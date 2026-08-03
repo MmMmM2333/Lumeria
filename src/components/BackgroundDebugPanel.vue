@@ -4,7 +4,7 @@
       'background-debug-panel',
       debugPanelDock === 'left' ? 'background-debug-panel-left' : 'background-debug-panel-right',
     ]"
-    aria-label="开发者调试面板"
+    :aria-label="t('debug.panel.title')"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -12,18 +12,18 @@
   >
     <header class="background-debug-header">
       <div class="background-debug-title">
-        <strong>开发者调试面板</strong>
-        <span>仅开发环境</span>
+        <strong>{{ t("debug.panel.title") }}</strong>
+        <span>{{ t("debug.common.devOnly") }}</span>
       </div>
       <div class="background-debug-header-actions">
-        <div class="background-debug-dock-toggle" role="group" aria-label="调试面板位置">
+        <div class="background-debug-dock-toggle" role="group" :aria-label="t('debug.panel.positionAria')">
           <button
             type="button"
             :class="['background-debug-dock-button', debugPanelDock === 'left' && 'background-debug-dock-button-active']"
             :aria-pressed="debugPanelDock === 'left'"
             @click="setDebugPanelDock('left')"
           >
-            左下角
+            {{ t("debug.common.leftBottom") }}
           </button>
           <button
             type="button"
@@ -31,11 +31,11 @@
             :aria-pressed="debugPanelDock === 'right'"
             @click="setDebugPanelDock('right')"
           >
-            右下角
+            {{ t("debug.common.rightBottom") }}
           </button>
         </div>
         <button type="button" class="background-debug-button" @click="isCollapsed = !isCollapsed">
-          {{ isCollapsed ? "展开" : "收起" }}
+          {{ isCollapsed ? t("debug.common.expand") : t("debug.common.collapse") }}
         </button>
       </div>
     </header>
@@ -50,28 +50,28 @@
           debugTabCount === 6 && 'background-debug-tabs-six',
         ]"
         role="tablist"
-        aria-label="调试面板分区"
+        :aria-label="t('debug.panel.sectionsAria')"
       >
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'acrylic' && 'background-debug-tab-active']"
           @click="activePanel = 'acrylic'"
         >
-          亚克力
+          {{ t("debug.panel.tabs.acrylic") }}
         </button>
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'layout' && 'background-debug-tab-active']"
           @click="activePanel = 'layout'"
         >
-          布局
+          {{ t("debug.panel.tabs.layout") }}
         </button>
         <button
           type="button"
           :class="['background-debug-tab', activePanel === 'notice' && 'background-debug-tab-active']"
           @click="activePanel = 'notice'"
         >
-          通知
+          {{ t("debug.panel.tabs.notice") }}
         </button>
         <button
           v-if="canDebugRender"
@@ -79,7 +79,7 @@
           :class="['background-debug-tab', activePanel === 'render' && 'background-debug-tab-active']"
           @click="activePanel = 'render'"
         >
-          渲染
+          {{ t("debug.panel.tabs.render") }}
         </button>
         <button
           v-if="canDebugMotion"
@@ -87,7 +87,7 @@
           :class="['background-debug-tab', activePanel === 'motion' && 'background-debug-tab-active']"
           @click="activePanel = 'motion'"
         >
-          动画
+          {{ t("debug.panel.tabs.motion") }}
         </button>
         <button
           v-if="canDebugLiveDesktop"
@@ -95,7 +95,7 @@
           :class="['background-debug-tab', activePanel === 'liveDesktop' && 'background-debug-tab-active']"
           @click="activePanel = 'liveDesktop'"
         >
-          动态桌面
+          {{ t("debug.panel.tabs.liveDesktop") }}
         </button>
       </div>
 
@@ -119,7 +119,7 @@
             :checked="isOverrideEnabled"
             @change="setAcrylicDebugOverrideEnabled($event.target.checked)"
           >
-          <span>覆盖设置</span>
+          <span>{{ t("debug.acrylic.override") }}</span>
         </label>
 
         <label
@@ -128,7 +128,7 @@
           class="background-debug-control"
         >
           <span>
-            {{ slider.label }}
+            {{ t(slider.labelKey) }}
             <output>{{ formatValue(params[slider.key], slider.digits) }}</output>
           </span>
           <input
@@ -143,14 +143,14 @@
 
         <label class="background-debug-control background-debug-color-control">
           <span>
-            染色颜色（tintColor）
+            {{ t("debug.acrylic.tintColor") }}
             <output>{{ tintHex }}</output>
           </span>
           <input type="color" :value="tintHex" @input="updateTintColor">
         </label>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">模糊内核</div>
+          <div class="background-debug-subtitle">{{ t("debug.acrylic.blurKernel") }}</div>
           <label class="background-debug-toggle">
             <input
               name="kawaseDebugOverride"
@@ -158,30 +158,30 @@
               :checked="isKawaseOverrideEnabled"
               @change="setKawaseOverrideEnabled($event.target.checked)"
             >
-            <span>覆盖半径/pass</span>
+            <span>{{ t("debug.acrylic.overrideRadiusPass") }}</span>
           </label>
 
-          <div class="background-debug-mode-group background-debug-kernel-group" role="group" aria-label="模糊内核">
+          <div class="background-debug-mode-group background-debug-kernel-group" role="group" :aria-label="t('debug.acrylic.blurKernel')">
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_AUTO && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_AUTO)"
             >
-              自动
+              {{ t("debug.acrylic.kernel.auto") }}
             </button>
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_DUAL_KAWASE && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_DUAL_KAWASE)"
             >
-              双重 Kawase
+              {{ t("debug.acrylic.kernel.dualKawase") }}
             </button>
             <button
               type="button"
               :class="['background-debug-mode-button', kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN && 'background-debug-mode-button-active']"
               @click="setBlurKernel(BLUR_KERNEL_GAUSSIAN)"
             >
-              高斯
+              {{ t("debug.acrylic.kernel.gaussian") }}
             </button>
           </div>
 
@@ -191,7 +191,7 @@
             class="background-debug-control"
           >
             <span>
-              {{ slider.label }}
+              {{ t(slider.labelKey) }}
               <output>{{ formatValue(kawaseParams[slider.key], slider.digits) }}</output>
             </span>
             <input
@@ -210,7 +210,7 @@
 
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" @click="resetBackgroundDebugParams">
-            重置
+            {{ t("debug.common.reset") }}
           </button>
           <button type="button" class="background-debug-button" @click="copyParams">
             {{ acrylicCopyButtonLabel }}
@@ -226,7 +226,7 @@
             :checked="layoutParams.enabled"
             @change="setLayoutDebugEnabled($event.target.checked)"
           >
-          <span>覆盖布局</span>
+          <span>{{ t("debug.layout.override") }}</span>
         </label>
 
         <label class="background-debug-toggle">
@@ -236,7 +236,7 @@
             :checked="layoutParams.dragHitZonesEnabled"
             @change="setDragHitZonesDebugEnabled($event.target.checked)"
           >
-          <span>显示拖拽命中区</span>
+          <span>{{ t("debug.layout.showDragHitZones") }}</span>
         </label>
 
         <label
@@ -245,7 +245,7 @@
           class="background-debug-control"
         >
           <span>
-            {{ slider.label }}
+            {{ t(slider.labelKey) }}
             <output>{{ formatValue(layoutParams[slider.key], slider.digits) }}px</output>
           </span>
           <input
@@ -270,19 +270,19 @@
         </dl>
 
         <div class="background-debug-detail">
-          CSS 控制宿主与主区域尺寸；gridTop 控制 Pixi 第一行的偏移。
+          {{ t("debug.layout.detail") }}
         </div>
 
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" @click="resetLayoutDebugParams">
-            重置
+            {{ t("debug.common.reset") }}
           </button>
         </div>
       </div>
 
       <div v-else-if="activePanel === 'notice'" class="background-debug-section">
         <div class="background-debug-detail">
-          生成布局保存、载入和恢复通知，用来检查 Lumeria 右下角 notice 的 Fluent 卡片样式。
+          {{ t("debug.notice.detail") }}
         </div>
 
         <dl class="background-debug-status-grid">
@@ -297,32 +297,32 @@
         </dl>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">布局通知</div>
+          <div class="background-debug-subtitle">{{ t("debug.notice.section") }}</div>
           <div class="background-debug-actions background-debug-notice-actions">
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveFailed">
-              保存失败
+              {{ t("debug.notice.actions.saveFailed") }}
             </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveRecovered">
-              保存恢复
+              {{ t("debug.notice.actions.saveRecovered") }}
             </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutLoadFailed">
-              载入失败
+              {{ t("debug.notice.actions.loadFailed") }}
             </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutLoadRecovered">
-              载入恢复
+              {{ t("debug.notice.actions.loadRecovered") }}
             </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutRecovered">
-              布局恢复
+              {{ t("debug.notice.actions.layoutRecovered") }}
             </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugNoticeStack">
-              堆叠样例
+              {{ t("debug.notice.actions.stackSample") }}
             </button>
           </div>
         </div>
 
         <div class="background-debug-actions">
           <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="clearDebugNotices">
-            清空通知
+            {{ t("debug.notice.actions.clear") }}
           </button>
         </div>
       </div>
@@ -344,7 +344,7 @@
             :disabled="motionReplayCaptureActive"
             @change="setMotionRuntimeDebugEnabled($event.target.checked)"
           >
-          <span>启用 Motion 诊断</span>
+          <span>{{ t("debug.motion.settings.enableDiagnostics") }}</span>
         </label>
 
         <label class="background-debug-toggle">
@@ -355,7 +355,7 @@
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionRecordEnabled($event.target.checked)"
           >
-          <span>记录历史</span>
+          <span>{{ t("debug.motion.settings.recordHistory") }}</span>
         </label>
 
         <label class="background-debug-toggle">
@@ -366,10 +366,10 @@
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @change="setMotionOverlayEnabled($event.target.checked)"
           >
-          <span>显示覆盖层</span>
+          <span>{{ t("debug.motion.settings.showOverlay") }}</span>
         </label>
 
-        <div class="background-debug-mode-group background-debug-motion-window-group" role="group" aria-label="Motion 记录窗口">
+        <div class="background-debug-mode-group background-debug-motion-window-group" role="group" :aria-label="t('debug.motion.aria.recordWindow')">
           <button
             v-for="preset in MOTION_RECORD_WINDOW_PRESETS"
             :key="preset.value"
@@ -378,13 +378,13 @@
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
             @click="setMotionWindowPreset(preset.value)"
           >
-            {{ preset.label }}
+            {{ preset.labelKey ? t(preset.labelKey) : preset.label }}
           </button>
         </div>
 
         <label class="background-debug-control background-debug-number-control">
           <span>
-            自定义秒数
+            {{ t("debug.motion.fields.customSeconds") }}
             <output>{{ motionWindowSeconds.toFixed(0) }}s</output>
           </span>
           <input
@@ -401,7 +401,7 @@
 
         <label class="background-debug-control">
           <span>
-            时间倍率
+            {{ t("debug.motion.fields.timeScale") }}
             <output>{{ Number(motionTimeScale).toFixed(2) }}x</output>
           </span>
           <input
@@ -417,30 +417,30 @@
         </label>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">分析工作区</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.analysisWorkspace") }}</div>
           <div class="background-debug-actions background-debug-motion-workspace-actions">
             <button
               type="button"
               class="background-debug-button"
               @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
             >
-              打开工作区
+              {{ t("debug.motion.actions.openWorkspace") }}
             </button>
             <button
               type="button"
               class="background-debug-button"
               @click="openMotionWorkspace(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
             >
-              全屏打开
+              {{ t("debug.motion.actions.openFullscreen") }}
             </button>
           </div>
         </div>
 
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">回放捕获</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.replayCapture") }}</div>
           <label class="background-debug-control background-debug-number-control">
             <span>
-              捕获秒数
+              {{ t("debug.motion.fields.captureSeconds") }}
               <output>{{ motionReplayCaptureSeconds }}s / 60Hz</output>
             </span>
             <input
@@ -471,7 +471,7 @@
               :disabled="motionReplayCaptureActive"
               @click="startMotionReplayCapture"
             >
-              开始捕获
+              {{ t("debug.motion.actions.startCapture") }}
             </button>
             <button
               type="button"
@@ -479,7 +479,7 @@
               :disabled="!motionReplayCaptureActive"
               @click="stopMotionReplayCapture"
             >
-              停止捕获
+              {{ t("debug.motion.actions.stopCapture") }}
             </button>
             <button
               type="button"
@@ -510,7 +510,7 @@
       motionWorkspaceDockResizeActive && 'motion-debug-workspace-resizing',
     ]"
     :style="motionWorkspaceStyle"
-    aria-label="Motion 调试工作区"
+    :aria-label="t('debug.motion.workspace.title')"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
@@ -522,7 +522,7 @@
       data-motion-workspace-resize-handle
       role="separator"
       tabindex="0"
-      aria-label="调整工作区停靠宽度"
+      :aria-label="t('debug.motion.workspace.resizeAria')"
       aria-orientation="vertical"
       :aria-valuemin="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN"
       :aria-valuemax="MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX"
@@ -533,11 +533,11 @@
     />
     <header class="motion-debug-workspace-toolbar">
       <div class="motion-debug-workspace-title">
-        <strong>Motion 调试工作区</strong>
-        <span>{{ motionWorkspaceModeLabel }} / 仅开发环境</span>
+        <strong>{{ t("debug.motion.workspace.title") }}</strong>
+        <span>{{ motionWorkspaceModeLabel }} / {{ t("debug.common.devOnly") }}</span>
       </div>
       <div class="motion-debug-workspace-toolbar-actions">
-        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" aria-label="工作区模式">
+        <div class="background-debug-mode-group motion-debug-workspace-mode-group" role="group" :aria-label="t('debug.motion.workspace.modeAria')">
           <button
             type="button"
             :class="[
@@ -546,7 +546,7 @@
             ]"
             @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_DOCK)"
           >
-            停靠
+            {{ t("debug.common.dock") }}
           </button>
           <button
             type="button"
@@ -556,18 +556,18 @@
             ]"
             @click="setMotionWorkspaceMode(MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN)"
           >
-            全屏
+            {{ t("debug.common.fullscreen") }}
           </button>
         </div>
         <button type="button" class="background-debug-button" @click="closeMotionWorkspace">
-          关闭
+          {{ t("debug.common.close") }}
         </button>
       </div>
     </header>
 
     <label v-if="!motionWorkspaceFullscreen" class="motion-debug-workspace-dock-control">
       <span>
-        停靠宽度
+        {{ t("debug.motion.workspace.dockWidth") }}
         <output>{{ motionWorkspaceDockWidthPx }}px</output>
       </span>
       <input
@@ -581,22 +581,22 @@
       >
     </label>
 
-    <div class="motion-debug-workspace-selection" aria-label="工作区选择">
+    <div class="motion-debug-workspace-selection" :aria-label="t('debug.motion.workspace.selectionAria')">
       <dl>
         <div>
-          <dt>目标</dt>
+          <dt>{{ t("debug.motion.fields.target") }}</dt>
           <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
         </div>
         <div>
-          <dt>轨道</dt>
+          <dt>{{ t("debug.motion.fields.track") }}</dt>
           <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
         </div>
         <div>
-          <dt>时间</dt>
+          <dt>{{ t("debug.motion.fields.time") }}</dt>
           <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
         </div>
         <div>
-          <dt>筛选</dt>
+          <dt>{{ t("debug.motion.fields.filter") }}</dt>
           <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
         </div>
       </dl>
@@ -610,7 +610,7 @@
           {{ motionWorkspacePinButtonLabel }}
         </button>
         <button type="button" class="background-debug-button" @click="clearMotionWorkspaceSelection">
-          清除选择
+          {{ t("debug.motion.actions.clearSelection") }}
         </button>
       </div>
     </div>
@@ -625,6 +625,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import { useLocalization } from "../i18n/localization.js";
 import BackgroundDebugLiveDesktopPanel from "./backgroundDebug/BackgroundDebugLiveDesktopPanel.vue";
 import BackgroundDebugMotionInspector from "./backgroundDebug/BackgroundDebugMotionInspector.vue";
 import BackgroundDebugMotionTargets from "./backgroundDebug/BackgroundDebugMotionTargets.vue";
@@ -786,6 +787,8 @@ const props = defineProps({
   },
 });
 
+const { n, resolvedLocale, t } = useLocalization();
+
 const params = useAcrylicDebugParams();
 const isOverrideEnabled = useAcrylicDebugOverrideEnabled();
 const kawaseParams = useKawaseDebugParams();
@@ -857,12 +860,12 @@ const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
 }));
 const noticeDebugRows = computed(() => [
   {
-    label: "临时通知",
-    value: props.dialogState?.transientNotice?.value?.title || "无",
+    label: t("debug.notice.transient"),
+    value: props.dialogState?.transientNotice?.value?.title || t("debug.common.none"),
   },
   {
-    label: "恢复通知",
-    value: props.dialogState?.layoutRecoveryNotice?.value?.title || "无",
+    label: t("debug.notice.recovery"),
+    value: props.dialogState?.layoutRecoveryNotice?.value?.title || t("debug.common.none"),
   },
 ]);
 let acrylicCopyStateTimer = null;
@@ -879,36 +882,36 @@ let kawaseLiveDesktopSyncTimer = null;
 const motionCaptureProfiles = getMotionCaptureProfiles();
 const motionCaptureAllowedProps = MOTION_CAPTURE_ALLOWED_PROPS;
 const MOTION_TRACK_CHART_SERIES_LABELS = Object.freeze({
-  delta: "差值（delta）",
-  to: "目标值（to）",
-  value: "当前值（value）",
-  velocity: "速度（velocity）",
+  delta: "debug.motion.series.delta",
+  to: "debug.motion.series.to",
+  value: "debug.motion.series.value",
+  velocity: "debug.motion.series.velocity",
 });
 const motionTrackChartSeriesOptions = MOTION_TRACK_CHART_SERIES_KEYS.map((key) => ({
   key,
-  label: MOTION_TRACK_CHART_SERIES_LABELS[key] || key,
+  labelKey: MOTION_TRACK_CHART_SERIES_LABELS[key],
 }));
 const MOTION_WORKSPACE_DOCK_RESIZE_STEP_PX = 20;
 const MOTION_WORKSPACE_DOCK_RESIZE_FAST_STEP_PX = 80;
 
 const sliders = [
-  { key: "saturation", label: "饱和度（saturation）", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
-  { key: "contrast", label: "对比度（contrast）", min: 0.75, max: 1.25, step: 0.01, digits: 2 },
-  { key: "brightness", label: "亮度（brightness）", min: 0.5, max: 1.2, step: 0.01, digits: 2 },
-  { key: "tintStrength", label: "染色强度（tintStrength）", min: 0, max: 0.6, step: 0.01, digits: 2 },
-  { key: "noise", label: "噪点（noise）", min: 0, max: 0.06, step: 0.001, digits: 3 },
-  { key: "seed", label: "噪点种子（seed）", min: 0, max: 100, step: 0.01, digits: 2 },
+  { key: "saturation", labelKey: "debug.acrylic.fields.saturation", min: 0.8, max: 1.8, step: 0.01, digits: 2 },
+  { key: "contrast", labelKey: "debug.acrylic.fields.contrast", min: 0.75, max: 1.25, step: 0.01, digits: 2 },
+  { key: "brightness", labelKey: "debug.acrylic.fields.brightness", min: 0.5, max: 1.2, step: 0.01, digits: 2 },
+  { key: "tintStrength", labelKey: "debug.acrylic.fields.tintStrength", min: 0, max: 0.6, step: 0.01, digits: 2 },
+  { key: "noise", labelKey: "debug.acrylic.fields.noise", min: 0, max: 0.06, step: 0.001, digits: 3 },
+  { key: "seed", labelKey: "debug.acrylic.fields.seed", min: 0, max: 100, step: 0.01, digits: 2 },
 ];
 const layoutSliders = [
-  { key: "hostMaxHeightPx", label: "宿主最大高度（hostMaxHeight）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
-  { key: "hostHeightOffsetPx", label: "宿主高度偏移（hostHeightOffset）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
-  { key: "mainPaddingYPx", label: "主区域纵向内边距（mainPaddingY）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
-  { key: "gridPaddingTopPx", label: "网格顶部内边距（gridPaddingTop）", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
+  { key: "hostMaxHeightPx", labelKey: "debug.layout.fields.hostMaxHeight", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
+  { key: "hostHeightOffsetPx", labelKey: "debug.layout.fields.hostHeightOffset", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
+  { key: "mainPaddingYPx", labelKey: "debug.layout.fields.mainPaddingY", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
+  { key: "gridPaddingTopPx", labelKey: "debug.layout.fields.gridPaddingTop", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
 ];
 const kawaseSliders = [
   {
     key: "passCount",
-    label: "迭代次数（passCount）",
+    labelKey: "debug.acrylic.fields.passCount",
     min: KAWASE_DEBUG_PASS_COUNT_MIN,
     max: KAWASE_DEBUG_PASS_COUNT_MAX,
     step: 1,
@@ -916,7 +919,7 @@ const kawaseSliders = [
   },
   {
     key: "offsetScale",
-    label: "半径倍率（radiusScale）",
+    labelKey: "debug.acrylic.fields.radiusScale",
     min: KAWASE_DEBUG_OFFSET_SCALE_MIN,
     max: KAWASE_DEBUG_OFFSET_SCALE_MAX,
     step: 0.01,
@@ -926,7 +929,7 @@ const kawaseSliders = [
 const gaussianSliders = [
   {
     key: "gaussianRadiusPx",
-    label: "高斯半径（gaussianRadius）",
+    labelKey: "debug.acrylic.fields.gaussianRadius",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
     step: 0.25,
@@ -936,7 +939,7 @@ const gaussianSliders = [
 const autoBlurKernelSliders = [
   {
     key: "testStrength",
-    label: "测试强度（testStrength）",
+    labelKey: "debug.acrylic.fields.testStrength",
     min: KAWASE_DEBUG_TEST_STRENGTH_MIN,
     max: KAWASE_DEBUG_TEST_STRENGTH_MAX,
     step: 1,
@@ -944,7 +947,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianCutoff",
-    label: "模糊阈值上限（blurCutoff）",
+    labelKey: "debug.acrylic.fields.blurCutoff",
     min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
     step: 1,
@@ -952,7 +955,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "acrylicGaussianCutoff",
-    label: "亚克力阈值上限（acrylicCutoff）",
+    labelKey: "debug.acrylic.fields.acrylicCutoff",
     min: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
     step: 1,
@@ -960,7 +963,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianRadiusScale",
-    label: "高斯缩放（gaussianScale）",
+    labelKey: "debug.acrylic.fields.gaussianScale",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX,
     step: 0.01,
@@ -968,7 +971,7 @@ const autoBlurKernelSliders = [
   },
   {
     key: "gaussianMaxRadiusPx",
-    label: "高斯最大值（gaussianMax）",
+    labelKey: "debug.acrylic.fields.gaussianMax",
     min: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN,
     max: KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX,
     step: 0.25,
@@ -1001,54 +1004,70 @@ const blurKernelStatus = computed(() => {
       : kawaseParams.gaussianCutoff;
     const offsetScale = resolveAutoDualKawaseOffsetScale(effect, testStrength, kawaseParams);
     const branchDetail = resolvedKernel === BLUR_KERNEL_GAUSSIAN
-      ? ` 半径=${radius.toFixed(2)}px`
-      : ` pass=${Number(kawaseParams.passCount).toFixed(0)} 半径倍率=${offsetScale.toFixed(2)} 基准=${Number(kawaseParams.offsetScale).toFixed(2)}`;
-    return `自动 ${formatEffectLabel(effect)} 实际强度=${actualStrength} 测试强度=${testStrength} 阈值<=${Number(cutoff).toFixed(0)} → ${resolvedKernel}${branchDetail}`;
+      ? t("debug.acrylic.status.gaussianDetail", { radius: radius.toFixed(2) })
+      : t("debug.acrylic.status.kawaseDetail", {
+        baseScale: Number(kawaseParams.offsetScale).toFixed(2),
+        passCount: Number(kawaseParams.passCount).toFixed(0),
+        radiusScale: offsetScale.toFixed(2),
+      });
+    return t("debug.acrylic.status.auto", {
+      actualStrength,
+      cutoff: Number(cutoff).toFixed(0),
+      detail: branchDetail,
+      effect: formatEffectLabel(effect),
+      kernel: formatBlurKernelLabel(resolvedKernel),
+      testStrength,
+    });
   }
   if (kawaseParams.kernel === BLUR_KERNEL_GAUSSIAN) {
-    return `手动高斯 半径=${Number(kawaseParams.gaussianRadiusPx).toFixed(2)}px`;
+    return t("debug.acrylic.status.manualGaussian", {
+      radius: Number(kawaseParams.gaussianRadiusPx).toFixed(2),
+    });
   }
-  return `手动双重 Kawase pass=${Number(kawaseParams.passCount).toFixed(0)} 半径倍率=${Number(kawaseParams.offsetScale).toFixed(2)}`;
+  return t("debug.acrylic.status.manualKawase", {
+    passCount: Number(kawaseParams.passCount).toFixed(0),
+    radiusScale: Number(kawaseParams.offsetScale).toFixed(2),
+  });
 });
-const acrylicCopyButtonLabel = computed(() => (hasCopiedAcrylic.value ? "已复制" : "复制 JSON"));
-const motionFullCopyButtonLabel = computed(() => (hasCopiedMotionFull.value ? "已复制" : "复制 AI 报告"));
+const acrylicCopyButtonLabel = computed(() => t(hasCopiedAcrylic.value ? "debug.common.copied" : "debug.common.copyJson"));
+const motionFullCopyButtonLabel = computed(() => t(hasCopiedMotionFull.value ? "debug.common.copied" : "debug.motion.actions.copyAiReport"));
 const motionReplayCaptureActive = computed(() => Boolean(motionReplayCaptureStatus.value.active));
 const motionReplayCaptureAvailable = computed(() => Boolean(motionReplayCaptureArtifact.value));
-const motionReplayIntervalCopyButtonLabel = computed(() => (hasCopiedMotionReplayInterval.value ? "已复制" : "复制区间"));
-const motionReplayPlayButtonLabel = computed(() => (motionReplayPlaying.value ? "暂停回放" : "播放回放"));
-const motionReplayTraceCopyButtonLabel = computed(() => (hasCopiedMotionReplayTrace.value ? "已复制" : "复制捕获"));
+const motionReplayIntervalCopyButtonLabel = computed(() => t(hasCopiedMotionReplayInterval.value ? "debug.common.copied" : "debug.motion.actions.copyInterval"));
+const motionReplayPlayButtonLabel = computed(() => t(motionReplayPlaying.value ? "debug.motion.actions.pauseReplay" : "debug.motion.actions.playReplay"));
+const motionReplayTraceCopyButtonLabel = computed(() => t(hasCopiedMotionReplayTrace.value ? "debug.common.copied" : "debug.motion.actions.copyCapture"));
 const motionReplayViewerLoaded = computed(() => Boolean(motionReplayDocument.value));
 const motionDiagnosticError = computed(() => motionActionError.value || motionRefreshError.value);
 const motionReplayImportStatus = computed(() => {
-  if (motionReplayImportError.value) return "错误";
-  return motionReplayViewerLoaded.value ? "已载入" : "空";
+  if (motionReplayImportError.value) return t("debug.common.error");
+  return t(motionReplayViewerLoaded.value ? "debug.common.loaded" : "debug.common.empty");
 });
-const motionSummaryCopyButtonLabel = computed(() => (hasCopiedMotionSummary.value ? "已复制" : "复制摘要"));
+const motionSummaryCopyButtonLabel = computed(() => t(hasCopiedMotionSummary.value ? "debug.common.copied" : "debug.motion.actions.copySummary"));
 const layoutDebugRows = computed(() => {
   const params = layoutParams.value;
   return [
-    { label: "覆盖布局 (enabled)", value: params.enabled ? "是" : "否" },
-    { label: "拖拽命中区 (dragHit)", value: params.dragHitZonesEnabled ? "显示" : "隐藏" },
-    { label: "宿主最大高度 (hostMax)", value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
-    { label: "高度偏移 (heightOffset)", value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
-    { label: "主区纵向内边距 (mainPaddingY)", value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
-    { label: "网格顶部 (gridTop)", value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
+    { label: t("debug.layout.fields.enabled"), value: t(params.enabled ? "debug.common.yes" : "debug.common.no") },
+    { label: t("debug.layout.fields.dragHit"), value: t(params.dragHitZonesEnabled ? "debug.common.shown" : "debug.common.hidden") },
+    { label: t("debug.layout.fields.hostMax"), value: `${Number(params.hostMaxHeightPx).toFixed(0)}px` },
+    { label: t("debug.layout.fields.heightOffset"), value: `${Number(params.hostHeightOffsetPx).toFixed(0)}px` },
+    { label: t("debug.layout.fields.mainPaddingYShort"), value: `${Number(params.mainPaddingYPx).toFixed(0)}px` },
+    { label: t("debug.layout.fields.gridTop"), value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
   ];
 });
-const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value));
+const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value, t));
 const motionAnimationRows = computed(() => buildMotionAnimationRows(motionSnapshot.value));
-const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value));
-const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value));
+const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value, 6, t));
+const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6, t));
 const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
 const motionFilters = computed(() => ({
   preset: motionFilterPreset.value,
   query: motionFilterQuery.value,
 }));
-const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value));
-const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value));
+const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value, t));
+const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value, undefined, t));
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionSnapshot.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
-const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value));
+const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value, { t }));
 const motionCaptureProfile = computed(() => buildMotionDebugWorkspaceCaptureProfile(motionWorkspaceSession.value));
 const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
   motionSnapshot.value,
@@ -1065,6 +1084,7 @@ const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(
     actualBytes: motionReplayCaptureArtifact.value?.artifact?.byteLength || 0,
     estimate: motionReplayCaptureEstimate.value,
     profile: motionCaptureProfile.value,
+    t,
   }
 ));
 const motionCaptureSelectedPropCount = computed(() => motionCaptureProfile.value.propAllowlist.length);
@@ -1078,57 +1098,74 @@ const motionCaptureTargetFilterText = computed(() => {
   };
 });
 const motionCaptureEstimateRows = computed(() => [
-  { label: "捕获配置 (profile)", value: motionCaptureProfile.value.label, wide: true },
-  { label: "属性 (props)", value: motionCaptureProfile.value.propAllowlist.join(", "), wide: true },
-  { label: "目标 (targets)", value: formatMotionCaptureTargetFilterSummary(motionCaptureProfile.value.targetFilters), wide: true },
+  { label: t("debug.motion.fields.profile"), value: formatMotionCaptureProfileLabel(motionCaptureProfile.value), wide: true },
+  { label: t("debug.motion.fields.props"), value: motionCaptureProfile.value.propAllowlist.join(", "), wide: true },
+  { label: t("debug.motion.fields.targetsTechnical"), value: formatMotionCaptureTargetFilterSummary(motionCaptureProfile.value.targetFilters), wide: true },
   {
-    label: "帧/事件 (frames/events)",
+    label: t("debug.motion.fields.framesEventsTechnical"),
     value: `${formatDebugCount(motionReplayCaptureEstimate.value.frameCount)} / ${formatDebugCount(motionReplayCaptureEstimate.value.eventCount)}`,
     wide: true,
   },
   {
-    label: "轨道/目标 (tracks/targets)",
+    label: t("debug.motion.fields.tracksTargetsTechnical"),
     value: `${formatDebugCount(motionReplayCaptureEstimate.value.trackCount)} / ${formatDebugCount(motionReplayCaptureEstimate.value.targetCount)}`,
     wide: true,
   },
-  { label: "预计 JSON", value: motionReplayCaptureEstimate.value.jsonSizeLabel, wide: true },
+  { label: t("debug.motion.fields.estimatedJson"), value: motionReplayCaptureEstimate.value.jsonSizeLabel, wide: true },
 ]);
 const motionReplayTimeRange = computed(() => motionReplayDocument.value?.timeRange() || { max: 0, min: 0 });
 const motionReplayFilters = computed(() => ({
   query: motionReplayFilterQuery.value,
 }));
 const motionReplayOverviewRows = computed(() => motionReplayDocument.value
-  ? motionReplayDocument.value.getView("overview", { timeMs: motionReplayCurrentTimeMs.value })
-  : [{ label: "查看器", value: "空" }, { label: "协议", value: "无", wide: true }]);
+  ? motionReplayDocument.value.getView("overview", {
+    locale: resolvedLocale.value,
+    t,
+    timeMs: motionReplayCurrentTimeMs.value,
+  })
+  : [
+    { label: t("debug.motion.fields.viewer"), value: t("debug.common.empty") },
+    { label: t("debug.motion.fields.schema"), value: t("debug.common.none"), wide: true },
+  ]);
 const motionReplayFilterSummary = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("filter-summary", {
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
+    t,
     timeMs: motionReplayCurrentTimeMs.value,
   })
-  : { query: "", text: "0 个属性 / 0 个事件" });
+  : { query: "", text: t("debug.motion.counts.propertiesEvents", { events: 0, properties: 0 }) });
 const motionReplayFrameRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("frame-rows", {
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
+    t,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
 const motionReplayEventRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("event-rows", {
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
+    t,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
 const motionReplayCurveGroups = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("curve-groups", {
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
+    t,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
 const motionReplayOverlayRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("overlay-rows", {
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
     selectedTarget: motionWorkspaceSession.value.selectedTarget,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
+    t,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
@@ -1150,26 +1187,32 @@ const motionTrackChartModel = computed(() => motionReplayDocument.value
     cursorTimeMs: motionWorkspaceSelectedTimeMs.value,
     displayMode: motionTrackChartDisplayMode.value,
     filters: motionReplayFilters.value,
+    locale: resolvedLocale.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
     seriesVisibility: motionTrackChartSeriesVisibility.value,
+    t,
     zoomWindow: motionTrackChartZoomWindow.value,
   })
   : null);
 const motionTrackChartHeaderLabel = computed(() => {
   const chart = motionTrackChartModel.value;
-  if (!chart) return `${motionTimelineGroups.value.length} 条实时轨道 / 未载入回放轨迹`;
-  return `${chart.summary.visibleTrackCount}/${chart.summary.trackCount} 条图表轨道 / ${chart.summary.eventCount} 个事件`;
+  if (!chart) return t("debug.motion.counts.liveTracksNoReplay", { tracks: motionTimelineGroups.value.length });
+  return t("debug.motion.counts.chartTracksEvents", {
+    events: chart.summary.eventCount,
+    total: chart.summary.trackCount,
+    visible: chart.summary.visibleTrackCount,
+  });
 });
 const motionTrackChartSummaryRows = computed(() => {
   const chart = motionTrackChartModel.value;
   if (!chart) return [];
   return [
-    { label: "时间窗口", value: `${formatMotionReplayTime(chart.zoomWindow.startMs)}..${formatMotionReplayTime(chart.zoomWindow.endMs)}`, wide: true },
-    { label: "采样", value: formatDebugCount(chart.summary.sampleCount) },
-    { label: "事件", value: formatDebugCount(chart.summary.eventCount) },
-    { label: "轨道", value: `${formatDebugCount(chart.summary.visibleTrackCount)} / ${formatDebugCount(chart.summary.trackCount)}` },
-    { label: "曲线点数", value: `每条曲线 ≤ ${formatDebugCount(chart.limits.maxPointsPerSeries)}` },
-    { label: "时间游标", value: formatMotionReplayTime(chart.cursor.timeMs) },
+    { label: t("debug.motion.fields.timeWindow"), value: `${formatMotionReplayTime(chart.zoomWindow.startMs)}..${formatMotionReplayTime(chart.zoomWindow.endMs)}`, wide: true },
+    { label: t("debug.motion.fields.samples"), value: formatDebugCount(chart.summary.sampleCount) },
+    { label: t("debug.motion.fields.events"), value: formatDebugCount(chart.summary.eventCount) },
+    { label: t("debug.motion.fields.tracks"), value: `${formatDebugCount(chart.summary.visibleTrackCount)} / ${formatDebugCount(chart.summary.trackCount)}` },
+    { label: t("debug.motion.fields.curvePoints"), value: t("debug.motion.counts.curvePointLimit", { count: formatDebugCount(chart.limits.maxPointsPerSeries) }) },
+    { label: t("debug.motion.fields.timeCursor"), value: formatMotionReplayTime(chart.cursor.timeMs) },
   ];
 });
 const motionReplayAnalysis = computed(() => motionReplayDocument.value
@@ -1178,7 +1221,7 @@ const motionReplayAnalysis = computed(() => motionReplayDocument.value
   })
   : null);
 const motionReplayFindingRows = computed(() => motionReplayAnalysis.value?.findings || []);
-const motionReplayFindingStatusLabel = computed(() => motionReplayAnalysis.value?.summary?.headline || "暂无诊断发现");
+const motionReplayFindingStatusLabel = computed(() => motionReplayAnalysis.value?.summary?.headline || t("debug.motion.values.noFindings"));
 const motionTrackChartIntervalOverlay = computed(() => {
   const chart = motionTrackChartModel.value;
   if (!chart) return { active: false, width: 0, x: 0 };
@@ -1206,7 +1249,7 @@ const motionWorkspaceOpen = computed(() => canDebugMotion.value && motionWorkspa
 const motionWorkspaceFullscreen = computed(() => motionWorkspaceSession.value.mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN);
 const motionWorkspaceDockWidthPx = computed(() => motionWorkspaceSession.value.dockWidthPx);
 const motionWorkspaceDockResizeActive = computed(() => motionWorkspaceDockResize.value != null);
-const motionWorkspaceModeLabel = computed(() => (motionWorkspaceFullscreen.value ? "全屏" : "停靠"));
+const motionWorkspaceModeLabel = computed(() => t(motionWorkspaceFullscreen.value ? "debug.common.fullscreen" : "debug.common.dock"));
 const motionWorkspaceStyle = computed(() => (motionWorkspaceFullscreen.value
   ? undefined
   : { width: `${motionWorkspaceDockWidthPx.value}px` }));
@@ -1216,73 +1259,78 @@ const motionWorkspaceSelectedTrackLabel = computed(() => formatMotionWorkspaceTr
 const motionWorkspaceFilterLabel = computed(() => {
   const filters = motionWorkspaceSession.value.filters;
   const preset = MOTION_FILTER_PRESETS.find((entry) => entry.value === filters.preset);
-  return `${preset?.label || "全部"}${filters.query ? ` / ${filters.query}` : ""}`;
+  const presetLabel = preset?.labelKey ? t(preset.labelKey) : (preset?.label || t("debug.common.all"));
+  return `${presetLabel}${filters.query ? ` / ${filters.query}` : ""}`;
 });
 const motionWorkspaceSelectedTargetPinned = computed(() => {
   const selectedKey = getMotionWorkspaceTargetKey(motionWorkspaceSession.value.selectedTarget);
   return Boolean(selectedKey && motionWorkspaceSession.value.pinnedTargets.some((pin) => pin.key === selectedKey));
 });
-const motionWorkspacePinButtonLabel = computed(() => (motionWorkspaceSelectedTargetPinned.value ? "取消固定目标" : "固定目标"));
+const motionWorkspacePinButtonLabel = computed(() => t(motionWorkspaceSelectedTargetPinned.value
+  ? "debug.motion.actions.unpinTarget"
+  : "debug.motion.actions.pinTarget"));
 const motionInspectorModel = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("inspector", {
+    locale: resolvedLocale.value,
     selectedTarget: motionWorkspaceSession.value.selectedTarget,
     selectedTimeMs: motionWorkspaceSelectedTimeMs.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
+    t,
   })
   : null);
 const motionInspectorStatusRows = computed(() => {
   const current = motionInspectorModel.value?.current;
   return [
-    { label: "当前值 (value)", value: current?.valueLabel || "-" },
-    { label: "目标值 (to)", value: current?.toLabel || "-" },
-    { label: "差值 (delta)", value: current?.deltaLabel || "-" },
-    { label: "速度 (velocity)", value: current?.velocityLabel || "-" },
-    { label: "驱动器 (driver)", value: current?.driver || "-" },
-    { label: "通道 (lane)", value: current ? `${current.lane}/${current.laneKey}` : "-", wide: true },
-    { label: "来源 (source)", value: current?.sourceLabel || "-", wide: true },
+    { label: t("debug.motion.series.value"), value: current?.valueLabel || "-" },
+    { label: t("debug.motion.series.to"), value: current?.toLabel || "-" },
+    { label: t("debug.motion.series.delta"), value: current?.deltaLabel || "-" },
+    { label: t("debug.motion.series.velocity"), value: current?.velocityLabel || "-" },
+    { label: t("debug.motion.fields.driver"), value: current?.driver || "-" },
+    { label: t("debug.motion.fields.lane"), value: current ? `${current.lane}/${current.laneKey}` : "-", wide: true },
+    { label: t("debug.motion.fields.sourceLabel"), value: current?.sourceLabel || "-", wide: true },
   ];
 });
 const motionInspectorLaneRows = computed(() => motionInspectorModel.value?.laneBreakdown || []);
 const motionInspectorWhyRows = computed(() => motionInspectorModel.value?.whyRows || []);
 const motionInspectorEventRows = computed(() => motionInspectorModel.value?.recentEvents || []);
 const motionInspectorWarningRows = computed(() => motionInspectorModel.value?.warnings || []);
-const motionFocusedCopyButtonLabel = computed(() => (hasCopiedMotionFocused.value ? "已复制" : "复制聚焦 AI 数据"));
+const motionFocusedCopyButtonLabel = computed(() => t(hasCopiedMotionFocused.value ? "debug.common.copied" : "debug.motion.actions.copyFocusedAi"));
 const motionFocusedDebugScopeRows = computed(() => [
   {
-    label: "捕获文档 (trace)",
-    value: motionReplayDocument.value ? "已载入" : "无",
+    label: t("debug.motion.fields.captureDocument"),
+    value: t(motionReplayDocument.value ? "debug.common.loaded" : "debug.common.none"),
   },
   {
-    label: "协议 (schema)",
+    label: t("debug.motion.fields.schemaTechnical"),
     value: MOTION_FOCUSED_DEBUG_SCHEMA,
     wide: true,
   },
   {
-    label: "区间 (interval)",
+    label: t("debug.motion.fields.interval"),
     value: motionReplayDocument.value
       ? `${formatMotionReplayTime(motionReplayIntervalStartMs.value)}..${formatMotionReplayTime(motionReplayIntervalEndMs.value)}`
       : "-",
     wide: true,
   },
   {
-    label: "选择 (selection)",
+    label: t("debug.motion.fields.selection"),
     value: formatMotionFocusedDebugSelectionLabel(),
     wide: true,
   },
   {
-    label: "轨道 (tracks)",
-    value: motionWorkspaceSession.value.selectedTrack ? "所选轨道" : "全部匹配轨道",
+    label: t("debug.motion.fields.tracksTechnical"),
+    value: t(motionWorkspaceSession.value.selectedTrack ? "debug.motion.values.selectedTrack" : "debug.motion.values.allMatchingTracks"),
   },
   {
-    label: "捕获配置 (profile)",
-    value: motionCaptureProfile.value.label,
+    label: t("debug.motion.fields.profileTechnical"),
+    value: formatMotionCaptureProfileLabel(motionCaptureProfile.value),
   },
   {
-    label: "筛选 (filter)",
-    value: motionReplayFilters.value.query || "无",
+    label: t("debug.motion.fields.filterTechnical"),
+    value: motionReplayFilters.value.query || t("debug.common.none"),
   },
   {
-    label: "书签 (bookmarks)",
+    label: t("debug.motion.fields.bookmarksTechnical"),
     value: motionReplayBookmarkStatusLabel.value,
   },
 ]);
@@ -1293,7 +1341,7 @@ function formatValue(value, digits) {
 
 function formatDebugCount(value) {
   const count = Math.max(0, Math.floor(Number(value) || 0));
-  return count.toLocaleString("zh-CN");
+  return n(count, "decimal");
 }
 
 function formatMotionChartStat(value) {
@@ -1472,20 +1520,25 @@ function handleMotionWorkspaceGlobalKeydown(event) {
 }
 
 function formatMotionWorkspaceTarget(target) {
-  if (!target) return "无";
-  return target.label || target.sourceLabel || target.layer || target.kind || `目标 ${target.targetId ?? "-"}`;
+  if (!target) return t("debug.common.none");
+  return target.label
+    || target.sourceLabel
+    || target.layer
+    || target.kind
+    || t("debug.motion.values.targetWithId", { id: target.targetId ?? "-" });
 }
 
 function formatMotionWorkspaceTrack(track) {
-  if (!track) return "无";
-  return `${track.prop || "未知属性"} / ${track.lane || "base"}`;
+  if (!track) return t("debug.common.none");
+  return `${track.prop || t("debug.motion.values.unknownProperty")} / ${track.lane || "base"}`;
 }
 
 function formatMotionFocusedDebugSelectionLabel() {
   const targetLabel = motionWorkspaceSelectedTargetLabel.value;
   const trackLabel = motionWorkspaceSelectedTrackLabel.value;
-  if (targetLabel === "无" && trackLabel === "无") return "全部可见回放轨道";
-  if (trackLabel === "无") return targetLabel;
+  const none = t("debug.common.none");
+  if (targetLabel === none && trackLabel === none) return t("debug.motion.values.allVisibleReplayTracks");
+  if (trackLabel === none) return targetLabel;
   return `${targetLabel} / ${trackLabel}`;
 }
 
@@ -1494,10 +1547,10 @@ function formatMotionReplayBookmarkMeta(bookmark = {}) {
     `${formatMotionReplayTime(bookmark.startMs)}..${formatMotionReplayTime(bookmark.endMs)}`,
   ];
   const trackLabel = formatMotionWorkspaceTrack(bookmark.track);
-  if (trackLabel !== "无") parts.push(trackLabel);
+  if (trackLabel !== t("debug.common.none")) parts.push(trackLabel);
   const targetLabel = formatMotionWorkspaceTarget(bookmark.selection);
-  if (targetLabel !== "无") parts.push(targetLabel);
-  if (bookmark.filters?.query) parts.push(`过滤器：${bookmark.filters.query}`);
+  if (targetLabel !== t("debug.common.none")) parts.push(targetLabel);
+  if (bookmark.filters?.query) parts.push(t("debug.motion.values.filterQuery", { query: bookmark.filters.query }));
   return parts.join(" / ");
 }
 
@@ -1507,11 +1560,11 @@ function formatMotionCaptureFilterList(values = []) {
 
 function formatMotionCaptureTargetFilterSummary(filters = {}) {
   const parts = [];
-  if (filters.layers?.length) parts.push(`${filters.layers.length} 个图层`);
-  if (filters.kinds?.length) parts.push(`${filters.kinds.length} 种类型`);
-  if (filters.sourceLabels?.length) parts.push(`${filters.sourceLabels.length} 个来源`);
-  if (filters.sourceQuery) parts.push(`搜索：${filters.sourceQuery}`);
-  return parts.length ? parts.join(" / ") : "全部目标";
+  if (filters.layers?.length) parts.push(t("debug.motion.counts.filterLayers", { count: filters.layers.length }));
+  if (filters.kinds?.length) parts.push(t("debug.motion.counts.filterKinds", { count: filters.kinds.length }));
+  if (filters.sourceLabels?.length) parts.push(t("debug.motion.counts.filterSources", { count: filters.sourceLabels.length }));
+  if (filters.sourceQuery) parts.push(t("debug.motion.values.searchQuery", { query: filters.sourceQuery }));
+  return parts.length ? parts.join(" / ") : t("debug.common.all");
 }
 
 function parseMotionCaptureFilterList(value) {
@@ -1555,6 +1608,16 @@ function isMotionWorkspaceTimelineEventSelected(event) {
     && Math.round(motionWorkspaceSession.value.selectedTimeMs) === Math.round(Number(event.timeMs) || 0);
 }
 
+function formatMotionCaptureProfileLabel(profile = {}) {
+  return profile.labelKey ? t(profile.labelKey) : (profile.label || profile.id || t("debug.common.none"));
+}
+
+function formatBlurKernelLabel(kernel) {
+  if (kernel === BLUR_KERNEL_GAUSSIAN) return t("debug.acrylic.kernel.gaussian");
+  if (kernel === BLUR_KERNEL_DUAL_KAWASE) return t("debug.acrylic.kernel.dualKawase");
+  return t("debug.acrylic.kernel.auto");
+}
+
 function formatEffectLabel(effect) {
   if (effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
   if (effect === BACKGROUND_EFFECT_BLUR) return "blur";
@@ -1568,13 +1631,13 @@ function syncMotionControlsFromConfig(config = {}) {
   motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
 }
 
-function recordMotionActionError(action, error, technicalLabel) {
-  motionActionError.value = formatDiagnosticActionError(action, error);
+function recordMotionActionError(actionKey, error, technicalLabel) {
+  motionActionError.value = formatDiagnosticActionError(t(actionKey), error, t);
   console.warn(technicalLabel, error);
 }
 
-function recordMotionRefreshError(action, error, technicalLabel) {
-  motionRefreshError.value = formatDiagnosticActionError(action, error);
+function recordMotionRefreshError(actionKey, error, technicalLabel) {
+  motionRefreshError.value = formatDiagnosticActionError(t(actionKey), error, t);
   console.warn(technicalLabel, error);
 }
 
@@ -1599,7 +1662,7 @@ async function refreshMotionSnapshot() {
     motionRefreshError.value = "";
     return snapshot;
   } catch (error) {
-    recordMotionRefreshError("刷新 Motion 状态", error, "Failed to refresh motion diagnostics");
+    recordMotionRefreshError("debug.motion.actions.refreshState", error, "Failed to refresh motion diagnostics");
     return null;
   }
 }
@@ -1616,7 +1679,7 @@ async function refreshMotionHistoryReport(_reason = "manual") {
     motionReport.value = await consumeDiagnosticArtifactValue(delivery);
     await refreshMotionSnapshot();
   } catch (error) {
-    recordMotionRefreshError("刷新 Motion 历史", error, "Failed to refresh motion diagnostic history");
+    recordMotionRefreshError("debug.motion.actions.refreshHistory", error, "Failed to refresh motion diagnostic history");
   }
 }
 
@@ -1642,7 +1705,7 @@ async function applyMotionRuntimeDebugConfig() {
     motionActionError.value = "";
     await refreshMotionSnapshot();
   } catch (error) {
-    recordMotionActionError("应用 Motion 设置", error, "Failed to apply motion diagnostic config");
+    recordMotionActionError("debug.motion.actions.applySettings", error, "Failed to apply motion diagnostic config");
     await refreshMotionSnapshot();
   }
 }
@@ -1663,7 +1726,7 @@ async function disableMotionRuntimeDebug() {
     motionActionError.value = "";
     await refreshMotionSnapshot();
   } catch (error) {
-    recordMotionActionError("停用 Motion 诊断", error, "Failed to disable motion diagnostics");
+    recordMotionActionError("debug.motion.actions.disableDiagnostics", error, "Failed to disable motion diagnostics");
     await refreshMotionSnapshot();
   }
 }
@@ -1977,7 +2040,7 @@ async function clearMotionDebugHistory() {
     motionActionError.value = "";
     await refreshMotionHistoryReport("clear-history");
   } catch (error) {
-    recordMotionActionError("清空 Motion 历史", error, "Failed to clear motion diagnostic history");
+    recordMotionActionError("debug.motion.actions.clearHistoryAction", error, "Failed to clear motion diagnostic history");
     await refreshMotionSnapshot();
   }
 }
@@ -1993,7 +2056,7 @@ async function syncMotionControlsFromRuntimeConfig() {
     if (description.status?.capture) motionReplayCaptureStatus.value = description.status.capture;
     motionRefreshError.value = "";
   } catch (error) {
-    recordMotionRefreshError("同步 Motion 控件", error, "Failed to synchronize motion diagnostic controls");
+    recordMotionRefreshError("debug.motion.actions.syncControls", error, "Failed to synchronize motion diagnostic controls");
   }
 }
 
@@ -2013,7 +2076,7 @@ async function startMotionReplayCapture() {
     await refreshMotionSnapshot();
     restartMotionRuntimePoller();
   } catch (error) {
-    recordMotionActionError("开始 Motion 捕获", error, "Failed to start motion replay capture");
+    recordMotionActionError("debug.motion.actions.startCaptureAction", error, "Failed to start motion replay capture");
     await refreshMotionSnapshot();
   }
 }
@@ -2026,7 +2089,7 @@ async function stopMotionReplayCapture(options = {}) {
     });
     motionReplayCaptureArtifact.value = delivery;
     const capturedDocument = motionDiagnosticSession.getDocument();
-    if (!capturedDocument) throw new Error("Motion 捕获已停止，但共享捕获文档没有发布");
+    if (!capturedDocument) throw new Error(t("debug.motion.errors.captureDocumentMissing"));
     motionReplayCaptureSummary.value = {
       capture: { profile: motionCaptureProfile.value },
       schema: capturedDocument.sourceSchema || capturedDocument.schema,
@@ -2039,7 +2102,7 @@ async function stopMotionReplayCapture(options = {}) {
     restartMotionRuntimePoller();
     return delivery;
   } catch (error) {
-    recordMotionActionError("停止 Motion 捕获", error, "Failed to stop motion replay capture");
+    recordMotionActionError("debug.motion.actions.stopCaptureAction", error, "Failed to stop motion replay capture");
     await refreshMotionSnapshot();
     return null;
   }
@@ -2495,7 +2558,7 @@ async function copyMotionReport(mode) {
       refreshMotionSnapshot();
     }
   } catch (error) {
-    recordMotionActionError("复制 Motion 报告", error, "Failed to copy Pixi motion debug report");
+    recordMotionActionError("debug.motion.actions.copyReport", error, "Failed to copy Pixi motion debug report");
   }
 }
 
@@ -2533,7 +2596,7 @@ async function copyMotionFocusedDebugExport(bookmark = null) {
     );
     motionActionError.value = "";
   } catch (error) {
-    recordMotionActionError("复制 Motion 聚焦报告", error, "Failed to copy focused Pixi motion debug export");
+    recordMotionActionError("debug.motion.actions.copyFocusedReport", error, "Failed to copy focused Pixi motion debug export");
   }
 }
 
@@ -2548,7 +2611,7 @@ async function copyMotionReplayTrace() {
     );
     motionActionError.value = "";
   } catch (error) {
-    recordMotionActionError("复制 Motion 捕获", error, "Failed to copy Pixi motion replay trace");
+    recordMotionActionError("debug.motion.actions.copyCaptureAction", error, "Failed to copy Pixi motion replay trace");
   }
 }
 
@@ -2569,7 +2632,7 @@ async function copyMotionReplayInterval() {
     );
     motionActionError.value = "";
   } catch (error) {
-    recordMotionActionError("复制 Motion 区间", error, "Failed to copy Pixi motion replay interval");
+    recordMotionActionError("debug.motion.actions.copyIntervalAction", error, "Failed to copy Pixi motion replay interval");
   }
 }
 
@@ -2777,7 +2840,7 @@ onBeforeUnmount(() => {
   if (motionSummaryCopyStateTimer != null) window.clearTimeout(motionSummaryCopyStateTimer);
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
   void disposeMotionDebugPanelState().catch((error) => {
-    console.error("释放 Motion 调试面板状态失败", error);
+    console.error("Failed to release Motion debug panel state", error);
   });
   clearMotionWorkspaceDockResize();
   window.removeEventListener("keydown", handleMotionWorkspaceGlobalKeydown);

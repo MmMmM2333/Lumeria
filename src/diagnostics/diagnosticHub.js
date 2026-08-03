@@ -107,8 +107,8 @@ export function createDiagnosticHub(options = {}) {
   function disposedFailure(input) {
     return failure(
       input,
-      new DiagnosticError("diagnostic-hub-disposed", "诊断入口已经释放", {
-        nextActions: ["等待运行时重新安装诊断入口"],
+      new DiagnosticError("diagnostic-hub-disposed", "The diagnostic entry point has been disposed", {
+        nextActions: ["Wait for the runtime to reinstall the diagnostic entry point"],
       }),
     );
   }
@@ -116,9 +116,9 @@ export function createDiagnosticHub(options = {}) {
   function missingToolFailure(input, toolId) {
     return failure(
       input,
-      new DiagnosticError("diagnostic-tool-not-found", `未找到诊断工具 ${toolId || "(empty)"}`, {
+      new DiagnosticError("diagnostic-tool-not-found", `Diagnostic tool not found: ${toolId || "(empty)"}`, {
         details: { toolId: toolId || null },
-        nextActions: ["调用 listTools() 获取当前可用工具"],
+        nextActions: ["Call listTools() to get the currently available tools"],
       }),
     );
   }
@@ -137,7 +137,7 @@ export function createDiagnosticHub(options = {}) {
     } catch (error) {
       return failure(resultInput, error, {
         code: "diagnostic-tool-list-failed",
-        message: "读取诊断工具列表失败",
+        message: "Failed to read the diagnostic tool list",
       });
     }
   }
@@ -158,8 +158,8 @@ export function createDiagnosticHub(options = {}) {
     } catch (error) {
       return failure(resultInput, error, {
         code: "diagnostic-status-failed",
-        message: `读取诊断工具 ${normalizedToolId} 状态失败`,
-        nextActions: ["检查运行时是否仍然可用", "稍后重试 describe(toolId)"],
+        message: `Failed to read diagnostic tool ${normalizedToolId} state`,
+        nextActions: ["Check whether the runtime is still available", "Retry describe(toolId) later"],
       });
     }
   }
@@ -177,10 +177,10 @@ export function createDiagnosticHub(options = {}) {
         resultInput,
         new DiagnosticError(
           "diagnostic-operation-not-supported",
-          `诊断工具 ${toolId} 不支持操作 ${operation || "(empty)"}`,
+          `Diagnostic tool ${toolId} does not support operation ${operation || "(empty)"}`,
           {
             details: { operation: operation || null, toolId },
-            nextActions: ["调用 describe(toolId) 查看工具支持的操作"],
+            nextActions: ["Call describe(toolId) to inspect supported operations"],
           },
         ),
       );
@@ -211,8 +211,8 @@ export function createDiagnosticHub(options = {}) {
     } catch (error) {
       return failure(resultInput, error, {
         code: "diagnostic-operation-failed",
-        message: `诊断操作 ${toolId}.${operation} 执行失败`,
-        nextActions: ["检查错误详情与工具当前状态", "修正参数后使用新的 requestId 重试"],
+        message: `Diagnostic operation ${toolId}.${operation} failed`,
+        nextActions: ["Inspect the error details and current tool state", "Correct the parameters and retry with a new requestId"],
       });
     }
   }
@@ -220,8 +220,8 @@ export function createDiagnosticHub(options = {}) {
   function unavailableArtifactStore(resultInput) {
     return failure(
       resultInput,
-      new DiagnosticError("diagnostic-artifact-store-unavailable", "诊断制品存储尚未配置", {
-        nextActions: ["等待运行时安装诊断制品存储后重试"],
+      new DiagnosticError("diagnostic-artifact-store-unavailable", "The diagnostic artifact store is not configured", {
+        nextActions: ["Wait for the runtime to install the diagnostic artifact store, then retry"],
       }),
     );
   }
@@ -236,7 +236,7 @@ export function createDiagnosticHub(options = {}) {
     } catch (error) {
       return failure(resultInput, error, {
         code: "diagnostic-artifact-query-failed",
-        message: "读取诊断制品失败",
+        message: "Failed to read the diagnostic artifact",
       });
     }
   }
@@ -251,7 +251,7 @@ export function createDiagnosticHub(options = {}) {
     } catch (error) {
       return failure(resultInput, error, {
         code: "diagnostic-artifact-release-failed",
-        message: "释放诊断制品失败",
+        message: "Failed to release the diagnostic artifact",
       });
     }
   }
@@ -274,9 +274,9 @@ export function createDiagnosticHub(options = {}) {
     if (failures.length) {
       return failure(
         resultInput,
-        new DiagnosticError("diagnostic-dispose-failed", "诊断入口释放不完整", {
+        new DiagnosticError("diagnostic-dispose-failed", "The diagnostic entry point was not fully disposed", {
           details: { failures },
-          nextActions: ["检查失败的工具释放错误"],
+          nextActions: ["Inspect the tool-disposal errors"],
         }),
       );
     }

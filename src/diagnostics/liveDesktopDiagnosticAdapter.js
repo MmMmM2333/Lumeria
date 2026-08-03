@@ -54,16 +54,16 @@ function isPlainObject(value) {
 
 function validateOperationParams(params, operation, allowedNames) {
   if (!isPlainObject(params)) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${operation} 的 params 必须是对象`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${operation} params must be an object`, {
       details: { receivedType: Array.isArray(params) ? "array" : typeof params },
-      nextActions: ["按工具描述中的 paramsSchema 传入对象参数"],
+      nextActions: ["Pass an object matching the paramsSchema in the tool description"],
     });
   }
   const unknownNames = Object.keys(params).filter((name) => !allowedNames.includes(name));
   if (unknownNames.length) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${operation} 包含未知参数`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${operation} contains unknown parameters`, {
       details: { unknownNames },
-      nextActions: ["调用 describe(toolId) 查看 paramsSchema"],
+      nextActions: ["Call describe(toolId) to inspect paramsSchema"],
     });
   }
   return params;
@@ -80,8 +80,8 @@ export function createLiveDesktopDiagnosticAdapter(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-tool-disposed", "Live Desktop 诊断工具已经释放", {
-        nextActions: ["等待运行时重新安装诊断入口"],
+      throw new DiagnosticError("diagnostic-tool-disposed", "The Live Desktop diagnostic tool has been disposed", {
+        nextActions: ["Wait for the runtime to reinstall the diagnostic entry point"],
       });
     }
   }

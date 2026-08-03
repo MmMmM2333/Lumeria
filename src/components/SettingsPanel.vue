@@ -12,7 +12,7 @@
       :class="cx('settings-panel', isNavigationCompact && 'settings-panel-navigation-compact')"
       role="dialog"
       aria-modal="true"
-      aria-label="设置"
+      :aria-label="t('settings.shell.title')"
       tabindex="-1"
       @keydown="handleSettingsPanelKeydown"
     >
@@ -23,7 +23,7 @@
             icon-only
             class="settings-navigation-toggle-button"
             type="button"
-            :aria-label="isNavigationCompact ? '展开设置导航' : '折叠设置导航'"
+            :aria-label="isNavigationCompact ? t('settings.shell.expandNavigation') : t('settings.shell.collapseNavigation')"
             :aria-pressed="isNavigationCompact"
             @click="shell.actions.toggleNavigation"
           >
@@ -39,17 +39,17 @@
                 icon-only
                 class="settings-back-button"
                 type="button"
-                :aria-label="`返回${activeRoute.parentLabel}`"
+                :aria-label="t('settings.shell.backTo', { label: activeRoute.parentLabel })"
                 @click="shell.actions.closeSubPage"
               >
                 <ArrowLeftIcon class="settings-back-icon" />
               </SettingsFluentButton>
-              <nav class="settings-breadcrumb" aria-label="设置路径">
+              <nav class="settings-breadcrumb" :aria-label="t('settings.shell.path')">
                 <button
                   v-if="activeRoute.depth > 0"
                   type="button"
                   class="settings-breadcrumb-item settings-breadcrumb-parent"
-                  :aria-label="`返回${activeRoute.parentLabel}`"
+                  :aria-label="t('settings.shell.backTo', { label: activeRoute.parentLabel })"
                   @click="shell.actions.closeSubPage"
                 >
                   {{ activeRoute.parentLabel }}
@@ -62,14 +62,14 @@
               </nav>
             </div>
           </div>
-          <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" aria-label="关闭设置" @click="shell.actions.close">
+          <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" :aria-label="t('settings.shell.close')" @click="shell.actions.close">
             <DismissIcon class="settings-close-icon" />
           </SettingsFluentButton>
         </div>
       </header>
 
       <div :class="cx('settings-shell', isNavigationCompact && 'settings-shell-compact')">
-        <nav class="settings-navigation" aria-label="设置分类">
+        <nav class="settings-navigation" :aria-label="t('settings.shell.categories')">
           <button
             v-for="tab in settingsTabs"
             :key="tab.id"
@@ -93,8 +93,8 @@
           </div>
 
           <footer v-if="showFooter" class="settings-actions">
-            <SettingsFluentButton appearance="outline" type="button" @click="shell.actions.close">取消</SettingsFluentButton>
-            <SettingsFluentButton appearance="primary" type="button" :disabled="!canApply" @click="shell.actions.apply">应用</SettingsFluentButton>
+            <SettingsFluentButton appearance="outline" type="button" @click="shell.actions.close">{{ t("common.actions.cancel") }}</SettingsFluentButton>
+            <SettingsFluentButton appearance="primary" type="button" :disabled="!canApply" @click="shell.actions.apply">{{ t("common.actions.apply") }}</SettingsFluentButton>
           </footer>
         </div>
       </div>
@@ -115,6 +115,7 @@ import SettingsRegularIcon from "~icons/fluent/settings-24-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { useLocalization } from "../i18n/localization.js";
 import AboutSettingsPage from "./settings/AboutSettingsPage.vue";
 import AppsSettingsPage from "./settings/AppsSettingsPage.vue";
 import GeneralSettingsPage from "./settings/GeneralSettingsPage.vue";
@@ -122,6 +123,7 @@ import InterfaceSettingsPage from "./settings/InterfaceSettingsPage.vue";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
 const props = defineProps({ model: { type: Object, required: true } });
+const { t } = useLocalization();
 const shell = props.model.shell;
 const {
   activePageModel,
@@ -159,7 +161,7 @@ const tabIcons = Object.freeze({
   apps: AppsIcon,
   about: InfoIcon,
 });
-const settingsTabs = shell.tabs.map((tab) => ({ ...tab, icon: tabIcons[tab.id] }));
+const settingsTabs = computed(() => shell.tabs.value.map((tab) => ({ ...tab, icon: tabIcons[tab.id] })));
 const pageComponents = Object.freeze({
   general: GeneralSettingsPage,
   interface: InterfaceSettingsPage,
@@ -189,7 +191,7 @@ function resetSettingsContentScroll() {
 
 function handleSettingsPanelKeydown(event) {
   if (event.defaultPrevented) return;
-  if (event.key === "Escape" && closeOpenFluentMenu()) {
+  if (event.key === "Escape" && closeOpenFluentPopup()) {
     event.preventDefault();
     event.stopPropagation();
     return;
@@ -198,12 +200,20 @@ function handleSettingsPanelKeydown(event) {
 }
 
 function handleSettingsPanelWindowKeydown(event) {
-  if (!isOpen.value || event.key !== "Escape" || !closeOpenFluentMenu()) return;
+  if (!isOpen.value || event.key !== "Escape" || !closeOpenFluentPopup()) return;
   event.preventDefault();
   event.stopPropagation();
 }
 
-function closeOpenFluentMenu() {
+function closeOpenFluentPopup() {
+  const listboxes = Array.from(settingsPanelRef.value?.querySelectorAll?.("fluent-listbox") || []);
+  const openListbox = listboxes.find((listbox) => listbox.matches(":popover-open"));
+  if (openListbox) {
+    openListbox.hidePopover?.();
+    openListbox.closest("fluent-dropdown")?.focus?.({ preventScroll: true });
+    return true;
+  }
+
   const menus = Array.from(settingsPanelRef.value?.querySelectorAll?.("fluent-menu") || []);
   const openMenu = menus.find((menu) => menu.querySelector("[slot='trigger']")?.getAttribute("aria-expanded") === "true");
   if (!openMenu) return false;

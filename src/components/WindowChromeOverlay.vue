@@ -1,9 +1,9 @@
 <template>
   <div v-if="active" class="window-chrome-overlay">
-    <div v-if="showTitlebar" class="window-chrome-bar" aria-label="窗口栏">
+    <div v-if="showTitlebar" class="window-chrome-bar" :aria-label="t('window.chrome.bar')">
       <div
         class="window-chrome-drag-area"
-        aria-label="拖动窗口"
+        :aria-label="t('window.chrome.drag')"
         @pointerdown.stop
         @mousedown.left.stop="handleDragMouseDown"
         @dblclick.left.stop="handleDragAreaDoubleClick"
@@ -12,13 +12,13 @@
         <span class="window-chrome-title-text">Lumeria</span>
       </div>
       <div class="window-chrome-controls" @pointerdown.stop>
-        <button class="window-chrome-control" type="button" aria-label="最小化窗口" title="最小化" @click.stop="handleMinimizeClick">
+        <button class="window-chrome-control" type="button" :aria-label="t('window.chrome.minimize')" :title="t('window.chrome.minimize')" @click.stop="handleMinimizeClick">
           <SubtractIcon class="window-chrome-control-icon" />
         </button>
         <button class="window-chrome-control" type="button" :aria-label="maximizeButtonLabel" :title="maximizeButtonLabel" @click.stop="handleMaximizeClick">
           <component :is="isWindowMaximizedState ? RestoreIcon : MaximizeIcon" class="window-chrome-control-icon" />
         </button>
-        <button class="window-chrome-control window-chrome-control-close" type="button" aria-label="隐藏窗口" title="隐藏" @click.stop="handleCloseClick">
+        <button class="window-chrome-control window-chrome-control-close" type="button" :aria-label="t('window.chrome.hide')" :title="t('window.chrome.hide')" @click.stop="handleCloseClick">
           <DismissIcon class="window-chrome-control-icon" />
         </button>
       </div>
@@ -26,7 +26,7 @@
     <div
       v-else
       class="window-chrome-drag-strip"
-      aria-label="拖动窗口"
+      :aria-label="t('window.chrome.drag')"
       @pointerdown.stop
       @mousedown.left.stop="handleDragMouseDown"
       @dblclick.left.stop="handleDragAreaDoubleClick"
@@ -55,6 +55,7 @@ import {
   startWindowResize,
   toggleWindowMaximize,
 } from "../api/windowChromeApi.js";
+import { useLocalization } from "../i18n/localization.js";
 
 const props = defineProps({
   active: {
@@ -79,7 +80,10 @@ const resizeHandles = Object.freeze([
 ]);
 
 const isWindowMaximizedState = ref(false);
-const maximizeButtonLabel = computed(() => (isWindowMaximizedState.value ? "向下还原窗口" : "最大化窗口"));
+const { t } = useLocalization();
+const maximizeButtonLabel = computed(() => (
+  isWindowMaximizedState.value ? t("window.chrome.restore") : t("window.chrome.maximize")
+));
 let windowMaximizedRefreshFrame = null;
 let windowMaximizedRefreshRequest = 0;
 

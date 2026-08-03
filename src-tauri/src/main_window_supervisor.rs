@@ -13,11 +13,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 use crate::{
+    current_app_locale,
     dwm::{
         hide_window_immediately, set_main_window_topmost, set_window_border_enabled,
         set_window_cloaked, set_window_corner_rounding_enabled, set_window_non_client_rendering,
         set_window_shadow_enabled, set_window_transitions_enabled,
     },
+    i18n,
     launcher::launch_path,
     native_error::NativeError,
     window_effects::{
@@ -40,6 +42,30 @@ const FULLSCREEN_OVERSCAN_PX: i32 = 1;
 const EXPERIMENT_WINDOWED_THICKFRAME_NCCALCSIZE: bool = true;
 const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
 const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WebviewRecoveryPromptCopy {
+    title: String,
+    message: String,
+}
+
+fn webview_recovery_prompt_copy(
+    locale: &str,
+    log_dir: Option<&str>,
+) -> Result<WebviewRecoveryPromptCopy, String> {
+    let log_dir = match log_dir {
+        Some(path) => path.to_string(),
+        None => i18n::translate(locale, "native.supervisor.logUnavailable", &[])?,
+    };
+    Ok(WebviewRecoveryPromptCopy {
+        title: i18n::translate(locale, "native.supervisor.title", &[])?,
+        message: i18n::translate(
+            locale,
+            "native.supervisor.message",
+            &[("logDir", log_dir.as_str())],
+        )?,
+    })
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MainWindowRect {
@@ -498,17 +524,35 @@ fn show_webview_recovery_prompt(app: &AppHandle) {
         .path()
         .app_log_dir()
         .map(|path| path.display().to_string())
-        .unwrap_or_else(|error| {
+        .map_err(|error| {
             log::error!(
                 target: "webview-supervisor",
                 "Failed to resolve log directory for recovery prompt: {error}"
             );
-            "（日志目录不可用）".to_string()
-        });
-    let message = HSTRING::from(format!(
-        "Lumeria 的界面进程连续发生故障。为避免阻挡桌面，启动台窗口已保持隐藏。\n\n选择“是”重新启动 Lumeria；选择“否”保持隐藏，您仍可从托盘打开日志或退出。\n\n日志目录：{log_dir}"
-    ));
-    let title = HSTRING::from("Lumeria 界面恢复");
+        })
+        .ok();
+    let copy = current_app_locale(app)
+        .and_then(|locale| webview_recovery_prompt_copy(&locale, log_dir.as_deref()));
+    let copy = match copy {
+        Ok(copy) => copy,
+        Err(error) => {
+            log::error!(
+                target: "webview-supervisor",
+                "Failed to localize native WebView2 recovery prompt: {error}"
+            );
+            if let Ok(mut state) = MAIN_WINDOW_SUPERVISOR_STATE.lock() {
+                state.finish_recovery_prompt();
+            } else {
+                log::error!(
+                    target: "webview-supervisor",
+                    "Failed to clear main window recovery prompt state after localization failure"
+                );
+            }
+            return;
+        }
+    };
+    let message = HSTRING::from(copy.message);
+    let title = HSTRING::from(copy.title);
     log::warn!(
         target: "webview-supervisor",
         "Showing native WebView2 recovery prompt after crash-loop suppression"
@@ -2950,5 +2994,18 @@ mod tests {
                 "openSequence": 7,
             })
         );
+    }
+
+    #[test]
+    fn webview_recovery_prompt_uses_the_shared_locale_catalog() {
+        let chinese = webview_recovery_prompt_copy("zh-CN", Some("C:\\Logs"))
+            .expect("Chinese recovery prompt");
+        let english = webview_recovery_prompt_copy("en-US", None).expect("English recovery prompt");
+
+        assert_eq!(chinese.title, "Lumeria 界面恢复");
+        assert!(chinese.message.contains("C:\\Logs"));
+        assert_eq!(english.title, "Lumeria interface recovery");
+        assert!(english.message.contains("log folder unavailable"));
+        assert!(english.message.contains("Choose Yes to restart"));
     }
 }

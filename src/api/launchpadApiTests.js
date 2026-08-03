@@ -1,4 +1,6 @@
 import {
+  applyAppLocalePreference,
+  getAppLocaleState,
   normalizeScanAppsResult,
   openDeveloperConsole,
   setLaunchpadApiBridgeForTests,
@@ -9,6 +11,12 @@ export async function runLaunchpadApiTests() {
     if (!condition) throw new Error(`[Launchpad API test failed] ${message}`);
   };
   const invocations = [];
+  const nativeLocaleState = {
+    preference: "system",
+    resolvedLocale: "en-US",
+    match: "language",
+    issue: null,
+  };
   let malformedStatsError = null;
   try {
     normalizeScanAppsResult({ apps: [], excludedApps: [], warnings: [], stats: {} });
@@ -45,6 +53,10 @@ export async function runLaunchpadApiTests() {
   setLaunchpadApiBridgeForTests({
     invoke: async (command, args) => {
       invocations.push({ args, command });
+      if (command === "get_app_locale_state") return nativeLocaleState;
+      if (command === "apply_app_locale_preference") {
+        return { ...nativeLocaleState, preference: args.preference, resolvedLocale: args.preference };
+      }
     },
   });
 
@@ -52,6 +64,14 @@ export async function runLaunchpadApiTests() {
     assert(await openDeveloperConsole(), "the native bridge should report a successful console open");
     assert(invocations.length === 1, "opening the developer console should issue one native command");
     assert(invocations[0].command === "open_developer_console", "the developer console should use the dedicated open command");
+    assert(await getAppLocaleState() === nativeLocaleState, "locale bootstrap should preserve the native locale state payload");
+    const appliedLocale = await applyAppLocalePreference("zh-CN");
+    assert(appliedLocale.resolvedLocale === "zh-CN", "locale apply should return the native applied state");
+    assert(invocations[1].command === "get_app_locale_state", "locale bootstrap should use the dedicated native command");
+    assert(
+      invocations[2].command === "apply_app_locale_preference" && invocations[2].args.preference === "zh-CN",
+      "locale apply should pass the preference through the dedicated native command"
+    );
   } finally {
     setLaunchpadApiBridgeForTests(null);
   }

@@ -104,9 +104,9 @@ function normalizeCursorX(range, timeMs) {
 }
 
 function makeDisposedError(id) {
-  return new DiagnosticError("motion-replay-document-disposed", `Motion 捕获文档 ${id} 已经释放`, {
+  return new DiagnosticError("motion-replay-document-disposed", `Motion capture document ${id} has been disposed`, {
     details: { documentId: id },
-    nextActions: ["从 MotionDiagnosticSession 获取当前捕获文档"],
+    nextActions: ["Get the current capture document from MotionDiagnosticSession"],
   });
 }
 
@@ -150,7 +150,7 @@ export function createMotionReplayDocument(traceInput, options = {}) {
     const key = stableStringify({ filters, limit: limit ?? null });
     if (!curveCache || curveCache.key !== key) {
       curveCache = {
-        groups: buildMotionReplayCurveGroups(trace, range.min, filters, limit),
+        groups: buildMotionReplayCurveGroups(trace, range.min, filters, limit, viewOptions.t),
         key,
       };
     }
@@ -201,9 +201,9 @@ export function createMotionReplayDocument(traceInput, options = {}) {
     ensureActive();
     switch (view) {
       case "overview":
-        return buildMotionReplayOverviewRows(trace, viewOptions.timeMs);
+        return buildMotionReplayOverviewRows(trace, viewOptions.timeMs, viewOptions.t);
       case "filter-summary":
-        return buildMotionReplayFilterSummary(trace, viewOptions.timeMs, viewOptions.filters);
+        return buildMotionReplayFilterSummary(trace, viewOptions.timeMs, viewOptions.filters, viewOptions.t);
       case "frame-rows":
         return buildMotionReplayFrameRows(trace, viewOptions.timeMs, viewOptions.filters, viewOptions.limit);
       case "event-rows":
@@ -229,9 +229,9 @@ export function createMotionReplayDocument(traceInput, options = {}) {
       case "step.event":
         return getEventStep(viewOptions);
       default:
-        throw new DiagnosticError("motion-replay-view-not-found", `未知 Motion 捕获视图 ${view || "(empty)"}`, {
+        throw new DiagnosticError("motion-replay-view-not-found", `Unknown Motion capture view: ${view || "(empty)"}`, {
           details: { supportedViews: MOTION_REPLAY_DOCUMENT_VIEWS, view: view || null },
-          nextActions: [`使用 ${MOTION_REPLAY_DOCUMENT_VIEWS.join("、")} 之一`],
+          nextActions: [`Use one of: ${MOTION_REPLAY_DOCUMENT_VIEWS.join(", ")}`],
         });
     }
   }
@@ -280,9 +280,9 @@ export function createMotionReplayDocument(traceInput, options = {}) {
     if (format === "trace") return cloneJson(trace);
     if (format === "interval") return createMotionReplayIntervalExport(trace, exportOptions);
     if (format === "focused") return createMotionFocusedDebugExport(trace, exportOptions);
-    throw new DiagnosticError("motion-replay-export-not-supported", `不支持 Motion 捕获导出格式 ${format}`, {
+    throw new DiagnosticError("motion-replay-export-not-supported", `Unsupported Motion capture export format: ${format}`, {
       details: { format, supportedFormats: MOTION_REPLAY_EXPORT_FORMATS },
-      nextActions: [`使用 ${MOTION_REPLAY_EXPORT_FORMATS.join("、")} 之一`],
+      nextActions: [`Use one of: ${MOTION_REPLAY_EXPORT_FORMATS.join(", ")}`],
     });
   }
 

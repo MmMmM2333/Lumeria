@@ -694,6 +694,7 @@ export class FolderOverlayLayer extends Container {
     this.onDesktopSourceGhostingChange = options.onDesktopSourceGhostingChange || (() => { });
     this.onRenderRequest = options.onRenderRequest || (() => { });
     this.showFolderTitle = options.showFolderTitle === true;
+    this.renderCopy = { newFolderName: String(options.renderCopy?.newFolderName || "") };
     if (!options.iconBoundsRegistry) throw new Error("FolderOverlayLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.transitionPort = ensureLayerTransitionPort(this);
@@ -765,6 +766,10 @@ export class FolderOverlayLayer extends Container {
     this.eventMode = "static";
     this.on("pointerdown", (event) => this.handlePointerDown(event));
     this.describeMotionTargets();
+  }
+
+  setRenderCopy(copy = {}) {
+    this.renderCopy = { newFolderName: String(copy.newFolderName || "") };
   }
 
   update(state) {
@@ -1004,7 +1009,7 @@ export class FolderOverlayLayer extends Container {
       })?.openingGeometrySnapshot || null;
     }
 
-    this.folderTitle.text = state.renderedFolder.name || "新文件夹";
+    this.folderTitle.text = state.renderedFolder.name || this.renderCopy.newFolderName;
     this.folderTitle.visible = this.showFolderTitle;
     this.folderTitle.anchor.set(0.5);
     this.folderTitle.position.set(geometry.panel.width / 2, -34);

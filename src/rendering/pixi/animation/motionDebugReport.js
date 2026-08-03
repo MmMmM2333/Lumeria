@@ -15,9 +15,9 @@ const REPORT_MODES = new Set(["summary", "full", "selectedTarget"]);
 function normalizeMode(mode) {
   const normalized = mode == null ? "summary" : String(mode);
   if (REPORT_MODES.has(normalized)) return normalized;
-  throw new DiagnosticError("diagnostic-params-invalid", "Motion 报告模式不受支持", {
+  throw new DiagnosticError("diagnostic-params-invalid", "The Motion report mode is not supported", {
     details: { mode: normalized, supportedModes: [...REPORT_MODES] },
-    nextActions: ["使用 summary、full 或 selectedTarget 模式"],
+    nextActions: ["Use summary, full, or selectedTarget mode"],
   });
 }
 
@@ -176,48 +176,48 @@ function makeReportData(runtime, options = {}) {
   };
 }
 
-function formatTable(entries, emptyText = "无") {
+function formatTable(entries, emptyText = "None") {
   if (!entries?.length) return `- ${emptyText}`;
   return entries.map((entry) => `- ${entry.key}: ${entry.count}`).join("\n");
 }
 
 function formatWarnings(warnings = []) {
-  if (!warnings.length) return "- 无";
+  if (!warnings.length) return "- None";
   return warnings
     .slice(0, 12)
-    .map((warning) => `- ${warning.type}：目标 ${warning.targetId ?? "未知"} ${warning.prop ?? "?"} ${warning.laneKey ?? ""}`.trim())
+    .map((warning) => `- ${warning.type}: target ${warning.targetId ?? "unknown"} ${warning.prop ?? "?"} ${warning.laneKey ?? ""}`.trim())
     .join("\n");
 }
 
 function formatAnimations(animations = []) {
-  if (!animations.length) return "- 无";
+  if (!animations.length) return "- None";
   return animations
     .slice(0, 16)
     .map((animation) => {
-      const label = animation.sourceLabel || animation.targetLabel || `目标 ${animation.targetId ?? "未知"}`;
-      return `- ${label}：${animation.prop}=${animation.value} → ${animation.to}（${animation.driver}/${animation.lane}/${animation.laneKey}）`;
+      const label = animation.sourceLabel || animation.targetLabel || `target ${animation.targetId ?? "unknown"}`;
+      return `- ${label}: ${animation.prop}=${animation.value} → ${animation.to} (${animation.driver}/${animation.lane}/${animation.laneKey})`;
     })
     .join("\n");
 }
 
 function formatCurveStats(curveStats = []) {
-  if (!curveStats.length) return "- 无";
+  if (!curveStats.length) return "- None";
   return curveStats
     .slice(0, 12)
     .map((stats) => {
       const label = stats.sourceLabel || `${stats.targetId}:${stats.prop}:${stats.laneKey}`;
-      return `- ${label}：最大差值=${stats.maxDelta}，最大速度=${stats.maxVelocity}，过冲=${stats.overshootCount}，重定向=${stats.retargetCount}`;
+      return `- ${label}: max delta=${stats.maxDelta}, max velocity=${stats.maxVelocity}, overshoots=${stats.overshootCount}, retargets=${stats.retargetCount}`;
     })
     .join("\n");
 }
 
 function formatCurveSummary(curveSummary = {}) {
-  if (!curveSummary.tracks?.length) return "- 无";
+  if (!curveSummary.tracks?.length) return "- None";
   return curveSummary.tracks
     .slice(0, 12)
     .map((track) => {
       const label = track.sourceLabel || `${track.targetId}:${track.prop}:${track.laneKey}`;
-      return `- ${label}：采样=${track.sampleCount}，事件=${track.eventCount}，值域=${track.valueRange.min}..${track.valueRange.max}，速度范围=${track.velocityRange.min}..${track.velocityRange.max}`;
+      return `- ${label}: samples=${track.sampleCount}, events=${track.eventCount}, value range=${track.valueRange.min}..${track.valueRange.max}, velocity range=${track.velocityRange.min}..${track.velocityRange.max}`;
     })
     .join("\n");
 }
@@ -225,40 +225,40 @@ function formatCurveSummary(curveSummary = {}) {
 export function formatMotionDebugMarkdown(data) {
   const overview = data.overview;
   return [
-    "# Pixi Motion AI 调试报告",
+    "# Pixi Motion AI debug report",
     "",
-    `模式：${data.mode}`,
-    `生成时间：${data.generatedAt}`,
-    data.selection ? `选择范围：${JSON.stringify(data.selection)}` : null,
+    `Mode: ${data.mode}`,
+    `Generated at: ${data.generatedAt}`,
+    data.selection ? `Selection: ${JSON.stringify(data.selection)}` : null,
     "",
-    "## 概览",
-    `- 活动动画：${overview.activeAnimationCount}`,
-    `- 活动目标：${overview.activeTargetCount}`,
-    `- 活动通道：${overview.activeChannelCount}`,
-    `- 警告：${overview.warningCount}`,
-    `- 有元数据的目标：${overview.targetMetadataCount}`,
-    `- 曲线统计：${overview.curveStatsCount}`,
-    `- 历史事件 / 采样：${overview.eventCount}/${overview.sampleCount}`,
+    "## Overview",
+    `- Active animations: ${overview.activeAnimationCount}`,
+    `- Active targets: ${overview.activeTargetCount}`,
+    `- Active channels: ${overview.activeChannelCount}`,
+    `- Warnings: ${overview.warningCount}`,
+    `- Targets with metadata: ${overview.targetMetadataCount}`,
+    `- Curve statistics: ${overview.curveStatsCount}`,
+    `- History events / samples: ${overview.eventCount}/${overview.sampleCount}`,
     "",
-    "## 高频属性",
+    "## Frequent properties",
     formatTable(overview.topProps),
     "",
-    "## 高频通道键",
+    "## Frequent lane keys",
     formatTable(overview.topLaneKeys),
     "",
-    "## 主要取消原因",
+    "## Top cancellation reasons",
     formatTable(overview.topCancelReasons),
     "",
-    "## 警告",
+    "## Warnings",
     formatWarnings(data.report.warnings),
     "",
-    "## 活动动画",
+    "## Active animations",
     formatAnimations(data.report.animations),
     "",
-    "## 曲线统计",
+    "## Curve statistics",
     formatCurveStats(data.report.curveStats),
     "",
-    "## 曲线摘要",
+    "## Curve summary",
     formatCurveSummary(data.curveSummary),
   ].filter((line) => line != null).join("\n");
 }

@@ -28,8 +28,8 @@ export function createSceneDiagnosticAdapter(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-tool-disposed", "Scene 诊断工具已经释放", {
-        nextActions: ["等待 Pixi 桌面表面重新安装诊断入口"],
+      throw new DiagnosticError("diagnostic-tool-disposed", "The scene diagnostic tool has been disposed", {
+        nextActions: ["Wait for the Pixi desktop surface to reinstall the diagnostic entry point"],
       });
     }
   }
@@ -52,9 +52,9 @@ export function createSceneDiagnosticAdapter(options = {}) {
         return state.clear(params.channel ?? null);
       case "folder-handoff.configure": {
         if (typeof params.enabled !== "boolean") {
-          throw new DiagnosticError("diagnostic-params-invalid", "folder-handoff.configure 需要布尔 enabled 参数", {
+          throw new DiagnosticError("diagnostic-params-invalid", "folder-handoff.configure requires a boolean enabled parameter", {
             details: { enabled: params.enabled ?? null },
-            nextActions: ["传入 { enabled: true } 启用，或 { enabled: false } 停用"],
+            nextActions: ["Pass { enabled: true } to enable it, or { enabled: false } to disable it"],
           });
         }
         const { enabled, ...config } = params;

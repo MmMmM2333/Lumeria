@@ -36,6 +36,9 @@ function normalizeMaxIndex(value) {
 }
 
 export function useLaunchpadLayout(options = {}) {
+  if (typeof options.getNewFolderName !== "function") {
+    throw new TypeError("useLaunchpadLayout requires getNewFolderName");
+  }
   const gridRowsState = ref(DEFAULT_ROWS);
   const gridColsState = ref(DEFAULT_COLS);
   const folderRowsState = ref(DEFAULT_FOLDER_ROWS);
@@ -64,6 +67,7 @@ export function useLaunchpadLayout(options = {}) {
     ensurePage: layoutHelpers.ensurePage,
     getFolderChildPages: layoutHelpers.getFolderChildPages,
     getFolderPageSize: () => folderPageSize.value,
+    getNewFolderName: options.getNewFolderName,
     getPageSize: () => pageSize.value,
     makeId: layoutHelpers.makeId,
     withFolderPages: layoutHelpers.withFolderPages,

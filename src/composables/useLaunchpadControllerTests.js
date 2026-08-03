@@ -6,6 +6,7 @@ import {
   shouldPlayFolderOpenIconGhosts,
   useLaunchpadController,
 } from "./useLaunchpadController.js";
+import { createLocalization } from "../i18n/localization.js";
 
 export async function runLaunchpadControllerTests() {
   const assert = (condition, message) => {
@@ -65,7 +66,17 @@ export async function runLaunchpadControllerTests() {
   let controller;
   const app = createSSRApp({
     setup() {
-      controller = useLaunchpadController({ appVersion: "controller-setup-test" });
+      const localization = createLocalization({
+        preference: "zh-CN",
+        resolvedLocale: "zh-CN",
+        match: "explicit",
+        issue: null,
+      });
+      controller = useLaunchpadController({
+        activateLocale: localization.activate,
+        appVersion: "controller-setup-test",
+        localizationText: localization.text,
+      });
       return () => h("div");
     },
   });

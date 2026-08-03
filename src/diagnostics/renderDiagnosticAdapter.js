@@ -42,8 +42,8 @@ export function createRenderDiagnosticAdapter(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-tool-disposed", "Render 诊断工具已经释放", {
-        nextActions: ["等待运行时重新安装诊断入口"],
+      throw new DiagnosticError("diagnostic-tool-disposed", "The render diagnostic tool has been disposed", {
+        nextActions: ["Wait for the runtime to reinstall the diagnostic entry point"],
       });
     }
   }
@@ -101,8 +101,8 @@ export function createRenderDiagnosticAdapter(options = {}) {
       }
       case "folder-visual.snapshot":
         if (typeof getFolderVisualSnapshot !== "function") {
-          throw new DiagnosticError("diagnostic-capability-unavailable", "文件夹视觉状态快照当前不可用", {
-            nextActions: ["确认 Pixi 桌面图层已经挂载"],
+          throw new DiagnosticError("diagnostic-capability-unavailable", "The folder visual-state snapshot is currently unavailable", {
+            nextActions: ["Confirm the Pixi desktop layer is mounted"],
           });
         }
         return getFolderVisualSnapshot();

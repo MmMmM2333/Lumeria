@@ -255,7 +255,7 @@ export function runMotionFocusedDebugExportModelTests() {
   assert(!serialized.includes("rawTarget"), "focused export should not serialize raw target references");
   assert(focused.presentation === "structured" && !Object.hasOwn(focused, "content"), "structured focused exports should not materialize text copies");
   const focusedMarkdown = createMotionFocusedDebugExport(makeTrace(), { ...focusedOptions, presentation: "markdown" });
-  assert(focusedMarkdown.content.includes("Pixi Motion 聚焦调试报告"), "markdown should be readable when requested");
+  assert(focusedMarkdown.content.includes("Pixi Motion focused debug report"), "markdown should be readable when requested");
   assert(!Object.hasOwn(focusedMarkdown, "data"), "markdown focused exports should not duplicate structured data");
 
   const alphaFocused = createMotionFocusedDebugExport(makeTrace(), {
@@ -291,6 +291,6 @@ export function runMotionFocusedDebugExportModelTests() {
 
   const markdown = formatMotionFocusedDebugMarkdown(data);
   assert(markdown.includes(MOTION_FOCUSED_DEBUG_SCHEMA), "standalone markdown formatter should include schema");
-  assert(markdown.includes("书签：retarget window"), "standalone markdown formatter should include bookmark context");
-  assert(markdown.includes("帧 / 事件：2/2"), "standalone markdown formatter should include summary counts");
+  assert(markdown.includes("Bookmark: retarget window"), "standalone markdown formatter should include bookmark context");
+  assert(markdown.includes("Frames / events: 2/2"), "standalone markdown formatter should include summary counts");
 }

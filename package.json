@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "benchmark:diagnostics": "node --expose-gc scripts/benchmarkMotionDiagnostics.mjs",
+    "check:i18n": "node scripts/checkI18n.mjs",
     "dev": "vite",
     "test": "node src/domain/runLaunchpadLayoutTests.js",
+    "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.mjs --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",
     "build": "vite build",
     "tauri:dev": "tauri dev",
@@ -20,7 +22,8 @@
     "gsap": "^3.15.0",
     "pinyin-pro": "^3.28.1",
     "pixi.js": "^8.18.1",
-    "vue": "^3.5.0"
+    "vue": "^3.5.0",
+    "vue-i18n": "^11.4.8"
   },
   "devDependencies": {
     "@iconify-json/fluent": "^1.2.51",

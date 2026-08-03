@@ -94,9 +94,9 @@ export function normalizeLiveDesktopDebugSettings(input = {}) {
 
 export function validateLiveDesktopDebugSettingsPatch(patch) {
   if (!isPlainObject(patch)) {
-    throw new DiagnosticError("diagnostic-params-invalid", "Live Desktop 调试设置 patch 必须是对象", {
+    throw new DiagnosticError("diagnostic-params-invalid", "The Live Desktop debug-settings patch must be an object", {
       details: { receivedType: Array.isArray(patch) ? "array" : typeof patch },
-      nextActions: ["传入仅包含受支持设置名的对象"],
+      nextActions: ["Pass an object containing only supported setting names"],
     });
   }
   const unknownNames = Object.keys(patch).filter((name) => !SETTING_NAMES.includes(name));
@@ -107,36 +107,36 @@ export function validateLiveDesktopDebugSettingsPatch(patch) {
     && patch.debugFrameSourceOverride !== null
     && patch.debugFrameSourceOverride !== LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN;
   if (unknownNames.length || invalidBooleanNames.length || hasInvalidFrameSource) {
-    throw new DiagnosticError("diagnostic-params-invalid", "Live Desktop 调试设置包含未知名称或非法值", {
+    throw new DiagnosticError("diagnostic-params-invalid", "Live Desktop debug settings contain an unknown name or invalid value", {
       details: {
         invalidBooleanNames,
         invalidFrameSource: hasInvalidFrameSource ? patch.debugFrameSourceOverride : null,
         unknownNames,
       },
       nextActions: [
-        `布尔设置必须使用 true/false；debugFrameSourceOverride 仅接受 null 或 ${LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN}`,
+        `Boolean settings must use true/false; debugFrameSourceOverride accepts only null or ${LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN}`,
       ],
     });
   }
   return { ...patch };
 }
 
-export function validateLiveDesktopRestartOptions(options, label = "Live Desktop 运行时选项") {
+export function validateLiveDesktopRestartOptions(options, label = "Live Desktop runtime options") {
   if (!isPlainObject(options)) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${label}必须是对象`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${label} must be an object`, {
       details: { receivedType: Array.isArray(options) ? "array" : typeof options },
-      nextActions: ["传入空对象，或仅传入布尔字段 restart"],
+      nextActions: ["Pass an empty object, or only the boolean restart field"],
     });
   }
   const unknownNames = Object.keys(options).filter((name) => name !== "restart");
   const hasInvalidRestart = Object.hasOwn(options, "restart") && typeof options.restart !== "boolean";
   if (unknownNames.length || hasInvalidRestart) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${label}包含未知名称或非法值`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${label} contains an unknown name or invalid value`, {
       details: {
         invalidRestart: hasInvalidRestart ? options.restart : null,
         unknownNames,
       },
-      nextActions: ["restart 仅接受 true 或 false"],
+      nextActions: ["restart accepts only true or false"],
     });
   }
   return { ...options };
@@ -163,7 +163,7 @@ export function createLiveDesktopDebugSettingsStore(options = {}) {
         values[name] = DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS[name];
         issues.push({
           code: "live-desktop-settings-read-failed",
-          message: `读取 Live Desktop 调试设置 ${name} 失败`,
+          message: `Failed to read Live Desktop debug setting ${name}`,
           name,
           storageKey: LIVE_DESKTOP_DEBUG_STORAGE_KEYS[name],
           technicalDetail: String(error?.message || error),
@@ -204,10 +204,10 @@ export function createLiveDesktopDebugSettingsStore(options = {}) {
     try {
       for (const name of SETTING_NAMES) previousRawValues[name] = readRaw(name);
     } catch (error) {
-      throw new DiagnosticError("live-desktop-settings-read-before-write-failed", "写入前无法完整读取 Live Desktop 调试设置", {
+      throw new DiagnosticError("live-desktop-settings-read-before-write-failed", "Live Desktop debug settings could not be read completely before writing", {
         cause: error,
         details: { technicalDetail: String(error?.message || error) },
-        nextActions: ["检查浏览器本地存储权限后重试"],
+        nextActions: ["Check browser local-storage permissions, then retry"],
       });
     }
     const beforeValues = Object.fromEntries(SETTING_NAMES.map((name) => (
@@ -218,13 +218,13 @@ export function createLiveDesktopDebugSettingsStore(options = {}) {
       for (const name of SETTING_NAMES) writeRaw(name, encodeSetting(name, values[name]));
     } catch (error) {
       const rollbackFailures = rollback(previousRawValues);
-      throw new DiagnosticError("live-desktop-settings-write-failed", "写入 Live Desktop 调试设置失败，已尝试回滚", {
+      throw new DiagnosticError("live-desktop-settings-write-failed", "Writing Live Desktop debug settings failed; rollback was attempted", {
         cause: error,
         details: {
           rollbackFailures,
           technicalDetail: String(error?.message || error),
         },
-        nextActions: ["检查浏览器本地存储权限与剩余空间后重试"],
+        nextActions: ["Check browser local-storage permissions and remaining space, then retry"],
       });
     }
     const snapshot = {
@@ -236,14 +236,14 @@ export function createLiveDesktopDebugSettingsStore(options = {}) {
       try {
         notify(snapshot);
       } catch (error) {
-        throw new DiagnosticError("live-desktop-settings-notify-failed", "Live Desktop 调试设置已保存，但通知应用失败", {
+        throw new DiagnosticError("live-desktop-settings-notify-failed", "Live Desktop debug settings were saved, but notifying the application failed", {
           cause: error,
           details: {
             persisted: true,
             technicalDetail: String(error?.message || error),
             values: cloneValues(values),
           },
-          nextActions: ["刷新诊断状态，确认应用层是否已读取新设置"],
+          nextActions: ["Refresh diagnostic state and confirm the application read the new settings"],
         });
       }
     }

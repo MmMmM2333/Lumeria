@@ -1,10 +1,12 @@
 import {
+  applyAppLocalePreference,
   cacheCustomIcon,
   checkLaunchTargets,
   confirmQuitAfterSave,
   configureLiveDesktopBackground,
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
+  getAppLocaleState,
   getLiveDesktopBackgroundSupport,
   getLiveDesktopRuntimeStatus,
   getMainWindowEffectsSupport,
@@ -32,6 +34,7 @@ import {
   startLiveDesktopBackground,
   stopLiveDesktopBackground,
 } from "../api/launchpadApi.js";
+import { createLocaleRuntimePort } from "./localeRuntime.js";
 
 export const backgroundAssetPort = Object.freeze({
   getDesktopWallpaper: getDesktopWallpaperBackground,
@@ -80,6 +83,12 @@ export const layoutStorePort = Object.freeze({
   confirmQuit: confirmQuitAfterSave,
   load: loadLayout,
   save: saveLayout,
+});
+
+export const localeRuntimePort = createLocaleRuntimePort({
+  applyNativePreference: applyAppLocalePreference,
+  getNativeState: getAppLocaleState,
+  isNative: isNativeBridgeAvailable,
 });
 
 export const nativeLifecyclePort = Object.freeze({

@@ -19,6 +19,10 @@ export const MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT = 240;
 export const MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT = 24;
 export const MOTION_TRACK_CHART_SERIES_KEYS = ["value", "to", "delta", "velocity"];
 
+function localize(t, key, params, technicalText) {
+  return typeof t === "function" ? t(key, params) : technicalText;
+}
+
 const DEFAULT_SERIES_VISIBILITY = {
   delta: true,
   to: true,
@@ -365,7 +369,10 @@ export function createMotionTrackChartProjector(traceInput = {}, options = {}) {
           series,
           sourceLabel: track.sourceLabel,
           stats: buildStats(track),
-          summary: `${track.samples.length} 个采样 / ${track.events.length} 个事件`,
+          summary: localize(options.t, "debug.motion.counts.samplesEvents", {
+            events: track.events.length,
+            samples: track.samples.length,
+          }, `${track.samples.length} samples / ${track.events.length} events`),
           targetId: track.targetId,
           targetProp: track.label,
           timeline: buildTrackTimeline(track, zoomWindow),

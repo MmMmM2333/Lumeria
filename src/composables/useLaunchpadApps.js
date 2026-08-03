@@ -1,9 +1,9 @@
 import { computed, readonly, ref, shallowRef } from "vue";
 import {
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
-  DEFAULT_SCAN_ROOTS,
   canExcludeAppFromScan,
   compareAppsByDefaultOrder,
+  createDefaultScanRoots,
   fallbackAppGlyph,
   isAppExcludedFromScan,
   makeScanAppExclusionEntry,
@@ -32,11 +32,15 @@ export function getCustomIconCanvasSize(width, height) {
 
 export function useLaunchpadApps(options) {
   const catalog = options.catalogPort || catalogPort;
+  const t = options.localizationText?.t;
   if (typeof options.commitPagesAfterDeletion !== "function") {
     throw new TypeError("useLaunchpadApps requires commitPagesAfterDeletion");
   }
   if (typeof options.reclampPageIndices !== "function") {
     throw new TypeError("useLaunchpadApps requires reclampPageIndices");
+  }
+  if (typeof t !== "function") {
+    throw new TypeError("useLaunchpadApps requires localization text");
   }
 
   const appManagerSelectedIds = ref([]);
@@ -47,7 +51,7 @@ export function useLaunchpadApps(options) {
   const scanResultSelectedIds = ref([]);
   const newScanKeyword = ref("");
   const hiddenAppIds = ref([]);
-  const scanRoots = ref(DEFAULT_SCAN_ROOTS.map((root) => ({ ...root })));
+  const scanRoots = ref(createDefaultScanRoots(t));
   const scanKeywordBlacklist = ref([]);
   const scanAppBlacklist = ref([]);
   const excludedCatalogApps = ref([]);
@@ -286,7 +290,7 @@ export function useLaunchpadApps(options) {
       {
         id: options.makeId("root"),
         type: "customDirectory",
-        label: "自定义目录",
+        label: t("settings.apps.sources.custom"),
         path: "%USERPROFILE%/Desktop",
         enabled: false,
         removable: true,
@@ -297,16 +301,16 @@ export function useLaunchpadApps(options) {
   }
 
   function resetScanRootsToDefaults() {
-    scanRoots.value = DEFAULT_SCAN_ROOTS.map((root) => ({ ...root }));
+    scanRoots.value = createDefaultScanRoots(t);
   }
 
   function confirmResetScanRoots() {
     options.openWarningDialog?.({
-      title: "还原默认来源",
-      message: "将移除当前自定义扫描来源，并恢复用户开始菜单、系统开始菜单和 Windows 应用目录。",
+      title: t("settings.apps.sources.resetTitle"),
+      message: t("settings.apps.sources.resetMessage"),
       intent: "warning",
-      cancelText: "取消",
-      confirmText: "还原",
+      cancelText: t("common.actions.cancel"),
+      confirmText: t("settings.apps.sources.resetConfirm"),
       onConfirm: resetScanRootsToDefaults,
     });
   }
@@ -331,9 +335,9 @@ export function useLaunchpadApps(options) {
     options.openWarningDialog?.({
       title: config.title,
       message: config.message,
-      suggestion: [config.suggestion, detail && `错误信息：${detail}`].filter(Boolean).join(" "),
+      suggestion: [config.suggestion, detail && t("settings.apps.operations.errorDetail", { detail })].filter(Boolean).join(" "),
       intent: "error",
-      confirmText: "知道了",
+      confirmText: t("notices.acknowledge"),
     });
   }
 
@@ -347,9 +351,9 @@ export function useLaunchpadApps(options) {
       changeScanRootPath(rootId, selectedPath);
     } catch (error) {
       openOperationFailedDialog({
-        title: "无法选择扫描来源",
-        message: "Lumeria 无法打开目录选择器。",
-        suggestion: "请重试，或检查系统文件选择权限。",
+        title: t("settings.apps.sources.chooseFailedTitle"),
+        message: t("settings.apps.sources.chooseFailedMessage"),
+        suggestion: t("settings.apps.sources.chooseFailedSuggestion"),
       }, error);
       console.error("Failed to pick scan root directory", error);
     } finally {
@@ -392,12 +396,14 @@ export function useLaunchpadApps(options) {
       scanAppBlacklist.value.filter((_, index) => !selectedIndexSet.has(index))
     );
     forgetExcludedCatalogApps(restoredEntries.map((entry) => entry.catalogId));
-    const singleName = restoredEntries.length === 1 ? String(restoredEntries[0]?.name || "该应用") : "";
+    const singleName = restoredEntries.length === 1
+      ? String(restoredEntries[0]?.name || t("settings.apps.operations.appFallback"))
+      : "";
     showAppActionNotice({
-      title: "已从排除列表移出",
+      title: t("settings.apps.operations.restoredTitle"),
       message: restoredEntries.length === 1
-        ? `“${singleName}”已从排除列表移出，可在重新扫描后再次添加。`
-        : `已将 ${restoredEntries.length} 个应用从排除列表移出，可在重新扫描后再次添加。`,
+        ? t("settings.apps.operations.restoredOne", { name: singleName })
+        : t("settings.apps.operations.restoredMany", { count: restoredEntries.length }),
       intent: "success",
     });
     return true;
@@ -454,10 +460,10 @@ export function useLaunchpadApps(options) {
 
   function openIconErrorDialog(message) {
     options.openWarningDialog?.({
-      title: "无法使用此图标",
+      title: t("settings.apps.icon.errorTitle"),
       message,
       intent: "error",
-      confirmText: "知道了",
+      confirmText: t("notices.acknowledge"),
     });
   }
 
@@ -471,7 +477,7 @@ export function useLaunchpadApps(options) {
       };
       image.onerror = () => {
         URL.revokeObjectURL(url);
-        reject(new Error("图片无法读取。"));
+        reject(new Error(t("settings.apps.icon.readFailed")));
       };
       image.src = url;
     });
@@ -481,15 +487,15 @@ export function useLaunchpadApps(options) {
     return new Promise((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (!blob) {
-          reject(new Error("图标压缩失败。"));
+          reject(new Error(t("settings.apps.icon.compressFailed")));
           return;
         }
         const reader = new FileReader();
         reader.onload = () => {
           if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error("图标压缩失败。"));
+          else reject(new Error(t("settings.apps.icon.compressFailed")));
         };
-        reader.onerror = () => reject(new Error("图标压缩失败。"));
+        reader.onerror = () => reject(new Error(t("settings.apps.icon.compressFailed")));
         reader.readAsDataURL(blob);
       }, "image/png");
     });
@@ -497,17 +503,17 @@ export function useLaunchpadApps(options) {
 
   async function normalizeCustomIconFile(file) {
     if (!file.type || !file.type.startsWith("image/")) {
-      throw new Error("请选择图片文件。");
+      throw new Error(t("settings.apps.icon.chooseImage"));
     }
     if (file.size > CUSTOM_ICON_SOURCE_MAX_BYTES) {
-      throw new Error("图片文件过大，请选择 10MB 以内的图片。");
+      throw new Error(t("settings.apps.icon.tooLarge"));
     }
 
     const image = await loadImageFromFile(file);
     const width = image.naturalWidth || image.width;
     const height = image.naturalHeight || image.height;
     if (width < CUSTOM_ICON_MIN_SOURCE_SIZE || height < CUSTOM_ICON_MIN_SOURCE_SIZE) {
-      throw new Error("图片尺寸过小，请选择至少 16x16 的图片。");
+      throw new Error(t("settings.apps.icon.tooSmall"));
     }
 
     const canvasSize = getCustomIconCanvasSize(width, height);
@@ -518,7 +524,7 @@ export function useLaunchpadApps(options) {
     canvas.width = canvasSize;
     canvas.height = canvasSize;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("图标压缩失败。");
+    if (!context) throw new Error(t("settings.apps.icon.compressFailed"));
     context.clearRect(0, 0, canvasSize, canvasSize);
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = "high";
@@ -532,7 +538,7 @@ export function useLaunchpadApps(options) {
 
     const dataUrl = await canvasToPngDataUrl(canvas);
     if (dataUrl.length > CUSTOM_ICON_DATA_URL_MAX_LENGTH) {
-      throw new Error("压缩后的图标仍然过大，请换一张更简单的图片。");
+      throw new Error(t("settings.apps.icon.compressedTooLarge"));
     }
     return dataUrl;
   }
@@ -540,7 +546,7 @@ export function useLaunchpadApps(options) {
   async function cacheCustomIconDataUrl(dataUrl) {
     if (!options.shouldUseNativeCatalog()) return { iconDataUrl: dataUrl, iconPath: null };
     const cached = await catalog.cacheCustomIcon(dataUrl);
-    if (!cached?.iconPath) throw new Error("图标缓存失败。");
+    if (!cached?.iconPath) throw new Error(t("settings.apps.icon.cacheFailed"));
     return {
       iconPath: cached.iconPath,
       iconDataUrl: cached.iconDataUrl || dataUrl,
@@ -555,7 +561,7 @@ export function useLaunchpadApps(options) {
       const dataUrl = await normalizeCustomIconFile(file);
       callback(await cacheCustomIconDataUrl(dataUrl));
     } catch (error) {
-      openIconErrorDialog(error?.message || "图标处理失败。");
+      openIconErrorDialog(error?.message || t("settings.apps.icon.processFailed"));
     } finally {
       input.value = "";
     }
@@ -586,9 +592,9 @@ export function useLaunchpadApps(options) {
       isEditorIconReset.value = false;
     } catch (error) {
       openOperationFailedDialog({
-        title: "无法选择启动文件",
-        message: "Lumeria 无法打开文件选择器。",
-        suggestion: "请重试，或手动填写启动路径。",
+        title: t("settings.apps.targetPicker.failedTitle"),
+        message: t("settings.apps.targetPicker.failedMessage"),
+        suggestion: t("settings.apps.targetPicker.failedSuggestion"),
       }, error);
       console.error("Failed to pick launch file", error);
     } finally {
@@ -650,7 +656,7 @@ export function useLaunchpadApps(options) {
     } catch (error) {
       if (requestId === iconChooserRequestId) {
         iconChoices.value = [];
-        iconChoicesError.value = "无法读取应用内图标，请重试。";
+        iconChoicesError.value = t("settings.apps.icon.loadChoicesFailed");
       }
       console.error("Failed to load app icon choices", error);
     } finally {
@@ -668,8 +674,10 @@ export function useLaunchpadApps(options) {
     if (!editorSession.value) return;
     openIconChooser({
       target: "editor",
-      title: "更换图标",
-      subtitle: editorName.value.trim() || (editorSession.value.mode === "edit" ? "编辑应用" : "新增应用"),
+      title: t("settings.apps.icon.change"),
+      subtitle: editorName.value.trim() || (editorSession.value.mode === "edit"
+        ? t("dialogs.appEditor.editTitle")
+        : t("dialogs.appEditor.addTitle")),
     });
   }
 
@@ -680,8 +688,8 @@ export function useLaunchpadApps(options) {
     openIconChooser({
       target: "existing",
       appId,
-      title: "更换图标",
-      subtitle: app.name || "应用",
+      title: t("settings.apps.icon.change"),
+      subtitle: app.name || t("settings.apps.icon.appFallback"),
     });
   }
 
@@ -854,10 +862,10 @@ export function useLaunchpadApps(options) {
   function showManagedAppsRemovedNotice(removedApps) {
     if (!removedApps.length) return;
     showAppActionNotice({
-      title: "已从启动台移除",
+      title: t("settings.apps.operations.removedTitle"),
       message: removedApps.length === 1
-        ? `“${removedApps[0].name}”已从启动台移除。此操作不会卸载应用或删除文件。`
-        : `已将 ${removedApps.length} 个应用从启动台移除。此操作不会卸载应用或删除文件。`,
+        ? t("settings.apps.operations.removedOne", { name: removedApps[0].name })
+        : t("settings.apps.operations.removedMany", { count: removedApps.length }),
     });
   }
 
@@ -889,8 +897,8 @@ export function useLaunchpadApps(options) {
     const currentApps = requestedApps.map((app) => currentById.get(app.id)).filter(Boolean);
     if (currentApps.length !== requestedApps.length || !currentApps.every(canExcludeManagedAppFromScan)) {
       showAppActionNotice({
-        title: "无法从扫描中排除",
-        message: "所选应用中包含没有稳定扫描来源的项目，未移除任何应用。",
+        title: t("settings.apps.operations.excludeFailedTitle"),
+        message: t("settings.apps.operations.excludeUnstable"),
         intent: "error",
       });
       return false;
@@ -904,8 +912,8 @@ export function useLaunchpadApps(options) {
     ]);
     if (!currentApps.every((app) => isAppExcludedFromScan(app, nextBlacklist))) {
       showAppActionNotice({
-        title: "无法从扫描中排除",
-        message: "无法保存应用的扫描来源，未移除任何应用。",
+        title: t("settings.apps.operations.excludeFailedTitle"),
+        message: t("settings.apps.operations.excludeSaveFailed"),
         intent: "error",
       });
       return false;
@@ -916,8 +924,8 @@ export function useLaunchpadApps(options) {
     if (removedApps.length !== currentApps.length) {
       scanAppBlacklist.value = previousBlacklist;
       showAppActionNotice({
-        title: "扫描排除未完成",
-        message: "应用状态在操作期间发生变化，请重新扫描后重试。",
+        title: t("settings.apps.operations.excludeChangedTitle"),
+        message: t("settings.apps.operations.excludeChanged"),
         intent: "error",
       });
       return false;
@@ -925,10 +933,10 @@ export function useLaunchpadApps(options) {
     rememberExcludedCatalogApps(removedApps);
 
     showAppActionNotice({
-      title: "已从扫描中排除",
+      title: t("settings.apps.operations.excludedTitle"),
       message: removedApps.length === 1
-        ? `“${removedApps[0].name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中将其移出排除列表。`
-        : `已移除并排除 ${removedApps.length} 个应用。可在设置的“已排除的应用”中将这些应用移出排除列表。`,
+        ? t("settings.apps.operations.excludedOne", { name: removedApps[0].name })
+        : t("settings.apps.operations.excludedMany", { count: removedApps.length }),
     });
     return true;
   }
@@ -973,9 +981,9 @@ export function useLaunchpadApps(options) {
       syncManagedAppState();
     } catch (error) {
       openOperationFailedDialog({
-        title: "无法扫描应用",
-        message: "Lumeria 无法扫描当前应用来源。",
-        suggestion: "请检查扫描来源是否仍可访问，然后重试。",
+        title: t("settings.apps.operations.scanFailedTitle"),
+        message: t("settings.apps.operations.scanFailedMessage"),
+        suggestion: t("settings.apps.operations.scanFailedSuggestion"),
       }, error);
       console.error("Failed to scan apps", error);
     } finally {
@@ -1060,7 +1068,9 @@ export function useLaunchpadApps(options) {
     hiddenAppIds.value = Array.isArray(fragment.hiddenAppIds)
       ? Array.from(new Set(fragment.hiddenAppIds.map(String)))
       : [];
-    scanRoots.value = normalizeScanRoots(fragment.scanRoots);
+    scanRoots.value = Array.isArray(fragment.scanRoots)
+      ? normalizeScanRoots(fragment.scanRoots)
+      : createDefaultScanRoots(t);
     scanKeywordBlacklist.value = Array.isArray(fragment.scanKeywordBlacklist)
       ? normalizeScanKeywordBlacklist(fragment.scanKeywordBlacklist)
       : [...DEFAULT_SCAN_KEYWORD_BLACKLIST];

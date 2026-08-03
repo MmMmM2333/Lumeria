@@ -125,6 +125,9 @@ export function samplePointerVelocity(previous = {}, event = {}, options = {}) {
 }
 
 export function useLaunchpadDrag(options) {
+  if (typeof options.getNewFolderName !== "function") {
+    throw new TypeError("useLaunchpadDrag requires getNewFolderName");
+  }
   const dragMeta = shallowRef(null);
   const dragFolderHoverState = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
@@ -1818,7 +1821,7 @@ export function useLaunchpadDrag(options) {
     const childPage = [targetApp];
     if (createOptions.includeDraggedApp) childPage.push(draggedApp);
     const folderItem = options.withFolderPages(
-      { id: folderId, type: "folder", name: "新文件夹" },
+      { id: folderId, type: "folder", name: options.getNewFolderName() },
       [childPage]
     );
     const originGeometry =

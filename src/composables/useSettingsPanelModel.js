@@ -70,21 +70,23 @@ const ACRYLIC_CONTRAST_MAX = 1.25;
 const ACRYLIC_SATURATION_MIN = 0.8;
 const ACRYLIC_SATURATION_MAX = 1.8;
 
-const SETTINGS_TABS = Object.freeze([
-  Object.freeze({ id: "general", label: "通用" }),
-  Object.freeze({ id: "interface", label: "外观" }),
-  Object.freeze({ id: "apps", label: "应用" }),
-  Object.freeze({ id: "about", label: "关于" }),
+const SETTINGS_TAB_SPECS = Object.freeze([
+  Object.freeze({ id: "general", labelKey: "settings.general.title" }),
+  Object.freeze({ id: "interface", labelKey: "settings.interface.title" }),
+  Object.freeze({ id: "apps", labelKey: "settings.apps.title" }),
+  Object.freeze({ id: "about", labelKey: "settings.about.title" }),
 ]);
 
-const SETTINGS_SUBPAGES = Object.freeze({
-  appsExcludedApps: Object.freeze({ id: "apps.excludedApps", label: "已排除的应用", parentTabId: "apps" }),
-  appsAppManager: Object.freeze({ id: "apps.appManager", label: "应用管理", parentTabId: "apps" }),
+const SETTINGS_SUBPAGE_SPECS = Object.freeze({
+  appsExcludedApps: Object.freeze({ id: "apps.excludedApps", labelKey: "settings.apps.excluded.title", parentTabId: "apps" }),
+  appsAppManager: Object.freeze({ id: "apps.appManager", labelKey: "settings.apps.manager.title", parentTabId: "apps" }),
 });
 
 const GENERAL_CAPABILITIES = [
+  "draftLocalePreference",
   "draftMainWindowShortcut",
   "isApplyingSettingsConfig",
+  "localePreferenceError",
 ];
 
 const INTERFACE_CAPABILITIES = [
@@ -189,12 +191,6 @@ function pickCapabilities(source, names) {
   return Object.fromEntries(names.map((name) => [name, source[name]]));
 }
 
-function normalizeSettingsSubPage(page) {
-  if (!page?.id || !page?.label || !page?.parentTabId) return null;
-  if (!SETTINGS_TABS.some((tab) => tab.id === page.parentTabId)) return null;
-  return { id: page.id, label: page.label, parentTabId: page.parentTabId };
-}
-
 function getExcludedAppKey(app, index) {
   if (app?.catalogId) return `catalog:${String(app.catalogId).toLocaleLowerCase()}`;
   if (app?.name) return `name:${String(app.name).toLocaleLowerCase()}:${index}`;
@@ -228,6 +224,8 @@ export function useSettingsPanelModel(options) {
 
 function createSettingsPanelModel(options) {
   const state = options?.capabilities;
+  const text = options?.localizationText;
+  const t = text?.t;
   const developerTools = options?.developerTools || developerToolsPort;
   const nativeEvents = options?.nativeEvents || nativeLifecyclePort;
   if (!state || typeof state.closeSettingsPanel !== "function" || typeof state.applySettingsConfig !== "function") {
@@ -238,6 +236,9 @@ function createSettingsPanelModel(options) {
   }
   if (!options?.backgroundLayoutContext || !("value" in options.backgroundLayoutContext)) {
     throw new TypeError("useSettingsPanelModel requires background layout context");
+  }
+  if (typeof t !== "function" || typeof text?.d !== "function") {
+    throw new TypeError("useSettingsPanelModel requires localization text");
   }
   if (typeof nativeEvents?.listen !== "function") {
     throw new TypeError("useSettingsPanelModel requires native events");
@@ -250,14 +251,23 @@ function createSettingsPanelModel(options) {
   const activeSubPage = ref(null);
   const isNavigationCompact = ref(true);
   const routeTransitionName = ref(SETTINGS_ROUTE_TRANSITION_SWITCH);
-  const activeTabItem = computed(() => SETTINGS_TABS.find((tab) => tab.id === activeTab.value) || SETTINGS_TABS[0]);
+  const settingsTabs = computed(() => SETTINGS_TAB_SPECS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })));
+  const settingsSubPages = computed(() => Object.fromEntries(
+    Object.entries(SETTINGS_SUBPAGE_SPECS).map(([name, page]) => [name, {
+      id: page.id,
+      label: t(page.labelKey),
+      labelKey: page.labelKey,
+      parentTabId: page.parentTabId,
+    }]),
+  ));
+  const activeTabItem = computed(() => settingsTabs.value.find((tab) => tab.id === activeTab.value) || settingsTabs.value[0]);
   const activeRoute = computed(() => {
     const tab = activeTabItem.value;
     const subPage = activeSubPage.value?.parentTabId === tab.id ? activeSubPage.value : null;
     return {
       depth: subPage ? 1 : 0,
       key: subPage ? `${tab.id}/${subPage.id}` : `${tab.id}/index`,
-      label: subPage?.label || tab.label,
+      label: subPage?.labelKey ? t(subPage.labelKey) : tab.label,
       parentLabel: tab.label,
       subPageId: subPage?.id || null,
       tabId: tab.id,
@@ -275,7 +285,7 @@ function createSettingsPanelModel(options) {
   }
 
   function updateRoute(tabId, subPage) {
-    if (!SETTINGS_TABS.some((tab) => tab.id === tabId)) return false;
+    if (!SETTINGS_TAB_SPECS.some((tab) => tab.id === tabId)) return false;
     const nextSubPage = subPage ? normalizeSettingsSubPage(subPage) : null;
     if (nextSubPage && nextSubPage.parentTabId !== tabId) return false;
     routeTransitionName.value = resolveRouteTransition(tabId, nextSubPage);
@@ -291,6 +301,12 @@ function createSettingsPanelModel(options) {
   function openSubPage(page) {
     const next = normalizeSettingsSubPage(page);
     if (next) updateRoute(next.parentTabId, next);
+  }
+
+  function normalizeSettingsSubPage(page) {
+    if (!page?.id || !page?.labelKey || !page?.parentTabId) return null;
+    if (!SETTINGS_TAB_SPECS.some((tab) => tab.id === page.parentTabId)) return null;
+    return { id: page.id, labelKey: page.labelKey, parentTabId: page.parentTabId };
   }
 
   function closeSubPage() {
@@ -344,7 +360,7 @@ function createSettingsPanelModel(options) {
     } catch (error) {
       if (session === shortcutRecordingSession) {
         stopShortcutRecording();
-        setShortcutError("无法开始快捷键录制，请重试。");
+        setShortcutError(t("settings.general.shortcut.startFailed"));
       }
       console.error("Failed to listen for shortcut capture", error);
     }
@@ -360,7 +376,7 @@ function createSettingsPanelModel(options) {
       return;
     }
     if (result.status === "invalid") {
-      setShortcutError(result.message);
+      setShortcutError(t(`settings.general.shortcut.invalid.${result.reason}`));
       return;
     }
     acceptShortcut(result.shortcut);
@@ -384,7 +400,7 @@ function createSettingsPanelModel(options) {
     if (isOpeningDeveloperConsole.value) return false;
     developerConsoleError.value = "";
     if (!canOpenDeveloperConsole.value) {
-      developerConsoleError.value = "控制台仅在 Lumeria 桌面应用中可用。";
+      developerConsoleError.value = t("settings.general.advanced.unavailable");
       return false;
     }
 
@@ -392,12 +408,12 @@ function createSettingsPanelModel(options) {
     try {
       const opened = await developerTools.openConsole();
       if (!opened) {
-        developerConsoleError.value = "当前环境无法打开控制台。";
+        developerConsoleError.value = t("settings.general.advanced.openUnavailable");
         return false;
       }
       return true;
     } catch (error) {
-      developerConsoleError.value = "无法打开控制台，请重试。";
+      developerConsoleError.value = t("settings.general.advanced.openFailed");
       console.error("Failed to open developer console", error);
       return false;
     } finally {
@@ -412,22 +428,27 @@ function createSettingsPanelModel(options) {
     developerConsoleHint: computed(() => (
       developerConsoleError.value
       || (canOpenDeveloperConsole.value
-        ? "打开当前窗口的 WebView 开发者工具"
-        : "仅在 Lumeria 桌面应用中可用")
+        ? t("settings.general.advanced.hint")
+        : t("settings.general.advanced.unavailableHint"))
     )),
     isOpeningDeveloperConsole,
     isRecordingMainWindowShortcut: isRecordingShortcut,
     mainWindowShortcutHint: computed(() => {
       if (state.mainWindowShortcutError.value) return state.mainWindowShortcutError.value;
-      return isRecordingShortcut.value ? "按 Esc 取消录制" : "快速显示或隐藏 Lumeria";
+      return isRecordingShortcut.value
+        ? t("settings.general.shortcut.recordingHint")
+        : t("settings.general.shortcut.hint");
     }),
     mainWindowShortcutLabel: computed(() => (
-      isRecordingShortcut.value ? "按下组合键" : formatMainWindowShortcut(state.draftMainWindowShortcut.value)
+      isRecordingShortcut.value
+        ? t("settings.general.shortcut.pressKeys")
+        : formatMainWindowShortcut(state.draftMainWindowShortcut.value) || t("settings.general.shortcut.notSet")
     )),
     actions: Object.freeze({
       clearShortcut,
       openDeveloperConsole,
       resetShortcut,
+      setLocalePreference: state.setDraftLocalePreference,
       startShortcutRecording,
       stopShortcutRecording,
     }),
@@ -436,18 +457,18 @@ function createSettingsPanelModel(options) {
   const activeAcrylicParamsProfile = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
   const windowEffectsSupport = computed(() => state.windowEffectsSupport.value || {});
   const windowEffectMaterialNotes = computed(() => [
-    { material: WINDOW_EFFECT_MATERIAL_NONE, materialClass: "none", label: "无材质", description: "关闭系统材质，只显示底色与图片层", available: true },
-    { material: WINDOW_EFFECT_MATERIAL_ACRYLIC, materialClass: "acrylic", label: "Acrylic", description: "半透明模糊，背景变化更明显", available: Boolean(windowEffectsSupport.value.supportsAcrylic) },
-    { material: WINDOW_EFFECT_MATERIAL_MICA, materialClass: "mica", label: "Mica", description: "桌面采样，观感更稳定，资源占用更低", available: Boolean(windowEffectsSupport.value.supportsMica) },
-    { material: WINDOW_EFFECT_MATERIAL_MICA_ALT, materialClass: "mica-alt", label: "Mica Alt", description: "Mica 变体，层次更强，适合分层窗口", available: Boolean(windowEffectsSupport.value.supportsMicaAlt) },
+    { material: WINDOW_EFFECT_MATERIAL_NONE, materialClass: "none", label: t("settings.interface.window.materialNone"), description: t("settings.interface.window.materials.none"), available: true },
+    { material: WINDOW_EFFECT_MATERIAL_ACRYLIC, materialClass: "acrylic", label: "Acrylic", description: t("settings.interface.window.materials.acrylic"), available: Boolean(windowEffectsSupport.value.supportsAcrylic) },
+    { material: WINDOW_EFFECT_MATERIAL_MICA, materialClass: "mica", label: "Mica", description: t("settings.interface.window.materials.mica"), available: Boolean(windowEffectsSupport.value.supportsMica) },
+    { material: WINDOW_EFFECT_MATERIAL_MICA_ALT, materialClass: "mica-alt", label: "Mica Alt", description: t("settings.interface.window.materials.micaAlt"), available: Boolean(windowEffectsSupport.value.supportsMicaAlt) },
   ]);
-  const windowEffectAppearances = [
-    { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: "浅色" },
-    { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: "深色" },
-  ];
+  const windowEffectAppearances = computed(() => [
+    { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: t("settings.interface.window.light") },
+    { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: t("settings.interface.window.dark") },
+  ]);
   const activeWindowEffectAppearance = computed(() => (
-    windowEffectAppearances.find((item) => item.appearance === state.draftWindowEffectAppearance.value)
-    || windowEffectAppearances[1]
+    windowEffectAppearances.value.find((item) => item.appearance === state.draftWindowEffectAppearance.value)
+    || windowEffectAppearances.value[1]
   ));
   const windowEffectPreviewItems = computed(() => windowEffectMaterialNotes.value.map((material) => ({
     ...material,
@@ -477,34 +498,40 @@ function createSettingsPanelModel(options) {
   });
   const backgroundSourceHint = computed(() => (
     state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE
-      ? "自定义图片叠在底色上方"
+      ? t("settings.interface.background.layer.hintCustom")
       : state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER
-        ? "跟随当前 Windows 桌面壁纸"
+        ? t("settings.interface.background.layer.hintWallpaper")
         : state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value
-          ? liveDesktopRuntimeDetail.value || "捕获动态桌面并在 Native GPU 管线中合成"
+          ? liveDesktopRuntimeDetail.value || t("settings.interface.background.layer.hintLive")
           : canShowLiveDesktopControls.value && !state.canUseLiveDesktopBackground() && liveDesktopUnavailableDetail.value
-            ? `动态桌面不可用：${liveDesktopUnavailableDetail.value}`
-            : "不叠加背景层"
+            ? t("settings.interface.background.layer.hintLiveUnavailable", { detail: liveDesktopUnavailableDetail.value })
+            : t("settings.interface.background.layer.hintNone")
   ));
   const backgroundEffectHint = computed(() => (
     doesDraftBackgroundUseLayer.value
       ? doesDraftBackgroundUseLiveDesktop.value && !state.canUseLiveDesktopBackgroundEffect(state.draftBackgroundEffect.value)
-        ? "当前效果由前端透明层合成"
+        ? t("settings.interface.background.effect.hintCss")
         : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
-          ? "WebGL Acrylic 风格合成"
+          ? t("settings.interface.background.effect.hintAcrylic")
           : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
-            ? "模糊背景层"
+            ? t("settings.interface.background.effect.hintBlur")
             : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED
-              ? "叠加暗化遮罩"
-              : "直接显示背景层"
-      : "选择背景层后可用"
+              ? t("settings.interface.background.effect.hintDim")
+              : t("settings.interface.background.effect.hintOriginal")
+      : t("settings.interface.background.effect.unavailable")
   ));
   const draftBackgroundImageName = computed(() => {
     const path = String(state.draftBackgroundImagePath.value || "").trim();
-    if (!path) return isDraftWindowsWallpaper.value ? "等待同步桌面壁纸" : "使用内置图片";
+    if (!path) return isDraftWindowsWallpaper.value
+      ? t("settings.interface.background.layer.waitingSync")
+      : t("settings.interface.background.layer.builtIn");
     const name = path.split(/[\\/]/).filter(Boolean).pop() || "";
-    if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) return "当前桌面壁纸";
-    return /^background-[a-f0-9]{32}\./i.test(name) ? "自定义图片" : name || "自定义图片";
+    if (isDraftWindowsWallpaper.value && /^background-[a-f0-9]{32}\./i.test(name)) {
+      return t("settings.interface.background.layer.currentWallpaper");
+    }
+    return /^background-[a-f0-9]{32}\./i.test(name)
+      ? t("settings.interface.background.layer.custom")
+      : name || t("settings.interface.background.layer.custom");
   });
   const hasDraftBackgroundImagePreview = computed(() => Boolean(
     doesDraftBackgroundUseImage.value && state.draftBackgroundImageUrl.value
@@ -513,11 +540,15 @@ function createSettingsPanelModel(options) {
     hasDraftBackgroundImagePreview.value ? state.draftBackgroundImageUrl.value : null
   ));
   const backgroundLayerPreviewLabel = computed(() => {
-    if (!doesDraftBackgroundUseImage.value) return "无图片";
-    return isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片";
+    if (!doesDraftBackgroundUseImage.value) return t("settings.interface.background.layer.none");
+    return isDraftWindowsWallpaper.value
+      ? t("settings.interface.background.layer.waitingWallpaper")
+      : t("settings.interface.background.layer.selectImage");
   });
   const backgroundEffectPreviewLabel = computed(() => (
-    isDraftWindowsWallpaper.value ? "等待壁纸" : "选择图片后可用"
+    isDraftWindowsWallpaper.value
+      ? t("settings.interface.background.layer.waitingWallpaper")
+      : t("preview.selectImageFirst")
   ));
   const effectiveDraftBackgroundAcrylicAppearance = computed(() => {
     const appearance = normalizeBackgroundAcrylicAppearance(state.draftBackgroundAcrylicAppearance.value);
@@ -541,13 +572,13 @@ function createSettingsPanelModel(options) {
       : state.draftBackgroundAcrylicDarkParams.value
   ));
   const activeAcrylicTintColorHex = computed(() => rgbArrayToHex(activeAcrylicParams.value?.tintColor));
-  const backgroundImageLayoutOptions = [
-    { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: "填充" },
-    { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: "适应" },
-    { layout: BACKGROUND_IMAGE_LAYOUT_STRETCH, label: "拉伸" },
-    { layout: BACKGROUND_IMAGE_LAYOUT_TILE, label: "平铺" },
-    { layout: BACKGROUND_IMAGE_LAYOUT_CENTER, label: "居中" },
-  ];
+  const backgroundImageLayoutOptions = computed(() => [
+    { layout: BACKGROUND_IMAGE_LAYOUT_FILL, label: t("settings.interface.background.layer.layout.fill") },
+    { layout: BACKGROUND_IMAGE_LAYOUT_FIT, label: t("settings.interface.background.layer.layout.fit") },
+    { layout: BACKGROUND_IMAGE_LAYOUT_STRETCH, label: t("settings.interface.background.layer.layout.stretch") },
+    { layout: BACKGROUND_IMAGE_LAYOUT_TILE, label: t("settings.interface.background.layer.layout.tile") },
+    { layout: BACKGROUND_IMAGE_LAYOUT_CENTER, label: t("settings.interface.background.layer.layout.center") },
+  ]);
 
   function selectWindowEffectPreview(material, appearance) {
     if (!state.canUseWindowEffectMaterial(material)) return;
@@ -580,18 +611,18 @@ function createSettingsPanelModel(options) {
   ));
   const windowEffectSummary = computed(() => {
     const item = activeWindowEffectItem.value;
-    return item ? `${item.label} · ${item.appearanceLabel}` : "未设置";
+    return item ? `${item.label} · ${item.appearanceLabel}` : t("settings.interface.window.notSet");
   });
   const activeBackgroundImageLayoutLabel = computed(() => (
-    backgroundImageLayoutOptions.find((item) => item.layout === state.draftBackgroundImageLayout.value)?.label
-    || backgroundImageLayoutOptions[0]?.label
-    || "填充"
+    backgroundImageLayoutOptions.value.find((item) => item.layout === state.draftBackgroundImageLayout.value)?.label
+    || backgroundImageLayoutOptions.value[0]?.label
+    || t("settings.interface.background.layer.layout.fill")
   ));
   const backgroundLayerSourceLabel = computed(() => {
-    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return "自定义图片";
-    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return "桌面壁纸";
-    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value) return "动态桌面";
-    return "无图片";
+    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return t("settings.interface.background.layer.custom");
+    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_WALLPAPER) return t("settings.interface.background.layer.wallpaper");
+    if (state.draftBackgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP && canShowLiveDesktopControls.value) return t("settings.interface.background.layer.live");
+    return t("settings.interface.background.layer.none");
   });
   const backgroundLayerSummary = computed(() => {
     if (doesDraftBackgroundUseLiveDesktop.value) return `${backgroundLayerSourceLabel.value} · ${state.draftBackgroundLiveDesktopOpacity.value}%`;
@@ -599,16 +630,16 @@ function createSettingsPanelModel(options) {
     return backgroundLayerSourceLabel.value;
   });
   const backgroundAcrylicAppearanceLabel = computed(() => {
-    if (state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return "深色";
-    if (state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return "浅色";
-    return "跟随系统";
+    if (state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return t("settings.interface.window.dark");
+    if (state.draftBackgroundAcrylicAppearance.value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return t("settings.interface.window.light");
+    return t("settings.interface.background.effect.system");
   });
   const backgroundEffectSummary = computed(() => {
-    if (!doesDraftBackgroundUseLayer.value) return "选择背景层后可用";
-    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR) return `模糊 · ${state.draftBackgroundBlurStrength.value}%`;
+    if (!doesDraftBackgroundUseLayer.value) return t("settings.interface.background.effect.unavailable");
+    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR) return `${t("settings.interface.background.effect.blur")} · ${state.draftBackgroundBlurStrength.value}%`;
     if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${state.draftBackgroundAcrylicBlurStrength.value}%`;
-    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED) return `暗化 · ${state.draftBackgroundDarkenStrength.value}%`;
-    return "原图";
+    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED) return `${t("settings.interface.background.effect.dim")} · ${state.draftBackgroundDarkenStrength.value}%`;
+    return t("settings.interface.background.effect.original");
   });
 
   const interfaceModel = Object.freeze({
@@ -707,8 +738,8 @@ function createSettingsPanelModel(options) {
   });
   const selectedExcludedAppCount = computed(() => selectedExcludedAppKeys.value.size);
   const enabledScanRootCount = computed(() => (state.scanRoots?.value || []).filter((root) => root.enabled).length);
-  const isExcludedAppsPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGES.appsExcludedApps.id);
-  const isAppManagerPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGES.appsAppManager.id);
+  const isExcludedAppsPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGE_SPECS.appsExcludedApps.id);
+  const isAppManagerPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGE_SPECS.appsAppManager.id);
   const isAppsDetailPage = computed(() => isExcludedAppsPage.value || isAppManagerPage.value);
 
   function setExcludedAppsSearchQuery(value) {
@@ -755,11 +786,11 @@ function createSettingsPanelModel(options) {
   }
 
   function getExcludedAppName(app) {
-    return String(app?.name || app?.catalogId || "未命名应用");
+    return String(app?.name || app?.catalogId || t("settings.apps.unnamed"));
   }
 
   function getExcludedAppSubtitle(app) {
-    return String(app?.catalogId || "未设置 Catalog ID");
+    return String(app?.catalogId || t("settings.apps.catalogIdMissing"));
   }
 
   function getExcludedAppGlyph(app) {
@@ -770,14 +801,7 @@ function createSettingsPanelModel(options) {
   function formatScanTime(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
+    return text.d(date, "scanTimestamp");
   }
 
   const appsModel = Object.freeze({
@@ -796,13 +820,13 @@ function createSettingsPanelModel(options) {
     isExcludedAppsPage,
     selectedExcludedAppCount,
     selectedExcludedAppKeys,
-    settingsSubPages: SETTINGS_SUBPAGES,
+    settingsSubPages,
     actions: Object.freeze({
       cancelScanExclusion,
       cancelSelectedScanExclusions,
       clearExcludedAppSelection,
-      openAppManager: () => openSubPage(SETTINGS_SUBPAGES.appsAppManager),
-      openExcludedApps: () => openSubPage(SETTINGS_SUBPAGES.appsExcludedApps),
+      openAppManager: () => openSubPage(SETTINGS_SUBPAGE_SPECS.appsAppManager),
+      openExcludedApps: () => openSubPage(SETTINGS_SUBPAGE_SPECS.appsExcludedApps),
       selectAllFilteredExcludedApps,
       setExcludedAppsSearchQuery,
       toggleExcludedAppSelection,
@@ -834,7 +858,7 @@ function createSettingsPanelModel(options) {
     routeTransitionName,
     shouldRender: state.shouldRenderSettingsPanel,
     showFooter: computed(() => activeRoute.value.depth === 0 && ["general", "interface"].includes(activeTab.value)),
-    tabs: SETTINGS_TABS,
+    tabs: settingsTabs,
     actions: Object.freeze({
       apply: state.applySettingsConfig,
       close: state.closeSettingsPanel,
@@ -853,7 +877,7 @@ function createSettingsPanelModel(options) {
   function refreshLiveDesktopRuntimeStatus() {
     if (!canShowLiveDesktopControls.value) return;
     Promise.resolve(state.refreshLiveDesktopRuntimeStatus?.()).catch((error) => {
-      console.error("Live Desktop 运行时状态刷新失败，失败信息已写入状态", error);
+      console.error("Live Desktop runtime refresh failed; the failure was recorded in state", error);
     });
   }
   function syncLiveDesktopStatusTimer() {

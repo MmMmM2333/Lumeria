@@ -23,7 +23,7 @@
         <span>{{ state.layoutRecoveryNotice.value.message }}</span>
         <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
       </span>
-      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" aria-label="关闭布局恢复提示" @click="state.closeLayoutRecoveryNotice">
+      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" :aria-label="t('dialogs.notices.dismissRecovery')" @click="state.closeLayoutRecoveryNotice">
         <DismissIcon class="launchpad-notice-dismiss-icon" />
       </SettingsFluentButton>
     </section>
@@ -40,7 +40,7 @@
         <span>{{ state.transientNotice.value.message }}</span>
         <small v-if="state.transientNotice.value.detail">{{ state.transientNotice.value.detail }}</small>
       </span>
-      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" aria-label="关闭提示" @click="state.closeTransientNotice">
+      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" :aria-label="t('dialogs.notices.dismiss')" @click="state.closeTransientNotice">
         <DismissIcon class="launchpad-notice-dismiss-icon" />
       </SettingsFluentButton>
       <div v-if="state.transientNotice.value.actionText" class="launchpad-notice-actions">
@@ -80,7 +80,7 @@
       <div class="warning-dialog-content">
         <h2>{{ state.warningDialog.value.title }}</h2>
         <p>{{ state.warningDialog.value.message }}</p>
-        <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">建议：{{ state.warningDialog.value.suggestion }}</p>
+        <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">{{ t("dialogs.warning.suggestion", { suggestion: state.warningDialog.value.suggestion }) }}</p>
       </div>
       <footer class="warning-dialog-actions">
         <SettingsFluentButton v-if="state.warningDialog.value.cancelText" appearance="outline" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</SettingsFluentButton>
@@ -107,6 +107,7 @@ import InfoIcon from "~icons/fluent/info-20-regular";
 import WarningIcon from "~icons/fluent/warning-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import { useLocalization } from "../i18n/localization.js";
 import AppIconChooserDialog from "./AppIconChooserDialog.vue";
 import ManagedAppEditorDialog from "./ManagedAppEditorDialog.vue";
 import ScanResultDialog from "./ScanResultDialog.vue";
@@ -115,6 +116,7 @@ import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 const props = defineProps({
   state: { type: Object, required: true },
 });
+const { t } = useLocalization();
 
 const scanResultDialogRef = ref(null);
 const managedAppEditorDialogRef = ref(null);

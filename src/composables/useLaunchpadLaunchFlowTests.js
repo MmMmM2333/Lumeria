@@ -4,8 +4,10 @@ import {
   DESKTOP_CLOSE_DURATION,
 } from "./launchpadConstants.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
+import { createLocalization } from "../i18n/localization.js";
 
 const launchApp = { id: "launch-app", type: "app", name: "Launch App" };
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function createTimerWindow() {
   let nextId = 1;
@@ -108,6 +110,7 @@ function createLaunchFlow(overrides = {}) {
     isFolderZoomFadeClosing: ref(Boolean(overrides.isFolderZoomFadeClosing)),
     isSearchMode: () => Boolean(overrides.isSearchMode),
     keyboardFocusArea,
+    localizationText,
     launchNativeAppIfAvailable: (app) => {
       calls.launchNativeAppIfAvailable.push(app.id);
       return overrides.launchNativeAppResult ?? true;

@@ -7,7 +7,9 @@ function getTimerHost() {
   return typeof window === "undefined" ? globalThis : window;
 }
 
-export function useLaunchpadNotices() {
+export function useLaunchpadNotices(options) {
+  const t = options?.localizationText?.t;
+  if (typeof t !== "function") throw new TypeError("useLaunchpadNotices requires localization text");
   const warningDialog = shallowRef(null);
   const isWarningDialogOpen = ref(false);
   const layoutRecoveryNotice = shallowRef(null);
@@ -37,11 +39,11 @@ export function useLaunchpadNotices() {
 
   function openLaunchErrorDialog(config) {
     showWarningDialog({
-      title: config?.title || "无法打开应用",
-      message: config?.message || "Lumeria 无法打开此应用。",
+      title: config?.title || t("errors.launch.genericTitle"),
+      message: config?.message || t("errors.launch.genericMessage"),
       suggestion: config?.suggestion || "",
       intent: "error",
-      confirmText: "知道了",
+      confirmText: t("notices.acknowledge"),
     });
   }
 
@@ -64,8 +66,8 @@ export function useLaunchpadNotices() {
   function handleLayoutRecovered(event) {
     const payload = event?.payload || {};
     layoutRecoveryNotice.value = {
-      title: "布局已恢复",
-      message: "检测到布局文件损坏，已备份原文件并恢复默认布局。",
+      title: t("notices.layoutRecovered.title"),
+      message: t("notices.layoutRecovered.message"),
       backupPath: payload.backupPath || payload.backup_path || "",
       intent: "warning",
     };
@@ -83,7 +85,7 @@ export function useLaunchpadNotices() {
   function showTransientNotice(config) {
     clearTransientNoticeTimer();
     transientNotice.value = {
-      title: String(config?.title || "操作已完成"),
+      title: String(config?.title || t("notices.completed")),
       message: String(config?.message || ""),
       detail: String(config?.detail || ""),
       intent: config?.intent || "info",
@@ -100,21 +102,21 @@ export function useLaunchpadNotices() {
     const retryCount = Number(config?.retryCount) || 1;
     const detail = String(config?.error?.message || config?.error || "").trim();
     showTransientNotice({
-      title: "布局暂未保存",
+      title: t("notices.layoutSaveFailed.title"),
       message: retryCount > 1
-        ? `本次更改仍在当前会话中，重启后可能丢失。已失败 ${retryCount} 次。`
-        : "本次更改仍在当前会话中，重启后可能丢失。",
+        ? t("notices.layoutSaveFailed.messageRepeated", { count: retryCount })
+        : t("notices.layoutSaveFailed.message"),
       detail,
       intent: "error",
-      actionText: "重试",
+      actionText: t("notices.retry"),
       onAction: config?.onRetry,
     });
   }
 
   function showLayoutSaveRecovered() {
     showTransientNotice({
-      title: "布局已保存",
-      message: "之前未保存的更改已经写入。",
+      title: t("notices.layoutSaveRecovered.title"),
+      message: t("notices.layoutSaveRecovered.message"),
       intent: "success",
       durationMs: TRANSIENT_NOTICE_CLOSE_DURATION,
     });
@@ -124,21 +126,21 @@ export function useLaunchpadNotices() {
     const retryCount = Number(config?.retryCount) || 1;
     const detail = String(config?.error?.message || config?.error || "").trim();
     showTransientNotice({
-      title: "本地布局载入失败",
+      title: t("notices.layoutLoadFailed.title"),
       message: retryCount > 1
-        ? `当前更改不会保存。已失败 ${retryCount} 次。`
-        : "当前更改不会保存，请重试载入本地布局。",
+        ? t("notices.layoutLoadFailed.messageRepeated", { count: retryCount })
+        : t("notices.layoutLoadFailed.message"),
       detail,
       intent: "error",
-      actionText: "重试",
+      actionText: t("notices.retry"),
       onAction: config?.onRetry,
     });
   }
 
   function showLayoutLoadRecovered() {
     showTransientNotice({
-      title: "本地布局已载入",
-      message: "之后的更改会正常保存。",
+      title: t("notices.layoutLoadRecovered.title"),
+      message: t("notices.layoutLoadRecovered.message"),
       intent: "success",
       durationMs: TRANSIENT_NOTICE_CLOSE_DURATION,
     });

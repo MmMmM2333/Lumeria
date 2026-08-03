@@ -3,7 +3,7 @@
     ref="rootRef"
     :class="['settings-background-preview', !hasImage && 'settings-background-preview-empty']"
     :style="previewStyle"
-    :aria-label="ariaLabel"
+    :aria-label="resolvedAriaLabel"
   >
     <span class="settings-background-preview-base" aria-hidden="true" />
     <canvas
@@ -13,7 +13,7 @@
       aria-hidden="true"
     />
     <span class="settings-background-preview-darken" aria-hidden="true" />
-    <span v-if="!hasImage" class="settings-background-preview-label">{{ emptyLabel }}</span>
+    <span v-if="!hasImage" class="settings-background-preview-label">{{ resolvedEmptyLabel }}</span>
   </div>
 </template>
 
@@ -34,6 +34,7 @@ import {
   normalizeBackgroundImageLayout,
   resolveBackgroundImagePlacement,
 } from "../domain/backgroundImageLayout.js";
+import { useLocalization } from "../i18n/localization.js";
 
 const PREVIEW_SOURCE_CACHE_LIMIT = 4;
 const PREVIEW_SOURCE_MAX_SIDE = 1440;
@@ -41,7 +42,7 @@ const FILL_OVERSCAN_SCALE = 1.02;
 const previewSourceCache = new Map();
 
 const props = defineProps({
-  ariaLabel: { type: String, default: "图片预览" },
+  ariaLabel: { type: String, default: "" },
   backgroundBaseColor: { type: String, required: true },
   backgroundBaseOpacity: { type: Number, required: true },
   backgroundDarkenColor: { type: String, default: "#1c1c1c" },
@@ -51,9 +52,12 @@ const props = defineProps({
   backgroundImagePixelSize: { type: Object, default: null },
   backgroundImageUrl: { type: String, default: null },
   backgroundLayoutContext: { type: Object, default: null },
-  emptyLabel: { type: String, default: "选择图片后可用" },
+  emptyLabel: { type: String, default: "" },
 });
 
+const { t } = useLocalization();
+const resolvedAriaLabel = computed(() => props.ariaLabel || t("preview.image"));
+const resolvedEmptyLabel = computed(() => props.emptyLabel || t("preview.selectImageFirst"));
 const canvasRef = ref(null);
 const rootRef = ref(null);
 const hasImage = computed(() => Boolean(props.backgroundImageUrl));

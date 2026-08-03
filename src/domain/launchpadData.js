@@ -4,12 +4,13 @@ import {
   normalizeMainWindowShortcut,
 } from "./mainWindowShortcut.js";
 import { normalizeBackgroundImageLayout } from "./backgroundImageLayout.js";
+import { normalizeLocalePreference } from "../i18n/locale.js";
 
 export const DEFAULT_SCAN_ROOTS = [
   {
     id: "root-windows-app-catalog",
     type: "windowsAppCatalog",
-    label: "Windows 应用（商店与系统）",
+    labelKey: "settings.apps.sources.default.windowsCatalog",
     path: "shell:AppsFolder",
     enabled: true,
     removable: false,
@@ -18,7 +19,7 @@ export const DEFAULT_SCAN_ROOTS = [
   {
     id: "root-start-menu-user",
     type: "startMenuUser",
-    label: "用户开始菜单",
+    labelKey: "settings.apps.sources.default.userStartMenu",
     path: "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
     enabled: true,
     removable: true,
@@ -28,7 +29,7 @@ export const DEFAULT_SCAN_ROOTS = [
   {
     id: "root-start-menu-system",
     type: "startMenuSystem",
-    label: "系统开始菜单",
+    labelKey: "settings.apps.sources.default.systemStartMenu",
     path: "%ProgramData%/Microsoft/Windows/Start Menu/Programs",
     enabled: true,
     removable: true,
@@ -37,6 +38,17 @@ export const DEFAULT_SCAN_ROOTS = [
   },
 ];
 export const DEFAULT_SCAN_KEYWORD_BLACKLIST = ["卸载", "uninstall"];
+
+export function createDefaultScanRoots(translate) {
+  if (typeof translate !== "function") {
+    throw new TypeError("createDefaultScanRoots requires a translation function");
+  }
+  return DEFAULT_SCAN_ROOTS.map(({ labelKey, ...root }) => {
+    const label = String(translate(labelKey) || "").trim();
+    if (!label) throw new TypeError(`Default scan root label is empty: ${labelKey}`);
+    return { ...root, label };
+  });
+}
 
 export function fallbackAppGlyph(name) {
   return String(name || "A").trim().charAt(0).toUpperCase() || "A";
@@ -113,7 +125,7 @@ export function normalizeNativeApp(app) {
 }
 
 export function normalizeScanRoots(roots) {
-  const source = Array.isArray(roots) ? roots : DEFAULT_SCAN_ROOTS;
+  const source = Array.isArray(roots) ? roots : [];
   return source
     .map((root, index) => {
       const path = String(root?.path || "").trim();
@@ -299,10 +311,14 @@ export function createLaunchpadDataHelpers(options) {
     ensurePage,
     getFolderChildPages,
     getFolderPageSize,
+    getNewFolderName,
     getPageSize,
     makeId,
     withFolderPages,
   } = options;
+  if (typeof getNewFolderName !== "function") {
+    throw new TypeError("createLaunchpadDataHelpers requires getNewFolderName");
+  }
 
   function normalizePresentationOverrides(value) {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -386,11 +402,13 @@ export function createLaunchpadDataHelpers(options) {
       .filter((page) => page.length > 0);
 
     if (!childPages.length) return null;
+    const fallbackName = String(getNewFolderName() || "").trim();
+    if (!fallbackName) throw new TypeError("getNewFolderName returned an empty name");
     return withFolderPages(
       {
         id: String(folder?.id || makeId("folder")),
         type: "folder",
-        name: String(folder?.name || "新文件夹").slice(0, 32) || "新文件夹",
+        name: String(folder?.name || fallbackName).slice(0, 32) || fallbackName,
       },
       childPages
     );
@@ -540,6 +558,7 @@ export function createLaunchpadDataHelpers(options) {
         fullscreenOverscanEnabled,
         showCustomTitlebar,
         mainWindowShortcut,
+        localePreference: normalizeLocalePreference(state.localePreference),
       },
     };
   }

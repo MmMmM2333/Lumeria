@@ -42,6 +42,7 @@ use crate::native_error::NativeError;
 use crate::windows_com::ComGuard;
 use crate::{
     catalog::{icon_cache_dir, icon_file_data_url, stable_app_id},
+    current_app_locale, i18n,
     icons::cache_app_icon,
     models::LaunchTarget,
     path_utils::{extension, windows_api_path},
@@ -63,6 +64,27 @@ pub(crate) struct PickedLaunchFile {
 pub(crate) struct PickedBackgroundImage {
     name: String,
     image_path: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct NativeFileDialogLabels {
+    choose_launch_file: String,
+    choose_background_image: String,
+    choose_scan_root: String,
+    launch_file_filter: String,
+    image_file_filter: String,
+}
+
+#[cfg(target_os = "windows")]
+fn native_file_dialog_labels(locale: &str) -> Result<NativeFileDialogLabels, String> {
+    Ok(NativeFileDialogLabels {
+        choose_launch_file: i18n::translate(locale, "native.dialogs.chooseApp", &[])?,
+        choose_background_image: i18n::translate(locale, "native.dialogs.chooseBackground", &[])?,
+        choose_scan_root: i18n::translate(locale, "native.dialogs.chooseScanSource", &[])?,
+        launch_file_filter: i18n::translate(locale, "native.dialogs.executableFilter", &[])?,
+        image_file_filter: i18n::translate(locale, "native.dialogs.imageFilter", &[])?,
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -136,9 +158,10 @@ fn main_window_dialog_owner(app: &AppHandle) -> Result<isize, String> {
 #[cfg(target_os = "windows")]
 pub(crate) async fn pick_launch_file(app: AppHandle) -> Result<Option<PickedLaunchFile>, String> {
     let owner = main_window_dialog_owner(&app)?;
+    let labels = native_file_dialog_labels(&current_app_locale(&app)?)?;
     run_native_dialog(move || {
         let _com_guard = ComGuard::new()?;
-        let result = unsafe { pick_launch_file_inner(HWND(owner as _)) };
+        let result = unsafe { pick_launch_file_inner(HWND(owner as _), &labels) };
         match result {
             Ok(path) => make_picked_launch_file(&app, Path::new(&path)).map(Some),
             Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
@@ -162,9 +185,10 @@ pub(crate) async fn pick_background_image(
     app: AppHandle,
 ) -> Result<Option<PickedBackgroundImage>, String> {
     let owner = main_window_dialog_owner(&app)?;
+    let labels = native_file_dialog_labels(&current_app_locale(&app)?)?;
     run_native_dialog(move || {
         let _com_guard = ComGuard::new()?;
-        let result = unsafe { pick_background_image_inner(HWND(owner as _)) };
+        let result = unsafe { pick_background_image_inner(HWND(owner as _), &labels) };
         match result {
             Ok(path) => cache_picked_background_image(&app, Path::new(&path)).map(Some),
             Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
@@ -268,9 +292,10 @@ pub(crate) async fn pick_background_image(
 #[cfg(target_os = "windows")]
 pub(crate) async fn pick_scan_root_directory(app: AppHandle) -> Result<Option<String>, String> {
     let owner = main_window_dialog_owner(&app)?;
+    let labels = native_file_dialog_labels(&current_app_locale(&app)?)?;
     run_native_dialog(move || {
         let _com_guard = ComGuard::new()?;
-        let result = unsafe { pick_scan_root_directory_inner(HWND(owner as _)) };
+        let result = unsafe { pick_scan_root_directory_inner(HWND(owner as _), &labels) };
         match result {
             Ok(path) => Ok(Some(path)),
             Err(error) if error.windows_code() == Some(HRESULT::from_win32(ERROR_CANCELLED.0)) => {
@@ -290,7 +315,10 @@ pub(crate) async fn pick_scan_root_directory(
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_launch_file_inner(owner: HWND) -> Result<String, NativeError> {
+unsafe fn pick_launch_file_inner(
+    owner: HWND,
+    labels: &NativeFileDialogLabels,
+) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -299,7 +327,7 @@ unsafe fn pick_launch_file_inner(owner: HWND) -> Result<String, NativeError> {
             }
         })?
     };
-    let launch_files_name = HSTRING::from("Applications and shortcuts");
+    let launch_files_name = HSTRING::from(labels.launch_file_filter.as_str());
     let launch_files_spec = HSTRING::from("*.exe;*.lnk;*.url");
     let filters = [COMDLG_FILTERSPEC {
         pszName: PCWSTR(launch_files_name.as_ptr()),
@@ -308,7 +336,7 @@ unsafe fn pick_launch_file_inner(owner: HWND) -> Result<String, NativeError> {
 
     unsafe {
         dialog
-            .SetTitle(&HSTRING::from("选择应用"))
+            .SetTitle(&HSTRING::from(labels.choose_launch_file.as_str()))
             .map_err(|source| NativeError::Com {
                 context: "IFileOpenDialog::SetTitle(launch file)",
                 source,
@@ -361,7 +389,10 @@ unsafe fn pick_launch_file_inner(owner: HWND) -> Result<String, NativeError> {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_background_image_inner(owner: HWND) -> Result<String, NativeError> {
+unsafe fn pick_background_image_inner(
+    owner: HWND,
+    labels: &NativeFileDialogLabels,
+) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -370,7 +401,7 @@ unsafe fn pick_background_image_inner(owner: HWND) -> Result<String, NativeError
             }
         })?
     };
-    let image_files_name = HSTRING::from("Image files");
+    let image_files_name = HSTRING::from(labels.image_file_filter.as_str());
     let image_files_spec = HSTRING::from("*.png;*.jpg;*.jpeg;*.webp");
     let filters = [COMDLG_FILTERSPEC {
         pszName: PCWSTR(image_files_name.as_ptr()),
@@ -379,7 +410,7 @@ unsafe fn pick_background_image_inner(owner: HWND) -> Result<String, NativeError
 
     unsafe {
         dialog
-            .SetTitle(&HSTRING::from("选择背景图片"))
+            .SetTitle(&HSTRING::from(labels.choose_background_image.as_str()))
             .map_err(|source| NativeError::Com {
                 context: "IFileOpenDialog::SetTitle(background image)",
                 source,
@@ -420,7 +451,10 @@ unsafe fn pick_background_image_inner(owner: HWND) -> Result<String, NativeError
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn pick_scan_root_directory_inner(owner: HWND) -> Result<String, NativeError> {
+unsafe fn pick_scan_root_directory_inner(
+    owner: HWND,
+    labels: &NativeFileDialogLabels,
+) -> Result<String, NativeError> {
     let dialog: IFileOpenDialog = unsafe {
         CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).map_err(|source| {
             NativeError::Com {
@@ -432,7 +466,7 @@ unsafe fn pick_scan_root_directory_inner(owner: HWND) -> Result<String, NativeEr
 
     unsafe {
         dialog
-            .SetTitle(&HSTRING::from("选择扫描来源"))
+            .SetTitle(&HSTRING::from(labels.choose_scan_root.as_str()))
             .map_err(|source| NativeError::Com {
                 context: "IFileOpenDialog::SetTitle(scan root)",
                 source,
@@ -820,6 +854,18 @@ fn take_cotaskmem_string(value: PWSTR) -> Result<String, std::string::FromUtf16E
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_file_dialog_labels_use_the_shared_locale_catalog() {
+        let chinese = native_file_dialog_labels("zh-CN").expect("Chinese dialog labels");
+        let english = native_file_dialog_labels("en-US").expect("English dialog labels");
+
+        assert_eq!(chinese.choose_launch_file, "选择应用");
+        assert_eq!(chinese.choose_background_image, "选择背景图片");
+        assert_eq!(english.choose_scan_root, "Choose a scan source");
+        assert_eq!(english.launch_file_filter, "Applications and shortcuts");
+        assert_eq!(english.image_file_filter, "Images");
+    }
 
     #[test]
     fn supported_launch_files_include_url_shortcuts() {

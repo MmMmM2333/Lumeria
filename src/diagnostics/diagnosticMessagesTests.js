@@ -27,13 +27,19 @@ export function runDiagnosticMessagesTests() {
   assert(descriptor.operations[0].title === "分析捕获文档", "operation ids should receive Chinese presentation labels");
   assert(descriptor.operations[0].id === "replay.document.analyze", "localization must preserve stable operation ids");
 
+  assert(
+    translateDiagnosticMessage("diagnostics.tools.motion.title", {}, { locale: "en-US" })
+      === "Motion diagnostics",
+    "diagnostic messages should use the shared English catalog",
+  );
+
   let unsupportedLocale = null;
   try {
-    translateDiagnosticMessage("diagnostics.tools.motion.title", {}, { locale: "en-US" });
+    translateDiagnosticMessage("diagnostics.tools.motion.title", {}, { locale: "fr-FR" });
   } catch (error) {
     unsupportedLocale = error;
   }
-  assert(unsupportedLocale?.code === "diagnostic-locale-not-supported", "unsupported locales should fail explicitly");
+  assert(unsupportedLocale?.code === "diagnostic-locale-not-supported", "unknown locales should fail explicitly");
 
   let missingMessage = null;
   try {

@@ -154,7 +154,7 @@ export function normalizeMainWindowShortcut(shortcut) {
 }
 
 export function formatMainWindowShortcut(shortcut) {
-  if (shortcut === null) return "未设置";
+  if (shortcut === null) return null;
   return normalizeMainWindowShortcut(shortcut)
     .split("+")
     .map((token) => {
@@ -174,7 +174,7 @@ export function mainWindowShortcutFromKeyboardEvent(event) {
     return { status: "cancel" };
   }
   if (!code || MODIFIER_CODES.has(code)) {
-    return { status: "invalid", message: "请按下一个包含主键的组合键" };
+    return { status: "invalid", reason: "missingMainKey" };
   }
 
   const modifiers = [];
@@ -183,10 +183,10 @@ export function mainWindowShortcutFromKeyboardEvent(event) {
   if (event?.shiftKey) modifiers.push("shift");
   if (event?.metaKey) modifiers.push("super");
   if (!modifiers.length) {
-    return { status: "invalid", message: "请至少包含 Ctrl、Alt、Shift 或 Win 中的一个修饰键" };
+    return { status: "invalid", reason: "missingModifier" };
   }
 
   const mainKey = normalizeKeyToken(code) || normalizeKeyToken(key);
-  if (!mainKey) return { status: "invalid", message: "这个按键暂不支持作为全局快捷键" };
+  if (!mainKey) return { status: "invalid", reason: "unsupportedKey" };
   return { status: "valid", shortcut: [...modifiers, mainKey].join("+") };
 }

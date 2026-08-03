@@ -32,7 +32,7 @@
           :disabled="isSingleStageFolderInputDisabled"
           :style="singleStageFolderNameInputStyle"
           maxlength="32"
-          aria-label="文件夹名称"
+          :aria-label="t('launchpad.folderName')"
           @input="handleSingleStageFolderNameInput"
           @blur="restoreSingleStageEmptyFolderName"
           @keydown.enter.prevent.stop="$event.target.blur()"
@@ -87,6 +87,7 @@ import {
   getSingleStageFolderTitleOpenOpacity,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
+import { useLocalization } from "../../i18n/localization.js";
 
 const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
 const VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS = 1500;
@@ -139,6 +140,12 @@ const props = defineProps({
   showMissingLaunchTargetBadge: { type: Boolean, default: true },
   singleStageDiagnosticsOptions: { type: [Boolean, Object], default: null },
 });
+const localization = useLocalization();
+const { t } = localization;
+const pixiRenderCopy = computed(() => ({
+  newFolderName: t("launchpad.newFolder"),
+  searchEmpty: t("launchpad.search.empty"),
+}));
 
 const emit = defineEmits([
   "choose-app-icon",
@@ -272,7 +279,7 @@ function restoreSingleStageEmptyFolderName(event) {
     singleStageFolderNameBeforeEdit.value = input.value;
     return;
   }
-  const fallback = singleStageFolderNameBeforeEdit.value || folder.name || "新文件夹";
+  const fallback = singleStageFolderNameBeforeEdit.value || folder.name || t("launchpad.newFolder");
   if (input) input.value = fallback;
   state.renameFolder(folder.id, fallback);
 }
@@ -592,6 +599,7 @@ function renderPixi(options = {}) {
   const { metrics, renderGeometry } = domGeometry;
   const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
   if (shouldUpdateLayer) {
+    layer.setRenderCopy(pixiRenderCopy.value);
     const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
     // Nested controller refs can update before Vue flushes the matching props.
     // Capture drag ownership once so real icons and the preview cannot disagree
@@ -905,10 +913,10 @@ function disposeDiagnosticHub(hub) {
   if (!hub || typeof hub.dispose !== "function") return;
   void Promise.resolve(hub.dispose()).then((result) => {
     if (result?.ok === false) {
-      console.error("诊断入口释放不完整", result.error);
+      console.error("Diagnostic entry disposal was incomplete", result.error);
     }
   }).catch((error) => {
-    console.error("诊断入口释放失败", error);
+    console.error("Failed to dispose the diagnostic entry", error);
   });
 }
 
@@ -984,6 +992,7 @@ onMounted(async () => {
   motionRuntime.suspendAutoTicker?.();
   desktopMotionRuntimeSuspended = true;
   layer = new DesktopLayer({
+    renderCopy: pixiRenderCopy.value,
     onClosingFolderPointerDown: (folderId) => {
       props.folderOverlayState?.commitOpenFolder?.(folderId);
       requestRender("folder-closing-pointerdown");
@@ -1188,6 +1197,7 @@ watchEffect(() => {
   // makes each replacement invalidate the scene instead of hiding in a closure.
   void props.selectedIcon;
   void props.singleStageDiagnosticsOptions;
+  void pixiRenderCopy.value;
   requestRender("watch-effect");
   scheduleFolderTexturePrewarm();
 });

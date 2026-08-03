@@ -10,13 +10,13 @@
       !hasImage && 'settings-background-preview-empty',
     ]"
     :style="previewStyle"
-    aria-label="图片效果预览"
+    :aria-label="t('preview.effect')"
   >
     <span class="settings-background-preview-base" aria-hidden="true" />
     <BackgroundImagePreviewCanvas
       v-if="hasImage && isCanvasPreviewVisible"
       class="settings-background-effect-preview-fallback"
-      aria-label="图片效果预览 fallback"
+      :aria-label="t('preview.effectFallback')"
       :background-base-color="backgroundBaseColor"
       :background-base-opacity="0"
       :background-darken-color="backgroundDarkenColor"
@@ -26,7 +26,7 @@
       :background-image-pixel-size="backgroundImagePixelSize"
       :background-image-url="backgroundImageUrl"
       :background-layout-context="backgroundLayoutContext"
-      :empty-label="emptyLabel"
+      :empty-label="resolvedEmptyLabel"
     />
     <span
       v-if="shouldRenderPixiHost"
@@ -37,7 +37,7 @@
       ]"
       aria-hidden="true"
     />
-    <span v-if="!hasImage" class="settings-background-preview-label">{{ emptyLabel }}</span>
+    <span v-if="!hasImage" class="settings-background-preview-label">{{ resolvedEmptyLabel }}</span>
   </div>
 </template>
 
@@ -57,6 +57,7 @@ import {
 } from "../domain/backgroundImageLayout.js";
 import { BackgroundEffectPreviewRenderer } from "../rendering/pixi/background/backgroundEffectPreviewRenderer.js";
 import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "../rendering/pixi/background/kawaseDebugParams.js";
+import { useLocalization } from "../i18n/localization.js";
 
 const DEFAULT_RENDER_WIDTH = 960;
 const DEFAULT_RENDER_HEIGHT = 540;
@@ -78,9 +79,11 @@ const props = defineProps({
   backgroundImagePixelSize: { type: Object, default: null },
   backgroundImageUrl: { type: String, default: null },
   backgroundLayoutContext: { type: Object, default: null },
-  emptyLabel: { type: String, default: "选择图片后可用" },
+  emptyLabel: { type: String, default: "" },
 });
 
+const { t } = useLocalization();
+const resolvedEmptyLabel = computed(() => props.emptyLabel || t("preview.selectImageFirst"));
 const pixiHostRef = ref(null);
 const rootRef = ref(null);
 const renderSize = ref({ height: DEFAULT_RENDER_HEIGHT, width: DEFAULT_RENDER_WIDTH });

@@ -1,10 +1,10 @@
 <template>
   <div class="background-debug-section">
     <div class="background-debug-subsection background-debug-render-config">
-      <div class="background-debug-subtitle">捕获目标</div>
-      <div class="background-debug-mode-group background-debug-render-target-group" role="group" aria-label="渲染探针捕获目标">
+      <div class="background-debug-subtitle">{{ t("debug.render.captureTarget") }}</div>
+      <div class="background-debug-mode-group background-debug-render-target-group" role="group" :aria-label="t('debug.render.captureTargetAria')">
         <button
-          v-for="target in RENDER_PROBE_TARGET_OPTIONS"
+          v-for="target in renderProbeTargetOptions"
           :key="target.value"
           type="button"
           :class="['background-debug-mode-button', renderProbeTargetKind === target.value && 'background-debug-mode-button-active']"
@@ -31,15 +31,15 @@
     </div>
 
     <div class="background-debug-subsection">
-      <div class="background-debug-subtitle">Framebuffer 像素</div>
-      <div class="background-debug-mode-group background-debug-render-pixel-group" role="group" aria-label="渲染探针像素捕获模式">
+      <div class="background-debug-subtitle">{{ t("debug.render.pixels.title") }}</div>
+      <div class="background-debug-mode-group background-debug-render-pixel-group" role="group" :aria-label="t('debug.render.pixels.aria')">
         <button
           type="button"
           :class="['background-debug-mode-button', renderProbePixels === RENDER_PROBE_PIXELS_OFF && 'background-debug-mode-button-active']"
           :disabled="isActionBusy"
           @click="renderProbePixels = RENDER_PROBE_PIXELS_OFF"
         >
-          关闭
+          {{ t("debug.common.off") }}
         </button>
         <button
           type="button"
@@ -47,17 +47,17 @@
           :disabled="isActionBusy"
           @click="renderProbePixels = RENDER_PROBE_PIXELS_PHASE_DIFF"
         >
-          阶段差异
+          {{ t("debug.render.pixels.phaseDiff") }}
         </button>
       </div>
       <label class="background-debug-toggle">
         <input v-model="renderProbeAutoFreeze" name="renderProbeAutoFreeze" type="checkbox" :disabled="isActionBusy">
-        <span>发现约束违规或显著像素差异时自动冻结</span>
+        <span>{{ t("debug.render.pixels.autoFreeze") }}</span>
       </label>
     </div>
 
     <div class="background-debug-detail">
-      最近刷新：{{ lastUpdatedLabel }}{{ isRefreshing ? " · 刷新中" : "" }}
+      {{ t("debug.render.lastRefresh", { time: lastUpdatedLabel, state: isRefreshing ? t("debug.render.refreshingSuffix") : "" }) }}
     </div>
     <div v-if="renderProbeError" class="background-debug-error" :title="renderProbeError">
       {{ renderProbeError }}
@@ -75,7 +75,7 @@
     </dl>
 
     <div class="background-debug-subsection">
-      <div class="background-debug-subtitle">阶段捕获</div>
+      <div class="background-debug-subtitle">{{ t("debug.render.phases.title") }}</div>
       <div class="background-debug-render-list">
         <article
           v-for="row in renderProbePhaseRows"
@@ -86,23 +86,20 @@
             <span>{{ row.phase }}</span>
             <span>{{ row.time }}</span>
           </strong>
-          <span>Framebuffer：{{ row.framebuffer }}</span>
-          <span>约束违规：{{ row.violations }}</span>
+          <span>{{ t("debug.render.phases.framebuffer", { value: row.framebuffer }) }}</span>
+          <span>{{ t("debug.render.phases.violations", { count: row.violations }) }}</span>
         </article>
         <article v-if="renderProbePhaseRows.length === 0" class="background-debug-render-card">
-          <strong>暂无阶段捕获</strong>
-          <span>先布防探针，再长按并释放一个图标。</span>
+          <strong>{{ t("debug.render.phases.emptyTitle") }}</strong>
+          <span>{{ t("debug.render.phases.emptyMessage") }}</span>
         </article>
       </div>
     </div>
 
     <div class="background-debug-subsection">
-      <div class="background-debug-subtitle">像素候选</div>
+      <div class="background-debug-subtitle">{{ t("debug.render.candidates.title") }}</div>
       <div v-if="renderProbePixelComparison" class="background-debug-detail">
-        {{ renderProbePixelComparison.available ? "可分析" : `不可分析：${renderProbePixelComparison.reason || '未知原因'}` }}
-        · 强候选 {{ renderProbePixelComparison.strongCandidateCount || 0 }}
-        · 变化 {{ renderProbePixelComparison.changedSlotCount || 0 }}
-        / 可比较 {{ renderProbePixelComparison.comparableSlotCount || 0 }}
+        {{ pixelComparisonSummary }}
       </div>
       <div class="background-debug-render-list">
         <article
@@ -112,14 +109,14 @@
         >
           <strong>
             <span>#{{ row.rank }} {{ row.title }}</span>
-            <span>{{ row.strong ? "强候选" : "有变化" }}</span>
+            <span>{{ t(row.strong ? "debug.render.candidates.strong" : "debug.render.candidates.changed") }}</span>
           </strong>
           <span>{{ row.identity }}</span>
           <span>{{ row.detail }}</span>
         </article>
         <article v-if="renderProbeCandidateRows.length === 0" class="background-debug-render-card">
-          <strong>暂无像素候选</strong>
-          <span>{{ renderProbePixelComparison ? "当前会话没有可排序的 framebuffer 差异。" : "先完成一次阶段差异拖拽会话。" }}</span>
+          <strong>{{ t("debug.render.candidates.emptyTitle") }}</strong>
+          <span>{{ t(renderProbePixelComparison ? "debug.render.candidates.emptyWithComparison" : "debug.render.candidates.emptyWithoutComparison") }}</span>
         </article>
       </div>
     </div>
@@ -131,22 +128,22 @@
         :disabled="isActionBusy || !renderProbeReady || !renderProbeCanArm"
         @click="armRenderProbe"
       >
-        布防并清空
+        {{ t("debug.render.actions.armAndClear") }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isActionBusy || !renderProbeReady" @click="disarmRenderProbe">
-        解除布防
+        {{ t("debug.render.actions.disarm") }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isActionBusy || !renderProbeReady" @click="clearRenderProbe">
-        清空
+        {{ t("debug.common.clear") }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isRefreshing" @click="refreshRenderProbeSummary">
-        刷新
+        {{ t("debug.common.refresh") }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isActionBusy || !renderProbeReady" @click="copyRenderProbeJson">
         {{ renderProbeCopyButtonLabel }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isActionBusy || !renderProbeReady" @click="downloadRenderProbeJson">
-        下载 JSON
+        {{ t("debug.common.downloadJson") }}
       </button>
     </div>
   </div>
@@ -155,6 +152,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { diagnosticClient } from "../../diagnostics/diagnosticClient.js";
+import { useLocalization } from "../../i18n/localization.js";
 import { formatDiagnosticActionError } from "./diagnosticUiError.js";
 import {
   buildRenderProbeArmConfig,
@@ -164,7 +162,7 @@ import {
   RENDER_PROBE_PIXELS_OFF,
   RENDER_PROBE_PIXELS_PHASE_DIFF,
   RENDER_PROBE_TARGET_ALL,
-  RENDER_PROBE_TARGET_OPTIONS,
+  getRenderProbeTargetOptions,
   resolveRenderProbeDisplaySession,
 } from "./renderProbePanelModel.js";
 
@@ -174,6 +172,7 @@ const props = defineProps({
     default: false,
   },
 });
+const { resolvedLocale, t } = useLocalization();
 
 const hasCopiedRenderJson = ref(false);
 const isActionBusy = ref(false);
@@ -195,18 +194,36 @@ const renderProbeCanArm = computed(() => (
   renderProbeTargetKind.value === RENDER_PROBE_TARGET_ALL
   || Boolean(renderProbeTargetValue.value.trim())
 ));
+const renderProbeTargetOptions = computed(() => getRenderProbeTargetOptions(t));
 const renderProbeTargetInputLabel = computed(() => (
-  RENDER_PROBE_TARGET_OPTIONS.find((option) => option.value === renderProbeTargetKind.value)?.label
-  || "目标值"
+  renderProbeTargetOptions.value.find((option) => option.value === renderProbeTargetKind.value)?.label
+  || t("debug.render.target.value")
 ));
 const renderProbeDisplaySession = computed(() => resolveRenderProbeDisplaySession(renderProbeSummary.value));
-const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value));
-const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value));
-const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value));
+const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value, t));
+const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value, t));
+const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value, t));
 const renderProbePixelComparison = computed(() => renderProbeDisplaySession.value?.pixelComparison || null);
-const renderProbeCopyButtonLabel = computed(() => (hasCopiedRenderJson.value ? "已复制" : "复制 JSON"));
+const renderProbeCopyButtonLabel = computed(() => t(hasCopiedRenderJson.value ? "debug.common.copied" : "debug.common.copyJson"));
+const pixelComparisonSummary = computed(() => {
+  const comparison = renderProbePixelComparison.value;
+  if (!comparison) return "";
+  const availability = comparison.available
+    ? t("debug.render.candidates.available")
+    : t("debug.render.candidates.unavailable", {
+      reason: comparison.reason || t("debug.common.unknownReason"),
+    });
+  return t("debug.render.candidates.summary", {
+    availability,
+    changed: comparison.changedSlotCount || 0,
+    comparable: comparison.comparableSlotCount || 0,
+    strong: comparison.strongCandidateCount || 0,
+  });
+});
 const lastUpdatedLabel = computed(() => (
-  lastUpdatedAt.value ? new Date(lastUpdatedAt.value).toLocaleTimeString("zh-CN", { hour12: false }) : "尚未成功"
+  lastUpdatedAt.value
+    ? new Date(lastUpdatedAt.value).toLocaleTimeString(resolvedLocale.value, { hour12: false })
+    : t("debug.render.lastRefreshPending")
 ));
 
 async function refreshRenderProbeSummary() {
@@ -214,12 +231,12 @@ async function refreshRenderProbeSummary() {
   isRefreshing.value = true;
   try {
     const summary = await diagnosticClient.invoke("render", "report.summary");
-    if (!summary || typeof summary !== "object") throw new Error("渲染探针返回了无效摘要");
+    if (!summary || typeof summary !== "object") throw new Error(t("debug.render.errors.invalidSummary"));
     renderProbeSummary.value = summary;
     renderProbeRefreshError.value = "";
     lastUpdatedAt.value = Date.now();
   } catch (error) {
-    renderProbeRefreshError.value = formatDiagnosticActionError("刷新", error);
+    renderProbeRefreshError.value = formatDiagnosticActionError(t("debug.common.refresh"), error, t);
   } finally {
     isRefreshing.value = false;
   }
@@ -233,14 +250,14 @@ async function runRenderProbeAction(action, operation, params = {}) {
     renderProbeActionError.value = "";
     await refreshRenderProbeSummary();
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError(action, error);
+    renderProbeActionError.value = formatDiagnosticActionError(action, error, t);
   } finally {
     isActionBusy.value = false;
   }
 }
 
 function armRenderProbe() {
-  return runRenderProbeAction("布防", "probe.arm", buildRenderProbeArmConfig({
+  return runRenderProbeAction(t("debug.render.actions.arm"), "probe.arm", buildRenderProbeArmConfig({
     autoFreeze: renderProbeAutoFreeze.value,
     pixels: renderProbePixels.value,
     targetKind: renderProbeTargetKind.value,
@@ -249,11 +266,11 @@ function armRenderProbe() {
 }
 
 function disarmRenderProbe() {
-  return runRenderProbeAction("解除布防", "probe.disarm");
+  return runRenderProbeAction(t("debug.render.actions.disarm"), "probe.disarm");
 }
 
 function clearRenderProbe() {
-  return runRenderProbeAction("清空", "probe.clear");
+  return runRenderProbeAction(t("debug.common.clear"), "probe.clear");
 }
 
 function markCopied() {
@@ -267,14 +284,14 @@ function markCopied() {
 
 async function copyRenderProbeJson() {
   try {
-    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API 不可用");
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
     const delivery = await diagnosticClient.invoke("render", "report.export");
     const content = await diagnosticClient.consumeArtifactText(delivery, { path: ["content"] });
     await navigator.clipboard.writeText(content);
     markCopied();
     renderProbeActionError.value = "";
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError("复制", error);
+    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.copy"), error, t);
   }
 }
 
@@ -285,7 +302,7 @@ function downloadText(content, filename, mediaType = "text/plain") {
     || typeof URL.createObjectURL !== "function"
     || typeof Blob !== "function"
   ) {
-    throw new Error("浏览器下载 API 不可用");
+    throw new Error("Browser download APIs are unavailable");
   }
   const url = URL.createObjectURL(new Blob([content], { type: mediaType }));
   const link = document.createElement("a");
@@ -302,7 +319,7 @@ async function downloadRenderProbeJson() {
     downloadText(content, `lumeria-render-trace-${Date.now()}.json`, "application/json");
     renderProbeActionError.value = "";
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError("下载", error);
+    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.download"), error, t);
   }
 }
 

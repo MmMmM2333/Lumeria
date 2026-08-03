@@ -96,7 +96,7 @@ export function createLiveDesktopDiagnosticsController(options = {}) {
       ? {
         at: String(now()),
         code: "live-desktop-settings-read-failed",
-        message: "读取 Live Desktop 调试设置不完整",
+        message: "Live Desktop debug settings were not read completely",
         stage: "read",
         details: { issues: initialSettings.issues },
       }
@@ -119,16 +119,16 @@ export function createLiveDesktopDiagnosticsController(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("live-desktop-diagnostics-disposed", "Live Desktop 诊断控制器已经释放", {
-        nextActions: ["等待诊断入口重新安装"],
+      throw new DiagnosticError("live-desktop-diagnostics-disposed", "The Live Desktop diagnostics controller has been disposed", {
+        nextActions: ["Wait for the diagnostic entry point to be reinstalled"],
       });
     }
   }
 
   function ensureAcceptingOperations() {
     if (disposed || disposing) {
-      throw new DiagnosticError("live-desktop-diagnostics-disposed", "Live Desktop 诊断控制器已经释放", {
-        nextActions: ["等待诊断入口重新安装"],
+      throw new DiagnosticError("live-desktop-diagnostics-disposed", "The Live Desktop diagnostics controller has been disposed", {
+        nextActions: ["Wait for the diagnostic entry point to be reinstalled"],
       });
     }
   }
@@ -168,10 +168,10 @@ export function createLiveDesktopDiagnosticsController(options = {}) {
   function recordRefreshFailure(error) {
     const diagnosticError = error instanceof DiagnosticError
       ? error
-      : new DiagnosticError("live-desktop-runtime-refresh-failed", "刷新 Live Desktop 运行时状态失败", {
+      : new DiagnosticError("live-desktop-runtime-refresh-failed", "Failed to refresh Live Desktop runtime state", {
         cause: error,
         details: { technicalDetail: String(error?.message || error) },
-        nextActions: ["检查原生桥接是否可用后重试刷新"],
+        nextActions: ["Check that the native bridge is available, then retry the refresh"],
       });
     commit({
       lastRefreshFailure: {
@@ -235,29 +235,29 @@ export function createLiveDesktopDiagnosticsController(options = {}) {
         settings: clonePlain(nextValues),
       }));
     } catch (error) {
-      throw recordFailure("apply", error, "live-desktop-runtime-apply-failed", "应用 Live Desktop 调试设置失败");
+      throw recordFailure("apply", error, "live-desktop-runtime-apply-failed", "Failed to apply Live Desktop debug settings");
     }
     if (runtimeStatus?.phase === "failed") {
       throw recordFailure(
         "apply",
-        new DiagnosticError("live-desktop-runtime-apply-failed", "Live Desktop 运行时拒绝了调试设置", {
+        new DiagnosticError("live-desktop-runtime-apply-failed", "The Live Desktop runtime rejected the debug settings", {
           details: { runtimeStatus },
-          nextActions: ["检查 runtimeStatus.reason、detail 与最近错误后重试"],
+          nextActions: ["Inspect runtimeStatus.reason, detail, and the latest error before retrying"],
         }),
         "live-desktop-runtime-apply-failed",
-        "Live Desktop 运行时拒绝了调试设置",
+        "The Live Desktop runtime rejected the debug settings",
         { runtimeStatus },
       );
     }
     if (!runtimeConfirmedSettings(runtimeStatus)) {
       throw recordFailure(
         "apply",
-        new DiagnosticError("live-desktop-runtime-apply-unconfirmed", "Live Desktop 运行时未确认调试设置已经生效", {
+        new DiagnosticError("live-desktop-runtime-apply-unconfirmed", "The Live Desktop runtime did not confirm that the debug settings took effect", {
           details: { runtimeStatus },
-          nextActions: ["确认原生桥接与 Live Desktop 运行时处于 running 状态后重试"],
+          nextActions: ["Confirm the native bridge and Live Desktop runtime are running, then retry"],
         }),
         "live-desktop-runtime-apply-unconfirmed",
-        "Live Desktop 运行时未确认调试设置已经生效",
+        "The Live Desktop runtime did not confirm that the debug settings took effect",
         { runtimeStatus },
       );
     }
@@ -304,9 +304,9 @@ export function createLiveDesktopDiagnosticsController(options = {}) {
               values: normalizeLiveDesktopDebugSettings(error.details.values),
             },
           });
-          throw recordFailure("notify", error, "live-desktop-settings-notify-failed", "Live Desktop 调试设置已保存，但通知应用失败");
+          throw recordFailure("notify", error, "live-desktop-settings-notify-failed", "Live Desktop debug settings were saved, but notifying the application failed");
         }
-        throw recordFailure("persist", error, "live-desktop-settings-write-failed", "保存 Live Desktop 调试设置失败");
+        throw recordFailure("persist", error, "live-desktop-settings-write-failed", "Failed to save Live Desktop debug settings");
       }
       commit({
         persisted: {

@@ -6,11 +6,14 @@ import {
   RENDER_PROBE_TARGET_OPTIONS,
   resolveRenderProbeDisplaySession,
 } from "./renderProbePanelModel.js";
+import { createLocalization } from "../../i18n/localization.js";
 
 export function runRenderProbePanelModelTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Render probe panel model test failed] ${message}`);
   };
+  const chinese = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
+  const english = createLocalization({ issue: null, match: "exact", preference: "en-US", resolvedLocale: "en-US" }).text;
 
   assert(
     RENDER_PROBE_TARGET_OPTIONS.map((option) => option.value).join(",") === "all-folders,folderId,itemId,itemName",
@@ -118,21 +121,23 @@ export function runRenderProbePanelModelTests() {
   const session = resolveRenderProbeDisplaySession(summary);
   assert(session?.id === "drag-render-2", "the latest completed session should drive panel detail when no drag is active");
 
-  const statusRows = buildRenderProbeStatusRows(summary);
+  const statusRows = buildRenderProbeStatusRows(summary, chinese.t);
   assert(statusRows.some((row) => row.label === "状态" && row.value === "已布防"), "status rows should expose whether the probe is armed in Chinese");
   assert(statusRows.some((row) => row.label === "目标" && row.value === "项目名称: MiService"), "status rows should expose the active target with a readable field label");
   assert(statusRows.some((row) => row.label === "会话 / 事件" && row.value === "2 / 12"), "status rows should expose retained session and event counts");
   assert(statusRows.some((row) => row.label === "冻结原因" && row.value.includes("pixel-diff")), "status rows should expose the latest freeze reason");
 
-  const phaseRows = buildRenderProbePhaseRows(session);
+  const phaseRows = buildRenderProbePhaseRows(session, chinese.t);
   assert(phaseRows.map((row) => row.phase).join(",") === "pointerdown,drag-start,drag-end", "phase rows should preserve diagnostic capture order");
   assert(phaseRows[0].framebuffer === "未采样", "phase rows should distinguish metadata-only captures");
   assert(phaseRows[1].framebuffer.includes("6 个槽位") && phaseRows[1].framebuffer.includes("2.35ms"), "phase rows should summarize successful framebuffer work in Chinese");
   assert(phaseRows[2].framebuffer.includes("pixel-read-failed"), "phase rows should expose framebuffer failure reasons");
   assert(phaseRows[2].violations === "1 · framebuffer-capture-unavailable", "phase rows should expose the first invariant failure");
 
-  const candidateRows = buildRenderProbeCandidateRows(session);
+  const candidateRows = buildRenderProbeCandidateRows(session, chinese.t);
   assert(candidateRows[0]?.title === "MiService", "candidate rows should prefer the icon name");
   assert(candidateRows[0]?.identity.includes("folder-tools") && candidateRows[0]?.identity.includes("槽位 5"), "candidate rows should retain stable folder and slot identity");
   assert(candidateRows[0]?.detail.includes("强候选") && candidateRows[0]?.detail.includes("Δ 25.0%"), "candidate rows should format ranking evidence in Chinese");
+  const englishStatusRows = buildRenderProbeStatusRows(summary, english.t);
+  assert(englishStatusRows.some((row) => row.label === "State" && row.value === "Armed"), "status rows should follow the active locale");
 }

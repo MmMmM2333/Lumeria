@@ -17,6 +17,7 @@ import {
   normalizeMotionTimeScale,
   resolveMotionRecordWindowMs,
 } from "./motionDebugPanelModel.js";
+import { translateMessage } from "../../i18n/catalogs.js";
 
 export function runMotionDebugPanelModelTests() {
   const assert = (condition, message) => {
@@ -45,14 +46,14 @@ export function runMotionDebugPanelModelTests() {
       profile: { id: "alpha-focus", label: "Alpha Focus" },
     },
   );
-  assert(replayRows.some((row) => row.label === "捕获状态" && row.value === "捕获中"), "replay rows should expose capture active state");
-  assert(replayRows.some((row) => row.label === "捕获配置" && row.value === "Alpha Focus"), "replay rows should expose capture profile");
-  assert(replayRows.some((row) => row.label === "捕获窗口" && row.value === "12s"), "replay rows should expose capture window");
-  assert(replayRows.some((row) => row.label === "采样率" && row.value === "60Hz"), "replay rows should expose capture sample rate");
-  assert(replayRows.some((row) => row.label === "预计规模" && row.value === "16f / 8e / 4.0 KB"), "replay rows should expose estimated capture size");
-  assert(replayRows.some((row) => row.label === "实际 JSON" && row.value === "4.0 KB"), "replay rows should expose actual trace JSON size");
-  assert(replayRows.some((row) => row.label === "帧 / 事件" && row.value === "16 / 8"), "replay rows should expose trace frame/event counts");
-  assert(replayRows.some((row) => row.label === "协议" && row.value === "pixi-motion-replay-trace/v1"), "replay rows should expose trace schema");
+  assert(replayRows.some((row) => row.label === "Capture status" && row.value === "Capturing"), "replay rows should expose capture active state");
+  assert(replayRows.some((row) => row.label === "Capture profile" && row.value === "Alpha Focus"), "replay rows should expose capture profile");
+  assert(replayRows.some((row) => row.label === "Capture window" && row.value === "12s"), "replay rows should expose capture window");
+  assert(replayRows.some((row) => row.label === "Sample rate" && row.value === "60Hz"), "replay rows should expose capture sample rate");
+  assert(replayRows.some((row) => row.label === "Estimated size" && row.value === "16f / 8e / 4.0 KB"), "replay rows should expose estimated capture size");
+  assert(replayRows.some((row) => row.label === "Actual JSON" && row.value === "4.0 KB"), "replay rows should expose actual trace JSON size");
+  assert(replayRows.some((row) => row.label === "Frames / events" && row.value === "16 / 8"), "replay rows should expose trace frame/event counts");
+  assert(replayRows.some((row) => row.label === "Schema" && row.value === "pixi-motion-replay-trace/v1"), "replay rows should expose trace schema");
 
   const disabledConfig = buildMotionRuntimeDebugConfig({
     overlayEnabled: true,
@@ -272,10 +273,17 @@ export function runMotionDebugPanelModelTests() {
   }];
 
   const overview = buildMotionOverviewRows(report);
-  assert(overview.some((row) => row.label === "记录历史" && row.value === "开"), "overview should expose record state");
-  assert(overview.some((row) => row.label === "覆盖层" && row.value === "开"), "overview should expose overlay state");
-  assert(overview.some((row) => row.label === "事件 / 采样" && row.value === "3 / 3"), "overview should expose history counts");
-  assert(overview.some((row) => row.label === "时间倍率" && row.value === "0.50x"), "overview should expose time scale");
+  assert(overview.some((row) => row.label === "Record history" && row.value === "On"), "overview should expose record state");
+  assert(overview.some((row) => row.label === "Overlay" && row.value === "On"), "overview should expose overlay state");
+  assert(overview.some((row) => row.label === "Events / samples" && row.value === "3 / 3"), "overview should expose history counts");
+  assert(overview.some((row) => row.label === "Time scale" && row.value === "0.50x"), "overview should expose time scale");
+
+  const zhT = (key, values) => translateMessage("zh-CN", key, values);
+  const enT = (key, values) => translateMessage("en-US", key, values);
+  const zhOverview = buildMotionOverviewRows(report, zhT);
+  const enOverview = buildMotionOverviewRows(report, enT);
+  assert(zhOverview.some((row) => row.label === "记录历史" && row.value === "开启"), "overview should render Chinese catalog text");
+  assert(enOverview.some((row) => row.label === "Record history" && row.value === "On"), "overview should render English catalog text");
 
   const animationRows = buildMotionAnimationRows(report);
   assert(animationRows[0].target === "folder.panel", "animation rows should prefer sourceLabel");
@@ -305,7 +313,7 @@ export function runMotionDebugPanelModelTests() {
 
   const cancelRows = buildMotionCancelReasonRows(report);
   assert(cancelRows[0].key === "replace" && cancelRows[0].value === "2", "cancel reasons should sort by count");
-  assert(buildMotionCancelReasonRows({})[0].key === "无", "empty cancel reasons should produce an empty row");
+  assert(buildMotionCancelReasonRows({})[0].key === "None", "empty cancel reasons should produce an empty row");
 
   const warningRows = buildMotionWarningRows(report);
   assert(warningRows[0].key === "missing-target-metadata", "warning rows should include warning type");
@@ -325,7 +333,7 @@ export function runMotionDebugPanelModelTests() {
   assert(warningTimeline.length === 0, "warnings preset should use warning track keys for timeline filtering");
   const filterSummary = buildMotionFilterSummary(report, { preset: "active", query: "panel" });
   assert(filterSummary.preset === "active", "filter summary should preserve normalized preset");
-  assert(filterSummary.text === "1 个属性 / 2 个事件", "filter summary should count filtered properties and timeline events");
+  assert(filterSummary.text === "1 properties / 2 events", "filter summary should count filtered properties and timeline events");
 
   const curveGroups = buildMotionCurveChartGroups(report, { preset: "all", query: "" });
   assert(curveGroups.length === 2, "curve chart should group sampled tracks");
@@ -333,7 +341,7 @@ export function runMotionDebugPanelModelTests() {
   assert(panelCurve, "curve chart should label target.prop");
   assert(panelCurve.targetId === 3 && panelCurve.prop === "y" && panelCurve.laneKey === "panel-y", "curve chart should expose selection identifiers");
   assert(panelCurve.latestTimeMs === 100, "curve chart should expose latest selected time");
-  assert(panelCurve.summary.includes("3 个采样"), "curve chart summary should include sample count");
+  assert(panelCurve.summary.includes("3 samples"), "curve chart summary should include sample count");
   assert(panelCurve.valuePath.startsWith("M "), "curve chart should expose a value path");
   assert(panelCurve.toPath.startsWith("M "), "curve chart should expose a target path");
   assert(panelCurve.deltaPath.startsWith("M "), "curve chart should expose a delta path");

@@ -68,6 +68,10 @@ function formatCount(value) {
   return String(Math.max(0, Math.floor(readNumber(value, 0))));
 }
 
+function localize(t, key, params, technicalText) {
+  return typeof t === "function" ? t(key, params) : technicalText;
+}
+
 function clonePlain(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -113,7 +117,7 @@ function getMotionLabParamDigits(key = "") {
   return 0;
 }
 
-function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, limit = 8) {
+function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, limit = 8, t) {
   const current = normalizeMotionLabParams(currentParams);
   const previous = normalizeMotionLabParams(previousParams);
   return MOTION_LAB_COMPARE_PARAM_KEYS
@@ -121,13 +125,19 @@ function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, 
       const currentValue = current[key];
       const previousValue = previous[key];
       if (typeof currentValue === "number" && typeof previousValue === "number") {
-        return makeMetric(`参数：${key}`, currentValue, previousValue, getMotionLabParamDigits(key), `param:${key}`);
+        return makeMetric(
+          localize(t, "motionLab.metrics.parameter", { key }, `Parameter: ${key}`),
+          currentValue,
+          previousValue,
+          getMotionLabParamDigits(key),
+          `param:${key}`,
+        );
       }
       return {
         changed: currentValue !== previousValue,
         current: String(currentValue),
-        delta: currentValue === previousValue ? "0" : "已变化",
-        label: `参数：${key}`,
+        delta: currentValue === previousValue ? "0" : localize(t, "motionLab.values.changed", {}, "Changed"),
+        label: localize(t, "motionLab.metrics.parameter", { key }, `Parameter: ${key}`),
         machineName: `param:${key}`,
         previous: String(previousValue),
         value: currentValue === previousValue ? 0 : 1,
@@ -137,37 +147,45 @@ function makeMotionLabParamCompareRows(currentParams = {}, previousParams = {}, 
     .slice(0, Math.max(0, Math.floor(readNumber(limit, 8))));
 }
 
-export function buildMotionLabScenarioRows(scenarios = MOTION_LAB_SCENARIOS, selectedId = "") {
+export function buildMotionLabScenarioRows(scenarios = MOTION_LAB_SCENARIOS, selectedId = "", t) {
   return scenarios.map((scenario, index) => ({
     assertionCount: Array.isArray(scenario.assertions) ? scenario.assertions.length : 0,
-    description: scenario.description || "",
+    description: scenario.descriptionKey
+      ? localize(t, scenario.descriptionKey, {}, scenario.description || "")
+      : (scenario.description || ""),
     id: scenario.id || `scenario-${index}`,
-    label: scenario.label || scenario.id || `场景 ${index + 1}`,
+    label: scenario.labelKey
+      ? localize(t, scenario.labelKey, {}, scenario.label || scenario.id)
+      : (scenario.label || scenario.id || `Scenario ${index + 1}`),
     selected: scenario.id === selectedId || (!selectedId && index === 0),
     stage: scenario.stage || "draft",
   }));
 }
 
-export function buildMotionLabOverviewRows(report = {}, trace = null) {
+export function buildMotionLabOverviewRows(report = {}, trace = null, t) {
   const summary = report.summary || {};
   const history = report.history || {};
   const config = report.config || {};
   const traceSummary = trace?.summary || {};
   return [
-    { label: "运行时", value: config.enabled ? "调试中" : "空闲" },
-    { label: "活动动画", value: formatCount(summary.activeAnimationCount) },
-    { label: "警告", value: formatCount(summary.warningCount) },
-    { label: "事件 / 采样", value: `${formatCount(history.events?.length)} / ${formatCount(history.samples?.length)}`, wide: true },
-    { label: "回放轨迹", value: trace ? "就绪" : "无" },
-    { label: "轨迹帧 / 事件", value: `${formatCount(traceSummary.frameCount)} / ${formatCount(traceSummary.eventCount)}`, wide: true },
+    { label: localize(t, "motionLab.fields.runtime", {}, "Runtime"), value: localize(t, config.enabled ? "motionLab.values.debugging" : "motionLab.values.idle", {}, config.enabled ? "Debugging" : "Idle") },
+    { label: localize(t, "motionLab.fields.activeAnimations", {}, "Active animations"), value: formatCount(summary.activeAnimationCount) },
+    { label: localize(t, "motionLab.fields.warnings", {}, "Warnings"), value: formatCount(summary.warningCount) },
+    { label: localize(t, "motionLab.fields.eventsSamples", {}, "Events / samples"), value: `${formatCount(history.events?.length)} / ${formatCount(history.samples?.length)}`, wide: true },
+    { label: localize(t, "motionLab.fields.replayTrace", {}, "Replay trace"), value: localize(t, trace ? "motionLab.values.ready" : "debug.common.none", {}, trace ? "Ready" : "None") },
+    { label: localize(t, "motionLab.fields.traceFramesEvents", {}, "Trace frames / events"), value: `${formatCount(traceSummary.frameCount)} / ${formatCount(traceSummary.eventCount)}`, wide: true },
   ];
 }
 
-export function buildMotionLabAssertionRows(assertions = []) {
+export function buildMotionLabAssertionRows(assertions = [], t) {
   return assertions.map((assertion, index) => ({
-    detail: assertion.detail || assertion.label || "-",
+    detail: assertion.detailKey
+      ? localize(t, assertion.detailKey, {}, assertion.detail || assertion.label || "-")
+      : (assertion.detail || assertion.label || "-"),
     id: assertion.id || `assertion-${index}`,
-    label: assertion.label || assertion.id || `断言 ${index + 1}`,
+    label: assertion.labelKey
+      ? localize(t, assertion.labelKey, {}, assertion.label || assertion.id)
+      : (assertion.label || assertion.id || `Assertion ${index + 1}`),
     passed: assertion.passed === true,
     status: assertion.status || (assertion.passed ? "pass" : "fail"),
   }));
@@ -225,7 +243,7 @@ export function createMotionLabRunSnapshot({ assertions = [], params = {}, repor
     params: normalizeMotionLabParams(params),
     scenario: {
       id: scenario?.id || "unknown",
-      label: scenario?.label || scenario?.id || "场景",
+      label: scenario?.label || scenario?.id || "Scenario",
     },
     summary: {
       activeAnimationCount: readNumber(summary.activeAnimationCount, 0),
@@ -248,25 +266,25 @@ export function createMotionLabRunSnapshot({ assertions = [], params = {}, repor
   };
 }
 
-export function buildMotionLabCompareRows(current = null, previous = null) {
+export function buildMotionLabCompareRows(current = null, previous = null, t) {
   if (!current || !previous) return [];
   const currentSummary = current.summary || {};
   const previousSummary = previous.summary || {};
-  const paramRows = makeMotionLabParamCompareRows(current.params, previous.params);
+  const paramRows = makeMotionLabParamCompareRows(current.params, previous.params, 8, t);
   return [
     ...paramRows,
-    makeMetric("断言通过", currentSummary.assertionPassedCount, previousSummary.assertionPassedCount, 0, "assert pass"),
-    makeMetric("断言失败", currentSummary.assertionFailedCount, previousSummary.assertionFailedCount, 0, "assert fail"),
-    makeMetric("事件", currentSummary.eventCount, previousSummary.eventCount, 0, "events"),
-    makeMetric("采样", currentSummary.sampleCount, previousSummary.sampleCount, 0, "samples"),
-    makeMetric("曲线", currentSummary.curveCount, previousSummary.curveCount, 0, "curves"),
-    makeMetric("警告", currentSummary.warningCount, previousSummary.warningCount, 0, "warnings"),
-    makeMetric("时长", currentSummary.durationMs, previousSummary.durationMs, 0, "duration"),
-    makeMetric("最大速度", currentSummary.maxVelocity, previousSummary.maxVelocity, 2, "max velocity"),
-    makeMetric("重定向", currentSummary.retargetCount, previousSummary.retargetCount, 0, "retargets"),
-    makeMetric("过冲", currentSummary.overshootCount, previousSummary.overshootCount, 0, "overshoots"),
-    makeMetric("轨迹帧", currentSummary.traceFrameCount, previousSummary.traceFrameCount, 0, "trace frames"),
-    makeMetric("轨迹值", currentSummary.traceValueCount, previousSummary.traceValueCount, 0, "trace values"),
+    makeMetric(localize(t, "motionLab.metrics.assertionsPassed", {}, "Assertions passed"), currentSummary.assertionPassedCount, previousSummary.assertionPassedCount, 0, "assert pass"),
+    makeMetric(localize(t, "motionLab.metrics.assertionsFailed", {}, "Assertions failed"), currentSummary.assertionFailedCount, previousSummary.assertionFailedCount, 0, "assert fail"),
+    makeMetric(localize(t, "motionLab.metrics.events", {}, "Events"), currentSummary.eventCount, previousSummary.eventCount, 0, "events"),
+    makeMetric(localize(t, "motionLab.metrics.samples", {}, "Samples"), currentSummary.sampleCount, previousSummary.sampleCount, 0, "samples"),
+    makeMetric(localize(t, "motionLab.metrics.curves", {}, "Curves"), currentSummary.curveCount, previousSummary.curveCount, 0, "curves"),
+    makeMetric(localize(t, "motionLab.metrics.warnings", {}, "Warnings"), currentSummary.warningCount, previousSummary.warningCount, 0, "warnings"),
+    makeMetric(localize(t, "motionLab.metrics.duration", {}, "Duration"), currentSummary.durationMs, previousSummary.durationMs, 0, "duration"),
+    makeMetric(localize(t, "motionLab.metrics.maxVelocity", {}, "Maximum velocity"), currentSummary.maxVelocity, previousSummary.maxVelocity, 2, "max velocity"),
+    makeMetric(localize(t, "motionLab.metrics.retargets", {}, "Retargets"), currentSummary.retargetCount, previousSummary.retargetCount, 0, "retargets"),
+    makeMetric(localize(t, "motionLab.metrics.overshoots", {}, "Overshoots"), currentSummary.overshootCount, previousSummary.overshootCount, 0, "overshoots"),
+    makeMetric(localize(t, "motionLab.metrics.traceFrames", {}, "Trace frames"), currentSummary.traceFrameCount, previousSummary.traceFrameCount, 0, "trace frames"),
+    makeMetric(localize(t, "motionLab.metrics.traceValues", {}, "Trace values"), currentSummary.traceValueCount, previousSummary.traceValueCount, 0, "trace values"),
   ];
 }
 
@@ -277,17 +295,17 @@ function countTraceDuration(trace = {}) {
   return Math.max(0, readNumber(range.max) - readNumber(range.min));
 }
 
-function makeTraceMetricRows(currentTrace = null, previousTrace = null) {
+function makeTraceMetricRows(currentTrace = null, previousTrace = null, t) {
   const current = currentTrace?.summary || {};
   const previous = previousTrace?.summary || {};
   return [
-    makeMetric("帧", current.frameCount, previous.frameCount, 0, "frames"),
-    makeMetric("事件", current.eventCount, previous.eventCount, 0, "events"),
-    makeMetric("轨道", current.trackCount, previous.trackCount, 0, "tracks"),
-    makeMetric("目标", current.targetCount, previous.targetCount, 0, "targets"),
-    makeMetric("值", current.valueCount, previous.valueCount, 0, "values"),
-    makeMetric("警告", current.warningCount, previous.warningCount, 0, "warnings"),
-    makeMetric("时长", countTraceDuration(currentTrace), countTraceDuration(previousTrace), 0, "duration"),
+    makeMetric(localize(t, "motionLab.metrics.frames", {}, "Frames"), current.frameCount, previous.frameCount, 0, "frames"),
+    makeMetric(localize(t, "motionLab.metrics.events", {}, "Events"), current.eventCount, previous.eventCount, 0, "events"),
+    makeMetric(localize(t, "motionLab.metrics.tracks", {}, "Tracks"), current.trackCount, previous.trackCount, 0, "tracks"),
+    makeMetric(localize(t, "motionLab.metrics.targets", {}, "Targets"), current.targetCount, previous.targetCount, 0, "targets"),
+    makeMetric(localize(t, "motionLab.metrics.values", {}, "Values"), current.valueCount, previous.valueCount, 0, "values"),
+    makeMetric(localize(t, "motionLab.metrics.warnings", {}, "Warnings"), current.warningCount, previous.warningCount, 0, "warnings"),
+    makeMetric(localize(t, "motionLab.metrics.duration", {}, "Duration"), countTraceDuration(currentTrace), countTraceDuration(previousTrace), 0, "duration"),
   ];
 }
 
@@ -297,16 +315,16 @@ function makeCountDiffRows(labelPrefix, machinePrefix, currentCounts = {}, previ
     ...Object.keys(currentCounts || {}),
   ])).sort();
   return keys
-    .map((key) => makeMetric(`${labelPrefix}：${key}`, currentCounts?.[key], previousCounts?.[key], 0, `${machinePrefix}:${key}`))
+    .map((key) => makeMetric(`${labelPrefix}: ${key}`, currentCounts?.[key], previousCounts?.[key], 0, `${machinePrefix}:${key}`))
     .filter((row) => row.changed)
     .slice(0, Math.max(0, Math.floor(readNumber(limit, 6))));
 }
 
-export function buildMotionLabTraceDiffRows(currentTrace = null, previousTrace = null, limit = 14) {
+export function buildMotionLabTraceDiffRows(currentTrace = null, previousTrace = null, limit = 14, t) {
   if (!currentTrace || !previousTrace) return [];
-  const summaryRows = makeTraceMetricRows(currentTrace, previousTrace);
-  const propRows = makeCountDiffRows("属性", "prop", currentTrace.summary?.byProp, previousTrace.summary?.byProp);
-  const driverRows = makeCountDiffRows("驱动器", "driver", currentTrace.summary?.byDriver, previousTrace.summary?.byDriver);
+  const summaryRows = makeTraceMetricRows(currentTrace, previousTrace, t);
+  const propRows = makeCountDiffRows(localize(t, "motionLab.metrics.property", {}, "Property"), "prop", currentTrace.summary?.byProp, previousTrace.summary?.byProp);
+  const driverRows = makeCountDiffRows(localize(t, "motionLab.metrics.driver", {}, "Driver"), "driver", currentTrace.summary?.byDriver, previousTrace.summary?.byDriver);
   return [...summaryRows, ...propRows, ...driverRows]
     .slice(0, Math.max(0, Math.floor(readNumber(limit, 14))));
 }
@@ -344,7 +362,7 @@ function sanitizeMotionLabScenario(scenario = {}) {
   return {
     description: scenario?.description || "",
     id: scenario?.id || "unknown",
-    label: scenario?.label || scenario?.id || "场景",
+    label: scenario?.label || scenario?.id || "Scenario",
     stage: scenario?.stage || "draft",
   };
 }
@@ -353,7 +371,7 @@ function sanitizeMotionLabAssertions(assertions = []) {
   return (Array.isArray(assertions) ? assertions : []).map((assertion, index) => ({
     detail: assertion?.detail || assertion?.label || "-",
     id: assertion?.id || `assertion-${index}`,
-    label: assertion?.label || assertion?.id || `断言 ${index + 1}`,
+    label: assertion?.label || assertion?.id || `Assertion ${index + 1}`,
     passed: assertion?.passed === true,
     status: assertion?.status || (assertion?.passed ? "pass" : "fail"),
   }));
@@ -498,7 +516,7 @@ function formatMotionLabParamLine(params = {}) {
   ].join(", ");
 }
 
-function formatMotionLabFocusedList(rows = [], formatter = (row) => String(row), empty = "- 无") {
+function formatMotionLabFocusedList(rows = [], formatter = (row) => String(row), empty = "- None") {
   if (!rows.length) return empty;
   return rows.map(formatter).join("\n");
 }
@@ -568,35 +586,35 @@ export function formatMotionLabFocusedDebugMarkdown(data = {}) {
   const report = data.report || {};
   const params = data.params || {};
   return [
-    "# Pixi Motion Lab 聚焦调试报告",
+    "# Pixi Motion Lab focused debug report",
     "",
-    `协议：${data.schema || MOTION_LAB_FOCUSED_DEBUG_SCHEMA}`,
-    `生成时间：${data.generatedAt || "-"}`,
-    `场景：${scenario.label || scenario.id || "场景"}（${scenario.id || "未知"}）`,
-    `参数：${formatMotionLabParamLine(params)}`,
-    `断言：通过 ${assertions.passed || 0} / 失败 ${assertions.failed || 0} / 总计 ${assertions.total || 0}`,
-    `轨迹：${data.replay?.schema || "无"}，帧=${replay.frameCount || 0}，事件=${replay.eventCount || 0}，轨道=${replay.trackCount || 0}，目标=${replay.targetCount || 0}`,
-    `对比：${data.compare?.mode || "last"}，行数=${data.compare?.rows?.length || 0}`,
+    `Schema: ${data.schema || MOTION_LAB_FOCUSED_DEBUG_SCHEMA}`,
+    `Generated at: ${data.generatedAt || "-"}`,
+    `Scenario: ${scenario.label || scenario.id || "Scenario"} (${scenario.id || "unknown"})`,
+    `Parameters: ${formatMotionLabParamLine(params)}`,
+    `Assertions: passed ${assertions.passed || 0} / failed ${assertions.failed || 0} / total ${assertions.total || 0}`,
+    `Trace: ${data.replay?.schema || "None"}, frames=${replay.frameCount || 0}, events=${replay.eventCount || 0}, tracks=${replay.trackCount || 0}, targets=${replay.targetCount || 0}`,
+    `Comparison: ${data.compare?.mode || "last"}, rows=${data.compare?.rows?.length || 0}`,
     "",
-    "## 失败断言",
+    "## Failed assertions",
     formatMotionLabFocusedList(
       (data.assertions?.rows || []).filter((row) => !row.passed),
       (row) => `- ${row.label}: ${row.detail}`,
     ),
     "",
-    "## 最近事件",
+    "## Recent events",
     formatMotionLabFocusedList(
       report.timeline?.recentEvents || [],
-      (event) => `- ${event.timeMs}ms ${event.type}：${event.sourceLabel || `目标 ${event.targetId}`}.${event.prop || "-"} ${event.value ?? "-"} → ${event.to ?? "-"}`,
+      (event) => `- ${event.timeMs}ms ${event.type}: ${event.sourceLabel || `target ${event.targetId}`}.${event.prop || "-"} ${event.value ?? "-"} → ${event.to ?? "-"}`,
     ),
     "",
-    "## 曲线",
+    "## Curves",
     formatMotionLabFocusedList(
       report.curves?.rows || [],
-      (curve) => `- ${curve.label}：${curve.samples} 个采样，通道=${curve.lane}，最大速度=${curve.maxVelocity}`,
+      (curve) => `- ${curve.label}: ${curve.samples} samples, lane=${curve.lane}, max velocity=${curve.maxVelocity}`,
     ),
     "",
-    "## 对比明细",
+    "## Comparison details",
     formatMotionLabFocusedList(
       data.compare?.rows || [],
       (row) => `- ${row.label}: ${row.previous} -> ${row.current} (${row.delta})`,

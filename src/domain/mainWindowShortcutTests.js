@@ -19,7 +19,7 @@ export function runMainWindowShortcutTests() {
   assert(normalizeMainWindowShortcut("Space") === DEFAULT_MAIN_WINDOW_SHORTCUT, "single-key shortcuts should fall back to the default");
   assert(formatMainWindowShortcut("control+shift+KeyL") === "Ctrl + Shift + L", "letters should format without the Key prefix");
   assert(formatMainWindowShortcut("alt+Space") === "Alt + Space", "space should format as a readable key");
-  assert(formatMainWindowShortcut(null) === "未设置", "null shortcuts should format as disabled");
+  assert(formatMainWindowShortcut(null) === null, "null shortcuts should remain a locale-neutral disabled value");
 
   const valid = mainWindowShortcutFromKeyboardEvent({
     key: "l",
@@ -46,6 +46,7 @@ export function runMainWindowShortcutTests() {
     code: "AltLeft",
     altKey: true,
   });
+  assert(invalidModifier.reason === "missingMainKey", "modifier-only shortcuts should expose a stable reason code");
   assert(invalidModifier.status === "invalid", "pure modifier keys should be rejected");
 
   const invalidSingleKey = mainWindowShortcutFromKeyboardEvent({
@@ -56,5 +57,6 @@ export function runMainWindowShortcutTests() {
     shiftKey: false,
     metaKey: false,
   });
+  assert(invalidSingleKey.reason === "missingModifier", "single-key shortcuts should expose a stable reason code");
   assert(invalidSingleKey.status === "invalid", "single main keys should be rejected");
 }

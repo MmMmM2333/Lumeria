@@ -10,8 +10,8 @@ export function createMotionDiagnosticSession(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("motion-diagnostic-session-disposed", "Motion 诊断会话已经释放", {
-        nextActions: ["创建新的 MotionDiagnosticSession"],
+      throw new DiagnosticError("motion-diagnostic-session-disposed", "The Motion diagnostic session has been disposed", {
+        nextActions: ["Create a new MotionDiagnosticSession"],
       });
     }
   }

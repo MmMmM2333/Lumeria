@@ -1,0 +1,1509 @@
+{
+  "locale": "en-US",
+  "displayName": "English",
+  "direction": "ltr",
+  "messages": {
+    "common": {
+      "actions": {
+        "apply": "Apply",
+        "cancel": "Cancel",
+        "close": "Close",
+        "open": "Open",
+        "edit": "Edit",
+        "rename": "Rename",
+        "save": "Save",
+        "browse": "Browse",
+        "add": "Add",
+        "delete": "Delete",
+        "selectAll": "Select all",
+        "clearSelection": "Clear selection",
+        "selectImage": "Choose image",
+        "restoreDefault": "Restore default",
+        "decrease": "Decrease",
+        "increase": "Increase",
+        "reset": "Reset"
+      }
+    },
+    "diagnostics": {
+      "analysis": {
+        "dataQuality": {
+          "good": "Capture data is complete and suitable for analysis",
+          "insufficient": "Capture data is insufficient, so the current conclusions are unreliable",
+          "limited": "Capture data has gaps; review the conclusions in context",
+          "issue": {
+            "coverage": "The actual capture duration covers only {coveragePercent}% of the requested duration",
+            "frameGap": "The maximum frame gap was {maxFrameGapMs} ms, above the expected {expectedFrameGapMs} ms",
+            "noFrames": "The capture contains no frame samples, so property motion curves cannot be analyzed"
+          }
+        },
+        "finding": {
+          "cancel": {
+            "message": "The capture recorded {count} cancellations. A cancellation may be a normal replacement or may reveal a lifecycle interruption.",
+            "observation": "The strongest cancellation occurred at {timeMs} ms because of {reason}",
+            "title": "Animation cancellations occurred"
+          },
+          "counterEvidence": {
+            "settled": "Later samples returned near the target, so the anomaly may have been temporary and self-correcting"
+          },
+          "maxDelta": {
+            "message": "This is the largest target delta observed in the capture and helps locate the track with the greatest change. It is not a failure by itself.",
+            "observation": "{sourceLabel}.{prop} had an absolute target delta of {value} at {timeMs} ms",
+            "title": "Largest target delta"
+          },
+          "maxVelocity": {
+            "message": "This is the largest absolute velocity observed in the capture and helps locate the fastest-changing track. It is not a failure by itself.",
+            "observation": "{sourceLabel}.{prop} had an absolute velocity of {value} at {timeMs} ms",
+            "title": "Highest absolute velocity"
+          },
+          "overshoot": {
+            "message": "The runtime explicitly recorded an overshoot warning: the value passed its intended endpoint.",
+            "observation": "{sourceLabel}.{prop} triggered an overshoot warning near {timeMs} ms",
+            "title": "Overshoot detected"
+          },
+          "retarget": {
+            "message": "The capture recorded {count} retargets. This is useful lifecycle evidence, but it should not be treated as a failure without interaction context.",
+            "observation": "The strongest retarget occurred at {timeMs} ms because of {reason}",
+            "title": "Targets were redirected"
+          },
+          "warning": {
+            "message": "The runtime recorded a {warningType} warning. Inspect the affected track and its context.",
+            "observation": "{sourceLabel}.{prop} triggered a {warningType} warning near {timeMs} ms",
+            "title": "Runtime warning reported"
+          }
+        },
+        "nextAction": {
+          "inspect": "Inspect track state and events near {timeMs} ms",
+          "reviewCancel": "Confirm whether cancellation came from an expected animation replacement or component disposal",
+          "reviewRetarget": "Compare target values and trigger sources before and after the retarget",
+          "reviewWarning": "Inspect the warning track's driver, target value, and velocity"
+        },
+        "summary": {
+          "attention": "Found {warningCount} items needing attention and {infoCount} additional observations",
+          "empty": "There are no diagnostic findings to report in the current scope",
+          "insufficient": "Capture data is insufficient for a reliable conclusion",
+          "ok": "No issues need attention; {infoCount} observations were recorded"
+        },
+        "motion": {
+          "title": "Motion capture analysis"
+        },
+        "metric": {
+          "duration": "Capture duration",
+          "eventCount": "Events",
+          "frameCount": "Frames",
+          "maxDelta": "Largest absolute target delta",
+          "maxVelocity": "Highest absolute velocity",
+          "trackCount": "Tracks",
+          "warningCount": "Runtime warnings"
+        }
+      },
+      "confidence": {
+        "high": "High confidence",
+        "low": "Low confidence",
+        "medium": "Medium confidence"
+      },
+      "format": {
+        "counterEvidence": "Counter-evidence",
+        "dataQuality": "Data quality",
+        "evidence": "Evidence",
+        "findings": "Diagnostic findings",
+        "metrics": "Key metrics",
+        "nextActions": "Next step",
+        "noCounterEvidence": "No counter-evidence was found that materially weakens this conclusion",
+        "observations": "Observation",
+        "summary": "Conclusion"
+      },
+      "severity": {
+        "critical": "Critical",
+        "error": "Error",
+        "info": "Observation",
+        "warning": "Needs attention"
+      },
+      "tools": {
+        "motion": {
+          "description": "Capture, replay, and analyze Motion runtime state, tracks, events, and warnings.",
+          "operations": {
+            "history": { "clear": { "title": "Clear Motion history" } },
+            "overlay": { "snapshot": { "title": "Read Motion overlay snapshot" } },
+            "replay": {
+              "capture": {
+                "start": { "title": "Start replay capture" },
+                "stop": { "title": "Stop replay capture" }
+              },
+              "document": {
+                "analyze": { "title": "Analyze capture document" },
+                "close": { "title": "Close capture document" },
+                "export": { "title": "Export capture document" },
+                "load": { "title": "Load capture document" },
+                "status": { "title": "Read capture document status" },
+                "view": { "title": "Query capture document view" }
+              },
+              "export": { "title": "Export runtime replay" }
+            },
+            "report": {
+              "generate": { "title": "Generate Motion report" },
+              "read": { "title": "Read raw Motion report" }
+            },
+            "runtime": {
+              "configure": { "title": "Configure Motion diagnostics" },
+              "snapshot": { "title": "Read Motion runtime snapshot" }
+            }
+          },
+          "title": "Motion diagnostics"
+        },
+        "motion-lab": {
+          "description": "Run Motion scenarios, tune parameters, save baselines, compare results, and export analyzable captures.",
+          "operations": {
+            "baseline": { "save": { "title": "Save Motion Lab baseline" } },
+            "compare": { "run": { "title": "Compare Motion Lab run" } },
+            "export": { "read": { "title": "Export Motion Lab data" } },
+            "params": { "update": { "title": "Update Motion Lab parameters" } },
+            "preset": { "apply": { "title": "Apply Motion Lab parameter preset" } },
+            "replay": { "capture": { "title": "Capture Motion Lab replay" } },
+            "scenario": {
+              "run": { "title": "Run Motion Lab scenario" },
+              "select": { "title": "Select Motion Lab scenario" }
+            },
+            "scene": { "reset": { "title": "Reset Motion Lab scene" } },
+            "state": { "read": { "title": "Read Motion Lab state" } }
+          },
+          "title": "Motion Lab diagnostics"
+        },
+        "live-desktop": {
+          "description": "Read Live Desktop runtime state and update, apply, and persist debug settings through auditable operations.",
+          "operations": {
+            "runtime": {
+              "apply": { "title": "Reapply current settings" },
+              "refresh": { "title": "Refresh runtime state" }
+            },
+            "settings": { "update": { "title": "Update debug settings" } },
+            "state": { "read": { "title": "Read complete diagnostic state" } }
+          },
+          "title": "Live Desktop diagnostics"
+        },
+        "render": {
+          "description": "Capture and inspect Pixi render batches, framebuffers, compositing, and folder visual state.",
+          "operations": {
+            "capture": {
+              "inspect": { "title": "Capture and inspect render state" },
+              "manual": { "title": "Capture render state manually" }
+            },
+            "folder-visual": { "snapshot": { "title": "Read folder visual snapshot" } },
+            "probe": {
+              "arm": { "title": "Arm render probe" },
+              "clear": { "title": "Clear render captures" },
+              "disarm": { "title": "Disarm render probe" },
+              "freeze": { "title": "Freeze render capture" }
+            },
+            "report": {
+              "export": { "title": "Export render report" },
+              "read": { "title": "Read render report" },
+              "summary": { "title": "Read render summary" }
+            }
+          },
+          "title": "Pixi render diagnostics"
+        },
+        "scene": {
+          "description": "Read, configure, and clear drag-hit, folder handoff, and single-stage geometry diagnostics.",
+          "operations": {
+            "folder-handoff": { "configure": { "title": "Configure folder handoff diagnostics" } },
+            "state": {
+              "clear": { "title": "Clear scene diagnostic state" },
+              "read": { "title": "Read scene diagnostic state" }
+            }
+          },
+          "title": "Pixi scene diagnostics"
+        }
+      }
+    },
+    "debug": {
+      "common": {
+        "all": "All",
+        "none": "None",
+        "yes": "Yes",
+        "no": "No",
+        "unknown": "Unknown",
+        "unknownReason": "Unknown reason",
+        "available": "Available",
+        "unavailable": "Unavailable",
+        "notConnected": "Not connected",
+        "on": "On",
+        "off": "Off",
+        "refresh": "Refresh",
+        "refreshing": "Refreshing",
+        "processing": "Working",
+        "reset": "Reset",
+        "clear": "Clear",
+        "apply": "Apply",
+        "delete": "Delete",
+        "copied": "Copied",
+        "copyJson": "Copy JSON",
+        "downloadJson": "Download JSON",
+        "listSeparator": ", ",
+        "devOnly": "Development only",
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "leftBottom": "Bottom left",
+        "rightBottom": "Bottom right",
+        "dock": "Docked",
+        "fullscreen": "Fullscreen",
+        "close": "Close",
+        "empty": "Empty",
+        "loaded": "Loaded",
+        "error": "Error",
+        "shown": "Shown",
+        "hidden": "Hidden"
+      },
+      "errors": {
+        "unknown": "Unknown error",
+        "nextAction": "Refresh the actual state; if it still fails, inspect the technical details in the console",
+        "action": "{action} failed [{code}]: {message}; suggestion: {nextAction}"
+      },
+      "panel": {
+        "title": "Developer debug panel",
+        "positionAria": "Debug panel position",
+        "sectionsAria": "Debug panel sections",
+        "tabs": {
+          "acrylic": "Acrylic",
+          "layout": "Layout",
+          "notice": "Notices",
+          "render": "Rendering",
+          "motion": "Motion",
+          "liveDesktop": "Live Desktop"
+        }
+      },
+      "acrylic": {
+        "override": "Override settings",
+        "tintColor": "Tint color (tintColor)",
+        "blurKernel": "Blur kernel",
+        "overrideRadiusPass": "Override radius/pass",
+        "kernel": {
+          "auto": "Auto",
+          "dualKawase": "Dual Kawase",
+          "gaussian": "Gaussian"
+        },
+        "fields": {
+          "saturation": "Saturation (saturation)",
+          "contrast": "Contrast (contrast)",
+          "brightness": "Brightness (brightness)",
+          "tintStrength": "Tint strength (tintStrength)",
+          "noise": "Noise (noise)",
+          "seed": "Noise seed (seed)",
+          "passCount": "Pass count (passCount)",
+          "radiusScale": "Radius scale (radiusScale)",
+          "gaussianRadius": "Gaussian radius (gaussianRadius)",
+          "testStrength": "Test strength (testStrength)",
+          "blurCutoff": "Blur cutoff (blurCutoff)",
+          "acrylicCutoff": "Acrylic cutoff (acrylicCutoff)",
+          "gaussianScale": "Gaussian scale (gaussianScale)",
+          "gaussianMax": "Gaussian maximum (gaussianMax)"
+        },
+        "status": {
+          "auto": "Auto {effect} actual={actualStrength} test={testStrength} cutoff≤{cutoff} → {kernel}{detail}",
+          "gaussianDetail": " radius={radius}px",
+          "kawaseDetail": " pass={passCount} radius scale={radiusScale} base={baseScale}",
+          "manualGaussian": "Manual Gaussian radius={radius}px",
+          "manualKawase": "Manual Dual Kawase pass={passCount} radius scale={radiusScale}"
+        }
+      },
+      "layout": {
+        "override": "Override layout",
+        "showDragHitZones": "Show drag hit zones",
+        "detail": "CSS controls the host and main-area dimensions; gridTop controls the first Pixi row offset.",
+        "fields": {
+          "enabled": "Override layout (enabled)",
+          "dragHit": "Drag hit zones (dragHit)",
+          "hostMaxHeight": "Host max height (hostMaxHeight)",
+          "hostMax": "Host max height (hostMax)",
+          "hostHeightOffset": "Host height offset (hostHeightOffset)",
+          "heightOffset": "Height offset (heightOffset)",
+          "mainPaddingY": "Main vertical padding (mainPaddingY)",
+          "mainPaddingYShort": "Main vertical padding (mainPaddingY)",
+          "gridPaddingTop": "Grid top padding (gridPaddingTop)",
+          "gridTop": "Grid top (gridTop)"
+        }
+      },
+      "notice": {
+        "detail": "Generate layout save, load, and recovery notices to inspect the Fluent card style used by Lumeria notices in the bottom-right corner.",
+        "transient": "Transient notice",
+        "recovery": "Recovery notice",
+        "section": "Layout notices",
+        "actions": {
+          "saveFailed": "Save failed",
+          "saveRecovered": "Save recovered",
+          "loadFailed": "Load failed",
+          "loadRecovered": "Load recovered",
+          "layoutRecovered": "Layout recovered",
+          "stackSample": "Stack sample",
+          "clear": "Clear notices"
+        }
+      },
+      "render": {
+        "captureTarget": "Capture target",
+        "captureTargetAria": "Render probe capture target",
+        "target": {
+          "allFolders": "All folders",
+          "folderId": "Folder ID",
+          "itemId": "Item ID",
+          "itemName": "Item name",
+          "value": "Target value",
+          "unknown": "Unknown target"
+        },
+        "pixels": {
+          "title": "Framebuffer pixels",
+          "aria": "Render probe pixel capture mode",
+          "phaseDiff": "Phase difference",
+          "autoFreeze": "Freeze automatically when a constraint violation or significant pixel difference is found"
+        },
+        "lastRefresh": "Last refresh: {time}{state}",
+        "lastRefreshPending": "Not yet successful",
+        "refreshingSuffix": " · refreshing",
+        "phases": {
+          "title": "Phase captures",
+          "framebuffer": "Framebuffer: {value}",
+          "violations": "Constraint violations: {count}",
+          "emptyTitle": "No phase captures",
+          "emptyMessage": "Arm the probe, then press and hold an icon before releasing it."
+        },
+        "candidates": {
+          "title": "Pixel candidates",
+          "available": "Analyzable",
+          "unavailable": "Not analyzable: {reason}",
+          "summary": "{availability} · strong {strong} · changed {changed} / comparable {comparable}",
+          "strong": "Strong candidate",
+          "changed": "Changed",
+          "emptyTitle": "No pixel candidates",
+          "emptyWithComparison": "This session has no sortable framebuffer differences.",
+          "emptyWithoutComparison": "Complete a phase-difference drag session first.",
+          "folderUnknown": "Unknown folder",
+          "itemUnknown": "Unknown item",
+          "candidate": "Candidate {index}",
+          "slot": "Slot {slot}",
+          "grid": "Grid {value}",
+          "alpha": "Alpha {value}",
+          "brightness": "Brightness {value}"
+        },
+        "actions": {
+          "arm": "Arm",
+          "armAndClear": "Arm and clear",
+          "disarm": "Disarm",
+          "copy": "Copy",
+          "download": "Download"
+        },
+        "status": {
+          "state": "State",
+          "armed": "Armed",
+          "disarmed": "Disarmed",
+          "pixelSampling": "Pixel sampling",
+          "target": "Target",
+          "autoFreeze": "Auto-freeze",
+          "sessionEvents": "Sessions / events",
+          "currentSession": "Current session",
+          "dragItem": "Dragged item",
+          "freezeReason": "Freeze reason"
+        },
+        "framebuffer": {
+          "notSampled": "Not sampled",
+          "unavailable": "Unavailable · {reason}",
+          "slots": "{count} slots",
+          "reads": "{count} reads",
+          "skipped": "Skipped {count}",
+          "warnings": "{count} warnings"
+        },
+        "errors": {
+          "invalidSummary": "The render probe returned an invalid summary"
+        }
+      },
+      "liveDesktop": {
+        "sections": {
+          "consistency": "State consistency",
+          "runtime": "Native runtime",
+          "metrics": "Frame and composition metrics",
+          "windows": "Window discovery"
+        },
+        "runtimeDetailEmpty": "No runtime details yet",
+        "frameSource": {
+          "aria": "Live Desktop debug frame-source override",
+          "wallpaperEngine": "Wallpaper Engine window",
+          "testPattern": "Test pattern"
+        },
+        "settings": {
+          "compositorKeeper": "Composition keeper",
+          "cssFallbackEffects": "CSS fallback effects",
+          "debugFrameSourceOverride": "Debug frame source",
+          "disableMouseRelay": "Disable mouse relay",
+          "forceDwmFlush": "Force DWM Flush",
+          "skipBlankFrames": "Skip suspected blank frames",
+          "skipBlankFramesShort": "Skip blank frames"
+        },
+        "phase": {
+          "applying": "Applying",
+          "failed": "Failed",
+          "persisting": "Saving",
+          "ready": "Ready",
+          "refreshing": "Refreshing",
+          "running": "Running",
+          "stopped": "Stopped",
+          "unknown": "Unknown"
+        },
+        "consistency": {
+          "consistent": "Consistent",
+          "drifted": "Drift detected",
+          "unverified": "Unverified",
+          "applied": "{name} → applied",
+          "persisted": "{name} → persisted"
+        },
+        "verification": {
+          "frontend-event-dispatched": "Frontend event dispatched",
+          "runtime-accepted": "Accepted by runtime",
+          "unknown": "Unknown"
+        },
+        "fields": {
+          "controllerState": "Controller state",
+          "consistency": "Consistency",
+          "desiredRevision": "Desired revision",
+          "appliedVerification": "Apply verification",
+          "unconfirmedSettings": "Unconfirmed settings",
+          "stateDrift": "State drift",
+          "lastFailure": "Latest failure",
+          "lastRefreshFailure": "Latest refresh failure",
+          "phase": "Phase",
+          "active": "Active",
+          "generation": "Generation",
+          "reason": "Reason",
+          "framesCopied": "Frames copied",
+          "frameTimeouts": "Frame timeouts",
+          "copyErrors": "Copy errors",
+          "commitErrors": "Commit errors",
+          "shaderFallbacks": "Shader fallbacks",
+          "rates": "Live rates",
+          "frameArrived": "Frame-arrival signal",
+          "frameCopyTiming": "Frame copy timing",
+          "frameCommitTiming": "Frame commit timing",
+          "configUpdates": "Config updates",
+          "configErrors": "Config errors",
+          "testPatternFrames": "Test-pattern frames",
+          "abandonedWorkers": "Abandoned render workers",
+          "pixelProbe": "Pixel probe",
+          "lastFrame": "Latest frame",
+          "lastAbandonedReason": "Latest abandonment reason",
+          "lastShaderFallbackError": "Latest shader fallback error",
+          "windowDiagnostics": "Window diagnostics",
+          "windowsFound": "Windows found",
+          "candidateWindows": "Candidate windows"
+        },
+        "workerSummary": "Active {active} / reaped {reaped}",
+        "windows": {
+          "emptyTitle": "No Live Desktop candidate windows",
+          "emptyDetail": "Window diagnostics are not available yet",
+          "roleFallback": "Window",
+          "classFallback": "Unknown class",
+          "reasonFallback": "Diagnostic candidate",
+          "meta": "{reason} · {className} · {process} · parent {parent} · root {root} · style {style} · extended style {exStyle} · Cloaked {cloaked}{title}"
+        },
+        "actions": {
+          "reapply": "Reapply",
+          "reapplySettings": "Reapply settings",
+          "updateSettings": "Update settings",
+          "refreshState": "Refresh state",
+          "autoRefreshState": "Auto-refresh state",
+          "copyDiagnostics": "Copy diagnostics",
+          "copyDiagnosticsJson": "Copy diagnostics JSON",
+          "stateChange": "Live Desktop state change",
+          "stateRefresh": "Live Desktop state refresh"
+        },
+        "format": {
+          "lastFrame": "{width}x{height} · format {format}",
+          "pixelProbe": "Success {success} / errors {errors} · {size}RGB {rgbMin}/{rgbMax}/{rgbAvg} · Alpha {alphaMin}/{alphaMax}/{alphaAvg}",
+          "frameArrived": "Arrived {arrived} / dropped {dropped}",
+          "timing": "Average {average}ms / latest {last}ms / max {max}ms",
+          "rates": "Frames {frames}/s · arrived {arrived}/s · dropped {dropped}/s · timeouts {timeouts}/s · copy errors {copyErrors}/s"
+        },
+        "errors": {
+          "invalidState": "The Live Desktop diagnostic tool returned invalid state"
+        }
+      },
+      "motion": {
+        "sections": {
+          "inspector": "Inspector",
+          "currentSelection": "Current selection",
+          "channelBreakdown": "Channel contribution breakdown",
+          "whyMoving": "Why is it still moving?",
+          "recentLifecycle": "Recent lifecycle events",
+          "relatedWarnings": "Related warnings",
+          "propertyDetails": "Property details",
+          "cancelReasons": "Top cancellation reasons",
+          "warnings": "Warnings",
+          "aiExport": "AI analysis export",
+          "targets": "Targets",
+          "captureConfig": "Capture configuration",
+          "filters": "Filters",
+          "layerTree": "Layer tree",
+          "activeAnimations": "Active animations",
+          "pinnedTargets": "Pinned targets",
+          "timeline": "Timeline",
+          "trackChart": "Track chart",
+          "findings": "Diagnostic findings",
+          "replayViewer": "Replay viewer",
+          "bookmarks": "Bookmarks",
+          "eventTimeline": "Event timeline",
+          "curveChart": "Curve chart",
+          "analysisWorkspace": "Analysis workspace",
+          "replayCapture": "Replay capture"
+        },
+        "fields": {
+          "target": "Target",
+          "track": "Track",
+          "time": "Time",
+          "filter": "Filter",
+          "targetProp": "Target.property",
+          "currentValue": "Current value",
+          "targetValue": "Target value (to)",
+          "delta": "Delta",
+          "velocity": "Velocity",
+          "driver": "Driver",
+          "lane": "Lane",
+          "laneKey": "Lane key",
+          "sourceLabel": "Source label",
+          "property": "Property (prop)",
+          "valueTo": "Current → target",
+          "configuration": "Configuration",
+          "layers": "Layers",
+          "kinds": "Kinds",
+          "sourceSearch": "Source search",
+          "searchCriteria": "Search criteria",
+          "customSeconds": "Custom seconds",
+          "timeScale": "Time scale",
+          "captureSeconds": "Capture seconds",
+          "captureStatus": "Capture status",
+          "captureProfile": "Capture profile",
+          "captureWindow": "Capture window",
+          "sampleRate": "Sample rate",
+          "estimatedSize": "Estimated size",
+          "actualJson": "Actual JSON",
+          "framesEvents": "Frames / events",
+          "tracksTargets": "Tracks / targets",
+          "schema": "Schema",
+          "profile": "Capture profile (profile)",
+          "props": "Properties (props)",
+          "targetsTechnical": "Targets (targets)",
+          "framesEventsTechnical": "Frames/events (frames/events)",
+          "tracksTargetsTechnical": "Tracks/targets (tracks/targets)",
+          "estimatedJson": "Estimated JSON",
+          "viewer": "Viewer",
+          "timeWindow": "Time window",
+          "samples": "Samples",
+          "events": "Events",
+          "tracks": "Tracks",
+          "curvePoints": "Curve points",
+          "timeCursor": "Time cursor",
+          "captureDocument": "Capture document (trace)",
+          "schemaTechnical": "Schema (schema)",
+          "interval": "Interval (interval)",
+          "selection": "Selection (selection)",
+          "tracksTechnical": "Tracks (tracks)",
+          "profileTechnical": "Capture profile (profile)",
+          "filterTechnical": "Filter (filter)",
+          "bookmarksTechnical": "Bookmarks (bookmarks)",
+          "activeAnimations": "Active animations",
+          "targets": "Targets",
+          "channels": "Channels",
+          "warnings": "Warnings",
+          "overlay": "Overlay",
+          "recordWindow": "Recording window",
+          "eventsSamples": "Events / samples",
+          "mode": "Mode",
+          "currentTime": "Current time",
+          "duration": "Duration"
+        },
+        "settings": {
+          "enableDiagnostics": "Enable Motion diagnostics",
+          "recordHistory": "Record history",
+          "showOverlay": "Show overlay"
+        },
+        "workspace": {
+          "title": "Motion debug workspace",
+          "resizeAria": "Resize docked workspace",
+          "modeAria": "Workspace mode",
+          "dockWidth": "Dock width",
+          "selectionAria": "Workspace selection"
+        },
+        "aria": {
+          "propertyDetails": "Pixi Motion property details",
+          "captureProperties": "Capture properties",
+          "filterPresets": "Motion filter presets",
+          "activeAnimations": "Active Pixi Motion animations",
+          "trackMode": "Track chart display mode",
+          "trackSeries": "Track chart series visibility",
+          "findings": "Motion replay diagnostic findings",
+          "replayProperties": "Replay frame properties",
+          "recordWindow": "Motion recording window"
+        },
+        "empty": {
+          "loadReplay": "Load a replay trace to inspect values for the selected track",
+          "noCurrentSample": "No sample matches the selected target or track at the current time",
+          "noLaneContribution": "No channel contributions are available to break down",
+          "noExplanation": "No replay explanation is available",
+          "noLifecycle": "No matching lifecycle events",
+          "noRelatedWarnings": "No related warnings",
+          "noProperties": "No matching properties",
+          "noLayers": "No matching layers",
+          "noActiveAnimations": "There are no active animations",
+          "noPinnedTargets": "No targets have been pinned",
+          "noFindings": "No diagnostic findings in the current filter range",
+          "noReplayTracks": "No replay tracks to display",
+          "loadReplayTracks": "Load a replay trace to inspect track curves",
+          "noBookmarks": "No bookmarks saved",
+          "noReplayProperties": "The current replay frame has no matching property values",
+          "noReplayEvents": "No matching replay events",
+          "noReplayCurves": "No matching replay curves",
+          "noReplayTargets": "No matching replay overlay targets",
+          "noTimelineEvents": "No matching timeline events",
+          "noCurveSamples": "No matching curve samples"
+        },
+        "counts": {
+          "layersAnimations": "{layers} layers / {animations} active animations",
+          "targets": "{count} targets",
+          "animations": "{count} active animations",
+          "warnings": "{count} warnings",
+          "events": "{count} events",
+          "values": "{count} values",
+          "visibleTracks": "Showing {visible} of {total} tracks",
+          "propertiesEvents": "{properties} properties / {events} events",
+          "layerSummary": "{targets} targets / {animations} active animations / {warnings} warnings",
+          "samplesEvents": "{samples} samples / {events} events",
+          "liveTracksNoReplay": "{tracks} live tracks / no replay trace loaded",
+          "chartTracksEvents": "{visible}/{total} chart tracks / {events} events",
+          "curvePointLimit": "≤ {count} points per curve",
+          "filterLayers": "{count} layers",
+          "filterKinds": "{count} kinds",
+          "filterSources": "{count} sources"
+        },
+        "values": {
+          "deltaVelocity": "Delta {delta} / velocity {velocity}",
+          "currentTargetEvent": "Current value / target value / event",
+          "targetFallback": "Target",
+          "custom": "Custom",
+          "active": "Active",
+          "warnings": "Warnings",
+          "capturing": "Capturing",
+          "idle": "Idle",
+          "allVisibleReplayTracks": "All visible replay tracks",
+          "selectedTrack": "Selected track",
+          "allMatchingTracks": "All matching tracks",
+          "noFindings": "No diagnostic findings",
+          "targetWithId": "Target {id}",
+          "unknownProperty": "Unknown property",
+          "filterQuery": "Filter: {query}",
+          "searchQuery": "Search: {query}",
+          "propertiesList": "{kinds} / properties {props}",
+          "normalizedSamplesEvents": "{samples} samples / {events} events / normalized"
+        },
+        "series": {
+          "delta": "Delta (delta)",
+          "to": "Target value (to)",
+          "value": "Current value (value)",
+          "velocity": "Velocity (velocity)"
+        },
+        "profiles": {
+          "defaultVisual": "Default visual",
+          "defaultVisualDescription": "Covers common visual properties for everyday animation diagnostics.",
+          "transformFocus": "Transform focus",
+          "transformFocusDescription": "Captures only transform properties for layout, paging, and scaling issues.",
+          "alphaFocus": "Opacity focus",
+          "alphaFocusDescription": "Captures only alpha for opacity, fade, and visibility issues.",
+          "interruptions": "Lifecycle interruptions",
+          "interruptionsDescription": "Captures lifecycle events such as cancel, retarget, release, and snap.",
+          "custom": "Custom",
+          "customDescription": "Uses custom property, target, and lifecycle event filters."
+        },
+        "inspector": {
+          "noCurrentSample": "No current sample",
+          "noCurrentSampleDetail": "No replay sample matches the current target or track at the selected time.",
+          "currentValueDetail": "{source}.{prop}: current {value}, target {to}, delta {delta}, velocity {velocity}.",
+          "selectedLane": "Selected lane",
+          "selectedLaneDetail": "The {driver} driver on {lane}/{laneKey} is the selected channel contribution.",
+          "multipleLanes": "Multiple lane composition",
+          "recentEvent": "Recent event",
+          "recentEventDetail": "{time}: {type}{reason}: {detail}."
+        },
+        "actions": {
+          "clearHistory": "Clear history",
+          "importJson": "Import JSON",
+          "loadTrace": "Load trace",
+          "loadCurrentCapture": "Load current capture",
+          "clearViewer": "Clear viewer",
+          "jumpStart": "Jump to start",
+          "jumpEnd": "Jump to end",
+          "previousFrame": "Previous frame",
+          "nextFrame": "Next frame",
+          "previousEvent": "Previous event",
+          "nextEvent": "Next event",
+          "saveBookmark": "Save bookmark",
+          "clearBookmarks": "Clear bookmarks",
+          "exportFocused": "Export focused AI report",
+          "zoomSelection": "Zoom to selection",
+          "resetZoom": "Reset zoom",
+          "openWorkspace": "Open workspace",
+          "openFullscreen": "Open fullscreen",
+          "startCapture": "Start capture",
+          "stopCapture": "Stop capture",
+          "copyAiReport": "Copy AI report",
+          "copyInterval": "Copy interval",
+          "pauseReplay": "Pause replay",
+          "playReplay": "Play replay",
+          "copyCapture": "Copy capture",
+          "copySummary": "Copy summary",
+          "pinTarget": "Pin target",
+          "unpinTarget": "Unpin target",
+          "clearSelection": "Clear selection",
+          "copyFocusedAi": "Copy focused AI data",
+          "refreshState": "Refresh Motion state",
+          "refreshHistory": "Refresh Motion history",
+          "applySettings": "Apply Motion settings",
+          "disableDiagnostics": "Disable Motion diagnostics",
+          "clearHistoryAction": "Clear Motion history",
+          "syncControls": "Synchronize Motion controls",
+          "startCaptureAction": "Start Motion capture",
+          "stopCaptureAction": "Stop Motion capture",
+          "copyReport": "Copy Motion report",
+          "copyFocusedReport": "Copy focused Motion report",
+          "copyCaptureAction": "Copy Motion capture",
+          "copyIntervalAction": "Copy Motion interval"
+        },
+        "chart": {
+          "raw": "Raw values",
+          "normalized": "Normalized",
+          "zoomStart": "Zoom start",
+          "zoomEnd": "Zoom end",
+          "maxVelocity": "Max velocity {value}",
+          "maxDelta": "Max delta {value}",
+          "currentValue": "Current value {value}",
+          "targetValue": "Target value {value}",
+          "delta": "Delta {value}",
+          "velocity": "Velocity {value}"
+        },
+        "replay": {
+          "traceFile": "Trace file",
+          "loaded": "Loaded",
+          "timeCursor": "Time cursor",
+          "filter": "Replay filter",
+          "selectionStart": "Selection start",
+          "selectionEnd": "Selection end"
+        },
+        "errors": {
+          "captureDocumentMissing": "Motion capture stopped, but the shared capture document was not published"
+        },
+        "searchPlaceholder": "Target / lane / property / event"
+      }
+    },
+    "motionLab": {
+      "title": "Pixi Motion Lab",
+      "sections": {
+        "scenarios": "Scenarios",
+        "parameterPresets": "Parameter presets",
+        "runtime": "Runtime",
+        "warnings": "Warnings",
+        "assertions": "Assertions",
+        "timeline": "Timeline",
+        "curves": "Curves",
+        "replay": "Replay",
+        "traceDiff": "Trace differences",
+        "baselineCompare": "Baseline comparison",
+        "lastRunCompare": "Compare with previous run"
+      },
+      "fields": {
+        "current": "Current",
+        "schema": "Schema",
+        "mode": "Mode",
+        "framesEvents": "Frames / events",
+        "tracksTargets": "Tracks / targets",
+        "runtime": "Runtime",
+        "activeAnimations": "Active animations",
+        "warnings": "Warnings",
+        "eventsSamples": "Events / samples",
+        "replayTrace": "Replay trace",
+        "traceFramesEvents": "Trace frames / events",
+        "compareMode": "Comparison mode",
+        "baseline": "Baseline"
+      },
+      "actions": {
+        "run": "Run",
+        "captureReplay": "Capture replay",
+        "saveBaseline": "Save baseline",
+        "compareBaseline": "Compare baseline",
+        "compareLast": "Compare previous",
+        "copyReport": "Copy report",
+        "copiedReport": "Report copied",
+        "copyFocused": "Copy focused AI report",
+        "copiedFocused": "Focused report copied",
+        "copyTrace": "Copy trace",
+        "copiedTrace": "Trace copied",
+        "copyCompare": "Copy comparison",
+        "copiedCompare": "Comparison copied",
+        "copyBaselineCompare": "Copy baseline comparison",
+        "copiedBaselineCompare": "Baseline comparison copied",
+        "copyDiff": "Copy differences",
+        "copiedDiff": "Differences copied"
+      },
+      "values": {
+        "changed": "Changed",
+        "debugging": "Debugging",
+        "idle": "Idle",
+        "ready": "Ready",
+        "running": "Running",
+        "scenario": "Scenario",
+        "passed": "Passed",
+        "failed": "Failed",
+        "baseline": "Baseline",
+        "lastRun": "Previous run"
+      },
+      "counts": {
+        "assertions": "{count} assertions",
+        "curveSummary": "{samples} samples / max velocity {velocity}",
+        "snapshot": "{scenario} / passed {passed} / failed {failed}"
+      },
+      "empty": {
+        "assertions": "Assertions have not been run",
+        "events": "No events",
+        "curves": "No curves",
+        "traceDiff": "Capture two traces first",
+        "saveBaselineFirst": "Save a baseline run first",
+        "runCurrentScenario": "Run the current scenario",
+        "runTwice": "Run a scenario at least twice"
+      },
+      "parameterGroups": {
+        "spring": "Spring parameters",
+        "timing": "Timing parameters",
+        "interruption": "Interruption policy",
+        "drag": "Drag",
+        "icon": "Icon",
+        "folder": "Folder"
+      },
+      "parameters": {
+        "springStiffness": "Stiffness",
+        "springDamping": "Damping",
+        "springMass": "Mass",
+        "duration": "Duration",
+        "ease": "Ease",
+        "interruptPolicy": "Policy",
+        "interruptDelay": "Delay",
+        "blendDuration": "Blend duration",
+        "dragDistance": "Distance",
+        "dragReleaseY": "Release Y coordinate",
+        "iconPressScale": "Press scale",
+        "iconHoverScale": "Hover scale",
+        "jiggleRotation": "Jiggle angle",
+        "folderClosedScale": "Closed scale",
+        "folderOpenScale": "Open scale",
+        "folderTravel": "Travel distance",
+        "folderHoverScale": "Hover scale",
+        "pageDistance": "Page distance"
+      },
+      "metrics": {
+        "parameter": "Parameter: {key}",
+        "assertionsPassed": "Assertions passed",
+        "assertionsFailed": "Assertions failed",
+        "events": "Events",
+        "samples": "Samples",
+        "curves": "Curves",
+        "warnings": "Warnings",
+        "duration": "Duration",
+        "maxVelocity": "Maximum velocity",
+        "retargets": "Retargets",
+        "overshoots": "Overshoots",
+        "traceFrames": "Trace frames",
+        "traceValues": "Trace values",
+        "frames": "Frames",
+        "tracks": "Tracks",
+        "targets": "Targets",
+        "values": "Values",
+        "property": "Property",
+        "driver": "Driver"
+      },
+      "presets": {
+        "snappy": { "label": "Snappy", "description": "Fast settling / short tweens" },
+        "soft": { "label": "Soft", "description": "Soft springs / relaxed hover" },
+        "slow": { "label": "Slow", "description": "Long tweens / heavy settling" },
+        "interruptHeavy": { "label": "Interrupt-heavy", "description": "Short delay / replacement stress test" }
+      },
+      "scenarios": {
+        "folderOpen": {
+          "label": "Open folder",
+          "description": "Animates the folder panel scale, y position, and alpha as it enters.",
+          "assertions": { "folderOpenTrack": "The folder panel records scale and alpha tracks" }
+        },
+        "folderClose": {
+          "label": "Close folder",
+          "description": "Animates the folder panel scale and alpha as it exits.",
+          "assertions": { "folderCloseTrack": "Closing the folder produces panel events" }
+        },
+        "folderOpenInterruptedByClose": {
+          "label": "Open interrupted by close",
+          "description": "Starts opening, then replaces the same lane with a close action.",
+          "assertions": { "openCloseCancel": "The close action interrupts the open action" }
+        },
+        "folderCloseInterruptedByOpen": {
+          "label": "Close interrupted by open",
+          "description": "Starts closing, then replaces the same lane with an open action.",
+          "assertions": { "closeOpenCancel": "The open action interrupts the close action" }
+        },
+        "desktopPageScrub": {
+          "label": "Desktop page drag",
+          "description": "Springs the desktop page track toward another page and retargets it.",
+          "assertions": { "desktopPageRetarget": "Desktop page dragging retargets the page track" }
+        },
+        "folderPageScrub": {
+          "label": "Folder page drag",
+          "description": "Drags the folder's internal page track with progress.",
+          "assertions": { "folderPageProgress": "Folder page dragging produces a progress lane" }
+        },
+        "dragRelease": {
+          "label": "Drag release",
+          "description": "Drops the drag ghost back onto the grid.",
+          "assertions": { "dragReleaseTrack": "The drag ghost releases along x and y" }
+        },
+        "iconPressRelease": {
+          "label": "Icon press / release",
+          "description": "Presses and releases an icon through factor scaling.",
+          "assertions": { "iconPressFactor": "Icon pressing uses a factor lane" }
+        },
+        "folderHover": {
+          "label": "Folder hover",
+          "description": "Animates the folder target hover ring and icon scale.",
+          "assertions": { "folderHover": "Folder hover drives the hover lane" }
+        },
+        "appFolderCreateHover": {
+          "label": "App grouping hover",
+          "description": "Animates the hover pulse used while grouping apps.",
+          "assertions": { "appFolderCreateHover": "App grouping hover produces a create lane" }
+        },
+        "editJiggle": {
+          "label": "Edit-mode jiggle",
+          "description": "Drives additive rotation for edit-mode jiggle.",
+          "assertions": { "editJiggleAdditive": "Edit jiggle uses an additive lane" }
+        },
+        "hundredIconLayoutRetarget": {
+          "label": "100+ icon layout retarget",
+          "description": "Stress-tests layout spring retargeting with more than 100 icons.",
+          "assertions": { "hundredIconRetarget": "Retargeting 100+ icons produces retarget events" }
+        }
+      }
+    },
+    "launchpad": {
+      "search": {
+        "placeholder": "Search",
+        "label": "Search apps",
+        "clear": "Clear search",
+        "empty": "No matching apps found"
+      },
+      "settings": "Settings",
+      "openSettings": "Open settings",
+      "page": "Go to page {page}",
+      "folderName": "Folder name",
+      "newFolder": "New Folder",
+      "contextMenu": {
+        "label": "{name} menu",
+        "remove": "Remove from Launchpad",
+        "exclude": "Remove and exclude from scans",
+        "dissolve": "Dissolve folder"
+      }
+    },
+    "dialogs": {
+      "iconChooser": {
+        "close": "Close icon chooser",
+        "embedded": "App icons",
+        "count": "{count}",
+        "loading": "Loading",
+        "chooseEmbedded": "Choose app icon",
+        "empty": "No icons available",
+        "local": "Local image",
+        "chooseFromDisk": "Choose an image from disk"
+      },
+      "appEditor": {
+        "editTitle": "Edit app",
+        "addTitle": "Add app",
+        "addDescription": "Add a custom app to Launchpad",
+        "closeEdit": "Close editor",
+        "closeAdd": "Close add-app dialog",
+        "changeIcon": "Change icon",
+        "name": "App name",
+        "windowsId": "Windows app ID",
+        "windowsIdManaged": "Windows app ID (managed by Windows)",
+        "target": "Launch path or URL",
+        "args": "Launch arguments",
+        "choosing": "Choosing"
+      },
+      "scanResults": {
+        "title": "Scan results",
+        "summary": "Found {found} apps that can be added · {selected} selected",
+        "partial": "Some folders were skipped because of permissions, links, or scan limits",
+        "close": "Close scan results",
+        "available": "Apps available to add",
+        "selectApp": "Select {name}",
+        "targetMissing": "Launch path not set",
+        "args": "Arguments: {args}",
+        "empty": "No apps available to add were found",
+        "addSelected": "Add selected"
+      },
+      "notices": {
+        "dismissRecovery": "Dismiss layout recovery notice",
+        "dismiss": "Dismiss notice"
+      },
+      "warning": {
+        "suggestion": "Suggestion: {suggestion}"
+      }
+    },
+    "window": {
+      "chrome": {
+        "bar": "Window title bar",
+        "drag": "Drag window",
+        "minimize": "Minimize window",
+        "maximize": "Maximize window",
+        "restore": "Restore window",
+        "hide": "Hide window"
+      }
+    },
+    "preview": {
+      "image": "Image preview",
+      "effect": "Image effect preview",
+      "effectFallback": "Image effect preview fallback",
+      "selectImageFirst": "Available after choosing an image"
+    },
+    "settings": {
+      "shell": {
+        "title": "Settings",
+        "expandNavigation": "Expand settings navigation",
+        "collapseNavigation": "Collapse settings navigation",
+        "backTo": "Back to {label}",
+        "path": "Settings path",
+        "close": "Close settings",
+        "categories": "Settings categories"
+      },
+      "general": {
+        "title": "General",
+        "startup": {
+          "title": "Start at sign-in",
+          "description": "Open Lumeria automatically after signing in to Windows"
+        },
+        "shortcut": {
+          "title": "Shortcut",
+          "disable": "Disable shortcut",
+          "recording": "Recording",
+          "record": "Record",
+          "hint": "Show or hide Lumeria quickly",
+          "recordingHint": "Press Esc to cancel recording",
+          "pressKeys": "Press a shortcut",
+          "notSet": "Not set",
+          "startFailed": "Could not start shortcut recording. Try again.",
+          "unavailable": "The shortcut is already in use or unavailable",
+          "invalid": {
+            "missingMainKey": "Press a shortcut that includes a main key",
+            "missingModifier": "Include at least one of Ctrl, Alt, Shift, or Win",
+            "unsupportedKey": "This key cannot be used in a global shortcut"
+          }
+        },
+        "language": {
+          "title": "Language",
+          "description": "Choose the language used by Lumeria and its native menus",
+          "system": "Use system language",
+          "current": "Current: {locale}",
+          "select": "Choose interface language"
+        },
+        "advanced": {
+          "title": "Advanced options",
+          "developerConsole": "Developer console",
+          "opening": "Opening",
+          "open": "Open console",
+          "hint": "Open WebView developer tools for this window",
+          "unavailableHint": "Available only in the Lumeria desktop app",
+          "unavailable": "The console is available only in the Lumeria desktop app.",
+          "openUnavailable": "The console cannot be opened in this environment.",
+          "openFailed": "Could not open the console. Try again."
+        }
+      },
+      "interface": {
+        "title": "Appearance",
+        "window": {
+          "title": "Window",
+          "mode": "Window mode",
+          "modeDescription": "Choose how the Lumeria window opens",
+          "fullscreen": "Fullscreen",
+          "windowed": "Windowed",
+          "titlebar": "Show window title bar",
+          "titlebarDescription": "Show the title and window controls in windowed mode",
+          "material": "Window backdrop",
+          "materialNone": "No material",
+          "appearance": "Backdrop appearance",
+          "light": "Light",
+          "dark": "Dark",
+          "previews": "Window backdrop previews",
+          "notSet": "Not set",
+          "materials": {
+            "none": "Disable system materials and show only the base color and image layer",
+            "acrylic": "Translucent blur that makes background changes more visible",
+            "mica": "Samples the desktop for a stable look with lower resource use",
+            "micaAlt": "A layered Mica variant suited to tiered windows"
+          }
+        },
+        "background": {
+          "title": "Background",
+          "base": {
+            "title": "Base color",
+            "description": "Shown beneath the image layer",
+            "color": "Color",
+            "opacity": "Opacity",
+            "opacityLabel": "Base color opacity"
+          },
+          "layer": {
+            "title": "Background layer",
+            "source": "Source",
+            "sourceLabel": "Image source",
+            "none": "No image",
+            "custom": "Custom image",
+            "wallpaper": "Desktop wallpaper",
+            "live": "Live desktop",
+            "imageOpacity": "Background opacity",
+            "imageOpacityLabel": "Background layer opacity",
+            "liveOpacity": "Live desktop opacity",
+            "choosing": "Choosing",
+            "syncing": "Syncing",
+            "refreshWallpaper": "Refresh wallpaper",
+            "display": "Display mode",
+            "displayLabel": "Background image display mode",
+            "preview": "Image layer preview",
+            "waitingSync": "Waiting to sync the desktop wallpaper",
+            "builtIn": "Using built-in image",
+            "currentWallpaper": "Current desktop wallpaper",
+            "waitingWallpaper": "Waiting for wallpaper",
+            "selectImage": "Choose image",
+            "hintCustom": "Place a custom image above the base color",
+            "hintWallpaper": "Follow the current Windows desktop wallpaper",
+            "hintLive": "Capture the live desktop and composite it in the native GPU pipeline",
+            "hintLiveUnavailable": "Live desktop unavailable: {detail}",
+            "hintNone": "Do not add a background layer",
+            "layout": {
+              "fill": "Fill",
+              "fit": "Fit",
+              "stretch": "Stretch",
+              "tile": "Tile",
+              "center": "Center"
+            }
+          },
+          "effect": {
+            "title": "Background effect",
+            "effect": "Effect",
+            "effectLabel": "Image effect",
+            "original": "Original",
+            "dim": "Dim",
+            "blur": "Blur",
+            "blurStrength": "Blur strength",
+            "backgroundBlurStrength": "Background blur strength",
+            "dimColor": "Dim color",
+            "backgroundDimColor": "Background dim color",
+            "dimStrength": "Dim strength",
+            "backgroundDimStrength": "Background dim strength",
+            "acrylicBlurStrength": "Acrylic blur strength",
+            "acrylicAppearance": "Acrylic appearance",
+            "system": "Use system",
+            "params": "Parameters",
+            "paramsLabel": "Acrylic parameters",
+            "darkParams": "Dark parameters",
+            "lightParams": "Light parameters",
+            "tint": "Tint",
+            "acrylicTint": "Acrylic tint",
+            "tintStrength": "Tint strength",
+            "acrylicTintStrength": "Acrylic tint strength",
+            "brightness": "Brightness",
+            "acrylicBrightness": "Acrylic brightness",
+            "contrast": "Contrast",
+            "acrylicContrast": "Acrylic contrast",
+            "saturation": "Saturation",
+            "acrylicSaturation": "Acrylic saturation",
+            "unavailable": "Available after selecting a background layer",
+            "hintCss": "This effect is composited by the frontend transparency layer",
+            "hintAcrylic": "WebGL Acrylic-style composition",
+            "hintBlur": "Blur the background layer",
+            "hintDim": "Add a dimming overlay",
+            "hintOriginal": "Show the background layer directly"
+          }
+        },
+        "layout": {
+          "title": "Layout",
+          "desktop": "Desktop layout",
+          "desktopDescription": "Set the rows and columns in the desktop grid",
+          "desktopRows": "Desktop rows",
+          "desktopRowsDecrease": "Decrease desktop rows",
+          "desktopRowsIncrease": "Increase desktop rows",
+          "desktopCols": "Desktop columns",
+          "desktopColsDecrease": "Decrease desktop columns",
+          "desktopColsIncrease": "Increase desktop columns",
+          "folder": "Folder layout",
+          "folderDescription": "Set the rows and columns in expanded folders",
+          "folderRows": "Folder rows",
+          "folderRowsDecrease": "Decrease folder rows",
+          "folderRowsIncrease": "Increase folder rows",
+          "folderCols": "Folder columns",
+          "folderColsDecrease": "Decrease folder columns",
+          "folderColsIncrease": "Increase folder columns",
+          "iconSize": "Icon size",
+          "iconSizeDescription": "Set the target desktop icon size; the actual size also depends on the grid and available space",
+          "iconSizeDecrease": "Decrease icon size",
+          "iconSizeIncrease": "Increase icon size",
+          "folderIconSize": "Folder icon size",
+          "folderIconSizeDescription": "Set the target size of icons in folders; follow desktop icons or use a custom size",
+          "folderIconSizeMode": "Folder icon size mode",
+          "global": "Follow global",
+          "custom": "Custom",
+          "folderIconSizeDecrease": "Decrease folder icon size",
+          "folderIconSizeIncrease": "Increase folder icon size",
+          "textless": "Textless mode",
+          "textlessDescription": "Hide app names while keeping the icon grid",
+          "compact": "Fill empty spaces",
+          "compactDescription": "Move apps forward using the current grid to fill empty spaces",
+          "compactAction": "Rearrange"
+        },
+        "advanced": {
+          "title": "Advanced",
+          "options": "Advanced options",
+          "description": "Compatibility and native window behavior",
+          "overscan": "Enable fullscreen overscan",
+          "overscanDescription": "Extend the fullscreen window by one physical pixel on every edge to reduce Acrylic flicker on multi-monitor systems; disabling it may bring the issue back"
+        }
+      },
+      "apps": {
+        "title": "Apps",
+        "excluded": {
+          "title": "Excluded apps",
+          "search": "Search excluded apps",
+          "description": "These apps will not appear in future scan results. Remove one from this list to scan for and add it again.",
+          "selected": "{count} apps selected",
+          "removeSelected": "Remove selected apps",
+          "results": "{count} results",
+          "select": "Select {name}",
+          "restore": "Remove {name} from the exclusion list",
+          "restoreTitle": "Remove from exclusion list",
+          "noMatch": "No matching apps",
+          "empty": "No excluded apps"
+        },
+        "manager": {
+          "title": "App management",
+          "search": "Search apps",
+          "scanning": "Scanning",
+          "scanApps": "Scan apps",
+          "addApp": "Add app",
+          "selected": "{count} apps selected",
+          "remove": "Remove from Launchpad",
+          "exclude": "Remove and exclude from scans",
+          "excludeUnavailable": "Some selected apps do not have a scan source",
+          "count": "{filtered} / {total} apps",
+          "all": "All apps",
+          "noMatch": "No matching apps",
+          "select": "Select {name}",
+          "targetMissing": "Launch path not set",
+          "more": "More actions for {name}"
+        },
+        "sources": {
+          "title": "Scan sources",
+          "summary": "{total} sources · {enabled} enabled",
+          "reset": "Restore default sources",
+          "add": "Add source",
+          "enable": "Enable {name}",
+          "label": "Label for {name}",
+          "path": "Path for {name}",
+          "windowsManaged": "A virtual app catalog managed by Windows. It includes Store apps and some system apps.",
+          "lastScan": "Last scanned {time}",
+          "choosing": "Choosing",
+          "empty": "No scan sources",
+          "custom": "Custom folder",
+          "default": {
+            "windowsCatalog": "Windows apps (Store and system)",
+            "userStartMenu": "User Start Menu",
+            "systemStartMenu": "System Start Menu"
+          },
+          "resetTitle": "Restore default sources",
+          "resetMessage": "This removes custom scan sources and restores the user Start menu, system Start menu, and Windows app catalog.",
+          "resetConfirm": "Restore",
+          "chooseFailedTitle": "Could not choose scan source",
+          "chooseFailedMessage": "Lumeria could not open the folder picker.",
+          "chooseFailedSuggestion": "Try again or check system file-picker permissions."
+        },
+        "filters": {
+          "title": "Scan filters",
+          "keywords": "Excluded keywords",
+          "keywordCount": "{count} keywords",
+          "keywordInput": "Enter an excluded keyword",
+          "keywordAdd": "Add scan exclusion keyword",
+          "keywordRemove": "Remove keyword {keyword}",
+          "keywordEmpty": "No excluded keywords",
+          "appCount": "{count} apps"
+        },
+        "overview": {
+          "appCount": "{count} apps",
+          "scanReady": "Refresh apps from enabled scan sources",
+          "scanDisabled": "Enable a scan source first",
+          "scan": "Scan",
+          "addDescription": "Add a custom app manually",
+          "add": "Add",
+          "missingTarget": "Invalid launch target badge",
+          "missingTargetDescription": "Show a warning when an app's launch path or URL is unavailable",
+          "showMissingTarget": "Show invalid launch target badge"
+        },
+        "operations": {
+          "errorDetail": "Error: {detail}",
+          "restoredTitle": "Removed from exclusion list",
+          "restoredOne": "“{name}” was removed from the exclusion list and can be added after scanning again.",
+          "restoredMany": "{count} apps were removed from the exclusion list and can be added after scanning again.",
+          "appFallback": "this app",
+          "removedTitle": "Removed from Launchpad",
+          "removedOne": "“{name}” was removed from Launchpad. The app was not uninstalled and no files were deleted.",
+          "removedMany": "{count} apps were removed from Launchpad. The apps were not uninstalled and no files were deleted.",
+          "excludeFailedTitle": "Could not exclude from scans",
+          "excludeUnstable": "Some selected apps do not have a stable scan source. No apps were removed.",
+          "excludeSaveFailed": "The apps' scan sources could not be saved. No apps were removed.",
+          "excludeChangedTitle": "Scan exclusion did not finish",
+          "excludeChanged": "App state changed during the operation. Scan again and retry.",
+          "excludedTitle": "Excluded from scans",
+          "excludedOne": "“{name}” was removed and will be skipped by future scans. You can restore it from Excluded apps in Settings.",
+          "excludedMany": "{count} apps were removed and excluded. You can restore them from Excluded apps in Settings.",
+          "scanFailedTitle": "Could not scan apps",
+          "scanFailedMessage": "Lumeria could not scan the current app sources.",
+          "scanFailedSuggestion": "Check that the scan sources are still accessible, then try again."
+        },
+        "icon": {
+          "errorTitle": "Could not use this icon",
+          "readFailed": "The image could not be read.",
+          "compressFailed": "Icon compression failed.",
+          "chooseImage": "Choose an image file.",
+          "tooLarge": "The image is too large. Choose an image under 10 MB.",
+          "tooSmall": "The image is too small. Choose one at least 16×16 pixels.",
+          "compressedTooLarge": "The compressed icon is still too large. Choose a simpler image.",
+          "cacheFailed": "Icon caching failed.",
+          "processFailed": "Icon processing failed.",
+          "loadChoicesFailed": "App icons could not be loaded. Try again.",
+          "change": "Change icon",
+          "appFallback": "App"
+        },
+        "targetPicker": {
+          "failedTitle": "Could not choose launch file",
+          "failedMessage": "Lumeria could not open the file picker.",
+          "failedSuggestion": "Try again or enter the launch path manually."
+        },
+        "unnamed": "Unnamed app",
+        "catalogIdMissing": "Catalog ID not set"
+      },
+      "about": {
+        "title": "About",
+        "description": "Windows app launcher",
+        "version": "Version {version}"
+      }
+    },
+    "native": {
+      "tray": {
+        "show": "Show Lumeria",
+        "settings": "Settings",
+        "logs": "Open Logs Folder",
+        "restart": "Restart Lumeria",
+        "quit": "Quit"
+      },
+      "dialogs": {
+        "chooseApp": "Choose an app",
+        "chooseBackground": "Choose a background image",
+        "chooseScanSource": "Choose a scan source",
+        "executableFilter": "Applications and shortcuts",
+        "imageFilter": "Images"
+      },
+      "supervisor": {
+        "title": "Lumeria interface recovery",
+        "logUnavailable": "(log folder unavailable)",
+        "message": "Lumeria's interface process failed repeatedly. The Launchpad window has been kept hidden so it does not block the desktop.\n\nChoose Yes to restart Lumeria, or No to keep it hidden. You can still open logs or quit from the tray.\n\nLog folder: {logDir}"
+      }
+    },
+    "notices": {
+      "acknowledge": "Got it",
+      "completed": "Operation completed",
+      "retry": "Retry",
+      "layoutRecovered": {
+        "title": "Layout recovered",
+        "message": "The layout file was damaged. The original was backed up and the default layout was restored."
+      },
+      "layoutSaveFailed": {
+        "title": "Layout not saved yet",
+        "message": "This change remains in the current session and may be lost after restarting.",
+        "messageRepeated": "This change remains in the current session and may be lost after restarting. Saving has failed {count} times."
+      },
+      "layoutSaveRecovered": {
+        "title": "Layout saved",
+        "message": "Previously unsaved changes have been written."
+      },
+      "layoutLoadFailed": {
+        "title": "Local layout failed to load",
+        "message": "Current changes will not be saved. Try loading the local layout again.",
+        "messageRepeated": "Current changes will not be saved. Loading has failed {count} times."
+      },
+      "layoutLoadRecovered": {
+        "title": "Local layout loaded",
+        "message": "Future changes will be saved normally."
+      }
+    },
+    "commands": {
+      "compact": {
+        "title": "Rearrange desktop pages?",
+        "message": "This compacts every desktop page in the current order and may change the page layout.",
+        "confirm": "Rearrange"
+      },
+      "dissolve": {
+        "title": "Dissolve “{name}”?",
+        "message": "Apps in this folder will move back to the desktop in their current order. No apps will be deleted.",
+        "confirm": "Dissolve folder"
+      }
+    },
+    "errors": {
+      "bootstrap": {
+        "title": "Lumeria initialization failed",
+        "message": "The application language could not be initialized. Restart Lumeria and check the logs if the problem continues."
+      },
+      "launch": {
+        "title": "Could not open {appName}",
+        "genericTitle": "Could not open app",
+        "genericMessage": "Lumeria could not open this app.",
+        "appFallback": "this app",
+        "missingId": "“{appName}” is missing its app identifier and cannot be opened.",
+        "missingTarget": "“{appName}” does not have a launch target.",
+        "missingWindowsId": "“{appName}” is missing its Windows app identifier.",
+        "windowsNotFound": "Windows could not find “{appName}”. It may have been uninstalled or may no longer be registered for this user.",
+        "invalidKind": "“{appName}” has an invalid launch type.",
+        "emptyPath": "“{appName}” has an empty launch path.",
+        "pathMissing": "The launch file for “{appName}” could not be found. It may have been moved, deleted, or uninstalled.",
+        "failureMessage": "Could not open “{appName}”.\n\n{reason}",
+        "windowsFailure": "Could not open “{appName}”.\n\nWindows failed to open this app.",
+        "suggestion": {
+          "readd": "Add this app again.",
+          "chooseTarget": "Choose the launch file again in Settings.",
+          "rescan": "Scan again and add this app.",
+          "rescanOrRemove": "Scan apps again, or remove the old entry if the app was uninstalled.",
+          "editTarget": "Edit this app's launch path in Settings.",
+          "checkExplorer": "Check that the target program opens normally from File Explorer.",
+          "checkPermission": "Check file permissions, or try running the target program as an administrator.",
+          "replaceShortcut": "Choose the shortcut or target program again in Lumeria.",
+          "rescanOrReadd": "Scan apps again, or add this app again.",
+          "checkAssociation": "Check your default browser or file association settings.",
+          "supportedType": "Use a local program, shortcut, or link instead."
+        },
+        "reason": {
+          "accessDenied": "You do not have permission to open this app.",
+          "packageMissing": "Windows could not find this app. It may have been uninstalled or may no longer be registered for this user.",
+          "shortcutInvalid": "This shortcut may be damaged.",
+          "savedTargetInvalid": "Lumeria could not read the saved information for this app.",
+          "pathEmpty": "The launch path is incomplete.",
+          "noAssociation": "No default app is available to open this target.",
+          "pathMissing": "The launch file could not be found. It may have been moved, deleted, or uninstalled.",
+          "unsupported": "This launch type is not supported yet.",
+          "windowsFailure": "Windows failed to open this app."
+        }
+      },
+      "catalog": {
+        "incomplete": "The app catalog scan was incomplete. To avoid discarding {count} saved Catalog references, the layout was not loaded."
+      }
+    }
+  }
+}

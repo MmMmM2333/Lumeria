@@ -21,7 +21,8 @@ export function runLaunchpadLayoutOwnerTests() {
     if (!condition) throw new Error(`[Launchpad layout owner test failed] ${message}`);
   };
 
-  const layout = useLaunchpadLayout({ seedEnabled: false });
+  const getNewFolderName = () => "New Folder";
+  const layout = useLaunchpadLayout({ getNewFolderName, seedEnabled: false });
   const state = layout.presentation;
   assert(state.gridRows.value === DEFAULT_ROWS && state.gridCols.value === DEFAULT_COLS, "desktop grid should use defaults");
   assert(state.folderRows.value === DEFAULT_FOLDER_ROWS && state.folderCols.value === DEFAULT_FOLDER_COLS, "folder grid should use defaults");
@@ -63,6 +64,7 @@ export function runLaunchpadLayoutOwnerTests() {
   assert(layout.documentPersistence.capture().pages[0][0].id === "restored", "persistence capture should return a semantic clone");
 
   const seeded = useLaunchpadLayout({
+    getNewFolderName,
     seeds: makeApps(7),
   });
   seeded.applyConfiguration({ rows: 2, cols: 3 });

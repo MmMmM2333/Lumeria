@@ -1,11 +1,13 @@
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
+import { createLocalization } from "../i18n/localization.js";
 
 export function runLaunchpadNoticesTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad notices test failed] ${message}`);
   };
 
-  const notices = useLaunchpadNotices();
+  const localization = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" });
+  const notices = useLaunchpadNotices({ localizationText: localization.text });
   notices.showTransientNotice({
     title: "已从启动台移除",
     message: "应用仍保留在系统中。",

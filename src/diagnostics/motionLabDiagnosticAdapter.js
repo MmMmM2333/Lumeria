@@ -127,9 +127,9 @@ function requirePort(port) {
 function requireId(value, label) {
   const id = typeof value === "string" ? value.trim() : "";
   if (!id) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${label} 必须是非空字符串`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${label} must be a non-empty string`, {
       details: { [label]: value ?? null },
-      nextActions: [`调用 state.read 查看可用的 ${label}`],
+      nextActions: [`Call state.read to list available ${label} values`],
     });
   }
   return id;
@@ -143,16 +143,16 @@ function isPlainObject(value) {
 
 function validateOperationParams(params, operation, allowedNames) {
   if (!isPlainObject(params)) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${operation} 的 params 必须是普通对象`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${operation} params must be a plain object`, {
       details: { receivedType: Array.isArray(params) ? "array" : typeof params },
-      nextActions: ["调用 describe(toolId) 查看该操作的 paramsSchema"],
+      nextActions: ["Call describe(toolId) to inspect the operation paramsSchema"],
     });
   }
   const unknownNames = Object.keys(params).filter((name) => !allowedNames.includes(name));
   if (unknownNames.length) {
-    throw new DiagnosticError("diagnostic-params-invalid", `${operation} 包含未知参数`, {
+    throw new DiagnosticError("diagnostic-params-invalid", `${operation} contains unknown parameters`, {
       details: { unknownNames },
-      nextActions: ["调用 describe(toolId) 查看该操作的 paramsSchema"],
+      nextActions: ["Call describe(toolId) to inspect the operation paramsSchema"],
     });
   }
   return params;
@@ -160,9 +160,9 @@ function validateOperationParams(params, operation, allowedNames) {
 
 function validateParamPatch(patch) {
   if (!isPlainObject(patch)) {
-    throw new DiagnosticError("diagnostic-params-invalid", "params.update 需要普通对象 patch", {
+    throw new DiagnosticError("diagnostic-params-invalid", "params.update requires a plain-object patch", {
       details: { patch: patch ?? null },
-      nextActions: ["传入 { patch: { springStiffness: 120 } } 形式的参数"],
+      nextActions: ["Pass parameters in the form { patch: { springStiffness: 120 } }"],
     });
   }
   const knownNames = Object.keys(DEFAULT_MOTION_LAB_PARAMS);
@@ -178,9 +178,9 @@ function validateParamPatch(patch) {
     knownNames.includes(name) && !invalidNames.includes(name) && normalized[name] !== patch[name]
   ));
   if (unknownNames.length || invalidNames.length || outOfRangeNames.length) {
-    throw new DiagnosticError("diagnostic-params-invalid", "Motion Lab 参数包含未知名称、错误类型或越界值", {
+    throw new DiagnosticError("diagnostic-params-invalid", "Motion Lab parameters contain an unknown name, invalid type, or out-of-range value", {
       details: { invalidNames, outOfRangeNames, unknownNames },
-      nextActions: ["调用 state.read 查看当前参数，并按工具描述中的规范名称和范围传值"],
+      nextActions: ["Call state.read for current parameters, then use the canonical names and ranges from the tool description"],
     });
   }
   return { ...patch };
@@ -189,9 +189,9 @@ function validateParamPatch(patch) {
 async function requireAvailable(value, label) {
   const resolved = await value;
   if (resolved != null) return resolved;
-  throw new DiagnosticError("diagnostic-data-unavailable", `Motion Lab 当前没有可用的${label}`, {
+  throw new DiagnosticError("diagnostic-data-unavailable", `Motion Lab currently has no available ${label}`, {
     details: { label },
-    nextActions: ["先运行一个场景并完成所需的捕获或基线操作"],
+    nextActions: ["Run a scenario and complete the required capture or baseline operation first"],
   });
 }
 
@@ -202,8 +202,8 @@ export function createMotionLabDiagnosticAdapter(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-tool-disposed", "Motion Lab 诊断工具已经释放", {
-        nextActions: ["重新打开 Motion Lab 后重试"],
+      throw new DiagnosticError("diagnostic-tool-disposed", "The Motion Lab diagnostic tool has been disposed", {
+        nextActions: ["Reopen Motion Lab and try again"],
       });
     }
   }
@@ -223,9 +223,9 @@ export function createMotionLabDiagnosticAdapter(options = {}) {
     const rows = Array.isArray(state?.[collectionName]) ? state[collectionName] : [];
     const availableIds = rows.map((row) => String(row?.id || "")).filter(Boolean);
     if (!availableIds.includes(id)) {
-      throw new DiagnosticError("diagnostic-params-invalid", `${label} 不存在`, {
+      throw new DiagnosticError("diagnostic-params-invalid", `${label} does not exist`, {
         details: { [label]: id, availableIds },
-        nextActions: [`调用 state.read 查看可用的 ${label}`],
+        nextActions: [`Call state.read to list available ${label} values`],
       });
     }
     return id;
@@ -262,33 +262,33 @@ export function createMotionLabDiagnosticAdapter(options = {}) {
       }
       case "replay.capture": {
         validateOperationParams(params, operation, []);
-        return requireAvailable(port.captureReplay(), "回放捕获");
+        return requireAvailable(port.captureReplay(), "replay capture");
       }
       case "baseline.save": {
         validateOperationParams(params, operation, []);
-        return requireAvailable(port.saveBaseline(), "基线");
+        return requireAvailable(port.saveBaseline(), "baseline");
       }
       case "compare.run": {
         const input = validateOperationParams(params, operation, ["mode"]);
         const mode = typeof input.mode === "string" ? input.mode : "";
         if (!["baseline", "last"].includes(mode)) {
-          throw new DiagnosticError("diagnostic-params-invalid", "compare.run 的 mode 必须是 baseline 或 last", {
+          throw new DiagnosticError("diagnostic-params-invalid", "compare.run mode must be baseline or last", {
             details: { mode: input.mode ?? null },
-            nextActions: ["传入 { mode: \"baseline\" } 或 { mode: \"last\" }"],
+            nextActions: ["Pass { mode: \"baseline\" } or { mode: \"last\" }"],
           });
         }
-        return requireAvailable(port.compare(mode), "比较结果");
+        return requireAvailable(port.compare(mode), "comparison result");
       }
       case "export.read": {
         const input = validateOperationParams(params, operation, ["format"]);
         const format = typeof input.format === "string" ? input.format : "";
         if (!MOTION_LAB_EXPORT_FORMATS.includes(format)) {
-          throw new DiagnosticError("diagnostic-params-invalid", "Motion Lab 导出格式不受支持", {
+          throw new DiagnosticError("diagnostic-params-invalid", "The Motion Lab export format is not supported", {
             details: { format: input.format ?? null, supportedFormats: MOTION_LAB_EXPORT_FORMATS },
-            nextActions: [`使用 ${MOTION_LAB_EXPORT_FORMATS.join("、")} 之一`],
+            nextActions: [`Use one of: ${MOTION_LAB_EXPORT_FORMATS.join(", ")}`],
           });
         }
-        return requireAvailable(port.exportData(format), `${format} 导出`);
+        return requireAvailable(port.exportData(format), `${format} export`);
       }
       default:
         throw unsupportedDiagnosticOperation("motion-lab", operation);

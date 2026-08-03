@@ -58,10 +58,10 @@ function serializeArtifact(value) {
     if (serialized === undefined) throw new TypeError("root value has no JSON representation");
     return serialized;
   } catch (error) {
-    throw new DiagnosticError("diagnostic-artifact-not-serializable", "诊断结果无法序列化为制品", {
+    throw new DiagnosticError("diagnostic-artifact-not-serializable", "The diagnostic result cannot be serialized as an artifact", {
       cause: error,
       details: { reason: String(error?.message || error) },
-      nextActions: ["让诊断适配器返回不含循环引用、BigInt 或函数的普通 JSON 数据"],
+      nextActions: ["Return plain JSON data without circular references, BigInt values, or functions from the diagnostic adapter"],
     });
   }
 }
@@ -75,32 +75,32 @@ function normalizeSource(source = {}) {
 }
 
 function makeNotFoundError(artifactId) {
-  return new DiagnosticError("diagnostic-artifact-not-found", `未找到诊断制品 ${artifactId || "(empty)"}`, {
+  return new DiagnosticError("diagnostic-artifact-not-found", `Diagnostic artifact not found: ${artifactId || "(empty)"}`, {
     details: { artifactId: artifactId || null },
-    nextActions: ["确认制品尚未释放，并使用 invoke 返回的 artifactId 重试"],
+    nextActions: ["Confirm the artifact has not been released, then retry with the artifactId returned by invoke"],
   });
 }
 
 function normalizePath(path) {
   if (path == null) return [];
   if (!Array.isArray(path)) {
-    throw new DiagnosticError("diagnostic-artifact-path-invalid", "诊断制品 path 必须是字符串或整数数组", {
+    throw new DiagnosticError("diagnostic-artifact-path-invalid", "Diagnostic artifact path must be an array of strings or integers", {
       details: { path },
-      nextActions: ["示例：path: [\"timeline\", \"events\"]"],
+      nextActions: ["Example: path: [\"timeline\", \"events\"]"],
     });
   }
   if (path.length > 32) {
-    throw new DiagnosticError("diagnostic-artifact-path-invalid", "诊断制品 path 超过 32 层限制", {
+    throw new DiagnosticError("diagnostic-artifact-path-invalid", "Diagnostic artifact path exceeds the 32-level limit", {
       details: { length: path.length },
-      nextActions: ["缩短查询路径"],
+      nextActions: ["Shorten the query path"],
     });
   }
   return path.map((segment) => {
     if (typeof segment === "string") return segment;
     if (Number.isSafeInteger(segment) && segment >= 0) return segment;
-    throw new DiagnosticError("diagnostic-artifact-path-invalid", "诊断制品 path 只接受字符串或非负整数", {
+    throw new DiagnosticError("diagnostic-artifact-path-invalid", "Diagnostic artifact path accepts only strings or non-negative integers", {
       details: { path },
-      nextActions: ["用字段名访问对象，用非负整数访问数组"],
+      nextActions: ["Use field names for objects and non-negative integers for arrays"],
     });
   });
 }
@@ -117,9 +117,9 @@ function resolvePath(root, path, artifactId) {
       && typeof current === "object"
       && Object.prototype.hasOwnProperty.call(current, key);
     if (!exists) {
-      throw new DiagnosticError("diagnostic-artifact-path-not-found", "诊断制品中不存在请求的路径", {
+      throw new DiagnosticError("diagnostic-artifact-path-not-found", "The requested path does not exist in the diagnostic artifact", {
         details: { artifactId, missingAt: index, path },
-        nextActions: ["先查询父路径的 fields 或数组长度，再修正 path"],
+        nextActions: ["Query the parent path fields or array length, then correct the path"],
       });
     }
     current = current[key];
@@ -130,9 +130,9 @@ function resolvePath(root, path, artifactId) {
 function normalizeOffset(value) {
   const offset = value == null ? 0 : Number(value);
   if (!Number.isSafeInteger(offset) || offset < 0) {
-    throw new DiagnosticError("diagnostic-artifact-page-invalid", "诊断制品 offset 必须是非负整数", {
+    throw new DiagnosticError("diagnostic-artifact-page-invalid", "Diagnostic artifact offset must be a non-negative integer", {
       details: { offset: value },
-      nextActions: ["从 offset: 0 开始分页"],
+      nextActions: ["Begin pagination at offset: 0"],
     });
   }
   return offset;
@@ -141,9 +141,9 @@ function normalizeOffset(value) {
 function normalizeLimit(value, fallback, maximum) {
   const limit = value == null ? fallback : Number(value);
   if (!Number.isSafeInteger(limit) || limit <= 0 || limit > maximum) {
-    throw new DiagnosticError("diagnostic-artifact-page-invalid", `诊断制品 limit 必须是 1 到 ${maximum} 的整数`, {
+    throw new DiagnosticError("diagnostic-artifact-page-invalid", `Diagnostic artifact limit must be an integer from 1 to ${maximum}`, {
       details: { limit: value, maximum },
-      nextActions: [`把 limit 调整到 1..${maximum}`],
+      nextActions: [`Set limit to a value from 1 through ${maximum}`],
     });
   }
   return limit;
@@ -186,8 +186,8 @@ export function createDiagnosticArtifactStore(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-artifact-store-disposed", "诊断制品存储已经释放", {
-        nextActions: ["等待运行时重新安装诊断 Hub"],
+      throw new DiagnosticError("diagnostic-artifact-store-disposed", "The diagnostic artifact store has been disposed", {
+        nextActions: ["Wait for the runtime to reinstall the diagnostic Hub"],
       });
     }
   }
@@ -241,13 +241,13 @@ export function createDiagnosticArtifactStore(options = {}) {
     const serialized = serializeArtifact(value);
     const artifactBytes = byteLength(serialized);
     if (artifactBytes > maxArtifactBytes) {
-      throw new DiagnosticError("diagnostic-artifact-too-large", "诊断结果超过单个制品大小上限", {
+      throw new DiagnosticError("diagnostic-artifact-too-large", "The diagnostic result exceeds the per-artifact size limit", {
         details: { artifactBytes, maxArtifactBytes },
-        nextActions: ["缩短捕获窗口、收窄过滤条件，或改用分页友好的诊断操作"],
+        nextActions: ["Shorten the capture window, narrow the filters, or use a pagination-friendly diagnostic operation"],
       });
     }
     if (entries.size >= maxArtifacts || storedBytes + artifactBytes > maxBytes) {
-      throw new DiagnosticError("diagnostic-artifact-capacity-exceeded", "诊断制品存储容量不足", {
+      throw new DiagnosticError("diagnostic-artifact-capacity-exceeded", "The diagnostic artifact store has insufficient capacity", {
         details: {
           artifactBytes,
           artifactCount: entries.size,
@@ -255,16 +255,16 @@ export function createDiagnosticArtifactStore(options = {}) {
           maxBytes,
           storedBytes,
         },
-        nextActions: ["调用 releaseArtifact(artifactId) 释放不再使用的制品后重试"],
+        nextActions: ["Release unused artifacts with releaseArtifact(artifactId), then retry"],
       });
     }
     sequence += 1;
     const artifactId = String(idFactory({ sequence }) || "").trim();
     if (!artifactId) throw new TypeError("DiagnosticArtifactStore idFactory must return a non-empty id");
     if (entries.has(artifactId)) {
-      throw new DiagnosticError("diagnostic-artifact-id-collision", `诊断制品 ID ${artifactId} 已存在`, {
+      throw new DiagnosticError("diagnostic-artifact-id-collision", `Diagnostic artifact ID already exists: ${artifactId}`, {
         details: { artifactId },
-        nextActions: ["修正 DiagnosticArtifactStore 的 idFactory"],
+        nextActions: ["Correct the DiagnosticArtifactStore idFactory"],
       });
     }
     const rootFields = valueKind(value) === "object"
@@ -320,9 +320,9 @@ export function createDiagnosticArtifactStore(options = {}) {
       const root = ensureStructured(entry);
       const target = resolvePath(root, path, entry.artifactId);
       if (typeof target !== "string") {
-        throw new DiagnosticError("diagnostic-artifact-text-required", "text 表示只适用于字符串路径", {
+        throw new DiagnosticError("diagnostic-artifact-text-required", "The text representation is available only for string paths", {
           details: { artifactId: entry.artifactId, kind: valueKind(target), path },
-          nextActions: ["改用 representation: \"json\"，或把 path 指向字符串字段"],
+          nextActions: ["Use representation: \"json\", or point path to a string field"],
         });
       }
       content = target;
@@ -342,9 +342,9 @@ export function createDiagnosticArtifactStore(options = {}) {
     const serialized = serializeArtifact(target);
     const valueBytes = byteLength(serialized);
     if (valueBytes > maxPageBytes) {
-      throw new DiagnosticError("diagnostic-artifact-value-too-large", "请求的诊断值超过单页大小上限", {
+      throw new DiagnosticError("diagnostic-artifact-value-too-large", "The requested diagnostic value exceeds the page size limit", {
         details: { artifactId: entry.artifactId, maxPageBytes, path, valueBytes },
-        nextActions: ["查询子路径，或使用 representation: \"json\" 分页读取"],
+        nextActions: ["Query a child path, or paginate with representation: \"json\""],
       });
     }
     return {
@@ -364,9 +364,9 @@ export function createDiagnosticArtifactStore(options = {}) {
       const itemBytes = byteLength(serialized) + (items.length ? 1 : 0);
       if (responseBytes + itemBytes > maxPageBytes) {
         if (items.length === 0) {
-          throw new DiagnosticError("diagnostic-artifact-page-too-large", "单个数组项超过诊断制品单页上限", {
+          throw new DiagnosticError("diagnostic-artifact-page-too-large", "A single array item exceeds the diagnostic artifact page limit", {
             details: { artifactId: entry.artifactId, index, maxPageBytes, path },
-            nextActions: ["把 path 延伸到该数组项内部后再查询"],
+            nextActions: ["Extend path into the array item before querying again"],
           });
         }
         break;
@@ -393,7 +393,7 @@ export function createDiagnosticArtifactStore(options = {}) {
       const fieldBytes = byteLength(serialized) + (fields.length ? 1 : 0);
       if (responseBytes + fieldBytes > maxPageBytes) {
         if (fields.length === 0) {
-          throw new DiagnosticError("diagnostic-artifact-page-too-large", "单个对象字段摘要超过诊断制品单页上限", {
+          throw new DiagnosticError("diagnostic-artifact-page-too-large", "A single object-field summary exceeds the diagnostic artifact page limit", {
             details: {
               artifactId: entry.artifactId,
               fieldName: field.name,
@@ -401,7 +401,7 @@ export function createDiagnosticArtifactStore(options = {}) {
               maxPageBytes,
               path,
             },
-            nextActions: ["使用更短的字段名，或通过 representation: \"json\" 分页读取父路径"],
+            nextActions: ["Use shorter field names, or paginate the parent path with representation: \"json\""],
           });
         }
         break;
@@ -447,9 +447,9 @@ export function createDiagnosticArtifactStore(options = {}) {
       return queryText(entry, path, representation, request);
     }
     if (representation !== "structured") {
-      throw new DiagnosticError("diagnostic-artifact-representation-invalid", "不支持请求的诊断制品表示形式", {
+      throw new DiagnosticError("diagnostic-artifact-representation-invalid", "The requested diagnostic artifact representation is not supported", {
         details: { representation },
-        nextActions: ["使用 structured、json 或 text"],
+        nextActions: ["Use structured, json, or text"],
       });
     }
     if (path.length === 0 && request.mode !== "value" && entry.rootFields) {

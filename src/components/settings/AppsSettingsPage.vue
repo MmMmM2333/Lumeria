@@ -1,13 +1,13 @@
 <template>
-  <div :class="['settings-tab-panel', isAppsDetailPage && 'settings-tab-panel-fill']" role="tabpanel" aria-label="应用">
+  <div :class="['settings-tab-panel', isAppsDetailPage && 'settings-tab-panel-fill']" role="tabpanel" :aria-label="t('settings.apps.title')">
     <template v-if="isExcludedAppsPage">
-      <section class="settings-section settings-section-plain settings-section-fill" aria-label="已排除的应用">
+      <section class="settings-section settings-section-plain settings-section-fill" :aria-label="t('settings.apps.excluded.title')">
         <div class="app-settings-detail-toolbar">
           <fluent-text-input
             class="settings-text-input excluded-app-search"
             name="excludedAppSearch"
-            placeholder="搜索已排除的应用"
-            aria-label="搜索已排除的应用"
+            :placeholder="t('settings.apps.excluded.search')"
+            :aria-label="t('settings.apps.excluded.search')"
             autocomplete="off"
             :value.prop="excludedAppsSearchQuery"
             @input="setExcludedAppsSearchQuery($event.target.value)"
@@ -16,27 +16,27 @@
           </fluent-text-input>
         </div>
         <p class="settings-field-hint excluded-app-description">
-          这些应用不会出现在后续扫描结果中。从排除列表移出后，可以重新扫描并添加。
+          {{ t("settings.apps.excluded.description") }}
         </p>
 
         <Transition name="settings-selection-bar">
           <div v-if="selectedExcludedAppCount > 0" class="app-manager-selection-bar">
-            <span>已选择 {{ selectedExcludedAppCount }} 个应用</span>
+            <span>{{ t("settings.apps.excluded.selected", { count: selectedExcludedAppCount }) }}</span>
             <span class="app-manager-selection-actions">
               <SettingsFluentButton appearance="subtle" size="small" type="button" @click="cancelSelectedScanExclusions">
-                移出所选应用
+                {{ t("settings.apps.excluded.removeSelected") }}
               </SettingsFluentButton>
             </span>
           </div>
         </Transition>
 
         <div v-if="filteredExcludedApps.length" class="settings-list-actions app-manager-list-actions excluded-app-list-actions">
-          <span>{{ filteredExcludedApps.length }} 个结果</span>
-          <button class="settings-link-button" type="button" @click="selectAllFilteredExcludedApps">全选</button>
-          <button class="settings-link-button" type="button" @click="clearExcludedAppSelection">清空选择</button>
+          <span>{{ t("settings.apps.excluded.results", { count: filteredExcludedApps.length }) }}</span>
+          <button class="settings-link-button" type="button" @click="selectAllFilteredExcludedApps">{{ t("common.actions.selectAll") }}</button>
+          <button class="settings-link-button" type="button" @click="clearExcludedAppSelection">{{ t("common.actions.clearSelection") }}</button>
         </div>
 
-        <div v-if="filteredExcludedApps.length" class="app-manager-list excluded-app-list" role="list" aria-label="已排除的应用">
+        <div v-if="filteredExcludedApps.length" class="app-manager-list excluded-app-list" role="list" :aria-label="t('settings.apps.excluded.title')">
           <div
             v-for="{ app, index, key } in filteredExcludedApps"
             :key="key"
@@ -47,7 +47,7 @@
           >
             <fluent-checkbox
               :name="`excludedAppSelection-${key}`"
-              :aria-label="`选择 ${getExcludedAppName(app)}`"
+              :aria-label="t('settings.apps.excluded.select', { name: getExcludedAppName(app) })"
               :checked.prop="isExcludedAppSelected(key)"
               @click.stop
               @change.stop="toggleExcludedAppSelection(key, $event.target.checked)"
@@ -66,8 +66,8 @@
                 appearance="subtle"
                 icon-only
                 type="button"
-                :aria-label="`将 ${getExcludedAppName(app)} 移出排除列表`"
-                title="移出排除列表"
+                :aria-label="t('settings.apps.excluded.restore', { name: getExcludedAppName(app) })"
+                :title="t('settings.apps.excluded.restoreTitle')"
                 @click.stop="cancelScanExclusion(index, key)"
               >
                 <ArrowCounterclockwiseIcon class="excluded-app-restore-icon" />
@@ -76,19 +76,19 @@
           </div>
         </div>
         <div v-else class="settings-empty-state app-settings-detail-empty">
-          {{ state.scanAppBlacklist.value.length ? "没有匹配的应用" : "暂无已排除的应用" }}
+          {{ state.scanAppBlacklist.value.length ? t("settings.apps.excluded.noMatch") : t("settings.apps.excluded.empty") }}
         </div>
       </section>
     </template>
 
     <template v-else-if="isAppManagerPage">
-      <section class="settings-section settings-section-plain settings-section-fill app-manager-detail-section" aria-label="应用管理">
+      <section class="settings-section settings-section-plain settings-section-fill app-manager-detail-section" :aria-label="t('settings.apps.manager.title')">
         <div class="app-manager-toolbar">
           <fluent-text-input
             class="settings-text-input app-manager-search"
             name="appManagerSearch"
-            placeholder="搜索应用"
-            aria-label="搜索应用"
+            :placeholder="t('settings.apps.manager.search')"
+            :aria-label="t('settings.apps.manager.search')"
             autocomplete="off"
             :value.prop="state.appManagerSearchQuery.value"
             @input="state.appManagerSearchQuery.value = $event.target.value"
@@ -103,22 +103,22 @@
               @click="state.rescanManagedApps"
             >
               <ArrowSyncIcon slot="start" class="settings-command-icon" />
-              {{ state.isScanningApps.value ? "扫描中" : "扫描应用" }}
+              {{ state.isScanningApps.value ? t("settings.apps.manager.scanning") : t("settings.apps.manager.scanApps") }}
             </SettingsFluentButton>
             <SettingsFluentButton appearance="primary" type="button" @click="state.editorModel.actions.openCreate">
               <AddIcon slot="start" class="settings-command-icon" />
-              新增应用
+              {{ t("settings.apps.manager.addApp") }}
             </SettingsFluentButton>
           </div>
         </div>
 
         <Transition name="settings-selection-bar">
           <div v-if="state.selectedManagedAppCount.value > 0" class="app-manager-selection-bar">
-            <span>已选择 {{ state.selectedManagedAppCount.value }} 个应用</span>
+            <span>{{ t("settings.apps.manager.selected", { count: state.selectedManagedAppCount.value }) }}</span>
             <span class="app-manager-selection-actions">
               <SettingsFluentButton appearance="subtle" size="small" type="button" @click="state.removeSelectedManagedAppsFromLaunchpad">
                 <DeleteIcon slot="start" class="settings-command-icon" />
-                从启动台移除
+                {{ t("settings.apps.manager.remove") }}
               </SettingsFluentButton>
               <SettingsFluentButton
                 appearance="subtle"
@@ -126,24 +126,24 @@
                 size="small"
                 type="button"
                 :disabled="!state.canExcludeSelectedManagedAppsFromScan.value"
-                :title="state.canExcludeSelectedManagedAppsFromScan.value ? '' : '所选应用中包含没有扫描来源的项目'"
+                :title="state.canExcludeSelectedManagedAppsFromScan.value ? '' : t('settings.apps.manager.excludeUnavailable')"
                 @click="state.excludeSelectedManagedAppsFromScan"
               >
                 <DeleteDismissIcon slot="start" class="settings-command-icon" />
-                移除并从扫描中排除
+                {{ t("settings.apps.manager.exclude") }}
               </SettingsFluentButton>
             </span>
           </div>
         </Transition>
 
         <div class="settings-list-actions app-manager-list-actions">
-          <span>{{ state.filteredManagedApps.value.length }} / {{ state.managedApps.value.length }} 个应用</span>
-          <button class="settings-link-button" type="button" @click="state.selectAllManagedApps">全选</button>
-          <button class="settings-link-button" type="button" @click="state.clearManagedAppSelection">清空选择</button>
+          <span>{{ t("settings.apps.manager.count", { filtered: state.filteredManagedApps.value.length, total: state.managedApps.value.length }) }}</span>
+          <button class="settings-link-button" type="button" @click="state.selectAllManagedApps">{{ t("common.actions.selectAll") }}</button>
+          <button class="settings-link-button" type="button" @click="state.clearManagedAppSelection">{{ t("common.actions.clearSelection") }}</button>
         </div>
 
-        <div ref="appManagerListRef" class="app-manager-list app-manager-virtual-list app-manager-detail-list" role="list" aria-label="所有应用">
-          <div v-if="!state.filteredManagedApps.value.length" class="settings-empty-state app-manager-empty-state">没有匹配的应用</div>
+        <div ref="appManagerListRef" class="app-manager-list app-manager-virtual-list app-manager-detail-list" role="list" :aria-label="t('settings.apps.manager.all')">
+          <div v-if="!state.filteredManagedApps.value.length" class="settings-empty-state app-manager-empty-state">{{ t("settings.apps.manager.noMatch") }}</div>
           <div v-else class="app-manager-virtual-inner" :style="{ height: `${appManagerVirtualTotalSize}px` }">
             <div
               v-for="{ app, virtualRow } in appManagerVirtualRows"
@@ -156,7 +156,7 @@
             >
               <fluent-checkbox
                 :name="`managedAppSelection-${app.id}`"
-                :aria-label="`选择 ${app.name}`"
+                :aria-label="t('settings.apps.manager.select', { name: app.name })"
                 :checked.prop="state.appManagerSelectedIds.value.includes(app.id)"
                 @change="state.toggleManagedAppSelection(app.id, $event.target.checked)"
               />
@@ -166,7 +166,7 @@
               </span>
               <span class="app-manager-details">
                 <span class="app-manager-name">{{ app.name }}</span>
-                <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || "未设置启动路径" }}</span>
+                <span class="app-manager-target">{{ state.getLaunchTargetPath(app) || t("settings.apps.manager.targetMissing") }}</span>
               </span>
               <span class="app-manager-actions">
                 <fluent-menu>
@@ -176,20 +176,20 @@
                     appearance="subtle"
                     icon-only
                     type="button"
-                    :aria-label="`${app.name} 更多操作`"
+                    :aria-label="t('settings.apps.manager.more', { name: app.name })"
                   >
                     <MoreHorizontalIcon class="app-manager-more-icon" />
                   </SettingsFluentButton>
                   <fluent-menu-list>
-                    <fluent-menu-item @click="state.editorModel.actions.openEdit(app)">编辑</fluent-menu-item>
+                    <fluent-menu-item @click="state.editorModel.actions.openEdit(app)">{{ t("common.actions.edit") }}</fluent-menu-item>
                     <fluent-divider role="separator" />
-                    <fluent-menu-item @click="state.removeManagedAppFromLaunchpad(app.id)">从启动台移除</fluent-menu-item>
+                    <fluent-menu-item @click="state.removeManagedAppFromLaunchpad(app.id)">{{ t("settings.apps.manager.remove") }}</fluent-menu-item>
                     <fluent-menu-item
                       v-if="state.canExcludeManagedAppFromScan(app)"
                       class="settings-menu-item-danger"
                       @click="state.excludeManagedAppFromScan(app)"
                     >
-                      移除并从扫描中排除
+                      {{ t("settings.apps.manager.exclude") }}
                     </fluent-menu-item>
                   </fluent-menu-list>
                 </fluent-menu>
@@ -201,17 +201,17 @@
     </template>
 
     <template v-else>
-      <section class="settings-section settings-section-plain" aria-label="扫描来源">
+      <section class="settings-section settings-section-plain" :aria-label="t('settings.apps.sources.title')">
       <div class="settings-section-header">
         <div class="settings-section-heading">
-          <h3>扫描来源</h3>
-          <span class="settings-section-meta">{{ state.scanRoots.value.length }} 个来源 · {{ enabledScanRootCount }} 个已启用</span>
+          <h3>{{ t("settings.apps.sources.title") }}</h3>
+          <span class="settings-section-meta">{{ t("settings.apps.sources.summary", { total: state.scanRoots.value.length, enabled: enabledScanRootCount }) }}</span>
         </div>
         <div class="settings-inline-actions">
-          <SettingsFluentButton appearance="outline" type="button" @click="state.confirmResetScanRoots">还原默认来源</SettingsFluentButton>
+          <SettingsFluentButton appearance="outline" type="button" @click="state.confirmResetScanRoots">{{ t("settings.apps.sources.reset") }}</SettingsFluentButton>
           <SettingsFluentButton appearance="primary" type="button" @click="state.addScanRoot">
             <AddIcon slot="start" class="settings-command-icon" />
-            新增来源
+            {{ t("settings.apps.sources.add") }}
           </SettingsFluentButton>
         </div>
       </div>
@@ -221,7 +221,7 @@
           <div v-for="root in state.scanRoots.value" :key="root.id" class="scan-root-item">
             <fluent-switch
               :checked.prop="root.enabled"
-              :aria-label="`启用 ${root.label}`"
+              :aria-label="t('settings.apps.sources.enable', { name: root.label })"
               @change="state.toggleScanRootEnabled(root.id, $event.target.checked)"
             />
             <span class="scan-root-details">
@@ -230,7 +230,7 @@
                 control-size="small"
                 :name="`scanRootLabel-${root.id}`"
                 :value.prop="root.label"
-                :aria-label="`${root.label} 标签`"
+                :aria-label="t('settings.apps.sources.label', { name: root.label })"
                 autocomplete="off"
                 @change="state.changeScanRootLabel(root.id, $event.target.value)"
               />
@@ -240,16 +240,16 @@
                   control-size="small"
                   :name="`scanRootPath-${root.id}`"
                   :value.prop="root.path"
-                  :aria-label="`${root.label} 路径`"
+                  :aria-label="t('settings.apps.sources.path', { name: root.label })"
                   autocomplete="off"
                   :disabled="root.type === 'windowsAppCatalog'"
                   @change="state.changeScanRootPath(root.id, $event.target.value)"
                 />
               </span>
               <span v-if="root.type === 'windowsAppCatalog'" class="settings-field-hint">
-                由 Windows 管理的虚拟应用目录，包含商店应用和部分系统应用。
+                {{ t("settings.apps.sources.windowsManaged") }}
               </span>
-              <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status">上次扫描 {{ formatScanTime(root.lastScannedAt) }}</span>
+              <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status">{{ t("settings.apps.sources.lastScan", { time: formatScanTime(root.lastScannedAt) }) }}</span>
             </span>
             <span class="scan-root-actions">
               <SettingsFluentButton
@@ -260,7 +260,7 @@
                 :disabled="root.type === 'windowsAppCatalog' || !state.canBrowseScanRoots.value || state.isBrowsingScanRoot(root.id)"
                 @click="state.browseScanRootDirectory(root.id)"
               >
-                {{ state.isBrowsingScanRoot(root.id) ? "选择中" : "浏览" }}
+                {{ state.isBrowsingScanRoot(root.id) ? t("settings.apps.sources.choosing") : t("common.actions.browse") }}
               </SettingsFluentButton>
               <SettingsFluentButton
                 class="scan-root-delete-button"
@@ -271,19 +271,19 @@
                 :disabled="!root.removable"
                 @click="state.removeScanRoot(root.id)"
               >
-                删除
+                {{ t("common.actions.delete") }}
               </SettingsFluentButton>
             </span>
           </div>
-          <div v-if="!state.scanRoots.value.length" class="settings-empty-state">没有扫描来源</div>
+          <div v-if="!state.scanRoots.value.length" class="settings-empty-state">{{ t("settings.apps.sources.empty") }}</div>
         </div>
       </div>
     </section>
 
-      <section class="settings-section settings-section-plain" aria-label="扫描过滤">
+      <section class="settings-section settings-section-plain" :aria-label="t('settings.apps.filters.title')">
         <div class="settings-section-header">
           <div>
-            <h3>扫描过滤</h3>
+            <h3>{{ t("settings.apps.filters.title") }}</h3>
           </div>
         </div>
 
@@ -299,8 +299,8 @@
                 <FilterIcon />
               </span>
               <span class="settings-list-copy">
-                <span class="settings-list-title">排除关键字</span>
-                <span class="settings-list-description">{{ state.scanKeywordBlacklist.value.length }} 个关键字</span>
+                <span class="settings-list-title">{{ t("settings.apps.filters.keywords") }}</span>
+                <span class="settings-list-description">{{ t("settings.apps.filters.keywordCount", { count: state.scanKeywordBlacklist.value.length }) }}</span>
               </span>
               <ChevronDownIcon :class="['settings-list-chevron', isKeywordBlacklistExpanded && 'settings-list-chevron-open']" />
             </button>
@@ -312,24 +312,24 @@
                     <fluent-text-input
                       class="settings-text-input scan-keyword-input"
                       name="newScanKeyword"
-                      placeholder="输入排除关键字"
-                      aria-label="新增扫描排除关键字"
+                      :placeholder="t('settings.apps.filters.keywordInput')"
+                      :aria-label="t('settings.apps.filters.keywordAdd')"
                       autocomplete="off"
                       :value.prop="state.newScanKeyword.value"
                       @input="state.newScanKeyword.value = $event.target.value"
                       @keydown.enter.prevent="state.addScanKeywordBlacklistItem"
                     />
-                    <SettingsFluentButton appearance="outline" type="button" @click="state.addScanKeywordBlacklistItem">添加</SettingsFluentButton>
+                    <SettingsFluentButton appearance="outline" type="button" @click="state.addScanKeywordBlacklistItem">{{ t("common.actions.add") }}</SettingsFluentButton>
                   </div>
                   <div v-if="state.scanKeywordBlacklist.value.length" class="scan-keyword-list">
                     <span v-for="(keyword, index) in state.scanKeywordBlacklist.value" :key="`${keyword}-${index}`" class="scan-keyword-chip">
                       <span>{{ keyword }}</span>
-                      <button type="button" :aria-label="`移除关键字 ${keyword}`" @click="state.removeScanKeywordBlacklistItem(index)">
+                      <button type="button" :aria-label="t('settings.apps.filters.keywordRemove', { keyword })" @click="state.removeScanKeywordBlacklistItem(index)">
                         <DismissIcon class="scan-keyword-chip-icon" />
                       </button>
                     </span>
                   </div>
-                  <div v-else class="settings-empty-state">没有排除关键字</div>
+                  <div v-else class="settings-empty-state">{{ t("settings.apps.filters.keywordEmpty") }}</div>
                 </div>
               </div>
             </Transition>
@@ -344,18 +344,18 @@
               <AppsListDetailIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">已排除的应用</span>
-              <span class="settings-list-description">{{ state.scanAppBlacklist.value.length }} 个应用</span>
+              <span class="settings-list-title">{{ t("settings.apps.excluded.title") }}</span>
+              <span class="settings-list-description">{{ t("settings.apps.filters.appCount", { count: state.scanAppBlacklist.value.length }) }}</span>
             </span>
             <ChevronRightIcon class="settings-list-chevron" />
           </button>
         </div>
       </section>
 
-      <section class="settings-section settings-section-plain" aria-label="应用管理">
+      <section class="settings-section settings-section-plain" :aria-label="t('settings.apps.manager.title')">
         <div class="settings-section-header">
           <div>
-            <h3>应用管理</h3>
+            <h3>{{ t("settings.apps.manager.title") }}</h3>
           </div>
         </div>
 
@@ -369,8 +369,8 @@
               <AppsListIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">应用管理</span>
-              <span class="settings-list-description">{{ state.managedApps.value.length }} 个应用</span>
+              <span class="settings-list-title">{{ t("settings.apps.manager.title") }}</span>
+              <span class="settings-list-description">{{ t("settings.apps.overview.appCount", { count: state.managedApps.value.length }) }}</span>
             </span>
             <ChevronRightIcon class="settings-list-chevron" />
           </button>
@@ -380,8 +380,8 @@
               <ArrowSyncIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">{{ state.isScanningApps.value ? "扫描中" : "扫描应用" }}</span>
-              <span class="settings-list-description">{{ state.canScanManagedApps.value ? "从启用的扫描来源刷新应用" : "需要启用扫描来源" }}</span>
+              <span class="settings-list-title">{{ state.isScanningApps.value ? t("settings.apps.manager.scanning") : t("settings.apps.manager.scanApps") }}</span>
+              <span class="settings-list-description">{{ state.canScanManagedApps.value ? t("settings.apps.overview.scanReady") : t("settings.apps.overview.scanDisabled") }}</span>
             </span>
             <span class="settings-list-control">
               <SettingsFluentButton
@@ -390,7 +390,7 @@
                 :disabled="!state.canScanManagedApps.value || state.isScanningApps.value"
                 @click="state.rescanManagedApps"
               >
-                {{ state.isScanningApps.value ? "扫描中" : "扫描" }}
+                {{ state.isScanningApps.value ? t("settings.apps.manager.scanning") : t("settings.apps.overview.scan") }}
               </SettingsFluentButton>
             </span>
           </div>
@@ -400,12 +400,12 @@
               <AddIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">新增应用</span>
-              <span class="settings-list-description">手动添加自定义应用</span>
+              <span class="settings-list-title">{{ t("settings.apps.manager.addApp") }}</span>
+              <span class="settings-list-description">{{ t("settings.apps.overview.addDescription") }}</span>
             </span>
             <span class="settings-list-control">
               <SettingsFluentButton appearance="outline" type="button" @click="state.editorModel.actions.openCreate">
-                新增
+                {{ t("settings.apps.overview.add") }}
               </SettingsFluentButton>
             </span>
           </div>
@@ -415,13 +415,13 @@
               <FolderProhibitedIcon />
             </span>
             <span class="settings-list-copy">
-              <span class="settings-list-title">失效启动目标标记</span>
-              <span class="settings-list-description">应用的启动路径或 URL 不可用时显示提示</span>
+              <span class="settings-list-title">{{ t("settings.apps.overview.missingTarget") }}</span>
+              <span class="settings-list-description">{{ t("settings.apps.overview.missingTargetDescription") }}</span>
             </span>
             <span class="settings-list-control">
               <fluent-switch
                 :checked.prop="state.showMissingLaunchTargetBadge.value"
-                aria-label="显示失效启动目标标记"
+                :aria-label="t('settings.apps.overview.showMissingTarget')"
                 @change="state.toggleMissingLaunchTargetBadge($event.target.checked)"
               />
             </span>
@@ -451,6 +451,7 @@ import MoreHorizontalIcon from "~icons/fluent/more-horizontal-20-regular";
 import SearchIcon from "~icons/fluent/search-20-regular";
 
 import { getIconSource } from "../../domain/iconSource.js";
+import { useLocalization } from "../../i18n/localization.js";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 
 const props = defineProps({
@@ -458,6 +459,7 @@ const props = defineProps({
 });
 
 const state = props.model;
+const { t } = useLocalization();
 const {
   enabledScanRootCount,
   excludedAppsSearchQuery,

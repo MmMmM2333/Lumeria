@@ -1,10 +1,13 @@
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
 import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
+import { createLocalization } from "../i18n/localization.js";
 import {
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   WINDOW_MODE_WINDOWED,
 } from "./useLaunchpadSettingsConfig.js";
+
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function makeMainWindowRuntime(options = {}) {
   const calls = [];
@@ -39,11 +42,15 @@ export async function runLaunchpadSettingsTests() {
     if (!condition) throw new Error(`[Launchpad settings owner test failed] ${message}`);
   };
 
-  const layout = useLaunchpadLayout({ seedEnabled: false });
+  const layout = useLaunchpadLayout({
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+    seedEnabled: false,
+  });
   const mainWindow = makeMainWindowRuntime();
   let liveDesktopSyncs = 0;
   const settings = useLaunchpadSettings({
     layout,
+    localizationText,
     liveDesktopSupport: {
       value: {
         platform: "windows",
@@ -74,9 +81,13 @@ export async function runLaunchpadSettingsTests() {
   );
 
   const shortcutError = new Error("occupied");
-  const failedLayout = useLaunchpadLayout({ seedEnabled: false });
+  const failedLayout = useLaunchpadLayout({
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+    seedEnabled: false,
+  });
   const failed = useLaunchpadSettings({
     layout: failedLayout,
+    localizationText,
     liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
     mainWindow: makeMainWindowRuntime({ shortcutError }),
   });
@@ -122,4 +133,101 @@ export async function runLaunchpadSettingsTests() {
   });
   const captured = settings.persistence.capture();
   assert(captured.textless && captured.backgroundImagePath === "C:/Images/restored.png", "settings persistence should round-trip committed values");
+
+  const localeCalls = [];
+  const activatedLocales = [];
+  const localizedSettings = useLaunchpadSettings({
+    localizationText,
+    activateLocale: (state) => activatedLocales.push(state.resolvedLocale),
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    localeRuntime: {
+      applyPreference: async (preference) => {
+        localeCalls.push(preference);
+        return {
+          ok: true,
+          state: {
+            preference,
+            resolvedLocale: preference === "system" ? "zh-CN" : preference,
+            match: preference === "system" ? "default" : "explicit",
+            issue: null,
+          },
+        };
+      },
+    },
+    mainWindow: makeMainWindowRuntime(),
+  });
+  assert(localizedSettings.presentation.localePreference.value === "system", "new settings should follow the system language");
+  localizedSettings.beginEdit();
+  localizedSettings.actions.setDraftLocalePreference("en-US");
+  localizedSettings.cancelEdit();
+  assert(localizedSettings.draft.localePreference.value === "system", "cancel should discard the draft language");
+
+  localizedSettings.beginEdit();
+  localizedSettings.actions.setDraftLocalePreference("en-US");
+  const localeOutcome = await localizedSettings.applyEdit();
+  assert(localeOutcome.ok, "a supported language should apply successfully");
+  assert(localizedSettings.presentation.localePreference.value === "en-US", "successful apply should commit the language preference");
+  assert(localeCalls.join(",") === "en-US", "language changes should cross the locale runtime seam once");
+  assert(activatedLocales.join(",") === "en-US", "the WebView locale should activate only after the settings transaction commits");
+  assert(localizedSettings.persistence.capture().localePreference === "en-US", "the committed language should be persisted with settings");
+
+  localizedSettings.persistence.restore({});
+  assert(localizedSettings.presentation.localePreference.value === "system", "legacy settings without a locale should restore as system");
+
+  const localeError = new Error("locale unavailable");
+  const localeFailureSettings = useLaunchpadSettings({
+    localizationText,
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    localeRuntime: { applyPreference: async () => ({ ok: false, error: localeError }) },
+    mainWindow: makeMainWindowRuntime(),
+  });
+  localeFailureSettings.beginEdit();
+  localeFailureSettings.actions.setDraftLocalePreference("en-US");
+  const localeFailureOutcome = await localeFailureSettings.applyEdit();
+  assert(!localeFailureOutcome.ok && localeFailureOutcome.error === localeError, "native language failures should remain explicit");
+  assert(localeFailureSettings.presentation.localePreference.value === "system", "language failures should commit no settings state");
+  assert(localeFailureSettings.presentation.localePreferenceError.value === localeError.message, "language failures should remain visible in the edit session");
+
+  const rollbackLocaleCalls = [];
+  const rollbackActivations = [];
+  const shortcutFailureSettings = useLaunchpadSettings({
+    localizationText,
+    activateLocale: (state) => rollbackActivations.push(state.resolvedLocale),
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    localeRuntime: {
+      applyPreference: async (preference) => {
+        rollbackLocaleCalls.push(preference);
+        return {
+          ok: true,
+          state: {
+            preference,
+            resolvedLocale: preference === "system" ? "zh-CN" : preference,
+            match: preference === "system" ? "default" : "explicit",
+            issue: null,
+          },
+        };
+      },
+    },
+    mainWindow: makeMainWindowRuntime({ shortcutError }),
+  });
+  shortcutFailureSettings.beginEdit();
+  shortcutFailureSettings.actions.setDraftLocalePreference("en-US");
+  shortcutFailureSettings.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+  const shortcutFailureOutcome = await shortcutFailureSettings.applyEdit();
+  assert(!shortcutFailureOutcome.ok && shortcutFailureOutcome.error === shortcutError, "shortcut failure should remain the transaction error");
+  assert(rollbackLocaleCalls.join(",") === "en-US,system", "shortcut failure should restore the previous native language");
+  assert(shortcutFailureSettings.presentation.localePreference.value === "system", "compensated transactions should keep the committed language");
+  assert(rollbackActivations.length === 0, "the WebView language should not activate before the full transaction succeeds");
 }

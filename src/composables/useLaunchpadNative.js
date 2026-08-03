@@ -53,6 +53,44 @@ const NON_DESTRUCTIVE_CATALOG_WARNING_KINDS = new Set([
   "cycleSkipped",
   "iconExtractionFailed",
 ]);
+const NATIVE_LAUNCH_FAILURE_COPY = Object.freeze({
+  accessDenied: Object.freeze({
+    reason: "errors.launch.reason.accessDenied",
+    suggestion: "errors.launch.suggestion.checkPermission",
+  }),
+  appNotInstalled: Object.freeze({
+    reason: "errors.launch.reason.packageMissing",
+    suggestion: "errors.launch.suggestion.rescanOrRemove",
+  }),
+  brokenShortcut: Object.freeze({
+    reason: "errors.launch.reason.shortcutInvalid",
+    suggestion: "errors.launch.suggestion.replaceShortcut",
+  }),
+  layoutReadFailed: Object.freeze({
+    reason: "errors.launch.reason.savedTargetInvalid",
+    suggestion: "errors.launch.suggestion.rescanOrReadd",
+  }),
+  missingLaunchInfo: Object.freeze({
+    reason: "errors.launch.reason.pathEmpty",
+    suggestion: "errors.launch.suggestion.chooseTarget",
+  }),
+  noAssociation: Object.freeze({
+    reason: "errors.launch.reason.noAssociation",
+    suggestion: "errors.launch.suggestion.checkAssociation",
+  }),
+  targetNotFound: Object.freeze({
+    reason: "errors.launch.reason.pathMissing",
+    suggestion: "errors.launch.suggestion.editTarget",
+  }),
+  unsupportedTarget: Object.freeze({
+    reason: "errors.launch.reason.unsupported",
+    suggestion: "errors.launch.suggestion.supportedType",
+  }),
+  windowsLaunchFailed: Object.freeze({
+    reason: "errors.launch.reason.windowsFailure",
+    suggestion: "errors.launch.suggestion.checkExplorer",
+  }),
+});
 
 function collectSavedCatalogReferenceIds(savedDocument) {
   const ids = new Set();
@@ -72,7 +110,7 @@ function collectSavedCatalogReferenceIds(savedDocument) {
   return ids;
 }
 
-function assertCatalogRefreshCanRestoreDocument(savedDocument, scanResult) {
+function assertCatalogRefreshCanRestoreDocument(savedDocument, scanResult, localizationText) {
   const savedCatalogIds = collectSavedCatalogReferenceIds(savedDocument);
   if (!savedCatalogIds.size) return;
   const currentCatalogIds = new Set((scanResult?.apps || []).map((app) => String(app?.id || "")));
@@ -82,9 +120,7 @@ function assertCatalogRefreshCanRestoreDocument(savedDocument, scanResult) {
   const mayBeIncomplete = Boolean(scanResult?.stats?.limitReached)
     || warnings.some((warning) => !NON_DESTRUCTIVE_CATALOG_WARNING_KINDS.has(String(warning?.kind || "")));
   if (!mayBeIncomplete) return;
-  throw new Error(
-    `应用目录扫描不完整；为防止丢弃 ${missingCount} 个已保存的 Catalog 引用，本次未载入布局。`
-  );
+  throw new Error(localizationText.t("errors.catalog.incomplete", { count: missingCount }));
 }
 
 function isLiveDesktopDebugRuntimeConfigEnabled() {
@@ -97,7 +133,7 @@ function resolveLiveDesktopDebugRuntimeSettings() {
   }
   const snapshot = readLiveDesktopDebugSettings();
   if (snapshot.issues.length) {
-    console.error("读取 Live Desktop 运行时调试设置不完整", snapshot.issues);
+    console.error("Live Desktop runtime debug settings were only partially read", snapshot.issues);
   }
   return snapshot.values;
 }
@@ -147,6 +183,10 @@ function makeLiveDesktopRuntimeConfig(config) {
 }
 
 export function useLaunchpadNative(options) {
+  const localizationText = options.localizationText;
+  if (!localizationText || typeof localizationText.t !== "function") {
+    throw new TypeError("useLaunchpadNative requires localizationText");
+  }
   const document = options.document;
   if (
     typeof document?.capture !== "function"
@@ -506,7 +546,7 @@ export function useLaunchpadNative(options) {
 
       document.restoreConfiguration(savedLayout);
       const scanResult = await apps.scanInitialCatalog();
-      assertCatalogRefreshCanRestoreDocument(savedLayout, scanResult);
+      assertCatalogRefreshCanRestoreDocument(savedLayout, scanResult, localizationText);
       document.restorePages(savedLayout, scanResult.apps);
       const shortcutOutcome = await settings.registerCurrentShortcut();
       if (!shortcutOutcome.ok) console.error("Failed to update Lumeria shortcut", shortcutOutcome.error);
@@ -630,22 +670,20 @@ export function useLaunchpadNative(options) {
   }
 
   function normalizeLaunchErrorReport(error, app) {
-    const fallbackName = String(app?.name || "此应用").trim() || "此应用";
-    if (error && typeof error === "object" && typeof error.message === "string") {
-      return {
-        kind: String(error.kind || "windowsLaunchFailed"),
-        title: String(error.title || "无法打开应用"),
-        message: error.message,
-        suggestion: String(error.suggestion || "请确认目标程序可以从资源管理器正常打开。"),
-        detail: String(error.detail || ""),
-      };
-    }
+    const requestedKind = error && typeof error === "object" ? String(error.kind || "") : "";
+    const kind = Object.hasOwn(NATIVE_LAUNCH_FAILURE_COPY, requestedKind)
+      ? requestedKind
+      : "windowsLaunchFailed";
+    const copy = NATIVE_LAUNCH_FAILURE_COPY[kind];
+    const fallbackName = localizationText.t("errors.launch.appFallback");
+    const appName = String(error?.appName || app?.name || fallbackName).trim() || fallbackName;
+    const reason = localizationText.t(copy.reason);
     return {
-      kind: "windowsLaunchFailed",
-      title: "无法打开应用",
-      message: `无法打开“${fallbackName}”。\n\nWindows 未能打开此应用。`,
-      suggestion: "请确认目标程序可以从资源管理器正常打开。",
-      detail: String(error?.message || error || ""),
+      kind,
+      title: localizationText.t("errors.launch.genericTitle"),
+      message: localizationText.t("errors.launch.failureMessage", { appName, reason }),
+      suggestion: localizationText.t(copy.suggestion),
+      detail: String(error?.detail || error?.message || error || ""),
     };
   }
 

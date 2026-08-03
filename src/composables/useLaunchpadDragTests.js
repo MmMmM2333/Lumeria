@@ -183,6 +183,7 @@ function createDragHarness(overrides = {}) {
     folderPageRefs,
     folderPages,
     folderPageSize,
+    getNewFolderName: () => "新文件夹",
     folderPageTurnRequest,
     folderPanelRef,
     folderPanelStyle: overrides.folderPanelStyle || ref({}),

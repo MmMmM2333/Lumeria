@@ -163,6 +163,7 @@ import {
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+import { useLocalization, useLocalizationRuntime } from "./i18n/localization.js";
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
@@ -185,7 +186,13 @@ import "./styles/launchpad.css";
 import "./styles/settings.css";
 
 const appVersion = appPackage.version;
-const controller = useLaunchpadController({ appVersion });
+const localizationText = useLocalization();
+const localizationRuntime = useLocalizationRuntime();
+const controller = useLaunchpadController({
+  activateLocale: localizationRuntime.activate,
+  appVersion,
+  localizationText,
+});
 const {
   appActions,
   background: backgroundDomain,
@@ -353,7 +360,7 @@ const initialLiveDesktopDebugSettings = import.meta.env.DEV && isLiveDesktopExpe
   ? readLiveDesktopDebugSettings()
   : { issues: [], values: DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS };
 if (initialLiveDesktopDebugSettings.issues.length) {
-  console.error("读取 Live Desktop 调试设置不完整", initialLiveDesktopDebugSettings.issues);
+  console.error("Live Desktop debug settings were only partially read", initialLiveDesktopDebugSettings.issues);
 }
 const isLiveDesktopCompositorKeeperEnabled = ref(initialLiveDesktopDebugSettings.values.compositorKeeper);
 const liveDesktopCompositorTick = ref(0);
@@ -423,7 +430,7 @@ function handleLiveDesktopDebugSettingsChanged(event) {
   }
   const snapshot = readLiveDesktopDebugSettings();
   if (snapshot.issues.length) {
-    console.error("刷新 Live Desktop 前端调试设置失败", snapshot.issues);
+    console.error("Failed to refresh Live Desktop frontend debug settings", snapshot.issues);
   }
   applyLiveDesktopFrontendDebugSettings(snapshot.values);
 }

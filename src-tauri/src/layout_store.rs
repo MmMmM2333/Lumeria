@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
+use crate::i18n::validate_locale_preference;
 use crate::models::LaunchTarget;
 
 const MAX_LAYOUT_LOOKUP_DEPTH: usize = 32;
@@ -42,6 +43,29 @@ pub(crate) fn load_layout(app: &AppHandle) -> Result<LoadLayoutResult, String> {
 pub(crate) fn save_layout(app: &AppHandle, layout: &Value) -> Result<(), String> {
     let path = layout_path(app)?;
     save_layout_to_path(&path, layout)
+}
+
+pub(crate) fn read_locale_preference(app: &AppHandle) -> Result<Option<String>, String> {
+    let path = layout_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
+    let layout: Value = serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
+    let settings = layout
+        .as_object()
+        .and_then(|object| object.get("settings"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| "layout settings must be an object".to_string())?;
+    let Some(preference) = settings.get("localePreference") else {
+        return Ok(None);
+    };
+    let preference = preference
+        .as_str()
+        .ok_or_else(|| "layout settings.localePreference must be a non-empty string".to_string())?;
+    validate_locale_preference(preference).map(Some)
 }
 
 pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<SavedManualApp> {
@@ -285,6 +309,19 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         if shortcut.trim().is_empty() {
             return Err(
                 "layout settings.mainWindowShortcut must be a non-empty string or null".to_string(),
+            );
+        }
+    }
+
+    if let Some(value) = object.get("localePreference") {
+        let preference = value.as_str().ok_or_else(|| {
+            "layout settings.localePreference must be a non-empty string".to_string()
+        })?;
+        let trimmed = preference.trim();
+        if trimmed.is_empty() || trimmed.len() > 64 {
+            return Err(
+                "layout settings.localePreference must be a non-empty string up to 64 bytes"
+                    .to_string(),
             );
         }
     }
@@ -1140,6 +1177,38 @@ mod tests {
             .expect_err("non-boolean fullscreen overscan preference should fail");
 
         assert!(error.contains("fullscreenOverscanEnabled"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_accepts_optional_future_locale_preferences() {
+        let dir = test_dir("future-locale-preference");
+        let path = dir.join("layout.json");
+        let mut valid = valid_layout();
+        valid["settings"]["localePreference"] = json!("fr-FR");
+
+        save_layout_to_path(&path, &valid)
+            .expect("unknown non-empty locale preferences should remain forward compatible");
+
+        assert!(
+            path.exists(),
+            "the forward-compatible layout should be written"
+        );
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_locale_preferences() {
+        let dir = test_dir("invalid-locale-preference");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["localePreference"] = json!("   ");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("an empty locale preference should fail");
+
+        assert!(error.contains("localePreference"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

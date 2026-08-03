@@ -81,7 +81,7 @@ export function runMotionDebugReportTests() {
     const markdown = createMotionDebugAIReport(runtime, { mode: "summary", presentation: "markdown" });
     const json = createMotionDebugAIReport(runtime, { mode: "summary", presentation: "json" });
 
-    assert(markdown.content.includes("# Pixi Motion AI 调试报告"), "summary report should produce Markdown on request");
+    assert(markdown.content.includes("# Pixi Motion AI debug report"), "summary report should produce Markdown on request");
     assert(JSON.parse(json.content).schema === "pixi-motion-ai-report/v1", "summary report should produce JSON on request");
     assert(summary.presentation === "structured" && !Object.hasOwn(summary, "content"), "structured reports should not materialize text copies");
     assert(markdown.presentation === "markdown" && !Object.hasOwn(markdown, "data"), "Markdown reports should not duplicate structured data");

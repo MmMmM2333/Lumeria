@@ -305,31 +305,31 @@ export function createMotionFocusedDebugExport(traceInput = {}, options = {}) {
 }
 
 function formatRecordLine(record = {}) {
-  const label = record.sourceLabel || record.targetLabel || `目标 ${record.targetId ?? "未知"}`;
-  return `${label}.${record.prop || "未知属性"} ${record.value} → ${record.to}，速度=${record.velocity}`;
+  const label = record.sourceLabel || record.targetLabel || `target ${record.targetId ?? "unknown"}`;
+  return `${label}.${record.prop || "unknown property"} ${record.value} → ${record.to}, velocity=${record.velocity}`;
 }
 
 function formatTrackLines(tracks = []) {
-  if (!tracks.length) return "- 无";
+  if (!tracks.length) return "- None";
   return tracks
     .slice(0, 12)
-    .map((track) => `- ${track.sourceLabel || `目标 ${track.targetId}`}.${track.prop}：采样=${track.sampleCount}，事件=${track.eventCount}，通道=${track.lane}/${track.laneKey}`)
+    .map((track) => `- ${track.sourceLabel || `target ${track.targetId}`}.${track.prop}: samples=${track.sampleCount}, events=${track.eventCount}, lane=${track.lane}/${track.laneKey}`)
     .join("\n");
 }
 
 function formatEventLines(events = []) {
-  if (!events.length) return "- 无";
+  if (!events.length) return "- None";
   return events
     .slice(0, 16)
-    .map((event) => `- ${event.timeMs}ms ${event.type}：${formatRecordLine(event)}${event.reason ? `，原因=${event.reason}` : ""}`)
+    .map((event) => `- ${event.timeMs}ms ${event.type}: ${formatRecordLine(event)}${event.reason ? `, reason=${event.reason}` : ""}`)
     .join("\n");
 }
 
 function formatFrameLines(frames = []) {
-  if (!frames.length) return "- 无";
+  if (!frames.length) return "- None";
   return frames
     .slice(0, 8)
-    .map((frame) => `- ${frame.timeMs}ms，帧=${frame.frame}：${frame.values.slice(0, 6).map(formatRecordLine).join(" / ")}`)
+    .map((frame) => `- ${frame.timeMs}ms, frame=${frame.frame}: ${frame.values.slice(0, 6).map(formatRecordLine).join(" / ")}`)
     .join("\n");
 }
 
@@ -337,29 +337,29 @@ export function formatMotionFocusedDebugMarkdown(data = {}) {
   const context = data.context || {};
   const summary = data.summary || {};
   return [
-    "# Pixi Motion 聚焦调试报告",
+    "# Pixi Motion focused debug report",
     "",
-    `协议：${data.schema || MOTION_FOCUSED_DEBUG_SCHEMA}`,
-    `生成时间：${context.generatedAt || "-"}`,
-    `区间：${context.interval?.startMs ?? 0}ms..${context.interval?.endMs ?? 0}ms`,
-    `书签：${context.bookmark ? `${context.bookmark.label}（${context.bookmark.startMs}ms..${context.bookmark.endMs}ms）` : "无"}`,
-    `选择范围：${JSON.stringify(context.selection || {})}`,
-    `捕获配置：${context.captureProfile?.label || context.captureProfile?.id || "无"}`,
-    `过滤器：${JSON.stringify(context.filters || {})}`,
-    `可见轨道：${(context.visibleTracks || []).join(", ") || "全部"}`,
+    `Schema: ${data.schema || MOTION_FOCUSED_DEBUG_SCHEMA}`,
+    `Generated at: ${context.generatedAt || "-"}`,
+    `Interval: ${context.interval?.startMs ?? 0}ms..${context.interval?.endMs ?? 0}ms`,
+    `Bookmark: ${context.bookmark ? `${context.bookmark.label} (${context.bookmark.startMs}ms..${context.bookmark.endMs}ms)` : "None"}`,
+    `Selection: ${JSON.stringify(context.selection || {})}`,
+    `Capture profile: ${context.captureProfile?.label || context.captureProfile?.id || "None"}`,
+    `Filters: ${JSON.stringify(context.filters || {})}`,
+    `Visible tracks: ${(context.visibleTracks || []).join(", ") || "All"}`,
     "",
-    "## 摘要",
-    `- 帧 / 事件：${summary.frameCount || 0}/${summary.eventCount || 0}`,
-    `- 轨道 / 目标：${summary.trackCount || 0}/${summary.targetCount || 0}`,
-    `- 数值 / 警告：${summary.valueCount || 0}/${summary.warningCount || 0}`,
+    "## Summary",
+    `- Frames / events: ${summary.frameCount || 0}/${summary.eventCount || 0}`,
+    `- Tracks / targets: ${summary.trackCount || 0}/${summary.targetCount || 0}`,
+    `- Values / warnings: ${summary.valueCount || 0}/${summary.warningCount || 0}`,
     "",
-    "## 轨道",
+    "## Tracks",
     formatTrackLines(data.tracks || []),
     "",
-    "## 事件",
+    "## Events",
     formatEventLines(data.timeline?.events || []),
     "",
-    "## 帧采样",
+    "## Frame samples",
     formatFrameLines(data.timeline?.frames || []),
   ].join("\n");
 }

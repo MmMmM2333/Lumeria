@@ -2,6 +2,7 @@ mod catalog;
 mod dwm;
 mod encoding;
 mod file_dialog;
+mod i18n;
 mod icons;
 mod launcher;
 mod layout_store;
@@ -44,8 +45,8 @@ use file_dialog::{
 use icons::cache_app_icon_choices;
 use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPathErrorKind};
 use layout_store::{
-    find_layout_manual_app, load_layout as load_saved_layout, save_layout as save_saved_layout,
-    SavedManualApp,
+    find_layout_manual_app, load_layout as load_saved_layout, read_locale_preference,
+    save_layout as save_saved_layout, SavedManualApp,
 };
 use main_window_supervisor::{
     apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
@@ -60,7 +61,7 @@ use tauri::{
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
-use tray::setup_tray;
+use tray::{setup_tray, update_tray_menu};
 
 const QUIT_REQUESTED_EVENT: &str = "lumeria-quit-requested";
 const MAIN_WINDOW_SHORTCUT_CAPTURED_EVENT: &str = "lumeria-main-window-shortcut-captured";
@@ -81,13 +82,80 @@ pub use icons::debug_extract_icon_png;
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
     live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
+    locale_state: Mutex<i18n::LocaleState>,
     main_window_shortcut: Mutex<Option<String>>,
     main_window_shortcut_capture_active: AtomicBool,
 }
 
+fn locale_state_lock(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, i18n::LocaleState>, String> {
+    state
+        .locale_state
+        .lock()
+        .map_err(|_| "App locale state lock is poisoned".to_string())
+}
+
+fn initial_locale_state(app: &AppHandle) -> i18n::LocaleState {
+    let mut load_issue = None;
+    let preference = match read_locale_preference(app) {
+        Ok(Some(preference)) => preference,
+        Ok(None) => i18n::DEFAULT_LOCALE_PREFERENCE.to_string(),
+        Err(error) => {
+            log::warn!(target: "i18n", "Failed to read saved locale preference: {error}");
+            load_issue = Some(i18n::LocaleIssue {
+                code: "preferenceLoadFailed".to_string(),
+                value: "layout".to_string(),
+            });
+            i18n::DEFAULT_LOCALE_PREFERENCE.to_string()
+        }
+    };
+    let system_languages = match i18n::system_ui_languages() {
+        Ok(languages) => languages,
+        Err(error) => {
+            log::warn!(target: "i18n", "Failed to resolve system UI languages: {error}");
+            load_issue = Some(i18n::LocaleIssue {
+                code: "systemLocaleUnavailable".to_string(),
+                value: "windows".to_string(),
+            });
+            Vec::new()
+        }
+    };
+    let mut locale_state = i18n::resolve_locale_preference(&preference, &system_languages);
+    if load_issue.is_some() {
+        locale_state.issue = load_issue;
+    }
+    locale_state
+}
+
+#[tauri::command]
+fn get_app_locale_state(state: State<'_, AppState>) -> Result<i18n::LocaleState, String> {
+    Ok(locale_state_lock(&state)?.clone())
+}
+
+#[tauri::command]
+fn apply_app_locale_preference(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    preference: String,
+) -> Result<i18n::LocaleState, String> {
+    let preference = i18n::validate_locale_preference(&preference)?;
+    let system_languages = i18n::system_ui_languages()?;
+    let next = i18n::resolve_locale_preference(&preference, &system_languages);
+    update_tray_menu(&app, &next.resolved_locale)
+        .map_err(|error| format!("Failed to apply localized tray menu: {error}"))?;
+    *locale_state_lock(&state)? = next.clone();
+    Ok(next)
+}
+
+pub(crate) fn current_app_locale(app: &AppHandle) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let locale = locale_state_lock(&state)?.resolved_locale.clone();
+    Ok(locale)
+}
+
 #[derive(Clone, Debug)]
 struct LaunchableApp {
-    name: String,
     launch_target: models::LaunchTarget,
     launch_args: Option<String>,
     fallback_launch_paths: Vec<String>,
@@ -104,7 +172,6 @@ impl From<AppCatalogItem> for LaunchableApp {
             .filter(|path| Some(path.as_str()) != primary_path)
             .collect();
         Self {
-            name: app.name,
             launch_target: app.launch_target,
             launch_args: app.launch_args,
             fallback_launch_paths,
@@ -114,10 +181,14 @@ impl From<AppCatalogItem> for LaunchableApp {
 
 impl From<SavedManualApp> for LaunchableApp {
     fn from(app: SavedManualApp) -> Self {
+        let SavedManualApp {
+            name: _validated_name,
+            launch_target,
+            launch_args,
+        } = app;
         Self {
-            name: app.name,
-            launch_target: app.launch_target,
-            launch_args: app.launch_args,
+            launch_target,
+            launch_args,
             fallback_launch_paths: Vec::new(),
         }
     }
@@ -168,7 +239,6 @@ struct LaunchTargetCheckResult {
 #[serde(rename_all = "camelCase")]
 struct LaunchAppRequest {
     id: String,
-    name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -178,6 +248,13 @@ struct LaunchFailureReport {
     title: String,
     message: String,
     suggestion: String,
+    detail: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LaunchFailurePayload {
+    kind: String,
     detail: String,
 }
 
@@ -367,8 +444,8 @@ fn launch_app(
     app: AppHandle,
     request: LaunchAppRequest,
     state: State<'_, AppState>,
-) -> Result<(), LaunchFailureReport> {
-    launch_app_inner(&app, request, state).map_err(|error| error.report())
+) -> Result<(), LaunchFailurePayload> {
+    launch_app_inner(&app, request, state).map_err(|error| error.payload())
 }
 
 fn launch_app_inner(
@@ -379,17 +456,13 @@ fn launch_app_inner(
     let app_id = request.id.trim().to_string();
     if app_id.is_empty() {
         return Err(LaunchFailure::missing_launch_info(
-            request.name,
             "App id is required".to_string(),
         ));
     }
 
     let catalog_app = {
         let catalog = state.catalog.lock().map_err(|_| {
-            LaunchFailure::layout_read_failed(
-                request.name.clone(),
-                "Failed to lock app catalog".to_string(),
-            )
+            LaunchFailure::layout_read_failed("Failed to lock app catalog".to_string())
         })?;
         catalog.get(&app_id).cloned()
     };
@@ -399,7 +472,7 @@ fn launch_app_inner(
 
     let saved_layout = load_saved_layout(app_handle)
         .map(|result| result.layout)
-        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?;
+        .map_err(LaunchFailure::layout_read_failed)?;
     if let Some(manual_app) = saved_layout
         .as_ref()
         .and_then(|layout| find_layout_manual_app(layout, &app_id))
@@ -407,13 +480,8 @@ fn launch_app_inner(
         return launch_selected_app(manual_app.into());
     }
     let app = find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
-        .map_err(|error| LaunchFailure::layout_read_failed(request.name.clone(), error))?
-        .ok_or_else(|| {
-            LaunchFailure::missing_launch_info(
-                request.name.clone(),
-                format!("Unknown app id: {app_id}"),
-            )
-        })?;
+        .map_err(LaunchFailure::layout_read_failed)?
+        .ok_or_else(|| LaunchFailure::missing_launch_info(format!("Unknown app id: {app_id}")))?;
 
     launch_selected_app(app.into())
 }
@@ -458,8 +526,9 @@ fn finish_app_termination(app: &AppHandle, restart: bool) {
 }
 
 #[tauri::command]
-fn show_launch_error_message(report: LaunchFailureReport) {
-    show_launch_error_report(&report);
+fn show_launch_error_message(app: AppHandle, report: LaunchFailureReport) -> Result<(), String> {
+    let locale = current_app_locale(&app)?;
+    show_launch_error_report(&report, &locale)
 }
 
 #[tauri::command]
@@ -634,29 +703,24 @@ enum LaunchFailureKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct LaunchFailure {
-    app_name: String,
     kind: LaunchFailureKind,
     detail: String,
 }
 
 impl LaunchFailure {
-    fn new(app_name: impl Into<String>, kind: LaunchFailureKind, detail: String) -> Self {
-        Self {
-            app_name: normalize_launch_app_name(app_name.into()),
-            kind,
-            detail,
-        }
+    fn new(kind: LaunchFailureKind, detail: String) -> Self {
+        Self { kind, detail }
     }
 
-    fn missing_launch_info(app_name: impl Into<String>, detail: String) -> Self {
-        Self::new(app_name, LaunchFailureKind::MissingLaunchInfo, detail)
+    fn missing_launch_info(detail: String) -> Self {
+        Self::new(LaunchFailureKind::MissingLaunchInfo, detail)
     }
 
-    fn layout_read_failed(app_name: impl Into<String>, detail: String) -> Self {
-        Self::new(app_name, LaunchFailureKind::LayoutReadFailed, detail)
+    fn layout_read_failed(detail: String) -> Self {
+        Self::new(LaunchFailureKind::LayoutReadFailed, detail)
     }
 
-    fn from_launch_path_error(app_name: impl Into<String>, error: LaunchPathError) -> Self {
+    fn from_launch_path_error(error: LaunchPathError) -> Self {
         let kind = match error.kind {
             LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
             LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::BrokenShortcut,
@@ -666,10 +730,10 @@ impl LaunchFailure {
             LaunchPathErrorKind::UnsupportedPlatform => LaunchFailureKind::WindowsLaunchFailed,
             LaunchPathErrorKind::WindowsLaunchFailed => LaunchFailureKind::WindowsLaunchFailed,
         };
-        Self::new(app_name, kind, error.detail)
+        Self::new(kind, error.detail)
     }
 
-    fn from_app_activation_error(app_name: impl Into<String>, error: LaunchPathError) -> Self {
+    fn from_app_activation_error(error: LaunchPathError) -> Self {
         let kind = match error.kind {
             LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
             LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::WindowsLaunchFailed,
@@ -679,53 +743,12 @@ impl LaunchFailure {
             LaunchPathErrorKind::UnsupportedPlatform => LaunchFailureKind::WindowsLaunchFailed,
             LaunchPathErrorKind::WindowsLaunchFailed => LaunchFailureKind::WindowsLaunchFailed,
         };
-        Self::new(app_name, kind, error.detail)
+        Self::new(kind, error.detail)
     }
 
-    fn report(&self) -> LaunchFailureReport {
-        let name = &self.app_name;
-        let (reason, suggestion) = match self.kind {
-            LaunchFailureKind::AccessDenied => (
-                "没有权限打开此应用。",
-                "请检查文件权限，或尝试以管理员身份运行目标程序。",
-            ),
-            LaunchFailureKind::AppNotInstalled => (
-                "Windows 中找不到这个应用。它可能已被卸载或不再为当前用户注册。",
-                "请重新扫描应用；如果它已卸载，请从 Lumeria 中移除旧条目。",
-            ),
-            LaunchFailureKind::BrokenShortcut => (
-                "这个快捷方式可能已损坏。",
-                "请在 Lumeria 中重新选择快捷方式或目标程序。",
-            ),
-            LaunchFailureKind::LayoutReadFailed => (
-                "Lumeria 无法读取此应用的保存信息。",
-                "请重新扫描应用，或重新添加此应用。",
-            ),
-            LaunchFailureKind::MissingLaunchInfo => (
-                "启动路径不完整，无法打开。",
-                "请在 Lumeria 中重新选择启动文件。",
-            ),
-            LaunchFailureKind::NoAssociation => (
-                "系统没有可用于打开此目标的默认应用。",
-                "请检查默认浏览器或文件关联设置。",
-            ),
-            LaunchFailureKind::TargetNotFound => (
-                "找不到启动文件。它可能已被移动、删除或卸载。",
-                "请在 Lumeria 中编辑此应用的启动路径。",
-            ),
-            LaunchFailureKind::UnsupportedTarget => {
-                ("暂不支持这种启动类型。", "请改用本地程序、快捷方式或链接。")
-            }
-            LaunchFailureKind::WindowsLaunchFailed => (
-                "Windows 未能打开此应用。",
-                "请确认目标程序可以从资源管理器正常打开。",
-            ),
-        };
-        LaunchFailureReport {
+    fn payload(&self) -> LaunchFailurePayload {
+        LaunchFailurePayload {
             kind: self.kind_code().to_string(),
-            title: "无法打开应用".to_string(),
-            message: format!("无法打开“{name}”。\n\n{reason}"),
-            suggestion: suggestion.to_string(),
             detail: self.detail.clone(),
         }
     }
@@ -745,20 +768,10 @@ impl LaunchFailure {
     }
 }
 
-fn normalize_launch_app_name(name: String) -> String {
-    let trimmed = name.trim();
-    if trimmed.is_empty() {
-        "此应用".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
 fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), LaunchFailure> {
     let kind = app.launch_target.kind.as_str();
     if !matches!(kind, "executable" | "shortcut" | "url") {
         return Err(LaunchFailure::new(
-            app.name.clone(),
             LaunchFailureKind::UnsupportedTarget,
             format!("Unsupported launch target kind: {kind}"),
         ));
@@ -770,12 +783,7 @@ fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), La
         .as_ref()
         .filter(|path| !path.trim().is_empty())
         .cloned()
-        .ok_or_else(|| {
-            LaunchFailure::missing_launch_info(
-                app.name.clone(),
-                "App has no launch path".to_string(),
-            )
-        })?;
+        .ok_or_else(|| LaunchFailure::missing_launch_info("App has no launch path".to_string()))?;
     if matches!(kind, "executable" | "shortcut") && !std::path::Path::new(&path).exists() {
         if let Some(fallback) = app
             .fallback_launch_paths
@@ -785,7 +793,6 @@ fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), La
             path = fallback.clone();
         } else {
             return Err(LaunchFailure::new(
-                app.name.clone(),
                 LaunchFailureKind::TargetNotFound,
                 format!("Launch target does not exist: {path}"),
             ));
@@ -809,28 +816,29 @@ fn launch_selected_app(app: LaunchableApp) -> Result<(), LaunchFailure> {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .ok_or_else(|| {
-                LaunchFailure::missing_launch_info(
-                    app.name.clone(),
-                    "App has no AppUserModelId".to_string(),
-                )
+                LaunchFailure::missing_launch_info("App has no AppUserModelId".to_string())
             })?;
         return launch_app_user_model_id(app_user_model_id)
-            .map_err(|error| LaunchFailure::from_app_activation_error(app.name, error));
+            .map_err(LaunchFailure::from_app_activation_error);
     }
 
     let (path, launch_args) = resolve_launch_path(&app)?;
-    launch_path(&path, launch_args)
-        .map_err(|error| LaunchFailure::from_launch_path_error(app.name, error))
+    launch_path(&path, launch_args).map_err(LaunchFailure::from_launch_path_error)
 }
 
 #[cfg(target_os = "windows")]
-fn show_launch_error_report(report: &LaunchFailureReport) {
+fn show_launch_error_report(report: &LaunchFailureReport, locale: &str) -> Result<(), String> {
     use windows::{
         core::HSTRING,
         Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND},
     };
 
-    let body = format!("{}\n\n建议：{}", report.message, report.suggestion);
+    let suggestion = i18n::translate(
+        locale,
+        "dialogs.warning.suggestion",
+        &[("suggestion", report.suggestion.as_str())],
+    )?;
+    let body = format!("{}\n\n{}", report.message, suggestion);
     let message = HSTRING::from(body);
     let title = HSTRING::from(report.title.as_str());
     unsafe {
@@ -841,11 +849,18 @@ fn show_launch_error_report(report: &LaunchFailureReport) {
             MB_OK | MB_ICONERROR | MB_SETFOREGROUND,
         );
     }
+    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-fn show_launch_error_report(report: &LaunchFailureReport) {
-    log::error!(target: "launcher", "{}\n\n建议：{}", report.message, report.suggestion);
+fn show_launch_error_report(report: &LaunchFailureReport, locale: &str) -> Result<(), String> {
+    let suggestion = i18n::translate(
+        locale,
+        "dialogs.warning.suggestion",
+        &[("suggestion", report.suggestion.as_str())],
+    )?;
+    log::error!(target: "launcher", "{}\n\n{}", report.message, suggestion);
+    Ok(())
 }
 
 fn find_app_in_saved_scan_roots(
@@ -946,8 +961,13 @@ fn check_launch_target_status(
 }
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let initial_locale = initial_locale_state(app.handle());
+    {
+        let state = app.state::<AppState>();
+        *locale_state_lock(&state).map_err(std::io::Error::other)? = initial_locale.clone();
+    }
     main_window_supervisor::setup_main_window_supervisor(app)?;
-    setup_tray(app)?;
+    setup_tray(app, &initial_locale.resolved_locale)?;
     if let Err(error) = apply_main_window_mode(app.handle()) {
         log::warn!(target: "lumeria", "Failed to apply Lumeria window mode: {error}");
     }
@@ -1204,6 +1224,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             scan_apps,
+            get_app_locale_state,
+            apply_app_locale_preference,
             load_layout,
             save_layout,
             pick_launch_file,
@@ -1326,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn launch_request_ignores_renderer_launch_fields() {
+    fn launch_request_only_accepts_the_stable_app_id() {
         let request: LaunchAppRequest = serde_json::from_value(json!({
             "id": "app",
             "name": "App",
@@ -1339,7 +1361,6 @@ mod tests {
         .expect("extra launch fields should be ignored");
 
         assert_eq!(request.id, "app");
-        assert_eq!(request.name, "App");
     }
 
     #[test]
@@ -1393,24 +1414,22 @@ mod tests {
             .expect_err("missing AppUserModelIds should fail before activation");
 
         assert_eq!(error.kind, LaunchFailureKind::MissingLaunchInfo);
-        let report = error.report();
-        assert!(report.message.contains("启动路径不完整"));
+        let payload = error.payload();
+        assert_eq!(payload.kind, "missingLaunchInfo");
+        assert_eq!(payload.detail, "App has no AppUserModelId");
     }
 
     #[test]
     fn missing_app_activation_is_reported_as_uninstalled() {
-        let error = LaunchFailure::from_app_activation_error(
-            "Store App",
-            LaunchPathError {
-                kind: LaunchPathErrorKind::TargetNotFound,
-                detail: "not registered".to_string(),
-            },
-        );
+        let error = LaunchFailure::from_app_activation_error(LaunchPathError {
+            kind: LaunchPathErrorKind::TargetNotFound,
+            detail: "not registered".to_string(),
+        });
 
         assert_eq!(error.kind, LaunchFailureKind::AppNotInstalled);
-        let report = error.report();
-        assert!(report.message.contains("卸载"));
-        assert!(report.suggestion.contains("重新扫描"));
+        let payload = error.payload();
+        assert_eq!(payload.kind, "appNotInstalled");
+        assert_eq!(payload.detail, "not registered");
     }
 
     #[test]
@@ -1421,9 +1440,9 @@ mod tests {
         .expect_err("missing local paths should fail before shell launch");
 
         assert_eq!(error.kind, LaunchFailureKind::TargetNotFound);
-        let report = error.report();
-        assert!(report.message.contains("找不到启动文件"));
-        assert!(report.suggestion.contains("编辑"));
+        let payload = error.payload();
+        assert_eq!(payload.kind, "targetNotFound");
+        assert!(payload.detail.contains("Missing.exe"));
     }
 
     #[test]

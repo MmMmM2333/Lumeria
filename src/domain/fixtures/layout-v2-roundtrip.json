@@ -163,6 +163,7 @@
     "windowMode": "windowed",
     "fullscreenOverscanEnabled": false,
     "showCustomTitlebar": false,
-    "mainWindowShortcut": "control+alt+KeyL"
+    "mainWindowShortcut": "control+alt+KeyL",
+    "localePreference": "en-US"
   }
 }

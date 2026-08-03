@@ -6,6 +6,10 @@ export function shouldAssertLaunchpadLayout() {
 }
 
 export function useLaunchpadPageCommands(options) {
+  const t = options?.localizationText?.t;
+  if (typeof t !== "function") {
+    throw new TypeError("useLaunchpadPageCommands requires localization text");
+  }
   if (typeof options.rebasePageIndices !== "function") {
     throw new TypeError("useLaunchpadPageCommands requires rebasePageIndices");
   }
@@ -64,7 +68,7 @@ export function useLaunchpadPageCommands(options) {
   }
 
   function renameFolder(folderId, name) {
-    const nextName = String(name || "").slice(0, 32) || "新文件夹";
+    const nextName = String(name || "").slice(0, 32) || t("launchpad.newFolder");
     const next = options.clonePages(options.pages.value);
     const folder = options.findFolder(next, folderId);
     if (!folder) return;
@@ -89,11 +93,11 @@ export function useLaunchpadPageCommands(options) {
     }
 
     options.openWarningDialog({
-      title: "重新整理桌面页面？",
-      message: "这会按当前顺序压实所有桌面页面，可能改变当前分页布局。",
+      title: t("commands.compact.title"),
+      message: t("commands.compact.message"),
       intent: "warning",
-      confirmText: "重新整理",
-      cancelText: "取消",
+      confirmText: t("commands.compact.confirm"),
+      cancelText: t("common.actions.cancel"),
       onConfirm: forceFillAllPages,
     });
   }
@@ -119,11 +123,11 @@ export function useLaunchpadPageCommands(options) {
     const folder = options.findFolder(options.pages.value, folderId)?.item;
     if (!folder) return;
     options.openWarningDialog({
-      title: `解散“${folder.name}”？`,
-      message: "文件夹中的应用将按当前顺序移回桌面。此操作不会删除应用。",
+      title: t("commands.dissolve.title", { name: folder.name }),
+      message: t("commands.dissolve.message"),
       intent: "warning",
-      confirmText: "解散文件夹",
-      cancelText: "取消",
+      confirmText: t("commands.dissolve.confirm"),
+      cancelText: t("common.actions.cancel"),
       confirmAppearance: "outline",
       confirmTone: "danger",
       onConfirm: () => dissolveFolderById(folderId),

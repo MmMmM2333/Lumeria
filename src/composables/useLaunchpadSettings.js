@@ -9,7 +9,14 @@ import {
   clampLaunchpadIconSize,
   normalizeFolderIconSizeMode,
 } from "../domain/layoutConfiguration.js";
-import { backgroundAssetPort } from "../platform/launchpadPorts.js";
+import {
+  backgroundAssetPort,
+  localeRuntimePort as defaultLocaleRuntimePort,
+} from "../platform/launchpadPorts.js";
+import {
+  DEFAULT_LOCALE_PREFERENCE,
+  normalizeLocalePreference,
+} from "../i18n/locale.js";
 import {
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
@@ -87,6 +94,9 @@ export function useLaunchpadSettings(options = {}) {
   const mainWindow = options.mainWindow;
   const liveDesktopSupport = options.liveDesktopSupport;
   const backgroundAssets = options.backgroundAssetPort || backgroundAssetPort;
+  const localeRuntime = options.localeRuntime || defaultLocaleRuntimePort;
+  const activateLocale = typeof options.activateLocale === "function" ? options.activateLocale : () => {};
+  const t = options.localizationText?.t;
   if (typeof layout?.captureConfiguration !== "function" || typeof layout?.applyConfiguration !== "function") {
     throw new TypeError("useLaunchpadSettings requires layout");
   }
@@ -95,6 +105,12 @@ export function useLaunchpadSettings(options = {}) {
   }
   if (!liveDesktopSupport || !("value" in liveDesktopSupport)) {
     throw new TypeError("useLaunchpadSettings requires liveDesktopSupport");
+  }
+  if (typeof localeRuntime?.applyPreference !== "function") {
+    throw new TypeError("useLaunchpadSettings requires localeRuntime");
+  }
+  if (typeof t !== "function") {
+    throw new TypeError("useLaunchpadSettings requires localization text");
   }
 
   const isTextlessModeState = ref(false);
@@ -120,6 +136,7 @@ export function useLaunchpadSettings(options = {}) {
   const fullscreenOverscanEnabledState = ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED);
   const showCustomTitlebarState = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
   const mainWindowShortcutState = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const localePreferenceState = ref(DEFAULT_LOCALE_PREFERENCE);
 
   const draftRows = ref(DEFAULT_ROWS);
   const draftCols = ref(DEFAULT_COLS);
@@ -151,7 +168,9 @@ export function useLaunchpadSettings(options = {}) {
   const draftFullscreenOverscanEnabled = ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED);
   const draftShowCustomTitlebar = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
   const draftMainWindowShortcut = ref(DEFAULT_MAIN_WINDOW_SHORTCUT);
+  const draftLocalePreference = ref(DEFAULT_LOCALE_PREFERENCE);
   const mainWindowShortcutErrorState = ref("");
+  const localePreferenceErrorState = ref("");
   const isApplyingSettingsConfigState = ref(false);
   const isChoosingBackgroundImageState = ref(false);
 
@@ -200,15 +219,18 @@ export function useLaunchpadSettings(options = {}) {
     draftFullscreenOverscanEnabled.value = fullscreenOverscanEnabledState.value;
     draftShowCustomTitlebar.value = showCustomTitlebarState.value;
     draftMainWindowShortcut.value = mainWindowShortcutState.value;
+    draftLocalePreference.value = localePreferenceState.value;
   }
 
   function beginEdit() {
     mainWindowShortcutErrorState.value = "";
+    localePreferenceErrorState.value = "";
     syncDraftsFromCommitted();
   }
 
   function cancelEdit() {
     mainWindowShortcutErrorState.value = "";
+    localePreferenceErrorState.value = "";
     syncDraftsFromCommitted();
   }
 
@@ -439,11 +461,16 @@ export function useLaunchpadSettings(options = {}) {
     mainWindowShortcutErrorState.value = "";
   }
 
+  function setDraftLocalePreference(value) {
+    draftLocalePreference.value = normalizeLocalePreference(value);
+    localePreferenceErrorState.value = "";
+  }
+
   function setMainWindowShortcutError(value) {
     mainWindowShortcutErrorState.value = String(value || "");
   }
 
-  function commitDraft(nextShortcut, runtimeOptions) {
+  function commitDraft(nextShortcut, nextLocalePreference, runtimeOptions) {
     let appliedLayout = layout.captureConfiguration();
     if (!options.isDragActive?.()) {
       appliedLayout = layout.applyConfiguration({
@@ -498,6 +525,7 @@ export function useLaunchpadSettings(options = {}) {
     fullscreenOverscanEnabledState.value = normalizeFullscreenOverscanEnabled(draftFullscreenOverscanEnabled.value);
     showCustomTitlebarState.value = normalizeShowCustomTitlebar(draftShowCustomTitlebar.value);
     mainWindowShortcutState.value = nextShortcut;
+    localePreferenceState.value = nextLocalePreference;
     syncDraftsFromCommitted();
     return appliedLayout;
   }
@@ -505,9 +533,23 @@ export function useLaunchpadSettings(options = {}) {
   async function applyEdit(runtimeOptions = {}) {
     const currentShortcut = normalizeMainWindowShortcut(mainWindowShortcutState.value);
     const nextShortcut = normalizeMainWindowShortcut(draftMainWindowShortcut.value);
+    const currentLocalePreference = normalizeLocalePreference(localePreferenceState.value);
+    const nextLocalePreference = normalizeLocalePreference(draftLocalePreference.value);
     mainWindowShortcutErrorState.value = "";
+    localePreferenceErrorState.value = "";
     isApplyingSettingsConfigState.value = true;
     try {
+      let appliedLocaleState = null;
+      if (nextLocalePreference !== currentLocalePreference) {
+        const localeOutcome = await localeRuntime.applyPreference(nextLocalePreference);
+        if (!localeOutcome?.ok) {
+          const localeError = localeOutcome?.error || new Error("Unable to apply language");
+          localePreferenceErrorState.value = localeError.message;
+          return explicitFailure(localeError);
+        }
+        appliedLocaleState = localeOutcome.state;
+      }
+
       if (nextShortcut !== currentShortcut) {
         let shortcutOutcome;
         try {
@@ -516,12 +558,21 @@ export function useLaunchpadSettings(options = {}) {
           shortcutOutcome = explicitFailure(error);
         }
         if (!shortcutOutcome.ok) {
-          mainWindowShortcutErrorState.value = shortcutOutcome.error?.message || "快捷键已被占用或不可用";
+          if (appliedLocaleState) {
+            const rollbackOutcome = await localeRuntime.applyPreference(currentLocalePreference);
+            if (!rollbackOutcome?.ok) {
+              const rollbackError = rollbackOutcome?.error || new Error("Unable to restore previous language");
+              localePreferenceErrorState.value = rollbackError.message;
+              return explicitFailure(shortcutOutcome.error, { rollbackError });
+            }
+          }
+          mainWindowShortcutErrorState.value = shortcutOutcome.error?.message || t("settings.general.shortcut.unavailable");
           return explicitFailure(shortcutOutcome.error);
         }
       }
 
-      const appliedLayout = commitDraft(nextShortcut, runtimeOptions);
+      const appliedLayout = commitDraft(nextShortcut, nextLocalePreference, runtimeOptions);
+      if (appliedLocaleState) activateLocale(appliedLocaleState);
       const modeOutcome = await mainWindow.setMode({
         mode: windowModeState.value,
         fullscreenOverscanEnabled: fullscreenOverscanEnabledState.value,
@@ -576,7 +627,9 @@ export function useLaunchpadSettings(options = {}) {
     fullscreenOverscanEnabledState.value = normalizeFullscreenOverscanEnabled(fragment.fullscreenOverscanEnabled);
     showCustomTitlebarState.value = normalizeShowCustomTitlebar(fragment.showCustomTitlebar);
     mainWindowShortcutState.value = normalizeMainWindowShortcut(fragment.mainWindowShortcut);
+    localePreferenceState.value = normalizeLocalePreference(fragment.localePreference);
     mainWindowShortcutErrorState.value = "";
+    localePreferenceErrorState.value = "";
     syncDraftsFromCommitted();
   }
 
@@ -604,6 +657,7 @@ export function useLaunchpadSettings(options = {}) {
       fullscreenOverscanEnabled: fullscreenOverscanEnabledState.value,
       showCustomTitlebar: showCustomTitlebarState.value,
       mainWindowShortcut: mainWindowShortcutState.value,
+      localePreference: localePreferenceState.value,
     };
   }
 
@@ -635,7 +689,7 @@ export function useLaunchpadSettings(options = {}) {
   async function registerCurrentShortcut() {
     const outcome = await mainWindow.registerShortcut(mainWindowShortcutState.value);
     if (!outcome.ok) {
-      mainWindowShortcutErrorState.value = outcome.error?.message || "快捷键已被占用或不可用";
+      mainWindowShortcutErrorState.value = outcome.error?.message || t("settings.general.shortcut.unavailable");
       return outcome;
     }
     draftMainWindowShortcut.value = outcome.shortcut;
@@ -689,6 +743,8 @@ export function useLaunchpadSettings(options = {}) {
     isApplyingSettingsConfig: readonly(isApplyingSettingsConfigState),
     isChoosingBackgroundImage: readonly(isChoosingBackgroundImageState),
     isTextlessMode: readonly(isTextlessModeState),
+    localePreference: readonly(localePreferenceState),
+    localePreferenceError: readonly(localePreferenceErrorState),
     mainWindowShortcut: readonly(mainWindowShortcutState),
     mainWindowShortcutError: readonly(mainWindowShortcutErrorState),
     showCustomTitlebar: readonly(showCustomTitlebarState),
@@ -728,6 +784,7 @@ export function useLaunchpadSettings(options = {}) {
     fullscreenOverscanEnabled: draftFullscreenOverscanEnabled,
     showCustomTitlebar: draftShowCustomTitlebar,
     mainWindowShortcut: draftMainWindowShortcut,
+    localePreference: draftLocalePreference,
   });
 
   const actions = Object.freeze({
@@ -763,6 +820,7 @@ export function useLaunchpadSettings(options = {}) {
     setDraftBackgroundSource,
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
+    setDraftLocalePreference,
     setDraftMainWindowShortcut,
     setMainWindowShortcutError,
     setDraftShowCustomTitlebar,

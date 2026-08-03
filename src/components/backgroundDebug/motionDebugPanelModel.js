@@ -13,12 +13,12 @@ export const MOTION_RECORD_WINDOW_PRESETS = [
   { label: "30s", value: "30000" },
   { label: "60s", value: "60000" },
   { label: "120s", value: "120000" },
-  { label: "自定义", value: MOTION_RECORD_WINDOW_CUSTOM },
+  { label: "Custom", labelKey: "debug.motion.values.custom", value: MOTION_RECORD_WINDOW_CUSTOM },
 ];
 export const MOTION_FILTER_PRESETS = [
-  { label: "全部", value: "all" },
-  { label: "活动中", value: "active" },
-  { label: "警告", value: "warnings" },
+  { label: "All", labelKey: "debug.common.all", value: "all" },
+  { label: "Active", labelKey: "debug.motion.values.active", value: "active" },
+  { label: "Warnings", labelKey: "debug.motion.values.warnings", value: "warnings" },
 ];
 
 const DEFAULT_RECORD_WINDOW_MS = 30000;
@@ -77,8 +77,13 @@ function formatWindow(ms) {
   return `${formatMotionNumber(readNumber(ms, DEFAULT_RECORD_WINDOW_MS) / 1000, 0)}s`;
 }
 
-function makeEmptyRow(label = "无") {
-  return { detail: "-", key: label, value: "0" };
+function localize(t, key, params, technicalText) {
+  return typeof t === "function" ? t(key, params) : technicalText;
+}
+
+function makeEmptyRow(t, label = "None") {
+  const localizedLabel = localize(t, "debug.common.none", {}, label);
+  return { detail: "-", key: localizedLabel, value: "0" };
 }
 
 export function normalizeMotionFilterPreset(value) {
@@ -260,26 +265,27 @@ function makeFilterPredicate(report = {}, filters = {}, keyMode = "track") {
   };
 }
 
-export function buildMotionOverviewRows(report = {}) {
+export function buildMotionOverviewRows(report = {}, t) {
   const summary = report.summary || {};
   const config = report.config || {};
   const history = report.history || {};
   const eventCount = Array.isArray(history.events) ? history.events.length : 0;
   const sampleCount = Array.isArray(history.samples) ? history.samples.length : 0;
   return [
-    { label: "活动动画", value: formatCount(summary.activeAnimationCount) },
-    { label: "目标", value: formatCount(summary.activeTargetCount) },
-    { label: "通道", value: formatCount(summary.activeChannelCount) },
-    { label: "警告", value: formatCount(summary.warningCount) },
-    { label: "记录历史", value: config.recordHistory ? "开" : "关" },
-    { label: "覆盖层", value: config.overlayEnabled ? "开" : "关" },
-    { label: "记录窗口", value: formatWindow(config.recordWindowMs) },
-    { label: "时间倍率", value: `${formatMotionNumber(config.timeScale ?? 1, 2)}x` },
-    { label: "事件 / 采样", value: `${formatCount(eventCount)} / ${formatCount(sampleCount)}`, wide: true },
+    { label: localize(t, "debug.motion.fields.activeAnimations", {}, "Active animations"), value: formatCount(summary.activeAnimationCount) },
+    { label: localize(t, "debug.motion.fields.targets", {}, "Targets"), value: formatCount(summary.activeTargetCount) },
+    { label: localize(t, "debug.motion.fields.channels", {}, "Channels"), value: formatCount(summary.activeChannelCount) },
+    { label: localize(t, "debug.motion.fields.warnings", {}, "Warnings"), value: formatCount(summary.warningCount) },
+    { label: localize(t, "debug.motion.settings.recordHistory", {}, "Record history"), value: localize(t, config.recordHistory ? "debug.common.on" : "debug.common.off", {}, config.recordHistory ? "On" : "Off") },
+    { label: localize(t, "debug.motion.fields.overlay", {}, "Overlay"), value: localize(t, config.overlayEnabled ? "debug.common.on" : "debug.common.off", {}, config.overlayEnabled ? "On" : "Off") },
+    { label: localize(t, "debug.motion.fields.recordWindow", {}, "Recording window"), value: formatWindow(config.recordWindowMs) },
+    { label: localize(t, "debug.motion.fields.timeScale", {}, "Time scale"), value: `${formatMotionNumber(config.timeScale ?? 1, 2)}x` },
+    { label: localize(t, "debug.motion.fields.eventsSamples", {}, "Events / samples"), value: `${formatCount(eventCount)} / ${formatCount(sampleCount)}`, wide: true },
   ];
 }
 
 export function buildMotionReplayCaptureRows(status = {}, trace = null, options = {}) {
+  const t = options.t;
   const summary = trace?.summary || {};
   const capture = trace?.capture || {};
   const profile = status.captureProfile || capture.profile || options.profile || {};
@@ -287,20 +293,22 @@ export function buildMotionReplayCaptureRows(status = {}, trace = null, options 
   const actualBytes = options.actualBytes ?? (trace ? JSON.stringify(trace).length : 0);
   const requestedSeconds = status.seconds ?? (capture.requestedDurationMs != null ? capture.requestedDurationMs / 1000 : 30);
   const sampleHz = status.sampleHz ?? capture.sampleHz ?? 60;
-  const profileLabel = profile.label || profile.id || "无";
+  const profileLabel = profile.labelKey
+    ? localize(t, profile.labelKey, {}, profile.label || profile.id)
+    : (profile.label || profile.id || localize(t, "debug.common.none", {}, "None"));
   const estimateLabel = estimate.jsonSizeLabel
     ? `${formatCount(estimate.frameCount)}f / ${formatCount(estimate.eventCount)}e / ${estimate.jsonSizeLabel}`
     : "-";
   return [
-    { label: "捕获状态", value: status.active ? "捕获中" : "空闲" },
-    { label: "捕获配置", value: profileLabel, wide: true },
-    { label: "捕获窗口", value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
-    { label: "采样率", value: `${formatMotionNumber(sampleHz, 0)}Hz` },
-    { label: "预计规模", value: estimateLabel, wide: true },
-    { label: "实际 JSON", value: trace ? formatBytes(actualBytes) : "-", wide: true },
-    { label: "帧 / 事件", value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
-    { label: "轨道 / 目标", value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
-    { label: "协议", value: trace?.schema || "无", wide: true },
+    { label: localize(t, "debug.motion.fields.captureStatus", {}, "Capture status"), value: localize(t, status.active ? "debug.motion.values.capturing" : "debug.motion.values.idle", {}, status.active ? "Capturing" : "Idle") },
+    { label: localize(t, "debug.motion.fields.captureProfile", {}, "Capture profile"), value: profileLabel, wide: true },
+    { label: localize(t, "debug.motion.fields.captureWindow", {}, "Capture window"), value: `${formatMotionNumber(normalizeMotionCustomSeconds(requestedSeconds), 0)}s` },
+    { label: localize(t, "debug.motion.fields.sampleRate", {}, "Sample rate"), value: `${formatMotionNumber(sampleHz, 0)}Hz` },
+    { label: localize(t, "debug.motion.fields.estimatedSize", {}, "Estimated size"), value: estimateLabel, wide: true },
+    { label: localize(t, "debug.motion.fields.actualJson", {}, "Actual JSON"), value: trace ? formatBytes(actualBytes) : "-", wide: true },
+    { label: localize(t, "debug.motion.fields.framesEvents", {}, "Frames / events"), value: `${formatCount(summary.frameCount)} / ${formatCount(summary.eventCount)}`, wide: true },
+    { label: localize(t, "debug.motion.fields.tracksTargets", {}, "Tracks / targets"), value: `${formatCount(summary.trackCount)} / ${formatCount(summary.targetCount)}`, wide: true },
+    { label: localize(t, "debug.motion.fields.schema", {}, "Schema"), value: trace?.schema || localize(t, "debug.common.none", {}, "None"), wide: true },
   ];
 }
 
@@ -320,16 +328,16 @@ export function buildMotionAnimationRows(report = {}, limit = MAX_ROW_COUNT) {
   }));
 }
 
-export function buildMotionCancelReasonRows(report = {}, limit = 6) {
+export function buildMotionCancelReasonRows(report = {}, limit = 6, t) {
   const counts = report.counters?.canceledByReason || {};
   const rows = Object.entries(counts)
     .map(([key, value]) => ({ detail: key, key, value: formatCount(value) }))
     .sort((a, b) => (Number(b.value) - Number(a.value)) || a.key.localeCompare(b.key))
     .slice(0, limit);
-  return rows.length ? rows : [makeEmptyRow()];
+  return rows.length ? rows : [makeEmptyRow(t)];
 }
 
-export function buildMotionWarningRows(report = {}, limit = 6) {
+export function buildMotionWarningRows(report = {}, limit = 6, t) {
   const warnings = Array.isArray(report.warnings) ? report.warnings : [];
   const rows = warnings.slice(0, limit).map((warning) => ({
     detail: [
@@ -341,7 +349,7 @@ export function buildMotionWarningRows(report = {}, limit = 6) {
     key: warning.type || "warning",
     value: warning.prop || "-",
   }));
-  return rows.length ? rows : [makeEmptyRow()];
+  return rows.length ? rows : [makeEmptyRow(t)];
 }
 
 export function buildMotionPropertyRows(report = {}, filters = {}, limit = MAX_ROW_COUNT) {
@@ -368,7 +376,7 @@ export function buildMotionPropertyRows(report = {}, filters = {}, limit = MAX_R
     });
 }
 
-export function buildMotionLayerTreeRows(report = {}, filters = {}, limit = MAX_LAYER_TREE_ROW_COUNT) {
+export function buildMotionLayerTreeRows(report = {}, filters = {}, limit = MAX_LAYER_TREE_ROW_COUNT, t) {
   const preset = normalizeMotionFilterPreset(filters.preset);
   const query = normalizeQuery(filters.query);
   const groupsByLayer = new Map();
@@ -409,13 +417,20 @@ export function buildMotionLayerTreeRows(report = {}, filters = {}, limit = MAX_
     .slice(0, Math.max(0, Math.floor(readNumber(limit, MAX_LAYER_TREE_ROW_COUNT))))
     .map((group) => ({
       activeCount: formatCount(group.activeTargetCount),
-      detail: `${formatCompactList(group.kinds)} / 属性 ${formatCompactList(group.props)}`,
+      detail: localize(t, "debug.motion.values.propertiesList", {
+        kinds: formatCompactList(group.kinds),
+        props: formatCompactList(group.props),
+      }, `${formatCompactList(group.kinds)} / properties ${formatCompactList(group.props)}`),
       eventCount: formatCount(group.eventCount),
       key: `layer:${group.layer}`,
       layer: group.layer,
       props: formatCompactList(group.props),
       sources: formatCompactList(group.sources, 5),
-      summary: `${formatCount(group.targetCount)} 个目标 / ${formatCount(group.activeTargetCount)} 个活动动画 / ${formatCount(group.warningCount)} 个警告`,
+      summary: localize(t, "debug.motion.counts.layerSummary", {
+        animations: formatCount(group.activeTargetCount),
+        targets: formatCount(group.targetCount),
+        warnings: formatCount(group.warningCount),
+      }, `${formatCount(group.targetCount)} targets / ${formatCount(group.activeTargetCount)} active animations / ${formatCount(group.warningCount)} warnings`),
       targetCount: formatCount(group.targetCount),
       warningCount: formatCount(group.warningCount),
     }));
@@ -513,6 +528,7 @@ function collectMotionCurveTracks(report = {}, filters = {}) {
 }
 
 export function buildMotionCurveChartGroups(report = {}, filters = {}, options = {}) {
+  const t = options.t;
   const limit = Math.max(0, Math.floor(readNumber(options.limit, MAX_CURVE_GROUP_COUNT)));
   const statsByKey = new Map((report.curveStats || []).map((stats) => [makeTrackKey(stats), stats]));
   return collectMotionCurveTracks(report, filters)
@@ -578,7 +594,10 @@ export function buildMotionCurveChartGroups(report = {}, filters = {}, options =
           overshootCount: stats.overshootCount ?? 0,
           retargetCount: stats.retargetCount ?? 0,
         },
-        summary: `${formatCount(points.length)} 个采样 / ${formatCount(events.length)} 个事件 / 已归一化`,
+        summary: localize(t, "debug.motion.values.normalizedSamplesEvents", {
+          events: formatCount(events.length),
+          samples: formatCount(points.length),
+        }, `${formatCount(points.length)} samples / ${formatCount(events.length)} events / normalized`),
         targetId: track.targetId,
         toPath: makeSvgPath(to),
         valuePath: makeSvgPath(value),
@@ -589,7 +608,7 @@ export function buildMotionCurveChartGroups(report = {}, filters = {}, options =
     .slice(0, limit);
 }
 
-export function buildMotionFilterSummary(report = {}, filters = {}) {
+export function buildMotionFilterSummary(report = {}, filters = {}, t) {
   const predicate = makeFilterPredicate(report, filters, "track");
   const timelinePredicate = makeFilterPredicate(report, filters, "targetLane");
   const properties = (report.animations || []).filter(predicate).length;
@@ -597,6 +616,9 @@ export function buildMotionFilterSummary(report = {}, filters = {}) {
   return {
     preset: normalizeMotionFilterPreset(filters.preset),
     query: normalizeQuery(filters.query),
-    text: `${formatCount(properties)} 个属性 / ${formatCount(events)} 个事件`,
+    text: localize(t, "debug.motion.counts.propertiesEvents", {
+      events: formatCount(events),
+      properties: formatCount(properties),
+    }, `${formatCount(properties)} properties / ${formatCount(events)} events`),
   };
 }

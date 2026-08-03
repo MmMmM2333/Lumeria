@@ -5,16 +5,16 @@
       class="app-edit-dialog"
       role="dialog"
       aria-modal="true"
-      :aria-label="isEditing ? '编辑应用' : '新增应用'"
+      :aria-label="isEditing ? t('dialogs.appEditor.editTitle') : t('dialogs.appEditor.addTitle')"
       tabindex="-1"
       @keydown="handleModalKeydown($event, dialogRef, model.actions.cancel)"
     >
       <header class="app-edit-header">
         <div>
-          <h2>{{ isEditing ? "编辑应用" : "新增应用" }}</h2>
-          <p v-if="!isEditing">添加自定义应用到启动台</p>
+          <h2>{{ isEditing ? t("dialogs.appEditor.editTitle") : t("dialogs.appEditor.addTitle") }}</h2>
+          <p v-if="!isEditing">{{ t("dialogs.appEditor.addDescription") }}</p>
         </div>
-        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" :aria-label="isEditing ? '关闭编辑窗口' : '关闭新增窗口'" @click="model.actions.cancel">
+        <SettingsFluentButton appearance="subtle" icon-only class="settings-close-button" type="button" :aria-label="isEditing ? t('dialogs.appEditor.closeEdit') : t('dialogs.appEditor.closeAdd')" @click="model.actions.cancel">
           <DismissIcon class="settings-close-icon" />
         </SettingsFluentButton>
       </header>
@@ -26,46 +26,46 @@
             <span v-else>{{ model.glyph.value }}</span>
           </span>
           <div class="app-edit-icon-actions">
-            <SettingsFluentButton appearance="outline" type="button" @click="model.actions.openIconChooser">更换图标</SettingsFluentButton>
-            <SettingsFluentButton appearance="subtle" type="button" @click="model.actions.resetIcon">恢复默认</SettingsFluentButton>
+            <SettingsFluentButton appearance="outline" type="button" @click="model.actions.openIconChooser">{{ t("dialogs.appEditor.changeIcon") }}</SettingsFluentButton>
+            <SettingsFluentButton appearance="subtle" type="button" @click="model.actions.resetIcon">{{ t("common.actions.restoreDefault") }}</SettingsFluentButton>
           </div>
         </div>
 
         <label class="app-edit-field">
-          <span>应用名称</span>
+          <span>{{ t("dialogs.appEditor.name") }}</span>
           <fluent-text-input
             class="settings-text-input app-edit-input"
             name="managedAppName"
             maxlength="64"
-            aria-label="应用名称"
+            :aria-label="t('dialogs.appEditor.name')"
             autocomplete="off"
             :value.prop="model.name.value"
             @input="model.name.value = $event.target.value"
           />
         </label>
         <label class="app-edit-field">
-          <span>{{ model.targetReadOnly.value ? "Windows 应用标识（由系统管理）" : "启动路径或 URL" }}</span>
+          <span>{{ model.targetReadOnly.value ? t("dialogs.appEditor.windowsIdManaged") : t("dialogs.appEditor.target") }}</span>
           <span class="app-edit-target-row">
             <fluent-text-input
               class="settings-text-input app-edit-input"
               name="managedAppTarget"
-              :aria-label="model.targetReadOnly.value ? 'Windows 应用标识' : '启动路径或 URL'"
+              :aria-label="model.targetReadOnly.value ? t('dialogs.appEditor.windowsId') : t('dialogs.appEditor.target')"
               autocomplete="off"
               :value.prop="model.target.value"
               :disabled="model.targetReadOnly.value"
               @input="model.target.value = $event.target.value"
             />
             <SettingsFluentButton appearance="outline" type="button" :disabled="!model.canBrowseTarget.value" @click="model.actions.browseTarget">
-              {{ model.isBrowsingTarget.value ? "选择中" : "浏览" }}
+              {{ model.isBrowsingTarget.value ? t("dialogs.appEditor.choosing") : t("common.actions.browse") }}
             </SettingsFluentButton>
           </span>
         </label>
         <label v-if="model.canEditArgs.value" class="app-edit-field">
-          <span>启动参数</span>
+          <span>{{ t("dialogs.appEditor.args") }}</span>
           <fluent-text-input
             class="settings-text-input app-edit-input"
             name="managedAppArgs"
-            aria-label="启动参数"
+            :aria-label="t('dialogs.appEditor.args')"
             autocomplete="off"
             :value.prop="model.args.value"
             @input="model.args.value = $event.target.value"
@@ -74,8 +74,8 @@
       </div>
 
       <footer class="app-edit-actions">
-        <SettingsFluentButton appearance="outline" type="button" @click="model.actions.cancel">取消</SettingsFluentButton>
-        <SettingsFluentButton appearance="primary" type="button" :disabled="!model.canSave.value" @click="model.actions.save">保存</SettingsFluentButton>
+        <SettingsFluentButton appearance="outline" type="button" @click="model.actions.cancel">{{ t("common.actions.cancel") }}</SettingsFluentButton>
+        <SettingsFluentButton appearance="primary" type="button" :disabled="!model.canSave.value" @click="model.actions.save">{{ t("common.actions.save") }}</SettingsFluentButton>
       </footer>
     </section>
   </div>
@@ -86,9 +86,11 @@ import { computed, ref } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import { useLocalization } from "../i18n/localization.js";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
 const props = defineProps({ model: { type: Object, required: true } });
+const { t } = useLocalization();
 const dialogRef = ref(null);
 const isEditing = computed(() => props.model.mode.value === "edit");
 const iconSource = computed(() => {

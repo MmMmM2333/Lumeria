@@ -173,7 +173,7 @@ export function runMotionTrackChartModelTests() {
   assert(iconTrack.label === "desktop.icon.smoke.x", "track label should use source label and prop");
   assert(iconTrack.targetProp === "desktop.icon.smoke.x", "track should expose targetProp for table UI");
   assert(iconTrack.laneLabel === "base/default", "track should expose lane label");
-  assert(iconTrack.summary === "3 个采样 / 3 个事件", "track should expose compact summary");
+  assert(iconTrack.summary === "3 samples / 3 events", "track should expose compact summary");
   assert(iconTrack.sampleCount === 3 && iconTrack.eventCount === 3, "track should expose sample and event counts");
   assert(iconTrack.timeline.startMs === 0 && iconTrack.timeline.endMs === 100, "track timeline should expose active time range");
   assert(iconTrack.timeline.startX === 0 && iconTrack.timeline.endX === 100 && iconTrack.timeline.width === 100, "track timeline should expose percent bounds");

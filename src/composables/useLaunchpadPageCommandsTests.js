@@ -8,6 +8,9 @@ import {
   shouldAssertLaunchpadLayout,
   useLaunchpadPageCommands,
 } from "./useLaunchpadPageCommands.js";
+import { createLocalization } from "../i18n/localization.js";
+
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 const appA = { id: "app-a", type: "app", name: "App A" };
 const appB = { id: "app-b", type: "app", name: "App B" };
@@ -86,6 +89,7 @@ function createPageCommands(overrides = {}) {
     isFolderClosing,
     isHomeRevealSettling,
     isDragActive: () => Boolean(overrides.isDragActive),
+    localizationText,
     openFolderId,
     openWarningDialog: (config) => calls.openWarningDialog.push(config),
     pageIndex,

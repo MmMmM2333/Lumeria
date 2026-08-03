@@ -18,9 +18,9 @@ function cloneJson(value) {
 function requireChannel(channelInput) {
   const channel = String(channelInput || "").trim();
   if (!SCENE_DIAGNOSTIC_CHANNELS.includes(channel)) {
-    throw new DiagnosticError("scene-diagnostics-channel-invalid", `不支持场景诊断通道 ${channel || "(empty)"}`, {
+    throw new DiagnosticError("scene-diagnostics-channel-invalid", `Unsupported scene diagnostic channel: ${channel || "(empty)"}`, {
       details: { channel: channel || null },
-      nextActions: [`使用 ${SCENE_DIAGNOSTIC_CHANNELS.join("、")} 之一`],
+      nextActions: [`Use one of: ${SCENE_DIAGNOSTIC_CHANNELS.join(", ")}`],
     });
   }
   return channel;
@@ -30,9 +30,9 @@ function normalizeFolderHandoffOptions(value) {
   if (value == null || value === false) return null;
   if (value === true) return { ...DEFAULT_FOLDER_HANDOFF_OPTIONS };
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new DiagnosticError("scene-diagnostics-config-invalid", "文件夹 handoff 诊断配置必须是布尔值、对象或 null", {
+    throw new DiagnosticError("scene-diagnostics-config-invalid", "Folder handoff diagnostic configuration must be a boolean, object, or null", {
       details: { value },
-      nextActions: ["传入 true 使用默认配置，或传入 lineWidth/log/overlay/timeline 对象"],
+      nextActions: ["Pass true for default configuration, or an object containing lineWidth/log/overlay/timeline"],
     });
   }
   return {
@@ -70,9 +70,9 @@ export function createSceneDiagnosticsState(options = {}) {
     let next = cloneJson(value);
     if (publishOptions.merge) {
       if (next == null || typeof next !== "object" || Array.isArray(next)) {
-        throw new DiagnosticError("scene-diagnostics-snapshot-invalid", "合并发布需要普通对象快照", {
+        throw new DiagnosticError("scene-diagnostics-snapshot-invalid", "Merged publication requires a plain-object snapshot", {
           details: { channel },
-          nextActions: ["传入普通对象，或移除 merge 选项"],
+          nextActions: ["Pass a plain object, or remove the merge option"],
         });
       }
       next = {
@@ -124,9 +124,9 @@ export function createSceneDiagnosticsState(options = {}) {
       }
     }
     if (failures.length) {
-      throw new DiagnosticError("scene-diagnostics-clear-failed", "场景诊断视觉状态清理不完整", {
+      throw new DiagnosticError("scene-diagnostics-clear-failed", "Scene diagnostic visual state was not completely cleared", {
         details: { failures },
-        nextActions: ["检查失败通道的图层生命周期后重试 state.clear"],
+        nextActions: ["Inspect the failed channel layer lifecycle, then retry state.clear"],
       });
     }
     for (const channel of targetChannels) {

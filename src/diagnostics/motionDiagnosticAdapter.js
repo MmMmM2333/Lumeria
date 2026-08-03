@@ -102,8 +102,8 @@ export function createMotionDiagnosticAdapter(options = {}) {
 
   function ensureActive() {
     if (disposed) {
-      throw new DiagnosticError("diagnostic-tool-disposed", "Motion 诊断工具已经释放", {
-        nextActions: ["等待运行时重新安装诊断入口"],
+      throw new DiagnosticError("diagnostic-tool-disposed", "The Motion diagnostic tool has been disposed", {
+        nextActions: ["Wait for the runtime to reinstall the diagnostic entry point"],
       });
     }
   }
@@ -171,9 +171,9 @@ export function createMotionDiagnosticAdapter(options = {}) {
         const hasTrace = params.trace != null;
         const hasJson = params.json != null;
         if (hasTrace === hasJson) {
-          throw new DiagnosticError("diagnostic-params-invalid", "Motion 捕获文档载入必须且只能提供 trace 或 json", {
+          throw new DiagnosticError("diagnostic-params-invalid", "Loading a Motion capture document requires exactly one of trace or json", {
             details: { hasJson, hasTrace },
-            nextActions: ["只传入 trace 或 json 其中一项"],
+            nextActions: ["Pass either trace or json, but not both"],
           });
         }
         const { json, trace, ...loadOptions } = params;
@@ -188,8 +188,8 @@ export function createMotionDiagnosticAdapter(options = {}) {
       case "replay.document.view": {
         const document = diagnosticSession.getDocument();
         if (!document) {
-          throw new DiagnosticError("motion-replay-document-missing", "当前没有已载入的 Motion 捕获文档", {
-            nextActions: ["先调用 replay.document.load 或完成 replay.capture.stop"],
+          throw new DiagnosticError("motion-replay-document-missing", "No Motion capture document is currently loaded", {
+            nextActions: ["Call replay.document.load or complete replay.capture.stop first"],
           });
         }
         return document.getView(String(params.view || ""), params.options || {});
@@ -197,8 +197,8 @@ export function createMotionDiagnosticAdapter(options = {}) {
       case "replay.document.analyze": {
         const document = diagnosticSession.getDocument();
         if (!document) {
-          throw new DiagnosticError("motion-replay-document-missing", "当前没有已载入的 Motion 捕获文档", {
-            nextActions: ["先调用 replay.document.load 或完成 replay.capture.stop"],
+          throw new DiagnosticError("motion-replay-document-missing", "No Motion capture document is currently loaded", {
+            nextActions: ["Call replay.document.load or complete replay.capture.stop first"],
           });
         }
         return document.analyze(params);
@@ -206,8 +206,8 @@ export function createMotionDiagnosticAdapter(options = {}) {
       case "replay.document.export": {
         const document = diagnosticSession.getDocument();
         if (!document) {
-          throw new DiagnosticError("motion-replay-document-missing", "当前没有已载入的 Motion 捕获文档", {
-            nextActions: ["先调用 replay.document.load 或完成 replay.capture.stop"],
+          throw new DiagnosticError("motion-replay-document-missing", "No Motion capture document is currently loaded", {
+            nextActions: ["Call replay.document.load or complete replay.capture.stop first"],
           });
         }
         return document.export(params);
@@ -216,8 +216,8 @@ export function createMotionDiagnosticAdapter(options = {}) {
         return diagnosticSession.close();
       case "overlay.snapshot":
         if (typeof getOverlaySnapshot !== "function") {
-          throw new DiagnosticError("diagnostic-capability-unavailable", "Motion 覆盖层快照当前不可用", {
-            nextActions: ["确认 Pixi 桌面表面已经挂载"],
+          throw new DiagnosticError("diagnostic-capability-unavailable", "The Motion overlay snapshot is currently unavailable", {
+            nextActions: ["Confirm the Pixi desktop surface is mounted"],
           });
         }
         return getOverlaySnapshot();

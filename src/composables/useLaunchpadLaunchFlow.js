@@ -8,6 +8,8 @@ import { getElementFromRef } from "./usePageGridMetrics.js";
 const PATH_LAUNCH_TARGET_KINDS = new Set(["shortcut", "executable", "url"]);
 
 export function useLaunchpadLaunchFlow(options) {
+  const t = options?.localizationText?.t;
+  if (typeof t !== "function") throw new TypeError("useLaunchpadLaunchFlow requires localization text");
   const isDesktopOpen = ref(true);
   const isDesktopClosing = ref(false);
   const isAppLaunching = ref(false);
@@ -77,21 +79,21 @@ export function useLaunchpadLaunchFlow(options) {
 
   function getLaunchPreflightError(app) {
     if (!options.shouldValidateLaunchTarget?.()) return null;
-    const name = String(app?.name || "此应用");
+    const name = String(app?.name || t("errors.launch.appFallback"));
     if (!app?.id) {
       return {
-        title: "无法打开应用",
-        message: `“${name}”缺少应用标识，无法打开。`,
-        suggestion: "请重新添加此应用。",
+        title: t("errors.launch.genericTitle"),
+        message: t("errors.launch.missingId", { appName: name }),
+        suggestion: t("errors.launch.suggestion.readd"),
       };
     }
 
     const target = app.launchTarget;
     if (!target) {
       return {
-        title: "无法打开应用",
-        message: `“${name}”没有启动路径。`,
-        suggestion: "请在设置中重新选择启动文件。",
+        title: t("errors.launch.genericTitle"),
+        message: t("errors.launch.missingTarget", { appName: name }),
+        suggestion: t("errors.launch.suggestion.chooseTarget"),
       };
     }
 
@@ -99,39 +101,39 @@ export function useLaunchpadLaunchFlow(options) {
     if (kind === "appUserModelId") {
       if (!String(target.appUserModelId || "").trim()) {
         return {
-          title: "无法打开应用",
-          message: `“${name}”缺少 Windows 应用标识。`,
-          suggestion: "请重新扫描并添加此应用。",
+          title: t("errors.launch.genericTitle"),
+          message: t("errors.launch.missingWindowsId", { appName: name }),
+          suggestion: t("errors.launch.suggestion.rescan"),
         };
       }
       if (currentLaunchTargetStatus(app) === "missing") {
         return {
-          title: "无法打开应用",
-          message: `Windows 中找不到“${name}”。它可能已被卸载或不再为当前用户注册。`,
-          suggestion: "请重新扫描应用；如果它已卸载，请移除旧条目。",
+          title: t("errors.launch.genericTitle"),
+          message: t("errors.launch.windowsNotFound", { appName: name }),
+          suggestion: t("errors.launch.suggestion.rescanOrRemove"),
         };
       }
       return null;
     }
     if (!PATH_LAUNCH_TARGET_KINDS.has(kind)) {
       return {
-        title: "无法打开应用",
-        message: `“${name}”的启动类型无效。`,
-        suggestion: "请重新选择启动文件。",
+        title: t("errors.launch.genericTitle"),
+        message: t("errors.launch.invalidKind", { appName: name }),
+        suggestion: t("errors.launch.suggestion.chooseTarget"),
       };
     }
     if (!String(target.path || "").trim()) {
       return {
-        title: "无法打开应用",
-        message: `“${name}”的启动路径为空。`,
-        suggestion: "请在设置中重新选择启动文件。",
+        title: t("errors.launch.genericTitle"),
+        message: t("errors.launch.emptyPath", { appName: name }),
+        suggestion: t("errors.launch.suggestion.chooseTarget"),
       };
     }
     if (currentLaunchTargetStatus(app) === "missing") {
       return {
-        title: "无法打开应用",
-        message: `找不到“${name}”的启动文件。它可能已被移动、删除或卸载。`,
-        suggestion: "请在设置中编辑此应用的启动路径。",
+        title: t("errors.launch.genericTitle"),
+        message: t("errors.launch.pathMissing", { appName: name }),
+        suggestion: t("errors.launch.suggestion.editTarget"),
       };
     }
     return null;

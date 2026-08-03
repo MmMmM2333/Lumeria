@@ -1,6 +1,6 @@
 <template>
   <div class="background-debug-section">
-    <div class="background-debug-subtitle">状态一致性</div>
+    <div class="background-debug-subtitle">{{ t("debug.liveDesktop.sections.consistency") }}</div>
     <dl class="background-debug-status-grid">
       <div
         v-for="row in liveDesktopConsistencyRows"
@@ -12,7 +12,7 @@
       </div>
     </dl>
 
-    <div class="background-debug-subtitle">原生运行时</div>
+    <div class="background-debug-subtitle">{{ t("debug.liveDesktop.sections.runtime") }}</div>
     <dl class="background-debug-status-grid">
       <div
         v-for="row in liveDesktopStatusRows"
@@ -24,16 +24,16 @@
       </div>
     </dl>
 
-    <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || "暂无运行时详情" }}</pre>
+    <pre class="background-debug-detail" :title="liveDesktopStatus.detail">{{ liveDesktopStatus.detail || t("debug.liveDesktop.runtimeDetailEmpty") }}</pre>
 
-    <div class="background-debug-mode-group background-debug-live-source-group" role="group" aria-label="Live Desktop 调试帧源覆盖">
+    <div class="background-debug-mode-group background-debug-live-source-group" role="group" :aria-label="t('debug.liveDesktop.frameSource.aria')">
       <button
         type="button"
         :class="['background-debug-mode-button', !liveDesktopDebugFrameSourceOverride && 'background-debug-mode-button-active']"
         :disabled="isLiveDesktopActionBusy"
         @click="setLiveDesktopDebugFrameSourceOverride(null)"
       >
-        Wallpaper Engine 窗口
+        {{ t("debug.liveDesktop.frameSource.wallpaperEngine") }}
       </button>
       <button
         type="button"
@@ -41,7 +41,7 @@
         :disabled="isLiveDesktopActionBusy"
         @click="setLiveDesktopDebugFrameSourceOverride(LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN)"
       >
-        测试图案
+        {{ t("debug.liveDesktop.frameSource.testPattern") }}
       </button>
     </div>
 
@@ -53,7 +53,7 @@
         :disabled="isLiveDesktopActionBusy"
         @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
       >
-      <span>禁用鼠标转发</span>
+      <span>{{ t("debug.liveDesktop.settings.disableMouseRelay") }}</span>
     </label>
 
     <label class="background-debug-toggle">
@@ -64,7 +64,7 @@
         :disabled="isLiveDesktopActionBusy"
         @change="setLiveDesktopCompositorKeeper($event.target.checked)"
       >
-      <span>合成稳定器</span>
+      <span>{{ t("debug.liveDesktop.settings.compositorKeeper") }}</span>
     </label>
 
     <label class="background-debug-toggle">
@@ -75,7 +75,7 @@
         :disabled="isLiveDesktopActionBusy"
         @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
       >
-      <span>CSS 后备效果</span>
+      <span>{{ t("debug.liveDesktop.settings.cssFallbackEffects") }}</span>
     </label>
 
     <label class="background-debug-toggle">
@@ -86,7 +86,7 @@
         :disabled="isLiveDesktopActionBusy"
         @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
       >
-      <span>跳过疑似空白帧</span>
+      <span>{{ t("debug.liveDesktop.settings.skipBlankFrames") }}</span>
     </label>
 
     <label class="background-debug-toggle">
@@ -97,10 +97,10 @@
         :disabled="isLiveDesktopActionBusy"
         @change="setLiveDesktopForceDwmFlush($event.target.checked)"
       >
-      <span>强制 DWM Flush</span>
+      <span>{{ t("debug.liveDesktop.settings.forceDwmFlush") }}</span>
     </label>
 
-    <div class="background-debug-subtitle">帧与合成指标</div>
+    <div class="background-debug-subtitle">{{ t("debug.liveDesktop.sections.metrics") }}</div>
     <dl class="background-debug-diagnostics">
       <div
         v-for="row in liveDesktopDiagnosticsRows"
@@ -112,7 +112,7 @@
       </div>
     </dl>
 
-    <div class="background-debug-subtitle">窗口发现</div>
+    <div class="background-debug-subtitle">{{ t("debug.liveDesktop.sections.windows") }}</div>
     <dl class="background-debug-diagnostics">
       <div
         v-for="row in liveDesktopWindowRows"
@@ -130,13 +130,13 @@
         :key="windowInfo.hwnd"
         class="background-debug-window-card"
       >
-        <strong>{{ formatWindowTitle(windowInfo) }}</strong>
-        <span>{{ formatWindowMeta(windowInfo) }}</span>
+        <strong>{{ formatWindowTitle(windowInfo, t) }}</strong>
+        <span>{{ formatWindowMeta(windowInfo, t) }}</span>
         <span>{{ formatWindowRect(windowInfo.rect) }}</span>
       </article>
       <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
-        <strong>没有 Live Desktop 候选窗口</strong>
-        <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason || "尚未获得窗口诊断" }}</span>
+        <strong>{{ t("debug.liveDesktop.windows.emptyTitle") }}</strong>
+        <span>{{ liveDesktopWindowDiagnostics.detail || liveDesktopWindowDiagnostics.reason || t("debug.liveDesktop.windows.emptyDetail") }}</span>
       </article>
     </div>
 
@@ -146,7 +146,7 @@
 
     <div class="background-debug-actions background-debug-live-actions">
       <button type="button" class="background-debug-button" :disabled="isLiveDesktopActionBusy" @click="refreshLiveDesktopRuntimeStatus">
-        刷新
+        {{ t("debug.common.refresh") }}
       </button>
       <button
         type="button"
@@ -154,7 +154,7 @@
         :disabled="isLiveDesktopActionBusy"
         @click="reconfigureLiveDesktopRuntime"
       >
-        {{ isLiveDesktopActionBusy ? "处理中" : "重新应用" }}
+        {{ t(isLiveDesktopActionBusy ? "debug.common.processing" : "debug.liveDesktop.actions.reapply") }}
       </button>
       <button type="button" class="background-debug-button" :disabled="isCopyingDiagnostics" @click="copyDiagnostics">
         {{ diagnosticsCopyButtonLabel }}
@@ -166,6 +166,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { diagnosticClient } from "../../diagnostics/diagnosticClient.js";
+import { useLocalization } from "../../i18n/localization.js";
 import { formatDiagnosticActionError } from "./diagnosticUiError.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
@@ -194,34 +195,35 @@ const props = defineProps({
     default: null,
   },
 });
+const { t } = useLocalization();
 
-const SETTING_LABELS = Object.freeze({
-  compositorKeeper: "合成稳定器",
-  cssFallbackEffects: "CSS 后备效果",
-  debugFrameSourceOverride: "调试帧源",
-  disableMouseRelay: "禁用鼠标转发",
-  forceDwmFlush: "强制 DWM Flush",
-  skipBlankFrames: "跳过空白帧",
+const SETTING_LABEL_KEYS = Object.freeze({
+  compositorKeeper: "debug.liveDesktop.settings.compositorKeeper",
+  cssFallbackEffects: "debug.liveDesktop.settings.cssFallbackEffects",
+  debugFrameSourceOverride: "debug.liveDesktop.settings.debugFrameSourceOverride",
+  disableMouseRelay: "debug.liveDesktop.settings.disableMouseRelay",
+  forceDwmFlush: "debug.liveDesktop.settings.forceDwmFlush",
+  skipBlankFrames: "debug.liveDesktop.settings.skipBlankFramesShort",
 });
-const PHASE_LABELS = Object.freeze({
-  applying: "正在应用",
-  failed: "失败",
-  persisting: "正在保存",
-  ready: "就绪",
-  refreshing: "正在刷新",
-  running: "运行中",
-  stopped: "已停止",
-  unknown: "未知",
+const PHASE_LABEL_KEYS = Object.freeze({
+  applying: "debug.liveDesktop.phase.applying",
+  failed: "debug.liveDesktop.phase.failed",
+  persisting: "debug.liveDesktop.phase.persisting",
+  ready: "debug.liveDesktop.phase.ready",
+  refreshing: "debug.liveDesktop.phase.refreshing",
+  running: "debug.liveDesktop.phase.running",
+  stopped: "debug.liveDesktop.phase.stopped",
+  unknown: "debug.liveDesktop.phase.unknown",
 });
-const CONSISTENCY_LABELS = Object.freeze({
-  consistent: "一致",
-  drifted: "存在漂移",
-  unverified: "未验证",
+const CONSISTENCY_LABEL_KEYS = Object.freeze({
+  consistent: "debug.liveDesktop.consistency.consistent",
+  drifted: "debug.liveDesktop.consistency.drifted",
+  unverified: "debug.liveDesktop.consistency.unverified",
 });
-const VERIFICATION_LABELS = Object.freeze({
-  "frontend-event-dispatched": "前端事件已分发",
-  "runtime-accepted": "运行时已接受",
-  unknown: "未知",
+const VERIFICATION_LABEL_KEYS = Object.freeze({
+  "frontend-event-dispatched": "debug.liveDesktop.verification.frontend-event-dispatched",
+  "runtime-accepted": "debug.liveDesktop.verification.runtime-accepted",
+  unknown: "debug.liveDesktop.verification.unknown",
 });
 
 const hasCopiedDiagnostics = ref(false);
@@ -245,41 +247,47 @@ const liveDesktopCssFallbackEffects = computed(() => liveDesktopDesiredSettings.
 const liveDesktopSkipBlankFrames = computed(() => liveDesktopDesiredSettings.value.skipBlankFrames);
 const liveDesktopForceDwmFlush = computed(() => liveDesktopDesiredSettings.value.forceDwmFlush);
 const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(liveDesktopDiagnosticState.value?.runtimeStatus));
-const diagnosticsCopyButtonLabel = computed(() => (hasCopiedDiagnostics.value ? "已复制" : "复制诊断 JSON"));
+const diagnosticsCopyButtonLabel = computed(() => t(hasCopiedDiagnostics.value ? "debug.common.copied" : "debug.liveDesktop.actions.copyDiagnosticsJson"));
 
 function formatProtocolValue(value, labels) {
   const code = String(value || "unknown");
-  return `${labels[code] || code} (${code})`;
+  return `${labels[code] ? t(labels[code]) : code} (${code})`;
 }
 
 function formatSettingNames(names = []) {
-  return names.map((name) => `${SETTING_LABELS[name] || name} (${name})`).join("、") || "无";
+  return names
+    .map((name) => `${SETTING_LABEL_KEYS[name] ? t(SETTING_LABEL_KEYS[name]) : name} (${name})`)
+    .join(t("debug.common.listSeparator")) || t("debug.common.none");
 }
 
 const liveDesktopConsistencyRows = computed(() => {
   const state = liveDesktopDiagnosticState.value;
   const consistency = state?.consistency;
   const drift = [
-    ...(consistency?.desiredVsApplied || []).map((name) => `${SETTING_LABELS[name] || name} → 已应用`),
-    ...(consistency?.desiredVsPersisted || []).map((name) => `${SETTING_LABELS[name] || name} → 已持久化`),
+    ...(consistency?.desiredVsApplied || []).map((name) => t("debug.liveDesktop.consistency.applied", {
+      name: SETTING_LABEL_KEYS[name] ? t(SETTING_LABEL_KEYS[name]) : name,
+    })),
+    ...(consistency?.desiredVsPersisted || []).map((name) => t("debug.liveDesktop.consistency.persisted", {
+      name: SETTING_LABEL_KEYS[name] ? t(SETTING_LABEL_KEYS[name]) : name,
+    })),
   ];
   return [
-    { label: "控制器状态", value: state ? formatProtocolValue(state.phase, PHASE_LABELS) : "未连接" },
-    { label: "一致性", value: consistency ? formatProtocolValue(consistency.status, CONSISTENCY_LABELS) : "未验证" },
-    { label: "期望版本", value: String(state?.desired?.revision ?? 0) },
-    { label: "应用确认", value: formatProtocolValue(state?.applied?.verification, VERIFICATION_LABELS) },
-    { label: "未确认设置", value: formatSettingNames(consistency?.unconfirmedAppliedKeys), wide: true },
-    { label: "状态漂移", value: drift.join("、") || "无", wide: true },
+    { label: t("debug.liveDesktop.fields.controllerState"), value: state ? formatProtocolValue(state.phase, PHASE_LABEL_KEYS) : t("debug.common.notConnected") },
+    { label: t("debug.liveDesktop.fields.consistency"), value: consistency ? formatProtocolValue(consistency.status, CONSISTENCY_LABEL_KEYS) : t("debug.liveDesktop.consistency.unverified") },
+    { label: t("debug.liveDesktop.fields.desiredRevision"), value: String(state?.desired?.revision ?? 0) },
+    { label: t("debug.liveDesktop.fields.appliedVerification"), value: formatProtocolValue(state?.applied?.verification, VERIFICATION_LABEL_KEYS) },
+    { label: t("debug.liveDesktop.fields.unconfirmedSettings"), value: formatSettingNames(consistency?.unconfirmedAppliedKeys), wide: true },
+    { label: t("debug.liveDesktop.fields.stateDrift"), value: drift.join(t("debug.common.listSeparator")) || t("debug.common.none"), wide: true },
     ...(state?.lastFailure
       ? [{
-        label: "最近失败",
+        label: t("debug.liveDesktop.fields.lastFailure"),
         value: `[${state.lastFailure.stage}/${state.lastFailure.code}] ${state.lastFailure.message}`,
         wide: true,
       }]
       : []),
     ...(state?.lastRefreshFailure
       ? [{
-        label: "最近刷新失败",
+        label: t("debug.liveDesktop.fields.lastRefreshFailure"),
         value: `[refresh/${state.lastRefreshFailure.code}] ${state.lastRefreshFailure.message}`,
         wide: true,
       }]
@@ -290,70 +298,75 @@ const liveDesktopConsistencyRows = computed(() => {
 const liveDesktopStatusRows = computed(() => {
   const status = liveDesktopStatus.value;
   return [
-    { label: "阶段", value: formatProtocolValue(status.phase, PHASE_LABELS) },
-    { label: "是否活跃", value: status.active ? "是" : "否" },
-    { label: "代次", value: formatCount(status.generation) },
-    { label: "原因", value: status.reason || "-", wide: true },
+    { label: t("debug.liveDesktop.fields.phase"), value: formatProtocolValue(status.phase, PHASE_LABEL_KEYS) },
+    { label: t("debug.liveDesktop.fields.active"), value: t(status.active ? "debug.common.yes" : "debug.common.no") },
+    { label: t("debug.liveDesktop.fields.generation"), value: formatCount(status.generation) },
+    { label: t("debug.liveDesktop.fields.reason"), value: status.reason || "-", wide: true },
   ];
 });
 
 const liveDesktopDiagnosticsRows = computed(() => {
   const diagnostics = liveDesktopStatus.value.diagnostics;
   return [
-    { label: "已复制帧", value: formatCount(diagnostics.framesCopied) },
-    { label: "帧超时", value: formatCount(diagnostics.frameTimeouts) },
-    { label: "复制错误", value: formatCount(diagnostics.copyErrors) },
-    { label: "提交错误", value: formatCount(diagnostics.commitErrors) },
-    { label: "Shader 后备", value: formatCount(diagnostics.shaderCopyFallbacks) },
-    { label: "实时速率", value: formatLiveDesktopRates(liveDesktopRates.value), wide: true },
-    { label: "帧到达信号", value: formatFrameArrived(diagnostics), wide: true },
+    { label: t("debug.liveDesktop.fields.framesCopied"), value: formatCount(diagnostics.framesCopied) },
+    { label: t("debug.liveDesktop.fields.frameTimeouts"), value: formatCount(diagnostics.frameTimeouts) },
+    { label: t("debug.liveDesktop.fields.copyErrors"), value: formatCount(diagnostics.copyErrors) },
+    { label: t("debug.liveDesktop.fields.commitErrors"), value: formatCount(diagnostics.commitErrors) },
+    { label: t("debug.liveDesktop.fields.shaderFallbacks"), value: formatCount(diagnostics.shaderCopyFallbacks) },
+    { label: t("debug.liveDesktop.fields.rates"), value: formatLiveDesktopRates(liveDesktopRates.value, t), wide: true },
+    { label: t("debug.liveDesktop.fields.frameArrived"), value: formatFrameArrived(diagnostics, t), wide: true },
     {
-      label: "帧复制耗时",
+      label: t("debug.liveDesktop.fields.frameCopyTiming"),
       value: formatFrameTiming(
         diagnostics.frameCopySamples,
         diagnostics.frameCopyMicrosTotal,
         diagnostics.lastFrameCopyMicros,
         diagnostics.maxFrameCopyMicros,
+        t,
       ),
       wide: true,
     },
     {
-      label: "帧提交耗时",
+      label: t("debug.liveDesktop.fields.frameCommitTiming"),
       value: formatFrameTiming(
         diagnostics.frameCommitSamples,
         diagnostics.frameCommitMicrosTotal,
         diagnostics.lastFrameCommitMicros,
         diagnostics.maxFrameCommitMicros,
+        t,
       ),
       wide: true,
     },
-    { label: "配置更新", value: formatCount(diagnostics.configUpdates) },
-    { label: "配置错误", value: formatCount(diagnostics.configErrors) },
-    { label: "测试图案帧", value: formatCount(diagnostics.testPatternFrames) },
-    { label: "跳过空白帧", value: formatCount(diagnostics.blankFrameSkips) },
+    { label: t("debug.liveDesktop.fields.configUpdates"), value: formatCount(diagnostics.configUpdates) },
+    { label: t("debug.liveDesktop.fields.configErrors"), value: formatCount(diagnostics.configErrors) },
+    { label: t("debug.liveDesktop.fields.testPatternFrames"), value: formatCount(diagnostics.testPatternFrames) },
+    { label: t("debug.liveDesktop.settings.skipBlankFramesShort"), value: formatCount(diagnostics.blankFrameSkips) },
     {
-      label: "遗留渲染线程",
-      value: `活跃 ${formatCount(diagnostics.abandonedRendererWorkers)} / 已回收 ${formatCount(diagnostics.reapedAbandonedRendererWorkers)}`,
+      label: t("debug.liveDesktop.fields.abandonedWorkers"),
+      value: t("debug.liveDesktop.workerSummary", {
+        active: formatCount(diagnostics.abandonedRendererWorkers),
+        reaped: formatCount(diagnostics.reapedAbandonedRendererWorkers),
+      }),
       wide: true,
     },
-    { label: "像素探针", value: formatPixelProbe(diagnostics), wide: true },
-    { label: "最近一帧", value: formatLastFrame(diagnostics), wide: true },
+    { label: t("debug.liveDesktop.fields.pixelProbe"), value: formatPixelProbe(diagnostics, t), wide: true },
+    { label: t("debug.liveDesktop.fields.lastFrame"), value: formatLastFrame(diagnostics, t), wide: true },
     ...(diagnostics.lastAbandonedRendererReason
-      ? [{ label: "最近遗留原因", value: diagnostics.lastAbandonedRendererReason, wide: true }]
+      ? [{ label: t("debug.liveDesktop.fields.lastAbandonedReason"), value: diagnostics.lastAbandonedRendererReason, wide: true }]
       : []),
     ...(diagnostics.lastShaderCopyError
-      ? [{ label: "最近 Shader 后备错误", value: diagnostics.lastShaderCopyError, wide: true }]
+      ? [{ label: t("debug.liveDesktop.fields.lastShaderFallbackError"), value: diagnostics.lastShaderCopyError, wide: true }]
       : []),
   ];
 });
 
 const liveDesktopLastError = computed(() => liveDesktopActionError.value
   || (liveDesktopDiagnosticState.value?.lastFailure
-    ? formatDiagnosticActionError("Live Desktop 状态变更", liveDesktopDiagnosticState.value.lastFailure)
+    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateChange"), liveDesktopDiagnosticState.value.lastFailure, t)
     : "")
   || liveDesktopPollError.value
   || (liveDesktopDiagnosticState.value?.lastRefreshFailure
-    ? formatDiagnosticActionError("Live Desktop 状态刷新", liveDesktopDiagnosticState.value.lastRefreshFailure)
+    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateRefresh"), liveDesktopDiagnosticState.value.lastRefreshFailure, t)
     : "")
   || liveDesktopStatus.value.diagnostics.lastError);
 const liveDesktopWindowDiagnostics = computed(() => liveDesktopStatus.value.windowDiagnostics);
@@ -361,9 +374,9 @@ const liveDesktopCandidateWindows = computed(() => liveDesktopWindowDiagnostics.
 const liveDesktopWindowRows = computed(() => {
   const diagnostics = liveDesktopWindowDiagnostics.value;
   return [
-    { label: "窗口诊断", value: diagnostics.available ? "可用" : diagnostics.reason || "不可用", wide: true },
-    { label: "发现窗口", value: formatCount(diagnostics.windowCount) },
-    { label: "候选窗口", value: formatCount(diagnostics.candidateCount) },
+    { label: t("debug.liveDesktop.fields.windowDiagnostics"), value: diagnostics.available ? t("debug.common.available") : diagnostics.reason || t("debug.common.unavailable"), wide: true },
+    { label: t("debug.liveDesktop.fields.windowsFound"), value: formatCount(diagnostics.windowCount) },
+    { label: t("debug.liveDesktop.fields.candidateWindows"), value: formatCount(diagnostics.candidateCount) },
   ];
 });
 
@@ -417,14 +430,14 @@ async function runLiveDesktopDiagnosticAction(operation, params = {}, actionLabe
   try {
     const state = await diagnosticClient.invoke("live-desktop", operation, params);
     if (!state || state.schema !== "lumeria-live-desktop-diagnostics-state/v1") {
-      throw new Error("Live Desktop 诊断工具返回了无效状态");
+      throw new Error(t("debug.liveDesktop.errors.invalidState"));
     }
     liveDesktopDiagnosticState.value = state;
     errorState.value = "";
     updateLiveDesktopRates();
     return state;
   } catch (error) {
-    errorState.value = formatDiagnosticActionError(actionLabel, error);
+    errorState.value = formatDiagnosticActionError(actionLabel, error, t);
     return null;
   } finally {
     isLiveDesktopActionBusy.value = false;
@@ -433,7 +446,7 @@ async function runLiveDesktopDiagnosticAction(operation, params = {}, actionLabe
 
 function updateLiveDesktopDiagnosticSettings(patch) {
   liveDesktopRateSample = null;
-  return runLiveDesktopDiagnosticAction("settings.update", { patch }, "更新设置");
+  return runLiveDesktopDiagnosticAction("settings.update", { patch }, t("debug.liveDesktop.actions.updateSettings"));
 }
 
 function setLiveDesktopDisableMouseRelay(disabled) {
@@ -465,11 +478,11 @@ function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
 }
 
 function refreshLiveDesktopRuntimeStatus() {
-  return runLiveDesktopDiagnosticAction("runtime.refresh", {}, "刷新状态");
+  return runLiveDesktopDiagnosticAction("runtime.refresh", {}, t("debug.liveDesktop.actions.refreshState"));
 }
 
 function reconfigureLiveDesktopRuntime() {
-  return runLiveDesktopDiagnosticAction("runtime.apply", {}, "重新应用设置");
+  return runLiveDesktopDiagnosticAction("runtime.apply", {}, t("debug.liveDesktop.actions.reapplySettings"));
 }
 
 function markDiagnosticsCopied() {
@@ -485,7 +498,7 @@ async function copyDiagnostics() {
   if (isCopyingDiagnostics.value) return;
   isCopyingDiagnostics.value = true;
   try {
-    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API 不可用");
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
     const diagnosticsState = await diagnosticClient.invoke("live-desktop", "state.read");
     const bundle = {
       capturedAt: new Date().toISOString(),
@@ -498,7 +511,7 @@ async function copyDiagnostics() {
     liveDesktopActionError.value = "";
     markDiagnosticsCopied();
   } catch (error) {
-    liveDesktopActionError.value = formatDiagnosticActionError("复制诊断", error);
+    liveDesktopActionError.value = formatDiagnosticActionError(t("debug.liveDesktop.actions.copyDiagnostics"), error, t);
   } finally {
     isCopyingDiagnostics.value = false;
   }
@@ -517,7 +530,7 @@ function syncPoller() {
   const poll = () => runLiveDesktopDiagnosticAction(
     "runtime.refresh",
     {},
-    "自动刷新状态",
+    t("debug.liveDesktop.actions.autoRefreshState"),
     { errorState: liveDesktopPollError },
   );
   void poll();

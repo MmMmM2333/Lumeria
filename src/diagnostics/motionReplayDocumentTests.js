@@ -176,5 +176,5 @@ export function runMotionReplayDocumentTests() {
   } catch (error) {
     schemaError = error;
   }
-  assert(schemaError?.code === "motion-replay-schema-not-supported" && /不支持/.test(schemaError?.message || ""), "document construction should reject unsupported source schemas with a stable readable error");
+  assert(schemaError?.code === "motion-replay-schema-not-supported" && /not supported/.test(schemaError?.message || ""), "document construction should reject unsupported source schemas with a stable readable error");
 }

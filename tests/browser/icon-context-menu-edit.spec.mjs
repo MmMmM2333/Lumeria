@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.use({ locale: "zh-CN" });
+
 async function rightClickSingleSearchResult(page) {
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   await expect(canvas).toBeVisible();

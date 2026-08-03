@@ -2,11 +2,26 @@ export const RENDER_PROBE_TARGET_ALL = "all-folders";
 export const RENDER_PROBE_PIXELS_OFF = "off";
 export const RENDER_PROBE_PIXELS_PHASE_DIFF = "phase-diff";
 export const RENDER_PROBE_TARGET_OPTIONS = [
-  { label: "全部文件夹", value: RENDER_PROBE_TARGET_ALL },
-  { label: "文件夹 ID", value: "folderId" },
-  { label: "项目 ID", value: "itemId" },
-  { label: "项目名称", value: "itemName" },
+  { labelKey: "debug.render.target.allFolders", value: RENDER_PROBE_TARGET_ALL },
+  { labelKey: "debug.render.target.folderId", value: "folderId" },
+  { labelKey: "debug.render.target.itemId", value: "itemId" },
+  { labelKey: "debug.render.target.itemName", value: "itemName" },
 ];
+
+function requireTranslation(translate) {
+  if (typeof translate !== "function") {
+    throw new TypeError("Render probe presentation requires a translation function");
+  }
+  return translate;
+}
+
+export function getRenderProbeTargetOptions(translate) {
+  const t = requireTranslation(translate);
+  return RENDER_PROBE_TARGET_OPTIONS.map((option) => ({
+    ...option,
+    label: t(option.labelKey),
+  }));
+}
 
 const TARGET_KEYS = new Set(
   RENDER_PROBE_TARGET_OPTIONS
@@ -58,75 +73,83 @@ export function buildRenderProbeArmConfig(form = {}) {
   };
 }
 
-export function formatRenderProbeTarget(target) {
-  if (target == null || target === RENDER_PROBE_TARGET_ALL) return "全部文件夹";
+export function formatRenderProbeTarget(target, translate) {
+  const t = requireTranslation(translate);
+  if (target == null || target === RENDER_PROBE_TARGET_ALL) return t("debug.render.target.allFolders");
   for (const key of TARGET_KEYS) {
     if (target?.[key] != null) {
-      const label = RENDER_PROBE_TARGET_OPTIONS.find((option) => option.value === key)?.label || key;
+      const labelKey = RENDER_PROBE_TARGET_OPTIONS.find((option) => option.value === key)?.labelKey;
+      const label = labelKey ? t(labelKey) : key;
       return `${label}: ${String(target[key])}`;
     }
   }
-  return "未知目标";
+  return t("debug.render.target.unknown");
 }
 
 export function resolveRenderProbeDisplaySession(summary) {
   return summary?.activeSession || summary?.lastSession || null;
 }
 
-export function buildRenderProbeStatusRows(summary) {
-  if (!summary) return [{ label: "状态", value: "不可用", wide: true }];
+export function buildRenderProbeStatusRows(summary, translate) {
+  const t = requireTranslation(translate);
+  if (!summary) return [{ label: t("debug.render.status.state"), value: t("debug.common.unavailable"), wide: true }];
   const config = summary.config || {};
   const session = resolveRenderProbeDisplaySession(summary);
   return [
-    { label: "状态", value: config.enabled ? "已布防" : "未布防" },
-    { label: "像素采样", value: config.pixels === RENDER_PROBE_PIXELS_PHASE_DIFF ? "阶段差异" : "关闭" },
-    { label: "目标", value: formatRenderProbeTarget(config.target), wide: true },
-    { label: "自动冻结", value: config.autoFreeze === false ? "关闭" : "开启" },
+    { label: t("debug.render.status.state"), value: t(config.enabled ? "debug.render.status.armed" : "debug.render.status.disarmed") },
+    { label: t("debug.render.status.pixelSampling"), value: t(config.pixels === RENDER_PROBE_PIXELS_PHASE_DIFF ? "debug.render.pixels.phaseDiff" : "debug.common.off") },
+    { label: t("debug.render.status.target"), value: formatRenderProbeTarget(config.target, t), wide: true },
+    { label: t("debug.render.status.autoFreeze"), value: t(config.autoFreeze === false ? "debug.common.off" : "debug.common.on") },
     {
-      label: "会话 / 事件",
+      label: t("debug.render.status.sessionEvents"),
       value: `${normalizeCount(summary.sessionCount)} / ${normalizeCount(summary.recentEventCount)}`,
     },
     {
-      label: "当前会话",
-      value: session ? `${session.id || "未知"} · ${session.status || "未知"}` : "无",
+      label: t("debug.render.status.currentSession"),
+      value: session ? `${session.id || t("debug.common.unknown")} · ${session.status || t("debug.common.unknown")}` : t("debug.common.none"),
       wide: true,
     },
     {
-      label: "拖拽项目",
-      value: session?.dragItem?.name || session?.dragItem?.id || "无",
+      label: t("debug.render.status.dragItem"),
+      value: session?.dragItem?.name || session?.dragItem?.id || t("debug.common.none"),
       wide: true,
     },
-    { label: "冻结原因", value: session?.frozenReason || "无", wide: true },
+    { label: t("debug.render.status.freezeReason"), value: session?.frozenReason || t("debug.common.none"), wide: true },
   ];
 }
 
-function formatFramebuffer(framebuffer) {
-  if (!framebuffer) return "未采样";
-  if (framebuffer.available !== true) return `不可用 · ${framebuffer.reason || "未知原因"}`;
+function formatFramebuffer(framebuffer, t) {
+  if (!framebuffer) return t("debug.render.framebuffer.notSampled");
+  if (framebuffer.available !== true) {
+    return t("debug.render.framebuffer.unavailable", {
+      reason: framebuffer.reason || t("debug.common.unknownReason"),
+    });
+  }
   const region = framebuffer.region;
   const parts = [
-    `${normalizeCount(framebuffer.slotCount)} 个槽位`,
-    `${normalizeCount(framebuffer.readPixelsCallCount)} 次读取`,
+    t("debug.render.framebuffer.slots", { count: normalizeCount(framebuffer.slotCount) }),
+    t("debug.render.framebuffer.reads", { count: normalizeCount(framebuffer.readPixelsCallCount) }),
     formatMillis(framebuffer.captureDurationMs),
   ];
   if (region?.width != null && region?.height != null) {
     parts.push(`${normalizeCount(region.width)}×${normalizeCount(region.height)}`);
   }
   if (normalizeCount(framebuffer.skippedSlotCount)) {
-    parts.push(`跳过 ${normalizeCount(framebuffer.skippedSlotCount)}`);
+    parts.push(t("debug.render.framebuffer.skipped", { count: normalizeCount(framebuffer.skippedSlotCount) }));
   }
   if (normalizeCount(framebuffer.warningCount)) {
-    parts.push(`${normalizeCount(framebuffer.warningCount)} 条警告`);
+    parts.push(t("debug.render.framebuffer.warnings", { count: normalizeCount(framebuffer.warningCount) }));
   }
   return parts.join(" · ");
 }
 
-export function buildRenderProbePhaseRows(session) {
+export function buildRenderProbePhaseRows(session, translate) {
+  const t = requireTranslation(translate);
   return (session?.captures || []).map((capture, index) => {
     const violationCount = normalizeCount(capture?.violationCount);
     const firstViolation = capture?.firstViolation?.code || null;
     return {
-      framebuffer: formatFramebuffer(capture?.framebuffer),
+      framebuffer: formatFramebuffer(capture?.framebuffer, t),
       key: `${capture?.phase || "unknown"}:${capture?.timeMs ?? "unknown"}:${index}`,
       phase: capture?.phase || "unknown",
       time: formatMillis(capture?.timeMs),
@@ -135,24 +158,25 @@ export function buildRenderProbePhaseRows(session) {
   });
 }
 
-export function buildRenderProbeCandidateRows(session) {
+export function buildRenderProbeCandidateRows(session, translate) {
+  const t = requireTranslation(translate);
   return (session?.pixelComparison?.candidates || []).map((candidate, index) => {
     const folderLabel = candidate.folderName
-      ? `${candidate.folderName} (${candidate.folderId || "未知"})`
-      : candidate.folderId || "未知文件夹";
+      ? `${candidate.folderName} (${candidate.folderId || t("debug.common.unknown")})`
+      : candidate.folderId || t("debug.render.candidates.folderUnknown");
     return {
       detail: [
-        candidate.strongCandidate ? "强候选" : "有变化",
+        t(candidate.strongCandidate ? "debug.render.candidates.strong" : "debug.render.candidates.changed"),
         `Δ ${formatPercent(candidate.meanAbsoluteDelta)}`,
-        `网格 ${formatPercent(candidate.changedSampleRatio)}`,
-        `Alpha ${formatSignedPercent(candidate.alphaGainAfterRelease)}`,
-        `亮度 ${formatSignedPercent(candidate.brightnessGainAfterRelease)}`,
+        t("debug.render.candidates.grid", { value: formatPercent(candidate.changedSampleRatio) }),
+        t("debug.render.candidates.alpha", { value: formatSignedPercent(candidate.alphaGainAfterRelease) }),
+        t("debug.render.candidates.brightness", { value: formatSignedPercent(candidate.brightnessGainAfterRelease) }),
       ].join(" · "),
-      identity: `${folderLabel} · 槽位 ${candidate.slot ?? "?"} · ${candidate.itemId || "未知项目"}`,
+      identity: `${folderLabel} · ${t("debug.render.candidates.slot", { slot: candidate.slot ?? "?" })} · ${candidate.itemId || t("debug.render.candidates.itemUnknown")}`,
       key: `${candidate.folderId || ""}:${candidate.itemId || ""}:${candidate.slot ?? ""}:${index}`,
       rank: index + 1,
       strong: candidate.strongCandidate === true,
-      title: candidate.itemName || candidate.itemId || `候选 ${index + 1}`,
+      title: candidate.itemName || candidate.itemId || t("debug.render.candidates.candidate", { index: index + 1 }),
     };
   });
 }

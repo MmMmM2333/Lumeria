@@ -1,6 +1,7 @@
 import {
   DEFAULT_SCAN_ROOTS,
   canExcludeAppFromScan,
+  createDefaultScanRoots,
   createLaunchpadDataHelpers,
   isAppExcludedFromScan,
   makeLaunchTarget,
@@ -40,6 +41,7 @@ export function runLaunchpadDataTests() {
     ensurePage: layoutHelpers.ensurePage,
     getFolderChildPages: layoutHelpers.getFolderChildPages,
     getFolderPageSize: () => folderPageSize.value,
+    getNewFolderName: () => "New Folder",
     getPageSize: () => pageSize.value,
     makeId: layoutHelpers.makeId,
     withFolderPages: layoutHelpers.withFolderPages,
@@ -69,6 +71,12 @@ export function runLaunchpadDataTests() {
   const windowsAppRoot = DEFAULT_SCAN_ROOTS.find((root) => root.type === "windowsAppCatalog");
   assert(windowsAppRoot?.path === "shell:AppsFolder", "default scan roots should include the Windows app catalog");
   assert(windowsAppRoot?.removable === false, "the system-managed Windows app catalog should not be removable");
+  const localizedRoots = createDefaultScanRoots((key) => ({
+    "settings.apps.sources.default.systemStartMenu": "System Start Menu",
+    "settings.apps.sources.default.userStartMenu": "User Start Menu",
+    "settings.apps.sources.default.windowsCatalog": "Windows Apps",
+  })[key]);
+  assert(localizedRoots.map((root) => root.label).join(",") === "Windows Apps,User Start Menu,System Start Menu", "default scan-root labels should be created through the active locale");
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
   const blockedEntry = makeScanAppExclusionEntry({
@@ -208,6 +216,7 @@ export function runLaunchpadDataTests() {
     fullscreenOverscanEnabled: false,
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
+    localePreference: "en-US",
   });
   assert(snapshot.version === 2, "layout snapshots should use version 2");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -235,6 +244,7 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.fullscreenOverscanEnabled === false, "layout snapshots should preserve disabled fullscreen overscan");
   assert(snapshot.settings.showCustomTitlebar === false, "layout snapshots should include custom titlebar visibility");
   assert(snapshot.settings.mainWindowShortcut === "control+alt+KeyL", "layout snapshots should include the main window shortcut");
+  assert(snapshot.settings.localePreference === "en-US", "layout snapshots should include the language preference without changing version 2");
   const disabledShortcutSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

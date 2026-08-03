@@ -201,26 +201,41 @@ function buildWarnings(trace = {}, selectedTarget = null, selectedTrack = null, 
     .slice(0, Math.max(0, Math.floor(readNumber(limit, DEFAULT_WARNING_LIMIT))));
 }
 
-function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
+function localize(t, key, params, technicalText) {
+  return typeof t === "function" ? t(key, params) : technicalText;
+}
+
+function buildWhyRows({ current, laneBreakdown, recentEvents, t, warnings }) {
   const rows = [];
   if (!current) {
     rows.push({
-      detail: "所选时刻没有与当前目标或轨道匹配的回放采样。",
+      detail: localize(t, "debug.motion.inspector.noCurrentSampleDetail", {}, "No replay sample matches the current target or track at the selected time."),
       key: "no-current-sample",
-      label: "当前无采样",
+      label: localize(t, "debug.motion.inspector.noCurrentSample", {}, "No current sample"),
       tone: "muted",
     });
   } else {
     rows.push({
-      detail: `${current.sourceLabel}.${current.prop} 当前值 ${current.valueLabel}，目标值 ${current.toLabel}，差值 ${current.deltaLabel}，速度 ${current.velocityLabel}。`,
+      detail: localize(t, "debug.motion.inspector.currentValueDetail", {
+        delta: current.deltaLabel,
+        prop: current.prop,
+        source: current.sourceLabel,
+        to: current.toLabel,
+        value: current.valueLabel,
+        velocity: current.velocityLabel,
+      }, `${current.sourceLabel}.${current.prop}: current ${current.valueLabel}, target ${current.toLabel}, delta ${current.deltaLabel}, velocity ${current.velocityLabel}.`),
       key: "current-value",
-      label: "当前值",
+      label: localize(t, "debug.motion.fields.currentValue", {}, "Current value"),
       tone: Math.abs(current.delta) > 0.001 || Math.abs(current.velocity) > 0.001 ? "active" : "muted",
     });
     rows.push({
-      detail: `${current.lane}/${current.laneKey} 上的 ${current.driver} 驱动器是当前选中的通道贡献。`,
+      detail: localize(t, "debug.motion.inspector.selectedLaneDetail", {
+        driver: current.driver,
+        lane: current.lane,
+        laneKey: current.laneKey,
+      }, `The ${current.driver} driver on ${current.lane}/${current.laneKey} is the selected channel contribution.`),
       key: "selected-lane",
-      label: "选中通道",
+      label: localize(t, "debug.motion.inspector.selectedLane", {}, "Selected lane"),
       tone: "info",
     });
   }
@@ -228,7 +243,7 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     rows.push({
       detail: laneBreakdown.map((lane) => `${lane.lane}/${lane.laneKey}:${lane.valueLabel}->${lane.toLabel}`).join(" | "),
       key: "lane-breakdown",
-      label: "多通道叠加",
+      label: localize(t, "debug.motion.inspector.multipleLanes", {}, "Multiple lane composition"),
       tone: "info",
     });
   }
@@ -237,9 +252,14 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     .sort((a, b) => b.timeMs - a.timeMs)[0] || recentEvents[0];
   if (latestPastEvent) {
     rows.push({
-      detail: `${latestPastEvent.timeLabel} 发生 ${latestPastEvent.type}${latestPastEvent.reason ? `（${latestPastEvent.reason}）` : ""}：${latestPastEvent.detail}。`,
+      detail: localize(t, "debug.motion.inspector.recentEventDetail", {
+        detail: latestPastEvent.detail,
+        reason: latestPastEvent.reason ? ` (${latestPastEvent.reason})` : "",
+        time: latestPastEvent.timeLabel,
+        type: latestPastEvent.type,
+      }, `${latestPastEvent.timeLabel}: ${latestPastEvent.type}${latestPastEvent.reason ? ` (${latestPastEvent.reason})` : ""}: ${latestPastEvent.detail}.`),
       key: "recent-event",
-      label: "最近事件",
+      label: localize(t, "debug.motion.inspector.recentEvent", {}, "Recent event"),
       tone: latestPastEvent.type === "cancel" || latestPastEvent.type === "retarget" ? "warning" : "info",
     });
   }
@@ -247,7 +267,7 @@ function buildWhyRows({ current, laneBreakdown, recentEvents, warnings }) {
     rows.push({
       detail: warnings.map((warning) => warning.detail).join(" | "),
       key: "warnings",
-      label: "警告",
+      label: localize(t, "debug.motion.values.warnings", {}, "Warnings"),
       tone: "warning",
     });
   }
@@ -288,6 +308,6 @@ export function buildMotionInspectorModel(traceInput = null, options = {}) {
       track: selectedTrack,
     },
     warnings,
-    whyRows: buildWhyRows({ current, laneBreakdown, recentEvents, warnings }),
+    whyRows: buildWhyRows({ current, laneBreakdown, recentEvents, t: options.t, warnings }),
   };
 }

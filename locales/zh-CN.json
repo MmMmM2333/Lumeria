@@ -1,0 +1,1509 @@
+{
+  "locale": "zh-CN",
+  "displayName": "简体中文",
+  "direction": "ltr",
+  "messages": {
+    "common": {
+      "actions": {
+        "apply": "应用",
+        "cancel": "取消",
+        "close": "关闭",
+        "open": "打开",
+        "edit": "编辑",
+        "rename": "重命名",
+        "save": "保存",
+        "browse": "浏览",
+        "add": "添加",
+        "delete": "删除",
+        "selectAll": "全选",
+        "clearSelection": "清空选择",
+        "selectImage": "选择图片",
+        "restoreDefault": "恢复默认",
+        "decrease": "减少",
+        "increase": "增加",
+        "reset": "重置"
+      }
+    },
+    "diagnostics": {
+      "analysis": {
+        "dataQuality": {
+          "good": "捕获数据完整，可用于分析",
+          "insufficient": "捕获数据不足，当前结论不可靠",
+          "limited": "捕获数据存在缺口，分析结论需要结合上下文复核",
+          "issue": {
+            "coverage": "实际捕获时长只覆盖请求时长的 {coveragePercent}%",
+            "frameGap": "最大帧间隔 {maxFrameGapMs}ms，高于期望间隔 {expectedFrameGapMs}ms",
+            "noFrames": "捕获中没有帧采样，无法分析属性运动曲线"
+          }
+        },
+        "finding": {
+          "cancel": {
+            "message": "捕获中记录了 {count} 次取消；取消可能是正常替换，也可能暴露生命周期中断。",
+            "observation": "最强取消事件发生在 {timeMs}ms，原因是 {reason}",
+            "title": "发生动画取消"
+          },
+          "counterEvidence": {
+            "settled": "后续采样已回到目标附近，异常可能是短暂且已自行收敛"
+          },
+          "maxDelta": {
+            "message": "这是捕获范围内观测到的最大目标差值，用于定位变化幅度最大的轨道；它本身不等同于故障。",
+            "observation": "{sourceLabel}.{prop} 在 {timeMs}ms 的绝对目标差值为 {value}",
+            "title": "最大目标差值"
+          },
+          "maxVelocity": {
+            "message": "这是捕获范围内观测到的最大绝对速度，用于定位变化最快的轨道；它本身不等同于故障。",
+            "observation": "{sourceLabel}.{prop} 在 {timeMs}ms 的绝对速度为 {value}",
+            "title": "最大绝对速度"
+          },
+          "overshoot": {
+            "message": "运行时明确记录了过冲警告，目标值曾越过预期终点。",
+            "observation": "{sourceLabel}.{prop} 在 {timeMs}ms 附近触发 overshoot warning",
+            "title": "检测到过冲"
+          },
+          "retarget": {
+            "message": "捕获中记录了 {count} 次重定向；这是有用的生命周期事实，但不应脱离交互上下文直接判为故障。",
+            "observation": "最强重定向发生在 {timeMs}ms，原因是 {reason}",
+            "title": "发生目标重定向"
+          },
+          "warning": {
+            "message": "运行时记录了 {warningType} 警告，需要检查对应轨道及其上下文。",
+            "observation": "{sourceLabel}.{prop} 在 {timeMs}ms 附近触发 {warningType} warning",
+            "title": "运行时报告警告"
+          }
+        },
+        "nextAction": {
+          "inspect": "检查 {timeMs}ms 附近的轨道状态与事件",
+          "reviewCancel": "确认取消是否来自预期的动画替换或组件销毁",
+          "reviewRetarget": "核对重定向前后的目标值与触发来源",
+          "reviewWarning": "检查警告轨道的驱动器、目标值和速度"
+        },
+        "summary": {
+          "attention": "发现 {warningCount} 项需关注问题，另有 {infoCount} 项观测",
+          "empty": "当前范围内没有可报告的诊断发现",
+          "insufficient": "捕获数据不足，暂时无法形成可靠结论",
+          "ok": "未发现需关注问题，共记录 {infoCount} 项观测"
+        },
+        "motion": {
+          "title": "Motion 捕获分析"
+        },
+        "metric": {
+          "duration": "捕获时长",
+          "eventCount": "事件数",
+          "frameCount": "帧数",
+          "maxDelta": "最大绝对目标差值",
+          "maxVelocity": "最大绝对速度",
+          "trackCount": "轨道数",
+          "warningCount": "运行时警告数"
+        }
+      },
+      "confidence": {
+        "high": "高置信",
+        "low": "低置信",
+        "medium": "中置信"
+      },
+      "format": {
+        "counterEvidence": "反证",
+        "dataQuality": "数据质量",
+        "evidence": "证据",
+        "findings": "诊断发现",
+        "metrics": "关键指标",
+        "nextActions": "下一步",
+        "noCounterEvidence": "未发现足以削弱该结论的反证",
+        "observations": "观测",
+        "summary": "结论"
+      },
+      "severity": {
+        "critical": "严重",
+        "error": "错误",
+        "info": "观测",
+        "warning": "需关注"
+      },
+      "tools": {
+        "motion": {
+          "description": "捕获、回放并分析 Motion 运行时状态、轨道、事件和警告。",
+          "operations": {
+            "history": { "clear": { "title": "清除 Motion 历史" } },
+            "overlay": { "snapshot": { "title": "读取 Motion 覆盖层快照" } },
+            "replay": {
+              "capture": {
+                "start": { "title": "开始回放捕获" },
+                "stop": { "title": "停止回放捕获" }
+              },
+              "document": {
+                "analyze": { "title": "分析捕获文档" },
+                "close": { "title": "关闭捕获文档" },
+                "export": { "title": "导出捕获文档" },
+                "load": { "title": "载入捕获文档" },
+                "status": { "title": "读取捕获文档状态" },
+                "view": { "title": "查询捕获文档视图" }
+              },
+              "export": { "title": "导出运行时回放" }
+            },
+            "report": {
+              "generate": { "title": "生成 Motion 报告" },
+              "read": { "title": "读取 Motion 原始报告" }
+            },
+            "runtime": {
+              "configure": { "title": "配置 Motion 诊断" },
+              "snapshot": { "title": "读取 Motion 运行时快照" }
+            }
+          },
+          "title": "Motion 动画诊断"
+        },
+        "motion-lab": {
+          "description": "运行 Motion 场景、调整参数、保存基线、比较结果并导出可分析捕获。",
+          "operations": {
+            "baseline": { "save": { "title": "保存 Motion Lab 基线" } },
+            "compare": { "run": { "title": "比较 Motion Lab 运行结果" } },
+            "export": { "read": { "title": "导出 Motion Lab 数据" } },
+            "params": { "update": { "title": "更新 Motion Lab 参数" } },
+            "preset": { "apply": { "title": "应用 Motion Lab 参数预设" } },
+            "replay": { "capture": { "title": "捕获 Motion Lab 回放" } },
+            "scenario": {
+              "run": { "title": "运行 Motion Lab 场景" },
+              "select": { "title": "选择 Motion Lab 场景" }
+            },
+            "scene": { "reset": { "title": "重置 Motion Lab 场景" } },
+            "state": { "read": { "title": "读取 Motion Lab 状态" } }
+          },
+          "title": "Motion Lab 诊断"
+        },
+        "live-desktop": {
+          "description": "读取 Live Desktop 运行时状态，并以可审计方式更新、应用和持久化调试设置。",
+          "operations": {
+            "runtime": {
+              "apply": { "title": "重新应用当前设置" },
+              "refresh": { "title": "刷新运行时状态" }
+            },
+            "settings": { "update": { "title": "更新调试设置" } },
+            "state": { "read": { "title": "读取完整诊断状态" } }
+          },
+          "title": "Live Desktop 诊断"
+        },
+        "render": {
+          "description": "捕获并检查 Pixi 渲染批次、帧缓冲、合成与文件夹视觉状态。",
+          "operations": {
+            "capture": {
+              "inspect": { "title": "捕获并检查渲染状态" },
+              "manual": { "title": "手动捕获渲染状态" }
+            },
+            "folder-visual": { "snapshot": { "title": "读取文件夹视觉快照" } },
+            "probe": {
+              "arm": { "title": "启用渲染探针" },
+              "clear": { "title": "清除渲染捕获" },
+              "disarm": { "title": "停用渲染探针" },
+              "freeze": { "title": "冻结渲染捕获" }
+            },
+            "report": {
+              "export": { "title": "导出渲染报告" },
+              "read": { "title": "读取渲染报告" },
+              "summary": { "title": "读取渲染摘要" }
+            }
+          },
+          "title": "Pixi 渲染诊断"
+        },
+        "scene": {
+          "description": "读取、配置并清理拖拽命中、文件夹 handoff 与单舞台几何诊断状态。",
+          "operations": {
+            "folder-handoff": { "configure": { "title": "配置文件夹 handoff 诊断" } },
+            "state": {
+              "clear": { "title": "清理场景诊断状态" },
+              "read": { "title": "读取场景诊断状态" }
+            }
+          },
+          "title": "Pixi 场景诊断"
+        }
+      }
+    },
+    "debug": {
+      "common": {
+        "all": "全部",
+        "none": "无",
+        "yes": "是",
+        "no": "否",
+        "unknown": "未知",
+        "unknownReason": "未知原因",
+        "available": "可用",
+        "unavailable": "不可用",
+        "notConnected": "未连接",
+        "on": "开启",
+        "off": "关闭",
+        "refresh": "刷新",
+        "refreshing": "刷新中",
+        "processing": "处理中",
+        "reset": "重置",
+        "clear": "清空",
+        "apply": "应用",
+        "delete": "删除",
+        "copied": "已复制",
+        "copyJson": "复制 JSON",
+        "downloadJson": "下载 JSON",
+        "listSeparator": "、",
+        "devOnly": "仅开发环境",
+        "expand": "展开",
+        "collapse": "收起",
+        "leftBottom": "左下角",
+        "rightBottom": "右下角",
+        "dock": "停靠",
+        "fullscreen": "全屏",
+        "close": "关闭",
+        "empty": "空",
+        "loaded": "已载入",
+        "error": "错误",
+        "shown": "显示",
+        "hidden": "隐藏"
+      },
+      "errors": {
+        "unknown": "未知错误",
+        "nextAction": "刷新实际状态；若仍失败，查看控制台技术详情",
+        "action": "{action}失败 [{code}]：{message}；建议：{nextAction}"
+      },
+      "panel": {
+        "title": "开发者调试面板",
+        "positionAria": "调试面板位置",
+        "sectionsAria": "调试面板分区",
+        "tabs": {
+          "acrylic": "亚克力",
+          "layout": "布局",
+          "notice": "通知",
+          "render": "渲染",
+          "motion": "动画",
+          "liveDesktop": "动态桌面"
+        }
+      },
+      "acrylic": {
+        "override": "覆盖设置",
+        "tintColor": "染色颜色（tintColor）",
+        "blurKernel": "模糊内核",
+        "overrideRadiusPass": "覆盖半径/pass",
+        "kernel": {
+          "auto": "自动",
+          "dualKawase": "双重 Kawase",
+          "gaussian": "高斯"
+        },
+        "fields": {
+          "saturation": "饱和度（saturation）",
+          "contrast": "对比度（contrast）",
+          "brightness": "亮度（brightness）",
+          "tintStrength": "染色强度（tintStrength）",
+          "noise": "噪点（noise）",
+          "seed": "噪点种子（seed）",
+          "passCount": "迭代次数（passCount）",
+          "radiusScale": "半径倍率（radiusScale）",
+          "gaussianRadius": "高斯半径（gaussianRadius）",
+          "testStrength": "测试强度（testStrength）",
+          "blurCutoff": "模糊阈值上限（blurCutoff）",
+          "acrylicCutoff": "亚克力阈值上限（acrylicCutoff）",
+          "gaussianScale": "高斯缩放（gaussianScale）",
+          "gaussianMax": "高斯最大值（gaussianMax）"
+        },
+        "status": {
+          "auto": "自动 {effect} 实际强度={actualStrength} 测试强度={testStrength} 阈值≤{cutoff} → {kernel}{detail}",
+          "gaussianDetail": " 半径={radius}px",
+          "kawaseDetail": " pass={passCount} 半径倍率={radiusScale} 基准={baseScale}",
+          "manualGaussian": "手动高斯 半径={radius}px",
+          "manualKawase": "手动双重 Kawase pass={passCount} 半径倍率={radiusScale}"
+        }
+      },
+      "layout": {
+        "override": "覆盖布局",
+        "showDragHitZones": "显示拖拽命中区",
+        "detail": "CSS 控制宿主与主区域尺寸；gridTop 控制 Pixi 第一行的偏移。",
+        "fields": {
+          "enabled": "覆盖布局 (enabled)",
+          "dragHit": "拖拽命中区 (dragHit)",
+          "hostMaxHeight": "宿主最大高度（hostMaxHeight）",
+          "hostMax": "宿主最大高度 (hostMax)",
+          "hostHeightOffset": "宿主高度偏移（hostHeightOffset）",
+          "heightOffset": "高度偏移 (heightOffset)",
+          "mainPaddingY": "主区域纵向内边距（mainPaddingY）",
+          "mainPaddingYShort": "主区纵向内边距 (mainPaddingY)",
+          "gridPaddingTop": "网格顶部内边距（gridPaddingTop）",
+          "gridTop": "网格顶部 (gridTop)"
+        }
+      },
+      "notice": {
+        "detail": "生成布局保存、载入和恢复通知，用来检查 Lumeria 右下角 notice 的 Fluent 卡片样式。",
+        "transient": "临时通知",
+        "recovery": "恢复通知",
+        "section": "布局通知",
+        "actions": {
+          "saveFailed": "保存失败",
+          "saveRecovered": "保存恢复",
+          "loadFailed": "载入失败",
+          "loadRecovered": "载入恢复",
+          "layoutRecovered": "布局恢复",
+          "stackSample": "堆叠样例",
+          "clear": "清空通知"
+        }
+      },
+      "render": {
+        "captureTarget": "捕获目标",
+        "captureTargetAria": "渲染探针捕获目标",
+        "target": {
+          "allFolders": "全部文件夹",
+          "folderId": "文件夹 ID",
+          "itemId": "项目 ID",
+          "itemName": "项目名称",
+          "value": "目标值",
+          "unknown": "未知目标"
+        },
+        "pixels": {
+          "title": "Framebuffer 像素",
+          "aria": "渲染探针像素捕获模式",
+          "phaseDiff": "阶段差异",
+          "autoFreeze": "发现约束违规或显著像素差异时自动冻结"
+        },
+        "lastRefresh": "最近刷新：{time}{state}",
+        "lastRefreshPending": "尚未成功",
+        "refreshingSuffix": " · 刷新中",
+        "phases": {
+          "title": "阶段捕获",
+          "framebuffer": "Framebuffer：{value}",
+          "violations": "约束违规：{count}",
+          "emptyTitle": "暂无阶段捕获",
+          "emptyMessage": "先布防探针，再长按并释放一个图标。"
+        },
+        "candidates": {
+          "title": "像素候选",
+          "available": "可分析",
+          "unavailable": "不可分析：{reason}",
+          "summary": "{availability} · 强候选 {strong} · 变化 {changed} / 可比较 {comparable}",
+          "strong": "强候选",
+          "changed": "有变化",
+          "emptyTitle": "暂无像素候选",
+          "emptyWithComparison": "当前会话没有可排序的 framebuffer 差异。",
+          "emptyWithoutComparison": "先完成一次阶段差异拖拽会话。",
+          "folderUnknown": "未知文件夹",
+          "itemUnknown": "未知项目",
+          "candidate": "候选 {index}",
+          "slot": "槽位 {slot}",
+          "grid": "网格 {value}",
+          "alpha": "Alpha {value}",
+          "brightness": "亮度 {value}"
+        },
+        "actions": {
+          "arm": "布防",
+          "armAndClear": "布防并清空",
+          "disarm": "解除布防",
+          "copy": "复制",
+          "download": "下载"
+        },
+        "status": {
+          "state": "状态",
+          "armed": "已布防",
+          "disarmed": "未布防",
+          "pixelSampling": "像素采样",
+          "target": "目标",
+          "autoFreeze": "自动冻结",
+          "sessionEvents": "会话 / 事件",
+          "currentSession": "当前会话",
+          "dragItem": "拖拽项目",
+          "freezeReason": "冻结原因"
+        },
+        "framebuffer": {
+          "notSampled": "未采样",
+          "unavailable": "不可用 · {reason}",
+          "slots": "{count} 个槽位",
+          "reads": "{count} 次读取",
+          "skipped": "跳过 {count}",
+          "warnings": "{count} 条警告"
+        },
+        "errors": {
+          "invalidSummary": "渲染探针返回了无效摘要"
+        }
+      },
+      "liveDesktop": {
+        "sections": {
+          "consistency": "状态一致性",
+          "runtime": "原生运行时",
+          "metrics": "帧与合成指标",
+          "windows": "窗口发现"
+        },
+        "runtimeDetailEmpty": "暂无运行时详情",
+        "frameSource": {
+          "aria": "Live Desktop 调试帧源覆盖",
+          "wallpaperEngine": "Wallpaper Engine 窗口",
+          "testPattern": "测试图案"
+        },
+        "settings": {
+          "compositorKeeper": "合成稳定器",
+          "cssFallbackEffects": "CSS 后备效果",
+          "debugFrameSourceOverride": "调试帧源",
+          "disableMouseRelay": "禁用鼠标转发",
+          "forceDwmFlush": "强制 DWM Flush",
+          "skipBlankFrames": "跳过疑似空白帧",
+          "skipBlankFramesShort": "跳过空白帧"
+        },
+        "phase": {
+          "applying": "正在应用",
+          "failed": "失败",
+          "persisting": "正在保存",
+          "ready": "就绪",
+          "refreshing": "正在刷新",
+          "running": "运行中",
+          "stopped": "已停止",
+          "unknown": "未知"
+        },
+        "consistency": {
+          "consistent": "一致",
+          "drifted": "存在漂移",
+          "unverified": "未验证",
+          "applied": "{name} → 已应用",
+          "persisted": "{name} → 已持久化"
+        },
+        "verification": {
+          "frontend-event-dispatched": "前端事件已分发",
+          "runtime-accepted": "运行时已接受",
+          "unknown": "未知"
+        },
+        "fields": {
+          "controllerState": "控制器状态",
+          "consistency": "一致性",
+          "desiredRevision": "期望版本",
+          "appliedVerification": "应用确认",
+          "unconfirmedSettings": "未确认设置",
+          "stateDrift": "状态漂移",
+          "lastFailure": "最近失败",
+          "lastRefreshFailure": "最近刷新失败",
+          "phase": "阶段",
+          "active": "是否活跃",
+          "generation": "代次",
+          "reason": "原因",
+          "framesCopied": "已复制帧",
+          "frameTimeouts": "帧超时",
+          "copyErrors": "复制错误",
+          "commitErrors": "提交错误",
+          "shaderFallbacks": "Shader 后备",
+          "rates": "实时速率",
+          "frameArrived": "帧到达信号",
+          "frameCopyTiming": "帧复制耗时",
+          "frameCommitTiming": "帧提交耗时",
+          "configUpdates": "配置更新",
+          "configErrors": "配置错误",
+          "testPatternFrames": "测试图案帧",
+          "abandonedWorkers": "遗留渲染线程",
+          "pixelProbe": "像素探针",
+          "lastFrame": "最近一帧",
+          "lastAbandonedReason": "最近遗留原因",
+          "lastShaderFallbackError": "最近 Shader 后备错误",
+          "windowDiagnostics": "窗口诊断",
+          "windowsFound": "发现窗口",
+          "candidateWindows": "候选窗口"
+        },
+        "workerSummary": "活跃 {active} / 已回收 {reaped}",
+        "windows": {
+          "emptyTitle": "没有 Live Desktop 候选窗口",
+          "emptyDetail": "尚未获得窗口诊断",
+          "roleFallback": "窗口",
+          "classFallback": "未知类名",
+          "reasonFallback": "诊断候选",
+          "meta": "{reason} · {className} · {process} · 父窗口 {parent} · 根窗口 {root} · 样式 {style} · 扩展样式 {exStyle} · Cloaked {cloaked}{title}"
+        },
+        "actions": {
+          "reapply": "重新应用",
+          "reapplySettings": "重新应用设置",
+          "updateSettings": "更新设置",
+          "refreshState": "刷新状态",
+          "autoRefreshState": "自动刷新状态",
+          "copyDiagnostics": "复制诊断",
+          "copyDiagnosticsJson": "复制诊断 JSON",
+          "stateChange": "Live Desktop 状态变更",
+          "stateRefresh": "Live Desktop 状态刷新"
+        },
+        "format": {
+          "lastFrame": "{width}x{height} · 格式 {format}",
+          "pixelProbe": "成功 {success} / 错误 {errors} · {size}RGB {rgbMin}/{rgbMax}/{rgbAvg} · Alpha {alphaMin}/{alphaMax}/{alphaAvg}",
+          "frameArrived": "到达 {arrived} / 丢弃 {dropped}",
+          "timing": "平均 {average}ms / 最近 {last}ms / 最大 {max}ms",
+          "rates": "帧 {frames}/s · 到达 {arrived}/s · 丢弃 {dropped}/s · 超时 {timeouts}/s · 复制错误 {copyErrors}/s"
+        },
+        "errors": {
+          "invalidState": "Live Desktop 诊断工具返回了无效状态"
+        }
+      },
+      "motion": {
+        "sections": {
+          "inspector": "检查器",
+          "currentSelection": "当前选择",
+          "channelBreakdown": "通道贡献拆解",
+          "whyMoving": "为什么还在移动？",
+          "recentLifecycle": "最近生命周期事件",
+          "relatedWarnings": "相关警告",
+          "propertyDetails": "属性明细",
+          "cancelReasons": "主要取消原因",
+          "warnings": "警告",
+          "aiExport": "AI 分析导出",
+          "targets": "目标",
+          "captureConfig": "捕获配置",
+          "filters": "过滤器",
+          "layerTree": "图层树",
+          "activeAnimations": "活动动画",
+          "pinnedTargets": "固定目标",
+          "timeline": "时间线",
+          "trackChart": "轨道图表",
+          "findings": "诊断发现",
+          "replayViewer": "回放查看器",
+          "bookmarks": "书签",
+          "eventTimeline": "事件时间线",
+          "curveChart": "曲线图表",
+          "analysisWorkspace": "分析工作区",
+          "replayCapture": "回放捕获"
+        },
+        "fields": {
+          "target": "目标",
+          "track": "轨道",
+          "time": "时间",
+          "filter": "过滤器",
+          "targetProp": "目标.属性",
+          "currentValue": "当前值",
+          "targetValue": "目标值（to）",
+          "delta": "差值（delta）",
+          "velocity": "速度",
+          "driver": "驱动器",
+          "lane": "通道（lane）",
+          "laneKey": "通道键（laneKey）",
+          "sourceLabel": "来源标签（sourceLabel）",
+          "property": "属性（prop）",
+          "valueTo": "当前值 → 目标值",
+          "configuration": "配置",
+          "layers": "图层（layers）",
+          "kinds": "类型（kinds）",
+          "sourceSearch": "来源搜索",
+          "searchCriteria": "搜索条件",
+          "customSeconds": "自定义秒数",
+          "timeScale": "时间倍率",
+          "captureSeconds": "捕获秒数",
+          "captureStatus": "捕获状态",
+          "captureProfile": "捕获配置",
+          "captureWindow": "捕获窗口",
+          "sampleRate": "采样率",
+          "estimatedSize": "预计规模",
+          "actualJson": "实际 JSON",
+          "framesEvents": "帧 / 事件",
+          "tracksTargets": "轨道 / 目标",
+          "schema": "协议",
+          "profile": "捕获配置 (profile)",
+          "props": "属性 (props)",
+          "targetsTechnical": "目标 (targets)",
+          "framesEventsTechnical": "帧/事件 (frames/events)",
+          "tracksTargetsTechnical": "轨道/目标 (tracks/targets)",
+          "estimatedJson": "预计 JSON",
+          "viewer": "查看器",
+          "timeWindow": "时间窗口",
+          "samples": "采样",
+          "events": "事件",
+          "tracks": "轨道",
+          "curvePoints": "曲线点数",
+          "timeCursor": "时间游标",
+          "captureDocument": "捕获文档 (trace)",
+          "schemaTechnical": "协议 (schema)",
+          "interval": "区间 (interval)",
+          "selection": "选择 (selection)",
+          "tracksTechnical": "轨道 (tracks)",
+          "profileTechnical": "捕获配置 (profile)",
+          "filterTechnical": "筛选 (filter)",
+          "bookmarksTechnical": "书签 (bookmarks)",
+          "activeAnimations": "活动动画",
+          "targets": "目标",
+          "channels": "通道",
+          "warnings": "警告",
+          "overlay": "覆盖层",
+          "recordWindow": "记录窗口",
+          "eventsSamples": "事件 / 采样",
+          "mode": "模式",
+          "currentTime": "当前时间",
+          "duration": "时长"
+        },
+        "settings": {
+          "enableDiagnostics": "启用 Motion 诊断",
+          "recordHistory": "记录历史",
+          "showOverlay": "显示覆盖层"
+        },
+        "workspace": {
+          "title": "Motion 调试工作区",
+          "resizeAria": "调整工作区停靠宽度",
+          "modeAria": "工作区模式",
+          "dockWidth": "停靠宽度",
+          "selectionAria": "工作区选择"
+        },
+        "aria": {
+          "propertyDetails": "Pixi Motion 属性明细",
+          "captureProperties": "捕获属性",
+          "filterPresets": "Motion 过滤预设",
+          "activeAnimations": "活动中的 Pixi Motion 动画",
+          "trackMode": "轨道图表显示模式",
+          "trackSeries": "轨道图表曲线可见性",
+          "findings": "Motion 回放诊断发现",
+          "replayProperties": "回放帧属性",
+          "recordWindow": "Motion 记录窗口"
+        },
+        "empty": {
+          "loadReplay": "载入回放轨迹后可检查选中轨道的数值",
+          "noCurrentSample": "当前时刻没有与选中目标或轨道匹配的采样",
+          "noLaneContribution": "没有可拆解的通道贡献",
+          "noExplanation": "暂无回放解释",
+          "noLifecycle": "没有匹配的生命周期事件",
+          "noRelatedWarnings": "没有相关警告",
+          "noProperties": "没有匹配的属性",
+          "noLayers": "没有匹配的图层",
+          "noActiveAnimations": "当前没有活动动画",
+          "noPinnedTargets": "尚未固定目标",
+          "noFindings": "当前筛选范围内没有诊断发现",
+          "noReplayTracks": "没有可显示的回放轨道",
+          "loadReplayTracks": "载入回放轨迹后可检查各轨道曲线",
+          "noBookmarks": "尚未保存书签",
+          "noReplayProperties": "当前回放帧没有匹配的属性值",
+          "noReplayEvents": "没有匹配的回放事件",
+          "noReplayCurves": "没有匹配的回放曲线",
+          "noReplayTargets": "没有匹配的回放覆盖目标",
+          "noTimelineEvents": "没有匹配的时间线事件",
+          "noCurveSamples": "没有匹配的曲线采样"
+        },
+        "counts": {
+          "layersAnimations": "{layers} 个图层 / {animations} 个活动动画",
+          "targets": "{count} 个目标",
+          "animations": "{count} 个活动动画",
+          "warnings": "{count} 个警告",
+          "events": "{count} 个事件",
+          "values": "{count} 个值",
+          "visibleTracks": "当前显示 {visible} / {total} 条轨道",
+          "propertiesEvents": "{properties} 个属性 / {events} 个事件",
+          "layerSummary": "{targets} 个目标 / {animations} 个活动动画 / {warnings} 个警告",
+          "samplesEvents": "{samples} 个采样 / {events} 个事件",
+          "liveTracksNoReplay": "{tracks} 条实时轨道 / 未载入回放轨迹",
+          "chartTracksEvents": "{visible}/{total} 条图表轨道 / {events} 个事件",
+          "curvePointLimit": "每条曲线 ≤ {count}",
+          "filterLayers": "{count} 个图层",
+          "filterKinds": "{count} 种类型",
+          "filterSources": "{count} 个来源"
+        },
+        "values": {
+          "deltaVelocity": "差值 {delta} / 速度 {velocity}",
+          "currentTargetEvent": "当前值 / 目标值 / 事件",
+          "targetFallback": "目标",
+          "custom": "自定义",
+          "active": "活动中",
+          "warnings": "警告",
+          "capturing": "捕获中",
+          "idle": "空闲",
+          "allVisibleReplayTracks": "全部可见回放轨道",
+          "selectedTrack": "所选轨道",
+          "allMatchingTracks": "全部匹配轨道",
+          "noFindings": "暂无诊断发现",
+          "targetWithId": "目标 {id}",
+          "unknownProperty": "未知属性",
+          "filterQuery": "过滤器：{query}",
+          "searchQuery": "搜索：{query}",
+          "propertiesList": "{kinds} / 属性 {props}",
+          "normalizedSamplesEvents": "{samples} 个采样 / {events} 个事件 / 已归一化"
+        },
+        "series": {
+          "delta": "差值（delta）",
+          "to": "目标值（to）",
+          "value": "当前值（value）",
+          "velocity": "速度（velocity）"
+        },
+        "profiles": {
+          "defaultVisual": "默认视觉",
+          "defaultVisualDescription": "覆盖常用视觉属性，适合日常动画问题排查。",
+          "transformFocus": "变换聚焦",
+          "transformFocusDescription": "仅捕获变换属性，用于布局、翻页和缩放问题。",
+          "alphaFocus": "透明度聚焦",
+          "alphaFocusDescription": "仅捕获 alpha，用于透明度、淡入淡出和可见性问题。",
+          "interruptions": "生命周期中断",
+          "interruptionsDescription": "仅捕获 cancel、retarget、release 和 snap 等生命周期事件。",
+          "custom": "自定义",
+          "customDescription": "自定义属性、目标与生命周期事件过滤条件。"
+        },
+        "inspector": {
+          "noCurrentSample": "当前无采样",
+          "noCurrentSampleDetail": "所选时刻没有与当前目标或轨道匹配的回放采样。",
+          "currentValueDetail": "{source}.{prop} 当前值 {value}，目标值 {to}，差值 {delta}，速度 {velocity}。",
+          "selectedLane": "选中通道",
+          "selectedLaneDetail": "{lane}/{laneKey} 上的 {driver} 驱动器是当前选中的通道贡献。",
+          "multipleLanes": "多通道叠加",
+          "recentEvent": "最近事件",
+          "recentEventDetail": "{time} 发生 {type}{reason}：{detail}。"
+        },
+        "actions": {
+          "clearHistory": "清空历史",
+          "importJson": "导入 JSON",
+          "loadTrace": "载入轨迹",
+          "loadCurrentCapture": "载入当前捕获",
+          "clearViewer": "清空查看器",
+          "jumpStart": "跳到开始",
+          "jumpEnd": "跳到结束",
+          "previousFrame": "上一帧",
+          "nextFrame": "下一帧",
+          "previousEvent": "上一事件",
+          "nextEvent": "下一事件",
+          "saveBookmark": "保存书签",
+          "clearBookmarks": "清空书签",
+          "exportFocused": "导出聚焦 AI 报告",
+          "zoomSelection": "缩放到选区",
+          "resetZoom": "重置缩放",
+          "openWorkspace": "打开工作区",
+          "openFullscreen": "全屏打开",
+          "startCapture": "开始捕获",
+          "stopCapture": "停止捕获",
+          "copyAiReport": "复制 AI 报告",
+          "copyInterval": "复制区间",
+          "pauseReplay": "暂停回放",
+          "playReplay": "播放回放",
+          "copyCapture": "复制捕获",
+          "copySummary": "复制摘要",
+          "pinTarget": "固定目标",
+          "unpinTarget": "取消固定目标",
+          "clearSelection": "清除选择",
+          "copyFocusedAi": "复制聚焦 AI 数据",
+          "refreshState": "刷新 Motion 状态",
+          "refreshHistory": "刷新 Motion 历史",
+          "applySettings": "应用 Motion 设置",
+          "disableDiagnostics": "停用 Motion 诊断",
+          "clearHistoryAction": "清空 Motion 历史",
+          "syncControls": "同步 Motion 控件",
+          "startCaptureAction": "开始 Motion 捕获",
+          "stopCaptureAction": "停止 Motion 捕获",
+          "copyReport": "复制 Motion 报告",
+          "copyFocusedReport": "复制 Motion 聚焦报告",
+          "copyCaptureAction": "复制 Motion 捕获",
+          "copyIntervalAction": "复制 Motion 区间"
+        },
+        "chart": {
+          "raw": "原始值",
+          "normalized": "归一化",
+          "zoomStart": "缩放起点",
+          "zoomEnd": "缩放终点",
+          "maxVelocity": "最大速度 {value}",
+          "maxDelta": "最大差值 {value}",
+          "currentValue": "当前值 {value}",
+          "targetValue": "目标值 {value}",
+          "delta": "差值 {value}",
+          "velocity": "速度 {value}"
+        },
+        "replay": {
+          "traceFile": "轨迹文件",
+          "loaded": "已载入",
+          "timeCursor": "时间游标",
+          "filter": "回放过滤器",
+          "selectionStart": "选区起点",
+          "selectionEnd": "选区终点"
+        },
+        "errors": {
+          "captureDocumentMissing": "Motion 捕获已停止，但共享捕获文档没有发布"
+        },
+        "searchPlaceholder": "目标 / 通道 / 属性 / 事件"
+      }
+    },
+    "motionLab": {
+      "title": "Pixi Motion 实验室",
+      "sections": {
+        "scenarios": "场景",
+        "parameterPresets": "参数预设",
+        "runtime": "运行时",
+        "warnings": "警告",
+        "assertions": "断言",
+        "timeline": "时间线",
+        "curves": "曲线",
+        "replay": "回放",
+        "traceDiff": "轨迹差异",
+        "baselineCompare": "基线对比",
+        "lastRunCompare": "与上次运行对比"
+      },
+      "fields": {
+        "current": "当前",
+        "schema": "协议（schema）",
+        "mode": "模式",
+        "framesEvents": "帧 / 事件",
+        "tracksTargets": "轨道 / 目标",
+        "runtime": "运行时",
+        "activeAnimations": "活动动画",
+        "warnings": "警告",
+        "eventsSamples": "事件 / 采样",
+        "replayTrace": "回放轨迹",
+        "traceFramesEvents": "轨迹帧 / 事件",
+        "compareMode": "对比模式",
+        "baseline": "基准"
+      },
+      "actions": {
+        "run": "运行",
+        "captureReplay": "捕获回放",
+        "saveBaseline": "保存基线",
+        "compareBaseline": "对比基线",
+        "compareLast": "对比上次",
+        "copyReport": "复制报告",
+        "copiedReport": "已复制报告",
+        "copyFocused": "复制聚焦 AI 报告",
+        "copiedFocused": "已复制聚焦报告",
+        "copyTrace": "复制轨迹",
+        "copiedTrace": "已复制轨迹",
+        "copyCompare": "复制对比",
+        "copiedCompare": "已复制对比",
+        "copyBaselineCompare": "复制基线对比",
+        "copiedBaselineCompare": "已复制基线对比",
+        "copyDiff": "复制差异",
+        "copiedDiff": "已复制差异"
+      },
+      "values": {
+        "changed": "已变化",
+        "debugging": "调试中",
+        "idle": "空闲",
+        "ready": "就绪",
+        "running": "运行中",
+        "scenario": "场景",
+        "passed": "通过",
+        "failed": "失败",
+        "baseline": "基线",
+        "lastRun": "上次运行"
+      },
+      "counts": {
+        "assertions": "{count} 条断言",
+        "curveSummary": "{samples} 个采样 / 最大速度 {velocity}",
+        "snapshot": "{scenario} / 通过 {passed} / 失败 {failed}"
+      },
+      "empty": {
+        "assertions": "尚未运行断言",
+        "events": "暂无事件",
+        "curves": "暂无曲线",
+        "traceDiff": "请先捕获两条轨迹",
+        "saveBaselineFirst": "请先保存一次基线运行",
+        "runCurrentScenario": "请运行当前场景",
+        "runTwice": "请至少运行两次场景"
+      },
+      "parameterGroups": {
+        "spring": "弹簧参数",
+        "timing": "定时参数",
+        "interruption": "中断策略",
+        "drag": "拖拽",
+        "icon": "图标",
+        "folder": "文件夹"
+      },
+      "parameters": {
+        "springStiffness": "刚度（stiffness）",
+        "springDamping": "阻尼（damping）",
+        "springMass": "质量（mass）",
+        "duration": "时长（duration）",
+        "ease": "缓动函数（ease）",
+        "interruptPolicy": "策略（policy）",
+        "interruptDelay": "延迟（delay）",
+        "blendDuration": "混合时长（blend）",
+        "dragDistance": "距离（distance）",
+        "dragReleaseY": "释放 Y 坐标",
+        "iconPressScale": "按压缩放",
+        "iconHoverScale": "悬停缩放",
+        "jiggleRotation": "抖动角度（jiggle）",
+        "folderClosedScale": "关闭缩放",
+        "folderOpenScale": "打开缩放",
+        "folderTravel": "位移距离（travel）",
+        "folderHoverScale": "悬停缩放",
+        "pageDistance": "翻页距离"
+      },
+      "metrics": {
+        "parameter": "参数：{key}",
+        "assertionsPassed": "断言通过",
+        "assertionsFailed": "断言失败",
+        "events": "事件",
+        "samples": "采样",
+        "curves": "曲线",
+        "warnings": "警告",
+        "duration": "时长",
+        "maxVelocity": "最大速度",
+        "retargets": "重定向",
+        "overshoots": "过冲",
+        "traceFrames": "轨迹帧",
+        "traceValues": "轨迹值",
+        "frames": "帧",
+        "tracks": "轨道",
+        "targets": "目标",
+        "values": "值",
+        "property": "属性",
+        "driver": "驱动器"
+      },
+      "presets": {
+        "snappy": { "label": "敏捷", "description": "快速收敛 / 短补间" },
+        "soft": { "label": "柔和", "description": "柔和弹簧 / 舒缓悬停" },
+        "slow": { "label": "缓慢", "description": "长补间 / 厚重收敛" },
+        "interruptHeavy": { "label": "高频中断", "description": "短延迟 / 替换压力测试" }
+      },
+      "scenarios": {
+        "folderOpen": {
+          "label": "打开文件夹",
+          "description": "文件夹面板进入时的 scale、y 与 alpha 动画",
+          "assertions": { "folderOpenTrack": "文件夹面板记录 scale/alpha 轨道" }
+        },
+        "folderClose": {
+          "label": "关闭文件夹",
+          "description": "文件夹面板退出时的 scale 与 alpha 动画",
+          "assertions": { "folderCloseTrack": "文件夹关闭产生面板事件" }
+        },
+        "folderOpenInterruptedByClose": {
+          "label": "打开被关闭中断",
+          "description": "开始打开后，由关闭动作替换同一通道",
+          "assertions": { "openCloseCancel": "打开动作被关闭动作中断" }
+        },
+        "folderCloseInterruptedByOpen": {
+          "label": "关闭被打开中断",
+          "description": "开始关闭后，由打开动作替换同一通道",
+          "assertions": { "closeOpenCancel": "关闭动作被打开动作中断" }
+        },
+        "desktopPageScrub": {
+          "label": "桌面翻页拖动",
+          "description": "桌面页面轨道弹向另一页并发生 retarget",
+          "assertions": { "desktopPageRetarget": "桌面翻页拖动会重定向页面轨道" }
+        },
+        "folderPageScrub": {
+          "label": "文件夹翻页拖动",
+          "description": "文件夹内部页面轨道使用 progress 拖动",
+          "assertions": { "folderPageProgress": "文件夹翻页拖动产生 progress 通道" }
+        },
+        "dragRelease": {
+          "label": "拖拽释放",
+          "description": "拖拽幽灵回落到网格",
+          "assertions": { "dragReleaseTrack": "拖拽幽灵在 x/y 方向释放" }
+        },
+        "iconPressRelease": {
+          "label": "图标按压 / 释放",
+          "description": "图标通过 factor 缩放完成按下与释放",
+          "assertions": { "iconPressFactor": "图标按压使用 factor 通道" }
+        },
+        "folderHover": {
+          "label": "文件夹悬停",
+          "description": "文件夹目标悬停环与图标缩放",
+          "assertions": { "folderHover": "文件夹悬停驱动 hover 通道" }
+        },
+        "appFolderCreateHover": {
+          "label": "应用成组创建悬停",
+          "description": "应用成组创建时的悬停闪烁目标",
+          "assertions": { "appFolderCreateHover": "应用成组悬停产生 create 通道" }
+        },
+        "editJiggle": {
+          "label": "编辑模式抖动",
+          "description": "编辑模式抖动驱动叠加旋转",
+          "assertions": { "editJiggleAdditive": "编辑抖动使用 additive 通道" }
+        },
+        "hundredIconLayoutRetarget": {
+          "label": "100+ 图标布局重定向",
+          "description": "100+ 图标布局弹簧 retarget 压力场景",
+          "assertions": { "hundredIconRetarget": "100+ 图标重定向会产生 retarget 事件" }
+        }
+      }
+    },
+    "launchpad": {
+      "search": {
+        "placeholder": "搜索",
+        "label": "搜索应用",
+        "clear": "清除搜索",
+        "empty": "没有找到匹配的应用"
+      },
+      "settings": "设置",
+      "openSettings": "打开设置",
+      "page": "切换到第 {page} 页",
+      "folderName": "文件夹名称",
+      "newFolder": "新文件夹",
+      "contextMenu": {
+        "label": "{name} 菜单",
+        "remove": "从启动台移除",
+        "exclude": "移除并从扫描中排除",
+        "dissolve": "解散文件夹"
+      }
+    },
+    "dialogs": {
+      "iconChooser": {
+        "close": "关闭图标选择",
+        "embedded": "应用内图标",
+        "count": "{count} 个",
+        "loading": "正在读取",
+        "chooseEmbedded": "选择应用内图标",
+        "empty": "没有可用图标",
+        "local": "本地图片",
+        "chooseFromDisk": "从硬盘选择图片"
+      },
+      "appEditor": {
+        "editTitle": "编辑应用",
+        "addTitle": "新增应用",
+        "addDescription": "添加自定义应用到启动台",
+        "closeEdit": "关闭编辑窗口",
+        "closeAdd": "关闭新增窗口",
+        "changeIcon": "更换图标",
+        "name": "应用名称",
+        "windowsId": "Windows 应用标识",
+        "windowsIdManaged": "Windows 应用标识（由系统管理）",
+        "target": "启动路径或 URL",
+        "args": "启动参数",
+        "choosing": "选择中"
+      },
+      "scanResults": {
+        "title": "扫描结果",
+        "summary": "发现 {found} 个可添加应用 · 已选择 {selected} 个",
+        "partial": "部分目录因权限、链接或扫描限制被跳过",
+        "close": "关闭扫描结果",
+        "available": "可添加应用",
+        "selectApp": "选择 {name}",
+        "targetMissing": "未设置启动路径",
+        "args": "参数：{args}",
+        "empty": "没有发现可添加的应用",
+        "addSelected": "添加所选"
+      },
+      "notices": {
+        "dismissRecovery": "关闭布局恢复提示",
+        "dismiss": "关闭提示"
+      },
+      "warning": {
+        "suggestion": "建议：{suggestion}"
+      }
+    },
+    "window": {
+      "chrome": {
+        "bar": "窗口栏",
+        "drag": "拖动窗口",
+        "minimize": "最小化窗口",
+        "maximize": "最大化窗口",
+        "restore": "向下还原窗口",
+        "hide": "隐藏窗口"
+      }
+    },
+    "preview": {
+      "image": "图片预览",
+      "effect": "图片效果预览",
+      "effectFallback": "图片效果预览 fallback",
+      "selectImageFirst": "选择图片后可用"
+    },
+    "settings": {
+      "shell": {
+        "title": "设置",
+        "expandNavigation": "展开设置导航",
+        "collapseNavigation": "折叠设置导航",
+        "backTo": "返回{label}",
+        "path": "设置路径",
+        "close": "关闭设置",
+        "categories": "设置分类"
+      },
+      "general": {
+        "title": "通用",
+        "startup": {
+          "title": "开机自启",
+          "description": "登录 Windows 后自动打开 Lumeria"
+        },
+        "shortcut": {
+          "title": "快捷键",
+          "disable": "关闭快捷键",
+          "recording": "录制中",
+          "record": "录制",
+          "hint": "快速显示或隐藏 Lumeria",
+          "recordingHint": "按 Esc 取消录制",
+          "pressKeys": "按下组合键",
+          "notSet": "未设置",
+          "startFailed": "无法开始快捷键录制，请重试。",
+          "unavailable": "快捷键已被占用或不可用",
+          "invalid": {
+            "missingMainKey": "请按下一个包含主键的组合键",
+            "missingModifier": "请至少包含 Ctrl、Alt、Shift 或 Win 中的一个修饰键",
+            "unsupportedKey": "这个按键暂不支持作为全局快捷键"
+          }
+        },
+        "language": {
+          "title": "语言",
+          "description": "选择 Lumeria 界面和原生菜单使用的语言",
+          "system": "跟随系统",
+          "current": "当前：{locale}",
+          "select": "选择界面语言"
+        },
+        "advanced": {
+          "title": "高级选项",
+          "developerConsole": "开发者控制台",
+          "opening": "正在打开",
+          "open": "打开控制台",
+          "hint": "打开当前窗口的 WebView 开发者工具",
+          "unavailableHint": "仅在 Lumeria 桌面应用中可用",
+          "unavailable": "控制台仅在 Lumeria 桌面应用中可用。",
+          "openUnavailable": "当前环境无法打开控制台。",
+          "openFailed": "无法打开控制台，请重试。"
+        }
+      },
+      "interface": {
+        "title": "外观",
+        "window": {
+          "title": "窗口",
+          "mode": "窗口模式",
+          "modeDescription": "选择打开 Lumeria 时的窗口形态",
+          "fullscreen": "全屏",
+          "windowed": "窗口化",
+          "titlebar": "显示窗口标题栏",
+          "titlebarDescription": "窗口化时显示标题和窗口控制按钮",
+          "material": "窗口底材",
+          "materialNone": "无材质",
+          "appearance": "窗口底材明暗",
+          "light": "浅色",
+          "dark": "深色",
+          "previews": "窗口底材示意",
+          "notSet": "未设置",
+          "materials": {
+            "none": "关闭系统材质，只显示底色与图片层",
+            "acrylic": "半透明模糊，背景变化更明显",
+            "mica": "桌面采样，观感更稳定，资源占用更低",
+            "micaAlt": "Mica 变体，层次更强，适合分层窗口"
+          }
+        },
+        "background": {
+          "title": "背景",
+          "base": {
+            "title": "背景底色",
+            "description": "位于图片层下方",
+            "color": "颜色",
+            "opacity": "不透明度",
+            "opacityLabel": "背景底色不透明度"
+          },
+          "layer": {
+            "title": "背景层",
+            "source": "来源",
+            "sourceLabel": "图片来源",
+            "none": "无图片",
+            "custom": "自定义图片",
+            "wallpaper": "桌面壁纸",
+            "live": "动态桌面",
+            "imageOpacity": "背景透明度",
+            "imageOpacityLabel": "背景层透明度",
+            "liveOpacity": "动态桌面不透明度",
+            "choosing": "选择中",
+            "syncing": "同步中",
+            "refreshWallpaper": "刷新壁纸",
+            "display": "显示方式",
+            "displayLabel": "背景图片显示方式",
+            "preview": "图片层预览",
+            "waitingSync": "等待同步桌面壁纸",
+            "builtIn": "使用内置图片",
+            "currentWallpaper": "当前桌面壁纸",
+            "waitingWallpaper": "等待壁纸",
+            "selectImage": "选择图片",
+            "hintCustom": "自定义图片叠在底色上方",
+            "hintWallpaper": "跟随当前 Windows 桌面壁纸",
+            "hintLive": "捕获动态桌面并在 Native GPU 管线中合成",
+            "hintLiveUnavailable": "动态桌面不可用：{detail}",
+            "hintNone": "不叠加背景层",
+            "layout": {
+              "fill": "填充",
+              "fit": "适应",
+              "stretch": "拉伸",
+              "tile": "平铺",
+              "center": "居中"
+            }
+          },
+          "effect": {
+            "title": "背景效果",
+            "effect": "效果",
+            "effectLabel": "图片效果",
+            "original": "原图",
+            "dim": "暗化",
+            "blur": "模糊",
+            "blurStrength": "模糊强度",
+            "backgroundBlurStrength": "背景模糊强度",
+            "dimColor": "暗化颜色",
+            "backgroundDimColor": "背景暗化颜色",
+            "dimStrength": "暗化强度",
+            "backgroundDimStrength": "背景暗化强度",
+            "acrylicBlurStrength": "Acrylic 模糊强度",
+            "acrylicAppearance": "Acrylic 外观",
+            "system": "跟随系统",
+            "params": "参数",
+            "paramsLabel": "Acrylic 参数",
+            "darkParams": "深色参数",
+            "lightParams": "浅色参数",
+            "tint": "染色",
+            "acrylicTint": "Acrylic 染色",
+            "tintStrength": "染色强度",
+            "acrylicTintStrength": "Acrylic 染色强度",
+            "brightness": "亮度",
+            "acrylicBrightness": "Acrylic 亮度",
+            "contrast": "对比度",
+            "acrylicContrast": "Acrylic 对比度",
+            "saturation": "饱和度",
+            "acrylicSaturation": "Acrylic 饱和度",
+            "unavailable": "选择背景层后可用",
+            "hintCss": "当前效果由前端透明层合成",
+            "hintAcrylic": "WebGL Acrylic 风格合成",
+            "hintBlur": "模糊背景层",
+            "hintDim": "叠加暗化遮罩",
+            "hintOriginal": "直接显示背景层"
+          }
+        },
+        "layout": {
+          "title": "布局",
+          "desktop": "桌面布局",
+          "desktopDescription": "设置桌面网格的行数和列数",
+          "desktopRows": "桌面行数",
+          "desktopRowsDecrease": "减少桌面行数",
+          "desktopRowsIncrease": "增加桌面行数",
+          "desktopCols": "桌面列数",
+          "desktopColsDecrease": "减少桌面列数",
+          "desktopColsIncrease": "增加桌面列数",
+          "folder": "文件夹布局",
+          "folderDescription": "设置文件夹展开后的行数和列数",
+          "folderRows": "文件夹行数",
+          "folderRowsDecrease": "减少文件夹行数",
+          "folderRowsIncrease": "增加文件夹行数",
+          "folderCols": "文件夹列数",
+          "folderColsDecrease": "减少文件夹列数",
+          "folderColsIncrease": "增加文件夹列数",
+          "iconSize": "图标大小",
+          "iconSizeDescription": "设置桌面图标的目标尺寸；实际显示会受行列布局和可用空间影响",
+          "iconSizeDecrease": "缩小图标",
+          "iconSizeIncrease": "增大图标",
+          "folderIconSize": "文件夹图标大小",
+          "folderIconSizeDescription": "设置文件夹内图标的目标尺寸；可跟随桌面图标或单独设置",
+          "folderIconSizeMode": "文件夹图标大小模式",
+          "global": "跟随全局",
+          "custom": "自定义",
+          "folderIconSizeDecrease": "缩小文件夹图标",
+          "folderIconSizeIncrease": "增大文件夹图标",
+          "textless": "无字模式",
+          "textlessDescription": "隐藏应用名称，保留图标网格",
+          "compact": "整理空位",
+          "compactDescription": "根据当前行列布局，将 App 向前整理以填补空位",
+          "compactAction": "重新整理"
+        },
+        "advanced": {
+          "title": "高级",
+          "options": "高级选项",
+          "description": "兼容性与原生窗口行为",
+          "overscan": "启用全屏超扫",
+          "overscanDescription": "全屏时将窗口向显示器四边各扩展 1 个物理像素，可缓解多显示器环境下 Acrylic 背景闪烁；关闭可能重新出现该问题"
+        }
+      },
+      "apps": {
+        "title": "应用",
+        "excluded": {
+          "title": "已排除的应用",
+          "search": "搜索已排除的应用",
+          "description": "这些应用不会出现在后续扫描结果中。从排除列表移出后，可以重新扫描并添加。",
+          "selected": "已选择 {count} 个应用",
+          "removeSelected": "移出所选应用",
+          "results": "{count} 个结果",
+          "select": "选择 {name}",
+          "restore": "将 {name} 移出排除列表",
+          "restoreTitle": "移出排除列表",
+          "noMatch": "没有匹配的应用",
+          "empty": "暂无已排除的应用"
+        },
+        "manager": {
+          "title": "应用管理",
+          "search": "搜索应用",
+          "scanning": "扫描中",
+          "scanApps": "扫描应用",
+          "addApp": "新增应用",
+          "selected": "已选择 {count} 个应用",
+          "remove": "从启动台移除",
+          "exclude": "移除并从扫描中排除",
+          "excludeUnavailable": "所选应用中包含没有扫描来源的项目",
+          "count": "{filtered} / {total} 个应用",
+          "all": "所有应用",
+          "noMatch": "没有匹配的应用",
+          "select": "选择 {name}",
+          "targetMissing": "未设置启动路径",
+          "more": "{name} 更多操作"
+        },
+        "sources": {
+          "title": "扫描来源",
+          "summary": "{total} 个来源 · {enabled} 个已启用",
+          "reset": "还原默认来源",
+          "add": "新增来源",
+          "enable": "启用 {name}",
+          "label": "{name} 标签",
+          "path": "{name} 路径",
+          "windowsManaged": "由 Windows 管理的虚拟应用目录，包含商店应用和部分系统应用。",
+          "lastScan": "上次扫描 {time}",
+          "choosing": "选择中",
+          "empty": "没有扫描来源",
+          "custom": "自定义目录",
+          "default": {
+            "windowsCatalog": "Windows 应用（商店与系统）",
+            "userStartMenu": "用户开始菜单",
+            "systemStartMenu": "系统开始菜单"
+          },
+          "resetTitle": "还原默认来源",
+          "resetMessage": "将移除当前自定义扫描来源，并恢复用户开始菜单、系统开始菜单和 Windows 应用目录。",
+          "resetConfirm": "还原",
+          "chooseFailedTitle": "无法选择扫描来源",
+          "chooseFailedMessage": "Lumeria 无法打开目录选择器。",
+          "chooseFailedSuggestion": "请重试，或检查系统文件选择权限。"
+        },
+        "filters": {
+          "title": "扫描过滤",
+          "keywords": "排除关键字",
+          "keywordCount": "{count} 个关键字",
+          "keywordInput": "输入排除关键字",
+          "keywordAdd": "新增扫描排除关键字",
+          "keywordRemove": "移除关键字 {keyword}",
+          "keywordEmpty": "没有排除关键字",
+          "appCount": "{count} 个应用"
+        },
+        "overview": {
+          "appCount": "{count} 个应用",
+          "scanReady": "从启用的扫描来源刷新应用",
+          "scanDisabled": "需要启用扫描来源",
+          "scan": "扫描",
+          "addDescription": "手动添加自定义应用",
+          "add": "新增",
+          "missingTarget": "失效启动目标标记",
+          "missingTargetDescription": "应用的启动路径或 URL 不可用时显示提示",
+          "showMissingTarget": "显示失效启动目标标记"
+        },
+        "operations": {
+          "errorDetail": "错误信息：{detail}",
+          "restoredTitle": "已从排除列表移出",
+          "restoredOne": "“{name}”已从排除列表移出，可在重新扫描后再次添加。",
+          "restoredMany": "已将 {count} 个应用从排除列表移出，可在重新扫描后再次添加。",
+          "appFallback": "该应用",
+          "removedTitle": "已从启动台移除",
+          "removedOne": "“{name}”已从启动台移除。此操作不会卸载应用或删除文件。",
+          "removedMany": "已将 {count} 个应用从启动台移除。此操作不会卸载应用或删除文件。",
+          "excludeFailedTitle": "无法从扫描中排除",
+          "excludeUnstable": "所选应用中包含没有稳定扫描来源的项目，未移除任何应用。",
+          "excludeSaveFailed": "无法保存应用的扫描来源，未移除任何应用。",
+          "excludeChangedTitle": "扫描排除未完成",
+          "excludeChanged": "应用状态在操作期间发生变化，请重新扫描后重试。",
+          "excludedTitle": "已从扫描中排除",
+          "excludedOne": "“{name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中将其移出排除列表。",
+          "excludedMany": "已移除并排除 {count} 个应用。可在设置的“已排除的应用”中将这些应用移出排除列表。",
+          "scanFailedTitle": "无法扫描应用",
+          "scanFailedMessage": "Lumeria 无法扫描当前应用来源。",
+          "scanFailedSuggestion": "请检查扫描来源是否仍可访问，然后重试。"
+        },
+        "icon": {
+          "errorTitle": "无法使用此图标",
+          "readFailed": "图片无法读取。",
+          "compressFailed": "图标压缩失败。",
+          "chooseImage": "请选择图片文件。",
+          "tooLarge": "图片文件过大，请选择 10MB 以内的图片。",
+          "tooSmall": "图片尺寸过小，请选择至少 16x16 的图片。",
+          "compressedTooLarge": "压缩后的图标仍然过大，请换一张更简单的图片。",
+          "cacheFailed": "图标缓存失败。",
+          "processFailed": "图标处理失败。",
+          "loadChoicesFailed": "无法读取应用内图标，请重试。",
+          "change": "更换图标",
+          "appFallback": "应用"
+        },
+        "targetPicker": {
+          "failedTitle": "无法选择启动文件",
+          "failedMessage": "Lumeria 无法打开文件选择器。",
+          "failedSuggestion": "请重试，或手动填写启动路径。"
+        },
+        "unnamed": "未命名应用",
+        "catalogIdMissing": "未设置 Catalog ID"
+      },
+      "about": {
+        "title": "关于",
+        "description": "Windows 应用启动台",
+        "version": "版本 {version}"
+      }
+    },
+    "native": {
+      "tray": {
+        "show": "显示 Lumeria",
+        "settings": "设置",
+        "logs": "打开日志目录",
+        "restart": "重启 Lumeria",
+        "quit": "退出"
+      },
+      "dialogs": {
+        "chooseApp": "选择应用",
+        "chooseBackground": "选择背景图片",
+        "chooseScanSource": "选择扫描来源",
+        "executableFilter": "应用程序与快捷方式",
+        "imageFilter": "图片"
+      },
+      "supervisor": {
+        "title": "Lumeria 界面恢复",
+        "logUnavailable": "（日志目录不可用）",
+        "message": "Lumeria 的界面进程连续发生故障。为避免阻挡桌面，启动台窗口已保持隐藏。\n\n选择“是”重新启动 Lumeria；选择“否”保持隐藏，您仍可从托盘打开日志或退出。\n\n日志目录：{logDir}"
+      }
+    },
+    "notices": {
+      "acknowledge": "知道了",
+      "completed": "操作已完成",
+      "retry": "重试",
+      "layoutRecovered": {
+        "title": "布局已恢复",
+        "message": "检测到布局文件损坏，已备份原文件并恢复默认布局。"
+      },
+      "layoutSaveFailed": {
+        "title": "布局暂未保存",
+        "message": "本次更改仍在当前会话中，重启后可能丢失。",
+        "messageRepeated": "本次更改仍在当前会话中，重启后可能丢失。已失败 {count} 次。"
+      },
+      "layoutSaveRecovered": {
+        "title": "布局已保存",
+        "message": "之前未保存的更改已经写入。"
+      },
+      "layoutLoadFailed": {
+        "title": "本地布局载入失败",
+        "message": "当前更改不会保存，请重试载入本地布局。",
+        "messageRepeated": "当前更改不会保存。已失败 {count} 次。"
+      },
+      "layoutLoadRecovered": {
+        "title": "本地布局已载入",
+        "message": "之后的更改会正常保存。"
+      }
+    },
+    "commands": {
+      "compact": {
+        "title": "重新整理桌面页面？",
+        "message": "这会按当前顺序压实所有桌面页面，可能改变当前分页布局。",
+        "confirm": "重新整理"
+      },
+      "dissolve": {
+        "title": "解散“{name}”？",
+        "message": "文件夹中的应用将按当前顺序移回桌面。此操作不会删除应用。",
+        "confirm": "解散文件夹"
+      }
+    },
+    "errors": {
+      "bootstrap": {
+        "title": "Lumeria 初始化失败",
+        "message": "无法初始化应用语言。请重启 Lumeria；如果问题持续存在，请查看日志。"
+      },
+      "launch": {
+        "title": "无法打开 {appName}",
+        "genericTitle": "无法打开应用",
+        "genericMessage": "Lumeria 无法打开此应用。",
+        "appFallback": "此应用",
+        "missingId": "“{appName}”缺少应用标识，无法打开。",
+        "missingTarget": "“{appName}”没有启动路径。",
+        "missingWindowsId": "“{appName}”缺少 Windows 应用标识。",
+        "windowsNotFound": "Windows 中找不到“{appName}”。它可能已被卸载或不再为当前用户注册。",
+        "invalidKind": "“{appName}”的启动类型无效。",
+        "emptyPath": "“{appName}”的启动路径为空。",
+        "pathMissing": "找不到“{appName}”的启动文件。它可能已被移动、删除或卸载。",
+        "failureMessage": "无法打开“{appName}”。\n\n{reason}",
+        "windowsFailure": "无法打开“{appName}”。\n\nWindows 未能打开此应用。",
+        "suggestion": {
+          "readd": "请重新添加此应用。",
+          "chooseTarget": "请在设置中重新选择启动文件。",
+          "rescan": "请重新扫描并添加此应用。",
+          "rescanOrRemove": "请重新扫描应用；如果它已卸载，请移除旧条目。",
+          "editTarget": "请在设置中编辑此应用的启动路径。",
+          "checkExplorer": "请确认目标程序可以从资源管理器正常打开。",
+          "checkPermission": "请检查文件权限，或尝试以管理员身份运行目标程序。",
+          "replaceShortcut": "请在 Lumeria 中重新选择快捷方式或目标程序。",
+          "rescanOrReadd": "请重新扫描应用，或重新添加此应用。",
+          "checkAssociation": "请检查默认浏览器或文件关联设置。",
+          "supportedType": "请改用本地程序、快捷方式或链接。"
+        },
+        "reason": {
+          "accessDenied": "没有权限打开此应用。",
+          "packageMissing": "Windows 中找不到这个应用。它可能已被卸载或不再为当前用户注册。",
+          "shortcutInvalid": "这个快捷方式可能已损坏。",
+          "savedTargetInvalid": "Lumeria 无法读取此应用的保存信息。",
+          "pathEmpty": "启动路径不完整，无法打开。",
+          "noAssociation": "系统没有可用于打开此目标的默认应用。",
+          "pathMissing": "找不到启动文件。它可能已被移动、删除或卸载。",
+          "unsupported": "暂不支持这种启动类型。",
+          "windowsFailure": "Windows 未能打开此应用。"
+        }
+      },
+      "catalog": {
+        "incomplete": "应用目录扫描不完整；为防止丢弃 {count} 个已保存的 Catalog 引用，本次未载入布局。"
+      }
+    }
+  }
+}

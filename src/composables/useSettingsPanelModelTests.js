@@ -1,8 +1,11 @@
 import { ref } from "vue";
+import { createLocalization } from "../i18n/localization.js";
 import { useSettingsPanelModel } from "./useSettingsPanelModel.js";
 
 function createCapabilities() {
   const draftMainWindowShortcut = ref("control+alt+KeyL");
+  const draftLocalePreference = ref("system");
+  const localePreferenceError = ref("");
   const mainWindowShortcutError = ref("");
   return {
     activeSettingsState: ref(true),
@@ -13,6 +16,7 @@ function createCapabilities() {
     closeSettingsPanel: () => {},
     draftBackgroundAcrylicAppearance: ref("system"),
     draftBackgroundSource: ref("systemMaterial"),
+    draftLocalePreference,
     draftMainWindowShortcut,
     dragMeta: ref(null),
     excludedScanApps: ref([
@@ -21,6 +25,7 @@ function createCapabilities() {
     ]),
     isApplyingSettingsConfig: ref(false),
     isSettingsPanelOpen: ref(true),
+    localePreferenceError,
     mainWindowShortcutError,
     scanAppBlacklist: ref([
       { name: "Blocked Tool", catalogId: "catalog-blocked-tool" },
@@ -29,6 +34,10 @@ function createCapabilities() {
     setDraftMainWindowShortcut: (value) => {
       draftMainWindowShortcut.value = value;
       mainWindowShortcutError.value = "";
+    },
+    setDraftLocalePreference: (value) => {
+      draftLocalePreference.value = value;
+      localePreferenceError.value = "";
     },
     setMainWindowShortcutError: (value) => {
       mainWindowShortcutError.value = String(value || "");
@@ -47,6 +56,12 @@ export async function runSettingsPanelModelTests() {
     if (!condition) throw new Error(`[Settings panel model test failed] ${message}`);
   };
   const capabilities = createCapabilities();
+  const localization = createLocalization({
+    issue: null,
+    match: "exact",
+    preference: "en-US",
+    resolvedLocale: "en-US",
+  });
   let developerConsoleOpenCount = 0;
   const model = useSettingsPanelModel({
     appVersion: "0.1.0-test",
@@ -60,10 +75,16 @@ export async function runSettingsPanelModelTests() {
       },
     },
     nativeEvents: { listen: async () => () => {} },
+    localizationText: localization.text,
     systemAppearance: ref("light"),
   });
 
   assert(model.shell.activeTab.value === "general", "settings should start on the general page");
+  assert(model.shell.tabs.value[0].label === "General", "settings navigation should use the active locale");
+  localization.activate({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" });
+  assert(model.shell.tabs.value[0].label === "通用", "settings navigation should react to locale changes");
+  model.pages.general.actions.setLocalePreference("en-US");
+  assert(capabilities.draftLocalePreference.value === "en-US", "General should update the locale draft through the owner command");
   model.shell.actions.selectTab("apps");
   model.pages.apps.actions.openAppManager();
   assert(model.shell.activeRoute.value.subPageId === "apps.appManager", "Apps should own navigation to its manager subpage");

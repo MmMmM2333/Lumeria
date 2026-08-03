@@ -1,8 +1,8 @@
 <template>
       <section class="motion-debug-workspace-region">
         <header>
-          <strong>目标</strong>
-          <span>{{ motionLayerTreeRows.length }} 个图层 / {{ motionAnimationRows.length }} 个活动动画</span>
+          <strong>{{ t("debug.motion.sections.targets") }}</strong>
+          <span>{{ t("debug.motion.counts.layersAnimations", { layers: motionLayerTreeRows.length, animations: motionAnimationRows.length }) }}</span>
         </header>
         <div class="motion-debug-workspace-section-list">
         <dl class="background-debug-status-grid">
@@ -16,11 +16,11 @@
           </div>
         </dl>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">捕获配置</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.captureConfig") }}</div>
           <label class="background-debug-control background-debug-select-control">
             <span>
-              配置
-              <output>{{ motionCaptureProfile.label }}</output>
+              {{ t("debug.motion.fields.configuration") }}
+              <output>{{ motionCaptureProfile.labelKey ? t(motionCaptureProfile.labelKey) : motionCaptureProfile.label }}</output>
             </span>
             <select
               name="motionCaptureProfileId"
@@ -33,11 +33,11 @@
                 :key="profile.id"
                 :value="profile.id"
               >
-                {{ profile.label }}
+                {{ profile.labelKey ? t(profile.labelKey) : profile.label }}
               </option>
             </select>
           </label>
-          <div class="background-debug-motion-capture-props" role="group" aria-label="捕获属性">
+          <div class="background-debug-motion-capture-props" role="group" :aria-label="t('debug.motion.aria.captureProperties')">
             <label
               v-for="prop in motionCaptureAllowedProps"
               :key="prop"
@@ -56,8 +56,8 @@
           <div class="background-debug-motion-capture-filter-grid">
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                图层（layers）
-                <output>{{ motionCaptureTargetFilterText.layers || "全部" }}</output>
+                {{ t("debug.motion.fields.layers") }}
+                <output>{{ motionCaptureTargetFilterText.layers || t("debug.common.all") }}</output>
               </span>
               <input
                 name="motionCaptureLayerFilter"
@@ -70,8 +70,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                类型（kinds）
-                <output>{{ motionCaptureTargetFilterText.kinds || "全部" }}</output>
+                {{ t("debug.motion.fields.kinds") }}
+                <output>{{ motionCaptureTargetFilterText.kinds || t("debug.common.all") }}</output>
               </span>
               <input
                 name="motionCaptureKindFilter"
@@ -84,8 +84,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                来源标签（sourceLabels）
-                <output>{{ motionCaptureTargetFilterText.sourceLabels || "全部" }}</output>
+                {{ t("debug.motion.fields.sourceLabel") }}
+                <output>{{ motionCaptureTargetFilterText.sourceLabels || t("debug.common.all") }}</output>
               </span>
               <input
                 name="motionCaptureSourceLabelFilter"
@@ -98,8 +98,8 @@
             </label>
             <label class="background-debug-control background-debug-motion-capture-filter-control">
               <span>
-                来源搜索
-                <output>{{ motionCaptureTargetFilterText.sourceQuery || "全部" }}</output>
+                {{ t("debug.motion.fields.sourceSearch") }}
+                <output>{{ motionCaptureTargetFilterText.sourceQuery || t("debug.common.all") }}</output>
               </span>
               <input
                 name="motionCaptureSourceQuery"
@@ -123,8 +123,8 @@
           </dl>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">过滤器</div>
-          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" aria-label="Motion 过滤预设">
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.filters") }}</div>
+          <div class="background-debug-mode-group background-debug-motion-filter-group" role="group" :aria-label="t('debug.motion.aria.filterPresets')">
             <button
               v-for="preset in MOTION_FILTER_PRESETS"
               :key="preset.value"
@@ -132,25 +132,25 @@
               :class="['background-debug-mode-button', motionFilterPreset === preset.value && 'background-debug-mode-button-active']"
               @click="setMotionFilterPreset(preset.value)"
             >
-              {{ preset.label }}
+              {{ preset.labelKey ? t(preset.labelKey) : preset.label }}
             </button>
           </div>
           <label class="background-debug-control background-debug-motion-filter-control">
             <span>
-              搜索条件
+              {{ t("debug.motion.fields.searchCriteria") }}
               <output>{{ motionFilterSummary.text }}</output>
             </span>
             <input
               name="motionFilterQuery"
               type="search"
-              placeholder="目标 / 通道 / 属性 / 事件"
+              :placeholder="t('debug.motion.searchPlaceholder')"
               :value="motionFilterQuery"
               @input="updateMotionFilterQuery"
             >
           </label>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">图层树</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.layerTree") }}</div>
           <div class="background-debug-motion-layer-tree">
             <section
               v-for="row in motionLayerTreeRows"
@@ -171,10 +171,10 @@
                 <span>{{ row.summary }}</span>
               </header>
               <div class="background-debug-motion-layer-row">
-                <span>{{ row.targetCount }} 个目标</span>
-                <span>{{ row.activeCount }} 个活动动画</span>
-                <span>{{ row.warningCount }} 个警告</span>
-                <span>{{ row.eventCount }} 个事件</span>
+                <span>{{ t("debug.motion.counts.targets", { count: row.targetCount }) }}</span>
+                <span>{{ t("debug.motion.counts.animations", { count: row.activeCount }) }}</span>
+                <span>{{ t("debug.motion.counts.warnings", { count: row.warningCount }) }}</span>
+                <span>{{ t("debug.motion.counts.events", { count: row.eventCount }) }}</span>
               </div>
               <div class="background-debug-motion-layer-row">
                 <span :title="row.detail">{{ row.detail }}</span>
@@ -182,20 +182,20 @@
               </div>
             </section>
             <div v-if="motionLayerTreeRows.length === 0" class="background-debug-motion-empty">
-              没有匹配的图层
+              {{ t("debug.motion.empty.noLayers") }}
             </div>
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">活动动画</div>
-          <div class="background-debug-motion-table" role="table" aria-label="活动中的 Pixi Motion 动画">
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.activeAnimations") }}</div>
+          <div class="background-debug-motion-table" role="table" :aria-label="t('debug.motion.aria.activeAnimations')">
             <div class="background-debug-motion-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">目标</span>
-              <span role="columnheader">属性（prop）</span>
-              <span role="columnheader">当前值 → 目标值</span>
-              <span role="columnheader">驱动器</span>
-              <span role="columnheader">通道（lane）</span>
-              <span role="columnheader">速度</span>
+              <span role="columnheader">{{ t("debug.motion.fields.target") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.property") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.valueTo") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.driver") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.lane") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.velocity") }}</span>
             </div>
             <div
               v-for="(row, index) in motionAnimationRows"
@@ -211,12 +211,12 @@
               <span role="cell" :title="row.velocity">{{ row.velocity }}</span>
             </div>
             <div v-if="motionAnimationRows.length === 0" class="background-debug-motion-empty">
-              当前没有活动动画
+              {{ t("debug.motion.empty.noActiveAnimations") }}
             </div>
           </div>
         </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">固定目标</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.pinnedTargets") }}</div>
             <div class="background-debug-motion-replay-overlay-list">
               <article
                 v-for="pin in motionWorkspaceSession.pinnedTargets"
@@ -227,7 +227,7 @@
                 <span :title="pin.sourceLabel || pin.layer || pin.kind">{{ pin.sourceLabel || pin.layer || pin.kind || pin.key }}</span>
               </article>
               <div v-if="motionWorkspaceSession.pinnedTargets.length === 0" class="background-debug-motion-empty">
-                尚未固定目标
+                {{ t("debug.motion.empty.noPinnedTargets") }}
               </div>
             </div>
           </div>
@@ -236,7 +236,10 @@
 </template>
 
 <script setup>
+import { useLocalization } from "../../i18n/localization.js";
 import { useMotionDebugWorkspaceRegion } from "./motionDebugWorkspaceContext.js";
+
+const { t } = useLocalization();
 
 const {
   MOTION_FILTER_PRESETS,

@@ -105,8 +105,8 @@ export function formatDiagnosticAnalysis(analysis, options = {}) {
   const format = String(options.format || "markdown");
   if (format === "markdown") return formatMarkdown(analysis, locale);
   if (format === "text") return formatText(analysis, locale);
-  throw new DiagnosticError("diagnostic-format-not-supported", `诊断分析不支持输出格式 ${format}`, {
+  throw new DiagnosticError("diagnostic-format-not-supported", `Diagnostic analysis does not support output format ${format}`, {
     details: { format, supportedFormats: ["markdown", "text"] },
-    nextActions: ["使用 markdown 或 text 格式"],
+    nextActions: ["Use markdown or text format"],
   });
 }

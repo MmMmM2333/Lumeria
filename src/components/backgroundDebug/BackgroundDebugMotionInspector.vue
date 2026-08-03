@@ -1,27 +1,27 @@
 <template>
       <section class="motion-debug-workspace-region">
         <header>
-          <strong>检查器</strong>
+          <strong>{{ t("debug.motion.sections.inspector") }}</strong>
           <span>{{ motionWorkspaceSelectedTargetLabel }}</span>
         </header>
         <div class="motion-debug-workspace-section-list">
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">当前选择</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.currentSelection") }}</div>
             <dl class="background-debug-status-grid">
               <div class="background-debug-stat background-debug-stat-wide">
-                <dt>目标</dt>
+                <dt>{{ t("debug.motion.fields.target") }}</dt>
                 <dd :title="motionWorkspaceSelectedTargetLabel">{{ motionWorkspaceSelectedTargetLabel }}</dd>
               </div>
               <div class="background-debug-stat background-debug-stat-wide">
-                <dt>轨道</dt>
+                <dt>{{ t("debug.motion.fields.track") }}</dt>
                 <dd :title="motionWorkspaceSelectedTrackLabel">{{ motionWorkspaceSelectedTrackLabel }}</dd>
               </div>
               <div class="background-debug-stat">
-                <dt>时间</dt>
+                <dt>{{ t("debug.motion.fields.time") }}</dt>
                 <dd>{{ formatMotionReplayTime(motionWorkspaceSelectedTimeMs) }}</dd>
               </div>
               <div class="background-debug-stat">
-                <dt>过滤器</dt>
+                <dt>{{ t("debug.motion.fields.filter") }}</dt>
                 <dd :title="motionWorkspaceFilterLabel">{{ motionWorkspaceFilterLabel }}</dd>
               </div>
             </dl>
@@ -36,14 +36,14 @@
               </div>
             </dl>
             <div v-if="!motionInspectorModel" class="background-debug-motion-empty">
-              载入回放轨迹后可检查选中轨道的数值
+              {{ t("debug.motion.empty.loadReplay") }}
             </div>
             <div v-else-if="!motionInspectorModel.current" class="background-debug-motion-empty">
-              当前时刻没有与选中目标或轨道匹配的采样
+              {{ t("debug.motion.empty.noCurrentSample") }}
             </div>
           </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">通道贡献拆解</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.channelBreakdown") }}</div>
             <div class="motion-debug-inspector-card-list">
               <article
                 v-for="row in motionInspectorLaneRows"
@@ -53,17 +53,17 @@
                 <strong :title="`${row.lane}/${row.laneKey}`">{{ row.lane }} / {{ row.laneKey }}</strong>
                 <span :title="`${row.valueLabel} -> ${row.toLabel}`">{{ row.valueLabel }} -> {{ row.toLabel }}</span>
                 <span :title="`delta ${row.deltaLabel} / velocity ${row.velocityLabel}`">
-                  差值 {{ row.deltaLabel }} / 速度 {{ row.velocityLabel }}
+                  {{ t("debug.motion.values.deltaVelocity", { delta: row.deltaLabel, velocity: row.velocityLabel }) }}
                 </span>
                 <span :title="row.driver">{{ row.driver }}</span>
               </article>
               <div v-if="motionInspectorLaneRows.length === 0" class="background-debug-motion-empty">
-                没有可拆解的通道贡献
+                {{ t("debug.motion.empty.noLaneContribution") }}
               </div>
             </div>
           </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">为什么还在移动？</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.whyMoving") }}</div>
             <div class="motion-debug-inspector-card-list">
               <article
                 v-for="row in motionInspectorWhyRows"
@@ -74,12 +74,12 @@
                 <span :title="row.detail">{{ row.detail }}</span>
               </article>
               <div v-if="motionInspectorWhyRows.length === 0" class="background-debug-motion-empty">
-                暂无回放解释
+                {{ t("debug.motion.empty.noExplanation") }}
               </div>
             </div>
           </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">最近生命周期事件</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.recentLifecycle") }}</div>
             <div class="motion-debug-inspector-card-list">
               <article
                 v-for="event in motionInspectorEventRows"
@@ -91,12 +91,12 @@
                 <span :title="`${event.lane}/${event.laneKey}`">{{ event.lane }} / {{ event.laneKey }}</span>
               </article>
               <div v-if="motionInspectorEventRows.length === 0" class="background-debug-motion-empty">
-                没有匹配的生命周期事件
+                {{ t("debug.motion.empty.noLifecycle") }}
               </div>
             </div>
           </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">相关警告</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.relatedWarnings") }}</div>
             <div class="motion-debug-inspector-card-list">
               <article
                 v-for="warning in motionInspectorWarningRows"
@@ -107,30 +107,30 @@
                 <span :title="warning.detail">{{ warning.detail }}</span>
               </article>
               <div v-if="motionInspectorWarningRows.length === 0" class="background-debug-motion-empty">
-                没有相关警告
+                {{ t("debug.motion.empty.noRelatedWarnings") }}
               </div>
             </div>
           </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">属性明细</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.propertyDetails") }}</div>
           <div
             class="background-debug-motion-property-table"
             role="table"
-            aria-label="Pixi Motion 属性明细"
+            :aria-label="t('debug.motion.aria.propertyDetails')"
             @click="selectMotionWorkspacePropertyByEvent"
             @keydown.enter.prevent="selectMotionWorkspacePropertyByEvent"
             @keydown.space.prevent="selectMotionWorkspacePropertyByEvent"
           >
             <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">目标.属性</span>
-              <span role="columnheader">当前值</span>
-              <span role="columnheader">目标值（to）</span>
-              <span role="columnheader">差值（delta）</span>
-              <span role="columnheader">速度</span>
-              <span role="columnheader">驱动器</span>
-              <span role="columnheader">通道（lane）</span>
-              <span role="columnheader">通道键（laneKey）</span>
-              <span role="columnheader">来源标签（sourceLabel）</span>
+              <span role="columnheader">{{ t("debug.motion.fields.targetProp") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.currentValue") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.targetValue") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.delta") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.velocity") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.driver") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.lane") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.laneKey") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.sourceLabel") }}</span>
             </div>
             <div
               v-for="(row, index) in motionPropertyRows"
@@ -155,12 +155,12 @@
               <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
             </div>
             <div v-if="motionPropertyRows.length === 0" class="background-debug-motion-empty">
-              没有匹配的属性
+              {{ t("debug.motion.empty.noProperties") }}
             </div>
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">主要取消原因</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.cancelReasons") }}</div>
           <dl class="background-debug-diagnostics">
             <div
               v-for="row in motionCancelReasonRows"
@@ -174,7 +174,7 @@
           </dl>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">警告</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.warnings") }}</div>
           <div class="background-debug-motion-list">
             <div
               v-for="row in motionWarningRows"
@@ -187,7 +187,7 @@
           </div>
         </div>
           <div class="background-debug-subsection">
-            <div class="background-debug-subtitle">AI 分析导出</div>
+            <div class="background-debug-subtitle">{{ t("debug.motion.sections.aiExport") }}</div>
             <dl class="background-debug-status-grid">
               <div
                 v-for="row in motionFocusedDebugScopeRows"
@@ -205,7 +205,7 @@
                 :disabled="motionReplayCaptureActive"
                 @click="clearMotionDebugHistory"
               >
-                清空历史
+                {{ t("debug.motion.actions.clearHistory") }}
               </button>
               <button type="button" class="background-debug-button" @click="copyMotionReport('summary')">
                 {{ motionSummaryCopyButtonLabel }}
@@ -228,7 +228,10 @@
 </template>
 
 <script setup>
+import { useLocalization } from "../../i18n/localization.js";
 import { useMotionDebugWorkspaceRegion } from "./motionDebugWorkspaceContext.js";
+
+const { t } = useLocalization();
 
 const {
   clearMotionDebugHistory,

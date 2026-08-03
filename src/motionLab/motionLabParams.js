@@ -111,14 +111,16 @@ function makeMotionLabParamPreset(id, label, description, patch) {
   });
   return Object.freeze({
     description,
+    descriptionKey: `motionLab.presets.${id.replace(/-([a-z0-9])/g, (_match, character) => character.toUpperCase())}.description`,
     id,
     label,
+    labelKey: `motionLab.presets.${id.replace(/-([a-z0-9])/g, (_match, character) => character.toUpperCase())}.label`,
     params: Object.freeze(params),
   });
 }
 
 export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
-  makeMotionLabParamPreset("snappy", "敏捷", "快速收敛 / 短补间", {
+  makeMotionLabParamPreset("snappy", "Snappy", "Fast settling / short tweens", {
     blendDurationMs: 40,
     durationMs: 220,
     ease: "power3.out",
@@ -128,7 +130,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 0.72,
     springStiffness: 620,
   }),
-  makeMotionLabParamPreset("soft", "柔和", "柔和弹簧 / 舒缓悬停", {
+  makeMotionLabParamPreset("soft", "Soft", "Soft springs / relaxed hover", {
     blendDurationMs: 120,
     durationMs: 460,
     ease: "sine.inOut",
@@ -140,7 +142,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 1.15,
     springStiffness: 240,
   }),
-  makeMotionLabParamPreset("slow", "缓慢", "长补间 / 厚重收敛", {
+  makeMotionLabParamPreset("slow", "Slow", "Long tweens / heavy settling", {
     blendDurationMs: 180,
     durationMs: 760,
     ease: "power2.inOut",
@@ -151,7 +153,7 @@ export const MOTION_LAB_PARAM_PRESETS = Object.freeze([
     springMass: 1.55,
     springStiffness: 170,
   }),
-  makeMotionLabParamPreset("interrupt-heavy", "高频中断", "短延迟 / 替换压力测试", {
+  makeMotionLabParamPreset("interrupt-heavy", "Interrupt-heavy", "Short delay / replacement stress test", {
     blendDurationMs: 20,
     durationMs: 260,
     ease: "power2.out",
@@ -191,12 +193,14 @@ export function resolveMotionLabParamPresetId(params = {}) {
   return preset?.id || "custom";
 }
 
-export function buildMotionLabParamPresetRows(params = {}) {
+export function buildMotionLabParamPresetRows(params = {}, t) {
   const selectedId = resolveMotionLabParamPresetId(params);
   return MOTION_LAB_PARAM_PRESETS.map((preset) => ({
-    description: preset.description,
+    description: typeof t === "function" ? t(preset.descriptionKey) : preset.description,
+    descriptionKey: preset.descriptionKey,
     id: preset.id,
-    label: preset.label,
+    label: typeof t === "function" ? t(preset.labelKey) : preset.label,
+    labelKey: preset.labelKey,
     selected: preset.id === selectedId,
     summary: summarizeMotionLabParamPreset(preset.params),
   }));

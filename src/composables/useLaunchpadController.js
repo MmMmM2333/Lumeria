@@ -125,13 +125,21 @@ function useSystemAppearance() {
 }
 
 export function useLaunchpadController(options = {}) {
+  const localizationText = options.localizationText;
+  const activateLocale = options.activateLocale;
+  if (!localizationText || typeof localizationText.t !== "function" || typeof activateLocale !== "function") {
+    throw new TypeError("useLaunchpadController requires localizationText");
+  }
   const iconBoundsRegistry = createIconBoundsRegistry();
   const liveDesktopRuntime = useLiveDesktopRuntime();
   const liveDesktopBackgroundSupport = liveDesktopRuntime.support;
   const liveDesktopRuntimeStatus = liveDesktopRuntime.status;
   const mainWindowRuntime = useMainWindowRuntime();
   const windowEffectsSupport = mainWindowRuntime.support;
-  const layout = useLaunchpadLayout({ seedEnabled: !isNativeBridgeAvailable() });
+  const layout = useLaunchpadLayout({
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+    seedEnabled: !isNativeBridgeAvailable(),
+  });
   let dragControls = null;
   let settingsPanelModelDisposer = null;
 
@@ -149,9 +157,11 @@ export function useLaunchpadController(options = {}) {
     settingsPanelModelDisposer();
   }
   const settings = useLaunchpadSettings({
+    activateLocale,
     isDragActive: () => requireDragControls().isDragActive(),
     layout,
     liveDesktopSupport: liveDesktopBackgroundSupport,
+    localizationText,
     mainWindow: mainWindowRuntime,
   });
   function getCurrentIconScope() {
@@ -195,6 +205,8 @@ export function useLaunchpadController(options = {}) {
     isChoosingBackgroundImage,
     isApplyingSettingsConfig,
     isTextlessMode,
+    localePreference,
+    localePreferenceError,
     mainWindowShortcut,
     mainWindowShortcutError,
     showCustomTitlebar,
@@ -227,6 +239,7 @@ export function useLaunchpadController(options = {}) {
     fullscreenOverscanEnabled: draftFullscreenOverscanEnabled,
     iconSize: draftIconSize,
     isTextlessMode: draftIsTextlessMode,
+    localePreference: draftLocalePreference,
     mainWindowShortcut: draftMainWindowShortcut,
     rows: draftRows,
     showCustomTitlebar: draftShowCustomTitlebar,
@@ -644,6 +657,7 @@ export function useLaunchpadController(options = {}) {
     isFolderZoomFadeClosing,
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
+    localizationText,
     getLaunchTargetStatus: (app) => getLaunchTargetStatus(app),
     launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailable(app),
     normalizeLaunchSource,
@@ -765,7 +779,7 @@ export function useLaunchpadController(options = {}) {
     showLayoutSaveRecovered,
     showTransientNotice,
     warningDialog,
-  } = useLaunchpadNotices();
+  } = useLaunchpadNotices({ localizationText });
   const {
     commitChromePageIndex,
     commitPages,
@@ -795,6 +809,7 @@ export function useLaunchpadController(options = {}) {
     isFolderClosing,
     isHomeRevealSettling,
     isDragActive: () => isDragActive(),
+    localizationText,
     openFolderId,
     openWarningDialog,
     pageIndex,
@@ -822,6 +837,7 @@ export function useLaunchpadController(options = {}) {
   }
   const apps = useLaunchpadApps({
     appendAppsToPages,
+    localizationText,
     cancelLongPress: () => requireDragControls().cancelLongPress(),
     clearSelectedIcon,
     cloneItem,
@@ -954,6 +970,7 @@ export function useLaunchpadController(options = {}) {
     resetDraftBackgroundAcrylicParams,
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
+    setDraftLocalePreference,
     setDraftMainWindowShortcut,
     setMainWindowShortcutError,
     setDraftShowCustomTitlebar,
@@ -995,6 +1012,7 @@ export function useLaunchpadController(options = {}) {
   } = useLaunchpadNative({
     apps: apps.nativeIntegration,
     document: documentCoordinator,
+    localizationText,
     mainWindowRuntime,
     liveDesktopRuntime,
     notices: {
@@ -1062,6 +1080,7 @@ export function useLaunchpadController(options = {}) {
     folderSession,
     folderViewportHeight,
     getFolderChildPages,
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
     getPageSlotMotionGeometry,
     getTopLevelIconMotionGeometry,
     gridCols,
@@ -1536,6 +1555,7 @@ export function useLaunchpadController(options = {}) {
     draftFullscreenOverscanEnabled,
     draftIconSize,
     draftIsTextlessMode,
+    draftLocalePreference,
     draftMainWindowShortcut,
     draftRows,
     draftShowCustomTitlebar,
@@ -1555,6 +1575,8 @@ export function useLaunchpadController(options = {}) {
     isScanningApps,
     isSettingsPanelOpen,
     isTextlessMode,
+    localePreference,
+    localePreferenceError,
     fullscreenOverscanEnabled,
     liveDesktopBackgroundSupport,
     liveDesktopRuntimeStatus,
@@ -1591,6 +1613,7 @@ export function useLaunchpadController(options = {}) {
     setDraftBackgroundSource,
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
+    setDraftLocalePreference,
     setDraftMainWindowShortcut,
     setMainWindowShortcutError,
     setDraftShowCustomTitlebar,
@@ -1615,6 +1638,7 @@ export function useLaunchpadController(options = {}) {
     appVersion: options.appVersion,
     backgroundLayoutContext,
     capabilities: settingsPanel,
+    localizationText,
     systemAppearance,
   });
   settingsPanelModelDisposer = settingsPanelModel.dispose;

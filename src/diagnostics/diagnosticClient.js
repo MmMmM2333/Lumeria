@@ -15,15 +15,15 @@ function defaultResolveDiagnostics() {
 
 function unwrapDiagnosticResult(result) {
   if (!result || result.schema !== DIAGNOSTIC_RESULT_SCHEMA || typeof result.ok !== "boolean") {
-    throw new DiagnosticError("diagnostic-result-invalid", "诊断 Hub 返回了无效结果", {
+    throw new DiagnosticError("diagnostic-result-invalid", "The diagnostic Hub returned an invalid result", {
       details: { result },
-      nextActions: ["检查诊断 Hub 与客户端协议版本是否一致"],
+      nextActions: ["Check that the diagnostic Hub and client protocol versions match"],
     });
   }
   if (result.ok) return result.data;
   throw new DiagnosticError(
     result.error?.code || "diagnostic-operation-failed",
-    result.error?.message || "诊断操作失败",
+    result.error?.message || "Diagnostic operation failed",
     {
       details: result.error?.details ?? null,
       nextActions: result.error?.nextActions || [],
@@ -50,18 +50,18 @@ function requireArtifactReference(value) {
   ) {
     return value;
   }
-  throw new DiagnosticError("diagnostic-artifact-delivery-invalid", "诊断操作没有返回有效的制品引用", {
+  throw new DiagnosticError("diagnostic-artifact-delivery-invalid", "The diagnostic operation did not return a valid artifact reference", {
     details: { value },
-    nextActions: ["确认该操作的 resultSize 为 large，并检查 Hub 与客户端协议版本"],
+    nextActions: ["Confirm the operation resultSize is large and check the Hub and client protocol versions"],
   });
 }
 
 function normalizeChunkSize(value) {
   const size = value == null ? DEFAULT_ARTIFACT_CHUNK_SIZE : Number(value);
   if (!Number.isSafeInteger(size) || size <= 0) {
-    throw new DiagnosticError("diagnostic-artifact-chunk-size-invalid", "诊断制品 chunkSize 必须是正整数", {
+    throw new DiagnosticError("diagnostic-artifact-chunk-size-invalid", "Diagnostic artifact chunkSize must be a positive integer", {
       details: { chunkSize: value },
-      nextActions: ["使用大于 0 的 chunkSize"],
+      nextActions: ["Use a chunkSize greater than 0"],
     });
   }
   return size;
@@ -70,7 +70,7 @@ function normalizeChunkSize(value) {
 function invalidArtifactPage(message, details = {}) {
   return new DiagnosticError("diagnostic-artifact-page-invalid", message, {
     details,
-    nextActions: ["检查诊断 Hub 与客户端的制品分页协议版本"],
+    nextActions: ["Check the diagnostic Hub and client artifact-pagination protocol versions"],
   });
 }
 
@@ -82,14 +82,14 @@ export function createDiagnosticClient(options = {}) {
   function requireMethod(method) {
     const diagnostics = resolveDiagnostics();
     if (!diagnostics) {
-      throw new DiagnosticError("diagnostics-hub-unavailable", "诊断 Hub 尚未安装", {
-        nextActions: ["确认 Pixi Desktop Surface 已挂载并重试"],
+      throw new DiagnosticError("diagnostics-hub-unavailable", "The diagnostic Hub is not installed", {
+        nextActions: ["Confirm the Pixi Desktop Surface is mounted, then retry"],
       });
     }
     if (typeof diagnostics[method] !== "function") {
-      throw new DiagnosticError("diagnostics-client-method-unavailable", `诊断 Hub 不支持 ${method}`, {
+      throw new DiagnosticError("diagnostics-client-method-unavailable", `The diagnostic Hub does not support ${method}`, {
         details: { method },
-        nextActions: ["检查诊断 Hub 与客户端协议版本是否一致"],
+        nextActions: ["Check that the diagnostic Hub and client protocol versions match"],
       });
     }
     return diagnostics;
@@ -115,8 +115,8 @@ export function createDiagnosticClient(options = {}) {
       ? artifactOrId.trim()
       : requireArtifactReference(artifactOrId).artifactId;
     if (!artifactId) {
-      throw new DiagnosticError("diagnostic-artifact-id-invalid", "释放诊断制品需要非空 artifactId", {
-        nextActions: ["使用 invoke 返回的制品引用"],
+      throw new DiagnosticError("diagnostic-artifact-id-invalid", "Releasing a diagnostic artifact requires a non-empty artifactId", {
+        nextActions: ["Use the artifact reference returned by invoke"],
       });
     }
     const diagnostics = requireMethod("releaseArtifact");
@@ -133,10 +133,10 @@ export function createDiagnosticClient(options = {}) {
     while (true) {
       const page = await queryArtifact({ artifactId, limit, offset, path, representation });
       if (!page || page.schema !== DIAGNOSTIC_ARTIFACT_PAGE_SCHEMA) {
-        throw invalidArtifactPage("诊断 Hub 返回了无效的制品页 schema", { artifactId, page });
+        throw invalidArtifactPage("The diagnostic Hub returned an invalid artifact-page schema", { artifactId, page });
       }
       if (page.artifactId !== artifactId || page.representation !== representation || typeof page.text !== "string") {
-        throw invalidArtifactPage("诊断 Hub 返回了与请求不匹配的制品页", {
+        throw invalidArtifactPage("The diagnostic Hub returned an artifact page that does not match the request", {
           artifactId,
           pageArtifactId: page.artifactId,
           representation: page.representation,
@@ -150,12 +150,12 @@ export function createDiagnosticClient(options = {}) {
         || pageInfo.nextOffset < offset
         || pageInfo.returned !== page.text.length
       ) {
-        throw invalidArtifactPage("诊断制品分页游标无效", { artifactId, page: pageInfo });
+        throw invalidArtifactPage("The diagnostic artifact pagination cursor is invalid", { artifactId, page: pageInfo });
       }
       chunks.push(page.text);
       if (!pageInfo.hasMore) return chunks.join("");
       if (pageInfo.nextOffset <= offset) {
-        throw invalidArtifactPage("诊断制品分页游标没有前进", { artifactId, page: pageInfo });
+        throw invalidArtifactPage("The diagnostic artifact pagination cursor did not advance", { artifactId, page: pageInfo });
       }
       offset = pageInfo.nextOffset;
     }
@@ -175,10 +175,10 @@ export function createDiagnosticClient(options = {}) {
     try {
       return JSON.parse(content);
     } catch (error) {
-      throw new DiagnosticError("diagnostic-artifact-json-invalid", "诊断制品的 JSON 内容无法解析", {
+      throw new DiagnosticError("diagnostic-artifact-json-invalid", "The diagnostic artifact JSON content could not be parsed", {
         cause: error,
         details: { artifactId: artifact.artifactId, reason: String(error?.message || error) },
-        nextActions: ["检查制品是否在读取期间被错误修改，并重试诊断操作"],
+        nextActions: ["Check whether the artifact was modified during reading, then retry the diagnostic operation"],
       });
     }
   }
@@ -199,14 +199,14 @@ export function createDiagnosticClient(options = {}) {
       releaseError = error;
     }
     if (readError && releaseError) {
-      throw new DiagnosticError("diagnostic-artifact-consume-failed", "读取诊断制品失败，且随后释放制品也失败", {
+      throw new DiagnosticError("diagnostic-artifact-consume-failed", "Reading the diagnostic artifact failed, and releasing it afterward also failed", {
         cause: readError,
         details: {
           artifactId: artifact.artifactId,
           readError: { code: readError?.code || null, message: String(readError?.message || readError) },
           releaseError: { code: releaseError?.code || null, message: String(releaseError?.message || releaseError) },
         },
-        nextActions: ["保留两个错误详情并检查诊断 Hub 生命周期"],
+        nextActions: ["Preserve both error details and inspect the diagnostic Hub lifecycle"],
       });
     }
     if (readError) throw readError;

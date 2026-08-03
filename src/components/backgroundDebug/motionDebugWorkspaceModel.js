@@ -15,18 +15,18 @@ export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN = 520;
 export const MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX = 960;
 
 export const MOTION_DEBUG_QUICK_PANEL_CONTROLS = [
-  { id: "record", label: "记录", kind: "toggle" },
-  { id: "overlay", label: "覆盖层", kind: "toggle" },
-  { id: "time-scale", label: "时间倍率", kind: "slider" },
-  { id: "replay-capture", label: "回放捕获", kind: "command" },
-  { id: "open-workspace", label: "打开工作区", kind: "command" },
-  { id: "copy-ai-report", label: "复制 AI 报告", kind: "command" },
+  { id: "record", label: "Record", labelKey: "debug.motion.settings.recordHistory", kind: "toggle" },
+  { id: "overlay", label: "Overlay", labelKey: "debug.motion.fields.overlay", kind: "toggle" },
+  { id: "time-scale", label: "Time scale", labelKey: "debug.motion.fields.timeScale", kind: "slider" },
+  { id: "replay-capture", label: "Replay capture", labelKey: "debug.motion.sections.replayCapture", kind: "command" },
+  { id: "open-workspace", label: "Open workspace", labelKey: "debug.motion.actions.openWorkspace", kind: "command" },
+  { id: "copy-ai-report", label: "Copy AI report", labelKey: "debug.motion.actions.copyAiReport", kind: "command" },
 ];
 
 export const MOTION_DEBUG_WORKSPACE_REGIONS = [
-  { id: "left", label: "目标", sections: ["layer-tree", "target-tree", "filters", "pins"] },
-  { id: "center", label: "时间线", sections: ["timeline", "curves", "replay-scrubber", "event-track"] },
-  { id: "right", label: "检查器", sections: ["inspector", "properties", "lane-breakdown", "warnings", "ai-export"] },
+  { id: "left", label: "Targets", labelKey: "debug.motion.sections.targets", sections: ["layer-tree", "target-tree", "filters", "pins"] },
+  { id: "center", label: "Timeline", labelKey: "debug.motion.sections.timeline", sections: ["timeline", "curves", "replay-scrubber", "event-track"] },
+  { id: "right", label: "Inspector", labelKey: "debug.motion.sections.inspector", sections: ["inspector", "properties", "lane-breakdown", "warnings", "ai-export"] },
 ];
 
 const QUICK_PANEL_CONTROL_IDS = new Set(MOTION_DEBUG_QUICK_PANEL_CONTROLS.map((control) => control.id));

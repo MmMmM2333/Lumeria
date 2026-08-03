@@ -101,6 +101,18 @@ export async function saveLayout(layout) {
   return invoke("save_layout", { layout });
 }
 
+export async function getAppLocaleState() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("get_app_locale_state");
+}
+
+export async function applyAppLocalePreference(preference) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("apply_app_locale_preference", { preference });
+}
+
 export async function pickLaunchFile() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;

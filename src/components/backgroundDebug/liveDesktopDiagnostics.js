@@ -166,58 +166,99 @@ export function formatCount(value) {
   return String(normalizeCount(value));
 }
 
-export function formatLastFrame(diagnostics) {
-  if (!diagnostics.lastFrameWidth || !diagnostics.lastFrameHeight) return "-";
-  return `${diagnostics.lastFrameWidth}x${diagnostics.lastFrameHeight} · 格式 ${diagnostics.lastFrameFormat}`;
+function requireTranslation(translate) {
+  if (typeof translate !== "function") {
+    throw new TypeError("Live Desktop diagnostic presentation requires a translation function");
+  }
+  return translate;
 }
 
-export function formatPixelProbe(diagnostics) {
+export function formatLastFrame(diagnostics, translate) {
+  const t = requireTranslation(translate);
+  if (!diagnostics.lastFrameWidth || !diagnostics.lastFrameHeight) return "-";
+  return t("debug.liveDesktop.format.lastFrame", {
+    format: diagnostics.lastFrameFormat,
+    height: diagnostics.lastFrameHeight,
+    width: diagnostics.lastFrameWidth,
+  });
+}
+
+export function formatPixelProbe(diagnostics, translate) {
+  const t = requireTranslation(translate);
   if (!diagnostics.pixelProbeSamples && !diagnostics.pixelProbeErrors) return "-";
   const size = diagnostics.lastPixelProbeWidth && diagnostics.lastPixelProbeHeight
     ? `${diagnostics.lastPixelProbeWidth}x${diagnostics.lastPixelProbeHeight} · `
     : "";
-  return `成功 ${diagnostics.pixelProbeSamples} / 错误 ${diagnostics.pixelProbeErrors} · ${size}RGB ${diagnostics.lastPixelProbeMinRgb}/${diagnostics.lastPixelProbeMaxRgb}/${diagnostics.lastPixelProbeAvgRgb} · Alpha ${diagnostics.lastPixelProbeMinAlpha}/${diagnostics.lastPixelProbeMaxAlpha}/${diagnostics.lastPixelProbeAvgAlpha}`;
+  return t("debug.liveDesktop.format.pixelProbe", {
+    alphaAvg: diagnostics.lastPixelProbeAvgAlpha,
+    alphaMax: diagnostics.lastPixelProbeMaxAlpha,
+    alphaMin: diagnostics.lastPixelProbeMinAlpha,
+    errors: diagnostics.pixelProbeErrors,
+    rgbAvg: diagnostics.lastPixelProbeAvgRgb,
+    rgbMax: diagnostics.lastPixelProbeMaxRgb,
+    rgbMin: diagnostics.lastPixelProbeMinRgb,
+    size,
+    success: diagnostics.pixelProbeSamples,
+  });
 }
 
-export function formatFrameArrived(diagnostics) {
+export function formatFrameArrived(diagnostics, translate) {
+  const t = requireTranslation(translate);
   if (!diagnostics.frameArrivedEvents && !diagnostics.frameArrivedDroppedSignals) return "-";
-  return `到达 ${diagnostics.frameArrivedEvents} / 丢弃 ${diagnostics.frameArrivedDroppedSignals}`;
+  return t("debug.liveDesktop.format.frameArrived", {
+    arrived: diagnostics.frameArrivedEvents,
+    dropped: diagnostics.frameArrivedDroppedSignals,
+  });
 }
 
-export function formatFrameTiming(samples, totalMicros, lastMicros, maxMicros) {
+export function formatFrameTiming(samples, totalMicros, lastMicros, maxMicros, translate) {
+  const t = requireTranslation(translate);
   if (!samples) return "-";
   const averageMicros = totalMicros / samples;
-  return [
-    `平均 ${formatMicrosAsMillis(averageMicros)}ms`,
-    `最近 ${formatMicrosAsMillis(lastMicros)}ms`,
-    `最大 ${formatMicrosAsMillis(maxMicros)}ms`,
-  ].join(" / ");
+  return t("debug.liveDesktop.format.timing", {
+    average: formatMicrosAsMillis(averageMicros),
+    last: formatMicrosAsMillis(lastMicros),
+    max: formatMicrosAsMillis(maxMicros),
+  });
 }
 
 export function formatMicrosAsMillis(micros) {
   return (Number(micros) / 1000).toFixed(2);
 }
 
-export function formatLiveDesktopRates(rates) {
-  return [
-    `帧 ${rates.framesPerSecond.toFixed(1)}/s`,
-    `到达 ${rates.arrivedPerSecond.toFixed(1)}/s`,
-    `丢弃 ${rates.droppedPerSecond.toFixed(1)}/s`,
-    `超时 ${rates.timeoutsPerSecond.toFixed(1)}/s`,
-    `复制错误 ${rates.copyErrorsPerSecond.toFixed(1)}/s`,
-  ].join(" · ");
+export function formatLiveDesktopRates(rates, translate) {
+  const t = requireTranslation(translate);
+  return t("debug.liveDesktop.format.rates", {
+    arrived: rates.arrivedPerSecond.toFixed(1),
+    copyErrors: rates.copyErrorsPerSecond.toFixed(1),
+    dropped: rates.droppedPerSecond.toFixed(1),
+    frames: rates.framesPerSecond.toFixed(1),
+    timeouts: rates.timeoutsPerSecond.toFixed(1),
+  });
 }
 
-export function formatWindowTitle(windowInfo) {
-  return `${windowInfo.role || "窗口"} ${windowInfo.hwnd || "-"}`;
+export function formatWindowTitle(windowInfo, translate) {
+  const t = requireTranslation(translate);
+  return `${windowInfo.role || t("debug.liveDesktop.windows.roleFallback")} ${windowInfo.hwnd || "-"}`;
 }
 
-export function formatWindowMeta(windowInfo) {
+export function formatWindowMeta(windowInfo, translate) {
+  const t = requireTranslation(translate);
   const process = windowInfo.processName || `pid ${windowInfo.pid}`;
-  const className = windowInfo.className || "未知类名";
-  const reason = windowInfo.candidateReason || "诊断候选";
+  const className = windowInfo.className || t("debug.liveDesktop.windows.classFallback");
+  const reason = windowInfo.candidateReason || t("debug.liveDesktop.windows.reasonFallback");
   const title = windowInfo.title ? ` · ${windowInfo.title}` : "";
-  return `${reason} · ${className} · ${process} · 父窗口 ${windowInfo.parentHwnd || "-"} · 根窗口 ${windowInfo.rootHwnd || "-"} · 样式 ${windowInfo.style || "-"} · 扩展样式 ${windowInfo.exStyle || "-"} · Cloaked ${windowInfo.cloaked}${title}`;
+  return t("debug.liveDesktop.windows.meta", {
+    className,
+    cloaked: windowInfo.cloaked,
+    exStyle: windowInfo.exStyle || "-",
+    parent: windowInfo.parentHwnd || "-",
+    process,
+    reason,
+    root: windowInfo.rootHwnd || "-",
+    style: windowInfo.style || "-",
+    title,
+  });
 }
 
 export function formatWindowRect(rect) {

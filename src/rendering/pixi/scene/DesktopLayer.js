@@ -206,6 +206,10 @@ export class DesktopLayer extends Container {
     this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
+    this.renderCopy = {
+      newFolderName: String(options.renderCopy?.newFolderName || ""),
+      searchEmpty: String(options.renderCopy?.searchEmpty || ""),
+    };
     this.folderDropFrameSuppressedIds = new Set();
     this.lastFolderSourceGhostingState = null;
     this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
@@ -232,6 +236,7 @@ export class DesktopLayer extends Container {
       onRenderRequest: (reason) => this.onFolderRenderRequest(reason),
       onOutsidePointerDown: (event) => this.onFolderOutsidePointerDown(event),
       onPanelPointerDown: (event) => this.onFolderPanelPointerDown(event),
+      renderCopy: this.renderCopy,
       showFolderTitle: false,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
       visualCommitQueue: this.visualCommitQueue,
@@ -267,7 +272,7 @@ export class DesktopLayer extends Container {
     this.boundsFlushQueued = false;
     this.boundsDirty = false;
     this.emptyText = new Text({
-      text: "没有找到匹配的应用",
+      text: this.renderCopy.searchEmpty,
       style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
     });
     this.emptyText.anchor.set(0.5);
@@ -288,6 +293,15 @@ export class DesktopLayer extends Container {
       () => this.handoffDebugLayer.clear(),
     );
     this.describeMotionTargets();
+  }
+
+  setRenderCopy(copy = {}) {
+    this.renderCopy = {
+      newFolderName: String(copy.newFolderName || ""),
+      searchEmpty: String(copy.searchEmpty || ""),
+    };
+    this.emptyText.text = this.renderCopy.searchEmpty;
+    this.singleStageFolderLayer.setRenderCopy(this.renderCopy);
   }
 
   get folderHandoffNode() {

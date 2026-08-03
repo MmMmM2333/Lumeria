@@ -24,7 +24,7 @@
       <button
         type="button"
         tabindex="-1"
-        :aria-label="increaseLabel"
+        :aria-label="effectiveIncreaseLabel"
         :disabled="disabled || isAtMax"
         @pointerdown.prevent="focusInput"
         @click.prevent="stepBy(1)"
@@ -34,7 +34,7 @@
       <button
         type="button"
         tabindex="-1"
-        :aria-label="decreaseLabel"
+        :aria-label="effectiveDecreaseLabel"
         :disabled="disabled || isAtMin"
         @pointerdown.prevent="focusInput"
         @click.prevent="stepBy(-1)"
@@ -49,12 +49,13 @@
 import { computed, ref, watch } from "vue";
 import ChevronDownIcon from "~icons/fluent/chevron-down-12-regular";
 import ChevronUpIcon from "~icons/fluent/chevron-up-12-regular";
+import { useLocalization } from "../../i18n/localization.js";
 
 const props = defineProps({
   ariaLabel: { type: String, required: true },
-  decreaseLabel: { type: String, default: "减少" },
+  decreaseLabel: { type: String, default: "" },
   disabled: { type: Boolean, default: false },
-  increaseLabel: { type: String, default: "增加" },
+  increaseLabel: { type: String, default: "" },
   max: { type: Number, default: Number.POSITIVE_INFINITY },
   min: { type: Number, default: Number.NEGATIVE_INFINITY },
   modelValue: { type: Number, required: true },
@@ -65,6 +66,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:modelValue"]);
+const { t } = useLocalization();
 
 const inputRef = ref(null);
 const draftValue = ref(formatValue(props.modelValue));
@@ -76,6 +78,8 @@ const ariaValueText = computed(() => (props.unit ? `${formatValue(normalizedMode
 const inputMode = computed(() => (getStepPrecision(props.step) > 0 ? "decimal" : "numeric"));
 const isAtMin = computed(() => Number.isFinite(props.min) && normalizedModelValue.value <= props.min);
 const isAtMax = computed(() => Number.isFinite(props.max) && normalizedModelValue.value >= props.max);
+const effectiveDecreaseLabel = computed(() => props.decreaseLabel || t("common.actions.decrease"));
+const effectiveIncreaseLabel = computed(() => props.increaseLabel || t("common.actions.increase"));
 
 watch(
   () => props.modelValue,

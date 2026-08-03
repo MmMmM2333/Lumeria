@@ -32,10 +32,10 @@ export function makeDiagnosticErrorPayload(error, fallback = {}) {
 export function unsupportedDiagnosticOperation(toolId, operation) {
   return new DiagnosticError(
     "diagnostic-operation-not-supported",
-    `诊断工具 ${toolId} 不支持操作 ${operation || "(empty)"}`,
+    `Diagnostic tool ${toolId} does not support operation ${operation || "(empty)"}`,
     {
       details: { operation: operation || null, toolId },
-      nextActions: ["调用 describe(toolId) 查看工具支持的操作"],
+      nextActions: ["Call describe(toolId) to inspect supported operations"],
     },
   );
 }

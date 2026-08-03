@@ -8,6 +8,7 @@ import {
 } from "../api/launchpadApi.js";
 import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
+import { createLocalization } from "../i18n/localization.js";
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
 import { useLiveDesktopRuntime } from "./useLiveDesktopRuntime.js";
 import { useMainWindowRuntime } from "./useMainWindowRuntime.js";
@@ -47,6 +48,7 @@ import {
 const layoutV2RoundTripFixture = JSON.parse(
   readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
 );
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function makeScanStats(overrides = {}) {
   return {
@@ -72,6 +74,7 @@ function makeOptions(overrides = {}) {
     scanKeywordBlacklist: initialScanKeywordBlacklist = [],
     scanRoots: initialScanRoots = [{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }],
     showMissingLaunchTargetBadge: initialShowMissingLaunchTargetBadge = true,
+    localizationText: initialLocalizationText = localizationText,
     ...optionOverrides
   } = overrides;
   const calls = {
@@ -83,13 +86,17 @@ function makeOptions(overrides = {}) {
     schedulePageGridMetrics: 0,
     startFolderZoomFadeClose: [],
   };
-  const layout = useLaunchpadLayout({ seedEnabled: false });
+  const layout = useLaunchpadLayout({
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+    seedEnabled: false,
+  });
   layout.documentPersistence.restorePages(initialPages ?? [[]]);
   const pages = layout.presentation.pages;
   const liveDesktopRuntime = useLiveDesktopRuntime();
   const mainWindowRuntime = useMainWindowRuntime();
   const settings = useLaunchpadSettings({
     layout,
+    localizationText,
     liveDesktopSupport: liveDesktopRuntime.support,
     mainWindow: mainWindowRuntime,
   });
@@ -100,6 +107,7 @@ function makeOptions(overrides = {}) {
   });
   const apps = useLaunchpadApps({
     appendAppsToPages: layout.operations.appendAppsToPages,
+    localizationText,
     cloneItem: layout.operations.cloneItem,
     clonePages: layout.operations.clonePages,
     collectAppsFromPages: layout.operations.collectAppsFromPages,
@@ -135,6 +143,7 @@ function makeOptions(overrides = {}) {
     isDesktopOpen: ref(true),
     isSettingsPanelOpen: ref(initialIsSettingsPanelOpen ?? false),
     layout,
+    localizationText: initialLocalizationText,
     mainWindowRuntime,
     liveDesktopRuntime,
     openDesktop: () => {},
@@ -177,6 +186,7 @@ function makeOptions(overrides = {}) {
   options.nativeLifecycleOptions = {
     apps: apps.nativeIntegration,
     document: documentCoordinator,
+    localizationText: options.localizationText,
     liveDesktopRuntime,
     mainWindowRuntime,
     notices: {
@@ -2038,9 +2048,6 @@ export async function runLaunchpadNativeTests() {
       launchFailureCommands.push(command);
       throw {
         kind: "targetNotFound",
-        title: "无法打开应用",
-        message: "无法打开“Missing App”。\n\n找不到启动文件。",
-        suggestion: "请在 Lumeria 中编辑此应用的启动路径。",
         detail: "missing",
       };
     }
@@ -2064,8 +2071,44 @@ export async function runLaunchpadNativeTests() {
         name: "Missing App",
       });
       assert(failure.kind === "targetNotFound", "failed native launches should return structured launch errors");
+      assert(failure.title === "无法打开应用", "native launch errors should be localized by the WebView");
+      assert(failure.message.includes("Missing App") && failure.message.includes("找不到启动文件"), "native launch errors should combine the app name with the localized reason");
       await native.showNativeLaunchError(failure);
       assert(launchFailureCommands.join(",") === "launch_app,show_launch_error_message", "launch errors should be shown by an explicit native dialog command");
+    } finally {
+      console.error = originalConsoleError;
+    }
+  });
+
+  const englishLocalizationText = createLocalization({
+    issue: null,
+    match: "exact",
+    preference: "en-US",
+    resolvedLocale: "en-US",
+  }).text;
+  await withMockTauri(async (command, args) => {
+    if (command === "launch_app") {
+      throw { kind: "accessDenied", detail: "access denied" };
+    }
+    if (command === "show_launch_error_message") {
+      assert(args.report.title === "Could not open app", "native launch dialog titles should follow the active locale");
+      assert(args.report.message.includes("permission"), "native launch reasons should follow the active locale");
+      assert(args.report.suggestion.includes("administrator"), "native launch suggestions should follow the active locale");
+      return null;
+    }
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const { options } = makeOptions({ localizationText: englishLocalizationText });
+      const native = createNative(options);
+      const failure = await native.launchNativeAppIfAvailable({
+        id: "blocked-app",
+        type: "app",
+        name: "Blocked App",
+      });
+      await native.showNativeLaunchError(failure);
     } finally {
       console.error = originalConsoleError;
     }

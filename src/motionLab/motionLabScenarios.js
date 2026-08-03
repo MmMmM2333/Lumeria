@@ -123,13 +123,24 @@ function stepInterruptionDelay(context) {
   stepRuntime(context, params.interruptDelayMs / 1000);
 }
 
+function toMessageSegment(value) {
+  return String(value || "")
+    .replace(/-([a-z0-9])/g, (_match, character) => character.toUpperCase());
+}
+
 function createScenario(definition) {
+  const messageBase = `motionLab.scenarios.${toMessageSegment(definition.id)}`;
   return Object.freeze({
     assertAfterMs: 760,
     description: "",
     stage: "dsl",
     ...definition,
-    assertions: Object.freeze(definition.assertions || []),
+    descriptionKey: `${messageBase}.description`,
+    labelKey: `${messageBase}.label`,
+    assertions: Object.freeze((definition.assertions || []).map((assertion) => Object.freeze({
+      ...assertion,
+      labelKey: `${messageBase}.assertions.${toMessageSegment(assertion.id)}`,
+    }))),
   });
 }
 
@@ -137,34 +148,34 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-open-track",
-      label: "文件夹面板记录 scale/alpha 轨道",
+      label: "The folder panel records scale and alpha tracks",
       test: ({ report }) => hasTrack(report, "motionLab.folder.panel", "alpha") && hasTrack(report, "motionLab.folder.panel", "x"),
     }],
-    description: "文件夹面板进入时的 scale、y 与 alpha 动画",
+    description: "Animates the folder panel scale, y position, and alpha as it enters.",
     id: "folder-open",
-    label: "打开文件夹",
+    label: "Open folder",
     run: playFolderOpen,
   }),
   createScenario({
     assertions: [{
       id: "folder-close-track",
-      label: "文件夹关闭产生面板事件",
+      label: "Closing the folder produces panel events",
       test: ({ report }) => hasTrack(report, "motionLab.folder.panel", "alpha") && hasTrack(report, "motionLab.folder.panel", "x"),
     }],
-    description: "文件夹面板退出时的 scale 与 alpha 动画",
+    description: "Animates the folder panel scale and alpha as it exits.",
     id: "folder-close",
-    label: "关闭文件夹",
+    label: "Close folder",
     run: playFolderClose,
   }),
   createScenario({
     assertions: [{
       id: "open-close-cancel",
-      label: "打开动作被关闭动作中断",
+      label: "The close action interrupts the open action",
       test: ({ report }) => hasEvent(report, (event) => event.type === "cancel" && event.reason === "replace" && event.sourceLabel === "motionLab.folder.panel"),
     }],
-    description: "开始打开后，由关闭动作替换同一通道",
+    description: "Starts opening, then replaces the same lane with a close action.",
     id: "folder-open-interrupted-by-close",
-    label: "打开被关闭中断",
+    label: "Open interrupted by close",
     run: (context) => {
       playFolderOpen(context, "folder-panel-interrupt");
       stepInterruptionDelay(context);
@@ -174,12 +185,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "close-open-cancel",
-      label: "关闭动作被打开动作中断",
+      label: "The open action interrupts the close action",
       test: ({ report }) => hasEvent(report, (event) => event.type === "cancel" && event.reason === "replace" && event.sourceLabel === "motionLab.folder.panel"),
     }],
-    description: "开始关闭后，由打开动作替换同一通道",
+    description: "Starts closing, then replaces the same lane with an open action.",
     id: "folder-close-interrupted-by-open",
-    label: "关闭被打开中断",
+    label: "Close interrupted by open",
     run: (context) => {
       playFolderClose(context, "folder-panel-interrupt");
       stepInterruptionDelay(context);
@@ -189,12 +200,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "desktop-page-retarget",
-      label: "桌面翻页拖动会重定向页面轨道",
+      label: "Desktop page dragging retargets the page track",
       test: ({ report }) => hasEvent(report, (event) => event.type === "retarget" && event.sourceLabel === "motionLab.pageTrack"),
     }],
-    description: "桌面页面轨道弹向另一页并发生 retarget",
+    description: "Springs the desktop page track toward another page and retargets it.",
     id: "desktop-page-scrub",
-    label: "桌面翻页拖动",
+    label: "Desktop page drag",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.pageTrack, {
@@ -226,12 +237,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-page-progress",
-      label: "文件夹翻页拖动产生 progress 通道",
+      label: "Folder page dragging produces a progress lane",
       test: ({ report }) => hasTrack(report, "motionLab.folder.pageTrack", "x"),
     }],
-    description: "文件夹内部页面轨道使用 progress 拖动",
+    description: "Drags the folder's internal page track with progress.",
     id: "folder-page-scrub",
-    label: "文件夹翻页拖动",
+    label: "Folder page drag",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.folderPanel.alpha = 1;
@@ -253,12 +264,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "drag-release-track",
-      label: "拖拽幽灵在 x/y 方向释放",
+      label: "The drag ghost releases along x and y",
       test: ({ report }) => hasTrack(report, "motionLab.drag.ghost", "x") && hasTrack(report, "motionLab.drag.ghost", "y"),
     }],
-    description: "拖拽幽灵回落到网格",
+    description: "Drops the drag ghost back onto the grid.",
     id: "drag-release",
-    label: "拖拽释放",
+    label: "Drag release",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.dragGhost.alpha = 0.85;
@@ -281,12 +292,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "icon-press-factor",
-      label: "图标按压使用 factor 通道",
+      label: "Icon pressing uses a factor lane",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.icon.1" && event.lane === "factor" && event.laneKey === "press"),
     }],
-    description: "图标通过 factor 缩放完成按下与释放",
+    description: "Presses and releases an icon through factor scaling.",
     id: "icon-press-release",
-    label: "图标按压 / 释放",
+    label: "Icon press / release",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionSequence(scene.icons[0], [
@@ -313,12 +324,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "folder-hover",
-      label: "文件夹悬停驱动 hover 通道",
+      label: "Folder hover drives the hover lane",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.folder.hover" && event.laneKey === "folder-hover"),
     }],
-    description: "文件夹目标悬停环与图标缩放",
+    description: "Animates the folder target hover ring and icon scale.",
     id: "folder-hover",
-    label: "文件夹悬停",
+    label: "Folder hover",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.folderHover.alpha = 0;
@@ -348,12 +359,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "app-folder-create-hover",
-      label: "应用成组悬停产生 create 通道",
+      label: "App grouping hover produces a create lane",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.appFolderCreate.hover" && event.laneKey === "app-folder-create-hover"),
     }],
-    description: "应用成组创建时的悬停闪烁目标",
+    description: "Animates the hover pulse used while grouping apps.",
     id: "app-folder-create-hover",
-    label: "应用成组创建悬停",
+    label: "App grouping hover",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.createHover.alpha = 0;
@@ -373,12 +384,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
   createScenario({
     assertions: [{
       id: "edit-jiggle-additive",
-      label: "编辑抖动使用 additive 通道",
+      label: "Edit jiggle uses an additive lane",
       test: ({ report }) => hasEvent(report, (event) => event.sourceLabel === "motionLab.icon.1" && event.lane === "additive" && event.laneKey === "edit-jiggle"),
     }],
-    description: "编辑模式抖动驱动叠加旋转",
+    description: "Drives additive rotation for edit-mode jiggle.",
     id: "edit-jiggle",
-    label: "编辑模式抖动",
+    label: "Edit-mode jiggle",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       motionTo(scene.icons[0], {
@@ -407,12 +418,12 @@ export const MOTION_LAB_SCENARIOS = Object.freeze([
     assertAfterMs: 900,
     assertions: [{
       id: "hundred-icon-retarget",
-      label: "100+ 图标重定向会产生 retarget 事件",
+      label: "Retargeting 100+ icons produces retarget events",
       test: ({ report }) => countEvents(report, (event) => event.type === "retarget" && String(event.sourceLabel || "").startsWith("motionLab.massIcon.")) >= 100,
     }],
-    description: "100+ 图标布局弹簧 retarget 压力场景",
+    description: "Stress-tests layout spring retargeting with more than 100 icons.",
     id: "hundred-icon-layout-retarget",
-    label: "100+ 图标布局重定向",
+    label: "100+ icon layout retarget",
     run: ({ motionParams, runtime, scene }) => {
       const params = normalizeMotionLabParams(motionParams);
       scene.massIconLayer.alpha = 1;
@@ -472,16 +483,20 @@ export function evaluateMotionLabScenarioAssertions(scenario, context) {
       const passed = Boolean(assertion.test?.(context));
       return {
         detail: assertion.detail || assertion.label,
+        detailKey: assertion.detailKey || assertion.labelKey,
         id: assertion.id,
         label: assertion.label,
+        labelKey: assertion.labelKey,
         passed,
         status: passed ? "pass" : "fail",
       };
     } catch (error) {
       return {
         detail: error instanceof Error ? error.message : String(error),
+        detailKey: null,
         id: assertion.id,
         label: assertion.label,
+        labelKey: assertion.labelKey,
         passed: false,
         status: "fail",
       };

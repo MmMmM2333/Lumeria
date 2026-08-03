@@ -1,9 +1,12 @@
 import { ref, shallowRef } from "vue";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import { createLaunchpadLayoutHelpers } from "../domain/launchpadLayout.js";
+import { createLocalization } from "../i18n/localization.js";
 import { getCustomIconCanvasSize, useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
+
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function makeScanStats(overrides = {}) {
   return {
@@ -141,6 +144,7 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     commitPagesState: (next) => { pages.value = next; },
     folderPageIndex,
     isDragActive,
+    localizationText,
     pageIndex,
     pages,
     rebasePageIndices: pageRange.rebasePageIndices,
@@ -150,6 +154,7 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
   const transientNotices = [];
   const apps = useLaunchpadApps({
     appendAppsToPages: helpers.insertTopLevelItem,
+    localizationText,
     cloneItem: helpers.cloneItem,
     clonePages: helpers.clonePages,
     collectAppsFromPages: helpers.collectAppsFromPages,
@@ -488,6 +493,7 @@ export async function runLaunchpadAppsTests() {
         ...selectedApps.map((app) => ({ ...app })),
         ...(sourcePages[0] || []).map((app) => ({ ...app })),
       ]],
+      localizationText,
       cancelLongPress: () => { canceledLongPressCount += 1; },
       cloneItem: (item) => (item ? { ...item } : item),
       clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
@@ -644,6 +650,7 @@ export async function runLaunchpadAppsTests() {
       let commitCount = 0;
       const apps = useLaunchpadApps({
         appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+        localizationText,
         cloneItem: (item) => (item ? { ...item } : item),
         clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
         collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
@@ -703,6 +710,7 @@ export async function runLaunchpadAppsTests() {
     try {
       const apps = useLaunchpadApps({
         appendAppsToPages: (_sourcePages, selectedApps) => [selectedApps.map((app) => ({ ...app }))],
+        localizationText,
         cloneItem: (item) => (item ? { ...item } : item),
         clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
         collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),

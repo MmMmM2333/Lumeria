@@ -31,7 +31,7 @@
           :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
           type="button"
           :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
-          :aria-label="`切换到第 ${index} 页`"
+          :aria-label="t('launchpad.page', { page: index })"
           @pointerdown.stop
           @click="$emit('page-index', index - 1)"
         />
@@ -44,6 +44,7 @@
 import { ref, watch } from "vue";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { useLocalization } from "../i18n/localization.js";
 import LaunchpadHeader from "./LaunchpadHeader.vue";
 
 const props = defineProps({
@@ -60,6 +61,7 @@ const props = defineProps({
   renderKey: { type: String, default: "" },
   searchQuery: { type: String, default: "" },
 });
+const { t } = useLocalization();
 
 const headerMotionRef = ref(null);
 const dotsMotionRef = ref(null);

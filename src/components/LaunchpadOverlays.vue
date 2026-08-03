@@ -24,27 +24,27 @@
       class="icon-context-menu"
       :style="iconContextMenuStyle"
       role="menu"
-      :aria-label="`${iconContextMenu.item.name} 菜单`"
+      :aria-label="t('launchpad.contextMenu.label', { name: iconContextMenu.item.name })"
       @keydown.esc.stop.prevent="closeIconContextMenu"
       @pointerdown.stop
     >
       <fluent-menu-item @click="runIconContextMenuAction('open')">
         <FolderOpenIcon v-if="iconContextMenu.item.type === 'folder'" slot="start" class="icon-context-menu-item-icon" />
         <OpenIcon v-else slot="start" class="icon-context-menu-item-icon" />
-        打开
+        {{ t("common.actions.open") }}
       </fluent-menu-item>
       <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('edit')">
         <EditIcon slot="start" class="icon-context-menu-item-icon" />
-        编辑
+        {{ t("common.actions.edit") }}
       </fluent-menu-item>
       <fluent-menu-item v-else @click="runIconContextMenuAction('rename')">
         <RenameIcon slot="start" class="icon-context-menu-item-icon" />
-        重命名
+        {{ t("common.actions.rename") }}
       </fluent-menu-item>
       <fluent-divider class="icon-context-menu-divider" role="separator" />
       <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('remove-from-launchpad')">
         <DeleteIcon slot="start" class="icon-context-menu-item-icon" />
-        从启动台移除
+        {{ t("launchpad.contextMenu.remove") }}
       </fluent-menu-item>
       <fluent-menu-item
         v-if="iconContextMenu.item.type === 'app' && state.canExcludeManagedAppFromScan(iconContextMenu.item)"
@@ -52,11 +52,11 @@
         @click="runIconContextMenuAction('exclude-from-scan')"
       >
         <DeleteDismissIcon slot="start" class="icon-context-menu-item-icon" />
-        移除并从扫描中排除
+        {{ t("launchpad.contextMenu.exclude") }}
       </fluent-menu-item>
       <fluent-menu-item v-if="iconContextMenu.item.type === 'folder'" class="icon-context-menu-item-danger" @click="runIconContextMenuAction('dissolve')">
         <FolderArrowRightIcon slot="start" class="icon-context-menu-item-icon" />
-        解散文件夹
+        {{ t("launchpad.contextMenu.dissolve") }}
       </fluent-menu-item>
     </fluent-menu-list>
   </div>
@@ -74,6 +74,7 @@ import OpenIcon from "~icons/fluent/open-20-regular";
 import RenameIcon from "~icons/fluent/rename-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
+import { useLocalization } from "../i18n/localization.js";
 import { clampIconContextMenuPosition } from "./iconContextMenuGeometry.js";
 
 const props = defineProps({
@@ -81,6 +82,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["context-menu-action"]);
+const { t } = useLocalization();
 const launchGhostRef = ref(null);
 useGsapDomMotion(launchGhostRef, {
   initial: { opacity: 1, scale: 1 },

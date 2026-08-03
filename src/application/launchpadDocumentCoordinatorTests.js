@@ -5,17 +5,23 @@ import { useLaunchpadApps } from "../composables/useLaunchpadApps.js";
 import { useLaunchpadLayout } from "../composables/useLaunchpadLayout.js";
 import { useLaunchpadSettings } from "../composables/useLaunchpadSettings.js";
 import { useLiveDesktopRuntime } from "../composables/useLiveDesktopRuntime.js";
+import { createLocalization } from "../i18n/localization.js";
 import { createLaunchpadDocumentCoordinator } from "./launchpadDocumentCoordinator.js";
 
 const layoutV2RoundTripFixture = JSON.parse(
   readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
 );
+const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function createHarness() {
-  const layout = useLaunchpadLayout({ seedEnabled: false });
+  const layout = useLaunchpadLayout({
+    getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+    seedEnabled: false,
+  });
   const liveDesktopRuntime = useLiveDesktopRuntime();
   const settings = useLaunchpadSettings({
     layout,
+    localizationText,
     liveDesktopSupport: liveDesktopRuntime.support,
     mainWindow: {
       support: ref({ supportsAcrylic: true, supportsMica: true, supportsMicaAlt: true }),
@@ -26,6 +32,7 @@ function createHarness() {
   });
   const apps = useLaunchpadApps({
     appendAppsToPages: layout.operations.appendAppsToPages,
+    localizationText,
     cloneItem: layout.operations.cloneItem,
     clonePages: layout.operations.clonePages,
     collectAppsFromPages: layout.operations.collectAppsFromPages,

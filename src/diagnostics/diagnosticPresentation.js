@@ -5,9 +5,9 @@ export const DIAGNOSTIC_PRESENTATIONS = Object.freeze(["structured", "json", "ma
 export function createDiagnosticPresentation(data, options = {}) {
   const presentation = options.presentation === undefined ? "structured" : options.presentation;
   if (typeof presentation !== "string" || !DIAGNOSTIC_PRESENTATIONS.includes(presentation)) {
-    throw new DiagnosticError("diagnostic-presentation-invalid", "不支持请求的诊断结果表示形式", {
+    throw new DiagnosticError("diagnostic-presentation-invalid", "The requested diagnostic result presentation is not supported", {
       details: { presentation, supportedPresentations: DIAGNOSTIC_PRESENTATIONS },
-      nextActions: [`使用 ${DIAGNOSTIC_PRESENTATIONS.join("、")} 之一`],
+      nextActions: [`Use one of: ${DIAGNOSTIC_PRESENTATIONS.join(", ")}`],
     });
   }
   if (presentation === "structured") {

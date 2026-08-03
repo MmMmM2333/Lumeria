@@ -1,14 +1,14 @@
 <template>
       <section class="motion-debug-workspace-region">
         <header>
-          <strong>时间线</strong>
+          <strong>{{ t("debug.motion.sections.timeline") }}</strong>
           <span>{{ motionTrackChartHeaderLabel }}</span>
         </header>
         <div class="motion-debug-workspace-section-list">
         <div class="background-debug-subsection motion-debug-track-chart-section">
-          <div class="background-debug-subtitle">轨道图表</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.trackChart") }}</div>
           <div class="motion-debug-track-chart-toolbar">
-            <div class="background-debug-mode-group motion-debug-track-chart-mode-group" role="group" aria-label="轨道图表显示模式">
+            <div class="background-debug-mode-group motion-debug-track-chart-mode-group" role="group" :aria-label="t('debug.motion.aria.trackMode')">
               <button
                 type="button"
                 :class="[
@@ -17,7 +17,7 @@
                 ]"
                 @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_RAW)"
               >
-                原始值
+                {{ t("debug.motion.chart.raw") }}
               </button>
               <button
                 type="button"
@@ -27,10 +27,10 @@
                 ]"
                 @click="setMotionTrackChartDisplayMode(MOTION_TRACK_CHART_DISPLAY_NORMALIZED)"
               >
-                归一化
+                {{ t("debug.motion.chart.normalized") }}
               </button>
             </div>
-            <div class="motion-debug-track-chart-series-controls" role="group" aria-label="轨道图表曲线可见性">
+            <div class="motion-debug-track-chart-series-controls" role="group" :aria-label="t('debug.motion.aria.trackSeries')">
               <label
                 v-for="option in motionTrackChartSeriesOptions"
                 :key="option.key"
@@ -42,7 +42,7 @@
                   :checked="motionTrackChartSeriesVisibility[option.key]"
                   @change="toggleMotionTrackChartSeries(option.key, $event)"
                 >
-                <span>{{ option.label }}</span>
+                <span>{{ t(option.labelKey) }}</span>
               </label>
             </div>
           </div>
@@ -50,7 +50,7 @@
           <div v-if="motionTrackChartModel" class="motion-debug-track-chart-window-controls">
             <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
               <span>
-                缩放起点
+                {{ t("debug.motion.chart.zoomStart") }}
                 <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.startMs) }}</output>
               </span>
               <input
@@ -65,7 +65,7 @@
             </label>
             <label class="background-debug-control background-debug-number-control motion-debug-track-chart-window-control">
               <span>
-                缩放终点
+                {{ t("debug.motion.chart.zoomEnd") }}
                 <output>{{ formatMotionReplayTime(motionTrackChartZoomWindow.endMs) }}</output>
               </span>
               <input
@@ -85,7 +85,7 @@
                 :disabled="!motionTrackChartIntervalActive"
                 @click="zoomMotionTrackChartToInterval"
               >
-                缩放到选区
+                {{ t("debug.motion.actions.zoomSelection") }}
               </button>
               <button
                 type="button"
@@ -93,7 +93,7 @@
                 :disabled="!motionTrackChartZoomActive"
                 @click="resetMotionTrackChartZoom"
               >
-                重置缩放
+                {{ t("debug.motion.actions.resetZoom") }}
               </button>
             </div>
           </div>
@@ -111,14 +111,14 @@
 
           <div v-if="motionTrackChartModel" class="motion-debug-finding-panel">
             <header>
-              <strong>诊断发现</strong>
+              <strong>{{ t("debug.motion.sections.findings") }}</strong>
               <span :title="motionReplayFindingStatusLabel">{{ motionReplayFindingStatusLabel }}</span>
             </header>
             <div
               v-if="motionReplayFindingRows.length"
               class="motion-debug-finding-grid"
               role="group"
-              aria-label="Motion 回放诊断发现"
+              :aria-label="t('debug.motion.aria.findings')"
             >
               <button
                 v-for="finding in motionReplayFindingRows"
@@ -134,7 +134,7 @@
               </button>
             </div>
             <div v-else class="background-debug-motion-empty">
-              当前筛选范围内没有诊断发现
+              {{ t("debug.motion.empty.noFindings") }}
             </div>
           </div>
 
@@ -170,14 +170,14 @@
               <div class="motion-debug-track-chart-row-meta">
                 <span :title="track.laneLabel">{{ track.laneLabel }}</span>
                 <span :title="track.sourceLabel">{{ track.sourceLabel }}</span>
-                <span>最大速度 {{ formatMotionTrackChartValue(track.stats.maxAbsVelocity) }}</span>
-                <span>最大差值 {{ formatMotionTrackChartValue(track.stats.maxAbsDelta) }}</span>
+                <span>{{ t("debug.motion.chart.maxVelocity", { value: formatMotionTrackChartValue(track.stats.maxAbsVelocity) }) }}</span>
+                <span>{{ t("debug.motion.chart.maxDelta", { value: formatMotionTrackChartValue(track.stats.maxAbsDelta) }) }}</span>
               </div>
               <div class="motion-debug-track-chart-current">
-                <span>当前值 {{ formatMotionTrackChartValue(track.current?.value) }}</span>
-                <span>目标值 {{ formatMotionTrackChartValue(track.current?.to) }}</span>
-                <span>差值 {{ formatMotionTrackChartValue(track.current?.delta) }}</span>
-                <span>速度 {{ formatMotionTrackChartValue(track.current?.velocity) }}</span>
+                <span>{{ t("debug.motion.chart.currentValue", { value: formatMotionTrackChartValue(track.current?.value) }) }}</span>
+                <span>{{ t("debug.motion.chart.targetValue", { value: formatMotionTrackChartValue(track.current?.to) }) }}</span>
+                <span>{{ t("debug.motion.chart.delta", { value: formatMotionTrackChartValue(track.current?.delta) }) }}</span>
+                <span>{{ t("debug.motion.chart.velocity", { value: formatMotionTrackChartValue(track.current?.velocity) }) }}</span>
               </div>
               <div class="motion-debug-track-chart-activity" aria-hidden="true">
                 <span
@@ -265,26 +265,26 @@
                   :key="`${track.key}-range-${option.key}`"
                   :title="track.rangeLabels[option.key]"
                 >
-                  {{ option.label }} {{ track.rangeLabels[option.key] }}
+                  {{ t(option.labelKey) }} {{ track.rangeLabels[option.key] }}
                 </span>
               </div>
             </section>
             <div v-if="motionTrackChartModel.tracks.length === 0" class="background-debug-motion-empty">
-              没有可显示的回放轨道
+              {{ t("debug.motion.empty.noReplayTracks") }}
             </div>
             <div v-if="motionTrackChartModel.limits.tracksLimited" class="background-debug-motion-empty">
-              当前显示 {{ motionTrackChartModel.summary.visibleTrackCount }} / {{ motionTrackChartModel.summary.trackCount }} 条轨道
+              {{ t("debug.motion.counts.visibleTracks", { visible: motionTrackChartModel.summary.visibleTrackCount, total: motionTrackChartModel.summary.trackCount }) }}
             </div>
           </div>
           <div v-else class="background-debug-motion-empty">
-            载入回放轨迹后可检查各轨道曲线
+            {{ t("debug.motion.empty.loadReplayTracks") }}
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">回放查看器</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.replayViewer") }}</div>
           <label class="background-debug-control background-debug-textarea-control">
             <span>
-              导入 JSON
+              {{ t("debug.motion.actions.importJson") }}
               <output>{{ motionReplayImportStatus }}</output>
             </span>
             <textarea
@@ -298,8 +298,8 @@
           </label>
           <label class="background-debug-control background-debug-file-control">
             <span>
-              轨迹文件
-              <output>{{ motionReplayViewerLoaded ? "已载入" : "无" }}</output>
+              {{ t("debug.motion.replay.traceFile") }}
+              <output>{{ t(motionReplayViewerLoaded ? "debug.motion.replay.loaded" : "debug.common.none") }}</output>
             </span>
             <input
               name="motionReplayTraceFile"
@@ -310,7 +310,7 @@
           </label>
           <div class="background-debug-actions background-debug-motion-replay-viewer-actions">
             <button type="button" class="background-debug-button" @click="loadMotionReplayImportText">
-              载入轨迹
+              {{ t("debug.motion.actions.loadTrace") }}
             </button>
             <button
               type="button"
@@ -318,7 +318,7 @@
               :disabled="!motionReplayCaptureAvailable"
               @click="loadCapturedMotionReplayTrace"
             >
-              载入当前捕获
+              {{ t("debug.motion.actions.loadCurrentCapture") }}
             </button>
             <button
               type="button"
@@ -326,7 +326,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="clearMotionReplayViewer"
             >
-              清空查看器
+              {{ t("debug.motion.actions.clearViewer") }}
             </button>
           </div>
           <div v-if="motionReplayImportError" class="background-debug-error" :title="motionReplayImportError">
@@ -346,7 +346,7 @@
 
           <label class="background-debug-control">
             <span>
-              时间游标
+              {{ t("debug.motion.replay.timeCursor") }}
               <output>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</output>
             </span>
             <input
@@ -363,13 +363,13 @@
 
           <label class="background-debug-control background-debug-motion-filter-control">
             <span>
-              回放过滤器
+              {{ t("debug.motion.replay.filter") }}
               <output>{{ motionReplayFilterSummary.text }}</output>
             </span>
             <input
               name="motionReplayFilterQuery"
               type="search"
-              placeholder="目标 / 通道 / 属性 / 事件"
+              :placeholder="t('debug.motion.searchPlaceholder')"
               :disabled="!motionReplayViewerLoaded"
               :value="motionReplayFilterQuery"
               @input="updateMotionReplayFilterQuery"
@@ -391,7 +391,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="setMotionReplayCurrentTime(motionReplayTimeRange.min, { pause: true })"
             >
-              跳到开始
+              {{ t("debug.motion.actions.jumpStart") }}
             </button>
             <button
               type="button"
@@ -399,7 +399,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="setMotionReplayCurrentTime(motionReplayTimeRange.max, { pause: true })"
             >
-              跳到结束
+              {{ t("debug.motion.actions.jumpEnd") }}
             </button>
           </div>
 
@@ -410,7 +410,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="stepMotionReplayFrame('previous')"
             >
-              上一帧
+              {{ t("debug.motion.actions.previousFrame") }}
             </button>
             <button
               type="button"
@@ -418,7 +418,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="stepMotionReplayFrame('next')"
             >
-              下一帧
+              {{ t("debug.motion.actions.nextFrame") }}
             </button>
             <button
               type="button"
@@ -426,7 +426,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="stepMotionReplayEvent('previous')"
             >
-              上一事件
+              {{ t("debug.motion.actions.previousEvent") }}
             </button>
             <button
               type="button"
@@ -434,7 +434,7 @@
               :disabled="!motionReplayViewerLoaded"
               @click="stepMotionReplayEvent('next')"
             >
-              下一事件
+              {{ t("debug.motion.actions.nextEvent") }}
             </button>
             <button
               type="button"
@@ -449,7 +449,7 @@
           <div class="background-debug-motion-replay-interval-grid">
             <label class="background-debug-control background-debug-number-control">
               <span>
-                选区起点
+                {{ t("debug.motion.replay.selectionStart") }}
                 <output>{{ formatMotionReplayTime(motionReplayIntervalStartMs) }}</output>
               </span>
               <input
@@ -463,7 +463,7 @@
             </label>
             <label class="background-debug-control background-debug-number-control">
               <span>
-                选区终点
+                {{ t("debug.motion.replay.selectionEnd") }}
                 <output>{{ formatMotionReplayTime(motionReplayIntervalEndMs) }}</output>
               </span>
               <input
@@ -479,7 +479,7 @@
 
           <div class="background-debug-motion-replay-bookmarks">
             <header>
-              <strong>书签</strong>
+              <strong>{{ t("debug.motion.sections.bookmarks") }}</strong>
               <span>{{ motionReplayBookmarkStatusLabel }}</span>
             </header>
             <div class="background-debug-actions background-debug-motion-bookmark-actions">
@@ -489,7 +489,7 @@
                 :disabled="!motionReplayBookmarkCanSave"
                 @click="saveMotionReplayBookmark"
               >
-                保存书签
+                {{ t("debug.motion.actions.saveBookmark") }}
               </button>
               <button
                 type="button"
@@ -497,7 +497,7 @@
                 :disabled="motionReplayBookmarkRows.length === 0"
                 @click="clearMotionReplayBookmarks"
               >
-                清空书签
+                {{ t("debug.motion.actions.clearBookmarks") }}
               </button>
             </div>
             <div class="background-debug-motion-bookmark-list">
@@ -519,7 +519,7 @@
                     :disabled="!motionReplayViewerLoaded"
                     @click="applyMotionReplayBookmark(bookmark)"
                   >
-                    应用
+                    {{ t("debug.common.apply") }}
                   </button>
                   <button
                     type="button"
@@ -527,34 +527,34 @@
                     :disabled="!motionReplayViewerLoaded"
                     @click="copyMotionFocusedDebugExport(bookmark)"
                   >
-                    导出聚焦 AI 报告
+                    {{ t("debug.motion.actions.exportFocused") }}
                   </button>
                   <button
                     type="button"
                     class="background-debug-button"
                     @click="deleteMotionReplayBookmark(bookmark)"
                   >
-                    删除
+                    {{ t("debug.common.delete") }}
                   </button>
                 </div>
               </article>
               <div v-if="motionReplayBookmarkRows.length === 0" class="background-debug-motion-empty">
-                尚未保存书签
+                {{ t("debug.motion.empty.noBookmarks") }}
               </div>
             </div>
           </div>
 
-          <div class="background-debug-motion-property-table" role="table" aria-label="回放帧属性">
+          <div class="background-debug-motion-property-table" role="table" :aria-label="t('debug.motion.aria.replayProperties')">
             <div class="background-debug-motion-property-row background-debug-motion-row-head" role="row">
-              <span role="columnheader">目标.属性</span>
-              <span role="columnheader">当前值</span>
-              <span role="columnheader">目标值（to）</span>
-              <span role="columnheader">差值（delta）</span>
-              <span role="columnheader">速度</span>
-              <span role="columnheader">驱动器</span>
-              <span role="columnheader">通道（lane）</span>
-              <span role="columnheader">通道键（laneKey）</span>
-              <span role="columnheader">来源标签（sourceLabel）</span>
+              <span role="columnheader">{{ t("debug.motion.fields.targetProp") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.currentValue") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.targetValue") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.delta") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.velocity") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.driver") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.lane") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.laneKey") }}</span>
+              <span role="columnheader">{{ t("debug.motion.fields.sourceLabel") }}</span>
             </div>
             <div
               v-for="(row, index) in motionReplayFrameRows"
@@ -573,7 +573,7 @@
               <span role="cell" :title="row.sourceLabel">{{ row.sourceLabel }}</span>
             </div>
             <div v-if="motionReplayFrameRows.length === 0" class="background-debug-motion-empty">
-              当前回放帧没有匹配的属性值
+              {{ t("debug.motion.empty.noReplayProperties") }}
             </div>
           </div>
 
@@ -592,7 +592,7 @@
               <span>{{ event.detail }}</span>
             </button>
             <div v-if="motionReplayEventRows.length === 0" class="background-debug-motion-empty">
-              没有匹配的回放事件
+              {{ t("debug.motion.empty.noReplayEvents") }}
             </div>
           </div>
 
@@ -612,7 +612,7 @@
                 <span>{{ formatMotionReplayTime(motionReplayCurrentTimeMs) }}</span>
               </div>
               <div class="background-debug-motion-curve-row">
-                <span>当前值 / 目标值 / 事件</span>
+                <span>{{ t("debug.motion.values.currentTargetEvent") }}</span>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
                   <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
@@ -638,7 +638,7 @@
               </div>
             </section>
             <div v-if="motionReplayCurveGroups.length === 0" class="background-debug-motion-empty">
-              没有匹配的回放曲线
+              {{ t("debug.motion.empty.noReplayCurves") }}
             </div>
           </div>
 
@@ -659,19 +659,19 @@
             >
               <strong :title="row.label">{{ row.label }}</strong>
               <span :title="row.sourceLabel || row.kind || row.layer">
-                {{ row.sourceLabel || row.kind || row.layer || "目标" }}
+                {{ row.sourceLabel || row.kind || row.layer || t("debug.motion.values.targetFallback") }}
               </span>
               <span :title="row.valueSummary">{{ row.valueSummary }}</span>
               <span :title="row.laneSummary">{{ row.propSummary }} / {{ row.laneSummary }}</span>
-              <span>{{ row.valueCount }} 个值</span>
+              <span>{{ t("debug.motion.counts.values", { count: row.valueCount }) }}</span>
             </article>
             <div v-if="motionReplayOverlayRows.length === 0" class="background-debug-motion-empty">
-              没有匹配的回放覆盖目标
+              {{ t("debug.motion.empty.noReplayTargets") }}
             </div>
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">事件时间线</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.eventTimeline") }}</div>
           <div class="background-debug-motion-timeline">
             <section
               v-for="group in motionTimelineGroups"
@@ -689,7 +689,7 @@
             >
               <header>
                 <strong :title="group.label">{{ group.label }}</strong>
-                <span>{{ group.events.length }} 个事件</span>
+                <span>{{ t("debug.motion.counts.events", { count: group.events.length }) }}</span>
               </header>
               <div
                 v-for="event in group.events"
@@ -713,12 +713,12 @@
               </div>
             </section>
             <div v-if="motionTimelineGroups.length === 0" class="background-debug-motion-empty">
-              没有匹配的时间线事件
+              {{ t("debug.motion.empty.noTimelineEvents") }}
             </div>
           </div>
         </div>
         <div class="background-debug-subsection">
-          <div class="background-debug-subtitle">曲线图表</div>
+          <div class="background-debug-subtitle">{{ t("debug.motion.sections.curveChart") }}</div>
           <div class="background-debug-motion-curve-list">
             <section
               v-for="group in motionCurveChartGroups"
@@ -741,10 +741,10 @@
               <div class="background-debug-motion-curve-meta">
                 <span :title="group.laneLabel">{{ group.laneLabel }}</span>
                 <span :title="group.sourceLabel">{{ group.sourceLabel }}</span>
-                <span>最大速度 {{ formatMotionChartStat(group.stats.maxVelocity) }}</span>
+                <span>{{ t("debug.motion.chart.maxVelocity", { value: formatMotionChartStat(group.stats.maxVelocity) }) }}</span>
               </div>
               <div class="background-debug-motion-curve-row">
-                <span>当前值 / 目标值 / 事件</span>
+                <span>{{ t("debug.motion.values.currentTargetEvent") }}</span>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
                   <path v-if="group.toPath" class="background-debug-motion-curve-to" :d="group.toPath" />
@@ -762,7 +762,7 @@
                 <output>{{ group.rangeLabels.value }}</output>
               </div>
               <div class="background-debug-motion-curve-row">
-                <span>差值（delta）</span>
+                <span>{{ t("debug.motion.fields.delta") }}</span>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
                   <path v-if="group.deltaPath" class="background-debug-motion-curve-delta" :d="group.deltaPath" />
@@ -770,7 +770,7 @@
                 <output>{{ group.rangeLabels.delta }}</output>
               </div>
               <div class="background-debug-motion-curve-row">
-                <span>速度</span>
+                <span>{{ t("debug.motion.fields.velocity") }}</span>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <path class="background-debug-motion-curve-grid" d="M 0 50 L 100 50" />
                   <path v-if="group.velocityPath" class="background-debug-motion-curve-velocity" :d="group.velocityPath" />
@@ -779,7 +779,7 @@
               </div>
             </section>
             <div v-if="motionCurveChartGroups.length === 0" class="background-debug-motion-empty">
-              没有匹配的曲线采样
+              {{ t("debug.motion.empty.noCurveSamples") }}
             </div>
           </div>
         </div>
@@ -788,7 +788,10 @@
 </template>
 
 <script setup>
+import { useLocalization } from "../../i18n/localization.js";
 import { useMotionDebugWorkspaceRegion } from "./motionDebugWorkspaceContext.js";
+
+const { t } = useLocalization();
 
 const {
   MOTION_REPLAY_IMPORT_MAX_BYTES,

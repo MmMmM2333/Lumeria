@@ -32,6 +32,7 @@ import {
   runMotionLabScenario,
 } from "./motionLabScenarios.js";
 import { createMotionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
+import { translateMessage } from "../i18n/catalogs.js";
 
 function makeReport() {
   return {
@@ -176,12 +177,23 @@ export function runMotionLabModelTests() {
   assert(scenarioRows.some((row) => row.id === "desktop-page-scrub" && row.selected), "selected scenario should be marked");
   assert(scenarioRows.every((row) => row.assertionCount >= 1), "scenario rows should expose assertion counts");
 
+  const zhT = (key, values) => translateMessage("zh-CN", key, values);
+  const enT = (key, values) => translateMessage("en-US", key, values);
+  const zhScenarioRows = buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, "desktop-page-scrub", zhT);
+  const enScenarioRows = buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, "desktop-page-scrub", enT);
+  assert(zhScenarioRows.find((row) => row.selected)?.label === "桌面翻页拖动", "scenario rows should render Chinese catalog text");
+  assert(enScenarioRows.find((row) => row.selected)?.label === "Desktop page drag", "scenario rows should render English catalog text");
+
   const report = makeReport();
   const overviewRows = buildMotionLabOverviewRows(report, {
     summary: { eventCount: 2, frameCount: 3 },
   });
-  assert(overviewRows.some((row) => row.label === "运行时" && row.value === "调试中"), "overview should expose debug runtime state");
-  assert(overviewRows.some((row) => row.label === "轨迹帧 / 事件" && row.value === "3 / 2"), "overview should expose trace counts");
+  assert(overviewRows.some((row) => row.label === "Runtime" && row.value === "Debugging"), "overview should expose debug runtime state");
+  assert(overviewRows.some((row) => row.label === "Trace frames / events" && row.value === "3 / 2"), "overview should expose trace counts");
+  const zhOverviewRows = buildMotionLabOverviewRows(report, null, zhT);
+  const enOverviewRows = buildMotionLabOverviewRows(report, null, enT);
+  assert(zhOverviewRows.some((row) => row.label === "运行时" && row.value === "调试中"), "Motion Lab overview should render Chinese catalog text");
+  assert(enOverviewRows.some((row) => row.label === "Runtime" && row.value === "Debugging"), "Motion Lab overview should render English catalog text");
 
   const timelineRows = buildMotionLabTimelineRows(report);
   assert(timelineRows[0].type === "arrive", "timeline rows should show newest events first");
@@ -296,9 +308,9 @@ export function runMotionLabModelTests() {
   assert(snapshotB.summary.eventCount === 4, "run snapshot should count report events");
 
   const compareRows = buildMotionLabCompareRows(snapshotB, snapshotA);
-  assert(compareRows.some((row) => row.machineName === "param:durationMs" && row.label === "参数：durationMs" && row.delta === "+160"), "compare rows should expose localized params with stable machine names");
-  assert(compareRows.some((row) => row.machineName === "events" && row.label === "事件" && row.delta === "+2"), "compare rows should expose localized event delta");
-  assert(compareRows.some((row) => row.machineName === "trace values" && row.label === "轨迹值" && row.delta === "+6"), "compare rows should expose localized trace value delta");
+  assert(compareRows.some((row) => row.machineName === "param:durationMs" && row.label === "Parameter: durationMs" && row.delta === "+160"), "compare rows should expose readable params with stable machine names");
+  assert(compareRows.some((row) => row.machineName === "events" && row.label === "Events" && row.delta === "+2"), "compare rows should expose readable event delta");
+  assert(compareRows.some((row) => row.machineName === "trace values" && row.label === "Trace values" && row.delta === "+6"), "compare rows should expose readable trace value delta");
   const compareExport = createMotionLabCompareExport(snapshotB, snapshotA);
   assert(compareExport.schema === MOTION_LAB_COMPARE_SCHEMA, "compare export should expose schema");
   assert(compareExport.rows.length === compareRows.length, "compare export should include rows");
@@ -311,9 +323,9 @@ export function runMotionLabModelTests() {
   assert(baselineCompareExport.rows.some((row) => row.machineName === "events" && row.delta === "+2"), "baseline compare export should include metric deltas");
 
   const diffRows = buildMotionLabTraceDiffRows(traceB, traceA);
-  assert(diffRows.some((row) => row.machineName === "frames" && row.label === "帧" && row.delta === "+4"), "trace diff rows should expose localized frame delta");
-  assert(diffRows.some((row) => row.machineName === "prop:alpha" && row.label === "属性：alpha" && row.delta === "+1"), "trace diff rows should expose localized changed props");
-  assert(diffRows.some((row) => row.machineName === "driver:spring" && row.label === "驱动器：spring" && row.delta === "+2"), "trace diff rows should expose localized changed drivers");
+  assert(diffRows.some((row) => row.machineName === "frames" && row.label === "Frames" && row.delta === "+4"), "trace diff rows should expose readable frame delta");
+  assert(diffRows.some((row) => row.machineName === "prop:alpha" && row.label === "Property: alpha" && row.delta === "+1"), "trace diff rows should expose readable changed props");
+  assert(diffRows.some((row) => row.machineName === "driver:spring" && row.label === "Driver: spring" && row.delta === "+2"), "trace diff rows should expose readable changed drivers");
   const traceDiffExport = createMotionLabTraceDiffExport(traceB, traceA);
   assert(traceDiffExport.schema === MOTION_LAB_TRACE_DIFF_SCHEMA, "trace diff export should expose schema");
   assert(traceDiffExport.rows.length === diffRows.length, "trace diff export should include rows");
@@ -418,7 +430,7 @@ export function runMotionLabModelTests() {
     generatedAt: "2026-06-23T00:00:00.000Z",
     presentation: "markdown",
   });
-  assert(focusedMarkdown.content.includes("Pixi Motion Lab 聚焦调试报告"), "motion lab focused export should include readable markdown on request");
+  assert(focusedMarkdown.content.includes("Pixi Motion Lab focused debug report"), "motion lab focused export should include readable markdown on request");
   assert(!Object.hasOwn(focusedMarkdown, "data"), "Motion Lab markdown exports should not duplicate structured data");
   const focusedSerialized = JSON.stringify(focusedData);
   assert(!focusedSerialized.includes("rawTarget"), "motion lab focused export should not serialize raw target keys");

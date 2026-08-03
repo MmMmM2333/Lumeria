@@ -223,30 +223,30 @@ export function runMotionReplayViewerModelTests() {
     assertMotionReplayImportSize(MOTION_REPLAY_IMPORT_MAX_BYTES + 1);
     assert(false, "oversized replay imports should throw before parsing");
   } catch (error) {
-    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("过大"), "oversized replay import error should be readable and machine-identifiable");
+    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("too large"), "oversized replay import error should be readable and machine-identifiable");
   }
   try {
     parseMotionReplayTraceJson(JSON.stringify(makeTrace()), { maxBytes: 10 });
     assert(false, "parse should reject oversized JSON text");
   } catch (error) {
-    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("过大"), "parse size guard error should be readable and machine-identifiable");
+    assert(error?.code === "motion-replay-import-too-large" && String(error.message).includes("too large"), "parse size guard error should be readable and machine-identifiable");
   }
   try {
     normalizeMotionReplayTrace({ schema: "bad" });
     assert(false, "unsupported schema should throw");
   } catch (error) {
-    assert(error?.code === "motion-replay-schema-not-supported" && String(error.message).includes("不支持"), "unsupported schema error should be readable and machine-identifiable");
+    assert(error?.code === "motion-replay-schema-not-supported" && String(error.message).includes("not supported"), "unsupported schema error should be readable and machine-identifiable");
   }
   try {
     parseMotionReplayTraceJson("{");
     assert(false, "invalid replay JSON should throw");
   } catch (error) {
-    assert(error?.code === "motion-replay-json-invalid" && String(error.message).includes("解析失败"), "invalid replay JSON should expose a readable stable error");
+    assert(error?.code === "motion-replay-json-invalid" && String(error.message).includes("could not be parsed"), "invalid replay JSON should expose a readable stable error");
   }
 
   const overviewRows = buildMotionReplayOverviewRows(trace, 50);
-  assert(overviewRows.some((row) => row.label === "查看器" && row.value === "已载入"), "overview should expose loaded state");
-  assert(overviewRows.some((row) => row.label === "帧 / 事件" && row.value === "3 / 3"), "overview should expose frame/event counts");
+  assert(overviewRows.some((row) => row.label === "Viewer" && row.value === "Loaded"), "overview should expose loaded state");
+  assert(overviewRows.some((row) => row.label === "Frames / events" && row.value === "3 / 3"), "overview should expose frame/event counts");
 
   const frameRows = buildMotionReplayFrameRows(trace, 75, { query: "" });
   assert(frameRows.length === 2, "frame rows should show current frame values");
@@ -294,7 +294,7 @@ export function runMotionReplayViewerModelTests() {
   assert(!JSON.stringify(filteredOverlayRows).includes("rawTarget"), "overlay rows should not leak raw target references");
 
   const filterSummary = buildMotionReplayFilterSummary(trace, 50, { query: "icon" });
-  assert(filterSummary.text === "1 个属性 / 2 个事件", "filter summary should count filtered frame values and events");
+  assert(filterSummary.text === "1 properties / 2 events", "filter summary should count filtered frame values and events");
 
   const exported = createMotionReplayIntervalExport(trace, {
     endMs: 60,
