@@ -24,6 +24,7 @@ import {
   saveLayout,
   scanApps,
   setLiveDesktopBackgroundVisible,
+  setLaunchpadIconVariant,
   setMainWindowEffectsEnabled,
   setMainWindowMode,
   setMainWindowNativeFrameEnabled,
@@ -83,6 +84,11 @@ export const layoutStorePort = Object.freeze({
   confirmQuit: confirmQuitAfterSave,
   load: loadLayout,
   save: saveLayout,
+});
+
+export const launchpadIconPort = Object.freeze({
+  applyVariant: setLaunchpadIconVariant,
+  isAvailable: isNativeBridgeAvailable,
 });
 
 export const localeRuntimePort = createLocaleRuntimePort({

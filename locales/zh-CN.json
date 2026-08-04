@@ -1104,10 +1104,20 @@
         },
         "language": {
           "title": "语言",
-          "description": "选择 Lumeria 界面和原生菜单使用的语言",
           "system": "跟随系统",
-          "current": "当前：{locale}",
           "select": "选择界面语言"
+        },
+        "launchpadIcon": {
+          "title": "启动台图标",
+          "description": "设置窗口和系统托盘使用的图标",
+          "unavailable": "启动台图标仅可在桌面应用中修改",
+          "applyFailed": "无法更新启动台图标",
+          "options": {
+            "light": "经典亮色",
+            "dark": "经典暗色",
+            "pastelLight": "柔彩亮色",
+            "pastelDark": "柔彩暗色"
+          }
         },
         "advanced": {
           "title": "高级选项",
@@ -1123,10 +1133,20 @@
       },
       "interface": {
         "title": "外观",
+        "theme": {
+          "title": "设置界面",
+          "mode": "主题",
+          "description": "选择设置面板使用的明暗外观",
+          "system": "跟随系统",
+          "light": "浅色",
+          "dark": "深色"
+        },
         "window": {
           "title": "窗口",
           "mode": "窗口模式",
           "modeDescription": "选择打开 Lumeria 时的窗口形态",
+          "expandModeSettings": "展开窗口模式设置",
+          "collapseModeSettings": "收起窗口模式设置",
           "fullscreen": "全屏",
           "windowed": "窗口化",
           "titlebar": "显示窗口标题栏",
@@ -1134,6 +1154,7 @@
           "material": "窗口底材",
           "materialNone": "无材质",
           "appearance": "窗口底材明暗",
+          "system": "跟随系统",
           "light": "浅色",
           "dark": "深色",
           "previews": "窗口底材示意",

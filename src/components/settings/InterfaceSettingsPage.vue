@@ -1,5 +1,39 @@
 <template>
   <div class="settings-tab-panel" role="tabpanel" :aria-label="t('settings.interface.title')">
+    <section class="settings-section settings-section-plain" :aria-label="t('settings.interface.theme.title')">
+      <div class="settings-section-header">
+        <div>
+          <h3>{{ t("settings.interface.theme.title") }}</h3>
+        </div>
+      </div>
+
+      <div class="settings-list">
+        <div class="settings-list-row">
+          <span class="settings-list-icon" aria-hidden="true">
+            <DarkThemeIcon />
+          </span>
+          <span class="settings-list-copy">
+            <span class="settings-list-title">{{ t("settings.interface.theme.mode") }}</span>
+            <span class="settings-list-description">{{ t("settings.interface.theme.description") }}</span>
+          </span>
+          <span class="settings-list-control">
+            <span class="settings-segmented-control" :aria-label="t('settings.interface.theme.mode')">
+              <button
+                v-for="option in c.settingsThemeOptions.value"
+                :key="option.value"
+                type="button"
+                :class="c.cx('settings-segmented-button', state.draftSettingsThemePreference.value === option.value && 'settings-segmented-button-active')"
+                :aria-pressed="state.draftSettingsThemePreference.value === option.value"
+                @click="state.setDraftSettingsThemePreference(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+
     <section class="settings-section settings-section-plain" :aria-label="t('settings.interface.window.title')">
       <div class="settings-section-header">
         <div>
@@ -8,51 +42,69 @@
       </div>
 
       <div class="settings-list">
-        <div class="settings-list-row">
-          <span class="settings-list-icon" aria-hidden="true">
-            <WindowIcon />
-          </span>
-          <span class="settings-list-copy">
-            <span class="settings-list-title">{{ t("settings.interface.window.mode") }}</span>
-            <span class="settings-list-description">{{ t("settings.interface.window.modeDescription") }}</span>
-          </span>
-          <span class="settings-list-control">
-            <span class="settings-segmented-control" :aria-label="t('settings.interface.window.mode')">
-              <button
-                type="button"
-                :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_FULLSCREEN && 'settings-segmented-button-active')"
-                @click="state.setDraftWindowMode(c.WINDOW_MODE_FULLSCREEN)"
-              >
-                {{ t("settings.interface.window.fullscreen") }}
-              </button>
-              <button
-                type="button"
-                :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_WINDOWED && 'settings-segmented-button-active')"
-                @click="state.setDraftWindowMode(c.WINDOW_MODE_WINDOWED)"
-              >
-                {{ t("settings.interface.window.windowed") }}
-              </button>
-            </span>
-          </span>
-        </div>
-
-        <div :class="c.cx('settings-list-row', state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED && 'settings-row-disabled')">
-          <span class="settings-list-icon" aria-hidden="true">
-            <AppTitleIcon />
-          </span>
-          <span class="settings-list-copy">
-            <span class="settings-list-title">{{ t("settings.interface.window.titlebar") }}</span>
-            <span class="settings-list-description">{{ t("settings.interface.window.titlebarDescription") }}</span>
-          </span>
-          <span class="settings-list-control">
-            <fluent-switch
-              :checked.prop="state.draftShowCustomTitlebar.value"
-              :disabled.prop="state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED"
-              name="showCustomTitlebar"
-              :aria-label="t('settings.interface.window.titlebar')"
-              @change="state.setDraftShowCustomTitlebar($event.target.checked)"
+        <div class="settings-list-expandable">
+          <div class="settings-list-row settings-list-row-button settings-window-mode-row">
+            <button
+              type="button"
+              class="settings-window-mode-row-toggle"
+              :aria-label="t(isWindowModeSettingsExpanded ? 'settings.interface.window.collapseModeSettings' : 'settings.interface.window.expandModeSettings')"
+              :aria-expanded="isWindowModeSettingsExpanded"
+              aria-controls="settings-window-mode-details"
+              @click="isWindowModeSettingsExpanded = !isWindowModeSettingsExpanded"
             />
-          </span>
+            <span class="settings-list-icon" aria-hidden="true">
+              <WindowIcon />
+            </span>
+            <span class="settings-list-copy">
+              <span class="settings-list-title">{{ t("settings.interface.window.mode") }}</span>
+              <span class="settings-list-description">{{ t("settings.interface.window.modeDescription") }}</span>
+            </span>
+            <span class="settings-list-control settings-window-mode-control">
+              <span class="settings-segmented-control" :aria-label="t('settings.interface.window.mode')">
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_FULLSCREEN && 'settings-segmented-button-active')"
+                  :aria-pressed="state.draftWindowMode.value === c.WINDOW_MODE_FULLSCREEN"
+                  @click="state.setDraftWindowMode(c.WINDOW_MODE_FULLSCREEN)"
+                >
+                  {{ t("settings.interface.window.fullscreen") }}
+                </button>
+                <button
+                  type="button"
+                  :class="c.cx('settings-segmented-button', state.draftWindowMode.value === c.WINDOW_MODE_WINDOWED && 'settings-segmented-button-active')"
+                  :aria-pressed="state.draftWindowMode.value === c.WINDOW_MODE_WINDOWED"
+                  @click="state.setDraftWindowMode(c.WINDOW_MODE_WINDOWED)"
+                >
+                  {{ t("settings.interface.window.windowed") }}
+                </button>
+              </span>
+            </span>
+            <ChevronDownIcon :class="c.cx('settings-list-chevron', isWindowModeSettingsExpanded && 'settings-list-chevron-open')" />
+          </div>
+
+          <Transition name="settings-expand">
+            <div
+              v-if="isWindowModeSettingsExpanded"
+              id="settings-window-mode-details"
+              class="settings-list-expand-shell"
+            >
+              <div class="settings-list-expand">
+                <label :class="c.cx('settings-toggle', state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED && 'settings-row-disabled')">
+                  <span class="settings-field-copy">
+                    <span class="settings-list-title">{{ t("settings.interface.window.titlebar") }}</span>
+                    <span class="settings-list-description settings-list-description-wrap">{{ t("settings.interface.window.titlebarDescription") }}</span>
+                  </span>
+                  <fluent-switch
+                    :checked.prop="state.draftShowCustomTitlebar.value"
+                    :disabled.attr="state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED ? '' : null"
+                    name="showCustomTitlebar"
+                    :aria-label="t('settings.interface.window.titlebar')"
+                    @change="state.setDraftShowCustomTitlebar($event.target.checked)"
+                  />
+                </label>
+              </div>
+            </div>
+          </Transition>
         </div>
 
         <div class="settings-list-expandable">
@@ -112,6 +164,14 @@
                   <div class="settings-segmented-control" :aria-label="t('settings.interface.window.appearance')">
                     <button
                       type="button"
+                      :class="c.cx('settings-segmented-button', state.draftWindowEffectAppearance.value === c.WINDOW_EFFECT_APPEARANCE_SYSTEM && 'settings-segmented-button-active')"
+                      :disabled="!c.canEditWindowEffectAppearance.value"
+                      @click="state.setDraftWindowEffectAppearance(c.WINDOW_EFFECT_APPEARANCE_SYSTEM)"
+                    >
+                      {{ t("settings.interface.window.system") }}
+                    </button>
+                    <button
+                      type="button"
                       :class="c.cx('settings-segmented-button', state.draftWindowEffectAppearance.value === c.WINDOW_EFFECT_APPEARANCE_LIGHT && 'settings-segmented-button-active')"
                       :disabled="!c.canEditWindowEffectAppearance.value"
                       @click="state.setDraftWindowEffectAppearance(c.WINDOW_EFFECT_APPEARANCE_LIGHT)"
@@ -137,7 +197,7 @@
                     :class="c.cx(
                       'settings-window-effect-preview',
                       `settings-window-effect-preview-${item.materialClass}`,
-                      `settings-window-effect-preview-${item.appearance}`,
+                      `settings-window-effect-preview-${item.resolvedAppearance}`,
                       item.active && 'settings-window-effect-preview-active',
                       !item.available && 'settings-window-effect-preview-disabled'
                     )"
@@ -155,7 +215,7 @@
                     <span class="settings-window-effect-preview-copy">
                       <span class="settings-window-effect-preview-title">
                         <span>{{ item.label }}</span>
-                        <span>{{ item.appearanceLabel }}</span>
+                        <span v-if="item.material !== c.WINDOW_EFFECT_MATERIAL_NONE">{{ item.appearanceLabel }}</span>
                       </span>
                       <span>{{ item.description }}</span>
                     </span>
@@ -839,10 +899,10 @@
 
 <script setup>
 import { ref } from "vue";
-import AppTitleIcon from "~icons/fluent/app-title-24-regular";
 import BlurIcon from "~icons/fluent/blur-24-regular";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import ColorBackgroundIcon from "~icons/fluent/color-background-24-regular";
+import DarkThemeIcon from "~icons/fluent/dark-theme-24-regular";
 import ImageIcon from "~icons/fluent/image-24-regular";
 import PaintBrushIcon from "~icons/fluent/paint-brush-24-regular";
 import SettingsIcon from "~icons/fluent/settings-24-regular";
@@ -867,6 +927,7 @@ const {
   backgroundLayerSummary,
   windowEffectSummary,
 } = props.model;
+const isWindowModeSettingsExpanded = ref(false);
 const isWindowMaterialExpanded = ref(false);
 const isBackgroundLayerExpanded = ref(false);
 const isBackgroundEffectExpanded = ref(false);

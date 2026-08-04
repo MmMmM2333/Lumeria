@@ -5,7 +5,9 @@ import {
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
+  BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
 } from "../domain/backgroundSettings.js";
+import { normalizeAppearancePreference } from "../domain/appearancePreference.js";
 
 export {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
@@ -81,6 +83,7 @@ export const WINDOW_EFFECT_MATERIAL_MICA = "mica";
 export const WINDOW_EFFECT_MATERIAL_MICA_ALT = "micaAlt";
 export const WINDOW_EFFECT_APPEARANCE_DARK = "dark";
 export const WINDOW_EFFECT_APPEARANCE_LIGHT = "light";
+export const WINDOW_EFFECT_APPEARANCE_SYSTEM = "system";
 export const WINDOW_MODE_FULLSCREEN = "fullscreen";
 export const WINDOW_MODE_WINDOWED = "windowed";
 export const DEFAULT_WINDOW_MODE = WINDOW_MODE_FULLSCREEN;
@@ -147,7 +150,7 @@ export function normalizeWindowEffectMaterial(value) {
 }
 
 export function normalizeWindowEffectAppearance(value) {
-  return value === WINDOW_EFFECT_APPEARANCE_LIGHT ? WINDOW_EFFECT_APPEARANCE_LIGHT : WINDOW_EFFECT_APPEARANCE_DARK;
+  return normalizeAppearancePreference(value, WINDOW_EFFECT_APPEARANCE_DARK);
 }
 
 export function normalizeWindowMode(value) {

@@ -77,6 +77,7 @@ function createLifecycleOptions() {
       isDesktopOpen: ref(true),
       isSearchMode: ref(false),
       isTextlessMode: ref(false),
+      launchpadIconVariant: ref("light"),
       launchTargetStatusById: ref({}),
       loadNativeLaunchpadData: makeCall("loadNativeLaunchpadData"),
       observeFolderViewport: makeCall("observeFolderViewport"),
@@ -91,12 +92,15 @@ function createLifecycleOptions() {
       scheduleLaunchTargetStatusCheck: makeCall("scheduleLaunchTargetStatusCheck"),
       scheduleNativeLayoutSave: makeCall("scheduleNativeLayoutSave"),
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
+      setNativeWindowEffectsEnabled: makeCall("setNativeWindowEffectsEnabled"),
+      settingsThemePreference: ref("dark"),
       showNativeWindowAfterStartup: makeCall("showNativeWindowAfterStartup"),
       showMissingLaunchTargetBadge: ref(true),
       showCustomTitlebar: ref(true),
       syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
       syncWindowsWallpaperRefreshTimer: makeCall("syncWindowsWallpaperRefreshTimer"),
       syncManagedAppState: makeCall("syncManagedAppState"),
+      systemAppearance: ref("light"),
       updateFolderViewportHeight: makeCall("updateFolderViewportHeight"),
       updatePageGridMetrics: makeCall("updatePageGridMetrics"),
       visibleFolderRowCount: ref(7),
@@ -130,11 +134,11 @@ export async function runLaunchpadLifecycleTests() {
   };
 
   const watchers = [];
-  const { options } = createLifecycleOptions();
+  const { calls, options } = createLifecycleOptions();
   registerLaunchpadLifecycleWatchers(options, (source, callback, config) => {
     watchers.push({ source, callback, config });
   });
-  assert(watchers.length === 9, "lifecycle should register all controller watchers");
+  assert(watchers.length === 10, "lifecycle should register all controller watchers");
   assert(watchers.every((item) => item.config.flush === "post"), "lifecycle watchers should flush after render");
   assert(watchers[0].callback === options.schedulePageGridMetrics, "layout setting watcher should refresh page metrics");
   assert(watchers[2].source === options.folderViewportRef, "folder viewport watcher should observe the viewport ref");
@@ -149,6 +153,8 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[4].source.includes(options.windowMode), "layout save watcher should track window mode");
   assert(watchers[4].source.includes(options.fullscreenOverscanEnabled), "layout save watcher should track fullscreen overscan");
   assert(watchers[4].source.includes(options.showCustomTitlebar), "layout save watcher should track custom titlebar visibility");
+  assert(watchers[4].source.includes(options.settingsThemePreference), "layout save watcher should track the settings theme preference");
+  assert(watchers[4].source.includes(options.launchpadIconVariant), "layout save watcher should track the launchpad icon variant");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");
@@ -164,6 +170,15 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[8].source.includes(options.backgroundAcrylicAppearance), "live desktop watcher should track acrylic appearance");
   assert(watchers[8].source.includes(options.backgroundAcrylicDarkParams), "live desktop watcher should track acrylic dark params");
   assert(watchers[8].source.includes(options.backgroundAcrylicLightParams), "live desktop watcher should track acrylic light params");
+  assert(watchers[9].source === options.systemAppearance, "system appearance should own runtime appearance refreshes");
+  watchers[9].callback();
+  assert(calls.includes("syncLiveDesktopBackgroundRuntime"), "system acrylic should refresh the live desktop runtime when the system changes");
+  assert(!calls.includes("setNativeWindowEffectsEnabled"), "explicit window appearance should ignore system changes");
+  calls.length = 0;
+  options.windowEffectAppearance.value = "system";
+  options.backgroundAcrylicAppearance.value = "light";
+  watchers[9].callback();
+  assert(calls.join(",") === "setNativeWindowEffectsEnabled", "system window appearance should refresh only the native window material");
 
   const observed = [];
   const ObserverCtor = class {

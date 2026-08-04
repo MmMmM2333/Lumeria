@@ -286,6 +286,12 @@ export async function setMainWindowShortcutCaptureActive(active) {
   return true;
 }
 
+export async function setLaunchpadIconVariant(variant) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("set_launchpad_icon_variant", { variant });
+}
+
 export async function setMainWindowNativeFrameEnabled(enabled) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;

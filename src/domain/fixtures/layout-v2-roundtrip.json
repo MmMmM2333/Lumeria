@@ -159,11 +159,13 @@
     },
     "backgroundImagePath": "C:/Wallpapers/launchpad.png",
     "windowEffectMaterial": "micaAlt",
-    "windowEffectAppearance": "light",
+    "windowEffectAppearance": "system",
     "windowMode": "windowed",
     "fullscreenOverscanEnabled": false,
     "showCustomTitlebar": false,
     "mainWindowShortcut": "control+alt+KeyL",
-    "localePreference": "en-US"
+    "localePreference": "en-US",
+    "settingsThemePreference": "system",
+    "launchpadIconVariant": "pastelDark"
   }
 }

@@ -7,6 +7,10 @@ import {
   setLaunchpadApiBridgeForTests,
 } from "../api/launchpadApi.js";
 import { DEFAULT_MAIN_WINDOW_SHORTCUT } from "../domain/mainWindowShortcut.js";
+import {
+  LAUNCHPAD_ICON_LIGHT,
+  LAUNCHPAD_ICON_PASTEL_DARK,
+} from "../domain/launchpadIconVariant.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import { createLocalization } from "../i18n/localization.js";
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
@@ -92,8 +96,9 @@ function makeOptions(overrides = {}) {
   });
   layout.documentPersistence.restorePages(initialPages ?? [[]]);
   const pages = layout.presentation.pages;
+  const systemAppearance = ref(BACKGROUND_ACRYLIC_APPEARANCE_DARK);
   const liveDesktopRuntime = useLiveDesktopRuntime();
-  const mainWindowRuntime = useMainWindowRuntime();
+  const mainWindowRuntime = useMainWindowRuntime({ systemAppearance });
   const settings = useLaunchpadSettings({
     layout,
     localizationText,
@@ -158,6 +163,7 @@ function makeOptions(overrides = {}) {
       calls.schedulePageGridMetrics += 1;
     },
     settings,
+    systemAppearance,
     startFolderZoomFadeClose: (options) => {
       calls.startFolderZoomFadeClose.push(options);
       return Boolean(overrides.startFolderZoomFadeCloseResult ?? false);
@@ -196,6 +202,7 @@ function makeOptions(overrides = {}) {
       showLayoutSaveRecovered: options.showLayoutSaveRecovered,
     },
     settings: settings.nativeIntegration,
+    systemAppearance,
   };
   options.nativeEventHandlers = {
     closeDesktop: (...args) => options.closeDesktop(...args),
@@ -593,6 +600,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialSaveLayouts[0].settings.backgroundAcrylicLightParams.brightness === 1, "native saves should include acrylic light params");
     assert(initialSaveLayouts[0].settings.backgroundImagePath === null, "native saves should include an empty background image path");
     assert(initialSaveLayouts[0].settings.mainWindowShortcut === DEFAULT_MAIN_WINDOW_SHORTCUT, "native saves should include the main window shortcut");
+    assert(initialSaveLayouts[0].settings.launchpadIconVariant === LAUNCHPAD_ICON_LIGHT, "native saves should include the default launchpad icon variant");
     assert(calls.commitPageIndex.join(",") === "0", "initial native load should reclamp desktop page");
     assert(calls.schedulePageGridMetrics === 1, "initial native load should refresh grid metrics");
   }, { passScanAppsCommand: true });
@@ -667,6 +675,7 @@ export async function runLaunchpadNativeTests() {
           fullscreenOverscanEnabled: false,
           showCustomTitlebar: false,
           mainWindowShortcut: "control+alt+KeyL",
+          launchpadIconVariant: LAUNCHPAD_ICON_PASTEL_DARK,
           backgroundBaseColor: "#ABC",
           backgroundBaseOpacity: 73,
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -714,6 +723,8 @@ export async function runLaunchpadNativeTests() {
     assert(options.settings.draft.showCustomTitlebar.value === false, "native load should sync custom titlebar visibility draft");
     assert(options.settings.presentation.mainWindowShortcut.value === "control+alt+KeyL", "native load should apply saved main window shortcut");
     assert(options.settings.draft.mainWindowShortcut.value === "control+alt+KeyL", "native load should sync main window shortcut draft");
+    assert(options.settings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_PASTEL_DARK, "native load should apply the saved launchpad icon variant");
+    assert(options.settings.draft.launchpadIconVariant.value === LAUNCHPAD_ICON_PASTEL_DARK, "native load should sync the launchpad icon draft");
     assert(options.settings.presentation.backgroundBaseColor.value === "#aabbcc", "native load should apply saved background base color");
     assert(options.settings.presentation.backgroundBaseOpacity.value === 73, "native load should apply saved background base opacity");
     assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply saved background source");
@@ -1179,6 +1190,21 @@ export async function runLaunchpadNativeTests() {
     assert(liveDesktopRuntimeConfigs.at(-1).disableMouseRelay === true, "runtime config should keep mouse relay disabled outside DEV");
     assert(liveDesktopRuntimeConfigs.at(-1).skipBlankFrames === false, "runtime config should ignore blank frame skip storage outside DEV");
     assert(liveDesktopRuntimeConfigs.at(-1).forceDwmFlush === false, "runtime config should ignore DWM flush storage outside DEV");
+
+    options.systemAppearance.value = BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+    options.restoreSettings({
+      backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+      backgroundAcrylicDarkParams: {
+        ...options.settings.presentation.backgroundAcrylicDarkParams.value,
+        brightness: 0.66,
+      },
+      windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
+    });
+    await native.configureNativeLiveDesktopBackground();
+    assert(
+      liveDesktopRuntimeConfigs.at(-1).acrylicParams.brightness === 0.66,
+      "system acrylic should use the current system appearance instead of the window material preference",
+    );
 
     globalThis.window.localStorage = {
       getItem: (key) => {

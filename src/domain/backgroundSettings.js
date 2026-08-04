@@ -1,4 +1,10 @@
 import { clamp } from "./launchpadLayout.js";
+import {
+  APPEARANCE_DARK,
+  APPEARANCE_LIGHT,
+  APPEARANCE_SYSTEM,
+  normalizeAppearancePreference,
+} from "./appearancePreference.js";
 
 export const BACKGROUND_SOURCE_SYSTEM_MATERIAL = "systemMaterial";
 export const BACKGROUND_SOURCE_CUSTOM_IMAGE = "customImage";
@@ -8,9 +14,9 @@ export const BACKGROUND_EFFECT_NONE = "none";
 export const BACKGROUND_EFFECT_DIMMED = "dimmed";
 export const BACKGROUND_EFFECT_BLUR = "blur";
 export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
-export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = "system";
-export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = "dark";
-export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = "light";
+export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = APPEARANCE_SYSTEM;
+export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = APPEARANCE_DARK;
+export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = APPEARANCE_LIGHT;
 export const DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE = BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
 export const BACKGROUND_IMAGE_OPACITY_MIN = 0;
 export const BACKGROUND_IMAGE_OPACITY_MAX = 100;
@@ -64,9 +70,7 @@ export function backgroundSourceUsesLiveDesktop(source) {
 }
 
 export function normalizeBackgroundAcrylicAppearance(value) {
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_DARK) return BACKGROUND_ACRYLIC_APPEARANCE_DARK;
-  if (value === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT) return BACKGROUND_ACRYLIC_APPEARANCE_LIGHT;
-  return BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM;
+  return normalizeAppearancePreference(value, BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM);
 }
 
 export function clampBackgroundImageOpacity(value) {

@@ -9,7 +9,8 @@
   >
     <section
       ref="settingsPanelRef"
-      :class="cx('settings-panel', isNavigationCompact && 'settings-panel-navigation-compact')"
+      :class="cx('settings-panel select-none', isNavigationCompact && 'settings-panel-navigation-compact')"
+      :data-settings-theme="resolvedSettingsTheme"
       role="dialog"
       aria-modal="true"
       :aria-label="t('settings.shell.title')"
@@ -104,6 +105,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { setTheme } from "@fluentui/web-components";
+import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
 import AppsIcon from "~icons/fluent/apps-24-regular";
 import ArrowLeftIcon from "~icons/fluent/arrow-left-20-regular";
 import ChevronRightIcon from "~icons/fluent/chevron-right-16-regular";
@@ -134,6 +137,7 @@ const {
   isOpen,
   routeKey,
   routeTransitionName,
+  resolvedSettingsTheme,
   shouldRender,
   showFooter,
 } = shell;
@@ -147,6 +151,7 @@ const SETTINGS_PANEL_CLOSE_EASE = "power2.inOut";
 const settingsOverlayRef = ref(null);
 const settingsPanelRef = ref(null);
 const settingsContentRef = ref(null);
+let themedSettingsPanel = null;
 const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveSettingsOverlayMotion,
@@ -177,12 +182,19 @@ watch(isOpen, async (open) => {
 });
 watch(shell.motion.overlay, () => settingsOverlayMotion.animate(), { flush: "post" });
 watch(shell.motion.panel, () => settingsPanelMotion.animate(), { flush: "post" });
+watch([settingsPanelRef, resolvedSettingsTheme], ([panel, theme]) => {
+  if (themedSettingsPanel && themedSettingsPanel !== panel) setTheme(null, themedSettingsPanel);
+  themedSettingsPanel = panel;
+  if (panel) setTheme(theme === "light" ? webLightTheme : webDarkTheme, panel);
+}, { flush: "post" });
 
 onMounted(() => {
   if (typeof window !== "undefined") window.addEventListener("keydown", handleSettingsPanelWindowKeydown, true);
 });
 onBeforeUnmount(() => {
   if (typeof window !== "undefined") window.removeEventListener("keydown", handleSettingsPanelWindowKeydown, true);
+  if (themedSettingsPanel) setTheme(null, themedSettingsPanel);
+  themedSettingsPanel = null;
 });
 
 function resetSettingsContentScroll() {

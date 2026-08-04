@@ -10,6 +10,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::i18n::validate_locale_preference;
+use crate::launchpad_icon::LaunchpadIconVariant;
 use crate::models::LaunchTarget;
 
 const MAX_LAYOUT_LOOKUP_DEPTH: usize = 32;
@@ -66,6 +67,35 @@ pub(crate) fn read_locale_preference(app: &AppHandle) -> Result<Option<String>, 
         .as_str()
         .ok_or_else(|| "layout settings.localePreference must be a non-empty string".to_string())?;
     validate_locale_preference(preference).map(Some)
+}
+
+pub(crate) fn read_launchpad_icon_variant(
+    app: &AppHandle,
+) -> Result<Option<LaunchpadIconVariant>, String> {
+    let path = layout_path(app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
+    let layout: Value = serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
+    let settings = layout
+        .as_object()
+        .and_then(|object| object.get("settings"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| "layout settings must be an object".to_string())?;
+    let Some(value) = settings.get("launchpadIconVariant") else {
+        return Ok(None);
+    };
+    value
+        .as_str()
+        .and_then(LaunchpadIconVariant::parse)
+        .map(Some)
+        .ok_or_else(|| {
+            "layout settings.launchpadIconVariant must be light, dark, pastelLight, or pastelDark"
+                .to_string()
+        })
 }
 
 pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<SavedManualApp> {
@@ -291,12 +321,36 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     }
     if let Some(value) = object.get("windowEffectAppearance") {
         match value.as_str() {
-            Some("dark" | "light") => {}
+            Some("system" | "dark" | "light") => {}
             _ => {
                 return Err(
-                    "layout settings.windowEffectAppearance must be dark or light".to_string(),
+                    "layout settings.windowEffectAppearance must be system, dark, or light"
+                        .to_string(),
                 );
             }
+        }
+    }
+    if let Some(value) = object.get("settingsThemePreference") {
+        match value.as_str() {
+            Some("system" | "dark" | "light") => {}
+            _ => {
+                return Err(
+                    "layout settings.settingsThemePreference must be system, dark, or light"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    if let Some(value) = object.get("launchpadIconVariant") {
+        if value
+            .as_str()
+            .and_then(LaunchpadIconVariant::parse)
+            .is_none()
+        {
+            return Err(
+                "layout settings.launchpadIconVariant must be light, dark, pastelLight, or pastelDark"
+                    .to_string(),
+            );
         }
     }
     let main_window_shortcut = object
@@ -891,7 +945,9 @@ mod tests {
                 ],
                 "showMissingLaunchTargetBadge": true,
                 "windowEffectMaterial": "none",
-                "windowEffectAppearance": "light",
+                "windowEffectAppearance": "system",
+                "settingsThemePreference": "system",
+                "launchpadIconVariant": "pastelDark",
                 "mainWindowShortcut": "control+alt+KeyL"
             }
         })
@@ -1177,6 +1233,51 @@ mod tests {
             .expect_err("non-boolean fullscreen overscan preference should fail");
 
         assert!(error.contains("fullscreenOverscanEnabled"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_settings_theme_preferences() {
+        let dir = test_dir("invalid-settings-theme-preference");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["settingsThemePreference"] = json!("sepia");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("an unknown settings theme preference should fail");
+
+        assert!(error.contains("settingsThemePreference"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_launchpad_icon_variants() {
+        let dir = test_dir("invalid-launchpad-icon-variant");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["launchpadIconVariant"] = json!("system");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("an unknown launchpad icon variant should fail");
+
+        assert!(error.contains("launchpadIconVariant"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_window_effect_appearances() {
+        let dir = test_dir("invalid-window-effect-appearance");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["windowEffectAppearance"] = json!("sepia");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("an unknown window effect appearance should fail");
+
+        assert!(error.contains("windowEffectAppearance"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }

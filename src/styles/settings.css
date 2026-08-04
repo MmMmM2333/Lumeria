@@ -1,5 +1,10 @@
 /* Settings shell, pages, and related dialogs. */
 
+.select-none {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 :root {
   --settings-nav-width: 220px;
   --settings-nav-width-compact: 68px;
@@ -99,6 +104,250 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.settings-panel[data-settings-theme="light"] {
+  --settings-accent: var(--colorBrandForeground1);
+  --settings-accent-muted: var(--colorBrandForeground1);
+  --settings-accent-soft: var(--colorBrandBackground2);
+  --settings-panel-bg: var(--colorNeutralBackground2);
+  --settings-nav-bg: var(--colorNeutralBackground3);
+  --settings-nav-hover-bg: var(--colorNeutralBackground1Hover);
+  --settings-nav-selected-bg: var(--colorBrandBackground2);
+  --settings-row-bg: var(--colorNeutralBackground1);
+  --settings-row-hover-bg: var(--colorNeutralBackground1Hover);
+  --settings-row-pressed-bg: var(--colorNeutralBackground1Pressed);
+  --settings-row-border: var(--colorNeutralStroke2);
+  --settings-row-border-strong: var(--colorNeutralStroke1);
+  --settings-expanded-bg: var(--colorNeutralBackground3);
+  --settings-text-primary: var(--colorNeutralForeground1);
+  --settings-text-secondary: var(--colorNeutralForeground2);
+  --settings-text-muted: var(--colorNeutralForeground3);
+  color-scheme: light;
+}
+
+.settings-panel[data-settings-theme="dark"] {
+  color-scheme: dark;
+}
+
+.settings-panel input,
+.settings-panel textarea,
+.settings-panel fluent-text-input,
+.settings-panel [contenteditable="true"],
+.settings-panel .settings-field-error,
+.settings-panel .scan-blocked-app-path,
+.settings-panel .app-manager-target,
+.settings-panel .settings-about-version {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Preserve the original dark appearance; only the light branch remaps surfaces. */
+.settings-panel[data-settings-theme="light"] .settings-breadcrumb-separator,
+.settings-panel[data-settings-theme="light"] .settings-grid-layout-separator,
+.settings-panel[data-settings-theme="light"] .settings-window-effect-preview-title span:last-child,
+.settings-panel[data-settings-theme="light"] .scan-blocked-app-path,
+.settings-panel[data-settings-theme="light"] .scan-list-empty,
+.settings-panel[data-settings-theme="light"] .app-manager-target {
+  color: var(--settings-text-muted);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-content {
+  scrollbar-color: var(--colorNeutralForeground4) transparent;
+}
+
+.settings-panel[data-settings-theme="light"] .settings-content::-webkit-scrollbar-thumb,
+.settings-panel[data-settings-theme="light"] .app-manager-list::-webkit-scrollbar-thumb {
+  background: var(--colorNeutralForeground4);
+  background-clip: content-box;
+}
+
+.settings-panel[data-settings-theme="light"] .settings-content::-webkit-scrollbar-thumb:hover,
+.settings-panel[data-settings-theme="light"] .app-manager-list::-webkit-scrollbar-thumb:hover {
+  background: var(--settings-text-muted);
+  background-clip: content-box;
+}
+
+.settings-panel[data-settings-theme="light"] .settings-list-expand-shell {
+  border-top-color: var(--settings-row-border);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-segmented-control,
+.settings-panel[data-settings-theme="light"] .settings-window-effect-preview-button,
+.settings-panel[data-settings-theme="light"] .settings-color-swatch,
+.settings-panel[data-settings-theme="light"] .settings-hotkey-capture,
+.settings-panel[data-settings-theme="light"] .scan-list-empty,
+.settings-panel[data-settings-theme="light"] .scan-root-path::part(root) {
+  background: var(--colorNeutralBackground3);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-segmented-button + .settings-segmented-button {
+  border-left-color: var(--settings-row-border);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-number-control,
+.settings-panel[data-settings-theme="light"] .settings-text-input::part(root) {
+  border-color: var(--colorNeutralStroke1);
+  border-bottom-color: var(--colorNeutralStrokeAccessible);
+  background: var(--colorNeutralBackground3);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-number-control:hover:not(.settings-number-control-disabled),
+.settings-panel[data-settings-theme="light"] .settings-text-input:hover::part(root) {
+  border-color: var(--colorNeutralStroke1Hover);
+  border-bottom-color: var(--colorNeutralStrokeAccessibleHover);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-window-effect-preview-active {
+  border-color: var(--settings-accent);
+  box-shadow: inset 0 0 0 1px var(--settings-accent);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-window-effect-preview-title,
+.settings-panel[data-settings-theme="light"] .scan-root-name,
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip,
+.settings-panel[data-settings-theme="light"] .settings-about-name {
+  color: var(--settings-text-primary);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-opacity-range {
+  accent-color: var(--settings-accent);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-hotkey-capture {
+  border-color: var(--settings-row-border-strong);
+  color: var(--settings-text-muted);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-actions {
+  background: var(--settings-panel-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-primary-button {
+  color: var(--colorNeutralForegroundOnBrand);
+  background: var(--colorBrandBackground);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-secondary-button {
+  border-color: var(--settings-row-border-strong);
+  color: var(--settings-text-primary);
+  background: var(--settings-row-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-warning-button {
+  color: var(--colorPaletteMarigoldForeground2);
+  background: var(--colorPaletteMarigoldBackground2);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-danger-button {
+  color: var(--colorNeutralForegroundOnBrand);
+  background: var(--colorPaletteRedBackground3);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-fluent-button-danger {
+  --colorNeutralForeground1: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground1Hover: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground1Pressed: var(--colorPaletteRedForeground2);
+  --colorNeutralForeground2: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Hover: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Pressed: var(--colorPaletteRedForeground2);
+  --colorNeutralForeground2BrandHover: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2BrandPressed: var(--colorPaletteRedForeground2);
+  --colorNeutralStroke1: var(--colorPaletteRedBorder2);
+  --colorNeutralStroke1Hover: var(--colorPaletteRedBorder2);
+  --colorNeutralStroke1Pressed: var(--colorPaletteRedBorder2);
+  --colorSubtleBackgroundHover: var(--colorPaletteRedBackground1);
+  --colorSubtleBackgroundPressed: var(--colorPaletteRedBackground2);
+  --colorTransparentBackgroundHover: var(--colorPaletteRedBackground1);
+  --colorTransparentBackgroundPressed: var(--colorPaletteRedBackground2);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-section-title,
+.settings-panel[data-settings-theme="light"] .settings-link-button,
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip-remove {
+  color: var(--settings-text-secondary);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip {
+  background: var(--colorNeutralBackground3);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip-remove {
+  background: var(--settings-row-hover-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-root-label::part(root) {
+  border-color: transparent;
+  border-bottom-color: transparent;
+  background: transparent;
+}
+
+.settings-panel[data-settings-theme="light"] .scan-root-label:hover::part(root),
+.settings-panel[data-settings-theme="light"] .scan-root-label:focus-within::part(root) {
+  border-color: var(--colorNeutralStroke1Hover);
+  border-bottom-color: var(--colorNeutralStrokeAccessibleHover);
+  background: var(--settings-row-hover-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-root-path::part(root) {
+  border-color: var(--colorNeutralStroke2);
+  border-bottom-color: var(--colorNeutralStroke1);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-selection-bar,
+.settings-panel[data-settings-theme="light"] .app-manager-item-selected,
+.settings-panel[data-settings-theme="light"] .app-manager-item-selected:hover {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent-soft);
+}
+
+.settings-panel[data-settings-theme="light"] .app-manager-list {
+  scrollbar-color: var(--colorNeutralForeground4) transparent;
+}
+
+.settings-panel[data-settings-theme="light"] .settings-toggle input,
+.settings-panel[data-settings-theme="light"] .settings-option input[type="checkbox"],
+.settings-panel[data-settings-theme="light"] .app-manager-item input,
+.settings-panel[data-settings-theme="light"] .scan-root-item input[type="checkbox"] {
+  border-color: var(--settings-row-border-strong);
+  background: var(--colorNeutralBackground3);
+  box-shadow: none;
+}
+
+.settings-panel[data-settings-theme="light"] .settings-toggle input:hover,
+.settings-panel[data-settings-theme="light"] .settings-option input[type="checkbox"]:hover,
+.settings-panel[data-settings-theme="light"] .app-manager-item input:hover,
+.settings-panel[data-settings-theme="light"] .scan-root-item input[type="checkbox"]:hover {
+  border-color: var(--colorNeutralStroke1Hover);
+  background: var(--settings-row-hover-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-toggle input:focus-visible,
+.settings-panel[data-settings-theme="light"] .settings-option input[type="checkbox"]:focus-visible,
+.settings-panel[data-settings-theme="light"] .app-manager-item input:focus-visible,
+.settings-panel[data-settings-theme="light"] .scan-root-item input[type="checkbox"]:focus-visible {
+  border-color: var(--settings-accent);
+  box-shadow: 0 0 0 3px var(--settings-accent-soft);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-toggle input:checked,
+.settings-panel[data-settings-theme="light"] .settings-option input[type="checkbox"]:checked,
+.settings-panel[data-settings-theme="light"] .app-manager-item input:checked,
+.settings-panel[data-settings-theme="light"] .scan-root-item input[type="checkbox"]:checked {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-toggle input::after,
+.settings-panel[data-settings-theme="light"] .settings-option input[type="checkbox"]::after,
+.settings-panel[data-settings-theme="light"] .app-manager-item input::after,
+.settings-panel[data-settings-theme="light"] .scan-root-item input[type="checkbox"]::after {
+  border-right-color: var(--colorNeutralForegroundOnBrand);
+  border-bottom-color: var(--colorNeutralForegroundOnBrand);
+}
+
+.settings-panel[data-settings-theme="light"] .settings-about-version {
+  color: var(--settings-text-muted);
 }
 
 .settings-panel-navigation-compact {
@@ -257,7 +506,7 @@
   --colorNeutralForeground2Pressed: #ff8f83;
   --colorNeutralForeground2BrandHover: #ffb4a9;
   --colorNeutralForeground2BrandPressed: #ff8f83;
-  --colorNeutralStroke1: rgba(255, 170, 160, 0.36);
+  --colorNeutralStroke1: rgba(255, 170, 160, 0.5);
   --colorNeutralStroke1Hover: rgba(255, 180, 169, 0.58);
   --colorNeutralStroke1Pressed: rgba(255, 143, 131, 0.68);
   --colorSubtleBackgroundHover: rgba(196, 43, 28, 0.16);
@@ -341,7 +590,7 @@
   justify-self: center;
   width: 20px;
   height: 20px;
-  color: rgba(255, 255, 255, 0.74);
+  color: var(--settings-text-secondary);
 }
 
 .settings-nav-item-active .settings-nav-icon {
@@ -880,6 +1129,48 @@
   box-shadow: inset 0 -2px 0 var(--settings-accent);
 }
 
+.settings-window-mode-row {
+  position: relative;
+}
+
+.settings-window-mode-row-toggle {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-window-mode-row-toggle:focus-visible {
+  outline: 2px solid var(--settings-accent);
+  outline-offset: -2px;
+}
+
+.settings-window-mode-row > .settings-list-icon,
+.settings-window-mode-row > .settings-list-copy,
+.settings-window-mode-row > .settings-list-control,
+.settings-window-mode-row > .settings-list-chevron {
+  position: relative;
+  z-index: 1;
+}
+
+.settings-window-mode-row > .settings-list-icon,
+.settings-window-mode-row > .settings-list-copy,
+.settings-window-mode-row > .settings-list-chevron,
+.settings-window-mode-row > .settings-list-control {
+  pointer-events: none;
+}
+
+.settings-window-mode-row .settings-segmented-control {
+  pointer-events: auto;
+}
+
 .settings-grid-layout-separator {
   color: rgba(255, 255, 255, 0.46);
   font-size: 13px;
@@ -916,6 +1207,65 @@
   --colorStrokeFocus2: transparent;
   width: 176px;
   max-width: 100%;
+}
+
+.settings-launchpad-icon-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.settings-launchpad-icon-option {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 152px;
+  padding: 12px 8px;
+  border: 1px solid var(--settings-row-border);
+  border-radius: 8px;
+  color: var(--settings-text-secondary);
+  background: rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: center;
+  transition:
+    border-color var(--durationFaster, 100ms) var(--curveEasyEase, ease),
+    background-color var(--durationFaster, 100ms) var(--curveEasyEase, ease),
+    box-shadow var(--durationFaster, 100ms) var(--curveEasyEase, ease);
+}
+
+.settings-launchpad-icon-option:hover:not(:disabled) {
+  border-color: var(--settings-row-border-strong);
+  background: var(--settings-row-hover-bg);
+}
+
+.settings-launchpad-icon-option:focus-visible {
+  outline: 2px solid var(--settings-accent);
+  outline-offset: 2px;
+}
+
+.settings-launchpad-icon-option-active {
+  border-color: var(--settings-accent);
+  color: var(--settings-text-primary);
+  background: var(--settings-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--settings-accent);
+}
+
+.settings-launchpad-icon-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.settings-launchpad-icon-preview {
+  display: block;
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  pointer-events: none;
 }
 
 .settings-language-listbox {
@@ -2091,7 +2441,7 @@
   font-size: 12px;
 }
 
-.scan-root-status {
+.scan-root-meta {
   padding-left: 10px;
 }
 
@@ -2429,17 +2779,16 @@
   background: var(--colorNeutralBackground2, rgba(255, 255, 255, 0.08));
 }
 
+.settings-about-row {
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+}
+
 .settings-about-mark {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
+  display: block;
+  width: 60px;
+  height: 60px;
   flex: 0 0 auto;
-  border-radius: 8px;
-  color: white;
-  background: linear-gradient(135deg, #2563eb, #0f766e);
-  font-size: 14px;
-  font-weight: 700;
+  object-fit: contain;
 }
 
 .settings-about-copy {
@@ -2452,6 +2801,10 @@
   font-size: 18px;
   font-weight: 680;
   line-height: 1.2;
+}
+
+.settings-about-description {
+  font-size: 13px;
 }
 
 .settings-about-version {
@@ -3029,6 +3382,7 @@
   .settings-window-effect-field { grid-template-columns: 1fr; }
   .settings-window-effect-controls { justify-content: flex-start; width: 100%; }
   .settings-window-effect-previews { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-launchpad-icon-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-background-base-control { justify-content: flex-start; width: 100%; }
   .settings-background-expand { grid-template-columns: 1fr; }
   .settings-background-control-row,

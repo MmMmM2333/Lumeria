@@ -4,8 +4,20 @@ import { createLocalization } from "../i18n/localization.js";
 import {
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
+  WINDOW_EFFECT_APPEARANCE_SYSTEM,
   WINDOW_MODE_WINDOWED,
 } from "./useLaunchpadSettingsConfig.js";
+import {
+  APPEARANCE_DARK as SETTINGS_THEME_DARK,
+  APPEARANCE_LIGHT as SETTINGS_THEME_LIGHT,
+  APPEARANCE_SYSTEM as SETTINGS_THEME_SYSTEM,
+} from "../domain/appearancePreference.js";
+import {
+  LAUNCHPAD_ICON_DARK,
+  LAUNCHPAD_ICON_LIGHT,
+  LAUNCHPAD_ICON_PASTEL_DARK,
+  LAUNCHPAD_ICON_PASTEL_LIGHT,
+} from "../domain/launchpadIconVariant.js";
 
 const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
@@ -37,6 +49,19 @@ function makeMainWindowRuntime(options = {}) {
   };
 }
 
+function makeLaunchpadIconPort(options = {}) {
+  const calls = [];
+  return {
+    calls,
+    isAvailable: () => options.available !== false,
+    applyVariant: async (variant) => {
+      calls.push(variant);
+      if (options.error) throw options.error;
+      return variant;
+    },
+  };
+}
+
 export async function runLaunchpadSettingsTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad settings owner test failed] ${message}`);
@@ -47,6 +72,7 @@ export async function runLaunchpadSettingsTests() {
     seedEnabled: false,
   });
   const mainWindow = makeMainWindowRuntime();
+  const launchpadIcons = makeLaunchpadIconPort();
   let liveDesktopSyncs = 0;
   const settings = useLaunchpadSettings({
     layout,
@@ -58,10 +84,13 @@ export async function runLaunchpadSettingsTests() {
         supportsLiveDesktopBackgroundEffects: true,
       },
     },
+    launchpadIconPort: launchpadIcons,
     mainWindow,
   });
   const initialLayout = layout.captureConfiguration();
   const initialWindowMode = settings.presentation.windowMode.value;
+  assert(settings.presentation.settingsThemePreference.value === SETTINGS_THEME_DARK, "new and legacy settings should default to the existing dark theme");
+  assert(settings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_LIGHT, "new and legacy settings should use the classic light icon");
 
   settings.beginEdit();
   settings.draft.rows.value = 2;
@@ -71,11 +100,15 @@ export async function runLaunchpadSettingsTests() {
   settings.draft.backgroundImagePath.value = "C:/Images/test.png";
   settings.draft.backgroundImageUrl.value = "asset://test";
   settings.actions.setDraftBackgroundEffect(BACKGROUND_EFFECT_BLUR);
+  settings.actions.setDraftSettingsThemePreference(SETTINGS_THEME_LIGHT);
+  settings.actions.setDraftLaunchpadIconVariant(LAUNCHPAD_ICON_DARK);
   settings.cancelEdit();
   assert(
     settings.draft.rows.value === initialLayout.rows
       && settings.draft.cols.value === initialLayout.cols
       && settings.draft.windowMode.value === initialWindowMode
+      && settings.draft.settingsThemePreference.value === SETTINGS_THEME_DARK
+      && settings.draft.launchpadIconVariant.value === LAUNCHPAD_ICON_LIGHT
       && settings.presentation.windowMode.value === initialWindowMode,
     "cancel should discard the entire edit draft"
   );
@@ -113,6 +146,9 @@ export async function runLaunchpadSettingsTests() {
   settings.draft.cols.value = 3;
   settings.actions.setDraftWindowMode(WINDOW_MODE_WINDOWED);
   settings.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+  settings.actions.setDraftSettingsThemePreference(SETTINGS_THEME_SYSTEM);
+  settings.actions.setDraftLaunchpadIconVariant(LAUNCHPAD_ICON_PASTEL_DARK);
+  settings.actions.setDraftWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_SYSTEM);
   const outcome = await settings.applyEdit({
     reclampPageIndices: () => {},
     schedulePageGridMetrics: () => {},
@@ -121,7 +157,12 @@ export async function runLaunchpadSettingsTests() {
   assert(outcome.ok, "valid settings should commit successfully");
   assert(layout.presentation.gridRows.value === 2 && layout.presentation.gridCols.value === 3, "successful apply should commit layout configuration once");
   assert(settings.presentation.windowMode.value === WINDOW_MODE_WINDOWED, "successful apply should commit settings values");
+  assert(settings.presentation.settingsThemePreference.value === SETTINGS_THEME_SYSTEM, "successful apply should commit the settings theme preference");
+  assert(settings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_PASTEL_DARK, "successful apply should commit the launchpad icon variant");
+  assert(launchpadIcons.calls.join(",") === LAUNCHPAD_ICON_PASTEL_DARK, "icon changes should cross the native icon seam exactly once");
+  assert(settings.presentation.windowEffectAppearance.value === WINDOW_EFFECT_APPEARANCE_SYSTEM, "successful apply should preserve the system window appearance preference");
   assert(mainWindow.calls.map(([name]) => name).join(",") === "shortcut,mode,effects", "successful apply should register shortcuts before platform presentation");
+  assert(mainWindow.calls[2][1].appearance === WINDOW_EFFECT_APPEARANCE_SYSTEM, "settings should pass the unresolved window appearance preference to the runtime owner");
   assert(liveDesktopSyncs === 1, "successful apply should request one live desktop synchronization");
 
   settings.persistence.restore({
@@ -130,9 +171,19 @@ export async function runLaunchpadSettingsTests() {
     backgroundEffect: BACKGROUND_EFFECT_BLUR,
     backgroundImagePath: "C:/Images/restored.png",
     windowMode: WINDOW_MODE_WINDOWED,
+    windowEffectAppearance: WINDOW_EFFECT_APPEARANCE_SYSTEM,
+    settingsThemePreference: SETTINGS_THEME_LIGHT,
+    launchpadIconVariant: LAUNCHPAD_ICON_PASTEL_LIGHT,
   });
   const captured = settings.persistence.capture();
   assert(captured.textless && captured.backgroundImagePath === "C:/Images/restored.png", "settings persistence should round-trip committed values");
+  assert(captured.settingsThemePreference === SETTINGS_THEME_LIGHT, "settings persistence should round-trip the settings theme preference");
+  assert(captured.launchpadIconVariant === LAUNCHPAD_ICON_PASTEL_LIGHT, "settings persistence should round-trip the launchpad icon variant");
+  assert(captured.windowEffectAppearance === WINDOW_EFFECT_APPEARANCE_SYSTEM, "settings persistence should round-trip the system window appearance preference");
+
+  settings.persistence.restore({ settingsThemePreference: "unexpected" });
+  assert(settings.presentation.settingsThemePreference.value === SETTINGS_THEME_DARK, "invalid and legacy theme values should restore as dark");
+  assert(settings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_LIGHT, "invalid and legacy icon values should restore as classic light");
 
   const localeCalls = [];
   const activatedLocales = [];
@@ -230,4 +281,41 @@ export async function runLaunchpadSettingsTests() {
   assert(rollbackLocaleCalls.join(",") === "en-US,system", "shortcut failure should restore the previous native language");
   assert(shortcutFailureSettings.presentation.localePreference.value === "system", "compensated transactions should keep the committed language");
   assert(rollbackActivations.length === 0, "the WebView language should not activate before the full transaction succeeds");
+
+  const iconError = new Error("icon unavailable");
+  const iconFailureLocaleCalls = [];
+  const iconFailureMainWindow = makeMainWindowRuntime();
+  const iconFailureSettings = useLaunchpadSettings({
+    localizationText,
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    launchpadIconPort: makeLaunchpadIconPort({ error: iconError }),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    localeRuntime: {
+      applyPreference: async (preference) => {
+        iconFailureLocaleCalls.push(preference);
+        return {
+          ok: true,
+          state: { preference, resolvedLocale: preference === "system" ? "zh-CN" : preference },
+        };
+      },
+    },
+    mainWindow: iconFailureMainWindow,
+  });
+  iconFailureSettings.beginEdit();
+  iconFailureSettings.actions.setDraftLocalePreference("en-US");
+  iconFailureSettings.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+  iconFailureSettings.actions.setDraftLaunchpadIconVariant(LAUNCHPAD_ICON_DARK);
+  const iconFailureOutcome = await iconFailureSettings.applyEdit();
+  assert(!iconFailureOutcome.ok && iconFailureOutcome.error === iconError, "icon failures should remain explicit");
+  assert(iconFailureLocaleCalls.join(",") === "en-US,system", "icon failure should restore the previous native language");
+  assert(
+    iconFailureMainWindow.calls.filter(([name]) => name === "shortcut").length === 2,
+    "icon failure should restore the previous shortcut"
+  );
+  assert(iconFailureSettings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_LIGHT, "icon failures should commit no icon state");
+  assert(iconFailureSettings.presentation.localePreference.value === "system", "icon failures should commit no language state");
+  assert(iconFailureSettings.presentation.launchpadIconError.value === iconError.message, "icon failures should stay visible in the edit session");
 }

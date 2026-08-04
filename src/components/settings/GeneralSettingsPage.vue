@@ -47,9 +47,9 @@
                 {{ model.isRecordingMainWindowShortcut.value ? t("settings.general.shortcut.recording") : t("settings.general.shortcut.record") }}
               </SettingsFluentButton>
               <SettingsFluentButton
-                appearance="subtle"
+                appearance="outline"
                 type="button"
-                :disabled="model.isApplyingSettingsConfig.value"
+                :disabled="model.isApplyingSettingsConfig.value || !model.canResetMainWindowShortcut.value"
                 @click="model.actions.resetShortcut"
               >
                 {{ t("common.actions.reset") }}
@@ -64,8 +64,6 @@
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">{{ t("settings.general.language.title") }}</span>
-            <span class="settings-list-description">{{ t("settings.general.language.description") }}</span>
-            <span class="settings-field-hint">{{ t("settings.general.language.current", { locale: currentLocaleName }) }}</span>
             <span v-if="model.localePreferenceError.value" class="settings-field-error" role="alert">{{ model.localePreferenceError.value }}</span>
           </span>
           <span class="settings-list-control">
@@ -96,6 +94,56 @@
               </fluent-listbox>
             </fluent-dropdown>
           </span>
+        </div>
+
+        <div class="settings-list-expandable">
+          <button
+            type="button"
+            class="settings-list-row settings-list-row-button"
+            :aria-expanded="isLaunchpadIconExpanded"
+            @click="isLaunchpadIconExpanded = !isLaunchpadIconExpanded"
+          >
+            <span class="settings-list-icon" aria-hidden="true">
+              <RocketIcon />
+            </span>
+            <span class="settings-list-copy">
+              <span class="settings-list-title">{{ t("settings.general.launchpadIcon.title") }}</span>
+              <span class="settings-list-description settings-list-description-wrap">{{ t("settings.general.launchpadIcon.description") }}</span>
+              <span v-if="model.launchpadIconError.value" class="settings-field-error" role="alert">{{ model.launchpadIconError.value }}</span>
+            </span>
+            <span class="settings-list-summary">{{ activeLaunchpadIconOption?.label }}</span>
+            <ChevronDownIcon :class="model.cx('settings-list-chevron', isLaunchpadIconExpanded && 'settings-list-chevron-open')" />
+          </button>
+
+          <Transition name="settings-expand">
+            <div v-if="isLaunchpadIconExpanded" class="settings-list-expand-shell">
+              <div class="settings-list-expand">
+                <div class="settings-launchpad-icon-options" role="radiogroup" :aria-label="t('settings.general.launchpadIcon.title')">
+                  <button
+                    v-for="option in model.launchpadIconOptions.value"
+                    :key="option.value"
+                    type="button"
+                    role="radio"
+                    :class="model.cx(
+                      'settings-launchpad-icon-option',
+                      option.value === model.draftLaunchpadIconVariant.value && 'settings-launchpad-icon-option-active',
+                    )"
+                    :aria-label="option.label"
+                    :aria-checked="option.value === model.draftLaunchpadIconVariant.value ? 'true' : 'false'"
+                    :disabled="model.isApplyingSettingsConfig.value || !model.canCustomizeLaunchpadIcon.value"
+                    @click="model.actions.setLaunchpadIconVariant(option.value)"
+                  >
+                    <img
+                      class="settings-launchpad-icon-preview"
+                      :src="launchpadIconPreviewUrls[option.value]"
+                      alt=""
+                      draggable="false"
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
     </section>
@@ -134,25 +182,31 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import KeyboardIcon from "~icons/fluent/keyboard-24-regular";
 import LocalLanguageIcon from "~icons/fluent/local-language-24-regular";
 import PowerIcon from "~icons/fluent/power-24-regular";
+import RocketIcon from "~icons/fluent/rocket-24-regular";
 import WindowDevToolsIcon from "~icons/fluent/window-dev-tools-24-regular";
+import { launchpadIconUrls as launchpadIconPreviewUrls } from "../../assets/branding/launchpadIconUrls.js";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 import { useLocalization } from "../../i18n/localization.js";
 
-defineProps({ model: { type: Object, required: true } });
+const props = defineProps({ model: { type: Object, required: true } });
+const model = props.model;
 const localization = useLocalization();
-const { availableLocales, resolvedLocale, t } = localization;
+const { availableLocales, t } = localization;
 const languageDropdownRef = ref(null);
+const isLaunchpadIconExpanded = ref(false);
 let languageDropdownControlObserver = null;
 const languageOptions = computed(() => [
   { value: "system", label: t("settings.general.language.system") },
   ...availableLocales.map((locale) => ({ value: locale.locale, label: locale.displayName })),
 ]);
-const currentLocaleName = computed(() => (
-  availableLocales.find((locale) => locale.locale === resolvedLocale.value)?.displayName || resolvedLocale.value
+const activeLaunchpadIconOption = computed(() => (
+  model.launchpadIconOptions.value.find((option) => option.value === model.draftLaunchpadIconVariant.value)
+  || model.launchpadIconOptions.value[0]
 ));
 
 onMounted(() => {

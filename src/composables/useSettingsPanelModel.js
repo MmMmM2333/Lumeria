@@ -6,6 +6,18 @@ import {
   formatMainWindowShortcut,
   mainWindowShortcutFromKeyboardEvent,
 } from "../domain/mainWindowShortcut.js";
+import {
+  APPEARANCE_DARK as SETTINGS_THEME_DARK,
+  APPEARANCE_LIGHT as SETTINGS_THEME_LIGHT,
+  APPEARANCE_SYSTEM as SETTINGS_THEME_SYSTEM,
+  resolveAppearancePreference,
+} from "../domain/appearancePreference.js";
+import {
+  LAUNCHPAD_ICON_DARK,
+  LAUNCHPAD_ICON_LIGHT,
+  LAUNCHPAD_ICON_PASTEL_DARK,
+  LAUNCHPAD_ICON_PASTEL_LIGHT,
+} from "../domain/launchpadIconVariant.js";
 import { developerToolsPort, nativeLifecyclePort } from "../platform/launchpadPorts.js";
 import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
 import { useBackgroundImagePixelSize } from "./useBackgroundImagePixelSize.js";
@@ -44,6 +56,7 @@ import {
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_APPEARANCE_SYSTEM,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -83,10 +96,13 @@ const SETTINGS_SUBPAGE_SPECS = Object.freeze({
 });
 
 const GENERAL_CAPABILITIES = [
+  "canCustomizeLaunchpadIcon",
+  "draftLaunchpadIconVariant",
   "draftLocalePreference",
   "draftMainWindowShortcut",
   "isApplyingSettingsConfig",
   "localePreferenceError",
+  "launchpadIconError",
 ];
 
 const INTERFACE_CAPABILITIES = [
@@ -118,6 +134,7 @@ const INTERFACE_CAPABILITIES = [
   "draftIconSize",
   "draftIsTextlessMode",
   "draftRows",
+  "draftSettingsThemePreference",
   "draftShowCustomTitlebar",
   "draftWindowEffectAppearance",
   "draftWindowEffectMaterial",
@@ -138,6 +155,7 @@ const INTERFACE_CAPABILITIES = [
   "setDraftBackgroundSource",
   "setDraftFolderIconSizeMode",
   "setDraftFullscreenOverscanEnabled",
+  "setDraftSettingsThemePreference",
   "setDraftShowCustomTitlebar",
   "setDraftWindowEffectAppearance",
   "setDraftWindowEffectMaterial",
@@ -251,6 +269,21 @@ function createSettingsPanelModel(options) {
   const activeSubPage = ref(null);
   const isNavigationCompact = ref(true);
   const routeTransitionName = ref(SETTINGS_ROUTE_TRANSITION_SWITCH);
+  const resolvedSettingsTheme = computed(() => resolveAppearancePreference(
+    state.draftSettingsThemePreference.value,
+    options.systemAppearance.value
+  ));
+  const settingsThemeOptions = computed(() => [
+    { value: SETTINGS_THEME_SYSTEM, label: t("settings.interface.theme.system") },
+    { value: SETTINGS_THEME_LIGHT, label: t("settings.interface.theme.light") },
+    { value: SETTINGS_THEME_DARK, label: t("settings.interface.theme.dark") },
+  ]);
+  const launchpadIconOptions = computed(() => [
+    { value: LAUNCHPAD_ICON_LIGHT, label: t("settings.general.launchpadIcon.options.light") },
+    { value: LAUNCHPAD_ICON_DARK, label: t("settings.general.launchpadIcon.options.dark") },
+    { value: LAUNCHPAD_ICON_PASTEL_LIGHT, label: t("settings.general.launchpadIcon.options.pastelLight") },
+    { value: LAUNCHPAD_ICON_PASTEL_DARK, label: t("settings.general.launchpadIcon.options.pastelDark") },
+  ]);
   const settingsTabs = computed(() => SETTINGS_TAB_SPECS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })));
   const settingsSubPages = computed(() => Object.fromEntries(
     Object.entries(SETTINGS_SUBPAGE_SPECS).map(([name, page]) => [name, {
@@ -421,9 +454,14 @@ function createSettingsPanelModel(options) {
     }
   }
 
+  const canResetMainWindowShortcut = computed(() => (
+    state.draftMainWindowShortcut.value !== DEFAULT_MAIN_WINDOW_SHORTCUT
+  ));
+
   const general = Object.freeze({
     ...pickCapabilities(state, GENERAL_CAPABILITIES),
     canOpenDeveloperConsole,
+    canResetMainWindowShortcut,
     cx,
     developerConsoleHint: computed(() => (
       developerConsoleError.value
@@ -433,6 +471,7 @@ function createSettingsPanelModel(options) {
     )),
     isOpeningDeveloperConsole,
     isRecordingMainWindowShortcut: isRecordingShortcut,
+    launchpadIconOptions,
     mainWindowShortcutHint: computed(() => {
       if (state.mainWindowShortcutError.value) return state.mainWindowShortcutError.value;
       return isRecordingShortcut.value
@@ -448,6 +487,7 @@ function createSettingsPanelModel(options) {
       clearShortcut,
       openDeveloperConsole,
       resetShortcut,
+      setLaunchpadIconVariant: state.setDraftLaunchpadIconVariant,
       setLocalePreference: state.setDraftLocalePreference,
       startShortcutRecording,
       stopShortcutRecording,
@@ -463,16 +503,22 @@ function createSettingsPanelModel(options) {
     { material: WINDOW_EFFECT_MATERIAL_MICA_ALT, materialClass: "mica-alt", label: "Mica Alt", description: t("settings.interface.window.materials.micaAlt"), available: Boolean(windowEffectsSupport.value.supportsMicaAlt) },
   ]);
   const windowEffectAppearances = computed(() => [
+    { appearance: WINDOW_EFFECT_APPEARANCE_SYSTEM, appearanceLabel: t("settings.interface.window.system") },
     { appearance: WINDOW_EFFECT_APPEARANCE_LIGHT, appearanceLabel: t("settings.interface.window.light") },
     { appearance: WINDOW_EFFECT_APPEARANCE_DARK, appearanceLabel: t("settings.interface.window.dark") },
   ]);
   const activeWindowEffectAppearance = computed(() => (
     windowEffectAppearances.value.find((item) => item.appearance === state.draftWindowEffectAppearance.value)
-    || windowEffectAppearances.value[1]
+    || windowEffectAppearances.value.find((item) => item.appearance === WINDOW_EFFECT_APPEARANCE_DARK)
+  ));
+  const resolvedWindowEffectAppearance = computed(() => resolveAppearancePreference(
+    activeWindowEffectAppearance.value.appearance,
+    options.systemAppearance.value,
   ));
   const windowEffectPreviewItems = computed(() => windowEffectMaterialNotes.value.map((material) => ({
     ...material,
     ...activeWindowEffectAppearance.value,
+    resolvedAppearance: resolvedWindowEffectAppearance.value,
     active: state.draftWindowEffectMaterial.value === material.material,
   })));
   const canEditWindowEffectAppearance = computed(() => (
@@ -551,8 +597,11 @@ function createSettingsPanelModel(options) {
       : t("preview.selectImageFirst")
   ));
   const effectiveDraftBackgroundAcrylicAppearance = computed(() => {
-    const appearance = normalizeBackgroundAcrylicAppearance(state.draftBackgroundAcrylicAppearance.value);
-    return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? options.systemAppearance.value : appearance;
+    return resolveAppearancePreference(
+      normalizeBackgroundAcrylicAppearance(state.draftBackgroundAcrylicAppearance.value),
+      options.systemAppearance.value,
+      BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+    );
   });
   const draftBackgroundAcrylicPreviewParams = computed(() => {
     const appearance = effectiveDraftBackgroundAcrylicAppearance.value;
@@ -611,7 +660,10 @@ function createSettingsPanelModel(options) {
   ));
   const windowEffectSummary = computed(() => {
     const item = activeWindowEffectItem.value;
-    return item ? `${item.label} · ${item.appearanceLabel}` : t("settings.interface.window.notSet");
+    if (!item) return t("settings.interface.window.notSet");
+    return item.material === WINDOW_EFFECT_MATERIAL_NONE
+      ? item.label
+      : `${item.label} · ${item.appearanceLabel}`;
   });
   const activeBackgroundImageLayoutLabel = computed(() => (
     backgroundImageLayoutOptions.value.find((item) => item.layout === state.draftBackgroundImageLayout.value)?.label
@@ -682,8 +734,12 @@ function createSettingsPanelModel(options) {
     ICON_SIZE_MAX,
     ICON_SIZE_MIN,
     ICON_SIZE_STEP,
+    SETTINGS_THEME_DARK,
+    SETTINGS_THEME_LIGHT,
+    SETTINGS_THEME_SYSTEM,
     WINDOW_EFFECT_APPEARANCE_DARK,
     WINDOW_EFFECT_APPEARANCE_LIGHT,
+    WINDOW_EFFECT_APPEARANCE_SYSTEM,
     WINDOW_EFFECT_MATERIAL_ACRYLIC,
     WINDOW_EFFECT_MATERIAL_MICA,
     WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -721,6 +777,8 @@ function createSettingsPanelModel(options) {
     selectWindowEffectPreview,
     setActiveDraftBackgroundAcrylicParam,
     setDraftBackgroundAcrylicAppearance,
+    settingsThemeOptions,
+    resolvedSettingsTheme,
     systemAppearance: options.systemAppearance,
     windowEffectPreviewItems,
     windowEffectSummary,
@@ -834,7 +892,10 @@ function createSettingsPanelModel(options) {
   });
 
   const pages = Object.freeze({
-    about: Object.freeze({ appVersion: String(options.appVersion || "") }),
+    about: Object.freeze({
+      appVersion: String(options.appVersion || ""),
+      draftLaunchpadIconVariant: state.draftLaunchpadIconVariant,
+    }),
     apps: appsModel,
     general,
     interface: interfaceModel,
@@ -856,6 +917,7 @@ function createSettingsPanelModel(options) {
     }),
     routeKey: computed(() => activeRoute.value.key),
     routeTransitionName,
+    resolvedSettingsTheme,
     shouldRender: state.shouldRenderSettingsPanel,
     showFooter: computed(() => activeRoute.value.depth === 0 && ["general", "interface"].includes(activeTab.value)),
     tabs: settingsTabs,

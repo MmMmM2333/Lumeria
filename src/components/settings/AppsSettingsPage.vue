@@ -246,10 +246,10 @@
                   @change="state.changeScanRootPath(root.id, $event.target.value)"
                 />
               </span>
-              <span v-if="root.type === 'windowsAppCatalog'" class="settings-field-hint">
+              <span v-if="root.type === 'windowsAppCatalog'" class="settings-field-hint scan-root-meta">
                 {{ t("settings.apps.sources.windowsManaged") }}
               </span>
-              <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status">{{ t("settings.apps.sources.lastScan", { time: formatScanTime(root.lastScannedAt) }) }}</span>
+              <span v-if="root.lastScannedAt" class="settings-field-hint scan-root-status scan-root-meta">{{ t("settings.apps.sources.lastScan", { time: formatScanTime(root.lastScannedAt) }) }}</span>
             </span>
             <span class="scan-root-actions">
               <SettingsFluentButton

@@ -3,6 +3,7 @@ import {
   DESKTOP_CLOSE_DURATION,
 } from "./launchpadConstants.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
+import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
 import {
   backgroundAssetPort,
@@ -10,7 +11,6 @@ import {
   nativeLifecyclePort,
 } from "../platform/launchpadPorts.js";
 import {
-  BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
@@ -25,7 +25,6 @@ import {
   normalizeBackgroundDarkenColor,
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
-  normalizeWindowEffectAppearance,
 } from "./useLaunchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
@@ -138,18 +137,18 @@ function resolveLiveDesktopDebugRuntimeSettings() {
   return snapshot.values;
 }
 
-function resolveLiveDesktopAcrylicProfile(config) {
-  const appearance = normalizeBackgroundAcrylicAppearance(config.backgroundAcrylicAppearance);
-  if (appearance !== BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM) return appearance;
-  return normalizeWindowEffectAppearance(config.windowEffectAppearance) === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
-    ? BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
-    : BACKGROUND_ACRYLIC_APPEARANCE_DARK;
+function resolveLiveDesktopAcrylicProfile(config, systemAppearance) {
+  return resolveAppearancePreference(
+    normalizeBackgroundAcrylicAppearance(config.backgroundAcrylicAppearance),
+    systemAppearance,
+    BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+  );
 }
 
-function makeLiveDesktopRuntimeConfig(config) {
+function makeLiveDesktopRuntimeConfig(config, systemAppearance) {
   const debugSettings = resolveLiveDesktopDebugRuntimeSettings();
   const acrylicAppearance = normalizeBackgroundAcrylicAppearance(config.backgroundAcrylicAppearance);
-  const acrylicProfile = resolveLiveDesktopAcrylicProfile(config);
+  const acrylicProfile = resolveLiveDesktopAcrylicProfile(config, systemAppearance);
   const acrylicParams = normalizeBackgroundAcrylicParams(
     acrylicProfile === BACKGROUND_ACRYLIC_APPEARANCE_LIGHT
       ? config.backgroundAcrylicLightParams
@@ -186,6 +185,10 @@ export function useLaunchpadNative(options) {
   const localizationText = options.localizationText;
   if (!localizationText || typeof localizationText.t !== "function") {
     throw new TypeError("useLaunchpadNative requires localizationText");
+  }
+  const systemAppearance = options.systemAppearance;
+  if (!systemAppearance || !("value" in systemAppearance)) {
+    throw new TypeError("useLaunchpadNative requires systemAppearance");
   }
   const document = options.document;
   if (
@@ -508,7 +511,7 @@ export function useLaunchpadNative(options) {
     return {
       enabled: backgroundSourceUsesLiveDesktop(config.backgroundSource),
       visible: requireEventHandlers().isDesktopOpen(),
-      config: makeLiveDesktopRuntimeConfig(config),
+      config: makeLiveDesktopRuntimeConfig(config, systemAppearance.value),
     };
   }
 
@@ -591,14 +594,14 @@ export function useLaunchpadNative(options) {
 
   async function configureNativeLiveDesktopBackground() {
     const outcome = await liveDesktopRuntime.configure(
-      makeLiveDesktopRuntimeConfig(settings.captureLiveDesktopConfig())
+      makeLiveDesktopRuntimeConfig(settings.captureLiveDesktopConfig(), systemAppearance.value)
     );
     return reportLiveDesktopRuntimeOutcome("configure", outcome);
   }
 
   async function startNativeLiveDesktopBackground() {
     const outcome = await liveDesktopRuntime.start(
-      makeLiveDesktopRuntimeConfig(settings.captureLiveDesktopConfig())
+      makeLiveDesktopRuntimeConfig(settings.captureLiveDesktopConfig(), systemAppearance.value)
     );
     return reportLiveDesktopRuntimeOutcome("start", outcome);
   }

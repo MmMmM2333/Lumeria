@@ -1,6 +1,7 @@
 use std::io;
 
 use tauri::{
+    image::Image,
     menu::{Menu, MenuBuilder},
     tray::TrayIconBuilder,
     AppHandle, Manager, Runtime,
@@ -46,19 +47,24 @@ fn build_tray_menu<R: Runtime, M: Manager<R>>(
 pub(crate) fn setup_tray(
     app: &mut tauri::App,
     locale: &str,
+    icon: Image<'static>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_tray_menu(app, locale)?;
-    let mut builder = TrayIconBuilder::with_id(TRAY_ID)
+    TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("Lumeria");
-
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
-    }
-
-    builder.build(app)?;
+        .tooltip("Lumeria")
+        .icon(icon)
+        .build(app)?;
     Ok(())
+}
+
+pub(crate) fn set_tray_icon(app: &AppHandle, icon: Image<'static>) -> Result<(), String> {
+    let tray = app
+        .tray_by_id(TRAY_ID)
+        .ok_or_else(|| "Lumeria tray icon is unavailable".to_string())?;
+    tray.set_icon(Some(icon))
+        .map_err(|error| format!("Failed to update Lumeria tray icon: {error}"))
 }
 
 pub(crate) fn update_tray_menu(

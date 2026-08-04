@@ -2,14 +2,14 @@
   <div class="settings-tab-panel" role="tabpanel" :aria-label="t('settings.about.title')">
     <section class="settings-section settings-section-plain" :aria-label="t('settings.about.title')">
       <div class="settings-list">
-        <div class="settings-list-row">
-          <span class="settings-about-mark" aria-hidden="true">L</span>
+        <div class="settings-list-row settings-about-row">
+          <img class="settings-about-mark" :src="appIconUrl" alt="" aria-hidden="true" />
           <span class="settings-list-copy">
-            <span class="settings-list-title">Lumeria</span>
-            <span class="settings-list-description">{{ t("settings.about.description") }}</span>
+            <span class="settings-list-title settings-about-name">Lumeria</span>
+            <span class="settings-list-description settings-about-description">{{ t("settings.about.description") }}</span>
           </span>
           <span class="settings-list-control">
-            <span class="settings-list-summary">{{ t("settings.about.version", { version: model.appVersion }) }}</span>
+            <span class="settings-list-summary settings-about-version">{{ t("settings.about.version", { version: model.appVersion }) }}</span>
           </span>
         </div>
       </div>
@@ -18,8 +18,11 @@
 </template>
 
 <script setup>
+import { computed } from "vue";
+import { launchpadIconUrls } from "../../assets/branding/launchpadIconUrls.js";
 import { useLocalization } from "../../i18n/localization.js";
 
-defineProps({ model: { type: Object, required: true } });
+const props = defineProps({ model: { type: Object, required: true } });
 const { t } = useLocalization();
+const appIconUrl = computed(() => launchpadIconUrls[props.model.draftLaunchpadIconVariant.value]);
 </script>

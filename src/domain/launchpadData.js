@@ -4,6 +4,11 @@ import {
   normalizeMainWindowShortcut,
 } from "./mainWindowShortcut.js";
 import { normalizeBackgroundImageLayout } from "./backgroundImageLayout.js";
+import {
+  APPEARANCE_DARK,
+  normalizeAppearancePreference,
+} from "./appearancePreference.js";
+import { normalizeLaunchpadIconVariant } from "./launchpadIconVariant.js";
 import { normalizeLocalePreference } from "../i18n/locale.js";
 
 export const DEFAULT_SCAN_ROOTS = [
@@ -553,12 +558,14 @@ export function createLaunchpadDataHelpers(options) {
           ? backgroundImagePath || null
           : null,
         windowEffectMaterial,
-        windowEffectAppearance: state.windowEffectAppearance === "light" ? "light" : "dark",
+        windowEffectAppearance: normalizeAppearancePreference(state.windowEffectAppearance, APPEARANCE_DARK),
         windowMode,
         fullscreenOverscanEnabled,
         showCustomTitlebar,
         mainWindowShortcut,
         localePreference: normalizeLocalePreference(state.localePreference),
+        settingsThemePreference: normalizeAppearancePreference(state.settingsThemePreference),
+        launchpadIconVariant: normalizeLaunchpadIconVariant(state.launchpadIconVariant),
       },
     };
   }

@@ -211,12 +211,14 @@ export function runLaunchpadDataTests() {
     backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
     backgroundImagePath: " C:/Images/custom.webp ",
     windowEffectMaterial: "mica",
-    windowEffectAppearance: "light",
+    windowEffectAppearance: "system",
     windowMode: "windowed",
     fullscreenOverscanEnabled: false,
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
+    launchpadIconVariant: "pastelDark",
     localePreference: "en-US",
+    settingsThemePreference: "system",
   });
   assert(snapshot.version === 2, "layout snapshots should use version 2");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
@@ -239,12 +241,14 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.backgroundAcrylicDarkParams.tintColor[0] === 0x22 / 255, "layout snapshots should normalize acrylic dark tint");
   assert(snapshot.settings.backgroundAcrylicLightParams.brightness === 1.2, "layout snapshots should include acrylic light params");
   assert(snapshot.settings.backgroundImagePath === "C:/Images/custom.webp", "layout snapshots should include the trimmed custom background image path");
-  assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "light", "layout snapshots should include window effect settings");
+  assert(snapshot.settings.windowEffectMaterial === "mica" && snapshot.settings.windowEffectAppearance === "system", "layout snapshots should preserve system-following window effect settings");
   assert(snapshot.settings.windowMode === "windowed", "layout snapshots should include window mode settings");
   assert(snapshot.settings.fullscreenOverscanEnabled === false, "layout snapshots should preserve disabled fullscreen overscan");
   assert(snapshot.settings.showCustomTitlebar === false, "layout snapshots should include custom titlebar visibility");
   assert(snapshot.settings.mainWindowShortcut === "control+alt+KeyL", "layout snapshots should include the main window shortcut");
+  assert(snapshot.settings.launchpadIconVariant === "pastelDark", "layout snapshots should include the launchpad icon variant");
   assert(snapshot.settings.localePreference === "en-US", "layout snapshots should include the language preference without changing version 2");
+  assert(snapshot.settings.settingsThemePreference === "system", "layout snapshots should include the settings theme preference without changing version 2");
   const disabledShortcutSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

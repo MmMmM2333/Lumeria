@@ -1,6 +1,7 @@
 import { readonly, ref } from "vue";
 import { mainWindowPort } from "../platform/launchpadPorts.js";
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
+import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import {
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
   normalizeFullscreenOverscanEnabled,
@@ -22,6 +23,10 @@ export function useMainWindowRuntime(options = {}) {
   const port = options.port || mainWindowPort;
   if (!port || typeof port.isAvailable !== "function") {
     throw new TypeError("useMainWindowRuntime requires a window port");
+  }
+  const systemAppearance = options.systemAppearance;
+  if (!systemAppearance || !("value" in systemAppearance)) {
+    throw new TypeError("useMainWindowRuntime requires systemAppearance");
   }
 
   const supportState = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
@@ -75,7 +80,10 @@ export function useMainWindowRuntime(options = {}) {
       ? request.openSequence
       : null;
     const material = resolveWindowEffectMaterialForSupport(request.material, supportState.value);
-    const appearance = normalizeWindowEffectAppearance(request.appearance);
+    const appearance = resolveAppearancePreference(
+      normalizeWindowEffectAppearance(request.appearance),
+      systemAppearance.value,
+    );
     return enqueueSurface(port.setEffectsEnabled, [enabled, openSequence, { material, appearance }]);
   }
 

@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { createLaunchpadDocumentCoordinator } from "../application/launchpadDocumentCoordinator.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
 import { catalogPort } from "../platform/launchpadPorts.js";
 import { useAltEditMode } from "./useAltEditMode.js";
@@ -131,10 +132,11 @@ export function useLaunchpadController(options = {}) {
     throw new TypeError("useLaunchpadController requires localizationText");
   }
   const iconBoundsRegistry = createIconBoundsRegistry();
+  const systemAppearance = useSystemAppearance();
   const liveDesktopRuntime = useLiveDesktopRuntime();
   const liveDesktopBackgroundSupport = liveDesktopRuntime.support;
   const liveDesktopRuntimeStatus = liveDesktopRuntime.status;
-  const mainWindowRuntime = useMainWindowRuntime();
+  const mainWindowRuntime = useMainWindowRuntime({ systemAppearance });
   const windowEffectsSupport = mainWindowRuntime.support;
   const layout = useLaunchpadLayout({
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
@@ -205,10 +207,14 @@ export function useLaunchpadController(options = {}) {
     isChoosingBackgroundImage,
     isApplyingSettingsConfig,
     isTextlessMode,
+    canCustomizeLaunchpadIcon,
+    launchpadIconError,
+    launchpadIconVariant,
     localePreference,
     localePreferenceError,
     mainWindowShortcut,
     mainWindowShortcutError,
+    settingsThemePreference,
     showCustomTitlebar,
     windowMode,
     windowEffectAppearance,
@@ -240,7 +246,9 @@ export function useLaunchpadController(options = {}) {
     iconSize: draftIconSize,
     isTextlessMode: draftIsTextlessMode,
     localePreference: draftLocalePreference,
+    launchpadIconVariant: draftLaunchpadIconVariant,
     mainWindowShortcut: draftMainWindowShortcut,
+    settingsThemePreference: draftSettingsThemePreference,
     rows: draftRows,
     showCustomTitlebar: draftShowCustomTitlebar,
     windowEffectAppearance: draftWindowEffectAppearance,
@@ -323,10 +331,12 @@ export function useLaunchpadController(options = {}) {
     wouldTopLevelInsertOverflow,
     wouldFolderInsertOverflow,
   } = layout.operations;
-  const systemAppearance = useSystemAppearance();
   const backgroundAcrylicEffectiveAppearance = computed(() => {
-    const appearance = normalizeBackgroundAcrylicAppearance(backgroundAcrylicAppearance.value);
-    return appearance === BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM ? systemAppearance.value : appearance;
+    return resolveAppearancePreference(
+      normalizeBackgroundAcrylicAppearance(backgroundAcrylicAppearance.value),
+      systemAppearance.value,
+      BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
+    );
   });
   const backgroundAcrylicParams = computed(() => {
     const profile = backgroundAcrylicEffectiveAppearance.value;
@@ -971,7 +981,9 @@ export function useLaunchpadController(options = {}) {
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
     setDraftLocalePreference,
+    setDraftLaunchpadIconVariant,
     setDraftMainWindowShortcut,
+    setDraftSettingsThemePreference,
     setMainWindowShortcutError,
     setDraftShowCustomTitlebar,
     setDraftWindowMode,
@@ -1022,6 +1034,7 @@ export function useLaunchpadController(options = {}) {
       showLayoutSaveRecovered,
     },
     settings: settings.nativeIntegration,
+    systemAppearance,
   });
   registerEventHandlers({
     closeDesktop,
@@ -1331,6 +1344,7 @@ export function useLaunchpadController(options = {}) {
     isSearchMode,
     isDesktopOpen,
     isTextlessMode,
+    launchpadIconVariant,
     launchTargetStatusById,
     loadNativeLaunchpadData,
     observeFolderViewport,
@@ -1347,12 +1361,15 @@ export function useLaunchpadController(options = {}) {
     scheduleNativeLayoutSave,
     schedulePageGridMetrics,
     searchRef,
+    setNativeWindowEffectsEnabled,
+    settingsThemePreference,
     showNativeWindowAfterStartup,
     showCustomTitlebar,
     showMissingLaunchTargetBadge,
     syncLiveDesktopBackgroundRuntime,
     syncWindowsWallpaperRefreshTimer,
     syncManagedAppState,
+    systemAppearance,
     updateFolderViewportHeight,
     updatePageGridMetrics,
     visibleFolderRowCount,
@@ -1512,6 +1529,7 @@ export function useLaunchpadController(options = {}) {
     canUseLiveDesktopBackground,
     canUseLiveDesktopBackgroundEffect,
     canUseWindowEffectMaterial,
+    canCustomizeLaunchpadIcon,
     changeDraftBackgroundBaseOpacity,
     changeDraftBackgroundImageOpacity,
     changeDraftBackgroundLiveDesktopOpacity,
@@ -1555,8 +1573,10 @@ export function useLaunchpadController(options = {}) {
     draftFullscreenOverscanEnabled,
     draftIconSize,
     draftIsTextlessMode,
+    draftLaunchpadIconVariant,
     draftLocalePreference,
     draftMainWindowShortcut,
+    draftSettingsThemePreference,
     draftRows,
     draftShowCustomTitlebar,
     draftWindowEffectAppearance,
@@ -1577,10 +1597,13 @@ export function useLaunchpadController(options = {}) {
     isTextlessMode,
     localePreference,
     localePreferenceError,
+    launchpadIconError,
+    launchpadIconVariant,
     fullscreenOverscanEnabled,
     liveDesktopBackgroundSupport,
     liveDesktopRuntimeStatus,
     mainWindowShortcutError,
+    settingsThemePreference,
     managedApps,
     newScanKeyword,
     openSettingsPanel,
@@ -1614,7 +1637,9 @@ export function useLaunchpadController(options = {}) {
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
     setDraftLocalePreference,
+    setDraftLaunchpadIconVariant,
     setDraftMainWindowShortcut,
+    setDraftSettingsThemePreference,
     setMainWindowShortcutError,
     setDraftShowCustomTitlebar,
     setDraftWindowEffectAppearance,

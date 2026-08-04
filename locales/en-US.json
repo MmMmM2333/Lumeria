@@ -1104,10 +1104,20 @@
         },
         "language": {
           "title": "Language",
-          "description": "Choose the language used by Lumeria and its native menus",
           "system": "Use system language",
-          "current": "Current: {locale}",
           "select": "Choose interface language"
+        },
+        "launchpadIcon": {
+          "title": "Launchpad icon",
+          "description": "Choose the icon used by the window and system tray",
+          "unavailable": "The launchpad icon can only be changed in the desktop app",
+          "applyFailed": "Could not update the launchpad icon",
+          "options": {
+            "light": "Classic light",
+            "dark": "Classic dark",
+            "pastelLight": "Pastel light",
+            "pastelDark": "Pastel dark"
+          }
         },
         "advanced": {
           "title": "Advanced options",
@@ -1123,10 +1133,20 @@
       },
       "interface": {
         "title": "Appearance",
+        "theme": {
+          "title": "Settings interface",
+          "mode": "Theme",
+          "description": "Choose the appearance used by the settings panel",
+          "system": "Use system",
+          "light": "Light",
+          "dark": "Dark"
+        },
         "window": {
           "title": "Window",
           "mode": "Window mode",
           "modeDescription": "Choose how the Lumeria window opens",
+          "expandModeSettings": "Expand window mode settings",
+          "collapseModeSettings": "Collapse window mode settings",
           "fullscreen": "Fullscreen",
           "windowed": "Windowed",
           "titlebar": "Show window title bar",
@@ -1134,6 +1154,7 @@
           "material": "Window backdrop",
           "materialNone": "No material",
           "appearance": "Backdrop appearance",
+          "system": "Use system",
           "light": "Light",
           "dark": "Dark",
           "previews": "Window backdrop previews",

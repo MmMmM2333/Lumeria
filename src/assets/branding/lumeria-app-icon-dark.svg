@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="1254"
+  height="1254"
+  viewBox="164 159 925 925"
+  fill="none"
+  color-interpolation-filters="sRGB">
+  <title>Lumeria rocket icon — deep-sea steel dark theme</title>
+  <desc>Editable dark-theme vector with a midnight-blue launchpad and a deep-sea steel-blue rocket, restrained cool highlights, inset cells, and deep cast shadows.</desc>
+
+  <defs>
+    <!-- Panel and launchpad cells -->
+    <linearGradient id="panel-fill" x1="279" y1="216" x2="938" y2="1010" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B3046"/>
+      <stop offset="0.48" stop-color="#142A40"/>
+      <stop offset="0.78" stop-color="#11263B"/>
+      <stop offset="1" stop-color="#10253A"/>
+    </linearGradient>
+    <linearGradient id="panel-rim" x1="305" y1="208" x2="946" y2="1031" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A657D"/>
+      <stop offset="0.55" stop-color="#2E4961"/>
+      <stop offset="1" stop-color="#132A40"/>
+    </linearGradient>
+    <linearGradient id="cell-fill" x1="319" y1="296" x2="938" y2="910" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#132A40"/>
+      <stop offset="0.52" stop-color="#0D2135"/>
+      <stop offset="1" stop-color="#0B1D2F"/>
+    </linearGradient>
+
+    <!-- Blue object paints -->
+    <linearGradient id="body-fill" x1="620" y1="400" x2="820" y2="677" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#91C6D3"/>
+      <stop offset="0.20" stop-color="#78B7C8"/>
+      <stop offset="0.32" stop-color="#619FB4"/>
+      <stop offset="0.50" stop-color="#4685A7"/>
+      <stop offset="0.75" stop-color="#286B9A"/>
+      <stop offset="1" stop-color="#12426F"/>
+    </linearGradient>
+    <radialGradient id="body-sheen" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(650 475) rotate(128) scale(315 200)">
+      <stop offset="0" stop-color="#BFEAF0" stop-opacity="0.07"/>
+      <stop offset="0.48" stop-color="#9FD3DE" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#7FB8C6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body-edge" x1="566" y1="445" x2="824" y2="744" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A8CFD6" stop-opacity="0.34"/>
+      <stop offset="0.47" stop-color="#6FA6B7" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#2F7197" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="leading-highlight" x1="510" y1="680" x2="932" y2="354" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C8E2E6" stop-opacity="0.28"/>
+      <stop offset="0.66" stop-color="#C8E2E6" stop-opacity="0.22"/>
+      <stop offset="0.88" stop-color="#C8E2E6" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#C8E2E6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="left-fin-fill" x1="535" y1="551" x2="382" y2="710" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#79AAC0"/>
+      <stop offset="0.46" stop-color="#578EAB"/>
+      <stop offset="1" stop-color="#326F9C"/>
+    </linearGradient>
+    <linearGradient id="right-fin-fill" x1="760" y1="705" x2="641" y2="922" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B6894"/>
+      <stop offset="0.42" stop-color="#245C85"/>
+      <stop offset="1" stop-color="#17486F"/>
+    </linearGradient>
+    <linearGradient id="exhaust-fill" x1="523" y1="799" x2="395" y2="951" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2A76AA"/>
+      <stop offset="0.48" stop-color="#3B8BAD"/>
+      <stop offset="1" stop-color="#4C9CBA"/>
+    </linearGradient>
+    <linearGradient id="exhaust-edge" x1="520" y1="790" x2="392" y2="952" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B557C" stop-opacity="0.68"/>
+      <stop offset="0.55" stop-color="#377D9A" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#79BDD0" stop-opacity="0.54"/>
+    </linearGradient>
+    <linearGradient id="exhaust-highlight-edge" x1="505" y1="790" x2="395" y2="930" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C5E6EA" stop-opacity="0.06"/>
+      <stop offset="0.55" stop-color="#C5E6EA" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#C5E6EA" stop-opacity="0.44"/>
+    </linearGradient>
+    <linearGradient id="left-fin-edge" x1="575" y1="545" x2="375" y2="700" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#78AABE" stop-opacity="0.36"/>
+      <stop offset="0.55" stop-color="#4F89A5" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#2F7099" stop-opacity="0.56"/>
+    </linearGradient>
+    <linearGradient id="left-fin-highlight-edge" x1="575" y1="545" x2="376" y2="685" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D7ECEF" stop-opacity="0.05"/>
+      <stop offset="0.58" stop-color="#D7ECEF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#D7ECEF" stop-opacity="0.42"/>
+    </linearGradient>
+    <linearGradient id="right-fin-edge" x1="750" y1="700" x2="650" y2="925" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#205A82" stop-opacity="0.56"/>
+      <stop offset="0.54" stop-color="#2C6B8E" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#4F90A8" stop-opacity="0.48"/>
+    </linearGradient>
+    <linearGradient id="right-fin-highlight-edge" x1="750" y1="700" x2="659" y2="922" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B7D9DF" stop-opacity="0.08"/>
+      <stop offset="0.56" stop-color="#B7D9DF" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#B7D9DF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="porthole-ring" x1="800" y1="480" x2="700" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#AFC2CC"/>
+      <stop offset="0.52" stop-color="#C1D1D7"/>
+      <stop offset="1" stop-color="#D3E0E4"/>
+    </linearGradient>
+    <linearGradient id="porthole-glass" x1="711" y1="478" x2="777" y2="562" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#39799E"/>
+      <stop offset="0.46" stop-color="#4C91AD"/>
+      <stop offset="1" stop-color="#69AEC5"/>
+    </linearGradient>
+
+    <!-- Soft shadows and inset relief; all remain editable SVG effects. -->
+    <filter id="panel-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="outer-blur"/>
+      <feOffset in="outer-blur" dx="0" dy="12" result="outer-offset"/>
+      <feFlood flood-color="#01050B" flood-opacity="0.58" result="outer-color"/>
+      <feComposite in="outer-color" in2="outer-offset" operator="in" result="outer-shadow"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="close-blur"/>
+      <feOffset in="close-blur" dx="0" dy="3" result="close-offset"/>
+      <feFlood flood-color="#020812" flood-opacity="0.42" result="close-color"/>
+      <feComposite in="close-color" in2="close-offset" operator="in" result="close-shadow"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="1" seed="17" stitchTiles="stitch" result="panel-noise"/>
+      <feColorMatrix in="panel-noise" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.045 0" result="faint-noise"/>
+      <feComposite in="faint-noise" in2="SourceAlpha" operator="in" result="clipped-noise"/>
+      <feBlend in="SourceGraphic" in2="clipped-noise" mode="soft-light" result="textured-panel"/>
+      <feMerge>
+        <feMergeNode in="outer-shadow"/>
+        <feMergeNode in="close-shadow"/>
+        <feMergeNode in="textured-panel"/>
+      </feMerge>
+    </filter>
+    <filter id="panel-inner" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur"/>
+      <feOffset in="blur" dx="0" dy="8" result="offset-blur"/>
+      <feComposite in="SourceAlpha" in2="offset-blur" operator="out" result="inner-edge"/>
+      <feFlood flood-color="#FFFFFF" flood-opacity="0.58" result="inner-color"/>
+      <feComposite in="inner-color" in2="inner-edge" operator="in" result="inner-light"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="inner-light"/>
+      </feMerge>
+    </filter>
+    <filter id="cell-inset" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feOffset in="blur" dx="3" dy="5" result="down-blur"/>
+      <feComposite in="SourceAlpha" in2="down-blur" operator="out" result="top-edge"/>
+      <feFlood flood-color="#02060D" flood-opacity="0.64" result="shadow-color"/>
+      <feComposite in="shadow-color" in2="top-edge" operator="in" result="inner-shadow"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="close-blur"/>
+      <feOffset in="close-blur" dx="2" dy="4" result="close-down-blur"/>
+      <feComposite in="SourceAlpha" in2="close-down-blur" operator="out" result="close-top-edge"/>
+      <feFlood flood-color="#00030A" flood-opacity="0.70" result="close-shadow-color"/>
+      <feComposite in="close-shadow-color" in2="close-top-edge" operator="in" result="close-inner-shadow"/>
+      <feOffset in="blur" dx="-2" dy="-4" result="up-blur"/>
+      <feComposite in="SourceAlpha" in2="up-blur" operator="out" result="bottom-edge"/>
+      <feFlood flood-color="#6F93AD" flood-opacity="0.22" result="light-color"/>
+      <feComposite in="light-color" in2="bottom-edge" operator="in" result="inner-light"/>
+      <feDropShadow in="SourceAlpha" dx="2" dy="3" stdDeviation="2.5" flood-color="#9BB6C9" flood-opacity="0.14" result="outer-rim-light"/>
+      <feMerge>
+        <feMergeNode in="outer-rim-light"/>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="inner-shadow"/>
+        <feMergeNode in="close-inner-shadow"/>
+        <feMergeNode in="inner-light"/>
+      </feMerge>
+    </filter>
+    <filter id="blue-raised" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow in="SourceGraphic" dx="10" dy="16" stdDeviation="18" flood-color="#020713" flood-opacity="0.72" result="cast"/>
+      <feDropShadow in="SourceGraphic" dx="0" dy="0" stdDeviation="10" flood-color="#6AAFC4" flood-opacity="0.05" result="glow"/>
+      <feDropShadow in="SourceGraphic" dx="1" dy="3" stdDeviation="3" flood-color="#051B2D" flood-opacity="0.60" result="close"/>
+      <feMerge>
+        <feMergeNode in="cast"/>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="close"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="fin-shadow" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow in="SourceGraphic" dx="7" dy="13" stdDeviation="16" flood-color="#020713" flood-opacity="0.62" result="cast"/>
+      <feDropShadow in="SourceGraphic" dx="0" dy="0" stdDeviation="8" flood-color="#5C9FB8" flood-opacity="0.04" result="glow"/>
+      <feMerge>
+        <feMergeNode in="cast"/>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="ring-raised" x="-45%" y="-45%" width="190%" height="200%">
+      <feDropShadow in="SourceGraphic" dx="5" dy="9" stdDeviation="8" flood-color="#01050D" flood-opacity="0.68"/>
+      <feDropShadow in="SourceGraphic" dx="-2" dy="-2" stdDeviation="2" flood-color="#D7E7EB" flood-opacity="0.35"/>
+    </filter>
+    <filter id="glass-inset" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur"/>
+      <feOffset in="blur" dx="0" dy="5" result="down-blur"/>
+      <feComposite in="SourceAlpha" in2="down-blur" operator="out" result="top-edge"/>
+      <feFlood flood-color="#052D4A" flood-opacity="0.78" result="shadow-color"/>
+      <feComposite in="shadow-color" in2="top-edge" operator="in" result="inner-shadow"/>
+      <feOffset in="blur" dx="0" dy="-4" result="up-blur"/>
+      <feComposite in="SourceAlpha" in2="up-blur" operator="out" result="bottom-edge"/>
+      <feFlood flood-color="#A7CDD5" flood-opacity="0.32" result="light-color"/>
+      <feComposite in="light-color" in2="bottom-edge" operator="in" result="inner-light"/>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode in="inner-shadow"/>
+        <feMergeNode in="inner-light"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 01 · rounded-square app tile -->
+  <g id="layer-base-panel" inkscape:groupmode="layer" inkscape:label="01 底板">
+    <path
+      id="base-panel"
+      d="M 391,183 C 286,183 201,268 201,373 L 201,846 C 201,951 286,1036 391,1036 L 864,1036 C 969,1036 1054,951 1054,846 L 1054,373 C 1054,268 969,183 864,183 Z"
+      fill="url(#panel-fill)"
+      stroke="url(#panel-rim)"
+      stroke-width="3"
+      filter="url(#panel-shadow)"/>
+  </g>
+
+  <!-- 02 · nine softly inset launchpad cells -->
+  <g id="layer-grid" inkscape:groupmode="layer" inkscape:label="02 九宫格" fill="url(#cell-fill)" stroke="#9AB7CB" stroke-opacity="0.14" stroke-width="1" filter="url(#cell-inset)">
+    <rect id="grid-r1-c1" x="319" y="296" width="159" height="161" rx="39"/>
+    <rect id="grid-r1-c2" x="550" y="296" width="157" height="161" rx="39"/>
+    <rect id="grid-r1-c3" x="780" y="296" width="158" height="161" rx="39"/>
+    <rect id="grid-r2-c1" x="319" y="522" width="159" height="162" rx="39"/>
+    <rect id="grid-r2-c2" x="550" y="522" width="157" height="162" rx="39"/>
+    <rect id="grid-r2-c3" x="780" y="522" width="158" height="162" rx="39"/>
+    <rect id="grid-r3-c1" x="319" y="748" width="159" height="162" rx="39"/>
+    <rect id="grid-r3-c2" x="550" y="748" width="157" height="162" rx="39"/>
+    <rect id="grid-r3-c3" x="780" y="748" width="158" height="162" rx="39"/>
+  </g>
+
+  <!-- 03 · detached exhaust plume -->
+  <g id="layer-exhaust" inkscape:groupmode="layer" inkscape:label="03 尾焰">
+    <path
+      id="exhaust-plume"
+      d="M 392,934 C 392,878 412,819 450,790 C 473,772 500,774 524,794 C 549,815 557,840 549,865 C 538,899 488,931 411,953 C 400,956 392,949 392,934 Z"
+      fill="url(#exhaust-fill)"
+      stroke="url(#exhaust-edge)"
+      stroke-width="1.8"
+      stroke-linejoin="round"
+      filter="url(#fin-shadow)"/>
+    <path id="exhaust-highlight" d="M 394,932 C 395,876 414,821 451,792 C 470,777 492,777 512,789" fill="none" stroke="url(#exhaust-highlight-edge)" stroke-width="1.4" stroke-linecap="round"/>
+  </g>
+
+  <!-- 04 · rocket fins, placed behind the body -->
+  <g id="layer-fins" inkscape:groupmode="layer" inkscape:label="04 尾翼">
+    <path
+      id="left-fin"
+      d="M 483,701 C 446,699 413,701 388,704 C 377,705 370,697 373,686 C 393,612 452,551 524,539 C 547,535 566,537 583,544 C 551,590 518,646 483,701 Z"
+      fill="url(#left-fin-fill)"
+      stroke="url(#left-fin-edge)"
+      stroke-width="1.8"
+      stroke-linejoin="round"
+      filter="url(#fin-shadow)"/>
+    <path id="left-fin-highlight" d="M 376,685 C 396,614 453,555 524,542 C 544,538 560,539 575,544" fill="none" stroke="url(#left-fin-highlight-edge)" stroke-width="1.4" stroke-linecap="round"/>
+
+    <path
+      id="right-fin"
+      d="M 750,696 C 773,719 782,754 780,790 C 777,848 733,900 653,927 C 642,931 633,923 633,911 C 634,864 627,829 612,800 C 660,772 707,737 750,696 Z"
+      fill="url(#right-fin-fill)"
+      stroke="url(#right-fin-edge)"
+      stroke-width="1.8"
+      stroke-linejoin="round"
+      filter="url(#fin-shadow)"/>
+    <path id="right-fin-highlight" d="M 750,700 C 770,722 779,756 776,790 C 773,843 734,890 659,922" fill="none" stroke="url(#right-fin-highlight-edge)" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+
+  <!-- 05 · primary fuselage -->
+  <g id="layer-rocket-body" inkscape:groupmode="layer" inkscape:label="05 火箭主体">
+    <path
+      id="rocket-body"
+      d="M 480,704 C 503,620 549,521 624,433 C 706,337 817,283 881,304 C 937,322 942,385 921,462 C 895,559 837,649 759,726 C 716,768 673,801 635,819 C 619,827 602,824 589,813 L 489,730 C 480,722 477,714 480,704 Z"
+      fill="url(#body-fill)"
+      stroke="url(#body-edge)"
+      stroke-width="1.4"
+      stroke-linejoin="round"
+      filter="url(#blue-raised)"/>
+    <path
+      id="rocket-body-sheen"
+      d="M 480,704 C 503,620 549,521 624,433 C 706,337 817,283 881,304 C 937,322 942,385 921,462 C 895,559 837,649 759,726 C 716,768 673,801 635,819 C 619,827 602,824 589,813 L 489,730 C 480,722 477,714 480,704 Z"
+      fill="url(#body-sheen)"/>
+    <path id="rocket-leading-highlight" d="M 481,703 C 504,619 551,522 625,435 C 705,341 813,287 878,305 C 908,314 927,334 932,362" fill="none" stroke="url(#leading-highlight)" stroke-width="1" stroke-linecap="round"/>
+  </g>
+
+  <!-- 06 · porthole -->
+  <g id="layer-porthole" inkscape:groupmode="layer" inkscape:label="06 舷窗">
+    <circle id="porthole-outer" cx="744" cy="519" r="76" fill="url(#porthole-ring)" stroke="#D7E6EA" stroke-opacity="0.65" stroke-width="2" vector-effect="non-scaling-stroke" filter="url(#ring-raised)"/>
+    <circle id="porthole-inner" cx="744" cy="519" r="52" fill="url(#porthole-glass)" stroke="#B9DCE3" stroke-opacity="0.70" stroke-width="1.7" vector-effect="non-scaling-stroke" filter="url(#glass-inset)"/>
+    <ellipse id="porthole-glint" cx="725" cy="492" rx="23" ry="14" fill="#FFFFFF" fill-opacity="0.12" transform="rotate(-33 725 492)"/>
+  </g>
+</svg>

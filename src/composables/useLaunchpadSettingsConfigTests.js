@@ -6,6 +6,7 @@ import {
   DEFAULT_WINDOW_MODE,
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_APPEARANCE_LIGHT,
+  WINDOW_EFFECT_APPEARANCE_SYSTEM,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
@@ -44,6 +45,7 @@ export function runLaunchpadSettingsConfigTests() {
   assert(normalizeWindowEffectMaterial("mica-alt") === WINDOW_EFFECT_MATERIAL_MICA_ALT, "legacy mica-alt should normalize");
   assert(normalizeWindowEffectMaterial("unknown") === WINDOW_EFFECT_MATERIAL_ACRYLIC, "unknown materials should use acrylic");
   assert(normalizeWindowEffectAppearance("unknown") === WINDOW_EFFECT_APPEARANCE_DARK, "unknown appearances should use dark");
+  assert(normalizeWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_SYSTEM) === WINDOW_EFFECT_APPEARANCE_SYSTEM, "system appearance should be preserved");
   assert(normalizeWindowEffectAppearance(WINDOW_EFFECT_APPEARANCE_LIGHT) === WINDOW_EFFECT_APPEARANCE_LIGHT, "light appearance should be preserved");
   assert(normalizeWindowMode(WINDOW_MODE_WINDOWED) === WINDOW_MODE_WINDOWED, "windowed mode should be preserved");
   assert(normalizeWindowMode("unknown") === DEFAULT_WINDOW_MODE, "unknown window modes should use the default");

@@ -5,6 +5,7 @@ mod file_dialog;
 mod i18n;
 mod icons;
 mod launcher;
+mod launchpad_icon;
 mod layout_store;
 mod live_desktop;
 mod main_window_supervisor;
@@ -44,9 +45,10 @@ use file_dialog::{
 };
 use icons::cache_app_icon_choices;
 use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPathErrorKind};
+use launchpad_icon::LaunchpadIconVariant;
 use layout_store::{
-    find_layout_manual_app, load_layout as load_saved_layout, read_locale_preference,
-    save_layout as save_saved_layout, SavedManualApp,
+    find_layout_manual_app, load_layout as load_saved_layout, read_launchpad_icon_variant,
+    read_locale_preference, save_layout as save_saved_layout, SavedManualApp,
 };
 use main_window_supervisor::{
     apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
@@ -82,6 +84,7 @@ pub use icons::debug_extract_icon_png;
 struct AppState {
     catalog: Mutex<HashMap<String, AppCatalogItem>>,
     live_desktop_runtime: Mutex<live_desktop::LiveDesktopRuntime>,
+    launchpad_icon_variant: Mutex<LaunchpadIconVariant>,
     locale_state: Mutex<i18n::LocaleState>,
     main_window_shortcut: Mutex<Option<String>>,
     main_window_shortcut_capture_active: AtomicBool,
@@ -94,6 +97,15 @@ fn locale_state_lock(
         .locale_state
         .lock()
         .map_err(|_| "App locale state lock is poisoned".to_string())
+}
+
+fn launchpad_icon_variant_lock(
+    state: &AppState,
+) -> Result<std::sync::MutexGuard<'_, LaunchpadIconVariant>, String> {
+    state
+        .launchpad_icon_variant
+        .lock()
+        .map_err(|_| "Launchpad icon state lock is poisoned".to_string())
 }
 
 fn initial_locale_state(app: &AppHandle) -> i18n::LocaleState {
@@ -126,6 +138,17 @@ fn initial_locale_state(app: &AppHandle) -> i18n::LocaleState {
         locale_state.issue = load_issue;
     }
     locale_state
+}
+
+fn initial_launchpad_icon_variant(app: &AppHandle) -> LaunchpadIconVariant {
+    match read_launchpad_icon_variant(app) {
+        Ok(Some(variant)) => variant,
+        Ok(None) => LaunchpadIconVariant::default(),
+        Err(error) => {
+            log::warn!(target: "launchpad_icon", "Failed to read saved launchpad icon: {error}");
+            LaunchpadIconVariant::default()
+        }
+    }
 }
 
 #[tauri::command]
@@ -667,6 +690,24 @@ fn set_main_window_shortcut(
 }
 
 #[tauri::command]
+fn set_launchpad_icon_variant(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    variant: String,
+) -> Result<String, String> {
+    let next = LaunchpadIconVariant::parse(&variant).ok_or_else(|| {
+        "launchpad icon variant must be light, dark, pastelLight, or pastelDark".to_string()
+    })?;
+    let mut current = launchpad_icon_variant_lock(&state)?;
+    if *current == next {
+        return Ok(next.as_str().to_string());
+    }
+    launchpad_icon::apply_runtime_icon(&app, next, *current)?;
+    *current = next;
+    Ok(next.as_str().to_string())
+}
+
+#[tauri::command]
 fn set_main_window_shortcut_capture_active(
     state: State<'_, AppState>,
     active: bool,
@@ -962,12 +1003,24 @@ fn check_launch_target_status(
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let initial_locale = initial_locale_state(app.handle());
+    let initial_launchpad_icon = initial_launchpad_icon_variant(app.handle());
     {
         let state = app.state::<AppState>();
         *locale_state_lock(&state).map_err(std::io::Error::other)? = initial_locale.clone();
     }
     main_window_supervisor::setup_main_window_supervisor(app)?;
-    setup_tray(app, &initial_locale.resolved_locale)?;
+    launchpad_icon::set_main_window_icon(app.handle(), initial_launchpad_icon)
+        .map_err(std::io::Error::other)?;
+    setup_tray(
+        app,
+        &initial_locale.resolved_locale,
+        initial_launchpad_icon.tray_icon(),
+    )?;
+    {
+        let state = app.state::<AppState>();
+        *launchpad_icon_variant_lock(&state).map_err(std::io::Error::other)? =
+            initial_launchpad_icon;
+    }
     if let Err(error) = apply_main_window_mode(app.handle()) {
         log::warn!(target: "lumeria", "Failed to apply Lumeria window mode: {error}");
     }
@@ -1254,6 +1307,7 @@ pub fn run() {
             set_main_window_effects_enabled,
             set_main_window_mode,
             set_main_window_shortcut,
+            set_launchpad_icon_variant,
             set_main_window_shortcut_capture_active,
             set_main_window_native_frame_enabled,
             open_developer_console
