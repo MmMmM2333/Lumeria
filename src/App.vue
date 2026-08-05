@@ -83,6 +83,7 @@
         :grid-cols="gridCols"
         :grid-rows="gridRows"
         :icon-size="iconSize"
+        :icon-gesture-presentation="resolveMaybeRef(iconGesturePresentation)"
         :icon-bounds-registry="iconBoundsRegistry"
         :is-edit-mode="isEditMode"
         :is-desktop-closing="isDesktopClosing"
@@ -106,8 +107,7 @@
         @drag-release-complete="clearDragRelease"
         @folder-create-release-complete="completeFolderCreateRelease"
         @internal-activity="handleFolderPixiInternalActivity"
-        @pointerdown-icon="beginDrag"
-        @open-app="openApp"
+        @pointerdown-icon="handleIconPointerDown"
         @context-menu-icon="openIconContextMenu"
         @remove-app="removeManagedAppFromLaunchpad"
         @choose-app-icon="openExistingAppIconChooser"
@@ -192,6 +192,7 @@ const controller = useLaunchpadController({
   activateLocale: localizationRuntime.activate,
   appVersion,
   localizationText,
+  openIconContextMenu,
 });
 const {
   appActions,
@@ -276,7 +277,7 @@ const {
 const {
   activePageIndex,
   activePages,
-  beginDrag,
+  handleIconPointerDown,
   clearDragRelease,
   commitActivePageIndex,
   desktopMainRef,
@@ -296,6 +297,7 @@ const {
   gridCols,
   gridRows,
   iconBoundsRegistry,
+  iconGesturePresentation,
   iconSize,
   isIconOpening,
   launchTargetStatusById,

@@ -4,6 +4,7 @@ export const ICON_INTERACTION_PADDING = 12;
 export const ICON_INTERACTION_CLEARANCE = 12;
 export const EDIT_BUTTON_HIT_PADDING = ICON_INTERACTION_PADDING;
 export const EDIT_BUTTON_HIT_RADIUS = 12;
+export const MIN_ICON_HIT_SIZE = 44;
 
 export function getIconCellContentMaxWidth(cellWidth) {
   const width = Number(cellWidth);
@@ -30,12 +31,13 @@ export function getIconHitAreaRect(options = {}) {
     itemType = null,
     visualOffsetY = 0,
   } = options;
+  const hitSize = Math.max(MIN_ICON_HIT_SIZE, iconSize);
   const editPadding = editing && itemType === "app" ? EDIT_BUTTON_HIT_PADDING : 0;
   return {
-    height: iconSize + editPadding * 2,
-    left: -iconSize / 2 - editPadding,
-    top: visualOffsetY - iconSize / 2 - editPadding,
-    width: iconSize + editPadding * 2,
+    height: hitSize + editPadding * 2,
+    left: -hitSize / 2 - editPadding,
+    top: visualOffsetY - hitSize / 2 - editPadding,
+    width: hitSize + editPadding * 2,
   };
 }
 

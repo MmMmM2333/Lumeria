@@ -6,8 +6,6 @@ import {
   FOLDER_HOVER_STICKY_MARGIN,
   FOLDER_PAGE_EDGE_SIZE,
   FOLDER_SORT_MIN_DISTANCE,
-  LONG_PRESS_DELAY,
-  LONG_PRESS_MOVE_THRESHOLD,
   PAGE_EDGE_SIZE,
   PAGE_TURN_DELAY,
 } from "./launchpadConstants.js";
@@ -57,8 +55,6 @@ const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - F
 const FOLDER_HOVER_ESCAPE_MARGIN = 64;
 const FOLDER_HIT_CANDIDATE_MARGIN = 6;
 const FOLDER_HIT_INTENT_MAX_SIZE = 64;
-const FIRST_FOLDER_OPEN_PREPARE_DELAY_MS = 48;
-const SETTLED_DRAG_START_FRAMES = 3;
 const DRAG_VELOCITY_SMOOTHING = 0.6;
 const DRAG_VELOCITY_MAX_DELTA_MS = 80;
 
@@ -150,9 +146,7 @@ export function useLaunchpadDrag(options) {
   let dragSortBlocked = false;
   let pendingDesktopReturn = null;
   let layoutProjectionReleaseTimer = null;
-  let dragListenersAttached = false;
   let dragContextMenuListenerAttached = false;
-  let longPressState = null;
   let dragReleaseTimer = null;
   let dragReleaseResolveRaf = 0;
   let dragReleaseKey = 0;
@@ -161,8 +155,8 @@ export function useLaunchpadDrag(options) {
   let folderCreateReleaseKey = 0;
   let dragFolderHoverKey = 0;
   let dragHitDebugKey = 0;
-  let settledDragStartRaf = 0;
   let pendingFolderDragPageTurn = null;
+  let pendingDragStart = null;
 
   function isDragActive() {
     return Boolean(dragRuntime || dragReleaseState.value || folderCreateReleaseState.value);
@@ -179,7 +173,7 @@ export function useLaunchpadDrag(options) {
     return "desktop";
   }
 
-  function shouldRefreshLongPressBoundsOnStart() {
+  function shouldRefreshDragBoundsOnStart() {
     return Boolean(options.isHomeRevealSettling.value && !options.isFolderLayerActive.value);
   }
 
@@ -209,7 +203,7 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function resolveLongPressSourceRect(lp) {
+  function resolveDragSourceRect(lp) {
     if (!lp?.refreshBoundsOnStart) return lp?.rect || null;
     return options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.RENDERED, {
       area: getLaunchBoundsArea(lp.source),
@@ -219,8 +213,8 @@ export function useLaunchpadDrag(options) {
     }) || lp.rect || null;
   }
 
-  function getLongPressDragGeometry(lp) {
-    const rect = resolveLongPressSourceRect(lp);
+  function getDragStartGeometry(lp) {
+    const rect = resolveDragSourceRect(lp);
     if (!rect) return { offset: lp.offset, size: lp.size };
     const visualSize = lp.dragVisualState?.iconSize;
     const width = visualSize || rect.width;
@@ -380,25 +374,6 @@ export function useLaunchpadDrag(options) {
     }, LAYOUT_PROJECTION_RELEASE_DELAY);
   }
 
-  function attachDragListeners() {
-    if (dragListenersAttached) return;
-    dragListenersAttached = true;
-    window.addEventListener("pointermove", updateDragPointer, { passive: false });
-    window.addEventListener("pointerup", finishDrag);
-    window.addEventListener("pointercancel", finishDrag);
-    attachDragContextMenuListener();
-  }
-
-  function detachDragListeners() {
-    if (dragListenersAttached) {
-      dragListenersAttached = false;
-      window.removeEventListener("pointermove", updateDragPointer);
-      window.removeEventListener("pointerup", finishDrag);
-      window.removeEventListener("pointercancel", finishDrag);
-    }
-    if (!longPressState) detachDragContextMenuListener();
-  }
-
   function attachDragContextMenuListener() {
     if (dragContextMenuListenerAttached) return;
     dragContextMenuListenerAttached = true;
@@ -411,19 +386,8 @@ export function useLaunchpadDrag(options) {
     window.removeEventListener("contextmenu", suppressDragContextMenu, true);
   }
 
-  function detachLongPressListeners() {
-    window.removeEventListener("pointermove", handleLongPressMove);
-    window.removeEventListener("pointerup", handleLongPressUp);
-    window.removeEventListener("pointercancel", handleLongPressUp);
-  }
-
-  function clearSettledDragStartRaf() {
-    if (settledDragStartRaf) window.cancelAnimationFrame(settledDragStartRaf);
-    settledDragStartRaf = 0;
-  }
-
   function suppressDragContextMenu(event) {
-    if (!dragRuntime && !longPressState) return;
+    if (!dragRuntime) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
@@ -1274,7 +1238,7 @@ export function useLaunchpadDrag(options) {
 
   function endDrag() {
     const shouldClampFolderPage = Boolean(options.renderedFolder.value || options.openFolderId.value);
-    detachDragListeners();
+    detachDragContextMenuListener();
     clearDragIntentTimer();
     clearDragSortGateTimer();
     clearPageTurn();
@@ -2295,182 +2259,91 @@ export function useLaunchpadDrag(options) {
     dragIntentTimer = window.setTimeout(evaluateDragIntent, DRAG_INTENT_IDLE_DELAY);
   }
 
-  function cancelLongPress() {
-    if (!longPressState) return;
-    window.clearTimeout(longPressState.timer);
-    longPressState = null;
-    clearSettledDragStartRaf();
-    detachLongPressListeners();
-    if (!dragRuntime) detachDragContextMenuListener();
-  }
-
-  function handleLongPressMove(event) {
-    if (!longPressState) return;
-    if (!isSamePointerEvent(longPressState.pointerId, event)) return;
-    if (!isPrimaryPointerMoveEvent(event)) return;
-    const dist = Math.hypot(event.clientX - longPressState.startPoint.x, event.clientY - longPressState.startPoint.y);
-    if (dist > LONG_PRESS_MOVE_THRESHOLD) cancelLongPress();
-  }
-
-  function handleLongPressUp(event) {
-    if (!longPressState) return;
-    if (!isSamePointerEvent(longPressState.pointerId, event)) return;
-    if (event.type === "pointercancel") {
-      cancelLongPress();
-      return;
-    }
-    if (!isPrimaryPointerReleaseEvent(event)) return;
-    const lp = longPressState;
-    cancelLongPress();
-    if (lp.awaitingDragStart) return;
-    if (options.isLaunchpadInteractionBlocked()) return;
-    if (lp.item.type === "app") options.openApp(lp.item, lp.source);
-    else if (lp.item.type === "folder" && lp.source.type === "page") {
-      commitFolderOpenFromLongPress(lp);
-    }
-  }
-
-  function commitFolderOpenFromLongPress(lp) {
-    const commit = () => {
-      if (options.isLaunchpadInteractionBlocked()) return;
-      options.commitOpenFolder(lp.item.id, { originBounds: lp.folderOriginBounds });
+  function activatePreparedDrag(descriptor, { deferred = false } = {}) {
+    if (deferred && pendingDragStart !== descriptor) return;
+    if (pendingDragStart === descriptor) pendingDragStart = null;
+    if (options.isLaunchpadInteractionBlocked() || dragRuntime) return;
+    const { cellSize, dragVisualState, source, startPoint } = descriptor;
+    const geometry = getDragStartGeometry(descriptor);
+    dragRuntime = {
+      cellSize,
+      compact: dragVisualState?.compact === true,
+      item: descriptor.item,
+      source,
+      pointerId: descriptor.pointerId,
+      pointer: startPoint,
+      singleLineLabel: dragVisualState?.singleLineLabel === true,
+      lastPointerTime: nowMs(),
+      offset: geometry.offset,
+      size: geometry.size,
+      start: startPoint,
+      hasMoved: false,
+      velocity: makeZeroVelocity(),
     };
-    if (!options.consumeFirstFolderOpenPrepare?.()) {
-      commit();
-      return;
+    activateLayoutProjection();
+    pendingPreviewPoint = { x: startPoint.x, y: startPoint.y };
+    updatePreviewState();
+    dragMeta.value = { item: dragRuntime.item, source };
+    dragPlacement = source.type === "page"
+      ? placementKey("page", source.pageIndex, source.index)
+      : source.type === "folder"
+        ? placementKey("folder", source.folderId, source.pageIndex, source.index)
+        : null;
+    lastPlacementCommit = { key: dragPlacement, x: startPoint.x, y: startPoint.y };
+    attachDragContextMenuListener();
+    if (source.type === "folder") {
+      options.commitFolderSession({ mode: "source-folder", folderId: source.folderId, hasEntered: true, openedAt: Date.now() });
     }
-    window.setTimeout(commit, FIRST_FOLDER_OPEN_PREPARE_DELAY_MS);
   }
 
-  function startLongPressDrag(lp) {
-    if (longPressState !== lp) return;
-    if (options.isLaunchpadInteractionBlocked()) {
-      cancelLongPress();
-      return;
+  function startDrag(event, item, source) {
+    const isAcceptedPrimaryPointer = event?.type === "pointermove"
+      ? isPrimaryPointerMoveEvent(event)
+      : isPrimaryPointerStartEvent(event);
+    if (!isAcceptedPrimaryPointer || options.isLaunchpadInteractionBlocked() || dragRuntime || pendingDragStart) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const refreshBoundsOnStart = shouldRefreshDragBoundsOnStart();
+    if (refreshBoundsOnStart) {
+      options.finishHomeRevealSettleWindow();
     }
-    detachLongPressListeners();
-    longPressState = null;
-
+    clearDragRelease();
     clearPendingTarget();
     clearDragIntentTimer();
     clearPageTurn();
     clearFolderPageTurn();
 
-    const geometry = getLongPressDragGeometry(lp);
-    const nextDrag = {
-      cellSize: lp.cellSize,
-      compact: lp.dragVisualState?.compact === true,
-      item: lp.item,
-      source: lp.source,
-      pointerId: lp.pointerId,
-      pointer: { x: lp.startPoint.x, y: lp.startPoint.y },
-      singleLineLabel: lp.dragVisualState?.singleLineLabel === true,
-      lastPointerTime: nowMs(),
-      offset: geometry.offset,
-      size: geometry.size,
-      start: { x: lp.startPoint.x, y: lp.startPoint.y },
-      hasMoved: false,
-      velocity: makeZeroVelocity(),
-    };
-
-    dragRuntime = nextDrag;
-    activateLayoutProjection();
-    dragMeta.value = { item: nextDrag.item, source: nextDrag.source };
-    dragPlacement = lp.source.type === "page"
-      ? placementKey("page", lp.source.pageIndex, lp.source.index)
-      : lp.source.type === "folder"
-        ? placementKey("folder", lp.source.folderId, lp.source.pageIndex, lp.source.index)
-        : null;
-    lastPlacementCommit = { key: dragPlacement, x: lp.startPoint.x, y: lp.startPoint.y };
-    attachDragListeners();
-    nextTick(() => schedulePreviewPosition(lp.startPoint.x, lp.startPoint.y));
-
-    if (lp.source.type === "folder") {
-      options.commitFolderSession({ mode: "source-folder", folderId: lp.source.folderId, hasEntered: true, openedAt: Date.now() });
-    }
-  }
-
-  function requestSettledDragStartFrame(lp, remainingFrames) {
-    settledDragStartRaf = window.requestAnimationFrame(() => {
-      settledDragStartRaf = 0;
-      if (longPressState !== lp) return;
-      if (remainingFrames > 1) {
-        requestSettledDragStartFrame(lp, remainingFrames - 1);
-        return;
-      }
-      startLongPressDrag(lp);
-    });
-  }
-
-  function scheduleSettledDragStart(lp) {
-    lp.awaitingDragStart = true;
-    lp.refreshBoundsOnStart = true;
-    window.removeEventListener("pointermove", handleLongPressMove);
-    nextTick(() => {
-      if (longPressState !== lp) return;
-      requestSettledDragStartFrame(lp, SETTLED_DRAG_START_FRAMES);
-    });
-  }
-
-  function executeDragStart() {
-    const lp = longPressState;
-    if (!lp) return;
-    if (options.isLaunchpadInteractionBlocked()) {
-      cancelLongPress();
-      return;
-    }
-    if (options.isHomeRevealSettling.value && !options.isFolderLayerActive.value) {
-      options.finishHomeRevealSettleWindow();
-      scheduleSettledDragStart(lp);
-      return;
-    }
-    if (lp.refreshBoundsOnStart) {
-      scheduleSettledDragStart(lp);
-      return;
-    }
-    startLongPressDrag(lp);
-  }
-
-  function beginDrag(event, item, source) {
-    if (!isPrimaryPointerStartEvent(event)) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (options.isLaunchpadInteractionBlocked() || dragRuntime || longPressState) return;
-
-    cancelLongPress();
-    clearDragRelease();
-
     const folderOriginBounds = cloneFolderOriginBounds(event.folderOriginBounds);
     const dragVisualState = normalizeDragVisualState(event.dragVisualState);
-    const rect = event.currentTarget.getBoundingClientRect?.() || null;
+    const rect = event.currentTarget?.getBoundingClientRect?.() || null;
+    if (!rect) throw new TypeError("startDrag requires currentTarget.getBoundingClientRect()");
     const cellSize = getDragVisualCellSize(dragVisualState) ||
       getSourceCellSize(source) ||
       { height: rect.height, width: rect.width };
     if (item?.type === "folder" && source?.type === "page") {
       options.requestFolderOpenWarmup?.(item, folderOriginBounds);
     }
-
-    longPressState = {
+    const startPoint = { x: event.clientX, y: event.clientY };
+    const descriptor = {
       cellSize,
       item: options.cloneItem(item),
       dragVisualState,
       folderOriginBounds,
       rect: cloneRect(rect),
-      refreshBoundsOnStart: shouldRefreshLongPressBoundsOnStart(),
+      refreshBoundsOnStart,
       source,
       pointerId: event.pointerId,
-      startPoint: { x: event.clientX, y: event.clientY },
-      offset: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      startPoint,
+      offset: { x: startPoint.x - rect.left, y: startPoint.y - rect.top },
       size: { width: rect.width, height: rect.height },
-      timer: window.setTimeout(executeDragStart, LONG_PRESS_DELAY),
     };
-
-    window.addEventListener("pointermove", handleLongPressMove);
-    window.addEventListener("pointerup", handleLongPressUp);
-    window.addEventListener("pointercancel", handleLongPressUp);
-    attachDragContextMenuListener();
+    if (refreshBoundsOnStart) {
+      pendingDragStart = descriptor;
+      nextTick(() => activatePreparedDrag(descriptor, { deferred: true }));
+    } else {
+      activatePreparedDrag(descriptor);
+    }
+    return true;
   }
 
   function updateDragPointer(event) {
@@ -2506,6 +2379,10 @@ export function useLaunchpadDrag(options) {
   }
 
   function finishDrag(event) {
+    if (pendingDragStart && isSamePointerEvent(pendingDragStart.pointerId, event)) {
+      pendingDragStart = null;
+      return;
+    }
     const activeDrag = dragRuntime;
     if (!activeDrag) return;
     if (!shouldFinishDragForPointerEvent(activeDrag, event)) return;
@@ -2673,9 +2550,18 @@ export function useLaunchpadDrag(options) {
     endDrag();
   }
 
+  function cancelDrag(event = {}) {
+    finishDrag({ ...event, type: "pointercancel" });
+  }
+
+  function disposeDrag() {
+    pendingDragStart = null;
+    if (dragRuntime) endDrag();
+    else detachDragContextMenuListener();
+  }
+
   return {
-    beginDrag,
-    cancelLongPress,
+    cancelDrag,
     cancelPreviewRaf,
     clearFolderPageTurn,
     clearDragRelease,
@@ -2684,7 +2570,7 @@ export function useLaunchpadDrag(options) {
     clearPageTurn,
     clearPendingTarget,
     completeFolderCreateRelease,
-    detachDragListeners,
+    disposeDrag,
     dragFolderHoverState,
     dragFolderTargetId,
     dragHitDebugState,
@@ -2693,5 +2579,8 @@ export function useLaunchpadDrag(options) {
     dragReleaseState,
     folderCreateReleaseState,
     isDragActive,
+    finishDrag,
+    startDrag,
+    updateDragPointer,
   };
 }

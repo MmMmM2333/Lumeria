@@ -1,5 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 
 export function makeFolderIconRenderPlan(options = {}) {
@@ -48,6 +49,7 @@ export function makeFolderIconNodeState(options = {}) {
     folderId = null,
     folderPageSize = 0,
     iconSize = 64,
+    iconGesturePresentation = null,
     isActiveDraggedItem = false,
     isEditMode = false,
     isIconOpening = null,
@@ -83,6 +85,11 @@ export function makeFolderIconNodeState(options = {}) {
     ghosted,
     hasCustomIcon: Boolean(item?.customIconPath || item?.customIconDataUrl),
     iconSize,
+    interactionPhase: resolveIconInteractionPhase(iconGesturePresentation, {
+      interactive: isInteractivePage,
+      itemId,
+      scope: `folder:${folderId}`,
+    }),
     interactive: isInteractivePage,
     item,
     jiggleSeed: Math.max(0, Number(pageIndex) || 0) * 100 + (Number(source?.index) || 0),

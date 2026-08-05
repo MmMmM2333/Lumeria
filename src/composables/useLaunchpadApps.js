@@ -871,7 +871,7 @@ export function useLaunchpadApps(options) {
     if (!removedApps.length) return [];
     const removedIds = removedApps.map((app) => app.id);
 
-    options.cancelLongPress?.();
+    options.cancelInputGesture?.();
     let next = options.pages.value;
     for (const id of removedIds) next = options.removeEverywhere(next, id);
     const removedCatalogIds = removedApps

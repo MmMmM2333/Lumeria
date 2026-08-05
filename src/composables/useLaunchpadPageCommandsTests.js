@@ -28,7 +28,7 @@ const folder = {
 function createPageCommands(overrides = {}) {
   const calls = {
     assertNoDuplicateItemIds: 0,
-    cancelLongPress: 0,
+    cancelInputGesture: 0,
     clearSelectedIcon: 0,
     commitActivePageIndex: [],
     commitFolderPageIndex: [],
@@ -61,8 +61,8 @@ function createPageCommands(overrides = {}) {
     assertNoDuplicateItemIds: () => {
       calls.assertNoDuplicateItemIds += 1;
     },
-    cancelLongPress: () => {
-      calls.cancelLongPress += 1;
+    cancelInputGesture: () => {
+      calls.cancelInputGesture += 1;
     },
     chunkIntoPages,
     clonePages: helpers.clonePages,
@@ -197,7 +197,7 @@ export function runLaunchpadPageCommandsTests() {
   assert(dissolveDialog.confirmTone === "danger" && dissolveDialog.confirmAppearance === "outline", "folder dissolve confirmation should use a danger action");
   dissolveDialog.onConfirm();
   assert(dissolve.pages.value.map((page) => page.map((item) => item.id).join(",")).join("|") === "app-a,app-b,app-d|app-c,app-e", "confirmed folder dissolve should preserve child order and cascade page overflow");
-  assert(dissolve.calls.cancelLongPress === 1, "confirmed folder dissolve should cancel pending long press state");
+  assert(dissolve.calls.cancelInputGesture === 1, "confirmed folder dissolve should cancel the active input gesture");
   assert(dissolve.calls.clearSelectedIcon === 1, "confirmed folder dissolve should clear a selection that referenced the removed folder");
   assert(dissolve.calls.commitOpenFolder.length === 1 && dissolve.calls.commitOpenFolder[0] === null, "confirmed folder dissolve should close the dissolved folder");
   assert(dissolve.calls.schedulePageGridMetrics === 1, "confirmed folder dissolve should refresh desktop metrics");

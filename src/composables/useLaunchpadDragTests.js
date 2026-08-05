@@ -311,13 +311,36 @@ export async function runLaunchpadDragTests() {
   );
   assert(sampledVelocity.velocity.x === 500 && sampledVelocity.velocity.y === -250, "pointer velocity should smooth px/s deltas");
 
+  await withMockPointerEnvironment(async () => {
+    const { app, drag } = createDragHarness();
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    const started = drag.startDrag(makePointerDownEvent(40, target, {
+      button: -1,
+      buttons: 1,
+      type: "pointermove",
+    }), app, { type: "page", pageIndex: 0, index: 0 });
+
+    assert(
+      started === true && drag.dragMeta.value?.item.id === "app-a",
+      "an owned held-pointer move should start drag while the primary button remains pressed"
+    );
+    assert(
+      drag.dragPreviewState.value?.item.id === "app-a",
+      "starting an active drag should publish its initial preview in the same turn as drag ownership"
+    );
+    drag.cancelDrag({ pointerId: 40 });
+  });
+
   await withMockPointerEnvironment(async ({ listeners, timers }) => {
     const { app, drag, isLayoutProjectionActive } = createDragHarness();
     const target = {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(41, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(41, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     assert(drag.dragMeta.value?.item.id === "app-a", "long press should enter active drag state");
@@ -327,10 +350,10 @@ export async function runLaunchpadDragTests() {
     assert(Math.round(drag.dragPreviewState.value?.cellSize.width) === 100, "drag preview should include the source cell width");
     assert(isLayoutProjectionActive.value, "active drag should enable layout projection");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 42, button: 0, clientX: 40, clientY: 50 });
+    drag.finishDrag({ type: "pointerup", pointerId: 42, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value?.item.id === "app-a", "different pointerup should not finish an active drag");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 41, button: 0, clientX: 40, clientY: 50 });
+    drag.finishDrag({ type: "pointerup", pointerId: 41, button: 0, clientX: 40, clientY: 50 });
     assert(drag.dragMeta.value === null, "matching pointerup should finish the active drag");
     assert(drag.dragPreviewState.value === null, "finished drag should clear preview state");
     assert(isLayoutProjectionActive.value, "layout projection should remain briefly active after drag end");
@@ -344,7 +367,7 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(44, target, {
+    drag.startDrag(makePointerDownEvent(44, target, {
       dragVisualState: {
         cellHeight: 91,
         cellWidth: 123,
@@ -360,7 +383,7 @@ export async function runLaunchpadDragTests() {
     assert(drag.dragPreviewState.value?.cellSize.width === 123, "drag preview should use source node cell width for label wrapping");
     assert(drag.dragPreviewState.value?.cellSize.height === 91, "drag preview should use source node cell height for label layout");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 44, button: 0, clientX: 40, clientY: 50 });
+    drag.finishDrag({ type: "pointerup", pointerId: 44, button: 0, clientX: 40, clientY: 50 });
     await nextTick();
     assert(drag.dragReleaseState.value?.compact === true, "drag release should preserve source compact label layout");
     assert(drag.dragReleaseState.value?.singleLineLabel === true, "drag release should preserve source single-line label layout");
@@ -373,7 +396,7 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 11.12, top: 13.12, width: 61.76, height: 61.76 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(45, target, {
+    drag.startDrag(makePointerDownEvent(45, target, {
       dragVisualState: {
         cellHeight: 100,
         cellWidth: 100,
@@ -388,7 +411,7 @@ export async function runLaunchpadDragTests() {
     assert(Math.abs(drag.dragPreviewState.value?.offset.x - 14) < 0.0001, "drag preview should keep the pointer offset relative to the unpressed icon rect");
     assert(Math.abs(drag.dragPreviewState.value?.offset.y - 20) < 0.0001, "drag preview should keep the pointer y offset relative to the unpressed icon rect");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 45, button: 0, clientX: 40, clientY: 50 });
+    drag.finishDrag({ type: "pointerup", pointerId: 45, button: 0, clientX: 40, clientY: 50 });
     await nextTick();
     assert(drag.dragReleaseState.value?.size.width === 64, "drag release should use the source icon size instead of pressed visual bounds");
   });
@@ -416,7 +439,7 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(42, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(42, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     await nextTick();
@@ -424,6 +447,27 @@ export async function runLaunchpadDragTests() {
     assert(finishSettleCalls === 1, "first drag after desktop reveal should finish the settle window");
     assert(drag.dragPreviewState.value?.offset.x === 4 && drag.dragPreviewState.value?.offset.y === 10, "settled desktop drag should recompute pointer offset from fresh Pixi bounds");
     iconBoundsRegistry.clearBounds();
+  });
+
+  await withMockPointerEnvironment(async () => {
+    const isHomeRevealSettling = ref(true);
+    const { app, drag } = createDragHarness({
+      finishHomeRevealSettleWindow: () => {
+        isHomeRevealSettling.value = false;
+      },
+      isHomeRevealSettling,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
+    };
+
+    drag.startDrag(makePointerDownEvent(142, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.finishDrag({ type: "pointerup", pointerId: 142, button: 0, clientX: 24, clientY: 32 });
+    await nextTick();
+    await nextTick();
+
+    assert(drag.dragMeta.value === null, "releasing before deferred drag activation should not resurrect the drag");
+    assert(!drag.isDragActive(), "cancelled deferred drag activation should remain inactive");
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
@@ -437,7 +481,7 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(43, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(43, target), app, { type: "page", pageIndex: 0, index: 0 });
     isHomeRevealSettling.value = false;
     putLaunchBounds(
       iconBoundsRegistry,
@@ -462,11 +506,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(88, target), folder, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(88, target), folder, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 88, button: 0, clientX: 24, clientY: 32 });
+    drag.finishDrag({ type: "pointerup", pointerId: 88, button: 0, clientX: 24, clientY: 32 });
     await nextTick();
 
     assert(calls.commitOpenFolder.length === 0, "dropping a long-pressed folder without movement should not open it");
@@ -492,11 +536,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(89, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(89, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 89, button: 0, clientX: 132, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 89, button: 0, clientX: 132, clientY: 132 });
     await nextTick();
 
     const [folder] = pages.value[0];
@@ -532,10 +576,10 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(90, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(90, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 90,
       buttons: 1,
@@ -582,10 +626,10 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 128, height: 128 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(191, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(191, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 191,
       buttons: 1,
@@ -602,7 +646,7 @@ export async function runLaunchpadDragTests() {
     assert(drag.dragHitDebugState.value?.folderDecision?.dragIntersectsExpandedTarget === true, "large icon edge test should still discover the target as an overlap candidate");
     assert(Math.round(drag.dragHitDebugState.value?.folderDecision?.intentRect?.width) === 64, "large icon folder intent should cap to the default icon size");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 191, button: 0, clientX: 92, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 191, button: 0, clientX: 92, clientY: 132 });
     await nextTick();
 
     assert(!pages.value.flat().some((item) => item?.type === "folder"), "large icon edge release should not create a folder");
@@ -617,10 +661,10 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(91, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(91, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 91,
       buttons: 1,
@@ -630,7 +674,7 @@ export async function runLaunchpadDragTests() {
       preventDefault: () => {},
     });
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 91, button: 0, clientX: 690, clientY: 490, timeStamp: 40 });
+    drag.finishDrag({ type: "pointerup", pointerId: 91, button: 0, clientX: 690, clientY: 490, timeStamp: 40 });
     await nextTick();
 
     const rect = drag.dragReleaseState.value?.targetRect;
@@ -673,11 +717,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(93, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(93, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 93, button: 0, clientX: 690, clientY: 490 });
+    drag.finishDrag({ type: "pointerup", pointerId: 93, button: 0, clientX: 690, clientY: 490 });
     await nextTick();
 
     const rect = drag.dragReleaseState.value?.targetRect;
@@ -729,11 +773,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(92, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(92, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 92, button: 0, clientX: 390, clientY: 330 });
+    drag.finishDrag({ type: "pointerup", pointerId: 92, button: 0, clientX: 390, clientY: 330 });
     await nextTick();
 
     const rect = drag.dragReleaseState.value?.targetRect;
@@ -776,11 +820,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 150, top: 150, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(96, target), app, { type: "folder", folderId: "folder-large-release", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(96, target), app, { type: "folder", folderId: "folder-large-release", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 96, button: 0, clientX: 220, clientY: 190 });
+    drag.finishDrag({ type: "pointerup", pointerId: 96, button: 0, clientX: 220, clientY: 190 });
     await nextTick();
 
     const release = drag.dragReleaseState.value;
@@ -863,11 +907,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 320, top: 210, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(97, target, { clientX: 352, clientY: 242 }), app, { type: "folder", folderId: "folder-inflight-resize", pageIndex: 0, index: 8 });
+    drag.startDrag(makePointerDownEvent(97, target, { clientX: 352, clientY: 242 }), app, { type: "folder", folderId: "folder-inflight-resize", pageIndex: 0, index: 8 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 97, button: 0, clientX: 380, clientY: 250 });
+    drag.finishDrag({ type: "pointerup", pointerId: 97, button: 0, clientX: 380, clientY: 250 });
 
     const initialRelease = drag.dragReleaseState.value;
     assert(initialRelease?.provisionalLayoutTarget === true, "folder release should reuse the in-flight provisional folder target before clearing row-resize bounds");
@@ -941,11 +985,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(95, target), app, { type: "folder", folderId: "folder-provisional", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(95, target), app, { type: "folder", folderId: "folder-provisional", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 95, button: 0, clientX: 390, clientY: 330 });
+    drag.finishDrag({ type: "pointerup", pointerId: 95, button: 0, clientX: 390, clientY: 330 });
     await nextTick();
 
     const release = drag.dragReleaseState.value;
@@ -992,11 +1036,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 200, top: 130, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(94, target, { clientX: 210, clientY: 140 }), app, { type: "folder", folderId: "folder-stale", pageIndex: 0, index: 1 });
+    drag.startDrag(makePointerDownEvent(94, target, { clientX: 210, clientY: 140 }), app, { type: "folder", folderId: "folder-stale", pageIndex: 0, index: 1 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 94, button: 0, clientX: 125, clientY: 135 });
+    drag.finishDrag({ type: "pointerup", pointerId: 94, button: 0, clientX: 125, clientY: 135 });
     const staleRecord = iconBoundsRegistry.getRecord(
       K.LAUNCH,
       V.STABLE_STAGE_LAYOUT,
@@ -1025,12 +1069,12 @@ export async function runLaunchpadDragTests() {
       ],
     ];
 
-    drag.beginDrag(makePointerDownEvent(51, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(51, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     folderSession.value = { mode: "created", folderId: "folder-created", targetApp, hasEntered: false, openedAt: 1 };
 
-    listeners.get("pointercancel")({ type: "pointercancel", pointerId: 51, button: 0, clientX: 40, clientY: 50 });
+    drag.cancelDrag({ type: "pointercancel", pointerId: 51, button: 0, clientX: 40, clientY: 50 });
 
     const ids = pages.value.flat().map((item) => item.id).sort().join(",");
     assert(drag.dragMeta.value === null, "pointercancel should finish an active drag");
@@ -1046,12 +1090,12 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(61, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(61, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     assert(drag.dragMeta.value?.item.id === "app-a", "long press should enter active drag state before edge turn");
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 61,
       buttons: 1,
@@ -1061,7 +1105,7 @@ export async function runLaunchpadDragTests() {
     });
     assert(timers.size > 0, "edge drag should arm delayed timers before cancellation");
 
-    listeners.get("pointercancel")({ type: "pointercancel", pointerId: 61, button: 0, clientX: 1018, clientY: 50 });
+    drag.cancelDrag({ type: "pointercancel", pointerId: 61, button: 0, clientX: 1018, clientY: 50 });
     flushTimers(timers);
 
     assert(pages.value.length === 1, "pointercancel should clear page-turn timers before they can create a page");
@@ -1085,12 +1129,12 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 130, top: 150, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(65, target), app, { type: "folder", folderId: "folder-edge", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(65, target), app, { type: "folder", folderId: "folder-edge", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     assert(folderSession.value?.mode === "source-folder", "folder edge drag should start from the source folder");
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 65,
       buttons: 1,
@@ -1106,7 +1150,7 @@ export async function runLaunchpadDragTests() {
     assert(folderPageIndex.value === 0, "folder edge drag should keep the committed page until release");
     assert(visualFolderPageIndex.value === 1, "folder edge drag should expose the visual target page before release");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 65, button: 0, clientX: 492, clientY: 180 });
+    drag.finishDrag({ type: "pointerup", pointerId: 65, button: 0, clientX: 492, clientY: 180 });
     assert(calls.commitFolderPageTurnRequest.join(",") === "1", "releasing after a visual folder edge turn should commit the pending request");
     assert(folderPageIndex.value === 1, "releasing after a visual folder edge turn should land on the visual page");
     assert(calls.insertAppIntoFolder.at(-1)?.targetPageIndex === 1, "folder edge release should insert into the visual target page");
@@ -1138,11 +1182,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 140, top: 140, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(66, target, { clientX: 150, clientY: 150 }), app, { type: "folder", folderId: "folder-edge-append", pageIndex: 1, index: 0 });
+    drag.startDrag(makePointerDownEvent(66, target, { clientX: 150, clientY: 150 }), app, { type: "folder", folderId: "folder-edge-append", pageIndex: 1, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 66,
       buttons: 1,
@@ -1153,7 +1197,7 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     runNextTimer(timers);
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 66, button: 0, clientX: 108, clientY: 150 });
+    drag.finishDrag({ type: "pointerup", pointerId: 66, button: 0, clientX: 108, clientY: 150 });
     assert(folderPageIndex.value === 0, "post-turn folder release should commit to the previous page");
     assert(calls.insertAppIntoFolder.at(-1)?.targetPageIndex === 0, "post-turn folder release should target the committed page");
     assert(calls.insertAppIntoFolder.at(-1)?.insertIndex === 4, "post-turn edge release should append after the target page items instead of using the edge slot");
@@ -1176,12 +1220,12 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(71, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(71, target), app, { type: "folder", folderId: "folder-1", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
     assert(folderSession.value?.mode === "source-folder", "folder-sourced drag should enter a folder session");
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 71,
       buttons: 1,
@@ -1219,11 +1263,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(81, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(81, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 81,
       buttons: 1,
@@ -1245,7 +1289,7 @@ export async function runLaunchpadDragTests() {
     assert(folderSession.value?.mode === "existing", "hovering an existing folder should enter an existing-folder drag session");
     assert(Array.from(timers.values()).some((timer) => timer.delay > 400), "opening a folder during drag should arm a sort gate timer");
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 81,
       buttons: 1,
@@ -1281,11 +1325,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(82, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(82, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 82,
       buttons: 1,
@@ -1296,7 +1340,7 @@ export async function runLaunchpadDragTests() {
     runNextTimer(timers);
     assert(drag.dragFolderHoverState.value?.targetId === "folder-2", "folder hover state should be set while hovering a folder");
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 82,
       buttons: 1,
@@ -1333,11 +1377,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(83, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(83, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 83,
       buttons: 1,
@@ -1364,7 +1408,7 @@ export async function runLaunchpadDragTests() {
       { area: "desktop", id: "folder-3", index: 1, item: folder, pageIndex: 0 }
     );
 
-    listeners.get("pointermove")({
+    drag.updateDragPointer({
       type: "pointermove",
       pointerId: 83,
       buttons: 1,
@@ -1376,7 +1420,7 @@ export async function runLaunchpadDragTests() {
     assert(drag.dragFolderHoverState.value?.targetId === "folder-3", "moving target bounds should refresh the locked folder hover target");
     assert(calls.commitPages.length === 0, "locked folder hover should block desktop sorting while the target is still sticky");
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 83, button: 0, clientX: 232, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 83, button: 0, clientX: 232, clientY: 132 });
     assert(calls.insertAppIntoFolder.length === 1, "pointerup should prefer the locked folder target over moving visual bounds");
     assert(calls.insertAppIntoFolder[0].folderId === "folder-3", "locked folder drop should use the original folder id");
     iconBoundsRegistry.clearBounds();
@@ -1393,11 +1437,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(84, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(84, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 84, button: 0, clientX: 132, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 84, button: 0, clientX: 132, clientY: 132 });
     await nextTick();
     await nextTick();
 
@@ -1425,11 +1469,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(85, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(85, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 85, button: 0, clientX: 132, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 85, button: 0, clientX: 132, clientY: 132 });
     await nextTick();
     await nextTick();
 
@@ -1457,11 +1501,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(86, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(86, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 86, button: 0, clientX: 132, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 86, button: 0, clientX: 132, clientY: 132 });
     await nextTick();
     await nextTick();
 
@@ -1482,11 +1526,11 @@ export async function runLaunchpadDragTests() {
       getBoundingClientRect: () => ({ left: 10, top: 12, width: 64, height: 64 }),
     };
 
-    drag.beginDrag(makePointerDownEvent(87, target), app, { type: "page", pageIndex: 0, index: 0 });
+    drag.startDrag(makePointerDownEvent(87, target), app, { type: "page", pageIndex: 0, index: 0 });
     runNextTimer(timers);
     await nextTick();
 
-    listeners.get("pointerup")({ type: "pointerup", pointerId: 87, button: 0, clientX: 132, clientY: 132 });
+    drag.finishDrag({ type: "pointerup", pointerId: 87, button: 0, clientX: 132, clientY: 132 });
     await nextTick();
     await nextTick();
 

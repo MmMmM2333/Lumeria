@@ -233,6 +233,7 @@ body {
   gap: 8px;
   padding: 0 12px 0 0;
   cursor: grab;
+  touch-action: none;
   font-size: 13px;
   font-weight: 650;
   line-height: 1;
@@ -250,6 +251,7 @@ body {
   height: var(--window-chrome-safe-top, 24px);
   pointer-events: auto;
   cursor: grab;
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -726,6 +728,8 @@ body {
   max-height: none;
   margin: 0;
   pointer-events: auto;
+  touch-action: none;
+  user-select: none;
   z-index: 11;
 }
 
@@ -751,6 +755,8 @@ body {
   width: 100%;
   height: 100%;
   outline: none;
+  touch-action: none;
+  user-select: none;
 }
 
 .desktop-main:focus,
@@ -766,26 +772,39 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 0;
   padding: 10px 0 18px;
 }
 
 .page-dot {
-  width: 10px;
-  height: 10px;
+  position: relative;
+  width: 22px;
+  height: 44px;
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.28);
+  background: transparent;
   cursor: pointer;
+}
+
+.page-dot::before {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  content: "";
+  transform: translate(-50%, -50%);
   transition: background 160ms ease, transform 160ms ease;
 }
 
-.page-dot:hover { background: rgba(255, 255, 255, 0.5); }
-.page-dot-active {
+.page-dot:hover::before { background: rgba(255, 255, 255, 0.5); }
+.page-dot-active::before {
   background: rgba(255, 255, 255, 0.96);
-  transform: scale(1.02);
+  transform: translate(-50%, -50%) scale(1.02);
 }
 
 .icon-context-menu-layer {

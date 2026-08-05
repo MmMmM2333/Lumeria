@@ -44,6 +44,11 @@ export function runFolderLayerStateTests() {
       rect: { height: 0, left: 4, top: 5, width: 0 },
     },
     ui: {
+      iconGesturePresentation: {
+        phase: "armed",
+        scope: "folder:folder-1",
+        target: { id: "app-a", kind: "icon" },
+      },
       isEditMode: true,
       isTextlessMode: false,
       launchTargetStatusById: { "app-a": "ok" },
@@ -66,6 +71,7 @@ export function runFolderLayerStateTests() {
   assert(state.folderOpenProgress === 0.42, "folder open progress should be forwarded");
   assert(state.folderOpenProgressTarget === 1, "folder open progress target should be forwarded");
   assert(state.selectedIcon?.id === "app-a", "the explicit selection descriptor should be forwarded to the folder layer");
+  assert(state.iconGesturePresentation?.phase === "armed", "folder layer state should forward the shared icon gesture presentation");
   assert(state.completeFolderOpenIconGhost === callbacks.completeFolderOpenIconGhost, "callbacks should be forwarded");
   assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");

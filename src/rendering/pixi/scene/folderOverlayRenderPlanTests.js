@@ -37,6 +37,11 @@ export function runFolderOverlayRenderPlanTests() {
     getFolderPageRenderMode: (pageIndex) => pageIndex === 1 ? "empty" : "interactive",
     getVisibleFolderPage: (page) => page,
     iconSize: 56,
+    iconGesturePresentation: {
+      phase: "pressing",
+      scope: "folder:folder-1",
+      target: { id: appA.id, kind: "icon" },
+    },
     isEditMode: true,
     isFolderClosing: false,
     isIconOpening: (area, itemId) => area === "folder" && itemId === "app-a",
@@ -55,10 +60,12 @@ export function runFolderOverlayRenderPlanTests() {
   assert(entryA.key === "folder-1:0:app-a", "entry should expose the folder icon key");
   assert(entryA.x === 70 && entryA.y === 70, "entry should expose folder-local icon coordinates");
   assert(entryA.nodeState.draggable && entryA.nodeState.editing, "interactive entries should keep draggable edit state");
+  assert(entryA.nodeState.interactionPhase === "pressing", "the matching folder icon should receive the pressing phase");
   assert(entryA.nodeState.opening && entryA.nodeState.selected, "entry node state should preserve selected/opening lookups");
   assert(entryA.openingGhostInput?.controllerGhostKey === "open-a", "eligible opening entries should expose ghost input");
   assert(!entryA.closingGhostInput, "non-closing plans should not expose closing ghost input");
   assert(entryB.isActiveDraggedItem, "entries should expose active dragged state");
+  assert(entryB.nodeState.interactionPhase == null, "non-target folder icons should remain visually idle");
   assert(!entryB.openingGhostInput, "dragged entries should not create opening ghost input");
 
   const visualOpeningPlan = makeFolderOverlayRenderPlan({

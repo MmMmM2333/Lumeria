@@ -44,6 +44,7 @@ export function createFolderLayerState(groups, overrides = {}) {
     getVisibleFolderPage: callbacks.getVisibleFolderPage,
     height: Math.max(1, rect.height),
     iconSize: Number.parseFloat(folderPanelStyle["--folder-icon-size"]) || 64,
+    iconGesturePresentation: ui.iconGesturePresentation || null,
     isDesktopClosing: folder.desktopClosing === true,
     isEditMode: ui.isEditMode,
     isFolderAppLaunchClosing: folder.isAppLaunchClosing,

@@ -526,7 +526,7 @@ export async function runLaunchpadAppsTests() {
     const warningDialogs = [];
     const launchCriticalDirtyIds = [];
     let openedScanKeywordSettingsCount = 0;
-    let canceledLongPressCount = 0;
+    let canceledInputGestureCount = 0;
     let clearedSelectedIconCount = 0;
     const selectedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
     const apps = useLaunchpadApps({
@@ -535,7 +535,7 @@ export async function runLaunchpadAppsTests() {
         ...(sourcePages[0] || []).map((app) => ({ ...app })),
       ]],
       localizationText,
-      cancelLongPress: () => { canceledLongPressCount += 1; },
+      cancelInputGesture: () => { canceledInputGestureCount += 1; },
       cloneItem: (item) => (item ? { ...item } : item),
       clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
       clearSelectedIcon: () => {
@@ -691,7 +691,7 @@ export async function runLaunchpadAppsTests() {
     assert(!pages.value.flat().some((app) => app.id === "win-app-1"), "removing an app should remove it from the launchpad layout");
     assert(pages.value.flat().some((app) => app.id === "win-app-store"), "removing a classic app should not remove a scanned Windows app");
     assert(hiddenAppIds.value.includes("win-app-1"), "removing a catalog app should keep it hidden across native layout merges");
-    assert(canceledLongPressCount === 1, "removing an app should cancel pending long press state");
+    assert(canceledInputGestureCount === 1, "removing an app should cancel the active input gesture");
     assert(clearedSelectedIconCount === 1, "removing an app should clear a selection that referenced the removed icon");
 
     apps.openCreateManagedApp();

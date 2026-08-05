@@ -106,7 +106,7 @@ export function useLaunchpadPageCommands(options) {
     if (!folderId || options.isDragActive()) return;
     const folder = options.findFolder(options.pages.value, folderId);
     if (!folder) return;
-    options.cancelLongPress();
+    options.cancelInputGesture();
     const next = options.dissolveFolder(options.pages.value, folderId, options.pageSize.value);
     commitPages(next);
     if (options.selectedIcon?.value?.id === folderId) options.clearSelectedIcon?.();

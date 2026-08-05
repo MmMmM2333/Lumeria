@@ -116,8 +116,10 @@ function getIconMotionLabel(item, fallback = "Icon") {
   return item?.name || item?.title || item?.id || fallback;
 }
 
-const PRESSED_VISUAL_ALPHA = 0.58;
-const PRESS_SCALE_IMPULSE = -0.035;
+const PRESSING_VISUAL_ALPHA = 0.72;
+const ARMED_VISUAL_ALPHA = 0.92;
+const PRESSING_SCALE_IMPULSE = -0.03;
+const ARMED_SCALE_IMPULSE = 0.05;
 const RELEASE_SCALE_IMPULSE = 0.02;
 const FOLDER_HOVER_FRAME_DURATION = 0.18;
 const FOLDER_HOVER_RESET_DURATION = 0.16;
@@ -168,9 +170,8 @@ export class IconNode extends Container {
     this.stageWidth = 1;
     this.textless = false;
     this.isFolder = false;
-    this.clickIntent = null;
     this.openingScaleActive = null;
-    this.pressedPointerId = null;
+    this.interactionPhase = null;
     this.onAction = options.onAction || (() => {});
 
     this.selectionFrame = new Graphics();
@@ -258,9 +259,6 @@ export class IconNode extends Container {
     this.cursor = "pointer";
     this.hitArea = this.hitAreaRect;
     this.on("pointerdown", (event) => this.handlePointerDown(event));
-    this.on("pointerup", (event) => this.handlePointerUp(event));
-    this.on("pointerupoutside", () => this.cancelPressAndClickIntent());
-    this.on("pointercancel", () => this.cancelPressAndClickIntent());
     this.on("rightdown", (event) => this.handleContextMenu(event));
     this.describeMotionTargets();
   }
@@ -268,6 +266,7 @@ export class IconNode extends Container {
   setState(state) {
     state = { draggable: true, ...state };
     const wasGhosted = Boolean(this.state?.ghosted);
+    const wasFolder = this.isFolder;
     const shouldRestoreLabelAfterGhost = Boolean(this.state?.suppressLabelRevealAfterGhost || state.suppressLabelRevealAfterGhost);
     this.item = state.item;
     this.source = state.source;
@@ -277,19 +276,31 @@ export class IconNode extends Container {
     this.textless = Boolean(state.textless);
     this.isFolder = state.item?.type === "folder";
     this.state = state;
+    if (wasFolder !== this.isFolder) {
+      this.interactionPhase = null;
+      killMotionOf(this.visualWrap, "alpha");
+      killMotionOf(this.visualWrap.scale);
+      this.visualWrap.alpha = 1;
+      this.visualWrap.scale.set(1);
+    }
     this.describeMotionTargets(state);
     this.eventMode = state.interactive === false ? "none" : "static";
-    this.cursor = state.interactive === false ? "default" : "pointer";
     this.visible = !state.dragging && !state.ghosted;
     this.alpha = state.opening ? 0 : 1;
     this.updateOpeningScale(state);
-    if (state.dragging || state.ghosted || state.opening || state.interactive === false) this.setPressed(false, { immediate: true });
+    const suppressInteractionFeedback = Boolean(
+      state.dragging || state.ghosted || state.opening || state.interactive === false
+    );
     this.renderVisual(state);
     this.renderLabel(state);
     this.renderEditButtons(state);
     this.renderFrame(state);
     this.updateHitArea(state);
     this.updateJiggle(state);
+    this.setInteractionPhase(
+      suppressInteractionFeedback ? null : state.interactionPhase,
+      { immediate: suppressInteractionFeedback }
+    );
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
       this.resetFolderPreviewAfterGhost();
       if (this.folderHandoffLabelRevealInProgress) return;
@@ -448,53 +459,35 @@ export class IconNode extends Container {
       this.onAction(action, original, this.item, this.source, this);
       return;
     }
-    this.setPressed(true, { pointerId: original?.pointerId });
-    if (!this.state?.draggable) {
-      this.clickIntent = this.item?.type === "app"
-        ? { x: original.clientX ?? 0, y: original.clientY ?? 0, pointerId: original.pointerId }
-        : null;
-      original?.preventDefault?.();
-      return;
-    }
     this.onAction("pointerdown", original, this.item, this.source, this);
   }
 
-  handlePointerUp(event) {
-    this.setPressed(false);
-    if (this.state?.draggable || !this.clickIntent || this.item?.type !== "app") {
-      this.cancelClickIntent();
-      return;
-    }
-    const original = event?.nativeEvent || event;
-    if (this.clickIntent.pointerId != null && original?.pointerId != null && this.clickIntent.pointerId !== original.pointerId) return;
-    const distance = Math.hypot((original.clientX ?? 0) - this.clickIntent.x, (original.clientY ?? 0) - this.clickIntent.y);
-    this.cancelClickIntent();
-    if (distance > 8) return;
-    original?.preventDefault?.();
-    this.onAction("open", original, this.item, this.source, this);
-  }
-
-  cancelClickIntent() {
-    this.clickIntent = null;
-  }
-
-  cancelPressAndClickIntent() {
-    this.setPressed(false);
-    this.cancelClickIntent();
-  }
-
-  setPressed(pressed, options = {}) {
-    const nextAlpha = pressed ? PRESSED_VISUAL_ALPHA : 1;
-    const wasPressed = this.pressedPointerId != null;
-    if (pressed) this.pressedPointerId = options.pointerId ?? this.pressedPointerId;
-    else this.pressedPointerId = null;
+  setInteractionPhase(phase, options = {}) {
+    const nextPhase = phase === "pressing" || phase === "armed" ? phase : null;
+    const previousPhase = this.interactionPhase;
+    const nextAlpha = nextPhase === "pressing"
+      ? PRESSING_VISUAL_ALPHA
+      : nextPhase === "armed"
+        ? ARMED_VISUAL_ALPHA
+        : 1;
+    this.interactionPhase = nextPhase;
+    this.cursor = this.state?.interactive === false
+      ? "default"
+      : "pointer";
+    if (nextPhase === previousPhase && !options.immediate) return;
     killMotionOf(this.visualWrap, "alpha");
     if (options.immediate) {
       this.visualWrap.alpha = nextAlpha;
+      killMotionOf(this.visualWrap.scale);
+      this.visualWrap.scale.set(1);
       return;
     }
-    if (pressed !== wasPressed) {
-      const impulse = pressed ? PRESS_SCALE_IMPULSE : RELEASE_SCALE_IMPULSE;
+    const impulse = nextPhase === "pressing"
+      ? PRESSING_SCALE_IMPULSE
+      : nextPhase === "armed"
+        ? ARMED_SCALE_IMPULSE
+        : RELEASE_SCALE_IMPULSE;
+    if (previousPhase !== nextPhase) {
       motionAdd(this.visualWrap.scale, {
         spring: { damping: 32, mass: 0.8, restDelta: 0.001, restSpeed: 0.001, stiffness: 520 },
         x: impulse,
@@ -502,14 +495,13 @@ export class IconNode extends Container {
       });
     }
     motion(this.visualWrap)
-      .preset(pressed ? "press" : "release")
+      .preset(nextPhase === "pressing" ? "press" : "release")
       .interrupt("retarget")
       .to({ alpha: nextAlpha })
       .start();
   }
 
   handleContextMenu(event) {
-    this.setPressed(false);
     const original = event?.nativeEvent || event;
     if (this.item?.type !== "app" && this.item?.type !== "folder") return;
     original?.preventDefault?.();
@@ -601,7 +593,6 @@ export class IconNode extends Container {
     this.folderFlashSig = "";
     this.folderThumbFrameSig = "";
     this.folderThumb.scale.set(1);
-    this.visualWrap.scale.set(1);
     killMotionOf(this.folderHoverFrame);
     killMotionOf(this.folderThumb, "scale");
     for (const node of this.folderChildNodes) {
@@ -1231,7 +1222,7 @@ export class IconNode extends Container {
       }
     }
     if (sourceHidden) return;
-    this.setPressed(false, { immediate: true });
+    this.setInteractionPhase(null, { immediate: true });
     this.visualWrap.alpha = 1;
     killMotionOf(this.visualWrap.scale);
     this.visualWrap.scale.set(1);

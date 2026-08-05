@@ -1145,6 +1145,7 @@ export class FolderOverlayLayer extends Container {
       getFolderPageRenderMode: state.getFolderPageRenderMode,
       getVisibleFolderPage: state.getVisibleFolderPage,
       iconSize,
+      iconGesturePresentation: state.iconGesturePresentation,
       isClosing,
       isEditMode: state.isEditMode,
       isFolderClosing: state.isFolderClosing,
@@ -2396,6 +2397,7 @@ export class FolderOverlayLayer extends Container {
     this.pageDotsLayer.cursor = "default";
     this.pageDotsLayer.hitArea = new Rectangle(frame.left, frame.top, frame.width, frame.height);
     this.pageDotsLayerRevealKey = revealKey;
+    const pageDotPitch = FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP;
     const totalWidth = pageCount * FOLDER_PAGE_DOTS_SIZE + (pageCount - 1) * FOLDER_PAGE_DOTS_GAP;
     const startX = frame.left + frame.width / 2 - totalWidth / 2 + FOLDER_PAGE_DOTS_SIZE / 2;
     const centerY = frame.top + FOLDER_PAGE_DOTS_HIT_HEIGHT / 2;
@@ -2405,10 +2407,15 @@ export class FolderOverlayLayer extends Container {
       const isActive = index === activePageIndex;
       this.describePageDotTargets(dot, index, state, isActive);
       this.setPageDotHover(dot, isActive, false, { immediate: true });
-      dot.position.set(startX + index * (FOLDER_PAGE_DOTS_SIZE + FOLDER_PAGE_DOTS_GAP), centerY);
+      dot.position.set(startX + index * pageDotPitch, centerY);
       dot.eventMode = "static";
       dot.cursor = "pointer";
-      dot.hitArea = new Rectangle(-8, -8, FOLDER_PAGE_DOTS_SIZE + 16, FOLDER_PAGE_DOTS_SIZE + 16);
+      dot.hitArea = new Rectangle(
+        -pageDotPitch / 2,
+        -FOLDER_PAGE_DOTS_HIT_HEIGHT / 2,
+        pageDotPitch,
+        FOLDER_PAGE_DOTS_HIT_HEIGHT
+      );
       dot.on("pointerover", () => this.setPageDotHover(dot, isActive, true));
       dot.on("pointerout", () => this.setPageDotHover(dot, isActive, false));
       dot.on("pointerdown", (event) => {

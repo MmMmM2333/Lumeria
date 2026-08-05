@@ -132,7 +132,7 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
 
 export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver = null, lifecycle = null) {
   const {
-    cancelLongPress,
+    cancelInputGesture,
     cancelPreviewRaf,
     clearAltEditTimer,
     clearAppLaunchTimer,
@@ -156,7 +156,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
     clearPendingTarget,
     clearSettingsPanelCloseTimer,
     clearWarningDialogTimer,
-    detachDragListeners,
+    disposeInteractions,
     disconnectFolderViewportObserver,
     disposeSettingsPanelModel,
     handleAltKeyUp,
@@ -167,7 +167,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   } = options;
 
   if (lifecycle) lifecycle.active = false;
-  detachDragListeners();
+  disposeInteractions();
   cancelPreviewRaf();
   clearPendingTarget();
   clearDragRelease?.();
@@ -191,7 +191,7 @@ export function runLaunchpadBeforeUnmountEffects(options, layoutResizeObserver =
   if (flushNativeLayoutSave) flushNativeLayoutSave();
   else clearNativeSaveTimer();
   clearNativeEventListeners();
-  cancelLongPress();
+  cancelInputGesture();
   clearAltEditTimer();
   if (layoutResizeObserver) layoutResizeObserver.disconnect();
   disconnectFolderViewportObserver();

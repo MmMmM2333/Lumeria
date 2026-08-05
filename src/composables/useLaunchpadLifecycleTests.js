@@ -35,7 +35,7 @@ function createLifecycleOptions() {
       backgroundImagePath: ref(null),
       backgroundSource: ref("systemMaterial"),
       backgroundEffect: ref("dimmed"),
-      cancelLongPress: makeCall("cancelLongPress"),
+      cancelInputGesture: makeCall("cancelInputGesture"),
       cancelPreviewRaf: makeCall("cancelPreviewRaf"),
       clearAltEditTimer: makeCall("clearAltEditTimer"),
       clearAppLaunchTimer: makeCall("clearAppLaunchTimer"),
@@ -56,7 +56,7 @@ function createLifecycleOptions() {
       clearPendingTarget: makeCall("clearPendingTarget"),
       clearSettingsPanelCloseTimer: makeCall("clearSettingsPanelCloseTimer"),
       clearWarningDialogTimer: makeCall("clearWarningDialogTimer"),
-      detachDragListeners: makeCall("detachDragListeners"),
+      disposeInteractions: makeCall("disposeInteractions"),
       disconnectFolderViewportObserver: makeCall("disconnectFolderViewportObserver"),
       disposeSettingsPanelModel: makeCall("disposeSettingsPanelModel"),
       effectiveFolderIconSize: ref(64),
@@ -243,7 +243,7 @@ export async function runLaunchpadLifecycleTests() {
     runLaunchpadBeforeUnmountEffects(unmountOptions, layoutObserver);
     assert(
       calls.join(",") === [
-        "detachDragListeners",
+        "disposeInteractions",
         "cancelPreviewRaf",
         "clearPendingTarget",
         "clearPageTurn",
@@ -263,7 +263,7 @@ export async function runLaunchpadLifecycleTests() {
         "clearPageJumpRenderRange",
         "flushNativeLayoutSave",
         "clearNativeEventListeners",
-        "cancelLongPress",
+        "cancelInputGesture",
         "clearAltEditTimer",
         "disconnectLayoutResizeObserver",
         "disconnectFolderViewportObserver",

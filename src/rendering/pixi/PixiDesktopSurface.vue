@@ -121,6 +121,7 @@ const props = defineProps({
   gridCols: { type: Number, required: true },
   gridRows: { type: Number, required: true },
   iconSize: { type: Number, required: true },
+  iconGesturePresentation: { type: Object, default: null },
   iconBoundsRegistry: { type: Object, required: true },
   isEditMode: { type: Boolean, default: false },
   isDesktopClosing: { type: Boolean, default: false },
@@ -154,7 +155,6 @@ const emit = defineEmits([
   "drag-release-complete",
   "folder-create-release-complete",
   "internal-activity",
-  "open-app",
   "pointerdown-icon",
   "remove-app",
   "reset-app-icon",
@@ -485,6 +485,7 @@ function createSingleStageFolderState(
     },
     stage: { rect: renderGeometry.stageRect },
     ui: {
+      iconGesturePresentation: props.iconGesturePresentation,
       isEditMode: source.isEditMode?.value,
       isTextlessMode: source.isTextlessMode?.value,
       launchTargetStatusById: source.launchTargetStatusById?.value,
@@ -637,6 +638,7 @@ function renderPixi(options = {}) {
       gridRows: props.gridRows,
       height: renderGeometry.height,
       iconSize: props.iconSize,
+      iconGesturePresentation: props.iconGesturePresentation,
       isEditMode: props.isEditMode,
       folderSourceGhostedId: props.folderSourceGhostedId,
       folderSourceGhostedIds: props.folderSourceGhostedIds,
@@ -884,7 +886,6 @@ function scheduleFolderTexturePrewarm() {
 }
 
 function handleIconAction(action, event, item, source) {
-  if (action === "open") emit("open-app", item, source);
   if (action === "pointerdown") {
     if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
     emit("pointerdown-icon", event, item, source);
@@ -1183,6 +1184,7 @@ watchEffect(() => {
   void props.gridCols;
   void props.gridRows;
   void props.iconSize;
+  void props.iconGesturePresentation;
   void props.isEditMode;
   void props.isDesktopClosing;
   void props.folderSourceGhostedId;
@@ -1192,6 +1194,7 @@ watchEffect(() => {
   void props.isTextlessMode;
   void props.launchTargetStatusById;
   void props.pageGridMeasureStyle;
+  void props.pageTrackScrub;
   void props.folderPageSize;
   // Keyboard selection is a Pixi frame input; reading the descriptor here
   // makes each replacement invalidate the scene instead of hiding in a closure.

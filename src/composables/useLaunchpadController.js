@@ -26,9 +26,10 @@ import { useMainWindowRuntime } from "./useMainWindowRuntime.js";
 import { useLaunchpadNative } from "./useLaunchpadNative.js";
 import { useLaunchpadNotices } from "./useLaunchpadNotices.js";
 import { useLaunchpadPageCommands } from "./useLaunchpadPageCommands.js";
+import { useLaunchpadPageNavigation } from "./useLaunchpadPageNavigation.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
-import { useLaunchpadSurfaceInteractions } from "./useLaunchpadSurfaceInteractions.js";
+import { useLaunchpadInputGestures } from "./useLaunchpadInputGestures.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
@@ -649,7 +650,7 @@ export function useLaunchpadController(options = {}) {
     openApp,
     openDesktop,
   } = useLaunchpadLaunchFlow({
-    cancelLongPress: () => cancelLongPress(),
+    cancelInputGesture: () => cancelInputGesture(),
     clearSelectedIcon,
     clearOpeningIcon,
     clearFolderCloseIconGhosts,
@@ -800,7 +801,7 @@ export function useLaunchpadController(options = {}) {
     renameFolder,
   } = useLaunchpadPageCommands({
     assertNoDuplicateItemIds,
-    cancelLongPress: () => cancelLongPress(),
+    cancelInputGesture: () => cancelInputGesture(),
     clearSelectedIcon,
     chunkIntoPages,
     clonePages,
@@ -849,7 +850,7 @@ export function useLaunchpadController(options = {}) {
   const apps = useLaunchpadApps({
     appendAppsToPages,
     localizationText,
-    cancelLongPress: () => requireDragControls().cancelLongPress(),
+    cancelInputGesture: () => cancelInputGesture(),
     clearSelectedIcon,
     cloneItem,
     clonePages,
@@ -1083,7 +1084,6 @@ export function useLaunchpadController(options = {}) {
     commitFolderPageIndex,
     commitFolderSession,
     commitOpenFolder,
-    consumeFirstFolderOpenPrepare,
     commitPageIndex,
     commitPages,
     compactPages,
@@ -1117,7 +1117,6 @@ export function useLaunchpadController(options = {}) {
     isLaunchpadInteractionBlocked,
     isTextlessMode,
     makeId,
-    openApp,
     openFolderId,
     pageIndex,
     pageRefs,
@@ -1137,15 +1136,13 @@ export function useLaunchpadController(options = {}) {
     wouldTopLevelInsertOverflow,
   });
   const {
-    beginDrag,
-    cancelLongPress,
     cancelPreviewRaf,
     clearFolderPageTurn,
     clearDragRelease,
     clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
-    detachDragListeners,
+    disposeDrag,
     dragFolderHoverState,
     dragFolderTargetId,
     dragHitDebugState,
@@ -1202,9 +1199,29 @@ export function useLaunchpadController(options = {}) {
     );
   }
 
+  const pageNavigation = useLaunchpadPageNavigation({
+    commitPageIndex,
+    commitSearchPageIndex,
+    finishHomeRevealSettleWindow,
+    folderPageIndex,
+    folderPages,
+    isFolderAppLaunchClosing,
+    isFolderClosing,
+    isFolderZoomFadeClosing,
+    isHomeRevealSettling,
+    isSearchMode,
+    openFolderId,
+    pageIndex,
+    pages,
+    renderedFolder,
+    requestFolderPageTurn,
+    searchPageIndex,
+    searchPages,
+    selectFirstIconInCurrentScope,
+    visualFolderPageIndex,
+  });
   const {
     handleGlobalKeydown,
-    handleLaunchpadWheel,
   } = useLaunchpadKeyboard({
     closeTopmostModal: closeTopmostModalFromKeyboard,
     cancelAltEditMode,
@@ -1223,6 +1240,7 @@ export function useLaunchpadController(options = {}) {
     folderPanelRef,
     getCurrentIconScope,
     handleAltKeyDown,
+    hasFolderInteractionLayer: pageNavigation.hasFolderInteractionLayer,
     hideNativeWindowAfterCloseAnimation,
     isAltKeyEvent,
     isAppLaunching,
@@ -1253,19 +1271,25 @@ export function useLaunchpadController(options = {}) {
     selectedIcon,
     selectionMatchesScope,
     startFolderZoomFadeClose,
+    turnCurrentPage: pageNavigation.turnCurrentPage,
     visualFolderPageIndex,
   });
   const {
+    cancelInputGesture,
+    disposeInputGestures,
     folderPageTrackScrub,
     handleDesktopSurfacePointerDown,
     handleFolderPanelPointerDown,
     handleFolderOverlayPointerDown,
+    handleIconPointerDown,
+    handleLaunchpadWheel,
+    iconGesturePresentation,
     pageTrackScrub,
     setFolderPageRef,
     setPageRef,
-  } = useLaunchpadSurfaceInteractions({
-    closeDesktop,
+  } = useLaunchpadInputGestures({
     commitActivePageIndex,
+    dragControls,
     commitOpenFolder,
     activePageIndex,
     activePages,
@@ -1276,11 +1300,30 @@ export function useLaunchpadController(options = {}) {
     folderPageRefs,
     folderPanelRef,
     folderViewportRef,
-    hideNativeWindowAfterCloseAnimation,
-    isAppLaunching,
-    isDesktopOpen,
+    handleSurfaceTap: (target) => {
+      if (target?.action === "closeFolder") {
+        commitOpenFolder(null);
+        return;
+      }
+      if (target?.action === "closeDesktop") {
+        closeDesktop({ clearSearch: true });
+        hideNativeWindowAfterCloseAnimation();
+      }
+    },
+    isInteractionBlocked: () => !isDesktopOpen.value || isDragActive() || isAppLaunching.value,
     isSearchMode,
-    isDragActive,
+    openApp,
+    openFolder: (folder, event) => {
+      const commit = () => {
+        if (!isLaunchpadInteractionBlocked()) {
+          commitOpenFolder(folder.id, { originBounds: event?.folderOriginBounds });
+        }
+      };
+      if (consumeFirstFolderOpenPrepare?.()) globalThis.setTimeout(commit, 48);
+      else commit();
+    },
+    openIconContextMenu: options.openIconContextMenu,
+    prepareFolderOpen: requestFolderOpenWarmup,
     isFolderAppLaunchClosing,
     isFolderClosing,
     openFolderId,
@@ -1306,7 +1349,7 @@ export function useLaunchpadController(options = {}) {
     backgroundImageLayout,
     backgroundImagePath,
     backgroundSource,
-    cancelLongPress,
+    cancelInputGesture,
     cancelPreviewRaf,
     clearAltEditTimer,
     clearAppLaunchTimer,
@@ -1331,7 +1374,10 @@ export function useLaunchpadController(options = {}) {
     clearSettingsPanelCloseTimer,
     clearWarningDialogTimer,
     desktopMainRef,
-    detachDragListeners,
+    disposeInteractions: () => {
+      disposeDrag();
+      disposeInputGestures();
+    },
     disconnectFolderViewportObserver,
     disposeSettingsPanelModel,
     effectiveFolderIconSize,
@@ -1463,7 +1509,7 @@ export function useLaunchpadController(options = {}) {
   const desktopSurface = {
     activePageIndex,
     activePages,
-    beginDrag,
+    handleIconPointerDown,
     clearDragRelease,
     commitActivePageIndex,
     desktopMainRef,
@@ -1488,6 +1534,7 @@ export function useLaunchpadController(options = {}) {
     gridRows,
     handleDesktopSurfacePointerDown,
     iconBoundsRegistry,
+    iconGesturePresentation,
     iconSize,
     isEditMode,
     isHomeRevealSettling,
@@ -1703,7 +1750,7 @@ export function useLaunchpadController(options = {}) {
   const folderOverlay = {
     activePageIndex,
     activePages,
-    beginDrag,
+    handleIconPointerDown,
     commitFolderPageIndex,
     commitOpenFolder,
     completeFolderRenameRequest,

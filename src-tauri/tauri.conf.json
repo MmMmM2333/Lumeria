@@ -26,6 +26,7 @@
         "minWidth": 900,
         "minHeight": 620,
         "resizable": true,
+        "zoomHotkeysEnabled": false,
         "decorations": false,
         "transparent": true,
         "windowEffects": {

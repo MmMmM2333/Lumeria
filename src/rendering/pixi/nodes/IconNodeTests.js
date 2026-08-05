@@ -61,8 +61,29 @@ export async function runIconNodeTests() {
 
   const node = new IconNode();
   try {
+    const interactionNodeState = {
+      cellHeight: 80,
+      cellWidth: 80,
+      compact: false,
+      dragging: false,
+      draggable: true,
+      editing: false,
+      folderPreviewPageSize: 9,
+      ghosted: false,
+      hasCustomIcon: false,
+      iconSize: 64,
+      interactive: true,
+      item: { id: "app-interaction", name: "Interaction App", type: "app" },
+      opening: false,
+      removable: true,
+      selected: false,
+      source: { index: 0, pageIndex: 0, type: "page" },
+      stageHeight: 600,
+      stageWidth: 800,
+      textless: false,
+    };
     motionRuntime.reset();
-    node.setPressed(true, { pointerId: 1 });
+    node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
 
     let snapshot = motionRuntime.debugSnapshot();
     const pressScaleImpulses = snapshot.animations.filter((animation) => animation.lane === "additive");
@@ -71,15 +92,31 @@ export async function runIconNodeTests() {
     assert(pressScaleImpulses.some((animation) => animation.prop === "y"), "press should create an additive scale y impulse");
     assert(node.visualWrap.scale.x < 1 && node.visualWrap.scale.y < 1, "press additive impulse should shrink visual scale immediately");
     assert(snapshot.animations.some((animation) => animation.prop === "alpha" && animation.laneKey === "base"), "press should keep the existing alpha feedback animation");
+    const pressingAlphaTarget = snapshot.animations.find((animation) => animation.prop === "alpha" && animation.laneKey === "base")?.to;
+    assert(pressingAlphaTarget > 0.6 && pressingAlphaTarget < 1, "pressing feedback should remain visible while clearly acknowledging the press");
+    const pressingScale = node.visualWrap.scale.x;
 
-    node.setPressed(true, { pointerId: 1 });
+    node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
     snapshot = motionRuntime.debugSnapshot();
     const afterRepeatedPressCount = snapshot.animations.filter((animation) => animation.lane === "additive").length;
     assert(afterRepeatedPressCount === 2, "repeated press without state change should not add another scale impulse");
+    assert(node.visualWrap.scale.x < 1, "an unrelated render with the same pressing state should not reset its live scale feedback");
 
-    node.setPressed(false);
+    node.setState({ ...interactionNodeState, interactionPhase: "armed" });
     snapshot = motionRuntime.debugSnapshot();
-    assert(snapshot.animations.filter((animation) => animation.lane === "additive").length === 4, "release should stack a separate additive scale impulse");
+    const armedAlphaTarget = snapshot.animations.find((animation) => animation.prop === "alpha" && animation.laneKey === "base")?.to;
+    assert(node.cursor === "pointer", "armed feedback should keep the ordinary pointer cursor until dragging starts");
+    assert(armedAlphaTarget > pressingAlphaTarget, "armed feedback should lift the icon out of the darker pressing state");
+    assert(node.visualWrap.scale.x > pressingScale, "armed feedback should add a small upward scale impulse");
+
+    const armedImpulseCount = snapshot.animations.filter((animation) => animation.lane === "additive").length;
+    node.setState({ ...interactionNodeState, interactionPhase: null });
+    snapshot = motionRuntime.debugSnapshot();
+    assert(node.cursor === "pointer", "clearing the interaction should restore the ordinary pointer cursor");
+    assert(
+      snapshot.animations.filter((animation) => animation.lane === "additive").length === armedImpulseCount + 2,
+      "release should stack one restorative impulse per scale axis"
+    );
 
     motionRuntime.reset();
     node.updateJiggle({ editing: true, dragging: false, ghosted: false, jiggleSeed: 0 });
@@ -344,7 +381,12 @@ export async function runIconNodeTests() {
     node.item = { id: "app-meta", name: "App Meta", type: "app" };
     node.source = { index: 2, pageIndex: 1, type: "page" };
     node.describeMotionTargets({ item: node.item, source: node.source });
-    node.setPressed(true, { pointerId: 2 });
+    node.setState({
+      ...interactionNodeState,
+      interactionPhase: "pressing",
+      item: node.item,
+      source: node.source,
+    });
     snapshot = motionRuntime.debugReport({ includeTargets: true });
     assert(
       snapshot.targets.some((entry) => entry.sourceLabel === "desktop.icon.visualWrap" && entry.itemId === "app-meta"),

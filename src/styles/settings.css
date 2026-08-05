@@ -739,9 +739,11 @@
   gap: 16px;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 18px 20px 20px;
   scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
   scrollbar-width: thin;
+  touch-action: pan-y;
 }
 
 .settings-content > .settings-tab-panel {
@@ -2682,9 +2684,11 @@
   gap: 6px;
   max-height: 360px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 4px;
   scrollbar-color: rgba(255, 255, 255, 0.28) rgba(255, 255, 255, 0.06);
   scrollbar-width: thin;
+  touch-action: pan-y;
 }
 
 .excluded-app-list {

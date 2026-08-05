@@ -37,7 +37,7 @@ function createTimerWindow() {
 
 function createLaunchFlow(overrides = {}) {
   const calls = {
-    cancelLongPress: 0,
+    cancelInputGesture: 0,
     clearOpeningIcon: 0,
     clearFolderCloseIconGhosts: 0,
     clearFolderOpenIconGhosts: 0,
@@ -72,8 +72,8 @@ function createLaunchFlow(overrides = {}) {
   });
 
   const flow = useLaunchpadLaunchFlow({
-    cancelLongPress: () => {
-      calls.cancelLongPress += 1;
+    cancelInputGesture: () => {
+      calls.cancelInputGesture += 1;
     },
     clearOpeningIcon: () => {
       calls.clearOpeningIcon += 1;
@@ -170,7 +170,7 @@ export async function runLaunchpadLaunchFlowTests() {
     close.flow.closeDesktop({ clearSearch: true });
     assert(!close.flow.isDesktopOpen.value, "closing the desktop should mark it closed immediately");
     assert(close.flow.isDesktopClosing.value, "closing the desktop should enter the closing state immediately");
-    assert(close.calls.cancelLongPress === 1, "closing the desktop should cancel long press");
+    assert(close.calls.cancelInputGesture === 1, "closing the desktop should cancel the active input gesture");
     assert(close.calls.clearSelectedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");

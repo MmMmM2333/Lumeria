@@ -86,6 +86,22 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const appA = { id: "app-press-a", type: "app" };
+    const appB = { id: "app-press-b", type: "app" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[appA, appB]],
+      iconGesturePresentation: {
+        phase: "armed",
+        scope: "desktop",
+        target: { id: appB.id, kind: "icon" },
+      },
+    }));
+
+    assert(plan.entries[0].nodeState.interactionPhase == null, "non-target desktop icons should remain visually idle");
+    assert(plan.entries[1].nodeState.interactionPhase === "armed", "the matching desktop icon should receive the armed phase");
+  }
+
+  {
     const folder = { id: "folder-stale", type: "folder" };
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],

@@ -4,8 +4,7 @@
       <div
         class="window-chrome-drag-area"
         :aria-label="t('window.chrome.drag')"
-        @pointerdown.stop
-        @mousedown.left.stop="handleDragMouseDown"
+        @pointerdown.stop="handleDragPointerDown"
         @dblclick.left.stop="handleDragAreaDoubleClick"
       >
         <span class="window-chrome-title-icon" aria-hidden="true">L</span>
@@ -27,8 +26,7 @@
       v-else
       class="window-chrome-drag-strip"
       :aria-label="t('window.chrome.drag')"
-      @pointerdown.stop
-      @mousedown.left.stop="handleDragMouseDown"
+      @pointerdown.stop="handleDragPointerDown"
       @dblclick.left.stop="handleDragAreaDoubleClick"
     />
     <div
@@ -88,14 +86,15 @@ let windowMaximizedRefreshFrame = null;
 let windowMaximizedRefreshRequest = 0;
 
 function isPrimaryPointer(event) {
-  return event.button === 0;
+  return event.isPrimary !== false && event.button === 0;
 }
 
 function handleWindowChromeError(action, error) {
   console.error(`Failed to ${action} Lumeria window`, error);
 }
 
-function handleDragMouseDown(event) {
+function handleDragPointerDown(event) {
+  if (!isPrimaryPointer(event)) return;
   event.preventDefault();
   if (event.detail > 1) return;
   startWindowDrag().catch((error) => handleWindowChromeError("drag", error));

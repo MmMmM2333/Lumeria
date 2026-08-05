@@ -1,5 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
@@ -602,6 +603,11 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
+          interactionPhase: resolveIconInteractionPhase(state.iconGesturePresentation, {
+            interactive: isInteractivePage && !isFolderClosingHandoff,
+            itemId: item.id,
+            scope: state.isSearchMode ? "search" : "desktop",
+          }),
           interactive: isInteractivePage && !isFolderClosingHandoff,
           item,
           jiggleSeed: pageIndex * 100 + index,

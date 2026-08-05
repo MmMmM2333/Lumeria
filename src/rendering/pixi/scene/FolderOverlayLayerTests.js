@@ -143,13 +143,13 @@ export async function runFolderOverlayLayerTests() {
     panel: { height: 360, left: 180, top: 200, width: 800 },
   });
   assert(dotsFrame.left === 180 && dotsFrame.width === 800, "Pixi page dots should span the panel width");
-  assert(dotsFrame.top === 521, "Pixi page dots should sit in the lower panel padding below the grid");
-  assert(dotsFrame.height === 28, "Pixi page dots should keep a stable hit height");
+  assert(dotsFrame.top === 513, "Pixi page dots should sit in the lower panel padding below the grid");
+  assert(dotsFrame.height === 44, "Pixi page dots should expose a touch-sized hit height");
 
   const fallbackDotsFrame = getFolderPageDotsFrame({
     panel: { height: 360, left: 180, top: 200, width: 800 },
   });
-  assert(fallbackDotsFrame.top === 519, "Pixi page dots should have a panel-only fallback position");
+  assert(fallbackDotsFrame.top === 511, "Pixi page dots should have a panel-only fallback position");
   assert(getFolderPageDotVisualState().alpha === 0.28, "idle Pixi page dots should match the DOM idle alpha");
   assert(getFolderPageDotVisualState({ hovered: true }).alpha === 0.5, "hovered Pixi page dots should match the DOM hover alpha");
   const activeDot = getFolderPageDotVisualState({ active: true, hovered: true });
@@ -3226,6 +3226,14 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.pageDotsLayer.visible === true, "folder page dots should become visible once enabled");
     assert(layer.pageDotsLayer.children[0].alpha === getFolderPageDotVisualState({ active: false }).alpha, "committed page dot should render idle when visual page differs");
     assert(layer.pageDotsLayer.children[1].alpha === getFolderPageDotVisualState({ active: true }).alpha, "visual page dot should render active");
+    assert(
+      layer.pageDotsLayer.children[1].x - layer.pageDotsLayer.children[0].x === 22,
+      "folder page dots should keep the original 12px visual gap"
+    );
+    assert(
+      layer.pageDotsLayer.children[0].hitArea.width === 22 && layer.pageDotsLayer.children[0].hitArea.height === 44,
+      "folder page dot hit regions should preserve the 44px touch band without overlapping adjacent dots"
+    );
     assert(layer.pageDotsLayer.alpha === 0, "folder page dots should start their reveal from transparent");
     motionRuntime.step(0.04);
     assert(layer.pageDotsLayer.alpha > 0 && layer.pageDotsLayer.alpha < 1, "folder page dots should fade in after reveal starts");

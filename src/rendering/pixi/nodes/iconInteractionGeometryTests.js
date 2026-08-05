@@ -19,6 +19,9 @@ export function runIconInteractionGeometryTests() {
   assert(normalRect.left === -32 && normalRect.top === -46, "normal hit area should cover the visual icon");
   assert(normalRect.width === 64 && normalRect.height === 64, "normal hit area should match icon size");
 
+  const compactRect = getIconHitAreaRect({ iconSize: 32, visualOffsetY: 0 });
+  assert(compactRect.width === 44 && compactRect.height === 44, "small icons should retain a touch-sized interaction target");
+
   const editingAppRect = getIconHitAreaRect({ editing: true, iconSize: 64, itemType: "app", visualOffsetY: -14 });
   assert(editingAppRect.left === -44 && editingAppRect.top === -58, "editing app hit area should expand for edit buttons");
   assert(editingAppRect.width === 88 && editingAppRect.height === 88, "editing app hit area should include edit padding");
