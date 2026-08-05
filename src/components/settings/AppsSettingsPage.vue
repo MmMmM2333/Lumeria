@@ -325,7 +325,7 @@
                   <div v-if="state.scanKeywordBlacklist.value.length" class="scan-keyword-list">
                     <span v-for="(keyword, index) in state.scanKeywordBlacklist.value" :key="`${keyword}-${index}`" class="scan-keyword-chip">
                       <span>{{ keyword }}</span>
-                      <button type="button" :aria-label="t('settings.apps.filters.keywordRemove', { keyword })" @click="state.removeScanKeywordBlacklistItem(index)">
+                      <button class="scan-keyword-chip-remove" type="button" :aria-label="t('settings.apps.filters.keywordRemove', { keyword })" @click="state.removeScanKeywordBlacklistItem(index)">
                         <DismissIcon class="scan-keyword-chip-icon" />
                       </button>
                     </span>

@@ -106,7 +106,7 @@
   overflow: hidden;
 }
 
-.settings-panel[data-settings-theme="light"] {
+.settings-theme-scope[data-settings-theme="light"] {
   --settings-accent: var(--colorBrandForeground1);
   --settings-accent-muted: var(--colorBrandForeground1);
   --settings-accent-soft: var(--colorBrandBackground2);
@@ -126,8 +126,12 @@
   color-scheme: light;
 }
 
-.settings-panel[data-settings-theme="dark"] {
+.settings-theme-scope[data-settings-theme="dark"] {
   color-scheme: dark;
+}
+
+.launchpad-dialog-host {
+  display: contents;
 }
 
 .settings-panel input,
@@ -269,11 +273,22 @@
 }
 
 .settings-panel[data-settings-theme="light"] .scan-keyword-chip {
-  background: var(--colorNeutralBackground3);
+  border-color: var(--colorNeutralStroke2);
+  background: var(--colorNeutralBackground1);
 }
 
 .settings-panel[data-settings-theme="light"] .scan-keyword-chip-remove {
   background: var(--settings-row-hover-bg);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip-remove:hover {
+  color: var(--colorPaletteRedForeground1);
+  background: var(--colorPaletteRedBackground1);
+}
+
+.settings-panel[data-settings-theme="light"] .scan-keyword-chip-remove:active {
+  color: var(--colorPaletteRedForeground2);
+  background: var(--colorPaletteRedBackground2);
 }
 
 .settings-panel[data-settings-theme="light"] .scan-root-label::part(root) {
@@ -348,6 +363,61 @@
 
 .settings-panel[data-settings-theme="light"] .settings-about-version {
   color: var(--settings-text-muted);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-target {
+  color: var(--settings-text-muted);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .settings-text-input::part(root) {
+  border-color: var(--colorNeutralStroke1);
+  border-bottom-color: var(--colorNeutralStrokeAccessible);
+  background: var(--colorNeutralBackground3);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .settings-text-input:hover::part(root) {
+  border-color: var(--colorNeutralStroke1Hover);
+  border-bottom-color: var(--colorNeutralStrokeAccessibleHover);
+  background: var(--settings-row-hover-bg);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .settings-link-button {
+  color: var(--settings-text-secondary);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-item-selected,
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-item-selected:hover {
+  border-color: var(--settings-accent);
+  background: var(--settings-accent-soft);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-list {
+  scrollbar-color: var(--colorNeutralForeground4) transparent;
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-list::-webkit-scrollbar-thumb {
+  background: var(--colorNeutralForeground4);
+  background-clip: content-box;
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .app-manager-list::-webkit-scrollbar-thumb:hover {
+  background: var(--settings-text-muted);
+  background-clip: content-box;
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-icon {
+  color: var(--colorPaletteMarigoldForeground2);
+  background: var(--colorPaletteMarigoldBackground1);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-error .warning-dialog-icon {
+  color: var(--colorPaletteRedForeground1);
+  background: var(--colorPaletteRedBackground1);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-success .warning-dialog-icon {
+  color: var(--colorPaletteGreenForeground1);
+  background: var(--colorPaletteGreenBackground1);
 }
 
 .settings-panel-navigation-compact {
@@ -2281,6 +2351,7 @@
   max-width: 100%;
   min-height: 28px;
   padding: 4px 8px 4px 10px;
+  border: 1px solid transparent;
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.88);
   background: rgba(255, 255, 255, 0.1);
@@ -2309,6 +2380,11 @@
 .scan-keyword-chip button:active {
   color: #ff8f83;
   background: rgba(196, 43, 28, 0.24);
+}
+
+.scan-keyword-chip button:focus-visible {
+  outline: 2px solid var(--settings-accent);
+  outline-offset: 1px;
 }
 
 .scan-keyword-chip-icon {
@@ -2896,7 +2972,7 @@
   overflow: hidden;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border-strong);
-  background: rgb(31, 31, 31);
+  background: var(--settings-panel-bg);
   box-shadow: var(--shadow64, 0 32px 90px rgba(0, 0, 0, 0.42));
 }
 
@@ -3045,7 +3121,7 @@
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border-strong);
-  background: rgb(31, 31, 31);
+  background: var(--settings-panel-bg);
   box-shadow: var(--shadow64, 0 32px 90px rgba(0, 0, 0, 0.42));
 }
 
@@ -3148,7 +3224,7 @@
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border-strong);
-  background: rgba(31, 31, 31, 0.96);
+  background: var(--settings-panel-bg);
   box-shadow: var(--shadow64, 0 32px 90px rgba(0, 0, 0, 0.44));
   overflow: auto;
 }
@@ -3290,7 +3366,7 @@
   padding: 20px;
   border-radius: 8px;
   border: 1px solid var(--settings-row-border-strong);
-  background: rgb(31, 31, 31);
+  background: var(--settings-panel-bg);
   box-shadow: var(--shadow64, 0 32px 90px rgba(0, 0, 0, 0.42));
   transform-origin: center center;
   will-change: transform, opacity;

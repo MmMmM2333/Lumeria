@@ -1,7 +1,49 @@
 <template>
-  <ScanResultDialog ref="scanResultDialogRef" :model="state.scanResultModel" />
-  <ManagedAppEditorDialog ref="managedAppEditorDialogRef" :model="state.editorModel" />
-  <AppIconChooserDialog ref="appIconChooserDialogRef" :model="state.iconChooserModel" />
+  <div ref="dialogThemeHostRef" class="launchpad-dialog-host settings-theme-scope" :data-settings-theme="state.resolvedSettingsTheme.value">
+    <ScanResultDialog ref="scanResultDialogRef" :model="state.scanResultModel" />
+    <ManagedAppEditorDialog ref="managedAppEditorDialogRef" :model="state.editorModel" />
+    <AppIconChooserDialog ref="appIconChooserDialogRef" :model="state.iconChooserModel" />
+
+    <div
+      v-if="state.warningDialog.value"
+      key="warning-dialog-overlay"
+      ref="warningDialogOverlayRef"
+      :class="['warning-dialog-overlay', !state.isWarningDialogOpen.value && 'warning-dialog-overlay-closing']"
+      @wheel.stop
+      @pointerdown.self="state.closeWarningDialog"
+    >
+    <section
+      ref="warningDialogRef"
+      :class="['warning-dialog', `warning-dialog-${warningDialogIntent}`]"
+      role="alertdialog"
+      aria-modal="true"
+      :aria-label="state.warningDialog.value.title"
+      tabindex="-1"
+      @keydown="handleModalKeydown($event, warningDialogRef, state.closeWarningDialog)"
+    >
+      <div class="warning-dialog-icon">
+        <component :is="warningDialogIcon" class="warning-dialog-svg" />
+      </div>
+      <div class="warning-dialog-content">
+        <h2>{{ state.warningDialog.value.title }}</h2>
+        <p>{{ state.warningDialog.value.message }}</p>
+        <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">{{ t("dialogs.warning.suggestion", { suggestion: state.warningDialog.value.suggestion }) }}</p>
+      </div>
+      <footer class="warning-dialog-actions">
+        <SettingsFluentButton v-if="state.warningDialog.value.cancelText" appearance="outline" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</SettingsFluentButton>
+        <SettingsFluentButton
+          v-if="state.warningDialog.value.confirmText"
+          :appearance="warningConfirmAppearance"
+          :tone="warningConfirmTone"
+          type="button"
+          @click="state.confirmWarningDialog"
+        >
+          {{ state.warningDialog.value.confirmText }}
+        </SettingsFluentButton>
+      </footer>
+    </section>
+    </div>
+  </div>
 
   <div
     v-if="state.layoutRecoveryNotice.value || state.transientNotice.value"
@@ -56,50 +98,12 @@
       </div>
     </section>
   </div>
-
-  <div
-    v-if="state.warningDialog.value"
-    key="warning-dialog-overlay"
-    ref="warningDialogOverlayRef"
-    :class="['warning-dialog-overlay', !state.isWarningDialogOpen.value && 'warning-dialog-overlay-closing']"
-    @wheel.stop
-    @pointerdown.self="state.closeWarningDialog"
-  >
-    <section
-      ref="warningDialogRef"
-      :class="['warning-dialog', `warning-dialog-${warningDialogIntent}`]"
-      role="alertdialog"
-      aria-modal="true"
-      :aria-label="state.warningDialog.value.title"
-      tabindex="-1"
-      @keydown="handleModalKeydown($event, warningDialogRef, state.closeWarningDialog)"
-    >
-      <div class="warning-dialog-icon">
-        <component :is="warningDialogIcon" class="warning-dialog-svg" />
-      </div>
-      <div class="warning-dialog-content">
-        <h2>{{ state.warningDialog.value.title }}</h2>
-        <p>{{ state.warningDialog.value.message }}</p>
-        <p v-if="state.warningDialog.value.suggestion" class="warning-dialog-suggestion">{{ t("dialogs.warning.suggestion", { suggestion: state.warningDialog.value.suggestion }) }}</p>
-      </div>
-      <footer class="warning-dialog-actions">
-        <SettingsFluentButton v-if="state.warningDialog.value.cancelText" appearance="outline" type="button" @click="state.closeWarningDialog">{{ state.warningDialog.value.cancelText }}</SettingsFluentButton>
-        <SettingsFluentButton
-          v-if="state.warningDialog.value.confirmText"
-          :appearance="warningConfirmAppearance"
-          :tone="warningConfirmTone"
-          type="button"
-          @click="state.confirmWarningDialog"
-        >
-          {{ state.warningDialog.value.confirmText }}
-        </SettingsFluentButton>
-      </footer>
-    </section>
-  </div>
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
+import { setTheme } from "@fluentui/web-components";
+import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import CheckmarkCircleIcon from "~icons/fluent/checkmark-circle-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import ErrorCircleIcon from "~icons/fluent/error-circle-20-regular";
@@ -118,6 +122,7 @@ const props = defineProps({
 });
 const { t } = useLocalization();
 
+const dialogThemeHostRef = ref(null);
 const scanResultDialogRef = ref(null);
 const managedAppEditorDialogRef = ref(null);
 const appIconChooserDialogRef = ref(null);
@@ -131,6 +136,7 @@ const warningDialogMotion = useGsapDomMotion(warningDialogRef, {
   initial: { opacity: 0, scale: 0.96 },
   motion: resolveWarningDialogPanelMotion,
 });
+let themedDialogHost = null;
 
 const warningDialogIntent = computed(() => normalizeDialogIntent(props.state.warningDialog.value?.intent));
 const warningDialogIcon = computed(() => getNoticeIcon(warningDialogIntent.value));
@@ -163,6 +169,17 @@ watch(
     activeDialog.value?.focus();
   }
 );
+
+watch([dialogThemeHostRef, props.state.resolvedSettingsTheme], ([host, theme]) => {
+  if (themedDialogHost && themedDialogHost !== host) setTheme(null, themedDialogHost);
+  themedDialogHost = host;
+  if (host) setTheme(theme === "light" ? webLightTheme : webDarkTheme, host);
+}, { flush: "post" });
+
+onBeforeUnmount(() => {
+  if (themedDialogHost) setTheme(null, themedDialogHost);
+  themedDialogHost = null;
+});
 
 watch(
   () => props.state.isWarningDialogOpen.value,

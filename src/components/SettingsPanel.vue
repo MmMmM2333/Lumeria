@@ -9,7 +9,7 @@
   >
     <section
       ref="settingsPanelRef"
-      :class="cx('settings-panel select-none', isNavigationCompact && 'settings-panel-navigation-compact')"
+      :class="cx('settings-panel settings-theme-scope select-none', isNavigationCompact && 'settings-panel-navigation-compact')"
       :data-settings-theme="resolvedSettingsTheme"
       role="dialog"
       aria-modal="true"

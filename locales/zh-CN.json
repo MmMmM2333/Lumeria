@@ -1147,7 +1147,7 @@
         "theme": {
           "title": "设置界面",
           "mode": "主题",
-          "description": "选择设置面板使用的明暗外观",
+          "description": "选择启动台使用的外观",
           "system": "跟随系统",
           "light": "浅色",
           "dark": "深色"

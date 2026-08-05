@@ -1147,7 +1147,7 @@
         "theme": {
           "title": "Settings interface",
           "mode": "Theme",
-          "description": "Choose the appearance used by the settings panel",
+          "description": "Choose the appearance used by the launchpad",
           "system": "Use system",
           "light": "Light",
           "dark": "Dark"

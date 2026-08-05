@@ -85,4 +85,12 @@ export async function runLaunchpadControllerTests() {
     Array.isArray(controller.settingsPanelModel.pages.apps.excludedScanApps.value),
     "the Apps settings model should expose runtime excluded-app presentation data"
   );
+  assert(
+    controller.dialogs.resolvedSettingsTheme === controller.settingsPanelModel.shell.resolvedSettingsTheme,
+    "standalone dialogs should share the settings panel's resolved theme source"
+  );
+  assert(
+    controller.dialogs.resolvedSettingsTheme.value === "dark",
+    "standalone dialogs should preserve the existing dark default"
+  );
 }
