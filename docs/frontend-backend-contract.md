@@ -89,6 +89,7 @@ type ScanRoot = {
 type ScanAppsResult = {
   apps: AppCatalogItem[];
   excludedApps: AppCatalogItem[];
+  keywordExcludedApps: KeywordExcludedApp[];
   warnings: ScanWarning[];
   stats: {
     dirsVisited: number;
@@ -97,10 +98,16 @@ type ScanAppsResult = {
     startMenuOverlays: number;
     equivalentAppsMerged: number;
     unresolvedApps: number;
+    keywordExcludedApps: number;
     excludedApps: number;
     appsFound: number;
     limitReached: boolean;
   };
+};
+
+type KeywordExcludedApp = {
+  app: AppCatalogItem;
+  matchedKeyword: string;
 };
 
 type ScanWarning = {
@@ -112,6 +119,7 @@ type ScanWarning = {
 
 type ScanFilters = {
   keywordBlacklist: string[];
+  keywordAllowlist: string[];
   appBlacklist: ScanAppBlacklistItem[];
 };
 
@@ -135,6 +143,7 @@ type LaunchpadLayout = {
     textless: boolean;
     hiddenAppIds: string[];
     scanRoots: ScanRoot[];
+    scanKeywordAllowlist?: string[];
     scanKeywordBlacklist: string[];
     scanAppBlacklist: ScanAppBlacklistItem[];
     showMissingLaunchTargetBadge: boolean;
@@ -249,6 +258,24 @@ or truncated scans. The first-level `Startup` directory is omitted only for the
 two built-in Start Menu roots. When user and system Start Menu entries have the
 same normalized relative path, the user entry is primary and the system entry
 is retained as `shadowed` provenance instead of becoming a second app.
+
+`keywordBlacklist` performs case-insensitive substring matching against the
+logical app name only; source-relative and absolute paths are not matched.
+Matching happens after Start Menu overlay and semantic grouping, when the stable
+catalog id is available. `keywordAllowlist` contains catalog ids that bypass
+keyword matching, allowing the user to add a specific matched app without
+weakening the global keyword rule. Explicit `appBlacklist` entries take
+precedence over this allowlist.
+
+`stats.keywordExcludedApps` counts the grouped logical apps removed by keyword
+matching. `keywordExcludedApps` contains at most the first 200 of those apps for
+the scan-result UI. Each entry carries the complete `AppCatalogItem`, including
+its launch target and cached icon path when icon extraction succeeds, plus the
+first matched keyword. The stats count is authoritative; a larger count than
+the returned list means the list was truncated. Selecting one of these apps in
+the UI both adds it to the layout and persists its catalog id in
+`settings.scanKeywordAllowlist`; current writers always emit that setting while
+the native reader accepts older version-2 layouts that omit it as an empty list.
 
 After Start Menu overlay, the backend groups entries only when it can resolve an
 exact launch identity. That identity includes executable arguments and Windows

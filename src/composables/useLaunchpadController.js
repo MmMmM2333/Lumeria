@@ -143,6 +143,7 @@ export function useLaunchpadController(options = {}) {
     seedEnabled: !isNativeBridgeAvailable(),
   });
   let dragControls = null;
+  let openScanKeywordSettings = null;
   let settingsPanelModelDisposer = null;
 
   function requireDragControls() {
@@ -861,6 +862,12 @@ export function useLaunchpadController(options = {}) {
     makeId,
     markLaunchCriticalLayoutDirty: (appId) => markLaunchCriticalLayoutDirty(appId),
     openFolderId,
+    openScanKeywordSettings: () => {
+      if (typeof openScanKeywordSettings !== "function") {
+        throw new Error("Scan keyword settings navigation was used before controller wiring completed");
+      }
+      openScanKeywordSettings();
+    },
     openWarningDialog,
     pages,
     reclampPageIndices,
@@ -920,6 +927,7 @@ export function useLaunchpadController(options = {}) {
     hiddenAppIds,
     launchTargetStatusById,
     scanAppBlacklist,
+    scanKeywordAllowlist,
     scanKeywordBlacklist,
     scanRoots,
     showMissingLaunchTargetBadge,
@@ -1354,6 +1362,7 @@ export function useLaunchpadController(options = {}) {
     renderedFolder,
     rootRef,
     scanAppBlacklist,
+    scanKeywordAllowlist,
     scanKeywordBlacklist,
     scanRoots,
     scheduleFolderViewportMetrics,
@@ -1666,6 +1675,7 @@ export function useLaunchpadController(options = {}) {
     localizationText,
     systemAppearance,
   });
+  openScanKeywordSettings = settingsPanelModel.pages.apps.actions.openKeywordFilters;
   settingsPanelModelDisposer = settingsPanelModel.dispose;
 
   const dialogs = {

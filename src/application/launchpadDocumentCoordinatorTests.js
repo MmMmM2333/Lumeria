@@ -43,6 +43,7 @@ function createHarness() {
     isDragActive: () => false,
     makeId: layout.operations.makeId,
     openFolderId: ref(null),
+    openScanKeywordSettings: () => {},
     pages: layout.presentation.pages,
     reclampPageIndices: () => {},
     removeEverywhere: layout.operations.removeEverywhere,

@@ -939,6 +939,13 @@ fn saved_scan_config(
 fn saved_scan_filters(settings: &serde_json::Value) -> ScanFilters {
     let mut value = serde_json::Map::new();
     value.insert(
+        "keywordAllowlist".to_string(),
+        settings
+            .get("scanKeywordAllowlist")
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Array(Vec::new())),
+    );
+    value.insert(
         "keywordBlacklist".to_string(),
         settings
             .get("scanKeywordBlacklist")
@@ -1440,6 +1447,7 @@ mod tests {
                         "enabled": true
                     }
                 ],
+                "scanKeywordAllowlist": ["catalog-allowed"],
                 "scanKeywordBlacklist": ["uninstall"],
                 "scanAppBlacklist": [
                     {
@@ -1454,6 +1462,7 @@ mod tests {
 
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].id, "root");
+        assert_eq!(filters.keyword_allowlist, vec!["catalog-allowed"]);
         assert_eq!(filters.keyword_blacklist, vec!["uninstall"]);
         assert_eq!(filters.app_blacklist.len(), 1);
         assert_eq!(

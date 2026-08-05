@@ -280,7 +280,7 @@
       </div>
     </section>
 
-      <section class="settings-section settings-section-plain" :aria-label="t('settings.apps.filters.title')">
+      <section ref="keywordFiltersSectionRef" class="settings-section settings-section-plain" :aria-label="t('settings.apps.filters.title')">
         <div class="settings-section-header">
           <div>
             <h3>{{ t("settings.apps.filters.title") }}</h3>
@@ -310,6 +310,7 @@
                 <div class="settings-list-expand">
                   <div class="scan-keyword-editor">
                     <fluent-text-input
+                      ref="keywordInputRef"
                       class="settings-text-input scan-keyword-input"
                       name="newScanKeyword"
                       :placeholder="t('settings.apps.filters.keywordInput')"
@@ -472,6 +473,8 @@ const {
   isAppsDetailPage,
   isExcludedAppSelected,
   isExcludedAppsPage,
+  isKeywordBlacklistExpanded,
+  keywordFilterFocusRequest,
   selectedExcludedAppCount,
 } = props.model;
 const {
@@ -485,13 +488,13 @@ const {
   toggleExcludedAppSelection,
 } = props.model.actions;
 
-const isKeywordBlacklistExpanded = ref(false);
-
 const APP_MANAGER_ROW_HEIGHT = 64;
 const APP_MANAGER_ROW_GAP = 6;
 const APP_MANAGER_OVERSCAN = 6;
 
 const appManagerListRef = ref(null);
+const keywordFiltersSectionRef = ref(null);
+const keywordInputRef = ref(null);
 
 const appManagerVirtualizer = useVirtualizer({
   get count() {
@@ -533,5 +536,12 @@ watch(isAppManagerPage, async (active) => {
   appManagerVirtualizer.value.scrollToOffset(0);
   appManagerVirtualizer.value.measure();
 });
+
+watch(keywordFilterFocusRequest, async (request) => {
+  if (!request) return;
+  await nextTick();
+  keywordFiltersSectionRef.value?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  keywordInputRef.value?.focus?.({ preventScroll: true });
+}, { immediate: true, flush: "post" });
 
 </script>

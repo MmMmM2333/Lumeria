@@ -111,6 +111,9 @@ export async function runSettingsPanelModelTests() {
   model.shell.actions.selectTab("apps");
   model.pages.apps.actions.openAppManager();
   assert(model.shell.activeRoute.value.subPageId === "apps.appManager", "Apps should own navigation to its manager subpage");
+  model.pages.apps.actions.openKeywordFilters();
+  assert(model.shell.activeRoute.value.key === "apps/index", "keyword settings navigation should return to the Apps root");
+  assert(model.pages.apps.isKeywordBlacklistExpanded.value, "keyword settings navigation should expand the keyword editor");
   assert(model.shell.activePageModel.value === model.pages.apps, "the shell should expose only the selected page model");
   assert(
     model.pages.apps.filteredExcludedApps.value[0].app.iconUrl === "http://asset.localhost/blocked.png",

@@ -16,6 +16,7 @@ function makeScanStats(overrides = {}) {
     startMenuOverlays: 0,
     equivalentAppsMerged: 0,
     unresolvedApps: 0,
+    keywordExcludedApps: 0,
     excludedApps: 0,
     appsFound: 0,
     limitReached: false,
@@ -165,6 +166,7 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     isDragActive,
     makeId: () => "generated-app-id",
     openFolderId: ref(null),
+    openScanKeywordSettings: () => {},
     openWarningDialog: () => {},
     pages,
     reclampPageIndices: pageRange.reclampPageIndices,
@@ -189,6 +191,19 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
   assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
+
+  {
+    const { apps } = createManagedAppRemovalHarness([[]], 0);
+    assert(
+      apps.nativeIntegration.captureScanRequest().filters.keywordBlacklist.join(",") === "卸载,uninstall",
+      "a first-run scan should exclude uninstall entries by default"
+    );
+    apps.persistence.restore({ scanKeywordBlacklist: [] });
+    assert(
+      apps.nativeIntegration.captureScanRequest().filters.keywordBlacklist.length === 0,
+      "an explicitly empty saved keyword list should keep keyword exclusions disabled"
+    );
+  }
 
   {
     const { apps, pages } = createManagedAppRemovalHarness([[
@@ -480,11 +495,37 @@ export async function runLaunchpadAppsTests() {
       trackingKey: "launch:blocked",
       identityStatus: "exact",
       sources: [{ key: "scan-root:root:blocked.lnk", type: "customDirectory", state: "primary" }],
-    }], warnings: [], stats: makeScanStats({ physicalAppsFound: 3, excludedApps: 1, appsFound: 2 }) };
+    }], keywordExcludedApps: [{
+      app: {
+        id: "keyword-uninstall-native",
+        type: "app",
+        name: "Uninstall Native",
+        iconPath: "C:/Icons/uninstall-native.png",
+        emoji: "U",
+        launchTarget: { kind: "shortcut", path: "C:\\Tools\\Uninstall Native.lnk" },
+        trackingKey: "launch:keyword-uninstall-native",
+        identityStatus: "exact",
+        sources: [{ key: "scan-root:root:uninstall-native.lnk", type: "customDirectory", state: "primary" }],
+      },
+      matchedKeyword: "uninstall",
+    }, {
+      app: {
+        id: "keyword-blocked-uninstall",
+        type: "app",
+        name: "Blocked 卸载程序",
+        emoji: "B",
+        launchTarget: { kind: "appUserModelId", appUserModelId: "blocked.uninstall!app" },
+        trackingKey: "launch:keyword-blocked-uninstall",
+        identityStatus: "exact",
+        sources: [{ key: "windows-app:blocked.uninstall!app", type: "windowsAppCatalog", state: "primary" }],
+      },
+      matchedKeyword: "卸载",
+    }], warnings: [], stats: makeScanStats({ physicalAppsFound: 5, keywordExcludedApps: 2, excludedApps: 1, appsFound: 2 }) };
   }, async () => {
     const pages = shallowRef([[]]);
     const warningDialogs = [];
     const launchCriticalDirtyIds = [];
+    let openedScanKeywordSettingsCount = 0;
     let canceledLongPressCount = 0;
     let clearedSelectedIconCount = 0;
     const selectedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
@@ -514,6 +555,7 @@ export async function runLaunchpadAppsTests() {
       makeId: () => "generated-app-id",
       markLaunchCriticalLayoutDirty: (appId) => launchCriticalDirtyIds.push(appId),
       openFolderId: ref(null),
+      openScanKeywordSettings: () => { openedScanKeywordSettingsCount += 1; },
       openWarningDialog: (config) => warningDialogs.push(config),
       pages,
       reclampPageIndices: () => {},
@@ -575,6 +617,28 @@ export async function runLaunchpadAppsTests() {
     setAllScanRootsEnabled(true);
 
     await apps.rescanManagedApps();
+    assert(
+      apps.scanResultModel.stats.value.keywordExcludedApps === 2,
+      "scan results should expose keyword exclusion counts"
+    );
+    assert(
+      apps.scanResultModel.keywordExcludedApps.value.map((entry) => entry.app.name).join(",") === "Uninstall Native,Blocked 卸载程序",
+      "scan results should expose complete keyword-excluded apps"
+    );
+    assert(
+      apps.scanResultModel.keywordExcludedApps.value.map((entry) => apps.scanResultModel.getLaunchTargetPath(entry.app)).join("|")
+        === "C:\\Tools\\Uninstall Native.lnk|blocked.uninstall!app",
+      "scan results should expose keyword exclusion paths"
+    );
+    assert(
+      apps.scanResultModel.keywordExcludedApps.value[0].app.iconUrl === "http://asset.localhost/C:/Icons/uninstall-native.png",
+      "scan results should expose cached icons for keyword-excluded apps"
+    );
+    assert(apps.scanResultModel.activeTab.value === "available", "scan results should open on available apps when any can be added");
+    apps.scanResultModel.actions.selectTab("ignored");
+    assert(apps.scanResultModel.activeTab.value === "ignored", "scan results should let users inspect ignored entries");
+    apps.scanResultModel.actions.selectTab("unknown");
+    assert(apps.scanResultModel.activeTab.value === "ignored", "scan results should reject unknown tabs");
     const excludedApp = apps.presentation.excludedScanApps.value[0];
     assert(excludedApp.name === "Blocked Current Name", "excluded app rows should use current runtime catalog presentation");
     assert(excludedApp.iconUrl === "http://asset.localhost/C:/Icons/blocked.png", "excluded app rows should expose cached asset URLs");
@@ -602,6 +666,26 @@ export async function runLaunchpadAppsTests() {
     const editedWindowsApp = pages.value[0].find((app) => app.id === "win-app-store");
     assert(editedWindowsApp.launchTarget.kind === "appUserModelId", "editing a Windows app should preserve its launch target kind");
     assert(editedWindowsApp.launchTarget.appUserModelId === "windows.settings_123!App", "editing a Windows app should preserve its AppUserModelId");
+
+    await apps.rescanManagedApps();
+    assert(apps.scanResultModel.apps.value.length === 0, "rescanning should not offer apps that are already present");
+    assert(apps.scanResultModel.activeTab.value === "ignored", "scan results should open ignored entries when no apps can be added");
+    apps.scanResultModel.actions.manageKeywords();
+    assert(openedScanKeywordSettingsCount === 1, "scan results should open keyword settings through the owning navigation flow");
+    assert(!apps.scanResultModel.isOpen.value, "opening keyword settings should close scan results");
+
+    await apps.rescanManagedApps();
+    apps.scanResultModel.actions.toggleSelection("keyword-uninstall-native", true);
+    apps.scanResultModel.actions.addSelected();
+    assert(pages.value.flat().some((app) => app.id === "keyword-uninstall-native"), "selected keyword-excluded apps should be added to the launchpad");
+    assert(
+      apps.persistence.capture().scanKeywordAllowlist.join(",") === "keyword-uninstall-native",
+      "adding a keyword-excluded app should persist its stable catalog id as an exception"
+    );
+    assert(
+      apps.nativeIntegration.captureScanRequest().filters.keywordAllowlist.join(",") === "keyword-uninstall-native",
+      "future scans should send persisted keyword exceptions to the backend"
+    );
 
     apps.removeManagedAppFromLaunchpad("win-app-1");
     assert(!pages.value.flat().some((app) => app.id === "win-app-1"), "removing an app should remove it from the launchpad layout");
@@ -666,6 +750,7 @@ export async function runLaunchpadAppsTests() {
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
+        openScanKeywordSettings: () => {},
         openWarningDialog: () => {},
         pages,
         reclampPageIndices: () => {},
@@ -725,6 +810,7 @@ export async function runLaunchpadAppsTests() {
         isDragActive: () => false,
         makeId: () => "generated-app-id",
         openFolderId: ref(null),
+        openScanKeywordSettings: () => {},
         openWarningDialog: (config) => warningDialogs.push(config),
         pages,
         reclampPageIndices: () => {},

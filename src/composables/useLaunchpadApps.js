@@ -10,6 +10,7 @@ import {
   makeLaunchTarget,
   normalizeNativeApp,
   normalizeScanAppBlacklist,
+  normalizeScanKeywordAllowlist,
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
@@ -23,6 +24,8 @@ const CUSTOM_ICON_MIN_SOURCE_SIZE = 16;
 const CUSTOM_ICON_OUTPUT_MIN_SIZE = ICON_SIZE_MAX;
 const CUSTOM_ICON_OUTPUT_MAX_SIZE = ICON_SIZE_MAX * 2;
 const WINDOWS_APP_CATALOG_ROOT_TYPE = "windowsAppCatalog";
+const SCAN_RESULT_TAB_AVAILABLE = "available";
+const SCAN_RESULT_TAB_IGNORED = "ignored";
 
 export function getCustomIconCanvasSize(width, height) {
   const sourceMax = Math.max(Number(width) || 0, Number(height) || 0);
@@ -39,20 +42,27 @@ export function useLaunchpadApps(options) {
   if (typeof options.reclampPageIndices !== "function") {
     throw new TypeError("useLaunchpadApps requires reclampPageIndices");
   }
+  if (typeof options.openScanKeywordSettings !== "function") {
+    throw new TypeError("useLaunchpadApps requires openScanKeywordSettings");
+  }
   if (typeof t !== "function") {
     throw new TypeError("useLaunchpadApps requires localization text");
   }
 
   const appManagerSelectedIds = ref([]);
   const appManagerSearchQuery = ref("");
+  const scanResultActiveTab = ref(SCAN_RESULT_TAB_AVAILABLE);
   const isScanResultDialogOpen = ref(false);
   const scanResultApps = ref([]);
+  const scanResultKeywordExcludedApps = ref([]);
+  const scanResultStats = ref(null);
   const scanResultWarnings = ref([]);
   const scanResultSelectedIds = ref([]);
   const newScanKeyword = ref("");
   const hiddenAppIds = ref([]);
   const scanRoots = ref(createDefaultScanRoots(t));
-  const scanKeywordBlacklist = ref([]);
+  const scanKeywordBlacklist = ref([...DEFAULT_SCAN_KEYWORD_BLACKLIST]);
+  const scanKeywordAllowlist = ref([]);
   const scanAppBlacklist = ref([]);
   const excludedCatalogApps = ref([]);
   const showMissingLaunchTargetBadge = ref(true);
@@ -422,18 +432,39 @@ export function useLaunchpadApps(options) {
   }
 
   function selectAllScanResultApps() {
-    scanResultSelectedIds.value = scanResultApps.value.map((app) => app.id);
+    const selected = new Set(scanResultSelectedIds.value);
+    const activeIds = scanResultActiveTab.value === SCAN_RESULT_TAB_IGNORED
+      ? scanResultKeywordExcludedApps.value.map((entry) => entry.app.id)
+      : scanResultApps.value.map((app) => app.id);
+    activeIds.forEach((id) => selected.add(id));
+    scanResultSelectedIds.value = Array.from(selected);
   }
 
   function clearScanResultSelection() {
-    scanResultSelectedIds.value = [];
+    const activeIds = new Set(scanResultActiveTab.value === SCAN_RESULT_TAB_IGNORED
+      ? scanResultKeywordExcludedApps.value.map((entry) => entry.app.id)
+      : scanResultApps.value.map((app) => app.id));
+    scanResultSelectedIds.value = scanResultSelectedIds.value.filter((id) => !activeIds.has(id));
   }
 
   function closeScanResultDialog() {
+    scanResultActiveTab.value = SCAN_RESULT_TAB_AVAILABLE;
     isScanResultDialogOpen.value = false;
     scanResultApps.value = [];
+    scanResultKeywordExcludedApps.value = [];
+    scanResultStats.value = null;
     scanResultWarnings.value = [];
     scanResultSelectedIds.value = [];
+  }
+
+  function selectScanResultTab(tab) {
+    if (tab !== SCAN_RESULT_TAB_AVAILABLE && tab !== SCAN_RESULT_TAB_IGNORED) return;
+    scanResultActiveTab.value = tab;
+  }
+
+  function manageScanResultKeywords() {
+    closeScanResultDialog();
+    options.openScanKeywordSettings();
   }
 
   function resetManagedAppEditorDraft() {
@@ -956,6 +987,7 @@ export function useLaunchpadApps(options) {
       const enabledRoots = normalizeScanRoots(scanRoots.value).filter((root) => root.enabled);
       const scanFilters = {
         keywordBlacklist: normalizeScanKeywordBlacklist(scanKeywordBlacklist.value),
+        keywordAllowlist: normalizeScanKeywordAllowlist(scanKeywordAllowlist.value),
         appBlacklist: normalizeScanAppBlacklist(scanAppBlacklist.value),
       };
       const scanResult = await catalog.scan(enabledRoots, scanFilters);
@@ -974,7 +1006,18 @@ export function useLaunchpadApps(options) {
         ))
         .filter((app) => !isAppExcludedFromScan(app, scanFilters.appBlacklist))
         .filter((app) => !existingIds.has(app.id));
+      const keywordExcludedApps = (scanResult?.keywordExcludedApps || [])
+        .map((entry) => ({
+          app: applyCachedIconAssetUrlsToApp(normalizeNativeApp(entry.app), catalog.toAssetUrl),
+          matchedKeyword: entry.matchedKeyword,
+        }))
+        .filter((entry) => !existingIds.has(entry.app.id));
       scanResultApps.value = missingApps;
+      scanResultActiveTab.value = missingApps.length || !scanResult.stats.keywordExcludedApps
+        ? SCAN_RESULT_TAB_AVAILABLE
+        : SCAN_RESULT_TAB_IGNORED;
+      scanResultKeywordExcludedApps.value = keywordExcludedApps;
+      scanResultStats.value = scanResult.stats;
       scanResultWarnings.value = scanResult?.warnings || [];
       scanResultSelectedIds.value = missingApps.map((app) => app.id);
       isScanResultDialogOpen.value = true;
@@ -996,8 +1039,10 @@ export function useLaunchpadApps(options) {
     const selectedIds = new Set(scanResultSelectedIds.value);
     const existingApps = options.collectAppsFromPages(options.pages.value);
     const existingIds = new Set(existingApps.map((app) => app.id));
+    const keywordExcludedApps = scanResultKeywordExcludedApps.value.map((entry) => entry.app);
+    const selectableApps = [...scanResultApps.value, ...keywordExcludedApps];
     const admittedIds = new Set(
-      scanResultApps.value.filter((app) => selectedIds.has(app.id)).map((app) => app.id)
+      selectableApps.filter((app) => selectedIds.has(app.id)).map((app) => app.id)
     );
     const deferredIds = scanResultApps.value
       .filter((app) => !selectedIds.has(app.id))
@@ -1006,7 +1051,14 @@ export function useLaunchpadApps(options) {
       ...hiddenAppIds.value.filter((id) => !admittedIds.has(id)),
       ...deferredIds,
     ]));
-    const selectedApps = scanResultApps.value
+    const selectedKeywordExcludedIds = keywordExcludedApps
+      .filter((app) => selectedIds.has(app.id))
+      .map((app) => app.id);
+    scanKeywordAllowlist.value = normalizeScanKeywordAllowlist([
+      ...scanKeywordAllowlist.value,
+      ...selectedKeywordExcludedIds,
+    ]);
+    const selectedApps = selectableApps
       .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
     if (!selectedApps.length) {
       closeScanResultDialog();
@@ -1059,6 +1111,7 @@ export function useLaunchpadApps(options) {
       hiddenAppIds: [...hiddenAppIds.value],
       scanRoots: scanRoots.value.map((root) => ({ ...root })),
       scanKeywordBlacklist: [...scanKeywordBlacklist.value],
+      scanKeywordAllowlist: [...scanKeywordAllowlist.value],
       scanAppBlacklist: scanAppBlacklist.value.map((entry) => ({ ...entry })),
       showMissingLaunchTargetBadge: showMissingLaunchTargetBadge.value,
     };
@@ -1074,6 +1127,7 @@ export function useLaunchpadApps(options) {
     scanKeywordBlacklist.value = Array.isArray(fragment.scanKeywordBlacklist)
       ? normalizeScanKeywordBlacklist(fragment.scanKeywordBlacklist)
       : [...DEFAULT_SCAN_KEYWORD_BLACKLIST];
+    scanKeywordAllowlist.value = normalizeScanKeywordAllowlist(fragment.scanKeywordAllowlist);
     scanAppBlacklist.value = normalizeScanAppBlacklist(fragment.scanAppBlacklist);
     excludedCatalogApps.value = [];
     showMissingLaunchTargetBadge.value = fragment.showMissingLaunchTargetBadge !== false;
@@ -1152,6 +1206,7 @@ export function useLaunchpadApps(options) {
       roots: normalizeScanRoots(scanRoots.value).filter((root) => root.enabled),
       filters: {
         keywordBlacklist: normalizeScanKeywordBlacklist(scanKeywordBlacklist.value),
+        keywordAllowlist: normalizeScanKeywordAllowlist(scanKeywordAllowlist.value),
         appBlacklist: normalizeScanAppBlacklist(scanAppBlacklist.value),
       },
     };
@@ -1171,6 +1226,7 @@ export function useLaunchpadApps(options) {
       return {
         apps: [],
         excludedApps: [],
+        keywordExcludedApps: [],
         warnings: [],
         stats: {
           dirsVisited: 0,
@@ -1179,6 +1235,7 @@ export function useLaunchpadApps(options) {
           startMenuOverlays: 0,
           equivalentAppsMerged: 0,
           unresolvedApps: 0,
+          keywordExcludedApps: 0,
           excludedApps: 0,
           appsFound: 0,
           limitReached: false,
@@ -1196,6 +1253,7 @@ export function useLaunchpadApps(options) {
         .map((app) => normalizeNativeApp(app))
         .filter((app) => !isAppExcludedFromScan(app, request.filters.appBlacklist)),
       excludedApps: [...excludedCatalogApps.value],
+      keywordExcludedApps: result?.keywordExcludedApps || [],
       warnings: result?.warnings || [],
       stats: result?.stats || {},
     };
@@ -1242,17 +1300,22 @@ export function useLaunchpadApps(options) {
     }),
   });
   const scanResultModel = Object.freeze({
+    activeTab: readonly(scanResultActiveTab),
     apps: readonly(scanResultApps),
     canAdd: canAddScannedApps,
     isOpen: readonly(isScanResultDialogOpen),
+    keywordExcludedApps: readonly(scanResultKeywordExcludedApps),
     selectedCount: scanResultSelectedCount,
     selectedIds: readonly(scanResultSelectedIds),
+    stats: readonly(scanResultStats),
     warnings: readonly(scanResultWarnings),
     getLaunchTargetPath,
     actions: Object.freeze({
       addSelected: addSelectedScannedApps,
       clearSelection: clearScanResultSelection,
       close: closeScanResultDialog,
+      manageKeywords: manageScanResultKeywords,
+      selectTab: selectScanResultTab,
       selectAll: selectAllScanResultApps,
       toggleSelection: toggleScanResultSelection,
     }),
@@ -1262,6 +1325,7 @@ export function useLaunchpadApps(options) {
     hiddenAppIds: readonly(hiddenAppIds),
     launchTargetStatusById: readonly(launchTargetStatusById),
     scanAppBlacklist: readonly(scanAppBlacklist),
+    scanKeywordAllowlist: readonly(scanKeywordAllowlist),
     scanKeywordBlacklist: readonly(scanKeywordBlacklist),
     scanRoots: readonly(scanRoots),
     showMissingLaunchTargetBadge: readonly(showMissingLaunchTargetBadge),

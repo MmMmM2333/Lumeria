@@ -279,6 +279,9 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             .get("scanRoots")
             .ok_or_else(|| "layout settings.scanRoots must be an array".to_string())?,
     )?;
+    if let Some(value) = object.get("scanKeywordAllowlist") {
+        validate_string_array(value, "layout settings.scanKeywordAllowlist")?;
+    }
     validate_string_array(
         object
             .get("scanKeywordBlacklist")
@@ -935,6 +938,7 @@ mod tests {
                         "maxEntries": 5000
                     }
                 ],
+                "scanKeywordAllowlist": ["catalog-allowed"],
                 "scanKeywordBlacklist": ["卸载", "uninstall"],
                 "scanAppBlacklist": [
                     {
@@ -1160,6 +1164,38 @@ mod tests {
 
         assert!(error.contains("scanRoots"));
         assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_invalid_scan_keyword_allowlist() {
+        let dir = test_dir("invalid-scan-keyword-allowlist");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]["scanKeywordAllowlist"] = json!("catalog-allowed");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("scanKeywordAllowlist should be a string array");
+
+        assert!(error.contains("scanKeywordAllowlist"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_accepts_legacy_layout_without_scan_keyword_allowlist() {
+        let dir = test_dir("legacy-layout-without-scan-keyword-allowlist");
+        let path = dir.join("layout.json");
+        let mut legacy = valid_layout();
+        legacy["settings"]
+            .as_object_mut()
+            .expect("settings object")
+            .remove("scanKeywordAllowlist");
+
+        save_layout_to_path(&path, &legacy)
+            .expect("legacy layout without scanKeywordAllowlist should remain valid");
+
+        assert!(path.exists());
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 

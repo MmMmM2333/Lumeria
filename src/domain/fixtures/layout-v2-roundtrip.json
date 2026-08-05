@@ -111,6 +111,7 @@
       "uninstall",
       "卸载"
     ],
+    "scanKeywordAllowlist": [],
     "scanAppBlacklist": [
       {
         "catalogId": "catalog-blocked-tool",

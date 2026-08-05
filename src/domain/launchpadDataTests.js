@@ -8,6 +8,7 @@ import {
   makeScanAppExclusionEntry,
   normalizeNativeApp,
   normalizeScanAppBlacklist,
+  normalizeScanKeywordAllowlist,
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "./launchpadData.js";
@@ -67,6 +68,10 @@ export function runLaunchpadDataTests() {
   assert(makeLaunchTarget("C:/Tools/App.url").kind === "shortcut", "local .url targets should become shortcut launch targets");
   assert(makeLaunchTarget("C:/Tools/App.exe").kind === "executable", "local targets should become executable launch targets");
   assert(normalizeScanKeywordBlacklist([" uninstall ", "UNINSTALL", "", "卸载"]).join(",") === "uninstall,卸载", "scan keywords should be trimmed and deduplicated");
+  assert(
+    normalizeScanKeywordAllowlist([" catalog-app ", "CATALOG-APP", "", null]).join(",") === "catalog-app",
+    "scan keyword exceptions should normalize stable catalog ids"
+  );
   assert(normalizeScanRoots([]).length === 0, "empty scan roots should stay empty");
   const windowsAppRoot = DEFAULT_SCAN_ROOTS.find((root) => root.type === "windowsAppCatalog");
   assert(windowsAppRoot?.path === "shell:AppsFolder", "default scan roots should include the Windows app catalog");
@@ -196,6 +201,7 @@ export function runLaunchpadDataTests() {
     folderIconSize: 88,
     textless: true,
     hiddenAppIds: ["hidden"],
+    scanKeywordAllowlist: ["catalog-uninstall", "CATALOG-UNINSTALL"],
     backgroundBaseColor: "#ABC",
     backgroundBaseOpacity: 74,
     backgroundSource: "customImage",
@@ -225,6 +231,10 @@ export function runLaunchpadDataTests() {
   assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");
   assert(Array.isArray(snapshot.settings.scanRoots), "layout snapshots should include scan roots");
   assert(Array.isArray(snapshot.settings.scanKeywordBlacklist), "layout snapshots should include scan keyword blacklist");
+  assert(
+    snapshot.settings.scanKeywordAllowlist.join(",") === "catalog-uninstall",
+    "layout snapshots should include normalized keyword exceptions"
+  );
   assert(Array.isArray(snapshot.settings.scanAppBlacklist), "layout snapshots should include scan app blacklist");
   assert(snapshot.settings.showMissingLaunchTargetBadge === true, "layout snapshots should include missing target badge preference");
   assert(snapshot.settings.backgroundBaseColor === "#aabbcc", "layout snapshots should include normalized background base color");

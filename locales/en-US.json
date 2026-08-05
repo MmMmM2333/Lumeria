@@ -1035,10 +1035,21 @@
       },
       "scanResults": {
         "title": "Scan results",
-        "summary": "Found {found} apps that can be added · {selected} selected",
+        "summary": "{selected} selected",
         "partial": "Some folders were skipped because of permissions, links, or scan limits",
         "close": "Close scan results",
+        "tabs": {
+          "label": "Scan result categories",
+          "available": "Available {count}",
+          "ignored": "Ignored {count}"
+        },
         "available": "Apps available to add",
+        "ignoredIntro": "These apps are ignored because their names matched excluded keywords. Select and add one to save an exception for that app.",
+        "manageKeywords": "Manage keywords",
+        "ignoredList": "Scan entries ignored by keywords",
+        "matchedKeyword": "Matched: {keyword}",
+        "ignoredEmpty": "No entries were ignored by excluded keywords",
+        "ignoredTruncated": "Showing the first {shown} of {total} entries",
         "selectApp": "Select {name}",
         "targetMissing": "Launch path not set",
         "args": "Arguments: {args}",
@@ -1350,12 +1361,12 @@
         },
         "filters": {
           "title": "Scan filters",
-          "keywords": "Excluded keywords",
+          "keywords": "Excluded app-name keywords",
           "keywordCount": "{count} keywords",
-          "keywordInput": "Enter an excluded keyword",
-          "keywordAdd": "Add scan exclusion keyword",
+          "keywordInput": "Enter an app-name keyword",
+          "keywordAdd": "Add excluded app-name keyword",
           "keywordRemove": "Remove keyword {keyword}",
-          "keywordEmpty": "No excluded keywords",
+          "keywordEmpty": "No excluded app-name keywords",
           "appCount": "{count} apps"
         },
         "overview": {

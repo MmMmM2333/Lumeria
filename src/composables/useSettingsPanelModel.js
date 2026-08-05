@@ -786,6 +786,8 @@ function createSettingsPanelModel(options) {
 
   const excludedAppsSearchQuery = ref("");
   const selectedExcludedAppKeys = ref(new Set());
+  const isKeywordBlacklistExpanded = ref(false);
+  const keywordFilterFocusRequest = ref(0);
   const excludedAppsSearchTerm = computed(() => excludedAppsSearchQuery.value.trim().toLocaleLowerCase());
   const filteredExcludedApps = computed(() => {
     const term = excludedAppsSearchTerm.value;
@@ -799,6 +801,12 @@ function createSettingsPanelModel(options) {
   const isExcludedAppsPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGE_SPECS.appsExcludedApps.id);
   const isAppManagerPage = computed(() => activeSubPage.value?.id === SETTINGS_SUBPAGE_SPECS.appsAppManager.id);
   const isAppsDetailPage = computed(() => isExcludedAppsPage.value || isAppManagerPage.value);
+
+  function openKeywordFilters() {
+    updateRoute("apps", null);
+    isKeywordBlacklistExpanded.value = true;
+    keywordFilterFocusRequest.value += 1;
+  }
 
   function setExcludedAppsSearchQuery(value) {
     excludedAppsSearchQuery.value = value;
@@ -876,6 +884,8 @@ function createSettingsPanelModel(options) {
     isAppsDetailPage,
     isExcludedAppSelected,
     isExcludedAppsPage,
+    isKeywordBlacklistExpanded,
+    keywordFilterFocusRequest,
     selectedExcludedAppCount,
     selectedExcludedAppKeys,
     settingsSubPages,
@@ -885,6 +895,7 @@ function createSettingsPanelModel(options) {
       clearExcludedAppSelection,
       openAppManager: () => openSubPage(SETTINGS_SUBPAGE_SPECS.appsAppManager),
       openExcludedApps: () => openSubPage(SETTINGS_SUBPAGE_SPECS.appsExcludedApps),
+      openKeywordFilters,
       selectAllFilteredExcludedApps,
       setExcludedAppsSearchQuery,
       toggleExcludedAppSelection,

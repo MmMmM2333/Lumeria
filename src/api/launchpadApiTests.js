@@ -19,7 +19,7 @@ export async function runLaunchpadApiTests() {
   };
   let malformedStatsError = null;
   try {
-    normalizeScanAppsResult({ apps: [], excludedApps: [], warnings: [], stats: {} });
+    normalizeScanAppsResult({ apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: {} });
   } catch (error) {
     malformedStatsError = error;
   }
@@ -31,22 +31,75 @@ export async function runLaunchpadApiTests() {
     startMenuOverlays: 0,
     equivalentAppsMerged: 0,
     unresolvedApps: 0,
+    keywordExcludedApps: 0,
     excludedApps: 0,
     appsFound: 0,
     limitReached: false,
   };
+  const statsWithoutKeywordExclusions = { ...validStats };
+  delete statsWithoutKeywordExclusions.keywordExcludedApps;
+  let missingKeywordExclusionsError = null;
+  try {
+    normalizeScanAppsResult({ apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: statsWithoutKeywordExclusions });
+  } catch (error) {
+    missingKeywordExclusionsError = error;
+  }
+  assert(
+    missingKeywordExclusionsError instanceof TypeError,
+    "scan results should require keyword exclusion counts"
+  );
+  let missingKeywordExcludedAppsError = null;
+  try {
+    normalizeScanAppsResult({ apps: [], excludedApps: [], warnings: [], stats: validStats });
+  } catch (error) {
+    missingKeywordExcludedAppsError = error;
+  }
+  assert(
+    missingKeywordExcludedAppsError instanceof TypeError,
+    "scan results should require complete keyword-excluded apps"
+  );
   let missingExcludedAppsError = null;
   try {
-    normalizeScanAppsResult({ apps: [], warnings: [], stats: validStats });
+    normalizeScanAppsResult({ apps: [], keywordExcludedApps: [], warnings: [], stats: validStats });
   } catch (error) {
     missingExcludedAppsError = error;
   }
   assert(missingExcludedAppsError instanceof TypeError, "scan results should require runtime excluded-app presentation data");
   const excludedApps = [{ id: "catalog-blocked", name: "Blocked" }];
-  const normalizedResult = normalizeScanAppsResult({ apps: [], excludedApps, warnings: [], stats: validStats });
+  const normalizedResult = normalizeScanAppsResult({
+    apps: [],
+    excludedApps,
+    keywordExcludedApps: [{
+      app: {
+        id: "catalog-uninstall",
+        type: "app",
+        name: "Uninstall Example",
+        iconPath: "C:/Icons/uninstall.png",
+        launchTarget: { kind: "shortcut", path: "C:/Users/Example/Uninstall Example.lnk" },
+      },
+      matchedKeyword: "uninstall",
+      rootId: "root-system",
+      rootLabel: "System Start Menu",
+    }],
+    warnings: [],
+    stats: validStats,
+  });
   assert(
     normalizedResult.excludedApps === excludedApps,
     "complete scan results should preserve runtime excluded-app presentation data"
+  );
+  assert(
+    JSON.stringify(normalizedResult.keywordExcludedApps) === JSON.stringify([{
+      app: {
+        id: "catalog-uninstall",
+        type: "app",
+        name: "Uninstall Example",
+        iconPath: "C:/Icons/uninstall.png",
+        launchTarget: { kind: "shortcut", path: "C:/Users/Example/Uninstall Example.lnk" },
+      },
+      matchedKeyword: "uninstall",
+    }]),
+    "scan results should preserve complete keyword-excluded apps and their matched keyword"
   );
   assert(normalizedResult.stats === validStats, "complete scan stats should pass through unchanged");
 

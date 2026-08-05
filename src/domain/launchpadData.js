@@ -163,6 +163,18 @@ export function normalizeScanKeywordBlacklist(keywords) {
       if (!key || seen.has(key)) return false;
       seen.add(key);
       return true;
+      });
+}
+
+export function normalizeScanKeywordAllowlist(catalogIds) {
+  const seen = new Set();
+  return (Array.isArray(catalogIds) ? catalogIds : [])
+    .map((catalogId) => String(catalogId || "").trim())
+    .filter((catalogId) => {
+      const key = catalogId.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 }
 
@@ -536,6 +548,7 @@ export function createLaunchpadDataHelpers(options) {
         hiddenAppIds: state.hiddenAppIds,
         scanRoots: normalizeScanRoots(state.scanRoots),
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),
+        scanKeywordAllowlist: normalizeScanKeywordAllowlist(state.scanKeywordAllowlist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
         backgroundBaseColor,

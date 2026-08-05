@@ -62,6 +62,7 @@ function makeScanStats(overrides = {}) {
     startMenuOverlays: 0,
     equivalentAppsMerged: 0,
     unresolvedApps: 0,
+    keywordExcludedApps: 0,
     excludedApps: 0,
     appsFound: 0,
     limitReached: false,
@@ -75,6 +76,7 @@ function makeOptions(overrides = {}) {
     isSettingsPanelOpen: initialIsSettingsPanelOpen,
     pages: initialPages,
     scanAppBlacklist: initialScanAppBlacklist = [],
+    scanKeywordAllowlist: initialScanKeywordAllowlist = [],
     scanKeywordBlacklist: initialScanKeywordBlacklist = [],
     scanRoots: initialScanRoots = [{ id: "root", type: "customDirectory", label: "Root", path: "C:/Apps", enabled: true }],
     showMissingLaunchTargetBadge: initialShowMissingLaunchTargetBadge = true,
@@ -123,6 +125,7 @@ function makeOptions(overrides = {}) {
     isDragActive: () => false,
     makeId: layout.operations.makeId,
     openFolderId: ref(null),
+    openScanKeywordSettings: () => {},
     pages,
     reclampPageIndices: () => {},
     removeEverywhere: layout.operations.removeEverywhere,
@@ -173,6 +176,7 @@ function makeOptions(overrides = {}) {
   apps.persistence.restore({
     hiddenAppIds: initialHiddenAppIds,
     scanRoots: initialScanRoots,
+    scanKeywordAllowlist: initialScanKeywordAllowlist,
     scanKeywordBlacklist: initialScanKeywordBlacklist,
     scanAppBlacklist: initialScanAppBlacklist,
     showMissingLaunchTargetBadge: initialShowMissingLaunchTargetBadge,
@@ -274,7 +278,7 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         };
       }
       if (command === "scan_apps" && !bridgeOverrides.passScanAppsCommand) {
-        return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
+        return { apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats() };
       }
       return invoke(command, args);
     },
@@ -350,7 +354,7 @@ export async function runLaunchpadNativeTests() {
   const roundTripSaves = [];
   await withMockTauri(async (command, args) => {
     if (command === "load_layout") return structuredClone(layoutV2RoundTripFixture);
-    if (command === "scan_apps") return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
+    if (command === "scan_apps") return { apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       roundTripSaves.push(args.layout);
@@ -399,6 +403,7 @@ export async function runLaunchpadNativeTests() {
         removable: true,
       },
     ];
+    savedCatalogLayout.settings.scanKeywordAllowlist = ["catalog-refresh"];
     savedCatalogLayout.settings.scanKeywordBlacklist = ["saved-keyword"];
     savedCatalogLayout.settings.scanAppBlacklist = [];
     let savedCatalogScanCount = 0;
@@ -410,6 +415,10 @@ export async function runLaunchpadNativeTests() {
         assert(
           args.roots.length === 1 && args.roots[0].id === "saved-root",
           "saved catalog refresh should scan with roots restored from the saved document"
+        );
+        assert(
+          args.filters.keywordAllowlist.join(",") === "catalog-refresh",
+          "saved catalog refresh should scan with keyword exceptions restored from the saved document"
         );
         assert(
           args.filters.keywordBlacklist.join(",") === "saved-keyword",
@@ -425,6 +434,7 @@ export async function runLaunchpadNativeTests() {
             sources: [{ key: "saved", type: "customDirectory", state: "primary" }],
           }],
           excludedApps: [],
+          keywordExcludedApps: [],
           warnings: [],
           stats: makeScanStats({ appsFound: 1 }),
         };
@@ -462,6 +472,7 @@ export async function runLaunchpadNativeTests() {
           return {
             apps: [],
             excludedApps: [],
+            keywordExcludedApps: [],
             warnings: incompleteScanAttempts === 1
               ? [{
                 rootId: "saved-root",
@@ -557,7 +568,7 @@ export async function runLaunchpadNativeTests() {
           identityStatus: "exact",
           sources: [{ key: "blocked", type: "startMenuUser", state: "primary" }],
         },
-      ], excludedApps: [], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
+      ], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats({ appsFound: 2 }) };
     }
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
@@ -2249,7 +2260,7 @@ export async function runLaunchpadNativeTests() {
   let saveAttempts = 0;
   await withMockTauri(async (command) => {
     if (command === "load_layout") return null;
-    if (command === "scan_apps") return { apps: [], excludedApps: [], warnings: [], stats: makeScanStats() };
+    if (command === "scan_apps") return { apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats() };
     if (command === "check_launch_targets") return [];
     if (command === "save_layout") {
       saveAttempts += 1;

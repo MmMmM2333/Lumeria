@@ -1035,10 +1035,21 @@
       },
       "scanResults": {
         "title": "扫描结果",
-        "summary": "发现 {found} 个可添加应用 · 已选择 {selected} 个",
+        "summary": "已选择 {selected} 个",
         "partial": "部分目录因权限、链接或扫描限制被跳过",
         "close": "关闭扫描结果",
+        "tabs": {
+          "label": "扫描结果分类",
+          "available": "可添加 {count}",
+          "ignored": "已忽略 {count}"
+        },
         "available": "可添加应用",
+        "ignoredIntro": "这些应用因名称命中排除关键字而默认忽略；选中并添加后，将为该应用保存例外。",
+        "manageKeywords": "管理关键字",
+        "ignoredList": "因关键字被忽略的扫描条目",
+        "matchedKeyword": "匹配：{keyword}",
+        "ignoredEmpty": "没有因排除关键字而被忽略的条目",
+        "ignoredTruncated": "仅展示前 {shown} 条，共 {total} 条",
         "selectApp": "选择 {name}",
         "targetMissing": "未设置启动路径",
         "args": "参数：{args}",
@@ -1350,12 +1361,12 @@
         },
         "filters": {
           "title": "扫描过滤",
-          "keywords": "排除关键字",
+          "keywords": "应用名称排除关键字",
           "keywordCount": "{count} 个关键字",
-          "keywordInput": "输入排除关键字",
-          "keywordAdd": "新增扫描排除关键字",
+          "keywordInput": "输入应用名称关键字",
+          "keywordAdd": "新增应用名称排除关键字",
           "keywordRemove": "移除关键字 {keyword}",
-          "keywordEmpty": "没有排除关键字",
+          "keywordEmpty": "没有应用名称排除关键字",
           "appCount": "{count} 个应用"
         },
         "overview": {

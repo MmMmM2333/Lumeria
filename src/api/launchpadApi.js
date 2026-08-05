@@ -10,6 +10,7 @@ const SCAN_COUNT_STAT_FIELDS = [
   "startMenuOverlays",
   "equivalentAppsMerged",
   "unresolvedApps",
+  "keywordExcludedApps",
   "excludedApps",
   "appsFound",
 ];
@@ -67,8 +68,13 @@ export function normalizeScanAppsResult(result) {
   if (!result || typeof result !== "object" || Array.isArray(result)) {
     throw new TypeError("scan_apps must return a catalog result object");
   }
-  if (!Array.isArray(result.apps) || !Array.isArray(result.excludedApps) || !Array.isArray(result.warnings)) {
-    throw new TypeError("scan_apps result must include apps, excludedApps, and warnings arrays");
+  if (
+    !Array.isArray(result.apps)
+    || !Array.isArray(result.excludedApps)
+    || !Array.isArray(result.keywordExcludedApps)
+    || !Array.isArray(result.warnings)
+  ) {
+    throw new TypeError("scan_apps result must include apps, excludedApps, keywordExcludedApps, and warnings arrays");
   }
   if (!result.stats || typeof result.stats !== "object" || Array.isArray(result.stats)) {
     throw new TypeError("scan_apps result must include scan stats");
@@ -81,9 +87,23 @@ export function normalizeScanAppsResult(result) {
   if (typeof result.stats.limitReached !== "boolean") {
     throw new TypeError("scan_apps result stats.limitReached must be a boolean");
   }
+  const keywordExcludedApps = result.keywordExcludedApps.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError(`scan_apps result keywordExcludedApps[${index}] must be an object`);
+    }
+    if (!entry.app || typeof entry.app !== "object" || Array.isArray(entry.app)) {
+      throw new TypeError(`scan_apps result keywordExcludedApps[${index}].app must be an object`);
+    }
+    const matchedKeyword = String(entry.matchedKeyword || "").trim();
+    if (!matchedKeyword) {
+      throw new TypeError(`scan_apps result keywordExcludedApps[${index}].matchedKeyword must be a non-empty string`);
+    }
+    return { app: entry.app, matchedKeyword };
+  });
   return {
     apps: result.apps,
     excludedApps: result.excludedApps,
+    keywordExcludedApps,
     warnings: result.warnings,
     stats: result.stats,
   };

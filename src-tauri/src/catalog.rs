@@ -49,6 +49,8 @@ pub(crate) struct ScanFilters {
     #[serde(default)]
     pub(crate) keyword_blacklist: Vec<String>,
     #[serde(default)]
+    pub(crate) keyword_allowlist: Vec<String>,
+    #[serde(default)]
     pub(crate) app_blacklist: Vec<ScanAppBlacklistItem>,
 }
 
@@ -60,8 +62,14 @@ pub(crate) struct ScanAppBlacklistItem {
 }
 
 struct NormalizedScanFilters {
-    keyword_blacklist: Vec<String>,
+    keyword_blacklist: Vec<NormalizedKeyword>,
+    keyword_allowed_catalog_ids: HashSet<String>,
     blocked_catalog_ids: HashSet<String>,
+}
+
+struct NormalizedKeyword {
+    display: String,
+    matcher: String,
 }
 
 struct CatalogCandidate {
@@ -78,8 +86,16 @@ struct CatalogCandidate {
 pub(crate) struct ScanAppsResult {
     pub(crate) apps: Vec<AppCatalogItem>,
     pub(crate) excluded_apps: Vec<AppCatalogItem>,
+    pub(crate) keyword_excluded_apps: Vec<KeywordExcludedApp>,
     pub(crate) warnings: Vec<ScanWarning>,
     pub(crate) stats: ScanStats,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KeywordExcludedApp {
+    app: AppCatalogItem,
+    matched_keyword: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -100,6 +116,7 @@ pub(crate) struct ScanStats {
     start_menu_overlays: usize,
     equivalent_apps_merged: usize,
     unresolved_apps: usize,
+    keyword_excluded_apps: usize,
     excluded_apps: usize,
     apps_found: usize,
     limit_reached: bool,
@@ -115,6 +132,7 @@ const CUSTOM_DIRECTORY_MAX_DEPTH: usize = 3;
 const DEFAULT_MAX_ENTRIES: usize = 5_000;
 const MAX_CONFIGURED_DEPTH: usize = 32;
 const MAX_CONFIGURED_ENTRIES: usize = 50_000;
+const MAX_KEYWORD_EXCLUDED_APPS: usize = 200;
 #[cfg(target_os = "windows")]
 const FILE_ATTRIBUTE_REPARSE_POINT_VALUE: u32 = 0x400;
 
@@ -154,7 +172,6 @@ pub(crate) fn scan_apps_from_roots(
             collect_apps_from_windows_catalog(
                 root,
                 icon_dir,
-                &filters,
                 &mut apps,
                 &mut seen_app_user_model_ids,
                 &mut warnings,
@@ -174,7 +191,6 @@ pub(crate) fn scan_apps_from_roots(
             root,
             &root_path,
             &root_path,
-            &filters,
             &mut apps,
             &mut seen_paths,
             &mut visited_dirs,
@@ -197,14 +213,43 @@ pub(crate) fn scan_apps_from_roots(
         .iter()
         .filter(|app| app.identity_status == CatalogIdentityStatus::Unresolved)
         .count();
-    let (mut excluded_apps, mut apps): (Vec<_>, Vec<_>) = apps.into_iter().partition(|app| {
+    let (mut excluded_apps, apps): (Vec<_>, Vec<_>) = apps.into_iter().partition(|app| {
         filters
             .blocked_catalog_ids
             .contains(&normalize_match_text(&app.id))
     });
     stats.excluded_apps = excluded_apps.len();
+    let mut keyword_excluded_apps = Vec::new();
+    let mut included_apps = Vec::with_capacity(apps.len());
+    for app in apps {
+        let catalog_id = normalize_match_text(&app.id);
+        let is_allowed = filters.keyword_allowed_catalog_ids.contains(&catalog_id);
+        if !is_allowed {
+            if let Some(keyword) = matching_keyword(&app.name, &filters) {
+                keyword_excluded_apps.push(KeywordExcludedApp {
+                    app,
+                    matched_keyword: keyword.display.clone(),
+                });
+                continue;
+            }
+        }
+        included_apps.push(app);
+    }
+    let mut apps = included_apps;
+    stats.keyword_excluded_apps = keyword_excluded_apps.len();
     cache_catalog_icons(&mut apps, icon_dir);
     cache_catalog_icons(&mut excluded_apps, icon_dir);
+    keyword_excluded_apps.sort_by(|left, right| {
+        left.app
+            .name
+            .to_lowercase()
+            .cmp(&right.app.name.to_lowercase())
+            .then_with(|| left.app.id.cmp(&right.app.id))
+    });
+    keyword_excluded_apps.truncate(MAX_KEYWORD_EXCLUDED_APPS);
+    for excluded in &mut keyword_excluded_apps {
+        cache_catalog_icons(std::slice::from_mut(&mut excluded.app), icon_dir);
+    }
     apps.sort_by(|left, right| {
         left.name
             .to_lowercase()
@@ -221,6 +266,7 @@ pub(crate) fn scan_apps_from_roots(
     Ok(ScanAppsResult {
         apps,
         excluded_apps,
+        keyword_excluded_apps,
         warnings,
         stats,
     })
@@ -468,7 +514,6 @@ fn cache_catalog_icons(apps: &mut [AppCatalogItem], icon_dir: &Path) {
 fn collect_apps_from_windows_catalog(
     root: &ScanRoot,
     icon_dir: &Path,
-    filters: &NormalizedScanFilters,
     apps: &mut Vec<AppCatalogItem>,
     seen_app_user_model_ids: &mut HashSet<String>,
     warnings: &mut Vec<ScanWarning>,
@@ -510,10 +555,6 @@ fn collect_apps_from_windows_catalog(
         }
 
         let candidate = make_windows_app_candidate(entry.name.clone(), &entry.app_user_model_id);
-        if should_skip_candidate(&candidate, filters) {
-            continue;
-        }
-
         let cache_identity = entry
             .package_full_name
             .as_deref()
@@ -549,7 +590,6 @@ fn collect_apps_from_dir(
     root: &ScanRoot,
     root_dir: &Path,
     dir: &Path,
-    filters: &NormalizedScanFilters,
     apps: &mut Vec<AppCatalogItem>,
     seen_paths: &mut HashMap<String, ()>,
     visited_dirs: &mut HashSet<PathBuf>,
@@ -692,7 +732,6 @@ fn collect_apps_from_dir(
                 root,
                 root_dir,
                 &path,
-                filters,
                 apps,
                 seen_paths,
                 visited_dirs,
@@ -715,10 +754,6 @@ fn collect_apps_from_dir(
         }
 
         let candidate = make_catalog_candidate(root, root_dir, &path);
-        if should_skip_candidate(&candidate, filters) {
-            continue;
-        }
-
         apps.push(make_catalog_item(root, candidate));
     }
 
@@ -947,7 +982,10 @@ impl NormalizedScanFilters {
                 if normalized.is_empty() || !keyword_seen.insert(normalized.clone()) {
                     return None;
                 }
-                Some(normalized)
+                Some(NormalizedKeyword {
+                    display: keyword.trim().to_string(),
+                    matcher: normalized,
+                })
             })
             .collect();
 
@@ -959,32 +997,34 @@ impl NormalizedScanFilters {
             .filter(|value| !value.is_empty())
             .collect();
 
+        let keyword_allowed_catalog_ids = filters
+            .keyword_allowlist
+            .iter()
+            .map(|catalog_id| normalize_match_text(catalog_id))
+            .filter(|catalog_id| !catalog_id.is_empty())
+            .collect();
+
         Self {
             keyword_blacklist,
+            keyword_allowed_catalog_ids,
             blocked_catalog_ids,
         }
     }
 }
 
-fn should_skip_candidate(candidate: &CatalogCandidate, filters: &NormalizedScanFilters) -> bool {
-    matches_keyword_blacklist(candidate, filters)
-}
-
-fn matches_keyword_blacklist(
-    candidate: &CatalogCandidate,
-    filters: &NormalizedScanFilters,
-) -> bool {
+fn matching_keyword<'a>(
+    app_name: &str,
+    filters: &'a NormalizedScanFilters,
+) -> Option<&'a NormalizedKeyword> {
     if filters.keyword_blacklist.is_empty() {
-        return false;
+        return None;
     }
 
-    let name = normalize_match_text(&candidate.name);
-    let relative_path = normalize_path_key(&candidate.relative_path);
-    let absolute_path = normalize_path_key(&candidate.path_string);
-
-    filters.keyword_blacklist.iter().any(|keyword| {
-        name.contains(keyword) || relative_path.contains(keyword) || absolute_path.contains(keyword)
-    })
+    let name = normalize_match_text(app_name);
+    filters
+        .keyword_blacklist
+        .iter()
+        .find(|keyword| name.contains(&keyword.matcher))
 }
 
 #[cfg(target_os = "windows")]
@@ -1067,47 +1107,140 @@ mod tests {
         }
     }
 
-    fn test_candidate(name: &str, path: &str, relative_path: &str) -> CatalogCandidate {
-        CatalogCandidate {
-            id: "app".to_string(),
-            name: name.to_string(),
-            kind: "shortcut".to_string(),
-            path_string: path.to_string(),
-            relative_path: relative_path.to_string(),
-            source_key: format!(
-                "scan-root:root:{}",
-                normalize_source_relative_path(relative_path)
-            ),
-        }
-    }
-
     #[test]
-    fn scan_filters_match_keywords_before_icon_extraction() {
+    fn scan_filters_match_app_names_case_insensitively() {
         let filters = NormalizedScanFilters::from(&ScanFilters {
             keyword_blacklist: vec!["卸载".to_string(), "UNINSTALL".to_string()],
+            keyword_allowlist: Vec::new(),
             app_blacklist: Vec::new(),
         });
 
-        assert!(should_skip_candidate(
-            &test_candidate(
-                "卸载 Example",
-                r"C:\Apps\Example\Uninstall.lnk",
-                "Example/Uninstall.lnk"
-            ),
-            &filters
+        assert!(matching_keyword("卸载 Example", &filters).is_some());
+        assert!(matching_keyword("Example", &filters).is_none());
+        assert!(matching_keyword("Example", &filters).is_none());
+    }
+
+    #[test]
+    fn scan_keyword_filters_match_app_names_without_filtering_parent_paths() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-keyword-name-only-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
         ));
-        assert!(should_skip_candidate(
-            &test_candidate(
-                "Example",
-                r"C:\Apps\Example\uninstall helper.lnk",
-                "Example/uninstall helper.lnk"
-            ),
-            &filters
+        let scan_root = base.join("uninstall-tools");
+        fs::create_dir_all(&scan_root).expect("create scan directory");
+        fs::write(scan_root.join("Example.exe"), []).expect("create included app");
+        fs::write(scan_root.join("Uninstall Example.exe"), []).expect("create excluded app");
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root-custom".to_string(),
+            root_type: AppSourceType::CustomDirectory,
+            label: "Custom".to_string(),
+            path: scan_root.to_string_lossy().to_string(),
+            enabled: true,
+            max_depth: None,
+            max_entries: None,
+        };
+
+        let result = scan_apps_from_roots(
+            &[root],
+            &icon_dir,
+            &ScanFilters {
+                keyword_blacklist: vec!["UnInstall".to_string()],
+                keyword_allowlist: Vec::new(),
+                app_blacklist: Vec::new(),
+            },
+        )
+        .expect("scan should complete");
+
+        assert_eq!(result.apps.len(), 1);
+        assert_eq!(result.apps[0].name, "Example");
+        assert_eq!(result.stats.keyword_excluded_apps, 1);
+        assert_eq!(result.keyword_excluded_apps.len(), 1);
+        assert_eq!(
+            result.keyword_excluded_apps[0].app.name,
+            "Uninstall Example"
+        );
+        assert_eq!(result.keyword_excluded_apps[0].matched_keyword, "UnInstall");
+        assert_eq!(
+            result.keyword_excluded_apps[0].app.launch_target.path,
+            Some(windows_api_path(&scan_root.join("Uninstall Example.exe")))
+        );
+        assert_eq!(
+            result.keyword_excluded_apps[0].app.emoji.as_deref(),
+            Some("U")
+        );
+
+        let allowed_id = result.keyword_excluded_apps[0].app.id.clone();
+        let allowed = scan_apps_from_roots(
+            &[ScanRoot {
+                id: "root-custom".to_string(),
+                root_type: AppSourceType::CustomDirectory,
+                label: "Custom".to_string(),
+                path: scan_root.to_string_lossy().to_string(),
+                enabled: true,
+                max_depth: None,
+                max_entries: None,
+            }],
+            &icon_dir,
+            &ScanFilters {
+                keyword_blacklist: vec!["uninstall".to_string()],
+                keyword_allowlist: vec![allowed_id.clone()],
+                app_blacklist: Vec::new(),
+            },
+        )
+        .expect("allowlisted scan should complete");
+        assert_eq!(allowed.apps.len(), 2);
+        assert!(allowed.apps.iter().any(|app| app.id == allowed_id));
+        assert!(allowed.keyword_excluded_apps.is_empty());
+        assert_eq!(allowed.stats.keyword_excluded_apps, 0);
+        fs::remove_dir_all(base).expect("remove test directory");
+    }
+
+    #[test]
+    fn scan_keyword_excluded_apps_are_bounded_without_losing_the_total() {
+        let base = env::temp_dir().join(format!(
+            "lumeria-keyword-preview-limit-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time")
+                .as_nanos()
         ));
-        assert!(!should_skip_candidate(
-            &test_candidate("Example", r"C:\Apps\Example\App.lnk", "Example/App.lnk"),
-            &filters
-        ));
+        let scan_root = base.join("apps");
+        fs::create_dir_all(&scan_root).expect("create scan directory");
+        for index in 0..201 {
+            fs::write(scan_root.join(format!("Uninstall App {index}.exe")), [])
+                .expect("create excluded app");
+        }
+        let icon_dir = base.join("icons");
+        fs::create_dir_all(&icon_dir).expect("create icon directory");
+        let root = ScanRoot {
+            id: "root-custom".to_string(),
+            root_type: AppSourceType::CustomDirectory,
+            label: "Custom".to_string(),
+            path: scan_root.to_string_lossy().to_string(),
+            enabled: true,
+            max_depth: None,
+            max_entries: None,
+        };
+
+        let result = scan_apps_from_roots(
+            &[root],
+            &icon_dir,
+            &ScanFilters {
+                keyword_blacklist: vec!["uninstall".to_string()],
+                keyword_allowlist: Vec::new(),
+                app_blacklist: Vec::new(),
+            },
+        )
+        .expect("scan should complete");
+
+        assert_eq!(result.stats.keyword_excluded_apps, 201);
+        assert_eq!(result.keyword_excluded_apps.len(), 200);
+        fs::remove_dir_all(base).expect("remove test directory");
     }
 
     #[test]
@@ -1472,7 +1605,8 @@ mod tests {
             &roots,
             &icon_dir,
             &ScanFilters {
-                keyword_blacklist: Vec::new(),
+                keyword_blacklist: vec!["steam".to_string()],
+                keyword_allowlist: vec![catalog_id.clone()],
                 app_blacklist: vec![ScanAppBlacklistItem {
                     catalog_id: Some(catalog_id),
                 }],
@@ -1484,6 +1618,7 @@ mod tests {
         assert_eq!(excluded.excluded_apps.len(), 1);
         assert_eq!(excluded.excluded_apps[0].id, first.apps[0].id);
         assert_eq!(excluded.excluded_apps[0].sources.len(), 2);
+        assert!(excluded.keyword_excluded_apps.is_empty());
         fs::remove_dir_all(base).expect("remove test directory");
     }
 

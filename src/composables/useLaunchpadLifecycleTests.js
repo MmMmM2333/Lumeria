@@ -87,6 +87,9 @@ function createLifecycleOptions() {
         return Promise.resolve();
       },
       renderedFolder: ref(null),
+      scanAppBlacklist: ref([]),
+      scanKeywordAllowlist: ref([]),
+      scanKeywordBlacklist: ref([]),
       scanRoots: ref([]),
       scheduleFolderViewportMetrics: makeCall("scheduleFolderViewportMetrics"),
       scheduleLaunchTargetStatusCheck: makeCall("scheduleLaunchTargetStatusCheck"),
@@ -155,6 +158,7 @@ export async function runLaunchpadLifecycleTests() {
   assert(watchers[4].source.includes(options.showCustomTitlebar), "layout save watcher should track custom titlebar visibility");
   assert(watchers[4].source.includes(options.settingsThemePreference), "layout save watcher should track the settings theme preference");
   assert(watchers[4].source.includes(options.launchpadIconVariant), "layout save watcher should track the launchpad icon variant");
+  assert(watchers[4].source.includes(options.scanKeywordAllowlist), "layout save watcher should track keyword exceptions");
   assert(watchers[5].callback === options.scheduleLaunchTargetStatusCheck, "launch target watcher should refresh path status");
   assert(watchers[6].callback === options.syncManagedAppState, "managed app watcher should sync app state");
   assert(watchers[7].callback === options.syncWindowsWallpaperRefreshTimer, "wallpaper source watcher should sync the wallpaper refresh timer");
