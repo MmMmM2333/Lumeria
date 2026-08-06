@@ -36,7 +36,9 @@
           </span>
         </span>
       </label>
-      <button v-if="isSearchMode" class="search-clear-button" type="button" :aria-label="t('launchpad.search.clear')" @click="$emit('clear-search')">×</button>
+      <button v-if="isSearchMode" class="search-clear-button" type="button" :aria-label="t('launchpad.search.clear')" @click="$emit('clear-search')">
+        <DismissIcon class="search-clear-icon" />
+      </button>
     </div>
 
     <button class="settings-button" type="button" :disabled="dragDisabled" :aria-label="t('launchpad.openSettings')" @click="$emit('open-settings', $event)">
@@ -48,6 +50,7 @@
 
 <script setup>
 import { computed, ref } from "vue";
+import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { SearchIcon, SettingsIcon } from "./Icons.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { useLocalization } from "../i18n/localization.js";

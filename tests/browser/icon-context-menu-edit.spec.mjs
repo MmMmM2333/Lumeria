@@ -478,38 +478,60 @@ test("the Pixi canvas suppresses the browser's native context menu", async ({ pa
   });
 });
 
-test("launchpad chrome suppresses native context menus outside editable fields", async ({ page }) => {
+test("launchpad chrome routes background context menus while preserving buttons and editable fields", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".launchpad-header")).toBeVisible();
   await expect(page.locator(".page-dots")).toBeVisible();
 
-  const result = await page.evaluate(() => {
-    function dispatchContextMenu(selector) {
-      const element = document.querySelector(selector);
-      if (!element) throw new Error(`Missing context menu probe target: ${selector}`);
+  async function dispatchContextMenu(selector) {
+    return page.locator(selector).first().evaluate((element) => {
+      const rect = element.getBoundingClientRect();
       const event = new MouseEvent("contextmenu", {
         bubbles: true,
         cancelable: true,
         button: 2,
         buttons: 2,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
       });
       const dispatchReturned = element.dispatchEvent(event);
       return {
         defaultPrevented: event.defaultPrevented,
         dispatchReturned,
       };
-    }
+    });
+  }
 
-    return {
-      footer: dispatchContextMenu(".page-dots"),
-      header: dispatchContextMenu(".launchpad-header"),
-      searchInput: dispatchContextMenu(".search-input"),
-    };
+  const surfaceMenu = page.getByRole("menu", { name: "启动台菜单", exact: true });
+  expect(await dispatchContextMenu(".launchpad-header")).toEqual({
+    defaultPrevented: true,
+    dispatchReturned: false,
   });
+  await expect(surfaceMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(surfaceMenu).toBeHidden();
 
-  expect(result).toEqual({
-    footer: { defaultPrevented: true, dispatchReturned: false },
-    header: { defaultPrevented: true, dispatchReturned: false },
-    searchInput: { defaultPrevented: false, dispatchReturned: true },
+  expect(await dispatchContextMenu(".page-dots")).toEqual({
+    defaultPrevented: true,
+    dispatchReturned: false,
   });
+  await expect(surfaceMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(surfaceMenu).toBeHidden();
+
+  expect(await dispatchContextMenu(".settings-button")).toEqual({
+    defaultPrevented: true,
+    dispatchReturned: false,
+  });
+  expect(await dispatchContextMenu(".page-dot")).toEqual({
+    defaultPrevented: true,
+    dispatchReturned: false,
+  });
+  await expect(surfaceMenu).toHaveCount(0);
+
+  expect(await dispatchContextMenu(".search-input")).toEqual({
+    defaultPrevented: false,
+    dispatchReturned: true,
+  });
+  await expect(surfaceMenu).toHaveCount(0);
 });

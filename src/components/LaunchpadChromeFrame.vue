@@ -74,8 +74,9 @@ const dotsMotion = useGsapDomMotion(dotsMotionRef, {
   motion: resolveChromeMotion,
 });
 
-defineEmits([
+const emit = defineEmits([
   "clear-search",
+  "context-menu-request",
   "open-settings",
   "page-index",
   "search-blur",
@@ -98,8 +99,15 @@ function bindRef(target, node) {
 
 function handleShellContextMenu(event) {
   const target = event.target;
-  if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea"))) return;
+  if (
+    target instanceof Element &&
+    target.closest("input, textarea, [contenteditable]:not([contenteditable='false'])")
+  ) {
+    return;
+  }
   event.preventDefault();
+  if (target instanceof Element && target.closest("button, [role='button']")) return;
+  emit("context-menu-request", event);
 }
 
 function resolveChromeMotion() {

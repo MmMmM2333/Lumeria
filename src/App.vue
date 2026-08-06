@@ -50,6 +50,7 @@
       :is-search-mode="isSearchMode"
       :render-key="singleStageRenderKey"
       :search-query="searchQuery"
+      @context-menu-request="handleChromeContextMenuRequest"
       @search-input="handleSearchInput"
       @search-focus="keyboardFocusArea = 'search'"
       @clear-search="clearSearch"
@@ -948,6 +949,12 @@ function openSurfaceContextMenu(event) {
     canScan: canScanManagedApps,
     isScanning: isScanningApps,
   }) || false;
+}
+
+function handleChromeContextMenuRequest(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  return openSurfaceContextMenu(event);
 }
 
 function handleContextMenuRequest(event) {
