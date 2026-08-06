@@ -1,5 +1,11 @@
 <template>
-  <div v-if="model.chooser.value" class="icon-chooser-overlay" @wheel.stop @pointerdown.self="model.actions.close">
+  <div
+    v-if="model.chooser.value"
+    class="icon-chooser-overlay"
+    @contextmenu.self.stop.prevent
+    @wheel.stop
+    @pointerdown.self.stop.left="model.actions.close"
+  >
     <section ref="dialogRef" class="icon-chooser-dialog" role="dialog" aria-modal="true" :aria-label="model.chooser.value.title" tabindex="-1" @keydown="handleModalKeydown($event, dialogRef, model.actions.close)">
       <header class="icon-chooser-header">
         <div>

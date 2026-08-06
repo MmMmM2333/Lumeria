@@ -108,7 +108,7 @@
         @folder-create-release-complete="completeFolderCreateRelease"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="handleIconPointerDown"
-        @context-menu-icon="openIconContextMenu"
+        @context-menu-request="handleContextMenuRequest"
         @remove-app="removeManagedAppFromLaunchpad"
         @choose-app-icon="openExistingAppIconChooser"
         @reset-app-icon="resetAppCustomIcon"
@@ -122,7 +122,8 @@
     <LaunchpadOverlays
       ref="launchpadOverlaysRef"
       :state="overlays"
-      @context-menu-action="handleIconContextMenuAction"
+      @context-menu-action="handleContextMenuAction"
+      @context-menu-request="handleContextMenuRequest"
     />
     <WindowChromeOverlay :active="isWindowChromeOverlayActive" :show-titlebar="isWindowTitlebarVisible" />
     <BackgroundDebugPanel
@@ -167,6 +168,11 @@ import { useLocalization, useLocalizationRuntime } from "./i18n/localization.js"
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
+import {
+  isLaunchpadContextMenuInteractionBlocked,
+  resolveLaunchpadContextMenuTarget,
+} from "./domain/input/launchpadPointerTarget.js";
+import { ICON_BOUNDS_KIND } from "./rendering/pixi/geometry/iconBoundsRegistry.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
   LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT,
@@ -258,12 +264,16 @@ const {
   showMissingLaunchTargetBadge,
 } = appActions;
 const {
+  canScanManagedApps,
+  confirmForceFillAllPages,
+  isScanningApps,
   isSettingsPanelOpen,
   shouldRenderSettingsPanel,
   settingsOverlayAnimate,
   settingsPanelInitial,
   settingsPanelAnimate,
   openSettingsPanel,
+  rescanManagedApps,
 } = settingsPanel;
 const {
   clearSearch,
@@ -903,11 +913,78 @@ watch(
   }
 );
 
-function openIconContextMenu(event, item, source) {
-  launchpadOverlaysRef.value?.openIconContextMenu(event, item, source);
+function isLaunchpadDialogOpen() {
+  return Boolean(
+    resolveMaybeRef(dialogs.isWarningDialogOpen) ||
+    resolveMaybeRef(dialogs.editorModel?.isOpen) ||
+    resolveMaybeRef(dialogs.iconChooserModel?.chooser) ||
+    resolveMaybeRef(dialogs.scanResultModel?.isOpen)
+  );
 }
 
-function handleIconContextMenuAction(action, item, source) {
+function isContextMenuInteractionBlocked() {
+  return isLaunchpadContextMenuInteractionBlocked({
+    dragMeta: resolveMaybeRef(dragMeta),
+    isDialogOpen: isLaunchpadDialogOpen(),
+    isHomeInteractionDisabled: isHomeInteractionDisabled.value,
+    isSettingsPanelOpen: shouldRenderSettingsPanel.value,
+  });
+}
+
+function openIconContextMenu(event, item, source) {
+  if (isContextMenuInteractionBlocked()) return false;
+  return launchpadOverlaysRef.value?.openIconContextMenu(event, item, source) || false;
+}
+
+function openSurfaceContextMenu(event) {
+  if (
+    isContextMenuInteractionBlocked() ||
+    isSearchMode.value ||
+    isFolderLayerActive.value
+  ) {
+    return false;
+  }
+  return launchpadOverlaysRef.value?.openSurfaceContextMenu(event, {
+    canScan: canScanManagedApps,
+    isScanning: isScanningApps,
+  }) || false;
+}
+
+function handleContextMenuRequest(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const folderId = renderedFolder.value?.id || openFolderId.value || null;
+  const target = resolveLaunchpadContextMenuTarget({
+    clientX: event?.clientX,
+    clientY: event?.clientY,
+    folderId,
+    getIconAtPoint: (x, y, options) => iconBoundsRegistry.getAtPoint(
+      ICON_BOUNDS_KIND.LAUNCH,
+      x,
+      y,
+      options
+    ),
+    isFolderLayerActive: isFolderLayerActive.value,
+    isInteractionBlocked: isContextMenuInteractionBlocked(),
+    isSearchMode: isSearchMode.value,
+    mainRect: desktopMainRef.value?.getBoundingClientRect?.() || null,
+  });
+  if (target?.kind === "icon") {
+    return openIconContextMenu(event, target.item, target.source);
+  }
+  if (target?.kind === "surface") return openSurfaceContextMenu(event);
+  launchpadOverlaysRef.value?.closeContextMenu();
+  return false;
+}
+
+function handleContextMenuAction({ action, item, source, kind } = {}) {
+  if (kind === "surface") {
+    if (action === "compact-pages") confirmForceFillAllPages();
+    if (action === "scan-apps") void rescanManagedApps();
+    if (action === "open-settings") openSettingsPanel();
+    return;
+  }
+  if (kind !== "icon") return;
   if (item?.type === "app") {
     if (action === "open") openApp(item, source);
     if (action === "edit") openEditManagedApp(item);
@@ -922,7 +999,7 @@ function handleIconContextMenuAction(action, item, source) {
 }
 
 function handleLaunchpadSurfacePointerDown(event) {
-  if (launchpadOverlaysRef.value?.closeIconContextMenu()) {
+  if (launchpadOverlaysRef.value?.closeContextMenu()) {
     return;
   }
   handleDesktopSurfacePointerDown(event);

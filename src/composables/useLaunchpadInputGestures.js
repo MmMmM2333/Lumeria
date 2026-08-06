@@ -1,5 +1,6 @@
 import { shallowRef } from "vue";
 import { createLaunchpadGestureEngine } from "../domain/input/launchpadGestureEngine.js";
+import { makeLaunchSourceFromBounds } from "../domain/input/launchpadPointerTarget.js";
 
 const SURFACE_IGNORED_SELECTOR = [
   ".page-dot",
@@ -29,23 +30,6 @@ function readEventTime(event) {
 
 function isSamePointer(pointerId, event) {
   return pointerId == null || event?.pointerId == null || pointerId === event.pointerId;
-}
-
-function makeSourceFromBounds(target, isSearchMode) {
-  const meta = target?.meta || {};
-  if (meta.area === "folder") {
-    return {
-      type: "folder",
-      folderId: meta.folderId || null,
-      pageIndex: meta.pageIndex ?? 0,
-      index: meta.index ?? 0,
-    };
-  }
-  return {
-    type: isSearchMode ? "search" : "page",
-    pageIndex: meta.pageIndex ?? 0,
-    index: meta.index ?? 0,
-  };
 }
 
 export function useLaunchpadInputGestures(options) {
@@ -436,7 +420,7 @@ export function useLaunchpadInputGestures(options) {
 
     if (iconTarget?.meta?.item) {
       const item = iconTarget.meta.item;
-      const source = makeSourceFromBounds(iconTarget, options.isSearchMode?.value);
+      const source = makeLaunchSourceFromBounds(iconTarget, options.isSearchMode?.value);
       const details = makeIconDetails(event, item, source, "desktop");
       dispatchPointerDown(event, details.target, details.scope, details);
       return;

@@ -13,58 +13,85 @@
   </div>
 
   <div
-    v-if="iconContextMenu"
-    class="icon-context-menu-layer"
-    @contextmenu.prevent
-    @pointerdown.self="closeIconContextMenu"
-    @wheel.capture="closeIconContextMenu"
+    v-if="contextMenu"
+    ref="contextMenuThemeHostRef"
+    class="icon-context-menu-layer settings-theme-scope"
+    :data-settings-theme="state.resolvedSettingsTheme.value"
+    @contextmenu.self.stop.prevent="requestContextMenuAtPointer"
+    @pointerdown.self.stop="handleContextMenuLayerPointerDown"
+    @wheel.capture="closeContextMenu"
   >
     <fluent-menu-list
-      ref="iconContextMenuRef"
+      ref="contextMenuRef"
       class="icon-context-menu"
-      :style="iconContextMenuStyle"
+      :style="contextMenuStyle"
       role="menu"
-      :aria-label="t('launchpad.contextMenu.label', { name: iconContextMenu.item.name })"
-      @keydown.esc.stop.prevent="closeIconContextMenu"
+      :aria-label="contextMenuAriaLabel"
+      @contextmenu.stop.prevent
+      @keydown.esc.stop.prevent="closeContextMenu"
       @pointerdown.stop
     >
-      <fluent-menu-item @click="runIconContextMenuAction('open')">
-        <FolderOpenIcon v-if="iconContextMenu.item.type === 'folder'" slot="start" class="icon-context-menu-item-icon" />
-        <OpenIcon v-else slot="start" class="icon-context-menu-item-icon" />
-        {{ t("common.actions.open") }}
-      </fluent-menu-item>
-      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('edit')">
-        <EditIcon slot="start" class="icon-context-menu-item-icon" />
-        {{ t("common.actions.edit") }}
-      </fluent-menu-item>
-      <fluent-menu-item v-else @click="runIconContextMenuAction('rename')">
-        <RenameIcon slot="start" class="icon-context-menu-item-icon" />
-        {{ t("common.actions.rename") }}
-      </fluent-menu-item>
-      <fluent-divider class="icon-context-menu-divider" role="separator" />
-      <fluent-menu-item v-if="iconContextMenu.item.type === 'app'" @click="runIconContextMenuAction('remove-from-launchpad')">
-        <DeleteIcon slot="start" class="icon-context-menu-item-icon" />
-        {{ t("launchpad.contextMenu.remove") }}
-      </fluent-menu-item>
-      <fluent-menu-item
-        v-if="iconContextMenu.item.type === 'app' && state.canExcludeManagedAppFromScan(iconContextMenu.item)"
-        class="icon-context-menu-item-danger"
-        @click="runIconContextMenuAction('exclude-from-scan')"
-      >
-        <DeleteDismissIcon slot="start" class="icon-context-menu-item-icon" />
-        {{ t("launchpad.contextMenu.exclude") }}
-      </fluent-menu-item>
-      <fluent-menu-item v-if="iconContextMenu.item.type === 'folder'" class="icon-context-menu-item-danger" @click="runIconContextMenuAction('dissolve')">
-        <FolderArrowRightIcon slot="start" class="icon-context-menu-item-icon" />
-        {{ t("launchpad.contextMenu.dissolve") }}
-      </fluent-menu-item>
+      <template v-if="contextMenu.kind === 'icon'">
+        <fluent-menu-item @click="runContextMenuAction('open')">
+          <FolderOpenIcon v-if="contextMenu.item.type === 'folder'" slot="start" class="icon-context-menu-item-icon" />
+          <OpenIcon v-else slot="start" class="icon-context-menu-item-icon" />
+          {{ t("common.actions.open") }}
+        </fluent-menu-item>
+        <fluent-menu-item v-if="contextMenu.item.type === 'app'" @click="runContextMenuAction('edit')">
+          <EditIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("common.actions.edit") }}
+        </fluent-menu-item>
+        <fluent-menu-item v-else @click="runContextMenuAction('rename')">
+          <RenameIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("common.actions.rename") }}
+        </fluent-menu-item>
+        <fluent-divider class="icon-context-menu-divider" role="separator" />
+        <fluent-menu-item v-if="contextMenu.item.type === 'app'" @click="runContextMenuAction('remove-from-launchpad')">
+          <DeleteIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.remove") }}
+        </fluent-menu-item>
+        <fluent-menu-item
+          v-if="contextMenu.item.type === 'app' && state.canExcludeManagedAppFromScan(contextMenu.item)"
+          class="icon-context-menu-item-danger"
+          @click="runContextMenuAction('exclude-from-scan')"
+        >
+          <DeleteDismissIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.exclude") }}
+        </fluent-menu-item>
+        <fluent-menu-item v-if="contextMenu.item.type === 'folder'" class="icon-context-menu-item-danger" @click="runContextMenuAction('dissolve')">
+          <FolderArrowRightIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.dissolve") }}
+        </fluent-menu-item>
+      </template>
+      <template v-else>
+        <fluent-menu-item @click="runContextMenuAction('compact-pages')">
+          <ArrowSortIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("settings.interface.layout.compactAction") }}
+        </fluent-menu-item>
+        <fluent-menu-item
+          v-if="isSurfaceScanAvailable(contextMenu)"
+          :disabled="isSurfaceScanRunning(contextMenu)"
+          @click="runContextMenuAction('scan-apps')"
+        >
+          <ScanObjectIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ isSurfaceScanRunning(contextMenu) ? t("settings.apps.manager.scanning") : t("settings.apps.manager.scanApps") }}
+        </fluent-menu-item>
+        <fluent-divider v-if="isSurfaceScanAvailable(contextMenu)" class="icon-context-menu-divider" role="separator" />
+        <fluent-menu-item @click="runContextMenuAction('open-settings')">
+          <SettingsIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.openSettings") }}
+        </fluent-menu-item>
+      </template>
     </fluent-menu-list>
   </div>
 
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { setTheme } from "@fluentui/web-components";
+import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import ArrowSortIcon from "~icons/fluent/arrow-sort-20-regular";
 import DeleteIcon from "~icons/fluent/delete-20-regular";
 import DeleteDismissIcon from "~icons/fluent/delete-dismiss-20-regular";
 import EditIcon from "~icons/fluent/edit-20-regular";
@@ -72,6 +99,8 @@ import FolderArrowRightIcon from "~icons/fluent/folder-arrow-right-20-regular";
 import FolderOpenIcon from "~icons/fluent/folder-open-20-regular";
 import OpenIcon from "~icons/fluent/open-20-regular";
 import RenameIcon from "~icons/fluent/rename-20-regular";
+import ScanObjectIcon from "~icons/fluent/scan-object-20-regular";
+import SettingsIcon from "~icons/fluent/settings-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
 import { useLocalization } from "../i18n/localization.js";
@@ -81,7 +110,7 @@ const props = defineProps({
   state: { type: Object, required: true },
 });
 
-const emit = defineEmits(["context-menu-action"]);
+const emit = defineEmits(["context-menu-action", "context-menu-request"]);
 const { t } = useLocalization();
 const launchGhostRef = ref(null);
 useGsapDomMotion(launchGhostRef, {
@@ -93,24 +122,31 @@ useGsapDomMotion(launchGhostRef, {
     ease: "power2.out",
   }),
 });
-const iconContextMenu = ref(null);
-const iconContextMenuRef = ref(null);
-let iconContextMenuRequestId = 0;
-const iconContextMenuStyle = computed(() => {
-  if (!iconContextMenu.value) return {};
+const contextMenu = ref(null);
+const contextMenuRef = ref(null);
+const contextMenuThemeHostRef = ref(null);
+let contextMenuRequestId = 0;
+let themedContextMenuHost = null;
+const contextMenuStyle = computed(() => {
+  if (!contextMenu.value) return {};
   return {
-    left: `${iconContextMenu.value.positioned ? iconContextMenu.value.x : iconContextMenu.value.anchorX}px`,
-    top: `${iconContextMenu.value.positioned ? iconContextMenu.value.y : iconContextMenu.value.anchorY}px`,
-    visibility: iconContextMenu.value.positioned ? "visible" : "hidden",
+    left: `${contextMenu.value.positioned ? contextMenu.value.x : contextMenu.value.anchorX}px`,
+    top: `${contextMenu.value.positioned ? contextMenu.value.y : contextMenu.value.anchorY}px`,
+    visibility: contextMenu.value.positioned ? "visible" : "hidden",
   };
 });
+const contextMenuAriaLabel = computed(() => {
+  if (!contextMenu.value) return "";
+  if (contextMenu.value.kind === "surface") return t("launchpad.contextMenu.surfaceLabel");
+  return t("launchpad.contextMenu.label", { name: contextMenu.value.item.name });
+});
 
-async function positionIconContextMenu(requestId) {
+async function positionContextMenu(requestId) {
   await nextTick();
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
-  const menu = iconContextMenu.value;
-  const element = iconContextMenuRef.value;
-  if (!menu || requestId !== iconContextMenuRequestId || !element) return;
+  const menu = contextMenu.value;
+  const element = contextMenuRef.value;
+  if (!menu || requestId !== contextMenuRequestId || !element) return;
   const rect = element.getBoundingClientRect();
   const position = clampIconContextMenuPosition({
     anchorX: menu.anchorX,
@@ -120,20 +156,21 @@ async function positionIconContextMenu(requestId) {
     viewportHeight: window.innerHeight,
     viewportWidth: window.innerWidth,
   });
-  iconContextMenu.value = {
+  contextMenu.value = {
     ...menu,
     ...position,
     positioned: true,
   };
   await nextTick();
-  iconContextMenuRef.value?.querySelector("fluent-menu-item")?.focus({ preventScroll: true });
+  contextMenuRef.value?.querySelector("fluent-menu-item")?.focus({ preventScroll: true });
 }
 
 function openIconContextMenu(event, item, source) {
   if (!item || (item.type !== "app" && item.type !== "folder")) return false;
-  iconContextMenuRequestId += 1;
-  const requestId = iconContextMenuRequestId;
-  iconContextMenu.value = {
+  contextMenuRequestId += 1;
+  const requestId = contextMenuRequestId;
+  contextMenu.value = {
+    kind: "icon",
     anchorX: Number(event?.clientX) || 0,
     anchorY: Number(event?.clientY) || 0,
     item,
@@ -142,32 +179,86 @@ function openIconContextMenu(event, item, source) {
     x: 0,
     y: 0,
   };
-  void positionIconContextMenu(requestId);
+  void positionContextMenu(requestId);
   return true;
 }
 
-function closeIconContextMenu() {
-  if (!iconContextMenu.value) return false;
-  iconContextMenuRequestId += 1;
-  iconContextMenu.value = null;
+function openSurfaceContextMenu(event, capabilities = {}) {
+  contextMenuRequestId += 1;
+  const requestId = contextMenuRequestId;
+  contextMenu.value = {
+    kind: "surface",
+    anchorX: Number(event?.clientX) || 0,
+    anchorY: Number(event?.clientY) || 0,
+    capabilities: {
+      canScan: capabilities?.canScan ?? false,
+      isScanning: capabilities?.isScanning ?? false,
+    },
+    positioned: false,
+    x: 0,
+    y: 0,
+  };
+  void positionContextMenu(requestId);
   return true;
 }
 
-function runIconContextMenuAction(action) {
-  const menu = iconContextMenu.value;
+function closeContextMenu() {
+  if (!contextMenu.value) return false;
+  contextMenuRequestId += 1;
+  contextMenu.value = null;
+  return true;
+}
+
+function handleContextMenuLayerPointerDown(event) {
+  if (event?.button === 0) closeContextMenu();
+}
+
+function requestContextMenuAtPointer(event) {
+  emit("context-menu-request", event);
+}
+
+function runContextMenuAction(action) {
+  const menu = contextMenu.value;
   if (!menu) return;
-  closeIconContextMenu();
-  emit("context-menu-action", action, menu.item, menu.source);
+  closeContextMenu();
+  emit("context-menu-action", {
+    action,
+    item: menu.item || null,
+    kind: menu.kind,
+    source: menu.source || null,
+  });
 }
+
+function resolveMaybeRef(value) {
+  return value && typeof value === "object" && "value" in value ? value.value : value;
+}
+
+function isSurfaceScanAvailable(menu) {
+  return Boolean(resolveMaybeRef(menu?.capabilities?.canScan));
+}
+
+function isSurfaceScanRunning(menu) {
+  return Boolean(resolveMaybeRef(menu?.capabilities?.isScanning));
+}
+
+watch([contextMenuThemeHostRef, props.state.resolvedSettingsTheme], ([host, theme]) => {
+  if (themedContextMenuHost && themedContextMenuHost !== host) {
+    setTheme(null, themedContextMenuHost);
+  }
+  themedContextMenuHost = host;
+  if (host) setTheme(theme === "light" ? webLightTheme : webDarkTheme, host);
+}, { flush: "post" });
 
 onMounted(() => {
-  window.addEventListener("blur", closeIconContextMenu);
-  window.addEventListener("resize", closeIconContextMenu);
+  window.addEventListener("blur", closeContextMenu);
+  window.addEventListener("resize", closeContextMenu);
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("blur", closeIconContextMenu);
-  window.removeEventListener("resize", closeIconContextMenu);
+  window.removeEventListener("blur", closeContextMenu);
+  window.removeEventListener("resize", closeContextMenu);
+  if (themedContextMenuHost) setTheme(null, themedContextMenuHost);
+  themedContextMenuHost = null;
 });
 
 function resolveLaunchGhostDuration() {
@@ -176,7 +267,8 @@ function resolveLaunchGhostDuration() {
 }
 
 defineExpose({
-  closeIconContextMenu,
+  closeContextMenu,
   openIconContextMenu,
+  openSurfaceContextMenu,
 });
 </script>

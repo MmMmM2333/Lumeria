@@ -1003,6 +1003,7 @@
       "newFolder": "New Folder",
       "contextMenu": {
         "label": "{name} menu",
+        "surfaceLabel": "Launchpad menu",
         "remove": "Remove from Launchpad",
         "exclude": "Remove and exclude from scans",
         "dissolve": "Dissolve folder"

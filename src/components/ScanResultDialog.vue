@@ -1,5 +1,11 @@
 <template>
-  <div v-if="model.isOpen.value" class="scan-result-overlay" @wheel.stop @pointerdown.self="model.actions.close">
+  <div
+    v-if="model.isOpen.value"
+    class="scan-result-overlay"
+    @contextmenu.self.stop.prevent
+    @wheel.stop
+    @pointerdown.self.stop.left="model.actions.close"
+  >
     <section ref="dialogRef" class="scan-result-dialog" role="dialog" aria-modal="true" :aria-label="t('dialogs.scanResults.title')" tabindex="-1" @keydown="handleModalKeydown($event, dialogRef, model.actions.close)">
       <header class="scan-result-header">
         <div>

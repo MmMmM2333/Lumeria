@@ -9,8 +9,9 @@
       key="warning-dialog-overlay"
       ref="warningDialogOverlayRef"
       :class="['warning-dialog-overlay', !state.isWarningDialogOpen.value && 'warning-dialog-overlay-closing']"
+      @contextmenu.self.stop.prevent
       @wheel.stop
-      @pointerdown.self="state.closeWarningDialog"
+      @pointerdown.self.stop.left="state.closeWarningDialog"
     >
     <section
       ref="warningDialogRef"

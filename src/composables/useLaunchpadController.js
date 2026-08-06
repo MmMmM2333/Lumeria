@@ -1813,6 +1813,7 @@ export function useLaunchpadController(options = {}) {
     canExcludeManagedAppFromScan,
     launchGhost,
     launchGhostStyle,
+    resolvedSettingsTheme: settingsPanelModel.shell.resolvedSettingsTheme,
   };
 
   return {

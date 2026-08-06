@@ -93,4 +93,12 @@ export async function runLaunchpadControllerTests() {
     controller.dialogs.resolvedSettingsTheme.value === "dark",
     "standalone dialogs should preserve the existing dark default"
   );
+  assert(
+    controller.overlays.resolvedSettingsTheme === controller.settingsPanelModel.shell.resolvedSettingsTheme,
+    "launchpad overlays should share the settings panel's resolved theme source"
+  );
+  assert(
+    controller.overlays.resolvedSettingsTheme.value === "dark",
+    "launchpad overlays should preserve the existing dark default"
+  );
 }

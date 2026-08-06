@@ -1003,6 +1003,7 @@
       "newFolder": "新文件夹",
       "contextMenu": {
         "label": "{name} 菜单",
+        "surfaceLabel": "启动台菜单",
         "remove": "从启动台移除",
         "exclude": "移除并从扫描中排除",
         "dissolve": "解散文件夹"

@@ -4,8 +4,9 @@
     key="settings-overlay"
     ref="settingsOverlayRef"
     :class="cx('settings-overlay', !isOpen && 'settings-overlay-closing')"
+    @contextmenu.self.stop.prevent
     @wheel.stop
-    @pointerdown.self="shell.actions.close"
+    @pointerdown.self.stop.left="shell.actions.close"
   >
     <section
       ref="settingsPanelRef"

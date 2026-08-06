@@ -14,7 +14,7 @@
           isSingleStageDragPreviewActive && 'pixi-desktop-host-root-stage-drag-active',
         ]"
         :style="rootStageHostStyle"
-        @contextmenu.prevent
+        @contextmenu="requestContextMenuAtPointer"
         @pointerdown="$emit('surface-pointerdown', $event)"
         @wheel="$emit('wheel', $event)"
       />
@@ -150,7 +150,7 @@ const pixiRenderCopy = computed(() => ({
 
 const emit = defineEmits([
   "choose-app-icon",
-  "context-menu-icon",
+  "context-menu-request",
   "desktop-focus",
   "drag-release-complete",
   "folder-create-release-complete",
@@ -890,11 +890,16 @@ function handleIconAction(action, event, item, source) {
     if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
     emit("pointerdown-icon", event, item, source);
   }
-  if (action === "context-menu") emit("context-menu-icon", event, item, source);
   if (action === "remove") emit("remove-app", item.id);
   if (action === "choose-icon") emit("choose-app-icon", item.id);
   if (action === "reset-icon") emit("reset-app-icon", item.id);
   requestRender(makeIconActionRenderReason(action));
+}
+
+function requestContextMenuAtPointer(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  emit("context-menu-request", event);
 }
 
 function handleFolderInternalActivity(active, folderId = null) {

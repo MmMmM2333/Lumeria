@@ -259,7 +259,6 @@ export class IconNode extends Container {
     this.cursor = "pointer";
     this.hitArea = this.hitAreaRect;
     this.on("pointerdown", (event) => this.handlePointerDown(event));
-    this.on("rightdown", (event) => this.handleContextMenu(event));
     this.describeMotionTargets();
   }
 
@@ -446,10 +445,7 @@ export class IconNode extends Container {
 
   handlePointerDown(event) {
     const original = event?.nativeEvent || event;
-    if (original?.button === 2) {
-      this.handleContextMenu(event);
-      return;
-    }
+    if (original?.button !== 0) return;
     const action = this.getEditActionAt(event);
     if (action) {
       event?.stopPropagation?.();
@@ -499,15 +495,6 @@ export class IconNode extends Container {
       .interrupt("retarget")
       .to({ alpha: nextAlpha })
       .start();
-  }
-
-  handleContextMenu(event) {
-    const original = event?.nativeEvent || event;
-    if (this.item?.type !== "app" && this.item?.type !== "folder") return;
-    original?.preventDefault?.();
-    original?.stopPropagation?.();
-    original?.stopImmediatePropagation?.();
-    this.onAction("context-menu", original, this.item, this.source, this);
   }
 
   getEditActionAt(event) {

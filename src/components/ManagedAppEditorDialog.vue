@@ -1,5 +1,11 @@
 <template>
-  <div v-if="model.isOpen.value" class="app-edit-overlay" @wheel.stop @pointerdown.self="model.actions.cancel">
+  <div
+    v-if="model.isOpen.value"
+    class="app-edit-overlay"
+    @contextmenu.self.stop.prevent
+    @wheel.stop
+    @pointerdown.self.stop.left="model.actions.cancel"
+  >
     <section
       ref="dialogRef"
       class="app-edit-dialog"

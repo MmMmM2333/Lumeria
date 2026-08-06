@@ -820,7 +820,7 @@ body {
   min-width: 204px;
   max-width: min(240px, calc(100vw - 16px));
   padding: 4px;
-  --colorNeutralBackground1: rgba(31, 31, 31, 0.94);
+  --colorNeutralBackground1: #1f1f1f;
   --colorTransparentStroke: rgba(255, 255, 255, 0.14);
   --shadow16: 0 18px 42px rgba(0, 0, 0, 0.32);
   border-radius: 8px;
@@ -849,6 +849,21 @@ body {
   --colorNeutralForeground2Pressed: #ff8f83;
   --colorNeutralBackground1Hover: rgba(196, 43, 28, 0.16);
   --colorNeutralBackground1Selected: rgba(196, 43, 28, 0.22);
+}
+
+.icon-context-menu-layer[data-settings-theme="light"] .icon-context-menu {
+  --colorNeutralBackground1: #ffffff;
+  --colorTransparentStroke: rgba(0, 0, 0, 0.12);
+  --shadow16: 0 0 2px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.14);
+}
+
+.icon-context-menu-layer[data-settings-theme="light"] .icon-context-menu-item-danger {
+  --colorCompoundBrandForeground1Pressed: var(--colorPaletteRedForeground2);
+  --colorNeutralForeground2: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Hover: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Pressed: var(--colorPaletteRedForeground2);
+  --colorNeutralBackground1Hover: var(--colorPaletteRedBackground1);
+  --colorNeutralBackground1Selected: var(--colorPaletteRedBackground2);
 }
 
 .pixi-folder-name-input {
