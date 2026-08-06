@@ -323,9 +323,38 @@
         }
       },
       "notice": {
-        "detail": "生成布局保存、载入和恢复通知，用来检查 Lumeria 右下角 notice 的 Fluent 卡片样式。",
+        "detail": "生成状态弹窗与布局通知，用来检查 Lumeria 真实弹窗和右下角 notice 的 Fluent 样式。",
         "transient": "临时通知",
         "recovery": "恢复通知",
+        "dialogs": {
+          "section": "状态弹窗",
+          "actions": {
+            "warning": "警告",
+            "error": "错误",
+            "info": "信息",
+            "success": "成功"
+          },
+          "samples": {
+            "warning": {
+              "title": "确认执行示例操作？",
+              "message": "这个调试弹窗用于检查警告图标、双按钮布局和确认操作样式。",
+              "confirm": "继续"
+            },
+            "error": {
+              "title": "示例操作失败",
+              "message": "这个调试弹窗用于检查错误图标和错误信息层级。",
+              "suggestion": "检查错误详情后重试。"
+            },
+            "info": {
+              "title": "示例信息",
+              "message": "这个调试弹窗用于检查信息图标和普通确认操作样式。"
+            },
+            "success": {
+              "title": "示例操作已完成",
+              "message": "这个调试弹窗用于检查成功图标和完成状态样式。"
+            }
+          }
+        },
         "section": "布局通知",
         "actions": {
           "saveFailed": "保存失败",

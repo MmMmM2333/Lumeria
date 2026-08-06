@@ -142,10 +142,10 @@ let themedDialogHost = null;
 const warningDialogIntent = computed(() => normalizeDialogIntent(props.state.warningDialog.value?.intent));
 const warningDialogIcon = computed(() => getNoticeIcon(warningDialogIntent.value));
 const warningConfirmAppearance = computed(() => (
-  props.state.warningDialog.value?.confirmAppearance || (warningDialogIntent.value === "error" ? "outline" : "primary")
+  props.state.warningDialog.value?.confirmAppearance || "primary"
 ));
 const warningConfirmTone = computed(() => (
-  props.state.warningDialog.value?.confirmTone || (warningDialogIntent.value === "error" ? "danger" : null)
+  props.state.warningDialog.value?.confirmTone || null
 ));
 const activeDialog = computed(() => {
   if (props.state.warningDialog.value) {

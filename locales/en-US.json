@@ -323,9 +323,38 @@
         }
       },
       "notice": {
-        "detail": "Generate layout save, load, and recovery notices to inspect the Fluent card style used by Lumeria notices in the bottom-right corner.",
+        "detail": "Generate status dialogs and layout notices to inspect the real Fluent dialog and bottom-right notice styles used by Lumeria.",
         "transient": "Transient notice",
         "recovery": "Recovery notice",
+        "dialogs": {
+          "section": "Status dialogs",
+          "actions": {
+            "warning": "Warning",
+            "error": "Error",
+            "info": "Info",
+            "success": "Success"
+          },
+          "samples": {
+            "warning": {
+              "title": "Run the sample action?",
+              "message": "This debug dialog exercises the warning icon, two-button layout, and confirmation action style.",
+              "confirm": "Continue"
+            },
+            "error": {
+              "title": "Sample action failed",
+              "message": "This debug dialog exercises the error icon and error message hierarchy.",
+              "suggestion": "Review the error details, then try again."
+            },
+            "info": {
+              "title": "Sample information",
+              "message": "This debug dialog exercises the information icon and standard confirmation action style."
+            },
+            "success": {
+              "title": "Sample action completed",
+              "message": "This debug dialog exercises the success icon and completed-state style."
+            }
+          }
+        },
         "section": "Layout notices",
         "actions": {
           "saveFailed": "Save failed",

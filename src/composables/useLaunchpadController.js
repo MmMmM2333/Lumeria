@@ -1737,6 +1737,7 @@ export function useLaunchpadController(options = {}) {
     iconChooserModel,
     isWarningDialogOpen,
     layoutRecoveryNotice,
+    openWarningDialog,
     resolvedSettingsTheme: settingsPanelModel.shell.resolvedSettingsTheme,
     transientNotice,
     scanResultModel,

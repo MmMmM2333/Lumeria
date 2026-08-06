@@ -33,7 +33,7 @@
           </span>
           <div class="app-edit-icon-actions">
             <SettingsFluentButton appearance="outline" type="button" @click="model.actions.openIconChooser">{{ t("dialogs.appEditor.changeIcon") }}</SettingsFluentButton>
-            <SettingsFluentButton appearance="subtle" type="button" @click="model.actions.resetIcon">{{ t("common.actions.restoreDefault") }}</SettingsFluentButton>
+            <SettingsFluentButton appearance="outline" type="button" @click="model.actions.resetIcon">{{ t("common.actions.restoreDefault") }}</SettingsFluentButton>
           </div>
         </div>
 

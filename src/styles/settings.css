@@ -248,7 +248,8 @@
   background: var(--colorPaletteRedBackground3);
 }
 
-.settings-panel[data-settings-theme="light"] .settings-fluent-button-danger {
+.settings-panel[data-settings-theme="light"] .settings-fluent-button-danger,
+.launchpad-dialog-host[data-settings-theme="light"] .settings-fluent-button-danger {
   --colorNeutralForeground1: var(--colorPaletteRedForeground1);
   --colorNeutralForeground1Hover: var(--colorPaletteRedForeground1);
   --colorNeutralForeground1Pressed: var(--colorPaletteRedForeground2);
@@ -407,17 +408,26 @@
 
 .launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-icon {
   color: var(--colorPaletteMarigoldForeground2);
-  background: var(--colorPaletteMarigoldBackground1);
+  background: var(--colorPaletteMarigoldBackground2);
 }
 
 .launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-error .warning-dialog-icon {
-  color: var(--colorPaletteRedForeground1);
-  background: var(--colorPaletteRedBackground1);
+  color: var(--colorPaletteRedForeground2);
+  background: var(--colorPaletteRedBackground2);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-info .warning-dialog-icon {
+  color: var(--colorPaletteBlueForeground2);
+  background: var(--colorPaletteBlueBackground2);
 }
 
 .launchpad-dialog-host[data-settings-theme="light"] .warning-dialog-success .warning-dialog-icon {
-  color: var(--colorPaletteGreenForeground1);
-  background: var(--colorPaletteGreenBackground1);
+  color: var(--colorPaletteGreenForeground2);
+  background: var(--colorPaletteGreenBackground2);
+}
+
+.launchpad-dialog-host[data-settings-theme="light"] .settings-close-button {
+  --colorNeutralForeground2: var(--colorNeutralForeground1);
 }
 
 .settings-panel-navigation-compact {

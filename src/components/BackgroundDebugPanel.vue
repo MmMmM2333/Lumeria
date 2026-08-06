@@ -297,6 +297,22 @@
         </dl>
 
         <div class="background-debug-subsection">
+          <div class="background-debug-subtitle">{{ t("debug.notice.dialogs.section") }}</div>
+          <div class="background-debug-actions background-debug-notice-actions">
+            <button
+              v-for="sample in statusDialogDebugSamples"
+              :key="sample.intent"
+              type="button"
+              class="background-debug-button"
+              :disabled="!canDebugStatusDialog"
+              @click="showDebugStatusDialog(sample)"
+            >
+              {{ sample.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="background-debug-subsection">
           <div class="background-debug-subtitle">{{ t("debug.notice.section") }}</div>
           <div class="background-debug-actions background-debug-notice-actions">
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutSaveFailed">
@@ -807,6 +823,7 @@ const canDebugNotice = computed(() => Boolean(
     && props.dialogState?.showLayoutLoadRecovered
     && props.dialogState?.handleLayoutRecovered
 ));
+const canDebugStatusDialog = computed(() => Boolean(props.dialogState?.openWarningDialog));
 const debugTabCount = computed(() => 3
   + (canDebugRender.value ? 1 : 0)
   + (canDebugMotion.value ? 1 : 0)
@@ -866,6 +883,38 @@ const noticeDebugRows = computed(() => [
   {
     label: t("debug.notice.recovery"),
     value: props.dialogState?.layoutRecoveryNotice?.value?.title || t("debug.common.none"),
+  },
+]);
+const statusDialogDebugSamples = computed(() => [
+  {
+    intent: "warning",
+    label: t("debug.notice.dialogs.actions.warning"),
+    title: t("debug.notice.dialogs.samples.warning.title"),
+    message: t("debug.notice.dialogs.samples.warning.message"),
+    cancelText: t("common.actions.cancel"),
+    confirmText: t("debug.notice.dialogs.samples.warning.confirm"),
+  },
+  {
+    intent: "error",
+    label: t("debug.notice.dialogs.actions.error"),
+    title: t("debug.notice.dialogs.samples.error.title"),
+    message: t("debug.notice.dialogs.samples.error.message"),
+    suggestion: t("debug.notice.dialogs.samples.error.suggestion"),
+    confirmText: t("notices.acknowledge"),
+  },
+  {
+    intent: "info",
+    label: t("debug.notice.dialogs.actions.info"),
+    title: t("debug.notice.dialogs.samples.info.title"),
+    message: t("debug.notice.dialogs.samples.info.message"),
+    confirmText: t("notices.acknowledge"),
+  },
+  {
+    intent: "success",
+    label: t("debug.notice.dialogs.actions.success"),
+    title: t("debug.notice.dialogs.samples.success.title"),
+    message: t("debug.notice.dialogs.samples.success.message"),
+    confirmText: t("notices.acknowledge"),
   },
 ]);
 let acrylicCopyStateTimer = null;
@@ -2420,6 +2469,17 @@ function resetLayoutDebugParams() {
   props.resetDesktopLayoutDebugParams?.();
 }
 
+function showDebugStatusDialog(sample) {
+  props.dialogState?.openWarningDialog?.({
+    title: sample.title,
+    message: sample.message,
+    suggestion: sample.suggestion || "",
+    intent: sample.intent,
+    cancelText: sample.cancelText || "",
+    confirmText: sample.confirmText,
+  });
+}
+
 function showDebugLayoutSaveFailed() {
   props.dialogState?.showLayoutSaveFailed?.({
     error: new Error("EACCES: permission denied, open C:/Users/233/AppData/Roaming/com.lumeria.app/layout.json"),
@@ -2458,6 +2518,7 @@ function showDebugNoticeStack() {
 }
 
 function clearDebugNotices() {
+  props.dialogState?.closeWarningDialog?.();
   props.dialogState?.closeLayoutRecoveryNotice?.();
   props.dialogState?.closeTransientNotice?.();
 }
