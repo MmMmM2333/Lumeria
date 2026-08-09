@@ -110,9 +110,7 @@ const props = defineProps({
   dragHitDebugOptions: { type: Object, default: null },
   dragHitDebugState: { type: Object, default: null },
   dragMeta: { type: Object, default: null },
-  dragPreviewState: { type: Object, default: null },
-  dragReleaseState: { type: Object, default: null },
-  folderCreateReleaseState: { type: Object, default: null },
+  groupDragState: { type: Object, default: null },
   folderClosingHandoffId: { type: String, default: null },
   folderOverlayState: { type: Object, default: null },
   folderPageSize: { type: Number, required: true },
@@ -123,6 +121,7 @@ const props = defineProps({
   iconSize: { type: Number, required: true },
   iconGesturePresentation: { type: Object, default: null },
   iconBoundsRegistry: { type: Object, required: true },
+  isBatchSelectionActive: { type: Boolean, default: false },
   isEditMode: { type: Boolean, default: false },
   isDesktopClosing: { type: Boolean, default: false },
   folderSourceGhostedId: { type: String, default: null },
@@ -130,7 +129,8 @@ const props = defineProps({
   isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
   isHomeRevealSettling: { type: Boolean, default: false },
   isIconOpening: { type: Function, required: true },
-  selectedIcon: { type: Object, default: null },
+  focusedIcon: { type: Object, default: null },
+  selectedAppIds: { type: [Array, Set], default: () => [] },
   isSearchMode: { type: Boolean, default: false },
   isTextlessMode: { type: Boolean, default: false },
   launchTargetStatusById: { type: Object, default: () => ({}) },
@@ -152,8 +152,7 @@ const emit = defineEmits([
   "choose-app-icon",
   "context-menu-request",
   "desktop-focus",
-  "drag-release-complete",
-  "folder-create-release-complete",
+  "group-release-complete",
   "internal-activity",
   "pointerdown-icon",
   "remove-app",
@@ -237,7 +236,7 @@ const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
-  (props.dragPreviewState?.item || props.dragReleaseState?.item || props.folderCreateReleaseState?.folderId)
+  props.groupDragState?.key
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
@@ -444,6 +443,20 @@ function createSingleStageFolderState(
 ) {
   const source = props.folderOverlayState;
   if (!source) return null;
+  const sourceFolder = source.renderedFolder?.value;
+  const projectedFolder = sourceFolder?.id
+    ? dragSnapshot.groupDragState?.projectedPages
+      ?.flatMap((page) => page || [])
+      .find((item) => item?.type === "folder" && item.id === sourceFolder.id) || null
+    : null;
+  const renderedFolder = projectedFolder || sourceFolder;
+  const folderPages = projectedFolder
+    ? (
+      Array.isArray(projectedFolder.childPages)
+        ? projectedFolder.childPages
+        : [projectedFolder.children || []]
+    )
+    : source.folderPages?.value;
   return createFolderLayerState({
     callbacks: {
       completeFolderCloseIconGhost: source.completeFolderCloseIconGhost,
@@ -456,7 +469,6 @@ function createSingleStageFolderState(
     },
     drag: {
       meta: dragSnapshot.dragMeta,
-      releaseState: dragSnapshot.dragReleaseState,
     },
     folder: {
       closeIconGhosts: source.folderCloseIconGhosts?.value,
@@ -476,10 +488,10 @@ function createSingleStageFolderState(
       pageTrackScrub: resolveMaybeRef(source.folderPageTrackScrub) || null,
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
       pageSize: source.folderPageSize?.value || props.folderPageSize,
-      pages: source.folderPages?.value,
+      pages: folderPages,
       panelRef: source.folderPanelRef,
       panelStyle: source.folderPanelStyle?.value,
-      renderedFolder: source.renderedFolder?.value,
+      renderedFolder,
       viewportRef: source.folderViewportRef,
       visualPageIndex: source.visualFolderPageIndex?.value ?? source.folderPageIndex?.value,
     },
@@ -487,9 +499,11 @@ function createSingleStageFolderState(
     ui: {
       iconGesturePresentation: props.iconGesturePresentation,
       isEditMode: source.isEditMode?.value,
+      isBatchSelectionActive: props.isBatchSelectionActive,
       isTextlessMode: source.isTextlessMode?.value,
       launchTargetStatusById: source.launchTargetStatusById?.value,
-      selectedIcon: props.selectedIcon,
+      focusedIcon: props.focusedIcon,
+      selectedAppIds: props.selectedAppIds,
       showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
     },
   }, {
@@ -621,7 +635,6 @@ function renderPixi(options = {}) {
       dragHitDebugOptions: props.dragHitDebugOptions,
       dragHitDebugState: props.dragHitDebugState,
       ...dragSnapshot,
-      folderCreateReleaseState: props.folderCreateReleaseState,
       deviceResolution: app.renderer?.resolution || 1,
       folderClosingHandoffId,
       singleStageDiagnosticsEnabled: singleStageDiagnosticsOptions,
@@ -640,6 +653,7 @@ function renderPixi(options = {}) {
       iconSize: props.iconSize,
       iconGesturePresentation: props.iconGesturePresentation,
       isEditMode: props.isEditMode,
+      isBatchSelectionActive: props.isBatchSelectionActive,
       folderSourceGhostedId: props.folderSourceGhostedId,
       folderSourceGhostedIds: props.folderSourceGhostedIds,
       isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
@@ -649,7 +663,8 @@ function renderPixi(options = {}) {
       isTextlessMode: props.isTextlessMode,
       launchTargetStatusById: props.launchTargetStatusById,
       pageTrackScrub: props.pageTrackScrub,
-      selectedIcon: props.selectedIcon,
+      focusedIcon: props.focusedIcon,
+      selectedAppIds: props.selectedAppIds,
       setPageRef: props.setPageRef,
       shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
       snapDesktopLayout: options.snapDesktopLayout === true,
@@ -658,8 +673,7 @@ function renderPixi(options = {}) {
       width: renderGeometry.width,
     });
     preloadIconTextures([
-      ...collectDragPreviewTextureItems(dragSnapshot.dragPreviewState || dragSnapshot.dragReleaseState),
-      ...collectFolderCreateReleaseTextureItems(props.folderCreateReleaseState),
+      ...(dragSnapshot.groupDragState?.entries || []).map((entry) => entry.item).filter(Boolean),
     ]);
     logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
@@ -674,6 +688,7 @@ function applyImmediateFolderSourceGhosting() {
     folderSourceGhostedIds: props.folderSourceGhostedIds,
     isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
+  layer.applyImmediateGroupReleaseSourceGhosting?.(props.groupDragState);
   app.render?.();
   return true;
 }
@@ -858,17 +873,6 @@ function collectVisibleIconTextureItems() {
   return items;
 }
 
-function collectDragPreviewTextureItems(previewState) {
-  const item = previewState?.item;
-  if (!item) return [];
-  if (item.type !== "folder") return [item];
-  return getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean);
-}
-
-function collectFolderCreateReleaseTextureItems(releaseState) {
-  return [releaseState?.targetApp, releaseState?.draggedApp].filter(Boolean);
-}
-
 function scheduleFolderTexturePrewarm() {
   if (!app) return;
   clearFolderTexturePrewarmTimer();
@@ -1016,21 +1020,10 @@ onMounted(async () => {
     },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
     iconBoundsRegistry: props.iconBoundsRegistry,
-    onDragReleaseComplete: (release) => {
-      if (import.meta.env.DEV) {
-        renderProbe?.record?.("drag-release-complete", {
-          item: release?.item ? { id: release.item.id || null, name: release.item.name || null, type: release.item.type || null } : null,
-          key: release?.key || null,
-        });
-      }
-      emit("drag-release-complete", release);
-      requestRender("drag-release-complete");
-    },
-    onFolderCreateReleaseComplete: (release) => {
-      emit("folder-create-release-complete", release);
-      requestRender("folder-create-release-complete");
-    },
     onIconAction: handleIconAction,
+    onGroupReleaseComplete: (payload) => {
+      emit("group-release-complete", payload);
+    },
   });
   app.stage.addChild(layer);
   unsubscribeIconTextureLoadSettlements = subscribeIconTextureLoadSettlements(() => {
@@ -1166,6 +1159,20 @@ watch(
   { flush: "sync" }
 );
 
+watch(
+  () => [
+    props.groupDragState?.phase,
+    props.groupDragState?.releaseCreatedFolderId,
+    props.groupDragState?.releasePlan?.key,
+  ],
+  () => {
+    // Created-folder source ids are derived from the semantic group plan,
+    // rather than the folder-only ghosting props above.
+    applyImmediateFolderSourceGhosting();
+  },
+  { flush: "sync" }
+);
+
 watchEffect(() => {
   void props.activePageIndex;
   void props.activePages;
@@ -1181,9 +1188,7 @@ watchEffect(() => {
   void props.dragHitDebugOptions;
   void props.dragHitDebugState;
   void props.dragMeta;
-  void props.dragPreviewState;
-  void props.dragReleaseState;
-  void props.folderCreateReleaseState;
+  void props.groupDragState;
   void props.folderClosingHandoffId;
   readFolderOverlayStateRenderDependencies(props.folderOverlayState);
   void props.gridCols;
@@ -1191,6 +1196,7 @@ watchEffect(() => {
   void props.iconSize;
   void props.iconGesturePresentation;
   void props.isEditMode;
+  void props.isBatchSelectionActive;
   void props.isDesktopClosing;
   void props.folderSourceGhostedId;
   void props.folderSourceGhostedIds;
@@ -1203,7 +1209,8 @@ watchEffect(() => {
   void props.folderPageSize;
   // Keyboard selection is a Pixi frame input; reading the descriptor here
   // makes each replacement invalidate the scene instead of hiding in a closure.
-  void props.selectedIcon;
+  void props.focusedIcon;
+  void props.selectedAppIds;
   void props.singleStageDiagnosticsOptions;
   void pixiRenderCopy.value;
   requestRender("watch-effect");

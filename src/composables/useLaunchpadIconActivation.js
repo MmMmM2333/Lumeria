@@ -62,25 +62,25 @@ export function resolveCurrentIconScope(options) {
 export function useLaunchpadIconActivation(options) {
   const getCurrentIconScope = options.getCurrentIconScope;
 
-  function openSelectedIcon() {
-    const selected = options.findSelectedItem();
-    if (!selected) {
-      options.selectFirstIconInCurrentScope({ force: true });
+  function openFocusedIcon() {
+    const focused = options.findFocusedItem();
+    if (!focused) {
+      options.focusFirstIconInCurrentScope({ force: true });
       return;
     }
 
-    if (selected.item.type === "folder" && selected.scope.area === "desktop") {
-      options.commitOpenFolder(selected.item.id);
-      options.clearSelectedIcon();
+    if (focused.item.type === "folder" && focused.scope.area === "desktop") {
+      options.commitOpenFolder(focused.item.id);
+      options.clearFocusedIcon();
       return;
     }
 
-    if (selected.item.type === "app") {
+    if (focused.item.type === "app") {
       const source =
-        selected.scope.area === "folder"
-          ? { type: "folder", folderId: selected.scope.folderId, pageIndex: selected.scope.pageIndex }
-          : { type: selected.scope.area === "search" ? "search" : "page", pageIndex: selected.scope.pageIndex };
-      options.openApp(selected.item, source);
+        focused.scope.area === "folder"
+          ? { type: "folder", folderId: focused.scope.folderId, pageIndex: focused.scope.pageIndex }
+          : { type: focused.scope.area === "search" ? "search" : "page", pageIndex: focused.scope.pageIndex };
+      options.openApp(focused.item, source);
     }
   }
 
@@ -95,8 +95,8 @@ export function useLaunchpadIconActivation(options) {
       return { area: "desktop", id: app.id, pageIndex: source.pageIndex ?? options.pageIndex.value, folderId: null };
     }
 
-    const selected = options.getSelectedIcon();
-    if (selected?.id === app.id) return { ...selected };
+    const focused = options.getFocusedIcon();
+    if (focused?.id === app.id) return { ...focused };
 
     const renderedFolder = options.getRenderedFolder();
     if (renderedFolder) {
@@ -122,6 +122,6 @@ export function useLaunchpadIconActivation(options) {
     getCurrentIconScope,
     getLaunchIconRect: (launchSource) => getLaunchIconRect(launchSource, options.iconBoundsRegistry),
     normalizeLaunchSource,
-    openSelectedIcon,
+    openFocusedIcon,
   };
 }

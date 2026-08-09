@@ -1,20 +1,20 @@
 import { shallowRef } from "vue";
 import { clamp } from "../domain/launchpadLayout.js";
 
-export function useIconSelection(options) {
-  const selectedIcon = shallowRef(null);
+export function useIconFocus(options) {
+  const focusedIcon = shallowRef(null);
   const openingIcon = shallowRef(null);
   const getCurrentIconScope = options.getCurrentIconScope;
 
-  function clearSelectedIcon() {
-    selectedIcon.value = null;
+  function clearFocusedIcon() {
+    focusedIcon.value = null;
   }
 
   function clearOpeningIcon() {
     openingIcon.value = null;
   }
 
-  function makeIconSelection(area, item, pageNumber, folderId) {
+  function makeIconFocus(area, item, pageNumber, folderId) {
     if (!item) return null;
     return {
       area,
@@ -35,46 +35,46 @@ export function useIconSelection(options) {
     );
   }
 
-  function selectionMatchesScope(selection, scope) {
+  function focusMatchesScope(focus, scope) {
     return Boolean(
-      selection &&
+      focus &&
         scope &&
-        selection.area === scope.area &&
-        selection.pageIndex === scope.pageIndex &&
-        (scope.area !== "folder" || selection.folderId === scope.folderId)
+        focus.area === scope.area &&
+        focus.pageIndex === scope.pageIndex &&
+        (scope.area !== "folder" || focus.folderId === scope.folderId)
     );
   }
 
-  function selectIconInScope(scope, item) {
-    selectedIcon.value = makeIconSelection(scope.area, item, scope.pageIndex, scope.folderId);
+  function focusIconInScope(scope, item) {
+    focusedIcon.value = makeIconFocus(scope.area, item, scope.pageIndex, scope.folderId);
   }
 
-  function selectFirstIconInCurrentScope(options) {
+  function focusFirstIconInCurrentScope(options) {
     const scope = getCurrentIconScope();
     const first = scope.items[0] || null;
     if (!first) {
-      clearSelectedIcon();
+      clearFocusedIcon();
       return false;
     }
-    if (!options?.force && selectionMatchesScope(selectedIcon.value, scope)) return true;
-    selectIconInScope(scope, first);
+    if (!options?.force && focusMatchesScope(focusedIcon.value, scope)) return true;
+    focusIconInScope(scope, first);
     return true;
   }
 
-  function moveSelectionByArrow(key) {
+  function moveFocusByArrow(key) {
     const scope = getCurrentIconScope();
     const items = scope.items || [];
     if (!items.length) {
-      clearSelectedIcon();
+      clearFocusedIcon();
       return;
     }
 
-    const current = selectionMatchesScope(selectedIcon.value, scope)
-      ? items.findIndex((item) => item.id === selectedIcon.value.id)
+    const current = focusMatchesScope(focusedIcon.value, scope)
+      ? items.findIndex((item) => item.id === focusedIcon.value.id)
       : -1;
 
     if (current < 0) {
-      selectIconInScope(scope, items[0]);
+      focusIconInScope(scope, items[0]);
       return;
     }
 
@@ -85,28 +85,28 @@ export function useIconSelection(options) {
     if (key === "ArrowUp") nextIndex = current - columns;
     if (key === "ArrowDown") nextIndex = current + columns;
     nextIndex = clamp(nextIndex, 0, items.length - 1);
-    selectIconInScope(scope, items[nextIndex]);
+    focusIconInScope(scope, items[nextIndex]);
   }
 
-  function findSelectedItem() {
+  function findFocusedItem() {
     const scope = getCurrentIconScope();
-    const selected = selectedIcon.value;
-    if (!selectionMatchesScope(selected, scope)) return null;
-    const item = scope.items.find((candidate) => candidate.id === selected.id);
+    const focus = focusedIcon.value;
+    if (!focusMatchesScope(focus, scope)) return null;
+    const item = scope.items.find((candidate) => candidate.id === focus.id);
     return item ? { item, scope } : null;
   }
 
   return {
     clearOpeningIcon,
-    clearSelectedIcon,
-    findSelectedItem,
+    clearFocusedIcon,
+    findFocusedItem,
     isIconOpening,
-    makeIconSelection,
-    moveSelectionByArrow,
+    makeIconFocus,
+    moveFocusByArrow,
     openingIcon,
-    selectFirstIconInCurrentScope,
-    selectIconInScope,
-    selectedIcon,
-    selectionMatchesScope,
+    focusFirstIconInCurrentScope,
+    focusIconInScope,
+    focusedIcon,
+    focusMatchesScope,
   };
 }

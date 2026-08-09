@@ -45,7 +45,7 @@ export function runFolderOverlayRenderPlanTests() {
     isEditMode: true,
     isFolderClosing: false,
     isIconOpening: (area, itemId) => area === "folder" && itemId === "app-a",
-    selectedIcon: { area: "folder", folderId: folder.id, id: "app-a", pageIndex: 0 },
+    focusedIcon: { area: "folder", folderId: folder.id, id: "app-a", pageIndex: 0 },
     isNewFolder: true,
     localMetrics,
     previewSlots: [appA],
@@ -61,7 +61,7 @@ export function runFolderOverlayRenderPlanTests() {
   assert(entryA.x === 70 && entryA.y === 70, "entry should expose folder-local icon coordinates");
   assert(entryA.nodeState.draggable && entryA.nodeState.editing, "interactive entries should keep draggable edit state");
   assert(entryA.nodeState.interactionPhase === "pressing", "the matching folder icon should receive the pressing phase");
-  assert(entryA.nodeState.opening && entryA.nodeState.selected, "entry node state should preserve selected/opening lookups");
+  assert(entryA.nodeState.opening && entryA.nodeState.focused, "entry node state should preserve focus/opening lookups");
   assert(entryA.openingGhostInput?.controllerGhostKey === "open-a", "eligible opening entries should expose ghost input");
   assert(!entryA.closingGhostInput, "non-closing plans should not expose closing ghost input");
   assert(entryB.isActiveDraggedItem, "entries should expose active dragged state");

@@ -23,10 +23,9 @@ import {
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
-import { DragPreviewLayer } from "./DragPreviewLayer.js";
+import { GroupDragLayer } from "./GroupDragLayer.js";
 import { DragHitDebugLayer } from "./DragHitDebugLayer.js";
 import { FolderDropTargetLayer } from "./FolderDropTargetLayer.js";
-import { FolderCreateReleaseLayer } from "./FolderCreateReleaseLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import {
   getFolderHandoffDebugOptions,
@@ -70,6 +69,115 @@ const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
 const DESKTOP_RESIZE_LAYOUT_REASON = "desktop-resize-layout";
+const MOTION_TARGET_EPSILON = 0.0001;
+
+function makeIdListSignature(value) {
+  if (!value) return "";
+  const ids = value instanceof Set || Array.isArray(value)
+    ? Array.from(value)
+    : [value];
+  return ids
+    .map((id) => String(id || ""))
+    .filter(Boolean)
+    .sort()
+    .join(",");
+}
+
+function getCreatedFolderReleaseSourceIds(group) {
+  if (
+    !group?.releaseCreatedFolderId ||
+    !["committing", "accepted"].includes(group.phase)
+  ) return new Set();
+
+  const ids = new Set();
+  for (const entry of group.entries || []) {
+    const id = entry?.item?.id;
+    if (id) ids.add(id);
+  }
+  for (const entry of group.releasePlan?.entries || []) {
+    if (entry?.id) ids.add(entry.id);
+  }
+  return ids;
+}
+
+function makePointerOnlyPlanSnapshot(state, effectiveFolderSourceGhostedIds, folderDropFrameSuppressedIds, folderHandoffEntries) {
+  const group = state.groupDragState;
+  const renderedFolder = state.singleStageFolderState?.renderedFolder;
+  if (
+    !group ||
+    group.phase !== "dragging" ||
+    renderedFolder ||
+    folderHandoffEntries?.size ||
+    folderDropFrameSuppressedIds?.size
+  ) return null;
+
+  const frame = state.desktopFrame || {};
+  const stageRect = state.stageRect || {};
+  const hover = state.dragFolderHoverState || {};
+  const pageTrackScrub = state.pageTrackScrub || {};
+  return {
+    key: [
+      state.activePageIndex,
+      state.folderPageSize,
+      state.gridCols,
+      state.gridRows,
+      state.height,
+      state.width,
+      state.deviceResolution,
+      state.isBatchSelectionActive ? 1 : 0,
+      state.isEditMode ? 1 : 0,
+      state.isSearchMode ? 1 : 0,
+      state.isTextlessMode ? 1 : 0,
+      state.showMissingLaunchTargetBadge ? 1 : 0,
+      state.snapDesktopLayout ? 1 : 0,
+      state.shouldSnapTrack ? 1 : 0,
+      state.desktopTrackMotionKey || "",
+      state.desktopGridDebugOptions?.paddingTop ?? "",
+      state.dragFolderTargetId || "",
+      hover.key || "",
+      hover.phase || "",
+      hover.targetId || "",
+      hover.targetType || "",
+      group.phase,
+      group.releaseCreatedFolderId || "",
+      group.totalCount || 0,
+      makeIdListSignature(state.dragMeta?.draggedIds),
+      makeIdListSignature(state.selectedAppIds),
+      makeIdListSignature(effectiveFolderSourceGhostedIds),
+      makeIdListSignature(state.folderClosingHandoffIds || state.folderClosingHandoffId),
+      frame.left ?? "",
+      frame.top ?? "",
+      frame.width ?? "",
+      frame.height ?? "",
+      stageRect.left ?? "",
+      stageRect.top ?? "",
+      stageRect.width ?? "",
+      stageRect.height ?? "",
+      pageTrackScrub.progress ?? "",
+      pageTrackScrub.x ?? "",
+      pageTrackScrub.offset ?? "",
+    ].join("|"),
+    references: [
+      state.activePages,
+      state.dragMeta,
+      group.entries,
+      state.selectedAppIds,
+      state.focusedIcon,
+      state.iconGesturePresentation,
+      state.launchTargetStatusById,
+      state.getDesktopPageRenderMode,
+      state.getVisibleDesktopPage,
+      state.isIconOpening,
+      state.setPageRef,
+    ],
+  };
+}
+
+function canReusePointerOnlyPlan(previousSnapshot, nextSnapshot) {
+  if (!previousSnapshot || !nextSnapshot || previousSnapshot.key !== nextSnapshot.key) return false;
+  if (previousSnapshot.references.length !== nextSnapshot.references.length) return false;
+  return previousSnapshot.references.every((value, index) => value === nextSnapshot.references[index]);
+}
 
 function projectStageLayoutRecordToClient(record) {
   return stageLayoutRecordToClientRect(record);
@@ -171,6 +279,8 @@ function snapIconLayoutPosition(node, layoutTarget, markBoundsDirty, reason) {
 }
 
 function motionSpringTo(target, vars, config, options = {}) {
+  const numericProps = Object.keys(vars || {}).filter((prop) => Number.isFinite(Number(vars[prop])));
+  if (numericProps.length && shouldSkipMotionSpring(target, numericProps, vars, options)) return null;
   motion(target)
     .layout()
     .spring(config)
@@ -182,6 +292,26 @@ function motionSpringTo(target, vars, config, options = {}) {
       snap: options.snap,
     })
     .start();
+}
+
+function shouldSkipMotionSpring(target, props, vars, options = {}) {
+  if (!target) return true;
+  const snap = options.snap === true;
+  return props.every((prop) => {
+    const desired = Number(vars[prop]);
+    const current = Number(target[prop]);
+    const channel = motionRuntime.getChannel(target, prop);
+    const active = channel?.activeBaseKey
+      ? channel.base?.get(channel.activeBaseKey)
+      : null;
+    if (active && !active.done) {
+      // A snap must cancel an in-flight spring even when its destination is
+      // already correct. A regular update can leave the existing spring alone
+      // only when it is heading to this same destination.
+      return !snap && Math.abs(Number(active.to) - desired) <= MOTION_TARGET_EPSILON;
+    }
+    return Number.isFinite(current) && Math.abs(current - desired) <= MOTION_TARGET_EPSILON;
+  });
 }
 
 export class DesktopLayer extends Container {
@@ -200,8 +330,7 @@ export class DesktopLayer extends Container {
     this.onFolderOutsidePointerDown = options.onFolderOutsidePointerDown || (() => {});
     this.onFolderPanelPointerDown = options.onFolderPanelPointerDown || (() => {});
     this.onFolderTitleFrameChange = options.onFolderTitleFrameChange || (() => {});
-    this.onDragReleaseComplete = options.onDragReleaseComplete || (() => {});
-    this.onFolderCreateReleaseComplete = options.onFolderCreateReleaseComplete || (() => {});
+    this.onGroupReleaseComplete = options.onGroupReleaseComplete || (() => {});
     if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
     this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
@@ -249,13 +378,13 @@ export class DesktopLayer extends Container {
       onExitStart: (folderId) => this.holdFolderDropFrameSuppression(folderId),
       onTargetActive: (folderId) => this.holdFolderDropFrameSuppression(folderId),
     });
-    this.singleStageDragPreviewLayer = new DragPreviewLayer({
-      onReleaseComplete: (release) => this.onDragReleaseComplete(release),
+    this.groupDragLayer = new GroupDragLayer({
+      onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),
+      onReleaseSettled: (payload) => this.onGroupReleaseComplete(payload),
+      resolveFolderNode: (payload) => this.resolveGroupReleaseFolderNode(payload),
+      resolvePointTarget: (payload) => this.resolveGroupReleasePoint(payload),
     });
     this.folderDropStrokeLayer = new FolderDropTargetLayer({ part: "stroke" });
-    this.folderCreateReleaseLayer = new FolderCreateReleaseLayer({
-      onReleaseComplete: (release) => this.onFolderCreateReleaseComplete(release),
-    });
     this.dragHitDebugLayer = new DragHitDebugLayer();
     this.folderHandoffNodes = new Map();
     this.primaryFolderHandoffId = null;
@@ -265,6 +394,7 @@ export class DesktopLayer extends Container {
     this.hasFolderOverlayTransform = false;
     this.lastFolderHandoffDebugSnapshot = null;
     this.lastDesktopRenderPlan = null;
+    this.lastPointerOnlyPlanSnapshot = null;
     this.iconNodes = new Map();
     this.retiredIconNodes = new WeakSet();
     this.pageTrackMotion = createPageTrackMotionState();
@@ -282,9 +412,8 @@ export class DesktopLayer extends Container {
     this.addChild(this.visualRoot);
     this.addChild(this.desktopClosingUnderlayLayer);
     this.addChild(this.singleStageFolderLayer);
-    this.addChild(this.singleStageDragPreviewLayer);
+    this.addChild(this.groupDragLayer);
     this.addChild(this.folderDropStrokeLayer);
-    this.addChild(this.folderCreateReleaseLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
     this.addChild(this.dragHitDebugLayer);
@@ -367,6 +496,7 @@ export class DesktopLayer extends Container {
       destroyDisplayObjectAfterFrame(node, { children: true });
     };
     if (options.immediate === true) {
+      node.alpha = 0;
       finalize();
       return true;
     }
@@ -386,13 +516,30 @@ export class DesktopLayer extends Container {
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
-    const plan = buildDesktopRenderPlan(state, {
+    const folderHandoffEntries = this.getFolderHandoffNodes();
+    const pointerOnlyPlanSnapshot = makePointerOnlyPlanSnapshot(
+      state,
       effectiveFolderSourceGhostedIds,
-      folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
-      folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
-      folderHandoffEntries: this.getFolderHandoffNodes(),
-      folderLayer: this.singleStageFolderLayer,
-    });
+      this.folderDropFrameSuppressedIds,
+      folderHandoffEntries
+    );
+    const canReusePlan = canReusePointerOnlyPlan(
+      this.lastPointerOnlyPlanSnapshot,
+      pointerOnlyPlanSnapshot
+    );
+    const plan = canReusePlan
+      ? {
+        ...this.lastDesktopRenderPlan,
+        state,
+      }
+      : buildDesktopRenderPlan(state, {
+        effectiveFolderSourceGhostedIds,
+        folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
+        folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
+        folderHandoffEntries,
+        folderLayer: this.singleStageFolderLayer,
+      });
+    this.lastPointerOnlyPlanSnapshot = pointerOnlyPlanSnapshot;
     state = plan.state;
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
@@ -444,7 +591,9 @@ export class DesktopLayer extends Container {
         seen.add(key);
         let node = this.iconNodes.get(key);
         const isNewNode = !node;
-        const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (entry.isActiveDraggedItem || entry.isReleaseGhostItem);
+        const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (
+          entry.isActiveDraggedItem || entry.isCreatedFolderRelease
+        );
         const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
         if (isNewNode) {
           node = new IconNode({
@@ -503,9 +652,12 @@ export class DesktopLayer extends Container {
 
       this.emptyText.visible = plan.emptyText.visible;
       this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
+      const createdFolderReleaseSourceIds = getCreatedFolderReleaseSourceIds(state.groupDragState);
       for (const [key, node] of this.iconNodes) {
         if (seen.has(key)) continue;
-        this.retireIconNode(key, node, { immediate: pageTrackScopeChanged });
+        this.retireIconNode(key, node, {
+          immediate: pageTrackScopeChanged || createdFolderReleaseSourceIds.has(node?.item?.id),
+        });
       }
 
       this.boundsRegistration = makeDesktopBoundsRegistration(state, boundsEntries, plan.desktopFrame);
@@ -524,8 +676,7 @@ export class DesktopLayer extends Container {
     this.updateSingleStageFolderLayer(state);
     this.updateFolderDropTargetLayers(plan, state);
     this.applyFolderSourceGhosting(state);
-    this.updateSingleStageDragPreviewLayer(state);
-    this.updateFolderCreateReleaseLayer(state);
+    this.updateGroupDragLayer(state);
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
       iconBoundsRegistry: this.iconBoundsRegistry,
@@ -816,37 +967,94 @@ export class DesktopLayer extends Container {
     this.onFolderRenderRequest("folder-drop-target-exit-complete");
   }
 
-  updateSingleStageDragPreviewLayer(state) {
-    const targetFolderNode = state.dragReleaseState?.targetFolderId
-      ? this.findIconNodeByItemId(state.dragReleaseState.targetFolderId)
-      : null;
-    this.singleStageDragPreviewLayer.update({
+  updateGroupDragLayer(state) {
+    this.groupDragLayer?.update?.({
       deviceResolution: state.deviceResolution,
-      folderHoverState: state.dragFolderHoverState,
+      dragFolderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
+      groupState: state.groupDragState,
       height: state.height,
       iconSize: state.iconSize,
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
-      previewState: state.dragPreviewState,
-      releaseState: state.dragReleaseState,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
-      targetFolderNode,
       width: state.width,
     });
   }
 
-  updateFolderCreateReleaseLayer(state) {
-    if (!this.folderCreateReleaseLayer) return;
-    this.folderCreateReleaseLayer.update({
-      folderPageSize: state.folderPageSize,
-      height: state.height,
-      iconSize: state.iconSize,
-      releaseState: state.folderCreateReleaseState,
-      stageRect: state.stageRect,
-      width: state.width,
-    });
+  /**
+   * The accepted group state can arrive before the scheduled desktop render.
+   * Hide the old desktop owners in that same synchronous handoff so the
+   * release layer never shares a frame with a dimmed/hovered source icon.
+   */
+  applyImmediateGroupReleaseSourceGhosting(group) {
+    const sourceIds = getCreatedFolderReleaseSourceIds(group);
+    if (!sourceIds.size) return false;
+    let changed = false;
+    for (const node of this.iconNodes.values()) {
+      if (!node?.state || !sourceIds.has(node.item?.id) || node.state.ghosted === true) continue;
+      killMotionOf(node, null, { reason: "group-release-source-handoff" });
+      killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });
+      node.setState({
+        ...node.state,
+        ghosted: true,
+        suppressLabelRevealAfterGhost: true,
+      });
+      changed = true;
+    }
+    return changed;
+  }
+
+  resolveGroupReleaseFolderNode({ target } = {}) {
+    const folderId = target?.folderId || null;
+    if (!folderId) return null;
+    const handoffNode = this.getFolderHandoffEntry(folderId)?.node;
+    if (handoffNode && !handoffNode.destroyed) return handoffNode;
+    const desktopNode = this.findIconNodeByItemId(folderId);
+    if (desktopNode && !desktopNode.destroyed) return desktopNode;
+    for (const node of this.singleStageFolderLayer?.iconNodes?.values?.() || []) {
+      if (node?.item?.id === folderId && !node.destroyed) return node;
+    }
+    return null;
+  }
+
+  resolveGroupReleasePoint({ target, state } = {}) {
+    const targetId = target?.id || null;
+    if (!targetId) return null;
+    const nodeCandidates = [
+      this.findIconNodeByItemId(targetId),
+      ...Array.from(this.singleStageFolderLayer?.iconNodes?.values?.() || [])
+        .filter((node) => node?.item?.id === targetId),
+    ];
+    for (const node of nodeCandidates) {
+      if (!node || node.destroyed || !this.groupDragLayer) continue;
+      const local = this.groupDragLayer.toLocal({ x: 0, y: 0 }, node);
+      if (Number.isFinite(local.x) && Number.isFinite(local.y)) {
+        // IconNode.position is the layout/root center. The group ghost uses
+        // the same root convention, so a live Pixi node must not receive the
+        // visual label offset a second time (the registry fallback below is a
+        // visual-rect center and does need that conversion).
+        return { x: local.x, y: local.y };
+      }
+    }
+    const area = target?.area === "folder" ? "folder" : "desktop";
+    const rect = this.iconBoundsRegistry?.getBounds?.(
+      BOUNDS_KIND.LAUNCH,
+      BOUNDS_VARIANT.RENDERED,
+      {
+        area,
+        folderId: target?.folderId,
+        id: targetId,
+        pageIndex: target?.pageIndex,
+      }
+    );
+    const stageRect = clientRectToStageVisualRect(rect, state?.stageRect);
+    if (!stageRect) return null;
+    return {
+      x: stageRect.left + stageRect.width / 2,
+      y: stageRect.top + stageRect.height / 2 - (Number(state?.visualOffsetY) || 0),
+    };
   }
 
   findFolderBoundsEntry(folderId) {
@@ -1522,7 +1730,9 @@ export class DesktopLayer extends Container {
     killMotionOf(this.desktopClosingUnderlayLayer?.scale, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer, null, { lane: "base", reason: "destroyed" });
     killMotionOf(this.singleStageFolderLayer?.scale, null, { lane: "base", reason: "destroyed" });
-    this.folderCreateReleaseLayer?.clearVisuals?.("destroyed");
+    this.groupDragLayer?.destroy?.();
+    this.groupDragLayer = null;
+    this.lastPointerOnlyPlanSnapshot = null;
     cancelPageTrackMotion(this.pageTrackMotion, "destroyed");
     killMotionOf(this.pageTrack, null, { lane: "base", reason: "destroyed" });
     this.visualCommitQueue?.clear?.();

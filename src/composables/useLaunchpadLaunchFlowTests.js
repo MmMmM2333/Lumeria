@@ -42,7 +42,7 @@ function createLaunchFlow(overrides = {}) {
     clearFolderCloseIconGhosts: 0,
     clearFolderOpenIconGhosts: 0,
     clearSearch: [],
-    clearSelectedIcon: 0,
+    clearFocusedIcon: 0,
     finishFolderZoomFadeClose: 0,
     finishHomeRevealSettleWindow: 0,
     hideNativeWindow: 0,
@@ -86,8 +86,8 @@ function createLaunchFlow(overrides = {}) {
       calls.clearFolderOpenIconGhosts += 1;
     },
     clearSearch: (options) => calls.clearSearch.push(options),
-    clearSelectedIcon: () => {
-      calls.clearSelectedIcon += 1;
+    clearFocusedIcon: () => {
+      calls.clearFocusedIcon += 1;
     },
     cloneItem: (item) => ({ ...item }),
     desktopMainRef,
@@ -171,14 +171,14 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(!close.flow.isDesktopOpen.value, "closing the desktop should mark it closed immediately");
     assert(close.flow.isDesktopClosing.value, "closing the desktop should enter the closing state immediately");
     assert(close.calls.cancelInputGesture === 1, "closing the desktop should cancel the active input gesture");
-    assert(close.calls.clearSelectedIcon === 1, "closing the desktop should clear selected icon");
+    assert(close.calls.clearFocusedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
     assert(close.calls.setNativeWindowFrameEnabled.join(",") === "false", "closing the desktop should disable the native window frame");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
     assert(!close.flow.isDesktopClosing.value, "desktop close timer should end the closing state");
     assert(close.calls.clearSearch.length === 1, "desktop close should clear search after the close animation");
-    assert(close.calls.clearSearch[0].keepSelection === false, "desktop close should clear search without keeping selection");
+    assert(close.calls.clearSearch[0].keepFocus === false, "desktop close should clear search without keeping selection");
 
     const open = createLaunchFlow({ openingIcon: { area: "desktop", id: "old" } });
     open.flow.closeDesktop();

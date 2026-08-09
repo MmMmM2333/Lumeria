@@ -109,7 +109,7 @@ export function useLaunchpadPageCommands(options) {
     options.cancelInputGesture();
     const next = options.dissolveFolder(options.pages.value, folderId, options.pageSize.value);
     commitPages(next);
-    if (options.selectedIcon?.value?.id === folderId) options.clearSelectedIcon?.();
+    if (options.focusedIcon?.value?.id === folderId) options.clearFocusedIcon?.();
     if (options.openFolderId.value === folderId || options.renderedFolder.value?.id === folderId) {
       options.commitOpenFolder(null);
     }

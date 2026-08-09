@@ -817,12 +817,182 @@ body {
   transform: translate(-50%, -50%) scale(1.02);
 }
 
+.page-dot-has-selection::after {
+  position: absolute;
+  right: 3px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  background: #55aaff;
+  box-shadow: 0 0 0 2px rgba(85, 170, 255, 0.18);
+  content: "";
+}
+
 .icon-context-menu-layer {
   position: fixed;
   inset: 0;
   z-index: 88;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.launchpad-selection-toolbar {
+  position: fixed;
+  top: max(14px, calc(var(--window-chrome-safe-top) + 10px));
+  left: 50%;
+  z-index: 72;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(760px, calc(100vw - 40px));
+  min-height: 54px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(42, 48, 62, 0.94), rgba(23, 28, 39, 0.94));
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  transform: translateX(-50%);
+  animation: launchpad-selection-toolbar-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes launchpad-selection-toolbar-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.launchpad-root-batch-selection .launchpad-header {
+  opacity: 0;
+  pointer-events: none !important;
+}
+
+.launchpad-selection-toolbar-summary {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 120px;
+  padding: 0 6px;
+  line-height: 1.2;
+}
+
+.launchpad-selection-toolbar-summary strong {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.launchpad-selection-toolbar-summary span {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+}
+
+.launchpad-selection-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.launchpad-selection-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 11px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.launchpad-selection-toolbar-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.launchpad-selection-toolbar-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.launchpad-selection-toolbar-button:focus-visible {
+  outline: 2px solid rgba(126, 188, 255, 0.95);
+  outline-offset: 1px;
+}
+
+.launchpad-selection-toolbar-button:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.launchpad-selection-toolbar-close {
+  width: 38px;
+  flex: 0 0 38px;
+}
+
+.launchpad-selection-toolbar-action {
+  padding: 0 10px;
+}
+
+.launchpad-selection-toolbar-action-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 10px;
+}
+
+.launchpad-selection-toolbar-danger {
+  color: #ffaaa5;
+}
+
+.launchpad-selection-toolbar-danger:hover:not(:disabled) {
+  background: rgba(255, 82, 82, 0.14);
+}
+
+.launchpad-selection-toolbar-done {
+  min-width: 58px;
+  padding: 0 13px;
+  color: #07111f;
+  background: #8cc8ff;
+  font-weight: 680;
+}
+
+.launchpad-selection-toolbar-done:hover:not(:disabled) {
+  background: #a7d6ff;
+}
+
+@media (max-width: 760px) {
+  .launchpad-selection-toolbar {
+    top: max(10px, calc(var(--window-chrome-safe-top) + 6px));
+    width: calc(100vw - 20px);
+  }
+
+  .launchpad-selection-toolbar-action span:not(.launchpad-selection-toolbar-action-count) {
+    display: none;
+  }
+
+  .launchpad-selection-toolbar-action {
+    width: 38px;
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launchpad-selection-toolbar {
+    animation: none;
+  }
 }
 
 .icon-context-menu {

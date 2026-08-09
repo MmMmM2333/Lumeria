@@ -1,6 +1,7 @@
 import { createSSRApp, h, ref } from "vue";
 import { renderToString } from "@vue/server-renderer";
 import {
+  isMultiSelectFixtureEnabled,
   shouldDeferFolderOpenForClosingGhostHandoff,
   shouldIgnoreFolderCloseRequest,
   shouldPlayFolderOpenIconGhosts,
@@ -12,6 +13,16 @@ export async function runLaunchpadControllerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad controller test failed] ${message}`);
   };
+
+  assert(
+    isMultiSelectFixtureEnabled("?fixture=multi-select", true),
+    "the isolated multi-select fixture should only activate for its exact development query"
+  );
+  assert(
+    !isMultiSelectFixtureEnabled("?fixture=multi-select", false) &&
+      !isMultiSelectFixtureEnabled("?fixture=other", true),
+    "the fixture gate must stay disabled in production and for unrelated queries"
+  );
 
   assert(!shouldPlayFolderOpenIconGhosts(null), "empty folder open requests should not play folder-open icon ghosts");
   assert(shouldPlayFolderOpenIconGhosts("folder", {

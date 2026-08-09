@@ -211,7 +211,7 @@ function makeDesktopQuiescenceState(item = { id: "app-a", type: "app" }) {
     iconSize: 64,
     isFolderOpeningPreviewFrameGhosted: () => false,
     isIconOpening: () => false,
-    selectedIcon: null,
+    focusedIcon: null,
     isSearchMode: false,
     isTextlessMode: false,
     launchTargetStatusById: {},
@@ -234,7 +234,6 @@ function prepareLayerForDesktopQuiescenceTest(layer, item) {
     getDesktopSourceGhostedIds: () => new Set(),
     hasVisibleFolderSubstitute: () => false,
   };
-  layer.updateSingleStageDragPreviewLayer = () => {};
   layer.updateSingleStageFolderLayer = () => {};
   layer.pageTrackMotion = {
     control: null,
@@ -334,8 +333,8 @@ export async function runDesktopLayerTests() {
     const releaseState = {
       ...baseState,
       activePages: [[neighborItem, movingItem]],
-      dragReleaseGhostId: movingItem.id,
-      dragReleaseState: {
+      dragMeta: {
+        draggedIds: [movingItem.id],
         item: movingItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
@@ -349,9 +348,9 @@ export async function runDesktopLayerTests() {
     const expectedX = targetRecord.left + targetRecord.width / 2;
 
     assert(initialX !== expectedX, "desktop release-backed setup should move the hidden real icon to a new slot");
-    assert(movingNode.visible === false && movingNode.state.ghosted === true, "desktop release-backed real icon should stay hidden behind the drag preview");
-    assert(nearlyEqual(movingNode.x, expectedX), "desktop release-backed hidden real icon should snap to the release target before it is revealed");
-    assert(!getBaseAnimation(movingNode, "x"), "desktop release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+    assert(movingNode.visible === false && movingNode.state.dragging === true, "the shared drag owner should keep the real desktop icon hidden through visual release");
+    assert(nearlyEqual(movingNode.x, expectedX), "the hidden real desktop icon should snap to the release target before it is revealed");
+    assert(!getBaseAnimation(movingNode, "x"), "the hidden real desktop icon should not keep a layout spring that can twitch after reveal");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -389,6 +388,215 @@ export async function runDesktopLayerTests() {
       !getBaseAnimation(node, "x") && !getBaseAnimation(node, "y"),
       "window resize layout sync should not leave a delayed icon layout spring"
     );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const target = { id: "created-target-layout-target", name: "Target", type: "app" };
+    const dragged = { id: "created-target-layout-dragged", name: "Dragged", type: "app" };
+    const folder = {
+      childPages: [[target, dragged]],
+      children: [target, dragged],
+      id: "created-target-layout-folder",
+      name: "New Folder",
+      type: "folder",
+    };
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    layer.updateGroupDragLayer = () => {};
+    layer.update({
+      ...makeDesktopQuiescenceState(folder),
+      groupDragState: {
+        entries: [
+          { item: dragged, originKind: "lead" },
+          { item: target, originKind: "folder-create-target" },
+        ],
+        key: "created-target-layout",
+        phase: "accepted",
+        releaseCreatedFolderId: folder.id,
+        releasePlan: {
+          entries: [target, dragged].map((item, slotIndex) => ({
+            id: item.id,
+            mode: "created-folder",
+            target: {
+              folderId: folder.id,
+              kind: "created-folder",
+              slotIndex,
+            },
+          })),
+          key: "created-target-layout-plan",
+        },
+        totalCount: 1,
+      },
+    });
+    const folderNode = layer.findIconNodeByItemId(folder.id);
+    const folderEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.item.id === folder.id);
+    assert(folderNode?.state?.ghosted === true, "created-folder release target should remain hidden behind the release visuals");
+    assert(
+      nearlyEqual(folderNode?.position?.x, folderEntry?.layoutTarget?.x) &&
+        nearlyEqual(folderNode?.position?.y, folderEntry?.layoutTarget?.y) &&
+        !getBaseAnimation(folderNode, "x") &&
+        !getBaseAnimation(folderNode, "y"),
+      "created-folder release target should start at stable layout without the ordinary new-node entry spring"
+    );
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const dragged = { id: "created-release-dragged", name: "Dragged", type: "app" };
+    const target = { id: "created-release-target", name: "Target", type: "app" };
+    const folder = {
+      childPages: [[target, dragged]],
+      children: [target, dragged],
+      id: "created-release-folder",
+      name: "New Folder",
+      type: "folder",
+    };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.applyFolderSourceGhosting = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.dragHitDebugLayer = { update() {} };
+
+    const makePreparedNode = (item) => {
+      const node = makeNode(item.id);
+      node.item = item;
+      node.renderable = true;
+      node.setState = (nextState) => {
+        node.state = nextState;
+        node.visible = !nextState.dragging && !nextState.ghosted;
+      };
+      return node;
+    };
+    const draggedNode = prepareLayerForDesktopQuiescenceTest(layer, dragged);
+    const targetNode = makePreparedNode(target);
+    layer.iconNodes.set(`page:0:${target.id}`, targetNode);
+
+    const baseState = {
+      ...makeDesktopQuiescenceState(dragged),
+      activePages: [[dragged, target]],
+      desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+      gridCols: 2,
+      gridRows: 1,
+      height: 320,
+      stageRect: { height: 320, left: 0, top: 0, width: 480 },
+      width: 480,
+    };
+    layer.update(baseState);
+    draggedNode.alpha = 1;
+    targetNode.alpha = 1;
+    draggedNode.visible = true;
+    targetNode.visible = true;
+    draggedNode.renderable = true;
+    targetNode.renderable = true;
+
+    const folderNode = makePreparedNode(folder);
+    layer.iconNodes.set(`page:0:${folder.id}`, folderNode);
+    const releaseEntries = [
+      { item: dragged, originKind: "desktop" },
+      { item: target, originKind: "folder-create-target" },
+    ];
+    layer.update({
+      ...baseState,
+      activePages: [[folder]],
+      groupDragState: {
+        entries: releaseEntries,
+        key: "created-release-brightness",
+        phase: "accepted",
+        releaseCreatedFolderId: folder.id,
+        releasePlan: {
+          entries: releaseEntries.map((entry, index) => ({
+            id: entry.item.id,
+            mode: "created-folder",
+            order: index,
+            target: { folderId: folder.id, kind: "created-folder", slotIndex: index },
+          })),
+          key: "created-release-brightness-plan",
+        },
+        totalCount: 1,
+      },
+    });
+
+    assert(
+      targetNode.visible === false && targetNode.renderable === false && targetNode.alpha === 0,
+      "created-folder release should retire the old target node immediately so it cannot overlap the full-alpha release ghost"
+    );
+    assert(
+      draggedNode.visible === false && draggedNode.renderable === false && draggedNode.alpha === 0,
+      "created-folder release should retire every real source node immediately once the release layer owns their visuals"
+    );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const item = { id: "pointer-cache-app", name: "Pointer Cache", type: "app" };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const node = prepareLayerForDesktopQuiescenceTest(layer, item);
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.applyFolderSourceGhosting = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.singleStageDiagnosticsLayer.update = () => {};
+    layer.dragHitDebugLayer = { update() {} };
+
+    const entries = [];
+    const dragMeta = {
+      draggedIds: [item.id],
+      item,
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const groupDragState = {
+      center: { x: 180, y: 160 },
+      entries,
+      phase: "dragging",
+      pointer: { x: 180, y: 160 },
+      totalCount: 1,
+    };
+    const baseState = {
+      ...makeDesktopQuiescenceState(item),
+      dragMeta,
+      groupDragState,
+    };
+
+    layer.update(baseState);
+    const firstPlan = layer.lastDesktopRenderPlan;
+    layer.update({
+      ...baseState,
+      groupDragState: {
+        ...groupDragState,
+        center: { x: 260, y: 220 },
+        pointer: { x: 260, y: 220 },
+      },
+    });
+    const stablePointerPlan = layer.lastDesktopRenderPlan;
+    assert(
+      stablePointerPlan.entries === firstPlan.entries,
+      "pointer-only group drag updates should reuse the structural desktop plan"
+    );
+
+    layer.update({
+      ...baseState,
+      dragFolderTargetId: "folder-target",
+      groupDragState: {
+        ...groupDragState,
+        center: { x: 300, y: 240 },
+        pointer: { x: 300, y: 240 },
+      },
+    });
+    assert(
+      layer.lastDesktopRenderPlan.entries !== stablePointerPlan.entries,
+      "a changed folder target should invalidate the pointer-only desktop plan cache"
+    );
+    assert(node.state.dragging === true, "pointer-only plan test should keep the dragged icon state active");
     motionRuntime.reset();
   }
 
@@ -561,7 +769,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.singleStageDragPreviewLayer = { update() {} };
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -609,7 +816,7 @@ export async function runDesktopLayerTests() {
         iconSize: 64,
         isFolderOpeningPreviewFrameGhosted: () => false,
         isIconOpening: () => false,
-        selectedIcon: null,
+        focusedIcon: null,
         isSearchMode: true,
         isTextlessMode: false,
         launchTargetStatusById: {},
@@ -871,6 +1078,37 @@ export async function runDesktopLayerTests() {
     const pageTrack = makePageTrack([]);
     const layer = makeLayer(DesktopLayer, pageTrack);
     layer.markInteractiveBoundsDirty = () => {};
+    const transform = (y) => ({
+      desktopVisualTransform: { scale: 1, y },
+      height: 600,
+      width: 800,
+    });
+
+    layer.applyDesktopVisualTransform(transform(0));
+    layer.applyDesktopVisualTransform(transform(40));
+    const spring = getBaseAnimation(layer.visualRoot, "y");
+    assert(spring, "a changed desktop transform should start a spring");
+    motionRuntime.step(0.05);
+    const fromBeforeStableUpdate = spring.from;
+    layer.applyDesktopVisualTransform(transform(40));
+    assert(
+      spring.from === fromBeforeStableUpdate,
+      "a stable desktop transform should not restart its in-flight spring"
+    );
+
+    layer.applyDesktopVisualTransform(transform(50));
+    assert(
+      spring.to === 350 && spring.from !== fromBeforeStableUpdate,
+      "a changed desktop transform should still retarget the existing spring"
+    );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.markInteractiveBoundsDirty = () => {};
     const folderState = {
       renderedFolder: { id: "resize-snap-folder" },
     };
@@ -1001,7 +1239,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.updateSingleStageDragPreviewLayer = () => {};
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -1038,7 +1275,7 @@ export async function runDesktopLayerTests() {
       iconSize: 64,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isIconOpening: () => false,
-      selectedIcon: null,
+      focusedIcon: null,
       isSearchMode: false,
       isTextlessMode: false,
       launchTargetStatusById: {},
@@ -1124,7 +1361,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(["folder-a"]),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.updateSingleStageDragPreviewLayer = () => {};
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -1157,7 +1393,7 @@ export async function runDesktopLayerTests() {
       iconSize: 64,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isIconOpening: () => false,
-      selectedIcon: null,
+      focusedIcon: null,
       isSearchMode: false,
       isTextlessMode: false,
       launchTargetStatusById: {},
@@ -1655,64 +1891,6 @@ export async function runDesktopLayerTests() {
 
     assert(folder.position.x === 18 && folder.position.y === 42, "handoff should apply the pinned position");
     assert(folder.scale.x === 1.087 && folder.scale.y === 1.086, "handoff should apply inverse shell scale");
-  }
-
-  {
-    const calls = [];
-    const pageTrack = makePageTrack([]);
-    const layer = makeLayer(DesktopLayer, pageTrack);
-    layer.singleStageDragPreviewLayer = {
-      update(state) {
-        calls.push(state);
-      },
-    };
-    const targetFolderNode = makeNode("folder-preview-target");
-    targetFolderNode.item = { id: "folder-preview-target", type: "folder" };
-    layer.iconNodes.set("desktop:folder-preview-target", targetFolderNode);
-    const previewState = { item: { id: "app-a", type: "app" } };
-    const releaseState = {
-      item: { id: "app-a", type: "app" },
-      releaseMode: "folder-preview-slot",
-      targetFolderId: "folder-preview-target",
-    };
-
-    layer.updateSingleStageDragPreviewLayer({
-      deviceResolution: 1.5,
-      dragFolderHoverState: { phase: "hover", targetType: "folder" },
-      dragPreviewState: previewState,
-      dragReleaseState: releaseState,
-      folderPageSize: 9,
-      height: 600,
-      iconSize: 64,
-      isTextlessMode: false,
-      launchTargetStatusById: {},
-      showMissingLaunchTargetBadge: true,
-      stageRect: { height: 600, left: 10, top: 20, width: 800 },
-      width: 800,
-    });
-
-    assert(calls[0].previewState === previewState, "root-stage drag preview should receive the active preview state");
-    assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
-    assert(calls[0].targetFolderNode === targetFolderNode, "folder preview slot release should receive the current real target IconNode");
-    assert(calls[0].deviceResolution === 1.5, "folder preview slot release should receive renderer resolution for device-pixel handoff thresholds");
-
-    layer.updateSingleStageDragPreviewLayer({
-      deviceResolution: 2,
-      dragPreviewState: null,
-      dragReleaseState: null,
-      folderPageSize: 9,
-      height: 600,
-      iconSize: 64,
-      isTextlessMode: false,
-      launchTargetStatusById: {},
-      showMissingLaunchTargetBadge: true,
-      stageRect: { height: 600, left: 10, top: 20, width: 800 },
-      width: 800,
-    });
-
-    assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
-    assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
-    assert(calls[1].targetFolderNode == null, "root-stage drag preview should clear the live folder target with the release");
   }
 
   {

@@ -12,8 +12,8 @@ export function useLaunchpadSearch(options) {
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : options.pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? options.searchPageIndex.value : options.pageIndex.value));
 
-  function selectFirstIconOnNextTick() {
-    nextTick(() => options.selectFirstIconInCurrentScope({ force: true }));
+  function focusFirstIconOnNextTick() {
+    nextTick(() => options.focusFirstIconInCurrentScope({ force: true }));
   }
 
   function handleSearchInput(event) {
@@ -21,16 +21,16 @@ export function useLaunchpadSearch(options) {
     searchQuery.value = nextQuery;
     options.commitSearchPageIndex(0);
     if (nextQuery.trim() && !options.isDragActive() && options.openFolderId.value) options.commitOpenFolder(null);
-    if (nextQuery.trim()) selectFirstIconOnNextTick();
-    else options.clearSelectedIcon();
+    if (nextQuery.trim()) focusFirstIconOnNextTick();
+    else options.clearFocusedIcon();
     options.schedulePageGridMetrics();
   }
 
   function clearSearch(clearOptions) {
     searchQuery.value = "";
     options.commitSearchPageIndex(0);
-    if (clearOptions?.selectFirst) selectFirstIconOnNextTick();
-    else if (!clearOptions?.keepSelection) options.clearSelectedIcon();
+    if (clearOptions?.focusFirst) focusFirstIconOnNextTick();
+    else if (!clearOptions?.keepFocus) options.clearFocusedIcon();
     options.schedulePageGridMetrics();
   }
 

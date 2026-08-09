@@ -64,6 +64,11 @@
         </fluent-menu-item>
       </template>
       <template v-else>
+        <fluent-menu-item @click="runContextMenuAction('batch-manage')">
+          <SelectAllOnIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.batchManage") }}
+        </fluent-menu-item>
+        <fluent-divider class="icon-context-menu-divider" role="separator" />
         <fluent-menu-item @click="runContextMenuAction('compact-pages')">
           <ArrowSortIcon slot="start" class="icon-context-menu-item-icon" />
           {{ t("settings.interface.layout.compactAction") }}
@@ -100,6 +105,7 @@ import FolderOpenIcon from "~icons/fluent/folder-open-20-regular";
 import OpenIcon from "~icons/fluent/open-20-regular";
 import RenameIcon from "~icons/fluent/rename-20-regular";
 import ScanObjectIcon from "~icons/fluent/scan-object-20-regular";
+import SelectAllOnIcon from "~icons/fluent/select-all-on-20-regular";
 import SettingsIcon from "~icons/fluent/settings-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";

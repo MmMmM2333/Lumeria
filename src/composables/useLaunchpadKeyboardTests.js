@@ -22,11 +22,11 @@ function makeKeyEvent(key, overrides = {}) {
 }
 
 function createKeyboard(overrides = {}) {
-  const calls = { closeDesktop: 0, closeTopmostModal: 0, openSelectedIcon: 0, turnCurrentPage: [] };
+  const calls = { closeDesktop: 0, closeTopmostModal: 0, openFocusedIcon: 0, turnCurrentPage: [] };
   const keyboard = useLaunchpadKeyboard({
     cancelAltEditMode: () => {},
     clearSearch: () => {},
-    clearSelectedIcon: () => {},
+    clearFocusedIcon: () => {},
     closeDesktop: () => { calls.closeDesktop += 1; },
     closeTopmostModal: () => {
       calls.closeTopmostModal += 1;
@@ -51,15 +51,15 @@ function createKeyboard(overrides = {}) {
     isModalOpen: () => Boolean(overrides.hasModal),
     isSearchMode: ref(false),
     keyboardFocusArea: ref("desktop"),
-    moveSelectionByArrow: () => {},
+    moveFocusByArrow: () => {},
     openDesktop: () => {},
-    openSelectedIcon: () => { calls.openSelectedIcon += 1; },
+    openFocusedIcon: () => { calls.openFocusedIcon += 1; },
     schedulePageGridMetrics: () => {},
     searchInputRef: ref(null),
     searchQuery: ref(""),
-    selectFirstIconInCurrentScope: () => {},
-    selectedIcon: ref(null),
-    selectionMatchesScope: () => true,
+    focusFirstIconInCurrentScope: () => {},
+    focusedIcon: ref(null),
+    focusMatchesScope: () => true,
     startFolderZoomFadeClose: () => true,
     turnCurrentPage: (direction, options) => calls.turnCurrentPage.push({ direction, options }),
   });
@@ -82,5 +82,5 @@ export function runLaunchpadKeyboardTests() {
   const activation = createKeyboard();
   const enter = makeKeyEvent("Enter");
   activation.keyboard.handleGlobalKeydown(enter);
-  assert(activation.calls.openSelectedIcon === 1, "Enter should activate the selected icon");
+  assert(activation.calls.openFocusedIcon === 1, "Enter should activate the selected icon");
 }

@@ -17,13 +17,17 @@ export function makeLaunchSourceFromBounds(target, isSearchMode = false) {
 
 export function isLaunchpadContextMenuInteractionBlocked({
   dragMeta = null,
+  isBatchSelectionActive = false,
   isDialogOpen = false,
+  isEditMode = false,
   isHomeInteractionDisabled = false,
   isSettingsPanelOpen = false,
 } = {}) {
   return Boolean(
     dragMeta ||
+    isBatchSelectionActive ||
     isDialogOpen ||
+    isEditMode ||
     isHomeInteractionDisabled ||
     isSettingsPanelOpen
   );

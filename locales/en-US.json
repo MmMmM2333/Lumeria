@@ -1030,13 +1030,44 @@
       "page": "Go to page {page}",
       "folderName": "Folder name",
       "newFolder": "New Folder",
-      "contextMenu": {
-        "label": "{name} menu",
-        "surfaceLabel": "Launchpad menu",
-        "remove": "Remove from Launchpad",
-        "exclude": "Remove and exclude from scans",
-        "dissolve": "Dissolve folder"
-      }
+        "contextMenu": {
+          "label": "{name} menu",
+          "surfaceLabel": "Launchpad menu",
+          "batchManage": "Batch manage",
+          "remove": "Remove from Launchpad",
+          "exclude": "Remove and exclude from scans",
+          "dissolve": "Dissolve folder"
+        },
+        "batch": {
+          "toolbarLabel": "Batch management",
+          "selectedCount": "{count} selected",
+          "hiddenCount": "{count} more outside this view",
+          "pageWithSelection": "Page {page}, {count} apps selected",
+          "selectScope": "Select current page",
+          "createFolder": "Create folder",
+          "delete": "Delete",
+          "done": "Done",
+          "deleteTitle": "Delete selected apps?",
+          "deleteMessage": "Remove the selected {count} apps from Launchpad? This action cannot currently be undone.",
+            "deleteConfirm": "Delete",
+            "createRejectedTitle": "Could not create folder",
+            "moveRejectedTitle": "Could not move selected apps",
+            "reasons": {
+              "desktop-capacity": "The target page does not have enough space.",
+              "desktop-page-missing": "A new page cannot be created after an emptied trailing page.",
+              "duplicate-layout-id": "The layout contains duplicate apps and must be repaired first.",
+              "folder-missing": "The target folder no longer exists.",
+              "folder-page-capacity": "The target folder page does not have enough space.",
+              "folder-page-missing": "The target folder page no longer exists.",
+              "missing-dragged-id": "Some apps no longer exist. Select them again.",
+              "nested-folder-not-supported": "An app inside a folder cannot be used to create a nested folder.",
+              "revision-stale": "The layout changed. Please try again.",
+              "selection-revision-stale": "The selection changed. Please try again.",
+              "target-app-missing": "The target app no longer exists.",
+              "target-in-selection": "Selected apps cannot be dropped onto themselves.",
+              "invalid-target": "The current selection cannot be made into a folder."
+            }
+        }
     },
     "dialogs": {
       "iconChooser": {

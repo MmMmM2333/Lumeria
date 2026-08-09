@@ -1,11 +1,7 @@
 import { nextTick, shallowRef } from "vue";
 import {
-  DESKTOP_SORT_MIN_DISTANCE,
-  DRAG_INTENT_IDLE_DELAY,
-  FOLDER_DRAG_SORT_GATE_DURATION,
-  FOLDER_HOVER_STICKY_MARGIN,
   FOLDER_PAGE_EDGE_SIZE,
-  FOLDER_SORT_MIN_DISTANCE,
+  FOLDER_HOVER_STICKY_MARGIN,
   PAGE_EDGE_SIZE,
   PAGE_TURN_DELAY,
 } from "./launchpadConstants.js";
@@ -13,50 +9,38 @@ import {
   clamp,
   expandRect,
   isPointInsideRect,
-  shouldCommitPlacementFromLast,
 } from "../domain/launchpadLayout.js";
 import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
-import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
-import { getDesktopIconSizing } from "../rendering/pixi/scene/desktopIconSizing.js";
-import { makeFolderThumbPreviewRect } from "../rendering/pixi/scene/folderOverlayTargets.js";
-import { resolveFolderIconRenderSize } from "../rendering/pixi/scene/folderIconSizing.js";
 import {
-  cloneIconVisualSpec,
-  makeIconVisualSpec,
-} from "../rendering/pixi/scene/iconVisualSpec.js";
-import {
-  getFolderGridMetrics,
-  getFolderPanelGeometry,
-  readPx,
-} from "../rendering/pixi/geometry/gridGeometry.js";
-import { getFolderLayoutMetricsForRows } from "./useFolderLayoutStyles.js";
+  indexGroupDragSources,
+  resolveGroupGatherEntries,
+  selectGroupGatherRepresentatives,
+} from "../domain/groupGatherOrigins.js";
+import { makeGroupReleasePlan } from "../domain/groupReleasePlan.js";
+import { prefersReducedMotion } from "../rendering/pixi/animation/motionPreferences.js";
+import { appendGroupTrailPoint } from "../rendering/pixi/scene/groupDragPresentation.js";
+import { makeIconVisualSpec } from "../rendering/pixi/scene/iconVisualSpec.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
-const LAYOUT_PROJECTION_RELEASE_DELAY = 260;
-const DRAG_RELEASE_DURATION_MS = 180;
-const DRAG_RELEASE_GHOST_PADDING_MS = 60;
-const DRAG_RELEASE_FALLBACK_CLEAR_MS = 1200;
-const DRAG_RELEASE_TARGET_RESOLVE_FRAMES = 3;
-const DRAG_RELEASE_STABLE_TARGET_RESOLVE_FRAMES = 10;
-const DRAG_RELEASE_MODE_SLOT = "slot";
-const DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT = "folder-preview-slot";
-const DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB = "folder-center-absorb";
-const FOLDER_HOVER_SETTLE_MS = 660;
-const FOLDER_HOVER_FLASH_TOTAL_MS = 540;
-const FOLDER_HOVER_OPEN_BUFFER_MS = 20;
-const FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
-const FOLDER_HOVER_OPEN_DELAY_MS = FOLDER_HOVER_SETTLE_MS + FOLDER_HOVER_FLASH_TOTAL_MS + FOLDER_HOVER_OPEN_BUFFER_MS;
-const FOLDER_HOVER_OPENING_DELAY_MS = Math.max(0, FOLDER_HOVER_OPEN_DELAY_MS - FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS);
-const FOLDER_HOVER_ESCAPE_MARGIN = 64;
+const GROUP_DRAG_VISUAL_LIMIT = 12;
+// Group target intent is sampled on a short pointer cadence.  The generic
+// idle delay is intentionally not used here: waiting 140ms leaves the drag
+// visually over a target while the planner still reports the old desktop
+// slot, which makes app-on-app drops feel slippery.
+const GROUP_DROP_INTENT_DELAY_MS = 42;
+const GROUP_FOLDER_HOVER_OPEN_MS = 920;
+const GROUP_FOLDER_HOVER_FLASH_MS = 540;
 const FOLDER_HIT_CANDIDATE_MARGIN = 6;
 const FOLDER_HIT_INTENT_MAX_SIZE = 64;
-const DRAG_VELOCITY_SMOOTHING = 0.6;
-const DRAG_VELOCITY_MAX_DELTA_MS = 80;
+const LAYOUT_PROJECTION_RELEASE_DELAY_MS = 260;
+const POINTER_MOVE_THRESHOLD = 6;
+const VELOCITY_SMOOTHING = 0.6;
+const VELOCITY_MAX_DELTA_MS = 80;
 
 export function isPrimaryPointerStartEvent(event) {
   if (!event) return false;
@@ -86,192 +70,198 @@ function nowMs() {
   return globalThis.performance?.now?.() || Date.now();
 }
 
-function makeZeroVelocity() {
-  return { x: 0, y: 0 };
-}
-
 function readPointerTime(event) {
   const time = Number(event?.timeStamp);
   return Number.isFinite(time) && time > 0 ? time : nowMs();
 }
 
+function zeroVelocity() {
+  return { x: 0, y: 0 };
+}
+
 export function samplePointerVelocity(previous = {}, event = {}, options = {}) {
-  const smoothing = Math.max(0, Math.min(1, Number(options.smoothing ?? DRAG_VELOCITY_SMOOTHING)));
-  const maxDeltaMs = Math.max(1, Number(options.maxDeltaMs ?? DRAG_VELOCITY_MAX_DELTA_MS));
+  const smoothing = clamp(Number(options.smoothing ?? VELOCITY_SMOOTHING), 0, 1);
+  const maxDeltaMs = Math.max(1, Number(options.maxDeltaMs ?? VELOCITY_MAX_DELTA_MS));
   const time = readPointerTime(event);
   const previousPointer = previous.pointer || { x: event.clientX, y: event.clientY };
   const previousTime = Number(previous.time) || time;
-  const dtMs = Math.max(1, Math.min(maxDeltaMs, time - previousTime));
+  const deltaMs = Math.max(1, Math.min(maxDeltaMs, time - previousTime));
   const instant = {
-    x: ((Number(event.clientX) - previousPointer.x) / dtMs) * 1000,
-    y: ((Number(event.clientY) - previousPointer.y) / dtMs) * 1000,
+    x: ((Number(event.clientX) - previousPointer.x) / deltaMs) * 1000,
+    y: ((Number(event.clientY) - previousPointer.y) / deltaMs) * 1000,
   };
-  const previousVelocity = previous.velocity || makeZeroVelocity();
+  const velocity = previous.velocity || zeroVelocity();
   return {
-    pointer: {
-      x: Number(event.clientX),
-      y: Number(event.clientY),
-    },
+    pointer: { x: Number(event.clientX), y: Number(event.clientY) },
     time,
     velocity: {
-      x: previousVelocity.x + (instant.x - previousVelocity.x) * smoothing,
-      y: previousVelocity.y + (instant.y - previousVelocity.y) * smoothing,
+      x: velocity.x + (instant.x - velocity.x) * smoothing,
+      y: velocity.y + (instant.y - velocity.y) * smoothing,
     },
   };
+}
+
+function cloneRect(rect) {
+  if (!rect) return null;
+  const left = Number(rect.left) || 0;
+  const top = Number(rect.top) || 0;
+  const width = Number(rect.width) || 0;
+  const height = Number(rect.height) || 0;
+  return {
+    bottom: Number(rect.bottom) || top + height,
+    height,
+    left,
+    right: Number(rect.right) || left + width,
+    top,
+    width,
+  };
+}
+
+function centerRect(rect, fallback = { x: 0, y: 0 }) {
+  if (!rect) return { ...fallback };
+  return {
+    x: Number(rect.left) + Number(rect.width) / 2,
+    y: Number(rect.top) + Number(rect.height) / 2,
+  };
+}
+
+function rectsIntersect(left, right) {
+  if (!left || !right) return false;
+  return left.left <= right.right &&
+    left.right >= right.left &&
+    left.top <= right.bottom &&
+    left.bottom >= right.top;
+}
+
+function makeCenteredRect(rect, width, height) {
+  if (!rect || width <= 0 || height <= 0) return null;
+  const left = Number(rect.left) + (Number(rect.width) - width) / 2;
+  const top = Number(rect.top) + (Number(rect.height) - height) / 2;
+  return {
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+  };
+}
+
+function intentKey(intent) {
+  if (!intent) return "invalid";
+  return [
+    intent.type,
+    intent.folderId || "",
+    intent.targetAppId || "",
+    intent.pageIndex ?? "",
+    intent.index ?? "",
+    intent.allowCreate === true ? "create" : "",
+    intent.reason || "",
+  ].join(":");
+}
+
+function updateLayoutProjection(group, intent, plan) {
+  // Folder/app intent is semantic only; keep the last slot projection until
+  // release so the hidden source never exposes a hole in the base layout.
+  if (!["desktop-slot", "open-folder-slot"].includes(intent?.type)) return;
+  if (plan.status === "accepted") {
+    group.projectedPages = plan.projectedPages || plan.nextPages;
+  } else if (plan.status === "noop") {
+    group.projectedPages = null;
+  }
+}
+
+function getFolderChildrenPages(folder) {
+  if (Array.isArray(folder?.childPages)) return folder.childPages;
+  return [Array.isArray(folder?.children) ? folder.children : []];
+}
+
+function findFolderInPages(pages, folderId) {
+  for (const page of pages || []) {
+    const folder = (page || []).find((item) => item?.id === folderId && item.type === "folder");
+    if (folder) return folder;
+  }
+  return null;
 }
 
 export function useLaunchpadDrag(options) {
   if (typeof options.getNewFolderName !== "function") {
     throw new TypeError("useLaunchpadDrag requires getNewFolderName");
   }
+  if (typeof options.planGroupDrop !== "function") {
+    throw new TypeError("useLaunchpadDrag requires planGroupDrop");
+  }
+  if (typeof options.commitGroupDrop !== "function") {
+    throw new TypeError("useLaunchpadDrag requires commitGroupDrop");
+  }
+
   const dragMeta = shallowRef(null);
   const dragFolderHoverState = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
   const dragHitDebugState = shallowRef(null);
-  const dragPreviewState = shallowRef(null);
-  const dragReleaseState = shallowRef(null);
-  const folderCreateReleaseState = shallowRef(null);
+  const groupDragState = shallowRef(null);
+  const projectedPages = shallowRef(null);
 
-  let dragRuntime = null;
-  let dragPlacement = null;
-  let folderHover = null;
-  let lastPlacementCommit = null;
-  let pendingPreviewPoint = null;
-  let previewRafId = 0;
-  let pendingTimer = null;
+  let activeDrag = null;
+  let pendingDragStart = null;
+  let previewFrame = 0;
+  let intentTimer = null;
   let pageTurnTimer = null;
   let folderPageTurnTimer = null;
-  let dragIntentTimer = null;
-  let dragSortGateTimer = null;
-  let dragSortBlocked = false;
-  let pendingDesktopReturn = null;
-  let layoutProjectionReleaseTimer = null;
-  let dragContextMenuListenerAttached = false;
-  let dragReleaseTimer = null;
-  let dragReleaseResolveRaf = 0;
-  let dragReleaseKey = 0;
-  let folderCreateReleaseTimer = null;
-  let folderCreateReleaseResolveRaf = 0;
-  let folderCreateReleaseKey = 0;
-  let dragFolderHoverKey = 0;
-  let dragHitDebugKey = 0;
-  let pendingFolderDragPageTurn = null;
-  let pendingDragStart = null;
+  let folderHoverTimer = null;
+  let folderHoverFlashTimer = null;
+  let projectionReleaseTimer = null;
+  let contextMenuAttached = false;
+  let groupKey = 0;
+  let hoverKey = 0;
+  let debugKey = 0;
 
   function isDragActive() {
-    return Boolean(dragRuntime || dragReleaseState.value || folderCreateReleaseState.value);
+    return Boolean(activeDrag);
   }
 
-  function placementKey(kind) {
-    const parts = Array.prototype.slice.call(arguments, 1);
-    return `${kind}:${parts.join(":")}`;
+  function setLayoutProjectionActive(value) {
+    if (options.isLayoutProjectionActive && typeof options.isLayoutProjectionActive === "object") {
+      options.isLayoutProjectionActive.value = Boolean(value);
+    }
   }
 
-  function getLaunchBoundsArea(source) {
-    if (source?.type === "folder") return "folder";
-    if (source?.type === "search") return "search";
-    return "desktop";
+  function clearLayoutProjectionRelease(reset = false) {
+    if (projectionReleaseTimer) window.clearTimeout(projectionReleaseTimer);
+    projectionReleaseTimer = null;
+    if (reset) setLayoutProjectionActive(false);
   }
 
-  function shouldRefreshDragBoundsOnStart() {
-    return Boolean(options.isHomeRevealSettling.value && !options.isFolderLayerActive.value);
+  function scheduleLayoutProjectionRelease() {
+    clearLayoutProjectionRelease();
+    projectionReleaseTimer = window.setTimeout(() => {
+      projectionReleaseTimer = null;
+      setLayoutProjectionActive(false);
+    }, prefersReducedMotion() ? 0 : LAYOUT_PROJECTION_RELEASE_DELAY_MS);
   }
 
-  function cloneRect(rect) {
-    if (!rect) return null;
-    return {
-      height: rect.height,
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-    };
+  function suppressContextMenu(event) {
+    if (!activeDrag) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
   }
 
-  function cloneFolderOriginBounds(origin) {
-    if (!origin?.folderId || !origin.iconRect) return null;
-    return {
-      folderId: origin.folderId,
-      iconRect: cloneRect(origin.iconRect),
-      previewChildRects: (origin.previewChildRects || [])
-        .map((entry) => ({
-          childId: entry?.childId,
-          rect: cloneRect(entry?.rect),
-          slotIndex: entry?.slotIndex,
-        }))
-        .filter((entry) => entry.childId && entry.rect),
-      thumbRect: cloneRect(origin.thumbRect) || cloneRect(origin.iconRect),
-    };
+  function attachContextMenu() {
+    if (contextMenuAttached) return;
+    contextMenuAttached = true;
+    window.addEventListener("contextmenu", suppressContextMenu, true);
   }
 
-  function resolveDragSourceRect(lp) {
-    if (!lp?.refreshBoundsOnStart) return lp?.rect || null;
-    return options.iconBoundsRegistry.getBounds(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.RENDERED, {
-      area: getLaunchBoundsArea(lp.source),
-      folderId: lp.source?.folderId,
-      id: lp.item?.id,
-      pageIndex: lp.source?.pageIndex,
-    }) || lp.rect || null;
+  function detachContextMenu() {
+    if (!contextMenuAttached) return;
+    contextMenuAttached = false;
+    window.removeEventListener("contextmenu", suppressContextMenu, true);
   }
 
-  function getDragStartGeometry(lp) {
-    const rect = resolveDragSourceRect(lp);
-    if (!rect) return { offset: lp.offset, size: lp.size };
-    const visualSize = lp.dragVisualState?.iconSize;
-    const width = visualSize || rect.width;
-    const height = visualSize || rect.height;
-    const left = rect.left + rect.width / 2 - width / 2;
-    const top = rect.top + rect.height / 2 - height / 2;
-    return {
-      offset: {
-        x: lp.startPoint.x - left,
-        y: lp.startPoint.y - top,
-      },
-      size: {
-        height,
-        width,
-      },
-    };
-  }
-
-  function normalizeDragVisualState(value) {
-    if (!value || typeof value !== "object") return null;
-    const cellHeight = Math.max(1, Number(value.cellHeight) || 0) || null;
-    const cellWidth = Math.max(1, Number(value.cellWidth) || 0) || null;
-    return {
-      cellHeight,
-      cellWidth,
-      compact: value.compact === true,
-      iconSize: Math.max(1, Number(value.iconSize) || 0) || null,
-      singleLineLabel: value.singleLineLabel === true,
-    };
-  }
-
-  function getDragVisualCellSize(dragVisualState) {
-    if (!dragVisualState?.cellWidth || !dragVisualState?.cellHeight) return null;
-    return {
-      height: dragVisualState.cellHeight,
-      width: dragVisualState.cellWidth,
-    };
-  }
-
-  function clearPendingTarget() {
-    clearPendingFolderTimers();
-    pendingTimer = null;
-    folderHover = null;
-    dragFolderHoverState.value = null;
-    dragFolderTargetId.value = null;
-  }
-
-  function clearPendingTimerButKeepSticky() {
-    clearPendingFolderTimers();
-    pendingTimer = null;
-  }
-
-  function clearPendingFolderTimers() {
-    if (!pendingTimer) return;
-    if (pendingTimer.flashTimer) window.clearTimeout(pendingTimer.flashTimer);
-    if (pendingTimer.openingTimer) window.clearTimeout(pendingTimer.openingTimer);
-    if (pendingTimer.timer) window.clearTimeout(pendingTimer.timer);
+  function clearIntentTimer() {
+    if (intentTimer) window.clearTimeout(intentTimer);
+    intentTimer = null;
   }
 
   function clearPageTurn() {
@@ -282,2064 +272,1248 @@ export function useLaunchpadDrag(options) {
   function clearFolderPageTurn() {
     if (folderPageTurnTimer) window.clearTimeout(folderPageTurnTimer.timer);
     folderPageTurnTimer = null;
+    options.clearFolderPageTurnRequest?.("group-drag-clear");
   }
 
-  function clearPendingFolderDragPageTurn(reason = "drag-folder-page-turn-clear") {
-    if (!pendingFolderDragPageTurn) return false;
-    pendingFolderDragPageTurn = null;
-    options.clearFolderPageTurnRequest?.(reason);
-    return true;
+  function clearFolderHoverTimers() {
+    if (folderHoverTimer) window.clearTimeout(folderHoverTimer);
+    if (folderHoverFlashTimer) window.clearTimeout(folderHoverFlashTimer);
+    folderHoverTimer = null;
+    folderHoverFlashTimer = null;
   }
 
-  function commitPendingFolderDragPageTurn() {
-    const pending = pendingFolderDragPageTurn;
-    if (!pending) return null;
-    pendingFolderDragPageTurn = null;
-    const result = {
-      allowCreate: pending.allowCreate,
-      committed: false,
-      direction: pending.direction,
-      folderId: pending.folderId,
-      fromIndex: pending.fromIndex,
-      targetIndex: pending.targetIndex,
-      token: pending.token,
+  function clearLockedTarget() {
+    if (activeDrag?.group) activeDrag.group.lockedTarget = null;
+  }
+
+  function clearPendingTarget() {
+    clearFolderHoverTimers();
+    clearLockedTarget();
+    if (activeDrag?.group) activeDrag.group.pendingOpenFolderId = null;
+    dragFolderTargetId.value = null;
+    dragFolderHoverState.value = null;
+  }
+
+  function cancelPreviewRaf() {
+    if (previewFrame) window.cancelAnimationFrame(previewFrame);
+    previewFrame = 0;
+  }
+
+  function getRenderedLaunchRect(source) {
+    return options.iconBoundsRegistry.getBounds(
+      BOUNDS_KIND.LAUNCH,
+      BOUNDS_VARIANT.RENDERED,
+      source
+    );
+  }
+
+  function getRenderedFolderRect(folderId) {
+    return options.iconBoundsRegistry.getBounds(
+      BOUNDS_KIND.TOP_LEVEL,
+      BOUNDS_VARIANT.RENDERED,
+      folderId
+    ) || options.iconBoundsRegistry.getBounds(
+      BOUNDS_KIND.FOLDER_THUMB,
+      BOUNDS_VARIANT.RENDERED,
+      folderId
+    );
+  }
+
+  function getVisualDesktopPageIndex(drag = activeDrag) {
+    return Math.max(
+      0,
+      Number(drag?.group?.desktopPageIndex ?? options.pageIndex.value) || 0
+    );
+  }
+
+  function getPageRect(index = getVisualDesktopPageIndex()) {
+    return options.pageRefs?.[index]?.getBoundingClientRect?.() || null;
+  }
+
+  function getFolderPageRect(index = options.folderPageIndex.value) {
+    return options.folderPageRefs?.[index]?.getBoundingClientRect?.() ||
+      options.folderPageRefs?.find(Boolean)?.getBoundingClientRect?.() ||
+      null;
+  }
+
+  function getPointerCenter(drag = activeDrag) {
+    if (!drag) return null;
+    return {
+      x: drag.pointer.x - drag.offset.x + drag.size.width / 2,
+      y: drag.pointer.y - drag.offset.y + drag.size.height / 2,
     };
-    if (typeof options.commitFolderPageTurnRequest === "function" && pending.token != null) {
-      const committed = options.commitFolderPageTurnRequest(pending.token, {
-        allowCreate: pending.allowCreate,
-        folderId: pending.folderId,
-        phase: "open",
-      });
-      if (committed) return { ...result, committed: true };
-      options.clearFolderPageTurnRequest?.("drag-folder-page-turn-fallback");
-    }
-    if (pending.targetIndex == null) return result;
-    options.commitFolderPageIndex(pending.targetIndex, { allowCreate: pending.allowCreate });
-    return { ...result, committed: true };
   }
 
-  function clearDragIntentTimer() {
-    if (dragIntentTimer) window.clearTimeout(dragIntentTimer);
-    dragIntentTimer = null;
+  function getDragVisualRect(drag = activeDrag) {
+    if (!drag?.pointer || !drag.offset || !drag.size) return null;
+    const left = drag.pointer.x - drag.offset.x;
+    const top = drag.pointer.y - drag.offset.y;
+    const width = Number(drag.size.width) || 0;
+    const height = Number(drag.size.height) || 0;
+    return {
+      bottom: top + height,
+      height,
+      left,
+      right: left + width,
+      top,
+      width,
+    };
   }
 
-  function clearDragSortGateTimer() {
-    if (dragSortGateTimer) window.clearTimeout(dragSortGateTimer);
-    dragSortGateTimer = null;
-  }
-
-  function isDragSortingBlocked() {
-    return dragSortBlocked;
-  }
-
-  function scheduleDragSortGateEvaluation() {
-    if (dragSortGateTimer) return;
-    blockDragSorting();
-  }
-
-  function releaseDragSortGate() {
-    dragSortGateTimer = null;
-    dragSortBlocked = false;
-    if (dragRuntime && !options.isLaunchpadInteractionBlocked()) scheduleDragIntentEvaluation();
-  }
-
-  function blockDragSorting(duration = FOLDER_DRAG_SORT_GATE_DURATION) {
-    dragSortBlocked = true;
-    clearDragSortGateTimer();
-    dragSortGateTimer = window.setTimeout(releaseDragSortGate, duration);
-  }
-
-  function setLayoutProjectionActive(active) {
-    if (options.isLayoutProjectionActive && typeof options.isLayoutProjectionActive === "object" && "value" in options.isLayoutProjectionActive) {
-      options.isLayoutProjectionActive.value = Boolean(active);
-    }
-  }
-
-  function clearLayoutProjectionRelease(reset = false) {
-    if (layoutProjectionReleaseTimer) window.clearTimeout(layoutProjectionReleaseTimer);
-    layoutProjectionReleaseTimer = null;
-    if (reset) setLayoutProjectionActive(false);
-  }
-
-  function activateLayoutProjection() {
-    clearLayoutProjectionRelease();
-    setLayoutProjectionActive(true);
-  }
-
-  function scheduleLayoutProjectionRelease() {
-    clearLayoutProjectionRelease();
-    layoutProjectionReleaseTimer = window.setTimeout(() => {
-      layoutProjectionReleaseTimer = null;
-      setLayoutProjectionActive(false);
-    }, LAYOUT_PROJECTION_RELEASE_DELAY);
-  }
-
-  function attachDragContextMenuListener() {
-    if (dragContextMenuListenerAttached) return;
-    dragContextMenuListenerAttached = true;
-    window.addEventListener("contextmenu", suppressDragContextMenu, true);
-  }
-
-  function detachDragContextMenuListener() {
-    if (!dragContextMenuListenerAttached) return;
-    dragContextMenuListenerAttached = false;
-    window.removeEventListener("contextmenu", suppressDragContextMenu, true);
-  }
-
-  function suppressDragContextMenu(event) {
-    if (!dragRuntime) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation?.();
-  }
-
-  function getSourceCellSize(source) {
-    const isFolderSource = source?.type === "folder";
-    const pageRef = isFolderSource ? options.folderPageRefs[source.pageIndex] : options.pageRefs[source?.pageIndex];
-    const rect = pageRef?.getBoundingClientRect?.();
-    if (!rect) return null;
-    const cols = Math.max(1, Number((isFolderSource ? options.folderCols : options.gridCols).value) || 1);
-    const rowSource = isFolderSource ? options.visibleFolderRowCount : options.gridRows;
-    const rows = Math.max(1, Number(rowSource.value) || 1);
+  function getSourceCellSize(source, fallbackRect) {
+    const isFolder = source?.type === "folder";
+    const rect = isFolder ? getFolderPageRect(source.pageIndex) : getPageRect(source?.pageIndex);
+    if (!rect) return { height: fallbackRect.height, width: fallbackRect.width };
+    const cols = Math.max(1, Number((isFolder ? options.folderCols : options.gridCols).value) || 1);
+    const rowRef = isFolder ? options.visibleFolderRowCount : options.gridRows;
+    const rows = Math.max(1, Number(rowRef.value) || 1);
     return {
       height: rect.height / rows,
       width: rect.width / cols,
     };
   }
 
-  function updatePreviewState() {
-    previewRafId = 0;
-    if (!pendingPreviewPoint || !dragRuntime) return;
-    dragPreviewState.value = {
-      cellSize: { ...dragRuntime.cellSize },
-      compact: dragRuntime.compact === true,
-      item: dragRuntime.item,
-      offset: { ...dragRuntime.offset },
-      pointer: { ...pendingPreviewPoint },
-      singleLineLabel: dragRuntime.singleLineLabel === true,
-      size: { ...dragRuntime.size },
-      source: dragRuntime.source,
+  function buildGatherEntriesFromSnapshot(snapshot) {
+    const viewportRect = getPageRect(snapshot.activePageIndex) || {
+      height: Number(globalThis.innerHeight) || 1,
+      left: 0,
+      top: 0,
+      width: Number(globalThis.innerWidth) || 1,
     };
-  }
-
-  function schedulePreviewPosition(clientX, clientY) {
-    pendingPreviewPoint = { x: clientX, y: clientY };
-    if (previewRafId) return;
-    previewRafId = window.requestAnimationFrame(updatePreviewState);
-  }
-
-  function makeDragReleaseStartPose(activeDrag) {
-    if (!activeDrag?.pointer) return null;
-    return {
-      pointer: { ...activeDrag.pointer },
-    };
-  }
-
-  function sampleDragVelocity(activeDrag, event) {
-    const sampled = samplePointerVelocity({
-      pointer: activeDrag.pointer,
-      time: activeDrag.lastPointerTime,
-      velocity: activeDrag.velocity,
-    }, event);
-    activeDrag.velocity = sampled.velocity;
-    activeDrag.lastPointerTime = sampled.time;
-  }
-
-  function cancelPreviewRaf() {
-    if (previewRafId) window.cancelAnimationFrame(previewRafId);
-    previewRafId = 0;
-    pendingPreviewPoint = null;
-  }
-
-  function clearDragReleaseResolve() {
-    if (dragReleaseResolveRaf) window.cancelAnimationFrame(dragReleaseResolveRaf);
-    dragReleaseResolveRaf = 0;
-  }
-
-  function clearFolderCreateReleaseResolve() {
-    if (folderCreateReleaseResolveRaf) window.cancelAnimationFrame(folderCreateReleaseResolveRaf);
-    folderCreateReleaseResolveRaf = 0;
-  }
-
-  function clearFolderCreateRelease() {
-    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
-    clearFolderCreateReleaseResolve();
-    folderCreateReleaseTimer = null;
-    folderCreateReleaseState.value = null;
-  }
-
-  function clearDragRelease() {
-    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
-    clearDragReleaseResolve();
-    dragReleaseTimer = null;
-    dragReleaseState.value = null;
-    clearFolderCreateRelease();
-  }
-
-  function scheduleDragReleaseClear() {
-    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
-    dragReleaseTimer = window.setTimeout(() => {
-      dragReleaseTimer = null;
-      dragReleaseState.value = null;
-    }, DRAG_RELEASE_FALLBACK_CLEAR_MS + DRAG_RELEASE_GHOST_PADDING_MS);
-  }
-
-  function scheduleFolderCreateReleaseClear() {
-    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
-    folderCreateReleaseTimer = window.setTimeout(() => {
-      folderCreateReleaseTimer = null;
-      folderCreateReleaseState.value = null;
-    }, DRAG_RELEASE_FALLBACK_CLEAR_MS + DRAG_RELEASE_GHOST_PADDING_MS);
-  }
-
-  function getReleaseTextless() {
-    return Boolean(options.isTextlessMode?.value);
-  }
-
-  function getReleaseVisualOffsetY() {
-    return getReleaseTextless() ? 0 : -14;
-  }
-
-  function makeCenteredRect(centerX, centerY, width, height = width) {
-    return {
-      height,
-      left: centerX - width / 2,
-      top: centerY - height / 2,
-      width,
-    };
-  }
-
-  function getRefRect(refs, index) {
-    return refs?.[index]?.getBoundingClientRect?.() || null;
-  }
-
-  function cloneClientRect(rect) {
-    if (!rect) return null;
-    const left = Number(rect.left) || 0;
-    const top = Number(rect.top) || 0;
-    const width = Number(rect.width) || 0;
-    const height = Number(rect.height) || 0;
-    return {
-      bottom: Number(rect.bottom) || top + height,
-      height,
-      left,
-      right: Number(rect.right) || left + width,
-      top,
-      width,
-    };
-  }
-
-  function clonePoint(point) {
-    if (!point) return null;
-    const x = Number(point.x);
-    const y = Number(point.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y };
-  }
-
-  function getMaybeRefValue(value) {
-    return value && typeof value === "object" && "value" in value ? value.value : value;
-  }
-
-  function rectsAlmostEqual(a, b, epsilon = 0.5) {
-    if (!a && !b) return true;
-    if (!a || !b) return false;
-    return Math.abs((Number(a.left) || 0) - (Number(b.left) || 0)) <= epsilon &&
-      Math.abs((Number(a.top) || 0) - (Number(b.top) || 0)) <= epsilon &&
-      Math.abs((Number(a.width) || 0) - (Number(b.width) || 0)) <= epsilon &&
-      Math.abs((Number(a.height) || 0) - (Number(b.height) || 0)) <= epsilon;
-  }
-
-  function visualSpecsAlmostEqual(a, b, epsilon = 0.5) {
-    if (!a && !b) return true;
-    if (!a || !b) return false;
-    return a.compact === b.compact &&
-      a.singleLineLabel === b.singleLineLabel &&
-      a.textless === b.textless &&
-      Math.abs((Number(a.cellHeight) || 0) - (Number(b.cellHeight) || 0)) <= epsilon &&
-      Math.abs((Number(a.cellWidth) || 0) - (Number(b.cellWidth) || 0)) <= epsilon &&
-      Math.abs((Number(a.iconSize) || 0) - (Number(b.iconSize) || 0)) <= epsilon;
-  }
-
-  function getBoundsRecord(kind, variant, keyInput, optionsArg = {}) {
-    return options.iconBoundsRegistry.getRecord?.(kind, variant, keyInput, optionsArg) || null;
-  }
-
-  function getRecordVisualSpec(record) {
-    return cloneIconVisualSpec(record?.meta?.visualSpec);
-  }
-
-  function getFirstRecordVisualSpec() {
-    for (const record of arguments) {
-      const visualSpec = getRecordVisualSpec(record);
-      if (visualSpec) return visualSpec;
-    }
-    return null;
-  }
-
-  function isReleaseTargetProvisional(target) {
-    return target?.provisionalLayoutTarget === true ||
-      target?.clientRect?.meta?.provisionalLayoutTarget === true ||
-      target?.stageLayoutRect?.meta?.provisionalLayoutTarget === true;
-  }
-
-  function makeReleaseTarget(clientRect, stageLayoutRect = null, visualSpec = null, targetOptions = {}) {
-    const safeClientRect = cloneClientRect(clientRect);
-    const safeStageLayoutRect = cloneClientRect(stageLayoutRect);
-    if (!safeClientRect && !safeStageLayoutRect) return null;
-    return {
-      clientRect: safeClientRect,
-      provisionalLayoutTarget: targetOptions.provisionalLayoutTarget === true ||
-        clientRect?.meta?.provisionalLayoutTarget === true ||
-        stageLayoutRect?.meta?.provisionalLayoutTarget === true,
-      stageLayoutRect: safeStageLayoutRect,
-      visualSpec: cloneIconVisualSpec(visualSpec),
-    };
-  }
-
-  function normalizeReleaseTarget(target) {
-    if (target?.clientRect || target?.stageLayoutRect || target?.visualSpec) {
-      return makeReleaseTarget(target.clientRect, target.stageLayoutRect, target.visualSpec, {
-        provisionalLayoutTarget: target.provisionalLayoutTarget === true,
-      }) || { clientRect: null, provisionalLayoutTarget: false, stageLayoutRect: null, visualSpec: null };
-    }
-    return makeReleaseTarget(target) || { clientRect: null, provisionalLayoutTarget: false, stageLayoutRect: null, visualSpec: null };
-  }
-
-  function makeProvisionalReleaseTarget(target) {
-    const normalized = normalizeReleaseTarget(target);
-    if (!normalized.clientRect && !normalized.stageLayoutRect) return null;
-    return makeReleaseTarget(normalized.clientRect, normalized.stageLayoutRect, normalized.visualSpec, {
-      provisionalLayoutTarget: true,
-    });
-  }
-
-  function releaseTargetsAlmostEqual(a, b) {
-    return rectsAlmostEqual(a?.clientRect, b?.clientRect) &&
-      rectsAlmostEqual(a?.stageLayoutRect, b?.stageLayoutRect) &&
-      visualSpecsAlmostEqual(a?.visualSpec, b?.visualSpec) &&
-      isReleaseTargetProvisional(a) === isReleaseTargetProvisional(b);
-  }
-
-  function getStableLayoutReleaseTarget(source, expected = null) {
-    const record = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, source, { expected });
-    const clientRect = stageLayoutRecordToClientRect(record);
-    return clientRect ? makeReleaseTarget(clientRect, record, getRecordVisualSpec(record)) : null;
-  }
-
-  function clearFolderLaunchBounds(folderId) {
-    if (!folderId) return;
-    options.iconBoundsRegistry.clearBounds?.({
-      area: "folder",
-      folderId,
-      kind: BOUNDS_KIND.LAUNCH,
-    });
-  }
-
-  function getStageLayoutClientReleaseTarget(kind, keyInput, fallbackClientRect = null) {
-    const stageLayoutRecord = getBoundsRecord(kind, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, keyInput);
-    const stageLayoutClientRect = stageLayoutRecordToClientRect(stageLayoutRecord);
-    const liveRecord = getBoundsRecord(kind, BOUNDS_VARIANT.LIVE_TARGET, keyInput);
-    const renderedRecord = getBoundsRecord(kind, BOUNDS_VARIANT.RENDERED, keyInput);
-    return makeReleaseTarget(
-      liveRecord || renderedRecord || stageLayoutClientRect || fallbackClientRect,
-      stageLayoutRecord,
-      getFirstRecordVisualSpec(liveRecord, renderedRecord, stageLayoutRecord)
-    );
-  }
-
-  function getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect = null) {
-    return getStageLayoutClientReleaseTarget(BOUNDS_KIND.FOLDER_THUMB, folderId, fallbackClientRect);
-  }
-
-  function getFolderCreatePreviewChildReleaseTarget(folderId, childId, slotIndex, fallbackClientRect = null) {
-    const childKey = { childId, folderId, slotIndex };
-    const directTarget = getStageLayoutClientReleaseTarget(BOUNDS_KIND.PREVIEW_CHILD, childKey);
-    if (directTarget?.clientRect || directTarget?.stageLayoutRect) return directTarget;
-
-    const thumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, fallbackClientRect);
-    if (!thumbTarget?.clientRect && !thumbTarget?.stageLayoutRect) return null;
-    return makeReleaseTarget(
-      makeFolderThumbPreviewRect(thumbTarget.clientRect, slotIndex) || thumbTarget.clientRect,
-      makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, slotIndex)
-    );
-  }
-
-  function getFolderCreateReleaseTargets(folderId, targetAppId, draggedAppId, fallbackThumbTarget = null) {
-    const fallbackTarget = normalizeReleaseTarget(fallbackThumbTarget);
-    const registeredThumbTarget = getTopLevelFolderThumbReleaseTarget(folderId, null);
-    const thumbTarget = registeredThumbTarget?.clientRect || registeredThumbTarget?.stageLayoutRect
-      ? registeredThumbTarget
-      : fallbackTarget;
-    const targetAppSlotTarget = getFolderCreatePreviewChildReleaseTarget(folderId, targetAppId, 0, thumbTarget.clientRect) ||
-      makeReleaseTarget(
-        makeFolderThumbPreviewRect(thumbTarget.clientRect, 0),
-        makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 0)
-      );
-    const draggedAppSlotTarget = getFolderCreatePreviewChildReleaseTarget(folderId, draggedAppId, 1, thumbTarget.clientRect) ||
-      makeReleaseTarget(
-        makeFolderThumbPreviewRect(thumbTarget.clientRect, 1),
-        makeFolderThumbPreviewRect(thumbTarget.stageLayoutRect, 1)
-      );
-    return {
-      draggedAppSlotRect: draggedAppSlotTarget?.clientRect || null,
-      draggedAppSlotStageLayoutRect: draggedAppSlotTarget?.stageLayoutRect || null,
-      targetAppSlotRect: targetAppSlotTarget?.clientRect || null,
-      targetAppSlotStageLayoutRect: targetAppSlotTarget?.stageLayoutRect || null,
-      targetThumbRect: thumbTarget?.clientRect || null,
-      targetThumbStageLayoutRect: thumbTarget?.stageLayoutRect || null,
-    };
-  }
-
-  function getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize) {
-    const configuredSize = Math.max(1, Number(options.iconSize?.value) || Number(fallbackSize) || 64);
-    return Math.max(1, Math.min(configuredSize, cellWidth, cellHeight));
-  }
-
-  function getFolderPanelStyle() {
-    return getMaybeRefValue(options.folderPanelStyle) || {};
-  }
-
-  function getFolderViewportHeight() {
-    return Number(getMaybeRefValue(options.folderViewportHeight)) || 0;
-  }
-
-  function getElementScale(element, rect) {
-    const layoutWidth = Number(element?.offsetWidth || element?.clientWidth);
-    const layoutHeight = Number(element?.offsetHeight || element?.clientHeight);
-    return {
-      x: rect?.width && layoutWidth > 0 ? rect.width / layoutWidth : 1,
-      y: rect?.height && layoutHeight > 0 ? rect.height / layoutHeight : 1,
-    };
-  }
-
-  function getProjectedFolderLayoutMetrics(rowCount, fallbackSize) {
-    const currentStyle = getFolderPanelStyle();
-    const baseFolderIconSize = Number(options.effectiveFolderIconSize?.value) ||
-      readPx(currentStyle["--folder-icon-size"], 0) ||
-      Number(fallbackSize) ||
-      64;
-    return getFolderLayoutMetricsForRows({
-      baseFolderIconSize,
-      folderViewportHeight: getFolderViewportHeight(),
-      rowCount,
-    });
-  }
-
-  function getProjectedFolderPanelStyle(rowCount, fallbackSize) {
-    const metrics = getProjectedFolderLayoutMetrics(rowCount, fallbackSize);
-    return {
-      ...getFolderPanelStyle(),
-      "--folder-icon-cell-height": `${metrics.iconCellHeight}px`,
-      "--folder-icon-size": `${metrics.effectiveIconSize}px`,
-      "--folder-row-gap": `${metrics.rowGap}px`,
-      "--folder-shell-min-height": `${metrics.folderShellMinHeight}px`,
-    };
-  }
-
-  function getFolderProjectionStageSize() {
-    const width = Number(globalThis.window?.innerWidth);
-    const height = Number(globalThis.window?.innerHeight);
-    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
-      return { height, width };
-    }
-    return null;
-  }
-
-  function getFolderProjectionScale(element, rect, currentGeometry) {
-    const hasLayoutSize = Number(element?.offsetWidth || element?.clientWidth) > 0 &&
-      Number(element?.offsetHeight || element?.clientHeight) > 0;
-    if (hasLayoutSize) return getElementScale(element, rect);
-    return {
-      x: rect.width / Math.max(1, currentGeometry?.grid?.width || rect.width),
-      y: rect.height / Math.max(1, currentGeometry?.grid?.height || rect.height),
-    };
-  }
-
-  function getProjectedFolderGridRect(element, rows, fallbackSize) {
-    const rect = element?.getBoundingClientRect?.();
-    if (!rect) return null;
-    const stageSize = getFolderProjectionStageSize();
-    if (!stageSize) return rect;
-
-    const currentGeometry = getFolderPanelGeometry({
-      height: stageSize.height,
-      panelStyle: getFolderPanelStyle(),
-      width: stageSize.width,
-    });
-    const scale = getFolderProjectionScale(element, rect, currentGeometry);
-    const projectedGeometry = getFolderPanelGeometry({
-      height: stageSize.height,
-      panelStyle: getProjectedFolderPanelStyle(rows, fallbackSize),
-      width: stageSize.width,
-    });
-    const offsetX = rect.left - currentGeometry.grid.left * scale.x;
-    const offsetY = rect.top - currentGeometry.grid.top * scale.y;
-    return {
-      bottom: offsetY + (projectedGeometry.grid.top + projectedGeometry.grid.height) * scale.y,
-      height: projectedGeometry.grid.height * scale.y,
-      left: offsetX + projectedGeometry.grid.left * scale.x,
-      right: offsetX + (projectedGeometry.grid.left + projectedGeometry.grid.width) * scale.x,
-      top: offsetY + projectedGeometry.grid.top * scale.y,
-      width: projectedGeometry.grid.width * scale.x,
-    };
-  }
-
-  function getFolderReleaseGridMetrics(pageIndex, rows, fallbackSize) {
-    const element = options.folderPageRefs[pageIndex] || getFolderGridElement(pageIndex);
-    const sourceRect = element?.getBoundingClientRect?.();
-    const rect = getProjectedFolderGridRect(element, rows, fallbackSize) || sourceRect;
-    if (!rect) return null;
-    const stageSize = getFolderProjectionStageSize();
-    const currentGeometry = stageSize
-      ? getFolderPanelGeometry({
-        height: stageSize.height,
-        panelStyle: getFolderPanelStyle(),
-        width: stageSize.width,
-      })
-      : null;
-    const scale = getFolderProjectionScale(element, sourceRect || rect, currentGeometry);
-    const style = getProjectedFolderPanelStyle(rows, fallbackSize);
-    const cols = Math.max(1, Number(options.folderCols.value) || 1);
-    return {
-      metrics: getFolderGridMetrics({
-        cols,
-        fixedCellHeight: readPx(style["--folder-icon-cell-height"], 0) * scale.y,
-        grid: rect,
-        rowGap: readPx(style["--folder-row-gap"], 18) * scale.y,
-        rows,
+    const entries = resolveGroupGatherEntries({
+      activeFolderPageIndex: snapshot.activeFolderPageIndex,
+      activePageIndex: snapshot.activePageIndex,
+      draggedIds: snapshot.draggedIds,
+      getDesktopRect: (location) => getRenderedLaunchRect({
+        area: "desktop",
+        id: location.item.id,
+        pageIndex: location.pageIndex,
       }),
-      scale,
-      style,
-    };
-  }
-
-  function getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize, targetOptions = {}) {
-    return resolveFolderIconRenderSize({
-      cellHeight,
-      cellWidth,
-      fallbackSize: Number(fallbackSize) || 64,
-      requestedSize: Number(targetOptions.iconSize) || Number(options.effectiveFolderIconSize?.value) || null,
-    });
-  }
-
-  function getPageSlotReleaseTarget(pageIndex, index, fallbackSize) {
-    const rect = getRefRect(options.pageRefs, pageIndex);
-    if (!rect) return null;
-    const cols = Math.max(1, Number(options.gridCols.value) || 1);
-    const rows = Math.max(1, Number(options.gridRows.value) || 1);
-    const cellWidth = rect.width / cols;
-    const cellHeight = rect.height / rows;
-    const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
-    const col = safeIndex % cols;
-    const row = Math.floor(safeIndex / cols);
-    const sizing = getDesktopIconSizing({
-      iconSize: Number(options.iconSize?.value) || Number(fallbackSize) || 64,
-      isTextlessMode: getReleaseTextless(),
-      width: rect.width,
-    }, { height: cellHeight, width: cellWidth });
-    const size = getDesktopTargetIconSize(cellWidth, cellHeight, fallbackSize);
-    return makeReleaseTarget(
-      makeCenteredRect(rect.left + col * cellWidth + cellWidth / 2, rect.top + row * cellHeight + cellHeight / 2 + getReleaseVisualOffsetY(), size),
-      null,
-      makeIconVisualSpec({
-        cellHeight,
-        cellWidth,
-        compact: sizing.compact,
-        iconSize: size,
-        singleLineLabel: sizing.singleLineLabel,
-        textless: getReleaseTextless(),
-      })
-    );
-  }
-
-  function getFolderSlotReleaseTarget(pageIndex, index, fallbackSize, targetOptions = {}) {
-    const cols = Math.max(1, Number(options.folderCols.value) || 1);
-    const rows = Math.max(1, Number(targetOptions.rows) || Number(options.visibleFolderRowCount.value) || 1);
-    const releaseMetrics = getFolderReleaseGridMetrics(pageIndex, rows, fallbackSize);
-    if (!releaseMetrics) return null;
-    const { metrics, scale, style } = releaseMetrics;
-    const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
-    const col = safeIndex % cols;
-    const row = Math.floor(safeIndex / cols);
-    const cellWidth = metrics.cellWidth;
-    const cellHeight = metrics.cellHeight;
-    const iconSize = readPx(style["--folder-icon-size"], 0) * Math.min(scale.x, scale.y);
-    const size = getFolderTargetIconSize(cellWidth, cellHeight, fallbackSize, {
-      iconSize: iconSize > 0 ? iconSize : null,
-    });
-    return makeReleaseTarget(
-      makeCenteredRect(
-        metrics.gridLeft + col * (metrics.cellWidth + metrics.gapX) + metrics.cellWidth / 2,
-        metrics.gridTop + row * (metrics.cellHeight + metrics.gapY) + metrics.cellHeight / 2 + getReleaseVisualOffsetY() * scale.y,
-        size
+      getFolderLaunchRect: (location) => getRenderedLaunchRect({
+        area: "folder",
+        folderId: location.folderId,
+        id: location.item.id,
+        pageIndex: location.folderPageIndex,
+      }),
+      getFolderPreviewRect: (location) => options.iconBoundsRegistry.getBounds(
+        BOUNDS_KIND.PREVIEW_CHILD,
+        BOUNDS_VARIANT.RENDERED,
+        {
+          childId: location.item.id,
+          folderId: location.folderId,
+          slotIndex: location.flatIndex,
+        }
       ),
-      null,
-      makeIconVisualSpec({
-        cellHeight,
-        cellWidth,
-        compact: false,
-        iconSize: size,
-        singleLineLabel: false,
-        textless: getReleaseTextless(),
-      }),
-      {
-        provisionalLayoutTarget: targetOptions.provisionalLayoutTarget === true,
-      }
-    );
+      getFolderRect: (folderId) => getRenderedFolderRect(folderId),
+      folderPanelRect: getDomRefElement(options.folderPanelRef.value)?.getBoundingClientRect?.() || null,
+      leadId: snapshot.leadId,
+      leadRect: snapshot.leadRect,
+      openFolderId: snapshot.openFolderId,
+      pages: snapshot.pages,
+      pointer: snapshot.pointer,
+      viewportRect,
+    });
+    return selectGroupGatherRepresentatives(entries, GROUP_DRAG_VISUAL_LIMIT);
   }
 
-  function getCommittedTopLevelReleaseTarget(itemId, fallbackSize) {
-    const target = options.findTopLevel(options.pages.value, itemId);
-    return target ? getPageSlotReleaseTarget(target.pageIndex, target.index, fallbackSize) : null;
+  function buildGatherEntries(descriptor, drag) {
+    return buildGatherEntriesFromSnapshot({
+      activeFolderPageIndex: options.folderPageIndex.value,
+      activePageIndex: options.pageIndex.value,
+      draggedIds: drag.group.draggedIds,
+      leadId: drag.group.leadId,
+      leadRect: descriptor.rect,
+      openFolderId: options.openFolderId.value,
+      pages: drag.group.basePages,
+      pointer: descriptor.startPoint,
+    });
   }
 
-  function getCommittedFolderReleaseTarget(folderId, itemId, fallbackSize, targetOptions = {}) {
-    const target = options.findInFolder(options.pages.value, folderId, itemId);
-    return target ? getFolderSlotReleaseTarget(target.pageIndex, target.index, fallbackSize, targetOptions) : null;
+  function makeActiveDragVisualSpec(drag = activeDrag) {
+    if (!drag) return null;
+    return makeIconVisualSpec({
+      cellHeight: drag.cellSize?.height,
+      cellWidth: drag.cellSize?.width,
+      compact: drag.compact === true,
+      iconSize: drag.size?.width,
+      singleLineLabel: drag.singleLineLabel === true,
+      textless: (drag.group?.draggedIds?.length || 0) > 1 ||
+        options.isTextlessMode?.value === true,
+    });
   }
 
-  function getCommittedTopLevelTargetBounds(itemId) {
-    const target = options.findTopLevel(options.pages.value, itemId);
-    if (!target) return null;
-    const source = { area: "desktop", folderId: null, id: itemId, pageIndex: target.pageIndex };
-    const expected = { area: "desktop", id: itemId, index: target.index, pageIndex: target.pageIndex };
-    const liveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected });
-    return getStableLayoutReleaseTarget(source, expected) ||
-      makeReleaseTarget(liveRecord, null, getRecordVisualSpec(liveRecord));
-  }
-
-  function getCommittedFolderTargetBounds(folderId, itemId, targetOptions = {}) {
-    const target = options.findInFolder(options.pages.value, folderId, itemId);
-    if (!target) return null;
-    const source = { area: "folder", folderId, id: itemId, pageIndex: target.pageIndex };
-    const expected = { area: "folder", folderId, id: itemId, index: target.index, pageIndex: target.pageIndex };
-    const liveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected });
-    const stableTarget = getStableLayoutReleaseTarget(source, expected);
-    if (stableTarget || targetOptions.stableOnly) return stableTarget;
-    return stableTarget ||
-      makeReleaseTarget(liveRecord, null, getRecordVisualSpec(liveRecord));
-  }
-
-  function getMatchingCommittedFolderTargetBounds(folderId, itemId, expectedTarget) {
-    const target = options.findInFolder(options.pages.value, folderId, itemId);
-    if (!target || !expectedTarget) return null;
-    if (target.pageIndex !== expectedTarget.pageIndex || target.index !== expectedTarget.index) return null;
-    return getCommittedFolderTargetBounds(folderId, itemId);
-  }
-
-  function getPointerReleaseRect(activeDrag) {
-    if (!activeDrag) return null;
-    const width = Math.max(1, Number(activeDrag.size?.width) || 64);
-    const height = Math.max(1, Number(activeDrag.size?.height) || width);
-    const offset = activeDrag.offset || { x: width / 2, y: height / 2 };
-    const pointer = activeDrag.pointer || { x: 0, y: 0 };
-    return {
-      height,
-      left: pointer.x - offset.x,
-      top: pointer.y - offset.y,
-      width,
-    };
-  }
-
-  function startPendingDragRelease(releaseOptions = {}) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag) {
-      clearDragRelease();
+  function publishGroupState(overrides = {}) {
+    if (!activeDrag?.group) {
+      groupDragState.value = null;
+      projectedPages.value = null;
       return null;
     }
-    if (dragReleaseTimer) window.clearTimeout(dragReleaseTimer);
-    clearDragReleaseResolve();
-    dragReleaseTimer = null;
-    dragReleaseKey += 1;
-    const key = `release-${dragReleaseKey}-${activeDrag.item.id}`;
-    const releaseMode = releaseOptions.releaseMode || DRAG_RELEASE_MODE_SLOT;
-    const nextReleaseState = {
-      cellSize: { ...activeDrag.cellSize },
-      compact: activeDrag.compact === true,
-      duration: DRAG_RELEASE_DURATION_MS / 1000,
-      item: options.cloneItem(activeDrag.item),
-      key,
-      offset: { ...activeDrag.offset },
+    const group = activeDrag.group;
+    const state = {
+      center: getPointerCenter(activeDrag),
+      draggedIds: [...group.draggedIds],
+      dropReason: group.dropReason,
+      dropStatus: group.dropStatus,
+      desktopPageIndex: group.desktopPageIndex,
+      entries: group.entries,
+      intent: group.intent,
+      key: group.key,
+      phase: group.phase,
       pointer: { ...activeDrag.pointer },
-      releaseMode,
-      singleLineLabel: activeDrag.singleLineLabel === true,
-      size: { ...activeDrag.size },
+      projectedPages: group.projectedPages,
+      reducedMotion: prefersReducedMotion(),
+      releaseCreatedFolderId: group.releaseCreatedFolderId,
+      releasePlan: group.releasePlan,
+      releaseStatus: group.releaseStatus || null,
+      releaseSettledIds: group.releaseSettledIds || [],
       source: activeDrag.source,
-      startPose: makeDragReleaseStartPose(activeDrag),
-      suppressFolderPreviewChildId: releaseOptions.suppressFolderPreviewChildId || null,
-      suppressFolderPreviewFolderId: releaseOptions.suppressFolderPreviewFolderId || null,
-      targetFolderId: releaseOptions.targetFolderId || null,
-      targetPreviewSlotIndex: releaseOptions.targetPreviewSlotIndex ?? null,
-      textless: getReleaseTextless(),
-      velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
+      totalCount: group.draggedIds.length,
+      trail: group.trail,
+      visualSpec: makeActiveDragVisualSpec(activeDrag),
+      ...overrides,
     };
-    if (releaseMode === DRAG_RELEASE_MODE_SLOT) {
-      Object.assign(nextReleaseState, {
-        provisionalLayoutTarget: false,
-        targetRect: null,
-        targetStageLayoutRect: null,
-        targetVersion: 0,
-        targetVisualSpec: null,
-      });
-    }
-    dragReleaseState.value = nextReleaseState;
-    return key;
+    groupDragState.value = state;
+    projectedPages.value = group.projectedPages || null;
+    return state;
   }
 
-  function setDragReleaseTarget(releaseKey, targetRect, fallbackRect = null) {
-    const current = dragReleaseState.value;
-    if (!current || current.key !== releaseKey) return false;
-    const releaseTarget = normalizeReleaseTarget(targetRect);
-    const fallbackTarget = normalizeReleaseTarget(fallbackRect);
-    const targetCandidate = releaseTarget.clientRect;
-    const stageLayoutCandidate = releaseTarget.stageLayoutRect;
-    const fallbackCandidate = fallbackTarget.clientRect;
-    const pointerCandidate = getPointerReleaseRect(current);
-    const safeTargetRect = targetCandidate?.width && targetCandidate?.height
-      ? targetCandidate
-      : fallbackCandidate?.width && fallbackCandidate?.height
-        ? fallbackCandidate
-        : pointerCandidate;
-    const safeTargetVisualSpec = targetCandidate?.width && targetCandidate?.height
-      ? releaseTarget.visualSpec || fallbackTarget.visualSpec
-      : fallbackCandidate?.width && fallbackCandidate?.height
-        ? fallbackTarget.visualSpec
-        : null;
-    const safeProvisionalLayoutTarget = targetCandidate?.width && targetCandidate?.height
-      ? releaseTarget.provisionalLayoutTarget === true
-      : fallbackCandidate?.width && fallbackCandidate?.height
-        ? fallbackTarget.provisionalLayoutTarget === true
-        : false;
-    if (!safeTargetRect?.width || !safeTargetRect?.height) {
-      clearDragRelease();
-      return false;
-    }
-    const safeStageLayoutRect = targetCandidate?.width && targetCandidate?.height ? stageLayoutCandidate : null;
-    if (
-      rectsAlmostEqual(current.targetRect, safeTargetRect) &&
-      rectsAlmostEqual(current.targetStageLayoutRect, safeStageLayoutRect) &&
-      visualSpecsAlmostEqual(current.targetVisualSpec, safeTargetVisualSpec) &&
-      current.provisionalLayoutTarget === safeProvisionalLayoutTarget
-    ) {
-      scheduleDragReleaseClear();
-      return true;
-    }
-    dragReleaseState.value = {
-      ...current,
-      provisionalLayoutTarget: safeProvisionalLayoutTarget,
-      targetRect: safeTargetRect,
-      targetStageLayoutRect: safeStageLayoutRect,
-      targetVisualSpec: safeTargetVisualSpec,
-      targetVersion: (Number(current.targetVersion) || 0) + 1,
-    };
-    scheduleDragReleaseClear();
-    return true;
-  }
-
-  function scheduleDragReleaseTargetResolve(releaseKey, resolveTargetRect, fallbackRect, resolveOptions = {}) {
-    clearDragReleaseResolve();
-    let attempts = 0;
-    let stableAttempts = 0;
-    let previousTarget = null;
-    const maxAttempts = Math.max(
-      DRAG_RELEASE_TARGET_RESOLVE_FRAMES,
-      Number(resolveOptions.maxAttempts) || DRAG_RELEASE_TARGET_RESOLVE_FRAMES
-    );
-    const minAttempts = Math.max(1, Number(resolveOptions.minAttempts) || 1);
-    const settleFrames = Math.max(0, Number(resolveOptions.settleFrames) || 0);
-    const continueWhileProvisional = resolveOptions.continueWhileProvisional === true;
-    const deferStableTargetUntilSettled = resolveOptions.deferStableTargetUntilSettled === true;
-    const maxProvisionalAttempts = Math.max(
-      maxAttempts,
-      Number(resolveOptions.maxProvisionalAttempts) || 90
-    );
-    let hasPublishedProvisionalTarget = false;
-    const tryResolve = () => {
-      dragReleaseResolveRaf = 0;
-      if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
-      attempts += 1;
-      const targetRect = typeof resolveTargetRect === "function" ? resolveTargetRect() : null;
-      if (targetRect) {
-        const normalizedTarget = normalizeReleaseTarget(targetRect);
-        const targetIsProvisional = isReleaseTargetProvisional(normalizedTarget);
-        stableAttempts = releaseTargetsAlmostEqual(previousTarget, normalizedTarget)
-          ? stableAttempts + 1
-          : 1;
-        previousTarget = normalizedTarget;
-        const shouldKeepSettling = settleFrames > 0 &&
-          attempts < maxAttempts &&
-          (attempts < minAttempts || stableAttempts < settleFrames);
-        if (deferStableTargetUntilSettled && !targetIsProvisional && shouldKeepSettling) {
-          dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-          return;
-        }
-        const shouldHoldProvisionalTarget = deferStableTargetUntilSettled &&
-          targetIsProvisional &&
-          hasPublishedProvisionalTarget;
-        if (shouldHoldProvisionalTarget) {
-          scheduleDragReleaseClear();
-        } else {
-          const didPublish = setDragReleaseTarget(releaseKey, targetRect, fallbackRect);
-          if (didPublish && targetIsProvisional) hasPublishedProvisionalTarget = true;
-        }
-        if (continueWhileProvisional && targetIsProvisional && attempts < maxProvisionalAttempts) {
-          dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-          return;
-        }
-        if (shouldKeepSettling) {
-          dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-        }
-        return;
-      }
-      stableAttempts = 0;
-      previousTarget = null;
-      if (attempts < maxAttempts) {
-        dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-        return;
-      }
-      setDragReleaseTarget(releaseKey, null, fallbackRect);
-    };
-    nextTick(() => {
-      if (!dragReleaseState.value || dragReleaseState.value.key !== releaseKey) return;
-      dragReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
+  function scheduleVisualPublish() {
+    if (previewFrame) return;
+    previewFrame = window.requestAnimationFrame(() => {
+      previewFrame = 0;
+      publishGroupState();
     });
   }
 
-  function setFolderCreateReleaseTargets(releaseKey, targets = {}) {
-    const current = folderCreateReleaseState.value;
-    if (!current || current.key !== releaseKey) return false;
-    const hasTarget = Boolean(
-      targets.targetThumbRect?.width ||
-      targets.targetThumbStageLayoutRect?.width ||
-      targets.targetAppSlotRect?.width ||
-      targets.targetAppSlotStageLayoutRect?.width ||
-      targets.draggedAppSlotRect?.width ||
-      targets.draggedAppSlotStageLayoutRect?.width
-    );
-    if (!hasTarget) {
-      clearFolderCreateRelease();
-      return false;
-    }
-    folderCreateReleaseState.value = {
-      ...current,
-      draggedAppSlotRect: cloneClientRect(targets.draggedAppSlotRect),
-      draggedAppSlotStageLayoutRect: cloneClientRect(targets.draggedAppSlotStageLayoutRect),
-      targetAppSlotRect: cloneClientRect(targets.targetAppSlotRect),
-      targetAppSlotStageLayoutRect: cloneClientRect(targets.targetAppSlotStageLayoutRect),
-      targetThumbRect: cloneClientRect(targets.targetThumbRect),
-      targetThumbStageLayoutRect: cloneClientRect(targets.targetThumbStageLayoutRect),
-      targetVersion: (Number(current.targetVersion) || 0) + 1,
-    };
-    scheduleFolderCreateReleaseClear();
-    return true;
-  }
-
-  function scheduleFolderCreateReleaseTargetResolve(releaseKey, resolveTargets) {
-    clearFolderCreateReleaseResolve();
-    let attempts = 0;
-    const tryResolve = () => {
-      folderCreateReleaseResolveRaf = 0;
-      const current = folderCreateReleaseState.value;
-      if (!current || current.key !== releaseKey) return;
-      const targets = typeof resolveTargets === "function" ? resolveTargets() : null;
-      if (targets) {
-        setFolderCreateReleaseTargets(releaseKey, targets);
-        return;
-      }
-      attempts += 1;
-      if (attempts < DRAG_RELEASE_TARGET_RESOLVE_FRAMES) {
-        folderCreateReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-        return;
-      }
-      setFolderCreateReleaseTargets(releaseKey, {
-        draggedAppSlotRect: current.draggedAppSlotRect,
-        draggedAppSlotStageLayoutRect: current.draggedAppSlotStageLayoutRect,
-        targetAppSlotRect: current.targetAppSlotRect,
-        targetAppSlotStageLayoutRect: current.targetAppSlotStageLayoutRect,
-        targetThumbRect: current.targetThumbRect,
-        targetThumbStageLayoutRect: current.targetThumbStageLayoutRect,
-      });
-    };
-    nextTick(() => {
-      if (!folderCreateReleaseState.value || folderCreateReleaseState.value.key !== releaseKey) return;
-      folderCreateReleaseResolveRaf = window.requestAnimationFrame(tryResolve);
-    });
-  }
-
-  function startPendingFolderCreateRelease(createResult, releaseOptions = {}) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || !createResult?.folderId || !createResult.targetApp || !createResult.draggedApp) {
-      clearFolderCreateRelease();
-      return null;
-    }
-    if (folderCreateReleaseTimer) window.clearTimeout(folderCreateReleaseTimer);
-    clearFolderCreateReleaseResolve();
-    folderCreateReleaseTimer = null;
-    folderCreateReleaseKey += 1;
-    const key = `folder-create-release-${folderCreateReleaseKey}-${createResult.folderId}`;
-    const sourceTarget = normalizeReleaseTarget(releaseOptions.sourceTarget);
-    const initialTargets = getFolderCreateReleaseTargets(
-      createResult.folderId,
-      createResult.targetApp.id,
-      createResult.draggedApp.id,
-      sourceTarget
-    );
-    folderCreateReleaseState.value = {
-      draggedApp: options.cloneItem(createResult.draggedApp),
-      draggedAppSlotRect: null,
-      draggedAppSlotStageLayoutRect: null,
-      duration: DRAG_RELEASE_DURATION_MS / 1000,
-      folderId: createResult.folderId,
-      folderItem: options.cloneItem(createResult.folderItem),
-      key,
-      sourceDraggedRect: cloneClientRect(getPointerReleaseRect(activeDrag)),
-      sourceDraggedStageLayoutRect: null,
-      sourceDraggedVisualSpec: makeIconVisualSpec({
-        cellHeight: activeDrag.cellSize?.height,
-        cellWidth: activeDrag.cellSize?.width,
-        compact: activeDrag.compact === true,
-        iconSize: activeDrag.size?.width,
-        singleLineLabel: activeDrag.singleLineLabel === true,
-        textless: getReleaseTextless(),
-      }),
-      sourceTargetRect: sourceTarget.clientRect,
-      sourceTargetStageLayoutRect: sourceTarget.stageLayoutRect,
-      sourceTargetVisualSpec: sourceTarget.visualSpec,
-      targetApp: options.cloneItem(createResult.targetApp),
-      targetAppSlotRect: null,
-      targetAppSlotStageLayoutRect: null,
-      targetThumbRect: null,
-      targetThumbStageLayoutRect: null,
-      targetVersion: 0,
-      velocity: { ...(activeDrag.velocity || makeZeroVelocity()) },
-    };
-    setFolderCreateReleaseTargets(key, initialTargets);
-    scheduleFolderCreateReleaseTargetResolve(key, () => getFolderCreateReleaseTargets(
-      createResult.folderId,
-      createResult.targetApp.id,
-      createResult.draggedApp.id,
-      sourceTarget
-    ));
-    return key;
-  }
-
-  function completeFolderCreateRelease(release) {
-    const current = folderCreateReleaseState.value;
-    if (!current || current.key !== release?.key) return;
-    clearFolderCreateRelease();
-  }
-
-  function startDragRelease(targetRect) {
-    const releaseKey = startPendingDragRelease();
-    if (!releaseKey) return;
-    setDragReleaseTarget(releaseKey, targetRect);
-  }
-
-  function endDrag() {
-    const shouldClampFolderPage = Boolean(options.renderedFolder.value || options.openFolderId.value);
-    detachDragContextMenuListener();
-    clearDragIntentTimer();
-    clearDragSortGateTimer();
-    clearPageTurn();
-    clearFolderPageTurn();
-    clearPendingFolderDragPageTurn("drag-end");
-    cancelPreviewRaf();
-    dragRuntime = null;
-    dragMeta.value = null;
-    dragHitDebugState.value = null;
-    dragPreviewState.value = null;
-    dragSortBlocked = false;
-    pendingDesktopReturn = null;
-    dragFolderHoverState.value = null;
-    dragFolderTargetId.value = null;
-    dragPlacement = null;
-    folderHover = null;
-    lastPlacementCommit = null;
-    if (shouldClampFolderPage) options.commitFolderPageIndex(options.folderPageIndex.value);
-    options.commitPageIndex(options.pageIndex.value);
-    scheduleLayoutProjectionRelease();
-  }
-
-  function calcPageInsertIndex(clientX, clientY, targetPageIndex) {
-    const safePageIndex = typeof targetPageIndex === "number" ? targetPageIndex : options.pageIndex.value;
-    const page = options.pageRefs[safePageIndex];
-    if (!page) return options.pages.value[safePageIndex]?.length || 0;
-
-    const rect = page.getBoundingClientRect();
-    const x = clamp(clientX - rect.left, 0, Math.max(1, rect.width - 1));
-    const y = clamp(clientY - rect.top, 0, Math.max(1, rect.height - 1));
-    const col = clamp(Math.floor(x / (rect.width / options.gridCols.value)), 0, options.gridCols.value - 1);
-    const row = clamp(Math.floor(y / (rect.height / options.gridRows.value)), 0, options.gridRows.value - 1);
-    return clamp(row * options.gridCols.value + col, 0, options.pageSize.value - 1);
-  }
-
-  function getPageSlotCellRect(pageIndex, index) {
-    const rect = getRefRect(options.pageRefs, pageIndex);
-    if (!rect) return null;
+  function calcDesktopInsertIndex(clientX, clientY, targetPageIndex = getVisualDesktopPageIndex()) {
+    const rect = getPageRect(targetPageIndex);
+    if (!rect) return options.pages.value[targetPageIndex]?.length || 0;
     const cols = Math.max(1, Number(options.gridCols.value) || 1);
     const rows = Math.max(1, Number(options.gridRows.value) || 1);
-    const cellWidth = rect.width / cols;
-    const cellHeight = rect.height / rows;
-    const safeIndex = clamp(index, 0, Math.max(0, cols * rows - 1));
-    const col = safeIndex % cols;
-    const row = Math.floor(safeIndex / cols);
-    return cloneClientRect({
-      height: cellHeight,
-      left: rect.left + col * cellWidth,
-      top: rect.top + row * cellHeight,
-      width: cellWidth,
-    });
-  }
-
-  function getActiveFolderPageIndex() {
-    const visualIndex = Number(options.visualFolderPageIndex?.value);
-    const requestedIndex = Number.isFinite(visualIndex)
-      ? visualIndex
-      : Number(pendingFolderDragPageTurn?.targetIndex);
-    const fallback = Number(options.folderPageIndex.value) || 0;
-    const maxIndex = Math.max(
-      0,
-      options.folderPages.value.length - 1,
-      Number.isFinite(requestedIndex) ? requestedIndex : fallback
-    );
-    return clamp(Number.isFinite(requestedIndex) ? requestedIndex : fallback, 0, maxIndex);
-  }
-
-  function getFolderGridElement(pageIndex) {
-    const targetPageIndex = Number.isFinite(Number(pageIndex)) ? Number(pageIndex) : getActiveFolderPageIndex();
-    return options.folderPageRefs[targetPageIndex] ||
-      options.folderPageRefs[options.folderPageIndex.value] ||
-      options.folderPageRefs.find(Boolean) ||
-      null;
-  }
-
-  function getCurrentFolderGridElement() {
-    return getFolderGridElement(getActiveFolderPageIndex());
-  }
-
-  function isInsideCurrentFolderGrid(clientX, clientY) {
-    const grid = getCurrentFolderGridElement();
-    const rect = grid?.getBoundingClientRect();
-    return rect ? isPointInsideRect(rect, clientX, clientY) : false;
-  }
-
-  function calcFolderInsertTarget(clientX, clientY, targetOptions = {}) {
-    const requestedPageIndex = Number(targetOptions.pageIndex);
-    const activePageIndex = Number.isFinite(requestedPageIndex)
-      ? Math.max(0, requestedPageIndex)
-      : getActiveFolderPageIndex();
-    const grid = getFolderGridElement(activePageIndex);
-    const folder = options.openFolderId.value ? options.findFolder(options.pages.value, options.openFolderId.value)?.item : null;
-    if (!grid || !folder) {
-      const fallbackPages = options.getFolderChildPages(folder, options.folderPageSize.value);
-      const fallbackPageIndex = clamp(activePageIndex, 0, Math.max(0, fallbackPages.length - 1, activePageIndex));
-      return { pageIndex: fallbackPageIndex, index: fallbackPages[fallbackPageIndex]?.length || 0 };
-    }
-
-    const columnCount = Math.max(1, options.folderCols.value);
-    const rowCount = Math.max(1, Number(targetOptions.rows) || options.visibleFolderRowCount.value);
-    const releaseMetrics = getFolderReleaseGridMetrics(activePageIndex, rowCount, targetOptions.fallbackSize);
-    const metrics = releaseMetrics?.metrics;
-    const rect = metrics
-      ? {
-        height: metrics.gridHeight,
-        left: metrics.gridLeft,
-        top: metrics.gridTop,
-        width: metrics.gridWidth,
-      }
-      : grid.getBoundingClientRect();
-    const cellWidth = metrics?.cellWidth || rect.width / columnCount;
-    const cellHeight = metrics?.cellHeight || rect.height / rowCount;
-    const rowStep = cellHeight + (metrics?.gapY || 0);
-    const colStep = cellWidth + (metrics?.gapX || 0);
     const x = clamp(clientX - rect.left, 0, Math.max(1, rect.width - 1));
     const y = clamp(clientY - rect.top, 0, Math.max(1, rect.height - 1));
-    const col = clamp(Math.floor(x / colStep), 0, columnCount - 1);
-    const row = clamp(Math.floor(y / rowStep), 0, rowCount - 1);
-    return { pageIndex: activePageIndex, index: row * columnCount + col, rows: rowCount };
+    const col = clamp(Math.floor(x / (rect.width / cols)), 0, cols - 1);
+    const row = clamp(Math.floor(y / (rect.height / rows)), 0, rows - 1);
+    return row * cols + col;
   }
 
-  function getFolderMaxRowCount(columnCount = options.folderCols.value) {
-    const cols = Math.max(1, Number(columnCount) || 1);
-    const pageSize = Math.max(cols, Number(options.folderPageSize.value) || cols);
-    return Math.max(1, Math.ceil(pageSize / cols));
-  }
-
-  function getFolderRowsForItemCount(itemCount, columnCount = options.folderCols.value) {
-    const cols = Math.max(1, Number(columnCount) || 1);
-    const rows = Math.ceil(Math.max(0, Number(itemCount) || 0) / cols) || 1;
-    return clamp(rows, 1, getFolderMaxRowCount(cols));
-  }
-
-  function getFolderPagesWithoutItem(folderId, itemId) {
-    const folder = folderId ? options.findFolder(options.pages.value, folderId)?.item : null;
-    const childPages = options.getFolderChildPages(folder, options.folderPageSize.value);
-    const pages = (childPages?.length ? childPages : [[]]).map((page) =>
-      (page || []).filter((item) => item?.id !== itemId)
-    );
-    return pages.length ? pages : [[]];
-  }
-
-  function getFolderPageAppendIndex(folderId, pageIndex, itemId) {
-    const childPages = getFolderPagesWithoutItem(folderId, itemId);
-    const safePageIndex = Math.max(0, Number(pageIndex) || 0);
-    return childPages?.[safePageIndex]?.length || 0;
-  }
-
-  // Release can happen before Pixi has rendered the row created by the drop.
-  // Project the post-insert row count so the fallback target does not clamp to the old grid.
-  function getProjectedFolderRowCount(folderId, targetPageIndex, itemId) {
-    const columnCount = Math.max(1, Number(options.folderCols.value) || 1);
-    const pageSize = Math.max(1, Number(options.folderPageSize.value) || columnCount);
-    const safeTargetPageIndex = Math.max(0, Number(targetPageIndex) || 0);
-    const counts = getFolderPagesWithoutItem(folderId, itemId).map((page) => (page || []).length);
-    while (counts.length <= safeTargetPageIndex) counts.push(0);
-    counts[safeTargetPageIndex] += 1;
-
-    for (let pageIndex = safeTargetPageIndex; pageIndex < counts.length; pageIndex += 1) {
-      while (counts[pageIndex] > pageSize) {
-        counts[pageIndex] -= 1;
-        if (counts.length <= pageIndex + 1) counts.push(0);
-        counts[pageIndex + 1] += 1;
-      }
-    }
-
-    return counts.reduce(
-      (maxRows, count) => Math.max(maxRows, getFolderRowsForItemCount(count, columnCount)),
-      1
-    );
-  }
-
-  function isFolderTurnReleaseEdge(turn, clientX, clientY) {
-    if (!turn?.committed || !Number.isFinite(Number(turn.targetIndex))) return false;
-    const direction = Number(turn.direction) || Math.sign(Number(turn.targetIndex) - Number(turn.fromIndex));
-    if (!direction) return false;
-    const panel = getDomRefElement(options.folderPanelRef.value);
-    const rect = panel?.getBoundingClientRect();
-    if (!rect || !isPointInsideRect(rect, clientX, clientY)) return false;
-    return direction < 0
-      ? clientX <= rect.left + FOLDER_PAGE_EDGE_SIZE
-      : clientX >= rect.right - FOLDER_PAGE_EDGE_SIZE;
-  }
-
-  function calcFolderReleaseInsertTarget(folderId, activeDrag, clientX, clientY, turn = null) {
-    if (isFolderTurnReleaseEdge(turn, clientX, clientY)) {
-      const targetPageIndex = Math.max(0, Number(turn.targetIndex) || 0);
-      const rows = getProjectedFolderRowCount(folderId, targetPageIndex, activeDrag?.item?.id);
-      return {
-        index: getFolderPageAppendIndex(folderId, targetPageIndex, activeDrag?.item?.id),
-        pageIndex: targetPageIndex,
-        rows,
-      };
-    }
-    const activePageIndex = getActiveFolderPageIndex();
-    const rows = getProjectedFolderRowCount(folderId, activePageIndex, activeDrag?.item?.id);
-    return calcFolderInsertTarget(clientX, clientY, {
-      fallbackSize: activeDrag?.size?.width,
-      pageIndex: activePageIndex,
-      rows,
-    });
-  }
-
-  function getDragVisualCenter(activeDrag) {
-    if (!activeDrag) return null;
-    const width = activeDrag.size?.width || 70;
-    const height = activeDrag.size?.height || 70;
-    return {
-      x: activeDrag.pointer.x - activeDrag.offset.x + width / 2,
-      y: activeDrag.pointer.y - activeDrag.offset.y + height / 2,
-    };
-  }
-
-  function getDragVisualRect(activeDrag) {
-    if (!activeDrag) return null;
-    const width = activeDrag.size?.width || 70;
-    const height = activeDrag.size?.height || 70;
-    return {
-      bottom: activeDrag.pointer.y - activeDrag.offset.y + height,
-      height,
-      left: activeDrag.pointer.x - activeDrag.offset.x,
-      right: activeDrag.pointer.x - activeDrag.offset.x + width,
-      top: activeDrag.pointer.y - activeDrag.offset.y,
-      width,
-    };
-  }
-
-  function rectsIntersect(a, b) {
-    if (!a || !b) return false;
-    return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
-  }
-
-  function makeCenteredClientRect(rect, width, height = width) {
-    if (!rect) return null;
-    return cloneClientRect(makeCenteredRect(
-      rect.left + rect.width / 2,
-      rect.top + rect.height / 2,
-      width,
-      height
-    ));
-  }
-
-  function getFolderIntentRect(targetRect) {
-    const rect = cloneClientRect(targetRect);
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-    return makeCenteredClientRect(
-      rect,
-      Math.min(rect.width, FOLDER_HIT_INTENT_MAX_SIZE),
-      Math.min(rect.height, FOLDER_HIT_INTENT_MAX_SIZE)
-    );
-  }
-
-  function getFolderStickyRect(targetInfo, margin) {
-    const intentRect = getFolderIntentRect(targetInfo?.rect);
-    return intentRect ? expandRect(intentRect, margin) : null;
-  }
-
-  function getFolderHitDecision(targetInfo, clientX, clientY, activeDrag = null) {
-    const rect = cloneClientRect(targetInfo?.rect);
+  function calcFolderInsertIndex(clientX, clientY) {
+    const pageIndex = Math.max(0, Number(options.visualFolderPageIndex?.value ?? options.folderPageIndex.value) || 0);
+    const rect = getFolderPageRect(pageIndex);
     if (!rect) {
+      const folder = findFolderInPages(options.pages.value, options.openFolderId.value);
       return {
-        accepted: false,
-        centerInside: false,
-        centerInsideIntent: false,
-        dragIntersectsExpandedTarget: false,
-        expandedTargetRect: null,
-        intentRect: null,
-        reason: "no-target-rect",
-        targetRect: null,
+        index: getFolderChildrenPages(folder)[pageIndex]?.length || 0,
+        pageIndex,
       };
     }
-
-    const expandedTargetRect = expandRect(rect, FOLDER_HIT_CANDIDATE_MARGIN);
-    const intentRect = getFolderIntentRect(rect);
-    const dragRect = getDragVisualRect(activeDrag);
-    const centerInside = isPointInsideRect(rect, clientX, clientY);
-    const centerInsideIntent = intentRect ? isPointInsideRect(intentRect, clientX, clientY) : false;
-    const dragIntersectsExpandedTarget = rectsIntersect(expandedTargetRect, dragRect);
-    return {
-      accepted: centerInsideIntent,
-      centerInside,
-      centerInsideIntent,
-      dragIntersectsExpandedTarget,
-      expandedTargetRect: cloneClientRect(expandedTargetRect),
-      intentRect: cloneClientRect(intentRect),
-      reason: centerInsideIntent
-        ? "center-in-folder-intent"
-        : centerInside
-          ? "center-in-target-outside-folder-intent"
-        : dragIntersectsExpandedTarget
-          ? "drag-rect-intersects-target-candidate"
-          : "outside-target",
-      targetRect: cloneClientRect(rect),
-    };
-  }
-
-  function makeTargetDebugInfo(targetInfo, decision = null) {
-    if (!targetInfo?.item?.id) return null;
-    return {
-      expandedTargetRect: cloneClientRect(decision?.expandedTargetRect),
-      id: targetInfo.item.id,
-      intentRect: cloneClientRect(decision?.intentRect),
-      rect: cloneClientRect(targetInfo.rect),
-      stageLayoutRect: cloneClientRect(targetInfo.stageLayoutRect),
-      type: targetInfo.item.type || null,
-      visualSpec: cloneIconVisualSpec(targetInfo.visualSpec),
-    };
-  }
-
-  function publishDragHitDebugState(phase, debugOptions = {}) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag) {
-      dragHitDebugState.value = null;
-      return null;
-    }
-
-    const pointer = activeDrag.pointer || { x: debugOptions.clientX, y: debugOptions.clientY };
-    const clientX = Number(debugOptions.clientX ?? pointer.x);
-    const clientY = Number(debugOptions.clientY ?? pointer.y);
-    const center = getDragVisualCenter(activeDrag) || { x: clientX, y: clientY };
-    const pageIndex = options.pageIndex.value;
-    const insertIndex = calcPageInsertIndex(clientX, clientY, pageIndex);
-    const targetInfo = debugOptions.targetInfo === undefined
-      ? getTopLevelTargetForDrag(activeDrag, center)
-      : debugOptions.targetInfo;
-    const folderDecision = debugOptions.folderDecision ||
-      (targetInfo ? getFolderHitDecision(targetInfo, center.x, center.y, activeDrag) : null);
-    const lockedTargetInfo = debugOptions.lockedTargetInfo ||
-      (folderHover?.targetId ? getTopLevelTargetById(folderHover.targetId) : null);
-    const lockedDecision = debugOptions.lockedDecision ||
-      (lockedTargetInfo ? getFolderHitDecision(lockedTargetInfo, center.x, center.y, activeDrag) : null);
-    const slotTarget = getPageSlotReleaseTarget(pageIndex, insertIndex, activeDrag.size?.width);
-
-    dragHitDebugKey += 1;
-    dragHitDebugState.value = {
-      active: true,
-      dragPlacement,
-      dragRect: cloneClientRect(getDragVisualRect(activeDrag)),
-      folderDecision,
-      folderHover: folderHover
-        ? {
-          stickyRect: cloneClientRect(folderHover.stickyRect),
-          targetId: folderHover.targetId || null,
-        }
-        : null,
-      hoverState: dragFolderHoverState.value
-        ? {
-          key: dragFolderHoverState.value.key,
-          phase: dragFolderHoverState.value.phase,
-          targetId: dragFolderHoverState.value.targetId,
-          targetType: dragFolderHoverState.value.targetType,
-        }
-        : null,
-      key: `drag-hit-debug-${dragHitDebugKey}`,
-      lockedDecision,
-      lockedTarget: makeTargetDebugInfo(lockedTargetInfo, lockedDecision),
-      page: {
-        index: pageIndex,
-        insertIndex,
-        slotCellRect: getPageSlotCellRect(pageIndex, insertIndex),
-        slotTargetRect: cloneClientRect(slotTarget?.clientRect),
-      },
-      pendingFolderTargetId: pendingTimer?.targetId || null,
-      phase,
-      pointer: clonePoint({ x: clientX, y: clientY }),
-      reason: debugOptions.reason || folderDecision?.reason || lockedDecision?.reason || null,
-      source: activeDrag.source || null,
-      target: makeTargetDebugInfo(targetInfo, folderDecision),
-      visualCenter: clonePoint(center),
-      winner: debugOptions.winner || "pending",
-    };
-    return dragHitDebugState.value;
-  }
-
-  function getStableTopLevelTargetBounds(found) {
-    if (!found?.item?.id) return null;
-    const source = { area: "desktop", folderId: null, id: found.item.id, pageIndex: found.pageIndex };
-    const exactExpected = { area: "desktop", id: found.item.id, index: found.index, pageIndex: found.pageIndex };
-    const pageExpected = { area: "desktop", id: found.item.id, pageIndex: found.pageIndex };
-    const exactLiveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: exactExpected });
-    const pageLiveRecord = getBoundsRecord(BOUNDS_KIND.LAUNCH, BOUNDS_VARIANT.LIVE_TARGET, source, { expected: pageExpected });
-    return getStableLayoutReleaseTarget(source, exactExpected) ||
-      getStableLayoutReleaseTarget(source, pageExpected) ||
-      makeReleaseTarget(exactLiveRecord, null, getRecordVisualSpec(exactLiveRecord)) ||
-      makeReleaseTarget(pageLiveRecord, null, getRecordVisualSpec(pageLiveRecord));
-  }
-
-  function normalizeTopLevelTarget(found, fallbackRect = null, node = null) {
-    if (!found?.item) return null;
-    const target = getStableTopLevelTargetBounds(found);
-    const rect = target?.clientRect || fallbackRect;
-    return rect ? { item: found.item, node, rect, stageLayoutRect: target?.stageLayoutRect || null, visualSpec: target?.visualSpec || null } : null;
+    const cols = Math.max(1, Number(options.folderCols.value) || 1);
+    const rows = Math.max(1, Number(options.visibleFolderRowCount.value) || 1);
+    const x = clamp(clientX - rect.left, 0, Math.max(1, rect.width - 1));
+    const y = clamp(clientY - rect.top, 0, Math.max(1, rect.height - 1));
+    const col = clamp(Math.floor(x / (rect.width / cols)), 0, cols - 1);
+    const row = clamp(Math.floor(y / (rect.height / rows)), 0, rows - 1);
+    return { index: row * cols + col, pageIndex };
   }
 
   function getTopLevelTargetById(targetId) {
-    if (!targetId || targetId === dragRuntime?.item.id) return null;
+    if (!activeDrag || activeDrag.item.type === "folder" || !targetId) return null;
+    if (activeDrag.group.draggedIds.includes(targetId)) return null;
     const found = options.findTopLevel(options.pages.value, targetId);
-    return normalizeTopLevelTarget(found, options.iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.RENDERED, targetId));
-  }
-
-  function getTopLevelTargetAtPoint(clientX, clientY) {
-    const pixiTarget = options.iconBoundsRegistry.getAtPoint(BOUNDS_KIND.TOP_LEVEL, clientX, clientY, { excludeId: dragRuntime?.item.id });
-    if (pixiTarget?.id) {
-      const found = options.findTopLevel(options.pages.value, pixiTarget.id);
-      const target = normalizeTopLevelTarget(found, pixiTarget.rect);
-      if (target) return target;
-    }
-    return null;
-  }
-
-  function getTopLevelTargetForDrag(activeDrag, center) {
-    if (!activeDrag || !center) return null;
-    const pointTarget = getTopLevelTargetAtPoint(center.x, center.y);
-    if (pointTarget) return pointTarget;
-
-    const dragRect = getDragVisualRect(activeDrag);
-    if (!dragRect) return null;
-    const pageIndex = options.pageIndex.value;
-    const page = options.pages.value[pageIndex] || [];
-    for (let index = 0; index < page.length; index += 1) {
-      const item = page[index];
-      if (!item?.id || item.id === activeDrag.item.id) continue;
-      const target = normalizeTopLevelTarget({ item, pageIndex, index });
-      if (target && rectsIntersect(expandRect(target.rect, FOLDER_HIT_CANDIDATE_MARGIN), dragRect)) return target;
-    }
-    return null;
-  }
-
-  function isInsideFolderHitZone(targetInfo, clientX, clientY, activeDrag = null) {
-    return getFolderHitDecision(targetInfo, clientX, clientY, activeDrag).accepted;
-  }
-
-  function isInsideStickyFolderZone(clientX, clientY) {
-    if (!folderHover?.stickyRect) return false;
-    return isPointInsideRect(folderHover.stickyRect, clientX, clientY);
-  }
-
-  function refreshFolderHoverTarget(targetId) {
-    const targetInfo = getTopLevelTargetById(targetId);
-    if (!targetInfo) return null;
-    const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
-    const stickyRect = getFolderStickyRect(targetInfo, margin);
-    folderHover = { targetId, stickyRect };
-    return targetInfo;
-  }
-
-  function getLockedTopLevelDropIntent(activeDrag) {
-    const targetId = folderHover?.targetId || pendingTimer?.targetId;
-    if (!targetId) return null;
-    const targetInfo = refreshFolderHoverTarget(targetId);
-    if (!targetInfo) return null;
-    const center = getDragVisualCenter(activeDrag) || activeDrag?.pointer;
-    if (!center) return null;
-    const decision = getFolderHitDecision(targetInfo, center.x, center.y, activeDrag);
-    const stickyAccepted = isInsideStickyFolderZone(center.x, center.y);
-    if (stickyAccepted || decision.accepted) {
-      return {
-        decision,
-        reason: decision.accepted ? decision.reason : "sticky-folder-intent",
-        stickyAccepted,
-        targetInfo,
-      };
-    }
-    return null;
-  }
-
-  function isPendingFolderTargetStillActive(activeDrag, targetId) {
-    if (!activeDrag || activeDrag.item.type !== "app" || folderHover?.targetId !== targetId) return false;
-    const targetInfo = refreshFolderHoverTarget(targetId);
-    if (!targetInfo) return false;
-    const center = getDragVisualCenter(activeDrag) || activeDrag.pointer;
-    return isInsideStickyFolderZone(center.x, center.y) || isInsideFolderHitZone(targetInfo, center.x, center.y, activeDrag);
-  }
-
-  function lockFolderHoverTarget(targetInfo) {
-    const rect = targetInfo?.rect;
-    if (!rect) return;
-    const targetId = targetInfo.item.id;
-    const margin = pendingTimer?.targetId === targetId ? FOLDER_HOVER_ESCAPE_MARGIN : FOLDER_HOVER_STICKY_MARGIN;
-    folderHover = { targetId, stickyRect: getFolderStickyRect(targetInfo, margin) };
-    dragFolderTargetId.value = targetId;
-    if (dragFolderHoverState.value?.targetId === targetId) return;
-    dragFolderHoverKey += 1;
-    dragFolderHoverState.value = {
-      key: `folder-hover-${dragFolderHoverKey}`,
-      phase: "hover",
-      startedAt: Date.now(),
-      targetId,
-      targetType: targetInfo.item.type,
-    };
-  }
-
-  function setPendingFolderPhase(targetId, phase) {
-    const current = dragFolderHoverState.value;
-    if (!current || current.targetId !== targetId) return;
-    dragFolderHoverState.value = { ...current, phase };
-  }
-
-  function isPendingFolderTargetReady(targetId) {
-    const activeDrag = dragRuntime;
-    if (!isPendingFolderTargetStillActive(activeDrag, targetId)) {
-      clearPendingTarget();
-      return false;
-    }
-    return true;
-  }
-
-  function startPendingFolderTarget(target) {
-    if (pendingTimer?.targetId === target.id) return;
-    clearPendingTimerButKeepSticky();
-
-    pendingTimer = {
-      targetId: target.id,
-      flashTimer: window.setTimeout(() => {
-        if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "flash");
-      }, FOLDER_HOVER_SETTLE_MS),
-      openingTimer: window.setTimeout(() => {
-        if (isPendingFolderTargetReady(target.id)) setPendingFolderPhase(target.id, "opening");
-      }, FOLDER_HOVER_OPENING_DELAY_MS),
-      timer: window.setTimeout(() => {
-        const activeDrag = dragRuntime;
-        if (!isPendingFolderTargetStillActive(activeDrag, target.id)) return clearPendingTarget();
-        const latestTarget = options.findTopLevel(options.pages.value, target.id)?.item;
-        if (!latestTarget || latestTarget.id === activeDrag.item.id) return clearPendingTarget();
-        setPendingFolderPhase(target.id, "opening");
-        clearPendingTarget();
-        if (latestTarget.type === "folder") openExistingFolderForDrop(latestTarget.id);
-        else createFolderForDrop(latestTarget.id);
-      }, FOLDER_HOVER_OPEN_DELAY_MS),
-    };
-  }
-
-  function createTopLevelFolderFromAppTarget(targetAppId, createOptions = {}) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app") return { accepted: false };
-
-    const withoutDragged = options.removeEverywhere(options.pages.value, activeDrag.item.id);
-    const target = options.findTopLevel(withoutDragged, targetAppId);
-    if (!target || target.item.type !== "app") return { accepted: false };
-
-    const folderId = options.makeId("folder");
-    const targetApp = options.cloneItem(target.item);
-    const draggedApp = options.cloneItem(activeDrag.item);
-    const childPage = [targetApp];
-    if (createOptions.includeDraggedApp) childPage.push(draggedApp);
-    const folderItem = options.withFolderPages(
-      { id: folderId, type: "folder", name: options.getNewFolderName() },
-      [childPage]
-    );
-    const originGeometry =
-      options.getTopLevelIconMotionGeometry(targetAppId, folderId) ||
-      options.getPageSlotMotionGeometry(folderId, target.pageIndex, target.index);
-    const next = options.clonePages(withoutDragged);
-    next[target.pageIndex][target.index] = folderItem;
-
-    dragPlacement = placementKey(createOptions.openAfterCreate ? "folder-open" : "folder-drop", folderId);
-    lastPlacementCommit = null;
-    options.commitPages(options.compactPages(next));
-    if (createOptions.openAfterCreate) {
-      options.commitOpenFolder(folderId, { originGeometry });
-      options.commitFolderSession({ mode: "created", folderId, targetApp, hasEntered: false, openedAt: Date.now() });
-      blockDragSorting();
-    }
-    return {
-      accepted: true,
-      draggedApp,
-      folderId,
-      folderItem,
-      originGeometry,
-      targetApp,
-      targetInfo: createOptions.targetInfo || null,
-    };
-  }
-
-  function createFolderForDrop(targetAppId) {
-    createTopLevelFolderFromAppTarget(targetAppId, {
-      includeDraggedApp: false,
-      openAfterCreate: true,
-    });
-  }
-
-  function openExistingFolderForDrop(folderId) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app") return;
-    dragPlacement = placementKey("folder-open", folderId);
-    lastPlacementCommit = null;
-    options.commitPages(options.removeEverywhere(options.pages.value, activeDrag.item.id));
-    options.commitOpenFolder(folderId);
-    options.commitFolderSession({ mode: "existing", folderId, hasEntered: false, openedAt: Date.now() });
-    blockDragSorting();
-  }
-
-  function dropDraggedAppOnTopLevelTarget(targetInfo) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app" || !targetInfo?.item) return { accepted: false };
-
-    const target = options.findTopLevel(options.pages.value, targetInfo.item.id);
-    if (!target || target.item.id === activeDrag.item.id) return { accepted: false };
-
-    if (target.item.type === "folder") {
-      const childPages = options.getFolderChildPages(target.item, options.folderPageSize.value);
-      const previewLimit = Math.min(9, Math.max(0, Number(options.folderPageSize.value) || 0));
-      const firstPageCount = childPages[0]?.filter(Boolean).length || 0;
-      const canBecomePreviewChild = childPages.length === 1 && firstPageCount < previewLimit;
-      const targetPageIndex = Math.max(0, childPages.length - 1);
-      const insertIndex = childPages[targetPageIndex]?.length || 0;
-      options.commitPages(
-        options.insertAppIntoFolder(
-          options.pages.value,
-          target.item.id,
-          activeDrag.item,
-          targetPageIndex,
-          insertIndex,
-          options.folderPageSize.value
-        )
+    if (!found?.item) return null;
+    const rect = getRenderedFolderRect(targetId) ||
+      getRenderedLaunchRect({
+        area: "desktop",
+        id: targetId,
+        pageIndex: found.pageIndex,
+      }) ||
+      options.iconBoundsRegistry.getBounds(
+        BOUNDS_KIND.TOP_LEVEL,
+        BOUNDS_VARIANT.RENDERED,
+        targetId
       );
-      dragPlacement = placementKey("folder-drop", target.item.id, targetPageIndex, insertIndex);
-      return {
-        accepted: true,
-        folderId: target.item.id,
-        previewSlotIndex: canBecomePreviewChild ? firstPageCount : null,
-        releaseMode: canBecomePreviewChild
-          ? DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT
-          : DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB,
-        suppressFolderPreviewChildId: canBecomePreviewChild ? activeDrag.item.id : null,
-        suppressFolderPreviewFolderId: canBecomePreviewChild ? target.item.id : null,
-        targetInfo,
-      };
-    }
+    return rect ? { ...found, rect } : null;
+  }
 
-    const created = createTopLevelFolderFromAppTarget(target.item.id, {
-      includeDraggedApp: true,
-      openAfterCreate: false,
-      targetInfo,
-    });
-    if (!created.accepted) return { accepted: false };
-    return {
-      accepted: true,
-      createRelease: true,
-      draggedApp: created.draggedApp,
-      folderId: created.folderId,
-      folderItem: created.folderItem,
-      previewSlotIndex: null,
-      releaseMode: DRAG_RELEASE_MODE_SLOT,
-      targetApp: created.targetApp,
-      targetInfo: created.targetInfo || targetInfo,
+  function getTargetIntentRect(rect) {
+    const safeRect = cloneRect(rect);
+    if (!safeRect || safeRect.width <= 0 || safeRect.height <= 0) return null;
+    return makeCenteredRect(
+      safeRect,
+      Math.min(safeRect.width, FOLDER_HIT_INTENT_MAX_SIZE),
+      Math.min(safeRect.height, FOLDER_HIT_INTENT_MAX_SIZE)
+    );
+  }
+
+  function getTargetStickyRect(target) {
+    const intentRect = getTargetIntentRect(target?.rect);
+    return intentRect ? expandRect(intentRect, FOLDER_HOVER_STICKY_MARGIN) : null;
+  }
+
+  function lockTopLevelTarget(target) {
+    const stickyRect = getTargetStickyRect(target);
+    if (!activeDrag?.group || !target?.item?.id || !stickyRect) return;
+    activeDrag.group.lockedTarget = {
+      rect: cloneRect(target.rect),
+      stickyRect: cloneRect(stickyRect),
+      targetId: target.item.id,
+      targetType: target.item.type,
     };
   }
 
-  function commitDraggedItemToDesktop(session, commitOptions) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || !session) return;
-
-    const safeOptions = commitOptions || {};
-    let next = options.removeEverywhere(options.pages.value, activeDrag.item.id);
-    if (session.mode === "created" && session.targetApp) next = options.replaceFolderWithItem(next, session.folderId, session.targetApp);
-    const insertIndex = calcPageInsertIndex(activeDrag.pointer.x, activeDrag.pointer.y);
-    const shouldCommitOverflow = Boolean(safeOptions.force) || !options.wouldTopLevelInsertOverflow(next, activeDrag.item, options.pageIndex.value, options.pageSize.value);
-    next = shouldCommitOverflow
-      ? options.insertTopLevelItem(next, activeDrag.item, options.pageIndex.value, insertIndex, options.pageSize.value)
-      : options.previewTopLevelItemWithoutOverflow(next, activeDrag.item, options.pageIndex.value, insertIndex, options.pageSize.value);
-    dragPlacement = placementKey("page", options.pageIndex.value, insertIndex);
-
-    options.commitPages(next);
-    options.commitFolderPageIndex(options.folderPageIndex.value);
+  function getLockedTopLevelTarget(point) {
+    const locked = activeDrag?.group?.lockedTarget;
+    if (!locked?.targetId) return null;
+    const target = getTopLevelTargetById(locked.targetId);
+    if (!target) {
+      clearLockedTarget();
+      return null;
+    }
+    const stickyRect = getTargetStickyRect(target) || locked.stickyRect;
+    locked.stickyRect = cloneRect(stickyRect);
+    locked.rect = cloneRect(target.rect);
+    if (!stickyRect || !isPointInsideRect(stickyRect, point.x, point.y)) {
+      clearLockedTarget();
+      return null;
+    }
+    return { ...target, locked: true };
   }
 
-  function commitPendingDesktopReturn(commitOptions) {
-    if (!pendingDesktopReturn) return;
-    const pending = pendingDesktopReturn;
-    pendingDesktopReturn = null;
-    commitDraggedItemToDesktop(pending.session, { force: Boolean(commitOptions?.force || pending.force) });
-  }
-
-  function cancelFolderSessionAndReturnToDesktop(cancelOptions) {
-    const activeDrag = dragRuntime;
-    const session = options.folderSession.value;
-    if (!activeDrag || !session) return;
-
-    const safeOptions = cancelOptions || {};
-    options.commitOpenFolder(null);
-    options.commitFolderSession(null);
-    clearPendingTarget();
-
-    if (safeOptions.deferSort) {
-      pendingDesktopReturn = {
-        force: Boolean(safeOptions.force),
-        session: {
-          ...session,
-          targetApp: session.targetApp ? options.cloneItem(session.targetApp) : null,
-        },
-      };
-      blockDragSorting();
-      return;
+  function getTopLevelTargetAtPoint(point) {
+    if (!activeDrag || activeDrag.item.type === "folder" || !point) return null;
+    const selectedIds = new Set(activeDrag.group.draggedIds);
+    const hit = options.iconBoundsRegistry.getAtPoint(
+      BOUNDS_KIND.TOP_LEVEL,
+      point.x,
+      point.y,
+      { excludeId: activeDrag.group.leadId }
+    );
+    if (hit?.id && !selectedIds.has(hit.id)) {
+      const found = options.findTopLevel(options.pages.value, hit.id);
+      if (found) return { ...found, rect: hit.rect };
     }
 
-    commitDraggedItemToDesktop(session, safeOptions);
+    const dragRect = getDragVisualRect();
+    const pageIndex = getVisualDesktopPageIndex();
+    for (let index = 0; index < (options.pages.value[pageIndex] || []).length; index += 1) {
+      const item = options.pages.value[pageIndex][index];
+      if (!item?.id || selectedIds.has(item.id)) continue;
+      const target = getTopLevelTargetById(item.id);
+      if (!target) continue;
+      const candidateRect = expandRect(target.rect, FOLDER_HIT_CANDIDATE_MARGIN);
+      if (
+        isPointInsideRect(target.rect, point.x, point.y) ||
+        rectsIntersect(candidateRect, dragRect)
+      ) {
+        return target;
+      }
+    }
+    return null;
   }
 
-  function shouldCommitPlacement(key, clientX, clientY, minDistance, force) {
-    return shouldCommitPlacementFromLast(lastPlacementCommit, key, clientX, clientY, minDistance, Boolean(force));
+  function isTargetIntentAccepted(target, point) {
+    const intentRect = getTargetIntentRect(target?.rect);
+    return Boolean(intentRect && point && isPointInsideRect(intentRect, point.x, point.y));
   }
 
-  function rememberPlacementCommit(key, clientX, clientY) {
-    lastPlacementCommit = { key, x: clientX, y: clientY };
+  function maybeCloseAutoOpenedFolder(clientX, clientY) {
+    const group = activeDrag?.group;
+    if (!group?.autoOpenedFolderId || options.openFolderId.value !== group.autoOpenedFolderId) return;
+    const panel = getDomRefElement(options.folderPanelRef.value);
+    const rect = panel?.getBoundingClientRect?.();
+    if (!rect || isPointInsideRect(rect, clientX, clientY)) return;
+    group.autoOpenedFolderId = null;
+    options.commitOpenFolder(null);
   }
 
-  function moveTopLevelItemWithinCurrentPage(itemId, insertIndex) {
-    const currentPageIndex = options.pageIndex.value;
-    const page = options.pages.value[currentPageIndex];
-    if (!page) return false;
-
-    const currentIndex = page.findIndex((item) => item?.id === itemId);
-    if (currentIndex < 0) return false;
-
-    const safeIndex = clamp(insertIndex, 0, Math.min(options.pageSize.value, Math.max(0, page.length - 1)));
-    if (currentIndex === safeIndex) return true;
-
-    const nextPage = page.slice();
-    const [item] = nextPage.splice(currentIndex, 1);
-    nextPage.splice(safeIndex, 0, item);
-
-    const next = options.pages.value.slice();
-    next[currentPageIndex] = nextPage;
-    options.commitPages(next);
-    return true;
-  }
-
-  function placeDraggedItemOnDesktop(clientX, clientY, placeOptions) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag) return;
-    const safeOptions = placeOptions || {};
-    const insertIndex = calcPageInsertIndex(clientX, clientY);
-    const key = placementKey("page", options.pageIndex.value, insertIndex);
-    const isAlreadyOnCurrentPage = Boolean((options.pages.value[options.pageIndex.value] || []).some((item) => item?.id === activeDrag.item.id));
-    if (isAlreadyOnCurrentPage) {
-      if (dragPlacement === key) return;
-      if (!shouldCommitPlacement(key, clientX, clientY, DESKTOP_SORT_MIN_DISTANCE, safeOptions.force)) return;
-      if (moveTopLevelItemWithinCurrentPage(activeDrag.item.id, insertIndex)) {
-        dragPlacement = key;
-        rememberPlacementCommit(key, clientX, clientY);
-        return;
+  function resolveDropIntent(clientX, clientY) {
+    const point = getPointerCenter() || { x: clientX, y: clientY };
+    maybeCloseAutoOpenedFolder(clientX, clientY);
+    const openFolderId = options.openFolderId.value;
+    if (openFolderId && activeDrag.item.type !== "folder") {
+      const panel = getDomRefElement(options.folderPanelRef.value);
+      const panelRect = panel?.getBoundingClientRect?.() || null;
+      if (!panelRect || isPointInsideRect(panelRect, clientX, clientY)) {
+        clearLockedTarget();
+        const target = calcFolderInsertIndex(clientX, clientY);
+        return {
+          fallbackPoint: point,
+          intent: {
+            allowCreate: target.pageIndex >= options.folderPages.value.length,
+            folderId: openFolderId,
+            index: target.index,
+            pageIndex: target.pageIndex,
+            type: "open-folder-slot",
+          },
+          locked: false,
+          target: null,
+        };
       }
     }
 
-    const isAlreadyVisible = Boolean(options.findTopLevel(options.pages.value, activeDrag.item.id));
-    const needsMove = dragPlacement !== key || !isAlreadyVisible;
-    if (!needsMove) return;
-    const wouldOverflow = options.wouldTopLevelInsertOverflow(options.pages.value, activeDrag.item, options.pageIndex.value, options.pageSize.value);
-    if (!shouldCommitPlacement(key, clientX, clientY, DESKTOP_SORT_MIN_DISTANCE, safeOptions.force || !isAlreadyVisible)) return;
-
-    const next = safeOptions.force || !wouldOverflow
-      ? options.insertTopLevelItem(options.pages.value, activeDrag.item, options.pageIndex.value, insertIndex, options.pageSize.value)
-      : options.previewTopLevelItemWithoutOverflow(options.pages.value, activeDrag.item, options.pageIndex.value, insertIndex, options.pageSize.value);
-    dragPlacement = key;
-    rememberPlacementCommit(key, clientX, clientY);
-    options.commitPages(next);
-  }
-
-  function placeDraggedItemInFolder(folderId, clientX, clientY, placeOptions) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag || activeDrag.item.type !== "app") return;
-    const safeOptions = placeOptions || {};
-    const target = safeOptions.target || calcFolderInsertTarget(clientX, clientY);
-    const key = placementKey("folder", folderId, target.pageIndex, target.index);
-    const existing = options.findInFolder(options.pages.value, folderId, activeDrag.item.id);
-    const needsMove = dragPlacement !== key || !existing || existing.pageIndex !== target.pageIndex || existing.index !== target.index;
-    if (!needsMove) return;
-    const wouldOverflow = options.wouldFolderInsertOverflow(options.pages.value, folderId, activeDrag.item, target.pageIndex, options.folderPageSize.value);
-    if (!shouldCommitPlacement(key, clientX, clientY, FOLDER_SORT_MIN_DISTANCE, safeOptions.force || !existing)) return;
-
-    const next = safeOptions.force || !wouldOverflow
-      ? options.insertAppIntoFolder(options.pages.value, folderId, activeDrag.item, target.pageIndex, target.index, options.folderPageSize.value)
-      : options.previewAppIntoFolderWithoutOverflow(options.pages.value, folderId, activeDrag.item, target.pageIndex, target.index, options.folderPageSize.value);
-    dragPlacement = key;
-    rememberPlacementCommit(key, clientX, clientY);
-    clearFolderLaunchBounds(folderId);
-    options.commitPages(next);
-  }
-
-  function handleFolderSessionMove(clientX, clientY) {
-    const activeDrag = dragRuntime;
-    const session = options.folderSession.value;
-    const folderId = options.openFolderId.value;
-    if (!activeDrag || !session || !folderId) return false;
-    dragHitDebugState.value = null;
-
-    const panel = getDomRefElement(options.folderPanelRef.value);
-    const rect = panel?.getBoundingClientRect();
-    const inside = rect ? isPointInsideRect(rect, clientX, clientY) : false;
-
-    clearPendingTarget();
-
-    if (inside) {
-      if (!session.hasEntered) options.commitFolderSession({ ...session, hasEntered: true });
-      if (!isDragSortingBlocked() && isInsideCurrentFolderGrid(clientX, clientY)) placeDraggedItemInFolder(folderId, clientX, clientY);
-      return true;
+    const lockedTarget = getLockedTopLevelTarget(point);
+    if (lockedTarget) {
+      return {
+        fallbackPoint: centerRect(lockedTarget.rect, point),
+        intent: lockedTarget.item.type === "folder"
+          ? { folderId: lockedTarget.item.id, type: "closed-folder" }
+          : { targetAppId: lockedTarget.item.id, type: "app-folder-create" },
+        locked: true,
+        target: lockedTarget,
+      };
     }
 
-    if (!session.hasEntered) return true;
+    const target = getTopLevelTargetAtPoint(point);
+    if (target && isTargetIntentAccepted(target, point)) {
+      return {
+        fallbackPoint: centerRect(target.rect, point),
+        intent: target.item.type === "folder"
+          ? { folderId: target.item.id, type: "closed-folder" }
+          : { targetAppId: target.item.id, type: "app-folder-create" },
+        locked: false,
+        target,
+      };
+    }
 
-    cancelFolderSessionAndReturnToDesktop({ deferSort: true });
-    return true;
+    const pageIndex = getVisualDesktopPageIndex();
+    const pageRect = getPageRect(pageIndex);
+    if (pageRect && !isPointInsideRect(pageRect, clientX, clientY)) {
+      return {
+        fallbackPoint: point,
+        intent: { reason: "invalid-target", type: "invalid" },
+        locked: false,
+        target,
+      };
+    }
+    return {
+      fallbackPoint: point,
+      intent: {
+        index: calcDesktopInsertIndex(clientX, clientY, pageIndex),
+        pageIndex,
+        type: "desktop-slot",
+      },
+      locked: false,
+      target,
+    };
   }
 
-  function handlePageEdgeTurn(clientX) {
-    const direction = getPageEdgeDirection(clientX);
-    if (!direction) {
+  function makePlan(intent) {
+    const group = activeDrag.group;
+    return options.planGroupDrop({
+      basePages: group.basePages,
+      baseRevision: group.baseRevision,
+      createdFolderId: group.createdFolderId,
+      currentRevision: options.getGroupLayoutRevision(),
+      draggedIds: group.draggedIds,
+      intent,
+      leadId: group.leadId,
+      selectionRevision: group.selectionRevision,
+      standalone: group.standalone,
+    });
+  }
+
+  function publishTarget(target, plan, resolved = null) {
+    const isTopLevelIntent = ["app-folder-create", "closed-folder"].includes(resolved?.intent?.type);
+    if (!target || !isTopLevelIntent || plan.status !== "accepted") {
+      clearPendingTarget();
+      return;
+    }
+    const previousTargetId = activeDrag.group.lockedTarget?.targetId;
+    if (previousTargetId && previousTargetId !== target.item.id) {
+      activeDrag.group.pendingOpenFolderId = null;
+      clearFolderHoverTimers();
+    }
+    lockTopLevelTarget(target);
+    dragFolderTargetId.value = target.item.id;
+    const phase = dragFolderHoverState.value?.targetId === target.item.id
+      ? dragFolderHoverState.value.phase
+      : "hover";
+    if (dragFolderHoverState.value?.targetId !== target.item.id) {
+      hoverKey += 1;
+      dragFolderHoverState.value = {
+        key: `group-target-${hoverKey}`,
+        phase,
+        startedAt: Date.now(),
+        targetId: target.item.id,
+        targetType: target.item.type,
+      };
+    }
+    if (target.item.type !== "folder" || options.openFolderId.value === target.item.id) {
+      activeDrag.group.pendingOpenFolderId = null;
+      clearFolderHoverTimers();
+      return;
+    }
+    if (activeDrag.group.pendingOpenFolderId === target.item.id || activeDrag.group.autoOpenedFolderId === target.item.id) return;
+    clearFolderHoverTimers();
+    activeDrag.group.pendingOpenFolderId = target.item.id;
+    folderHoverFlashTimer = window.setTimeout(() => {
+      folderHoverFlashTimer = null;
+      if (!activeDrag || activeDrag.group.pendingOpenFolderId !== target.item.id) return;
+      dragFolderHoverState.value = {
+        ...dragFolderHoverState.value,
+        phase: "flash",
+      };
+      publishGroupState();
+    }, GROUP_FOLDER_HOVER_FLASH_MS);
+    folderHoverTimer = window.setTimeout(() => {
+      folderHoverTimer = null;
+      if (!activeDrag || activeDrag.group.pendingOpenFolderId !== target.item.id) return;
+      activeDrag.group.pendingOpenFolderId = null;
+      activeDrag.group.autoOpenedFolderId = target.item.id;
+      dragFolderHoverState.value = {
+        ...dragFolderHoverState.value,
+        phase: "opening",
+      };
+      options.commitOpenFolder(target.item.id);
+    }, GROUP_FOLDER_HOVER_OPEN_MS);
+  }
+
+  function publishDebug(resolved, plan) {
+    debugKey += 1;
+    dragHitDebugState.value = {
+      active: true,
+      key: `group-drag-debug-${debugKey}`,
+      phase: activeDrag.group.phase,
+      pointer: { ...activeDrag.pointer },
+      reason: plan.reason || plan.status,
+      source: activeDrag.source,
+      target: resolved.target
+        ? {
+          id: resolved.target.item.id,
+          rect: cloneRect(resolved.target.rect),
+          type: resolved.target.item.type,
+        }
+        : null,
+      winner: plan.status === "accepted" ? resolved.intent.type : "rejected",
+    };
+  }
+
+  function evaluateIntent(optionsArg = {}) {
+    intentTimer = null;
+    if (!activeDrag || options.isLaunchpadInteractionBlocked()) return null;
+    const resolved = resolveDropIntent(activeDrag.pointer.x, activeDrag.pointer.y);
+    const nextIntentKey = intentKey(resolved.intent);
+    let plan = activeDrag.group.lastPlan;
+    if (
+      optionsArg.force === true ||
+      activeDrag.group.intentKey !== nextIntentKey ||
+      activeDrag.group.planRevision !== options.getGroupLayoutRevision()
+    ) {
+      plan = makePlan(resolved.intent);
+      activeDrag.group.intentKey = nextIntentKey;
+      activeDrag.group.lastPlan = plan;
+      activeDrag.group.planRevision = options.getGroupLayoutRevision();
+    }
+    activeDrag.group.intent = resolved.intent;
+    activeDrag.group.lastResolved = resolved;
+    activeDrag.group.dropReason = plan.reason || null;
+    activeDrag.group.dropStatus = plan.status;
+    updateLayoutProjection(activeDrag.group, resolved.intent, plan);
+    activeDrag.group.phase = activeDrag.hasMoved ? "dragging" : "gathering";
+    publishTarget(resolved.target, plan, resolved);
+    publishDebug(resolved, plan);
+    publishGroupState();
+    return { plan, resolved };
+  }
+
+  function scheduleIntentEvaluation() {
+    clearIntentTimer();
+    intentTimer = window.setTimeout(evaluateIntent, GROUP_DROP_INTENT_DELAY_MS);
+  }
+
+  function scheduleDesktopPageTurn(clientX) {
+    const rect = getPageRect();
+    if (!rect) return clearPageTurn();
+    const direction = clientX <= rect.left + PAGE_EDGE_SIZE
+      ? -1
+      : clientX >= rect.right - PAGE_EDGE_SIZE
+        ? 1
+        : 0;
+    const currentIndex = getVisualDesktopPageIndex();
+    const targetIndex = currentIndex + direction;
+    const createsPage = targetIndex === options.pages.value.length;
+    const canCreatePage = createsPage &&
+      currentIndex === options.pages.value.length - 1 &&
+      makePlan({
+        index: 0,
+        pageIndex: targetIndex,
+        type: "desktop-slot",
+      }).status === "accepted";
+    if (
+      !direction ||
+      targetIndex < 0 ||
+      targetIndex > options.pages.value.length ||
+      (createsPage && !canCreatePage)
+    ) {
       clearPageTurn();
       return;
     }
-    if (pageTurnTimer?.direction === direction) return;
+    if (pageTurnTimer?.targetIndex === targetIndex) return;
     clearPageTurn();
-
     pageTurnTimer = {
-      direction,
+      targetIndex,
       timer: window.setTimeout(() => {
+        const pending = pageTurnTimer;
         pageTurnTimer = null;
-        const currentPage = options.pageIndex.value;
-        let didTurn = false;
-        dragPlacement = null;
-        lastPlacementCommit = null;
-        if (direction < 0) {
-          if (currentPage <= 0) return;
-          options.commitPageIndex(currentPage - 1);
-          didTurn = true;
-        } else {
-          if (currentPage >= options.pages.value.length - 1) {
-            const draggedItemId = dragRuntime?.item?.id;
-            if (!options.canCreateDesktopPageAfterDrag(options.pages.value, currentPage, draggedItemId)) return;
-            options.commitPages([...options.pages.value, []]);
-          }
-          options.commitPageIndex(currentPage + 1);
-          didTurn = true;
+        if (!activeDrag || !pending) return;
+        activeDrag.group.desktopPageIndex = pending.targetIndex;
+        if (pending.targetIndex < options.pages.value.length) {
+          options.commitPageIndex(pending.targetIndex);
         }
-        if (didTurn) nextTick(schedulePageEdgeTurnFromCurrentPointer);
+        activeDrag.group.intentKey = null;
+        evaluateIntent({ force: true });
       }, PAGE_TURN_DELAY),
     };
   }
 
-  function getPageEdgeDirection(clientX) {
-    const width = window.innerWidth;
-    return clientX > width - PAGE_EDGE_SIZE ? 1 : clientX < PAGE_EDGE_SIZE ? -1 : 0;
-  }
-
-  function schedulePageEdgeTurnFromCurrentPointer() {
-    if (!dragRuntime || options.folderSession.value || options.openFolderId.value) return;
-    const pointer = dragRuntime.pointer;
-    if (!pointer || !getPageEdgeDirection(pointer.x)) return;
-    handlePageEdgeTurn(pointer.x);
-  }
-
-  function getFolderPageEdgeDirection(clientX, clientY) {
+  function scheduleFolderPageTurn(clientX) {
     const panel = getDomRefElement(options.folderPanelRef.value);
-    const rect = panel?.getBoundingClientRect();
-    if (!rect || !isPointInsideRect(rect, clientX, clientY)) return 0;
-
-    const direction = clientX < rect.left + FOLDER_PAGE_EDGE_SIZE ? -1 : clientX > rect.right - FOLDER_PAGE_EDGE_SIZE ? 1 : 0;
-    if (direction < 0 && getActiveFolderPageIndex() <= 0) return 0;
-    return direction;
-  }
-
-  function scheduleFolderPageEdgeTurnFromCurrentPointer() {
-    if (!dragRuntime || (!options.folderSession.value && !options.openFolderId.value)) return;
-    const pointer = dragRuntime.pointer;
-    if (!pointer || !getFolderPageEdgeDirection(pointer.x, pointer.y)) return;
-    handleFolderPageEdgeTurn(pointer.x, pointer.y);
-  }
-
-  function handleFolderPageEdgeTurn(clientX, clientY) {
-    const direction = getFolderPageEdgeDirection(clientX, clientY);
-    if (!direction) {
+    const rect = panel?.getBoundingClientRect?.();
+    if (!rect || !isPointInsideRect(rect, clientX, activeDrag.pointer.y)) {
       clearFolderPageTurn();
       return;
     }
-
-    if (folderPageTurnTimer?.direction === direction) return;
+    const direction = clientX <= rect.left + FOLDER_PAGE_EDGE_SIZE
+      ? -1
+      : clientX >= rect.right - FOLDER_PAGE_EDGE_SIZE
+        ? 1
+        : 0;
+    if (folderPageTurnTimer) {
+      const pendingDirection = Math.sign(
+        folderPageTurnTimer.targetIndex - folderPageTurnTimer.fromIndex
+      );
+      if (direction === pendingDirection) return;
+      clearFolderPageTurn();
+    }
+    const currentIndex = Number(options.visualFolderPageIndex?.value ?? options.folderPageIndex.value) || 0;
+    const maxIndex = Math.max(0, options.folderPages.value.length - 1);
+    const targetIndex = currentIndex + direction;
+    const allowCreate = targetIndex === maxIndex + 1 &&
+      makePlan({
+        allowCreate: true,
+        folderId: options.openFolderId.value,
+        index: 0,
+        pageIndex: targetIndex,
+        type: "open-folder-slot",
+      }).status === "accepted";
+    if (!direction || targetIndex < 0 || targetIndex > maxIndex + 1 || (targetIndex > maxIndex && !allowCreate)) {
+      clearFolderPageTurn();
+      return;
+    }
+    if (folderPageTurnTimer?.targetIndex === targetIndex) return;
     clearFolderPageTurn();
-
+    const token = options.requestFolderPageTurn?.(targetIndex, {
+      allowCreate,
+      folderId: options.openFolderId.value,
+      phase: "open",
+      source: "group-drag",
+    });
     folderPageTurnTimer = {
-      direction,
+      allowCreate,
+      fromIndex: currentIndex,
+      targetIndex,
+      token,
       timer: window.setTimeout(() => {
+        const pending = folderPageTurnTimer;
         folderPageTurnTimer = null;
-        const currentPage = getActiveFolderPageIndex();
-        const targetPage = currentPage + (direction < 0 ? -1 : 1);
-        let didTurn = false;
-        dragPlacement = null;
-        lastPlacementCommit = null;
-        if (direction < 0) {
-          if (currentPage <= 0) return;
-          didTurn = requestOrCommitFolderDragPageTurn(targetPage, { allowCreate: false, fromIndex: currentPage });
-        } else {
-          const isCreatingNewPage = currentPage >= options.folderPages.value.length - 1;
-          if (isCreatingNewPage) {
-            const folder = options.openFolderId.value ? options.findFolder(options.pages.value, options.openFolderId.value)?.item : null;
-            const draggedItemId = dragRuntime?.item?.id;
-            if (!options.canCreateFolderPageAfterDrag(folder, currentPage, draggedItemId, options.folderPageSize.value)) return;
-          }
-          didTurn = requestOrCommitFolderDragPageTurn(targetPage, { allowCreate: isCreatingNewPage, fromIndex: currentPage });
+        if (!activeDrag || !pending) return;
+        const committed = pending.token != null
+          ? options.commitFolderPageTurnRequest?.(pending.token, {
+            allowCreate: pending.allowCreate,
+            folderId: options.openFolderId.value,
+            phase: "open",
+          })
+          : false;
+        if (!committed) {
+          options.commitFolderPageIndex(pending.targetIndex, {
+            allowCreate: pending.allowCreate,
+          });
         }
-        if (didTurn) nextTick(scheduleFolderPageEdgeTurnFromCurrentPointer);
+        if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
+        activeDrag.group.intentKey = null;
+        evaluateIntent({ force: true });
       }, PAGE_TURN_DELAY),
     };
   }
 
-  function requestOrCommitFolderDragPageTurn(targetPage, turnOptions = {}) {
-    const folderId = options.openFolderId.value || options.renderedFolder.value?.id || null;
-    const fromIndex = Number.isFinite(Number(turnOptions.fromIndex))
-      ? Number(turnOptions.fromIndex)
-      : Number(options.folderPageIndex.value) || 0;
-    if (typeof options.requestFolderPageTurn === "function") {
-      const token = options.requestFolderPageTurn(targetPage, {
-        allowCreate: Boolean(turnOptions.allowCreate),
-        folderId,
-        phase: "open",
-        source: "drag-edge",
-      });
-      if (token != null) {
-        const request = options.folderPageTurnRequest?.value;
-        const resolvedTargetPage = request?.token === token ? request.targetIndex : targetPage;
-        pendingFolderDragPageTurn = {
-          allowCreate: Boolean(turnOptions.allowCreate),
-          direction: Math.sign(resolvedTargetPage - fromIndex),
-          folderId,
-          fromIndex,
-          targetIndex: resolvedTargetPage,
-          token,
-        };
-        return true;
-      }
+  function commitPendingEdgeTurns() {
+    if (pageTurnTimer) {
+      const targetIndex = pageTurnTimer.targetIndex;
+      clearPageTurn();
+      activeDrag.group.desktopPageIndex = targetIndex;
+      if (targetIndex < options.pages.value.length) options.commitPageIndex(targetIndex);
     }
-    pendingFolderDragPageTurn = null;
-    options.commitFolderPageIndex(targetPage, { allowCreate: Boolean(turnOptions.allowCreate) });
+    if (folderPageTurnTimer) {
+      const pending = folderPageTurnTimer;
+      if (pending.timer) window.clearTimeout(pending.timer);
+      folderPageTurnTimer = null;
+      const committed = pending.token != null
+        ? options.commitFolderPageTurnRequest?.(pending.token, {
+          allowCreate: pending.allowCreate,
+          folderId: options.openFolderId.value,
+          phase: "open",
+        })
+        : false;
+      if (!committed) {
+        options.commitFolderPageIndex(pending.targetIndex, {
+          allowCreate: pending.allowCreate,
+        });
+      }
+      if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
+    }
+  }
+
+  function getPlacementReleasePoint(placement, fallbackPoint) {
+    const target = placement?.target;
+    if (!target) return fallbackPoint;
+    if (target.kind === "desktop") {
+      return centerRect(getRenderedLaunchRect({
+        area: "desktop",
+        id: placement.id,
+        pageIndex: target.pageIndex,
+      }), fallbackPoint);
+    }
+    if (target.kind === "folder") {
+      return centerRect(getRenderedLaunchRect({
+        area: "folder",
+        folderId: target.folderId,
+        id: placement.id,
+        pageIndex: target.pageIndex,
+      }), fallbackPoint);
+    }
+    if (target.kind === "closed-folder" || target.kind === "created-folder") {
+      const previewRect = target.index < Math.min(9, Number(options.folderPageSize?.value) || 9)
+        ? options.iconBoundsRegistry.getBounds(
+          BOUNDS_KIND.PREVIEW_CHILD,
+          BOUNDS_VARIANT.RENDERED,
+          {
+            childId: placement.id,
+            folderId: target.folderId,
+            slotIndex: target.index,
+          }
+        )
+        : null;
+      return centerRect(previewRect || getRenderedFolderRect(target.folderId), fallbackPoint);
+    }
+    return fallbackPoint;
+  }
+
+  function makeReleasePlan(plan, resolved, drag, key) {
+    const placements = new Map((plan.placements || []).map((placement) => [placement.id, placement]));
+    const fallback = resolved.fallbackPoint || getPointerCenter();
+    const fallbackById = {};
+    for (const entry of drag.group.entries) {
+      fallbackById[entry.item.id] = getPlacementReleasePoint(
+        placements.get(entry.item.id),
+        fallback
+      );
+    }
+    return makeGroupReleasePlan({
+      basePages: drag.group.basePages,
+      entries: drag.group.entries,
+      fallbackById,
+      fallbackPoint: fallback,
+      folderPageSize: Number(options.folderPageSize?.value) || 9,
+      key,
+      offset: drag.offset,
+      placements: plan.placements,
+      pointer: drag.pointer,
+      velocity: drag.velocity,
+    });
+  }
+
+  function makeFolderCreateTargetEntry(plan, resolved) {
+    if (!plan?.createdFolderId || resolved?.intent?.type !== "app-folder-create") return null;
+    const target = resolved.target;
+    if (!target?.item?.id || target.item.type !== "app" || !target.rect) return null;
+    return {
+      bundleCount: 1,
+      delayMs: 0,
+      item: options.cloneItem(target.item),
+      memberIds: [target.item.id],
+      order: 0,
+      origin: centerRect(target.rect, resolved.fallbackPoint),
+      originKind: "folder-create-target",
+      originScale: 1,
+      source: {
+        index: target.index,
+        kind: "desktop",
+        pageIndex: target.pageIndex,
+      },
+    };
+  }
+
+  function restoreUncommittedVirtualNavigation(drag) {
+    const group = drag?.group;
+    if (!group || group.didCommit) return;
+    if (group.desktopPageIndex >= options.pages.value.length) {
+      group.desktopPageIndex = options.pageIndex.value;
+    }
+    if (group.virtualFolderPageIndex != null) {
+      const maxIndex = Math.max(0, options.folderPages.value.length - 1);
+      options.commitFolderPageIndex(
+        Math.min(Number(options.folderPageIndex.value) || 0, maxIndex),
+        { allowCreate: false }
+      );
+      group.virtualFolderPageIndex = null;
+    }
+  }
+
+  function rejectDrop(reason, optionsArg = {}) {
+    const drag = activeDrag;
+    restoreUncommittedVirtualNavigation(drag);
+    drag.group.phase = "rejected";
+    drag.group.dropStatus = "rejected";
+    drag.group.dropReason = reason || "invalid-target";
+    drag.group.projectedPages = null;
+    const releaseKey = `group-release-reject-${groupKey}-${drag.group.leadId}`;
+    const fallbackById = Object.fromEntries(
+      drag.group.entries
+        .filter((entry) => entry?.item?.id)
+        .map((entry) => [entry.item.id, entry.origin])
+    );
+    drag.group.releasePlan = makeGroupReleasePlan({
+      basePages: drag.group.basePages,
+      entries: drag.group.entries,
+      fallbackById,
+      folderPageSize: Number(options.folderPageSize?.value) || 9,
+      key: releaseKey,
+      offset: drag.offset,
+      pointer: drag.pointer,
+      rejected: true,
+      velocity: drag.velocity,
+    });
+    drag.group.releaseSettledIds = [];
+    drag.group.releaseStatus = "pending";
+    clearPendingTarget();
+    publishGroupState();
+    if (optionsArg.notify !== false && reason !== "same-placement") {
+      options.onGroupDropRejected?.(reason || "invalid-target", {
+        standalone: drag.group.standalone,
+      });
+    }
+    if (prefersReducedMotion()) {
+      drag.group.visualCompleted = true;
+      endDrag();
+    }
+  }
+
+  function acceptDrop(plan, resolved) {
+    const drag = activeDrag;
+    const folderCreateTargetEntry = makeFolderCreateTargetEntry(plan, resolved);
+    const committed = options.commitGroupDrop(plan, {
+      baseRevision: drag.group.baseRevision,
+      draggedIds: drag.group.draggedIds,
+      intent: drag.group.intent,
+      selectionRevision: drag.group.selectionRevision,
+      standalone: drag.group.standalone,
+    });
+    if (committed === false) {
+      rejectDrop("revision-stale");
+      return;
+    }
+    drag.group.didCommit = true;
+    if (
+      resolved.intent.type === "open-folder-slot" &&
+      resolved.intent.folderId === options.openFolderId.value
+    ) {
+      const leadPlacement = plan.placements?.find(
+        (placement) => placement.id === drag.group.leadId && placement.target?.kind === "folder"
+      );
+      options.commitFolderPageIndex(
+        leadPlacement?.target?.pageIndex ?? resolved.intent.pageIndex,
+        { allowCreate: false }
+      );
+      drag.group.virtualFolderPageIndex = null;
+    } else {
+      options.commitPageIndex(drag.group.desktopPageIndex);
+    }
+    if (
+      folderCreateTargetEntry &&
+      !drag.group.entries.some((entry) => entry.item.id === folderCreateTargetEntry.item.id)
+    ) {
+      drag.group.entries = [
+        ...drag.group.entries.slice(0, Math.max(1, GROUP_DRAG_VISUAL_LIMIT - 1)),
+        folderCreateTargetEntry,
+      ];
+    }
+    drag.group.phase = "accepted";
+    drag.group.dropStatus = "accepted";
+    drag.group.dropReason = null;
+    drag.group.releaseCreatedFolderId = plan.createdFolderId || null;
+    drag.group.projectedPages = null;
+    projectedPages.value = null;
+    drag.group.releasePlan = makeReleasePlan(
+      plan,
+      resolved,
+      drag,
+      `group-release-${groupKey}-${drag.group.leadId}`
+    );
+    drag.group.releaseSettledIds = [];
+    drag.group.releaseStatus = "pending";
+    // The release plan now owns the committed landing geometry.  Clear the
+    // pre-release target before publishing the accepted frame so hover frames
+    // and folder-create backdrops begin their exit in the same render as the
+    // accepted drop, instead of waiting for the release ghosts to settle.
+    clearPendingTarget();
+    publishGroupState();
+  }
+
+  function getGatherSourceRect(location, activePageIndex, activeFolderPageIndex, openFolderId) {
+    if (!location) return null;
+    if (location.kind === "desktop") {
+      return location.pageIndex === activePageIndex
+        ? getRenderedLaunchRect({
+          area: "desktop",
+          id: location.item.id,
+          pageIndex: location.pageIndex,
+        })
+        : null;
+    }
+    if (
+      location.folderId === openFolderId &&
+      location.folderPageIndex === activeFolderPageIndex
+    ) {
+      return getRenderedLaunchRect({
+        area: "folder",
+        folderId: location.folderId,
+        id: location.item.id,
+        pageIndex: location.folderPageIndex,
+      });
+    }
+    if (location.ownerPageIndex !== activePageIndex) return null;
+    if (location.flatIndex < 9) {
+      const previewRect = options.iconBoundsRegistry.getBounds(
+        BOUNDS_KIND.PREVIEW_CHILD,
+        BOUNDS_VARIANT.RENDERED,
+        {
+          childId: location.item.id,
+          folderId: location.folderId,
+          slotIndex: location.flatIndex,
+        }
+      );
+      if (previewRect) return previewRect;
+    }
+    return getRenderedFolderRect(location.folderId);
+  }
+
+  function presentCommittedFolderCreation(request = {}) {
+    const plan = request.plan;
+    if (
+      activeDrag ||
+      pendingDragStart ||
+      plan?.status !== "accepted" ||
+      !plan.createdFolderId
+    ) return false;
+    if (typeof request.commit !== "function") {
+      throw new TypeError("presentCommittedFolderCreation requires commit");
+    }
+    const draggedIds = Array.from(new Set((request.draggedIds || []).filter(Boolean)));
+    const leadId = request.leadId || draggedIds[0] || null;
+    const basePages = options.clonePages(request.basePages || options.pages.value);
+    const sourceIndex = indexGroupDragSources(basePages);
+    const leadLocation = sourceIndex.apps.get(leadId) || null;
+    const targetLocation = options.findTopLevel(plan.nextPages, plan.createdFolderId);
+    if (!draggedIds.length || !leadLocation || !targetLocation) {
+      throw new Error("Folder creation presentation requires valid lead and target locations");
+    }
+
+    const activePageIndex = options.pageIndex.value;
+    const activeFolderPageIndex = options.folderPageIndex.value;
+    const openFolderId = options.openFolderId.value;
+    const viewportRect = getPageRect(activePageIndex);
+    const viewportCenter = viewportRect
+      ? centerRect(viewportRect)
+      : {
+        x: (Number(globalThis.innerWidth) || 1) / 2,
+        y: (Number(globalThis.innerHeight) || 1) / 2,
+      };
+    const leadRect = getGatherSourceRect(
+      leadLocation,
+      activePageIndex,
+      activeFolderPageIndex,
+      openFolderId
+    );
+    const pointer = centerRect(leadRect, viewportCenter);
+    const iconExtent = Math.max(1, Number(options.iconSize.value) || Number(leadRect?.width) || 1);
+    const startedAt = nowMs();
+    groupKey += 1;
+    activeDrag = {
+      cellSize: null,
+      compact: false,
+      hasMoved: false,
+      item: options.cloneItem(leadLocation.item),
+      lastPointerTime: startedAt,
+      offset: { x: iconExtent / 2, y: iconExtent / 2 },
+      pointer,
+      pointerId: null,
+      singleLineLabel: false,
+      size: { height: iconExtent, width: iconExtent },
+      source: leadLocation,
+      start: pointer,
+      velocity: zeroVelocity(),
+      group: {
+        basePages,
+        baseRevision: request.baseRevision,
+        createdFolderId: plan.createdFolderId,
+        desktopPageIndex: targetLocation.pageIndex,
+        didCommit: false,
+        draggedIds,
+        dropReason: null,
+        dropStatus: "accepted",
+        entries: [],
+        intent: { type: "app-folder-create" },
+        intentKey: null,
+        key: `group-create-${groupKey}-${leadId}`,
+        leadId,
+        onComplete: request.onComplete,
+        phase: "committing",
+        presentationOnly: true,
+        projectedPages: null,
+        releaseCreatedFolderId: plan.createdFolderId,
+        releasePlan: null,
+        releaseSettledIds: [],
+        releaseStatus: null,
+        selectionRevision: request.selectionRevision,
+        standalone: false,
+        trail: [],
+        virtualFolderPageIndex: null,
+        visualCompleted: false,
+      },
+    };
+    activeDrag.group.entries = buildGatherEntriesFromSnapshot({
+      activeFolderPageIndex,
+      activePageIndex,
+      draggedIds,
+      leadId,
+      leadRect,
+      openFolderId,
+      pages: basePages,
+      pointer,
+    });
+    dragMeta.value = {
+      draggedIds: [...draggedIds],
+      item: activeDrag.item,
+      source: activeDrag.source,
+    };
+    attachContextMenu();
+    publishGroupState();
+
+    let committed;
+    try {
+      committed = request.commit(plan);
+    } catch (error) {
+      endDrag();
+      throw error;
+    }
+    if (committed === false) {
+      endDrag();
+      return false;
+    }
+    const drag = activeDrag;
+    drag.group.didCommit = true;
+    options.commitPageIndex(targetLocation.pageIndex);
+    publishGroupState();
+    nextTick(() => {
+      if (activeDrag !== drag) return;
+      drag.group.phase = "accepted";
+      const fallbackPoint = centerRect(getRenderedFolderRect(plan.createdFolderId), viewportCenter);
+      drag.group.releasePlan = makeReleasePlan(
+        plan,
+        { fallbackPoint, intent: drag.group.intent },
+        drag,
+        `group-release-${groupKey}-${drag.group.leadId}`
+      );
+      drag.group.releaseSettledIds = [];
+      drag.group.releaseStatus = "pending";
+      publishGroupState();
+    });
     return true;
   }
 
-  function handleDefaultDesktopMove(clientX, clientY) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag) return;
-
-    if (activeDrag.item.type === "app") {
-      const center = getDragVisualCenter(activeDrag) || { x: clientX, y: clientY };
-      const lockedIntent = getLockedTopLevelDropIntent(activeDrag);
-      if (lockedIntent) {
-        publishDragHitDebugState("desktop-intent", {
-          clientX,
-          clientY,
-          folderDecision: lockedIntent.decision,
-          lockedDecision: lockedIntent.decision,
-          lockedTargetInfo: lockedIntent.targetInfo,
-          reason: lockedIntent.reason,
-          targetInfo: lockedIntent.targetInfo,
-          winner: "folder-hover-locked",
-        });
-        lockFolderHoverTarget(lockedIntent.targetInfo);
-        return;
-      }
-      const targetInfo = getTopLevelTargetForDrag(activeDrag, center);
-      const folderDecision = targetInfo ? getFolderHitDecision(targetInfo, center.x, center.y, activeDrag) : null;
-      if (targetInfo && folderDecision.accepted) {
-        publishDragHitDebugState("desktop-intent", {
-          clientX,
-          clientY,
-          folderDecision,
-          reason: folderDecision.reason,
-          targetInfo,
-          winner: targetInfo.item.type === "folder" ? "folder-open-hover" : "folder-create-hover",
-        });
-        lockFolderHoverTarget(targetInfo);
-        startPendingFolderTarget(targetInfo.item);
-        return;
-      }
-      clearPendingTarget();
-      publishDragHitDebugState("desktop-intent", {
-        clientX,
-        clientY,
-        folderDecision,
-        reason: folderDecision?.reason || "no-top-level-target",
-        targetInfo,
-        winner: "page-sort",
-      });
-    } else {
-      clearPendingTarget();
-      publishDragHitDebugState("desktop-intent", {
-        clientX,
-        clientY,
-        reason: "non-app-drag",
-        targetInfo: null,
-        winner: "page-sort",
-      });
-    }
-
-    placeDraggedItemOnDesktop(clientX, clientY);
-  }
-
-  function evaluateDragIntent() {
-    dragIntentTimer = null;
-    const activeDrag = dragRuntime;
-    if (!activeDrag || options.isLaunchpadInteractionBlocked()) return;
-
-    if (isDragSortingBlocked()) {
-      scheduleDragSortGateEvaluation();
-      return;
-    }
-
-    commitPendingDesktopReturn();
-
-    if (options.folderSession.value) {
-      handleFolderSessionMove(activeDrag.pointer.x, activeDrag.pointer.y);
-      return;
-    }
-
-    handleDefaultDesktopMove(activeDrag.pointer.x, activeDrag.pointer.y);
-  }
-
-  function scheduleDragIntentEvaluation() {
-    clearDragIntentTimer();
-    dragIntentTimer = window.setTimeout(evaluateDragIntent, DRAG_INTENT_IDLE_DELAY);
-  }
-
-  function activatePreparedDrag(descriptor, { deferred = false } = {}) {
-    if (deferred && pendingDragStart !== descriptor) return;
-    if (pendingDragStart === descriptor) pendingDragStart = null;
-    if (options.isLaunchpadInteractionBlocked() || dragRuntime) return;
-    const { cellSize, dragVisualState, source, startPoint } = descriptor;
-    const geometry = getDragStartGeometry(descriptor);
-    dragRuntime = {
-      cellSize,
-      compact: dragVisualState?.compact === true,
-      item: descriptor.item,
-      source,
-      pointerId: descriptor.pointerId,
-      pointer: startPoint,
-      singleLineLabel: dragVisualState?.singleLineLabel === true,
-      lastPointerTime: nowMs(),
-      offset: geometry.offset,
-      size: geometry.size,
-      start: startPoint,
-      hasMoved: false,
-      velocity: makeZeroVelocity(),
-    };
-    activateLayoutProjection();
-    pendingPreviewPoint = { x: startPoint.x, y: startPoint.y };
-    updatePreviewState();
-    dragMeta.value = { item: dragRuntime.item, source };
-    dragPlacement = source.type === "page"
-      ? placementKey("page", source.pageIndex, source.index)
-      : source.type === "folder"
-        ? placementKey("folder", source.folderId, source.pageIndex, source.index)
-        : null;
-    lastPlacementCommit = { key: dragPlacement, x: startPoint.x, y: startPoint.y };
-    attachDragContextMenuListener();
-    if (source.type === "folder") {
-      options.commitFolderSession({ mode: "source-folder", folderId: source.folderId, hasEntered: true, openedAt: Date.now() });
-    }
-  }
-
-  function startDrag(event, item, source) {
-    const isAcceptedPrimaryPointer = event?.type === "pointermove"
-      ? isPrimaryPointerMoveEvent(event)
-      : isPrimaryPointerStartEvent(event);
-    if (!isAcceptedPrimaryPointer || options.isLaunchpadInteractionBlocked() || dragRuntime || pendingDragStart) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    const refreshBoundsOnStart = shouldRefreshDragBoundsOnStart();
-    if (refreshBoundsOnStart) {
-      options.finishHomeRevealSettleWindow();
-    }
-    clearDragRelease();
-    clearPendingTarget();
-    clearDragIntentTimer();
+  function endDrag() {
+    const ended = activeDrag?.group || null;
+    detachContextMenu();
+    cancelPreviewRaf();
+    clearIntentTimer();
     clearPageTurn();
     clearFolderPageTurn();
+    clearFolderHoverTimers();
+    restoreUncommittedVirtualNavigation(activeDrag);
+    activeDrag = null;
+    pendingDragStart = null;
+    dragMeta.value = null;
+    dragFolderHoverState.value = null;
+    dragFolderTargetId.value = null;
+    dragHitDebugState.value = null;
+    groupDragState.value = null;
+    projectedPages.value = null;
+    scheduleLayoutProjectionRelease();
+    if (ended) options.onGroupDragEnd?.(ended);
+    if (ended?.visualCompleted) ended.onComplete?.();
+  }
 
-    const folderOriginBounds = cloneFolderOriginBounds(event.folderOriginBounds);
-    const dragVisualState = normalizeDragVisualState(event.dragVisualState);
-    const rect = event.currentTarget?.getBoundingClientRect?.() || null;
-    if (!rect) throw new TypeError("startDrag requires currentTarget.getBoundingClientRect()");
-    const cellSize = getDragVisualCellSize(dragVisualState) ||
-      getSourceCellSize(source) ||
-      { height: rect.height, width: rect.width };
-    if (item?.type === "folder" && source?.type === "page") {
-      options.requestFolderOpenWarmup?.(item, folderOriginBounds);
+  function completeGroupRelease(result = {}) {
+    const drag = activeDrag;
+    const group = drag?.group;
+    const plan = group?.releasePlan;
+    if (!drag || !group || !plan) return false;
+    if (result.planKey && result.planKey !== plan.key) return false;
+    const entryId = result.entryId || result.id || null;
+    if (!entryId) return false;
+    const expectedIds = new Set(plan.entries.map((entry) => entry.id));
+    if (!expectedIds.has(entryId)) return false;
+    const settled = new Set(group.releaseSettledIds || []);
+    if (settled.has(entryId)) return true;
+    settled.add(entryId);
+    group.releaseSettledIds = [...settled];
+    const outcome = result.outcome === "aborted" ? "aborted" : "settled";
+    if (outcome === "aborted") group.releaseStatus = "aborted";
+    const allSettled = [...expectedIds].every((id) => settled.has(id));
+    if (!allSettled && outcome !== "aborted") {
+      group.releaseStatus = "running";
+      publishGroupState();
+      return true;
     }
-    const startPoint = { x: event.clientX, y: event.clientY };
-    const descriptor = {
-      cellSize,
-      item: options.cloneItem(item),
-      dragVisualState,
-      folderOriginBounds,
-      rect: cloneRect(rect),
-      refreshBoundsOnStart,
-      source,
-      pointerId: event.pointerId,
-      startPoint,
-      offset: { x: startPoint.x - rect.left, y: startPoint.y - rect.top },
-      size: { width: rect.width, height: rect.height },
+    group.releaseStatus = outcome === "aborted" ? "aborted" : "settled";
+    group.visualCompleted = true;
+    publishGroupState();
+    endDrag();
+    return true;
+  }
+
+  function activatePreparedDrag(descriptor, deferred = false) {
+    if (deferred && pendingDragStart !== descriptor) return;
+    if (pendingDragStart === descriptor) pendingDragStart = null;
+    if (activeDrag || options.isLaunchpadInteractionBlocked()) return;
+    const payload = descriptor.payload;
+    if (options.onGroupDragStart?.(payload) === false) return;
+    groupKey += 1;
+    const startedAt = nowMs();
+    activeDrag = {
+      cellSize: descriptor.cellSize,
+      compact: descriptor.dragVisualState?.compact === true,
+      hasMoved: descriptor.startedFromMovement === true,
+      item: descriptor.item,
+      lastPointerTime: startedAt,
+      offset: descriptor.offset,
+      pointer: descriptor.startPoint,
+      pointerId: descriptor.pointerId,
+      singleLineLabel: descriptor.dragVisualState?.singleLineLabel === true,
+      size: descriptor.size,
+      source: descriptor.source,
+      start: descriptor.anchorPoint || descriptor.startPoint,
+      velocity: zeroVelocity(),
+      group: {
+        autoOpenedFolderId: null,
+        baseOpenFolderId: options.openFolderId.value,
+        basePages: options.clonePages(options.pages.value),
+        baseRevision: payload.layoutRevision,
+        createdFolderId: options.makeId("folder"),
+        desktopPageIndex: options.pageIndex.value,
+        didCommit: false,
+        draggedIds: [...payload.draggedIds],
+        dropReason: null,
+        dropStatus: null,
+        entries: [],
+        intent: null,
+        intentKey: null,
+        key: `group-drag-${groupKey}-${payload.leadId}`,
+        lastPlan: null,
+        lastResolved: null,
+        lockedTarget: null,
+        leadId: payload.leadId,
+        pendingOpenFolderId: null,
+        phase: "gathering",
+        planRevision: payload.layoutRevision,
+        projectedPages: null,
+        releasePlan: null,
+        releaseSettledIds: [],
+        releaseStatus: null,
+        releaseCreatedFolderId: null,
+        selectionRevision: payload.selectionRevision,
+        standalone: payload.standalone === true,
+        trail: appendGroupTrailPoint([], descriptor.startPoint, { timeMs: startedAt }),
+        virtualFolderPageIndex: null,
+      },
     };
-    if (refreshBoundsOnStart) {
+    activeDrag.group.entries = buildGatherEntries(descriptor, activeDrag);
+    dragMeta.value = {
+      draggedIds: [...activeDrag.group.draggedIds],
+      item: activeDrag.item,
+      source: activeDrag.source,
+    };
+    setLayoutProjectionActive(true);
+    attachContextMenu();
+    publishGroupState();
+    evaluateIntent({ force: true });
+  }
+
+  function startDrag(event, item, source, batchPayload = null) {
+    const acceptsPointer = event?.type === "pointermove"
+      ? isPrimaryPointerMoveEvent(event)
+      : isPrimaryPointerStartEvent(event);
+    if (
+      !acceptsPointer ||
+      !item?.id ||
+      activeDrag ||
+      pendingDragStart ||
+      options.isLaunchpadInteractionBlocked()
+    ) return false;
+    const rect = event.currentTarget?.getBoundingClientRect?.();
+    if (!rect) throw new TypeError("startDrag requires currentTarget.getBoundingClientRect()");
+    event.preventDefault();
+    event.stopPropagation();
+    clearLayoutProjectionRelease(true);
+    const dragVisualState = event.dragVisualState || null;
+    const iconSize = Math.max(1, Number(dragVisualState?.iconSize) || Number(rect.width) || 1);
+    const visualRect = {
+      height: iconSize,
+      left: rect.left + rect.width / 2 - iconSize / 2,
+      top: rect.top + rect.height / 2 - iconSize / 2,
+      width: iconSize,
+    };
+    const startPoint = { x: Number(event.clientX), y: Number(event.clientY) };
+    const anchorPoint = {
+      x: Number.isFinite(Number(event.dragAnchor?.x))
+        ? Number(event.dragAnchor.x)
+        : startPoint.x,
+      y: Number.isFinite(Number(event.dragAnchor?.y))
+        ? Number(event.dragAnchor.y)
+        : startPoint.y,
+    };
+    const payload = batchPayload?.draggedIds?.length
+      ? { ...batchPayload, draggedIds: [...batchPayload.draggedIds], standalone: false }
+      : {
+        draggedIds: [item.id],
+        layoutRevision: options.getGroupLayoutRevision(),
+        leadId: item.id,
+        selectionRevision: null,
+        standalone: true,
+      };
+    const descriptor = {
+      cellSize: dragVisualState?.cellWidth && dragVisualState?.cellHeight
+        ? { height: dragVisualState.cellHeight, width: dragVisualState.cellWidth }
+        : getSourceCellSize(source, rect),
+      dragVisualState,
+      item: options.cloneItem(item),
+      offset: {
+        x: anchorPoint.x - visualRect.left,
+        y: anchorPoint.y - visualRect.top,
+      },
+      payload,
+      pointerId: event.pointerId,
+      rect: cloneRect(visualRect),
+      size: { height: visualRect.height, width: visualRect.width },
+      source,
+      startedFromMovement: event.dragStartedFromThreshold === true,
+      anchorPoint,
+      startPoint,
+    };
+    if (options.isHomeRevealSettling.value) {
+      options.finishHomeRevealSettleWindow();
       pendingDragStart = descriptor;
-      nextTick(() => activatePreparedDrag(descriptor, { deferred: true }));
+      nextTick(() => activatePreparedDrag(descriptor, true));
     } else {
       activatePreparedDrag(descriptor);
     }
@@ -2347,35 +1521,38 @@ export function useLaunchpadDrag(options) {
   }
 
   function updateDragPointer(event) {
-    const activeDrag = dragRuntime;
-    if (!activeDrag) return;
-    if (!isSamePointerEvent(activeDrag.pointerId, event)) return;
-    if (!isPrimaryPointerMoveEvent(event)) return;
-
+    if (
+      !activeDrag ||
+      activeDrag.group.presentationOnly ||
+      !isSamePointerEvent(activeDrag.pointerId, event) ||
+      !isPrimaryPointerMoveEvent(event)
+    ) return;
     event.preventDefault();
-    sampleDragVelocity(activeDrag, event);
-    const distance = Math.hypot(event.clientX - activeDrag.start.x, event.clientY - activeDrag.start.y);
-    activeDrag.pointer = { x: event.clientX, y: event.clientY };
-    activeDrag.hasMoved = activeDrag.hasMoved || distance > 6;
-    schedulePreviewPosition(event.clientX, event.clientY);
-    if (!options.folderSession.value && !options.openFolderId.value) {
-      publishDragHitDebugState("pointer-move", {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        reason: "awaiting-intent-idle",
-        winner: "pending",
-      });
-    }
-
-    if (options.folderSession.value || options.openFolderId.value) {
+    const sample = samplePointerVelocity({
+      pointer: activeDrag.pointer,
+      time: activeDrag.lastPointerTime,
+      velocity: activeDrag.velocity,
+    }, event);
+    activeDrag.velocity = sample.velocity;
+    activeDrag.lastPointerTime = sample.time;
+    activeDrag.pointer = { x: Number(event.clientX), y: Number(event.clientY) };
+    activeDrag.hasMoved = activeDrag.hasMoved ||
+      Math.hypot(activeDrag.pointer.x - activeDrag.start.x, activeDrag.pointer.y - activeDrag.start.y) > POINTER_MOVE_THRESHOLD;
+    if (activeDrag.hasMoved) activeDrag.group.phase = "dragging";
+    activeDrag.group.trail = appendGroupTrailPoint(
+      activeDrag.group.trail,
+      activeDrag.pointer,
+      { timeMs: sample.time }
+    );
+    scheduleVisualPublish();
+    if (options.openFolderId.value) {
       clearPageTurn();
-      handleFolderPageEdgeTurn(event.clientX, event.clientY);
+      scheduleFolderPageTurn(activeDrag.pointer.x);
     } else {
       clearFolderPageTurn();
-      handlePageEdgeTurn(event.clientX);
+      scheduleDesktopPageTurn(activeDrag.pointer.x);
     }
-
-    scheduleDragIntentEvaluation();
+    scheduleIntentEvaluation();
   }
 
   function finishDrag(event) {
@@ -2383,171 +1560,38 @@ export function useLaunchpadDrag(options) {
       pendingDragStart = null;
       return;
     }
-    const activeDrag = dragRuntime;
-    if (!activeDrag) return;
-    if (!shouldFinishDragForPointerEvent(activeDrag, event)) return;
-    if (event.type === "pointercancel") {
-      if (options.folderSession.value) cancelFolderSessionAndReturnToDesktop({ force: true });
-      else commitPendingDesktopReturn({ force: true });
-      clearDragRelease();
+    if (!activeDrag || !shouldFinishDragForPointerEvent(activeDrag, event)) return;
+    if (activeDrag.group.presentationOnly) {
+      if (event.type === "pointercancel") endDrag();
+      return;
+    }
+    if (event.type === "pointercancel" || options.isLaunchpadInteractionBlocked()) {
       endDrag();
       return;
     }
-    if (options.isLaunchpadInteractionBlocked()) {
-      clearDragRelease();
-      endDrag();
-      return;
-    }
-
-    sampleDragVelocity(activeDrag, event);
-    activeDrag.pointer = { x: event.clientX, y: event.clientY };
-    clearDragIntentTimer();
-    const folderPageTurnCommit = options.folderSession.value || options.openFolderId.value
-      ? commitPendingFolderDragPageTurn()
-      : null;
-    commitPendingDesktopReturn({ force: true });
-
-    const center = getDragVisualCenter(activeDrag);
-    const lockedDropIntent = getLockedTopLevelDropIntent(activeDrag);
-    const lockedTopLevelDropTarget = lockedDropIntent?.targetInfo || null;
-    const topLevelDropTarget = lockedTopLevelDropTarget || (center ? getTopLevelTargetForDrag(activeDrag, center) : null);
-    const releaseDecision = lockedDropIntent?.decision || (topLevelDropTarget && center
-      ? getFolderHitDecision(topLevelDropTarget, center.x, center.y, activeDrag)
-      : null);
-    const shouldDropOnTopLevelTarget =
-      Boolean(lockedDropIntent) ||
-      Boolean(topLevelDropTarget && releaseDecision?.accepted);
-    publishDragHitDebugState("release", {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      folderDecision: releaseDecision,
-      lockedTargetInfo: lockedTopLevelDropTarget,
-      lockedDecision: lockedDropIntent?.decision,
-      reason: lockedDropIntent?.reason || releaseDecision?.reason || "no-top-level-target",
-      targetInfo: topLevelDropTarget,
-      winner: shouldDropOnTopLevelTarget ? "folder-release" : "page-release",
-    });
-
+    const sample = samplePointerVelocity({
+      pointer: activeDrag.pointer,
+      time: activeDrag.lastPointerTime,
+      velocity: activeDrag.velocity,
+    }, event);
+    activeDrag.velocity = sample.velocity;
+    activeDrag.lastPointerTime = sample.time;
+    activeDrag.pointer = { x: Number(event.clientX), y: Number(event.clientY) };
+    clearIntentTimer();
+    commitPendingEdgeTurns();
+    const outcome = evaluateIntent({ force: true });
     clearPageTurn();
     clearFolderPageTurn();
-    clearPendingTarget();
-
-    const session = options.folderSession.value;
-    const folderId = options.openFolderId.value;
-    const topLevelDropResult = !session && shouldDropOnTopLevelTarget
-      ? dropDraggedAppOnTopLevelTarget(topLevelDropTarget)
-      : null;
-    if (topLevelDropResult?.accepted) {
-      const fallbackReleaseTarget = makeReleaseTarget(topLevelDropTarget.rect, topLevelDropTarget.stageLayoutRect, topLevelDropTarget.visualSpec);
-      if (topLevelDropResult.createRelease) {
-        startPendingFolderCreateRelease(topLevelDropResult, {
-          sourceTarget: fallbackReleaseTarget,
-        });
-        options.commitFolderSession(null);
-        endDrag();
-        return;
-      }
-      const releaseKey = startPendingDragRelease({
-        releaseMode: topLevelDropResult.releaseMode,
-        suppressFolderPreviewChildId: topLevelDropResult.suppressFolderPreviewChildId,
-        suppressFolderPreviewFolderId: topLevelDropResult.suppressFolderPreviewFolderId,
-        targetFolderId: topLevelDropResult.folderId,
-        targetPreviewSlotIndex: topLevelDropResult.previewSlotIndex,
-      });
-      if (releaseKey) {
-        if (
-          topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_PREVIEW_SLOT ||
-          topLevelDropResult.releaseMode === DRAG_RELEASE_MODE_FOLDER_CENTER_ABSORB
-        ) {
-          scheduleDragReleaseClear();
-        } else {
-          setDragReleaseTarget(releaseKey, fallbackReleaseTarget);
-        }
-      }
-      options.commitFolderSession(null);
-      endDrag();
+    clearFolderHoverTimers();
+    if (!outcome || outcome.plan.status === "rejected") {
+      rejectDrop(outcome?.plan?.reason || "invalid-target");
       return;
     }
-
-    if (session && folderId && activeDrag.item.type === "app") {
-      const panel = getDomRefElement(options.folderPanelRef.value);
-      const rect = panel?.getBoundingClientRect();
-      const inside = rect ? isPointInsideRect(rect, event.clientX, event.clientY) : true;
-      if (!inside) {
-        const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
-        const fallbackReleaseTarget = getPageSlotReleaseTarget(options.pageIndex.value, insertIndex, activeDrag.size?.width);
-        cancelFolderSessionAndReturnToDesktop({ force: true });
-        const releaseKey = startPendingDragRelease();
-        const releaseTarget = getCommittedTopLevelReleaseTarget(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseTarget;
-        scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseTarget);
-        endDrag();
-        return;
-      }
-      const folderTarget = calcFolderReleaseInsertTarget(folderId, activeDrag, event.clientX, event.clientY, folderPageTurnCommit);
-      const visibleRows = Math.max(1, Number(options.visibleFolderRowCount.value) || 1);
-      const projectedRows = Math.max(1, Number(folderTarget.rows) || visibleRows);
-      const isRowCountGrowth = projectedRows > visibleRows;
-      const initialReleaseTargetOptions = {
-        ...folderTarget,
-        provisionalLayoutTarget: true,
-        rows: projectedRows,
-      };
-      const finalReleaseTargetOptions = {
-        ...folderTarget,
-        provisionalLayoutTarget: false,
-        rows: projectedRows,
-      };
-      const preCommitReleaseTarget = getMatchingCommittedFolderTargetBounds(folderId, activeDrag.item.id, folderTarget);
-      const initialFallbackReleaseTarget = getFolderSlotReleaseTarget(
-        folderTarget.pageIndex,
-        folderTarget.index,
-        activeDrag.size?.width,
-        initialReleaseTargetOptions
-      );
-      const finalFallbackReleaseTarget = getFolderSlotReleaseTarget(
-        folderTarget.pageIndex,
-        folderTarget.index,
-        activeDrag.size?.width,
-        finalReleaseTargetOptions
-      );
-      placeDraggedItemInFolder(folderId, event.clientX, event.clientY, { force: true, target: folderTarget });
-      const releaseKey = startPendingDragRelease();
-      const finalReleaseTarget = getCommittedFolderReleaseTarget(
-        folderId,
-        activeDrag.item.id,
-        activeDrag.size?.width,
-        finalReleaseTargetOptions
-      ) || finalFallbackReleaseTarget;
-      const initialPreCommitReleaseTarget = isRowCountGrowth ? null : preCommitReleaseTarget;
-      const initialReleaseTarget = makeProvisionalReleaseTarget(initialPreCommitReleaseTarget) ||
-        initialFallbackReleaseTarget ||
-        makeProvisionalReleaseTarget(finalReleaseTarget);
-      if (releaseKey) setDragReleaseTarget(releaseKey, initialReleaseTarget || finalReleaseTarget || finalFallbackReleaseTarget);
-      scheduleDragReleaseTargetResolve(
-        releaseKey,
-        () => getCommittedFolderTargetBounds(folderId, activeDrag.item.id, { stableOnly: true }),
-        finalReleaseTarget || finalFallbackReleaseTarget,
-        {
-          continueWhileProvisional: true,
-          deferStableTargetUntilSettled: true,
-          maxAttempts: DRAG_RELEASE_STABLE_TARGET_RESOLVE_FRAMES,
-          minAttempts: 6,
-          settleFrames: 3,
-        }
-      );
-      options.commitOpenFolder(folderId);
-      options.commitFolderSession(null);
-    } else {
-      const insertIndex = calcPageInsertIndex(event.clientX, event.clientY);
-      const fallbackReleaseTarget = getPageSlotReleaseTarget(options.pageIndex.value, insertIndex, activeDrag.size?.width);
-      placeDraggedItemOnDesktop(event.clientX, event.clientY, { force: true });
-      const releaseKey = startPendingDragRelease();
-      const releaseTarget = getCommittedTopLevelReleaseTarget(activeDrag.item.id, activeDrag.size?.width) || fallbackReleaseTarget;
-      scheduleDragReleaseTargetResolve(releaseKey, () => getCommittedTopLevelTargetBounds(activeDrag.item.id), releaseTarget);
-      options.commitFolderSession(null);
+    if (outcome.plan.status === "noop") {
+      rejectDrop(outcome.plan.reason || "same-placement", { notify: false });
+      return;
     }
-
-    endDrag();
+    acceptDrop(outcome.plan, outcome.resolved);
   }
 
   function cancelDrag(event = {}) {
@@ -2556,30 +1600,29 @@ export function useLaunchpadDrag(options) {
 
   function disposeDrag() {
     pendingDragStart = null;
-    if (dragRuntime) endDrag();
-    else detachDragContextMenuListener();
+    if (activeDrag) endDrag();
+    else detachContextMenu();
+    clearLayoutProjectionRelease(true);
   }
 
   return {
     cancelDrag,
     cancelPreviewRaf,
     clearFolderPageTurn,
-    clearDragRelease,
-    clearFolderCreateRelease,
     clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
-    completeFolderCreateRelease,
+    completeGroupRelease,
     disposeDrag,
     dragFolderHoverState,
     dragFolderTargetId,
     dragHitDebugState,
     dragMeta,
-    dragPreviewState,
-    dragReleaseState,
-    folderCreateReleaseState,
-    isDragActive,
     finishDrag,
+    groupDragState,
+    isDragActive,
+    presentCommittedFolderCreation,
+    projectedPages,
     startDrag,
     updateDragPointer,
   };

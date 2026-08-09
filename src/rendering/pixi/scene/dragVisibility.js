@@ -1,19 +1,14 @@
-export function isSameLaunchItemId(item, id) {
-  return Boolean(item?.id && id && item.id === id);
-}
-
 export function getActiveDragItemId(state) {
   return state?.dragMeta?.item?.id || null;
 }
 
-export function getReleaseGhostItemId(state) {
-  return state?.dragReleaseGhostId || null;
+export function getActiveDragItemIds(state) {
+  const ids = Array.isArray(state?.dragMeta?.draggedIds)
+    ? state.dragMeta.draggedIds
+    : [getActiveDragItemId(state)];
+  return new Set(ids.filter(Boolean));
 }
 
 export function isActiveDraggedLaunchItem(item, state) {
-  return isSameLaunchItemId(item, getActiveDragItemId(state));
-}
-
-export function isReleaseGhostLaunchItem(item, state) {
-  return isSameLaunchItemId(item, getReleaseGhostItemId(state));
+  return Boolean(item?.id && getActiveDragItemIds(state).has(item.id));
 }

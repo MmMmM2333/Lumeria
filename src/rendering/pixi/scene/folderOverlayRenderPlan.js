@@ -1,9 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getGridSlotRect } from "../geometry/gridGeometry.js";
-import {
-  isActiveDraggedLaunchItem,
-  isReleaseGhostLaunchItem,
-} from "./dragVisibility.js";
+import { isActiveDraggedLaunchItem } from "./dragVisibility.js";
 import {
   makeFolderIconNodeState,
   makeFolderIconRenderPlan,
@@ -21,7 +18,6 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     closingGhostKeys = null,
     cols = 1,
     dragMeta = null,
-    dragReleaseGhostId = null,
     folderCloseIconGhosts = null,
     folderId = null,
     folderOpenIconGhosts = null,
@@ -35,6 +31,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     iconSize = 64,
     iconGesturePresentation = null,
     isClosing = false,
+    isBatchSelectionActive = false,
     isEditMode = false,
     isFolderClosing = false,
     isIconOpening = null,
@@ -45,7 +42,8 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     openingGhostItemIds = null,
     previewSlots = [],
     rows = 1,
-    selectedIcon = null,
+    focusedIcon = null,
+    selectedAppIds = null,
     showMissingLaunchTargetBadge = true,
     targetTrackX = 0,
     stableFolderPageSpan = folderPageSpan,
@@ -58,7 +56,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
-  const dragState = { dragMeta, dragReleaseGhostId };
+  const dragState = { dragMeta };
   const entries = [];
 
   (folderPages || []).forEach((page, pageIndex) => {
@@ -90,7 +88,6 @@ export function makeFolderOverlayRenderPlan(options = {}) {
       });
       const { key, source, x, y } = iconPlan;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, dragState);
-      const isReleaseGhostItem = isReleaseGhostLaunchItem(item, dragState);
       const hasActiveOpeningGhost = openingGhostItemIds?.has(item.id) === true;
       const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode, targetTrackX, x, y });
       const stableTargetCenter = makeFolderIconTargetCenter({
@@ -107,16 +104,17 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         iconSize,
         iconGesturePresentation,
         isActiveDraggedItem,
+        isBatchSelectionActive,
         isEditMode,
         isIconOpening,
         isInteractivePage,
-        isReleaseGhostItem,
         isTextlessMode,
         item,
         launchTargetStatusById,
         openingGhostItemIds,
         pageIndex,
-        selectedIcon,
+        focusedIcon,
+        selectedAppIds,
         showMissingLaunchTargetBadge,
         slot,
         source,
@@ -143,13 +141,11 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         index,
         isActiveDraggedItem,
         isInteractivePage,
-        isReleaseGhostItem,
         item,
         key,
         nodeState,
         openingGhostInput: (isInteractivePage || hasActiveOpeningGhost) &&
           !isActiveDraggedItem &&
-          !isReleaseGhostItem &&
           (isNewFolder || hasActiveOpeningGhost) &&
           !isClosing &&
           (pageIndex === visualFolderPageIndex || hasActiveOpeningGhost)

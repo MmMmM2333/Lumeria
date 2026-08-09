@@ -195,6 +195,66 @@ export function runFolderReleaseControllerTests() {
     motionRuntime.reset();
     const layer = new Container();
     const previewNode = new Container();
+    previewNode.visualWrap = new Container();
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+    previewNode.position.set(120, 180);
+    layer.addChild(previewNode);
+    const targetFolderNode = new Container();
+    targetFolderNode.item = { id: "folder-created", type: "folder" };
+    targetFolderNode.getFolderPreviewChildReleasePose = () => null;
+    targetFolderNode.getFolderPreviewChildBounds = (_stageRect, slotIndex) => ({
+      left: slotIndex === 1 ? 300 : 280,
+      top: 240,
+      width: 16,
+      height: 16,
+    });
+    const completions = [];
+    const aborts = [];
+    const controller = new FolderReleaseController(layer, {
+      onReleaseAbort: (_release, reason) => aborts.push(reason),
+      onReleaseComplete: (release) => completions.push(release.key),
+    });
+    const release = {
+      item: { id: "app-dragged", type: "app" },
+      key: "release-created-folder-fallback-slot",
+      releaseMode: "created-folder",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-created",
+      targetPreviewSlotIndex: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      controller.update({
+        deviceResolution: 1,
+        height: 600,
+        previewNode,
+        release,
+        stageRect: { height: 600, left: 0, top: 0, width: 900 },
+        targetFolderNode,
+        width: 900,
+      });
+      for (let frame = 0; frame < 120 && !completions.length && !aborts.length; frame += 1) {
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      const terminal = readPose(layer, previewNode.visualWrap);
+      assert(aborts.length === 0 && completions.length === 1, "created-folder release should use deterministic slot geometry while the child is hidden");
+      assert(
+        nearlyEqual(terminal.center.x, 308, 0.25) && nearlyEqual(terminal.center.y, 248, 0.25),
+        "created-folder fallback should land the ghost in the committed preview slot"
+      );
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
     previewNode.labelText = new Container();
     previewNode.addChild(previewNode.labelText);
     previewNode.position.set(120, 160);

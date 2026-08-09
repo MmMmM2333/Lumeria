@@ -928,6 +928,7 @@ export class FolderOverlayLayer extends Container {
       folderId,
       geometry,
       isClosing,
+      isBatchSelectionActive: state.isBatchSelectionActive,
       isNewFolder,
       isPrewarm,
       previousGeometry,
@@ -1133,7 +1134,6 @@ export class FolderOverlayLayer extends Container {
       closingGhostKeys: this.folderHandoff.getGhostKeys(),
       cols,
       dragMeta: state.dragMeta,
-      dragReleaseGhostId: state.dragReleaseGhostId,
       folderCloseIconGhosts: state.folderCloseIconGhosts,
       folderId,
       folderOpenIconGhosts: state.folderOpenIconGhosts,
@@ -1146,6 +1146,7 @@ export class FolderOverlayLayer extends Container {
       getVisibleFolderPage: state.getVisibleFolderPage,
       iconSize,
       iconGesturePresentation: state.iconGesturePresentation,
+      isBatchSelectionActive: state.isBatchSelectionActive,
       isClosing,
       isEditMode: state.isEditMode,
       isFolderClosing: state.isFolderClosing,
@@ -1157,7 +1158,8 @@ export class FolderOverlayLayer extends Container {
       openingGhostItemIds: this.folderHandoff.getOpeningGhostKeys(),
       previewSlots,
       rows,
-      selectedIcon: state.selectedIcon,
+      focusedIcon: state.focusedIcon,
+      selectedAppIds: state.selectedAppIds,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stableFolderPageSpan,
       stableFolderCloseTarget: this.stableFolderCloseTarget,
@@ -1242,7 +1244,7 @@ export class FolderOverlayLayer extends Container {
       if (hasVisualOwner) node.visible = false;
 
       const stableBoundsTargetCenter = stableTargetCenter;
-      const isDragHandoffItem = entry.isActiveDraggedItem || entry.isReleaseGhostItem;
+      const isDragHandoffItem = entry.isActiveDraggedItem;
       const provisionalBoundsTarget = isDragHandoffItem
         ? hasProvisionalDragLayoutTarget
         : hasProvisionalOpeningLayoutTarget && (stableBoundsTargetCenter === targetCenter || !stableTargetCenter);
@@ -1279,7 +1281,7 @@ export class FolderOverlayLayer extends Container {
       nextLayoutTargets.set(key, layoutTarget);
       const shouldSnapIconLayout = shouldSnapIconLayoutForResize &&
         (resizeGeometryMode !== "opening" || isFolderIconLayoutCoveredByVisual(node, hasVisualOwner));
-      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem || entry.isReleaseGhostItem;
+      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem;
       if (shouldSnapIconLayout || shouldSnapDragHandoffLayout) {
         killMotionOf(node, "x,y", {
           lane: "base",
@@ -1444,18 +1446,18 @@ export class FolderOverlayLayer extends Container {
     if (state.isFolderClosing || state.isFolderAppLaunchClosing || state.isFolderZoomFadeClosing) return "closing";
     const committedFolderPageIndex = state.folderPageIndex ?? 0;
     const visualFolderPageIndex = state.visualFolderPageIndex ?? committedFolderPageIndex;
-    const releaseSource = state.dragReleaseState?.source || null;
-    const isCrossPageFolderRelease = Boolean(
-      state.dragReleaseGhostId &&
-      releaseSource?.type === "folder" &&
-      (releaseSource.folderId == null || releaseSource.folderId === state.renderedFolder?.id) &&
-      Number(releaseSource.pageIndex) !== Number(committedFolderPageIndex)
+    const dragSource = state.dragMeta?.source || null;
+    const isCrossPageFolderDrag = Boolean(
+      state.dragMeta &&
+      dragSource?.type === "folder" &&
+      (dragSource.folderId == null || dragSource.folderId === state.renderedFolder?.id) &&
+      Number(dragSource.pageIndex) !== Number(committedFolderPageIndex)
     );
     if (state.folderPageTrackScrub ||
       state.folderPageTurnToken != null ||
       visualFolderPageIndex !== committedFolderPageIndex ||
-      isCrossPageFolderRelease ||
-      (state.dragReleaseGhostId && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack))) {
+      isCrossPageFolderDrag ||
+      (state.dragMeta && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack))) {
       return "page-turn";
     }
     const openProgress = readProgress01(state.folderOpenProgress);
@@ -1465,7 +1467,7 @@ export class FolderOverlayLayer extends Container {
       this.frameGhostPhase === "opening" &&
       options.layoutChanged &&
       !options.sizeChanged &&
-      (state.dragMeta || state.dragReleaseGhostId)
+      state.dragMeta
     ) return "opening";
     if (this.folderHandoff?.hasActiveOpeningVisuals?.()) return "opening";
     return "layout";
@@ -1585,7 +1587,7 @@ export class FolderOverlayLayer extends Container {
     );
     const canAnimatePageTurnResize = Boolean(
       this.resizeLayoutSync?.mode === "page-turn" &&
-      (context.state?.dragMeta || context.state?.dragReleaseGhostId) &&
+      context.state?.dragMeta &&
       !context.state?.folderPageTrackScrub
     );
     const canAnimateOpeningResize = this.resizeLayoutSync?.mode === "opening";

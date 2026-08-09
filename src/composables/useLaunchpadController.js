@@ -1,9 +1,12 @@
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createLaunchpadDocumentCoordinator } from "../application/launchpadDocumentCoordinator.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { isNativeBridgeAvailable } from "../api/launchpadApi.js";
-import { catalogPort } from "../platform/launchpadPorts.js";
+import {
+  catalogPort,
+  nativeLifecyclePort,
+} from "../platform/launchpadPorts.js";
 import { useAltEditMode } from "./useAltEditMode.js";
 import { useFolderLayoutStyles } from "./useFolderLayoutStyles.js";
 import { useFolderMotionGeometry } from "./useFolderMotionGeometry.js";
@@ -17,7 +20,7 @@ import {
   useLaunchpadIconActivation,
 } from "./useLaunchpadIconActivation.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
-import { useIconSelection } from "./useIconSelection.js";
+import { useIconFocus } from "./useIconFocus.js";
 import { useLaunchpadKeyboard } from "./useLaunchpadKeyboard.js";
 import { useLaunchpadLifecycle } from "./useLaunchpadLifecycle.js";
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
@@ -30,7 +33,9 @@ import { useLaunchpadPageNavigation } from "./useLaunchpadPageNavigation.js";
 import { useLaunchpadSearch } from "./useLaunchpadSearch.js";
 import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
 import { useLaunchpadInputGestures } from "./useLaunchpadInputGestures.js";
+import { useLaunchpadSelectionSession } from "./useLaunchpadSelectionSession.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
+import { planGroupDrop } from "../domain/groupDropPlanner.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -50,6 +55,14 @@ import {
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
+
+export function isMultiSelectFixtureEnabled(
+  search = typeof window === "undefined" ? "" : window.location.search,
+  isDev = Boolean(import.meta.env?.DEV)
+) {
+  if (!isDev) return false;
+  return new URLSearchParams(String(search || "")).get("fixture") === "multi-select";
+}
 
 export function shouldPlayFolderOpenIconGhosts(next, state) {
   if (!next) return false;
@@ -139,9 +152,17 @@ export function useLaunchpadController(options = {}) {
   const liveDesktopRuntimeStatus = liveDesktopRuntime.status;
   const mainWindowRuntime = useMainWindowRuntime({ systemAppearance });
   const windowEffectsSupport = mainWindowRuntime.support;
+  const isMultiSelectFixture = isMultiSelectFixtureEnabled();
+  const nativeIntegrationEnabled = isNativeBridgeAvailable() && !isMultiSelectFixture;
+  const nativePlatform = isMultiSelectFixture
+    ? Object.freeze({
+      ...nativeLifecyclePort,
+      isAvailable: () => false,
+    })
+    : undefined;
   const layout = useLaunchpadLayout({
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
-    seedEnabled: !isNativeBridgeAvailable(),
+    seedEnabled: !nativeIntegrationEnabled,
   });
   let dragControls = null;
   let openScanKeywordSettings = null;
@@ -302,8 +323,6 @@ export function useLaunchpadController(options = {}) {
   const {
     appendAppsToPages,
     assertNoDuplicateItemIds,
-    canCreateDesktopPageAfterDrag,
-    canCreateFolderPageAfterDrag,
     chunkIntoPages,
     cloneItem,
     clonePages,
@@ -311,7 +330,6 @@ export function useLaunchpadController(options = {}) {
     compactPages,
     createLayoutSnapshot,
     dissolveFolder,
-    ensurePage,
     findFolder,
     findInFolder,
     findTopLevel,
@@ -321,18 +339,48 @@ export function useLaunchpadController(options = {}) {
     getVisibleDesktopPage,
     getVisibleFolderPage,
     getVisibleFolderPages,
-    insertTopLevelItem,
-    insertAppIntoFolder,
     makeId,
-    previewAppIntoFolderWithoutOverflow,
-    previewTopLevelItemWithoutOverflow,
     removeEverywhere,
     repackFoldersForPageSize,
-    replaceFolderWithItem,
     withFolderPages,
-    wouldTopLevelInsertOverflow,
-    wouldFolderInsertOverflow,
   } = layout.operations;
+  const batchSelection = useLaunchpadSelectionSession();
+  const batchLayoutRevision = ref(0);
+  const batchSelectedPageCounts = computed(() => (
+    pages.value.map((page) => (page || []).reduce((count, item) => {
+      if (item?.type === "app") return count + (batchSelection.isSelected(item.id) ? 1 : 0);
+      if (item?.type !== "folder") return count;
+      return count + getFolderChildPages(item, folderPageSize.value)
+        .flat()
+        .reduce((childCount, child) => childCount + (batchSelection.isSelected(child?.id) ? 1 : 0), 0);
+    }, 0))
+  ));
+  const batchCurrentScope = computed(() => {
+    const scope = getCurrentIconScope();
+    const folderId = scope.folderId || null;
+    return {
+      items: (scope.items || []).filter((item) => item?.type === "app"),
+      key: `${scope.area}:${folderId || ""}:${scope.pageIndex}`,
+    };
+  });
+  const batchCurrentScopeSelectedCount = computed(() => (
+    batchCurrentScope.value.items.reduce(
+      (count, item) => count + (batchSelection.isSelected(item.id) ? 1 : 0),
+      0
+    )
+  ));
+  const batchHiddenSelectedCount = computed(() => Math.max(
+    0,
+    batchSelection.selectedCount.value - batchCurrentScopeSelectedCount.value
+  ));
+  watch(
+    pages,
+    (nextPages) => {
+      batchLayoutRevision.value += 1;
+      batchSelection.reconcile(nextPages);
+    },
+    { flush: "sync" }
+  );
   const backgroundAcrylicEffectiveAppearance = computed(() => {
     return resolveAppearancePreference(
       normalizeBackgroundAcrylicAppearance(backgroundAcrylicAppearance.value),
@@ -369,15 +417,15 @@ export function useLaunchpadController(options = {}) {
 
   const {
     clearOpeningIcon,
-    clearSelectedIcon,
-    findSelectedItem,
+    clearFocusedIcon,
+    findFocusedItem,
     isIconOpening,
-    moveSelectionByArrow,
+    moveFocusByArrow,
     openingIcon,
-    selectFirstIconInCurrentScope,
-    selectedIcon,
-    selectionMatchesScope,
-  } = useIconSelection({ getCurrentIconScope: () => getCurrentIconScope() });
+    focusFirstIconInCurrentScope,
+    focusedIcon,
+    focusMatchesScope,
+  } = useIconFocus({ getCurrentIconScope: () => getCurrentIconScope() });
 
   const {
     captureFolderCloseIconGhosts,
@@ -508,7 +556,9 @@ export function useLaunchpadController(options = {}) {
       })) return;
       const closingFolder = renderedFolder.value;
       const closingFolderPage = closingFolder ? getVisibleFolderPage(folderPages.value[folderPageIndex.value] || []) : [];
-      const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage);
+      const excludedCloseGhostIds = new Set(commitOptions?.excludeCloseGhostIds || []);
+      const capturedCloseGhosts = captureFolderCloseIconGhosts(closingFolder, closingFolderPage)
+        .filter((ghost) => !excludedCloseGhostIds.has(ghost.item?.id));
       commitOpenFolderNow(next, {
         ...flowCommitOptions,
         waitForCloseGhosts: capturedCloseGhosts.length > 0,
@@ -556,8 +606,6 @@ export function useLaunchpadController(options = {}) {
   const {
     folderMotionGeometry,
     getFolderIconMotionGeometry,
-    getPageSlotMotionGeometry,
-    getTopLevelIconMotionGeometry,
   } = useFolderMotionGeometry({
     folderPages,
     gridCols,
@@ -591,7 +639,7 @@ export function useLaunchpadController(options = {}) {
     searchPages,
     searchQuery,
   } = useLaunchpadSearch({
-    clearSelectedIcon,
+    clearFocusedIcon,
     collectAppsFromPages,
     commitOpenFolder,
     commitSearchPageIndex: (next) => commitSearchPageIndex(next),
@@ -602,17 +650,17 @@ export function useLaunchpadController(options = {}) {
     pageSize,
     schedulePageGridMetrics: () => schedulePageGridMetrics(),
     searchPageIndex,
-    selectFirstIconInCurrentScope,
+    focusFirstIconInCurrentScope,
   });
   const {
     getLaunchIconRect,
     normalizeLaunchSource,
-    openSelectedIcon,
+    openFocusedIcon,
   } = useLaunchpadIconActivation({
-    clearSelectedIcon,
+    clearFocusedIcon,
     commitOpenFolder,
     findInFolder,
-    findSelectedItem,
+    findFocusedItem,
     findTopLevel,
     folderCols,
     folderPageIndex,
@@ -620,7 +668,7 @@ export function useLaunchpadController(options = {}) {
     getFolderPages: () => folderPages.value,
     getRenderedFolder: () => renderedFolder.value,
     getSearchPages: () => searchPages.value,
-    getSelectedIcon: () => selectedIcon.value,
+    getFocusedIcon: () => focusedIcon.value,
     getVisibleDesktopPage,
     getVisibleFolderPage,
     gridCols,
@@ -633,7 +681,7 @@ export function useLaunchpadController(options = {}) {
     pageIndex,
     pages,
     searchPageIndex,
-    selectFirstIconInCurrentScope,
+    focusFirstIconInCurrentScope,
   });
   const {
     clearAppLaunchTimer,
@@ -651,7 +699,7 @@ export function useLaunchpadController(options = {}) {
     openDesktop,
   } = useLaunchpadLaunchFlow({
     cancelInputGesture: () => cancelInputGesture(),
-    clearSelectedIcon,
+    clearFocusedIcon,
     clearOpeningIcon,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
@@ -681,7 +729,7 @@ export function useLaunchpadController(options = {}) {
     setNativeWindowEffectsEnabled: (enabled) => setNativeWindowEffectsEnabled(enabled),
     setNativeWindowFrameEnabled: (enabled) => setNativeWindowFrameEnabled(enabled),
     showNativeLaunchError: (error) => showNativeLaunchError(error),
-    shouldValidateLaunchTarget: () => isNativeBridgeAvailable(),
+    shouldValidateLaunchTarget: () => nativeIntegrationEnabled,
     startFolderAppLaunchClose,
     startFolderZoomFadeClose,
     startHomeRevealSettleWindow,
@@ -802,7 +850,7 @@ export function useLaunchpadController(options = {}) {
   } = useLaunchpadPageCommands({
     assertNoDuplicateItemIds,
     cancelInputGesture: () => cancelInputGesture(),
-    clearSelectedIcon,
+    clearFocusedIcon,
     chunkIntoPages,
     clonePages,
     compactPages,
@@ -831,7 +879,7 @@ export function useLaunchpadController(options = {}) {
     renderedFolder,
     schedulePageGridMetrics,
     searchPageIndex,
-    selectedIcon,
+    focusedIcon,
   });
 
   function requestFolderRename(folderId) {
@@ -851,7 +899,7 @@ export function useLaunchpadController(options = {}) {
     appendAppsToPages,
     localizationText,
     cancelInputGesture: () => cancelInputGesture(),
-    clearSelectedIcon,
+    clearFocusedIcon,
     cloneItem,
     clonePages,
     collectAppsFromPages,
@@ -875,9 +923,9 @@ export function useLaunchpadController(options = {}) {
     removeEverywhere,
     renderedFolder,
     schedulePageGridMetrics,
-    selectedIcon,
+    focusedIcon,
     showTransientNotice,
-    shouldUseNativeCatalog: () => isNativeBridgeAvailable(),
+    shouldUseNativeCatalog: () => nativeIntegrationEnabled,
   });
   const {
     addScanKeywordBlacklistItem,
@@ -909,6 +957,7 @@ export function useLaunchpadController(options = {}) {
     openEditManagedApp,
     openExistingAppIconChooser,
     removeManagedAppFromLaunchpad,
+    removeManagedAppsFromLaunchpad,
     removeSelectedManagedAppsFromLaunchpad,
     removeScanKeywordBlacklistItem,
     removeScanRoot,
@@ -933,6 +982,269 @@ export function useLaunchpadController(options = {}) {
     scanRoots,
     showMissingLaunchTargetBadge,
   } = apps.presentation;
+
+  function beginBatchSelection(item = null) {
+    if (isEditMode.value) return false;
+    if (!item) {
+      cancelInputGesture();
+      cancelAltEditMode();
+      batchSelection.begin({ initialIds: [], primaryId: null });
+      return true;
+    }
+    if (item?.type !== "app" || !item.id) return false;
+    const liveApp = collectAppsFromPages(pages.value).find((candidate) => candidate.id === item.id);
+    if (!liveApp) return false;
+    cancelInputGesture();
+    cancelAltEditMode();
+    batchSelection.begin({ initialIds: [item.id], primaryId: item.id });
+    return true;
+  }
+
+  function toggleBatchSelection(item, event = {}) {
+    if (!batchSelection.isActive.value || item?.type !== "app") return false;
+    return batchSelection.toggle(item.id, {
+      range: Boolean(event.shiftKey),
+      scope: batchCurrentScope.value,
+    });
+  }
+
+  function replaceBatchSelectionForDrag(item) {
+    if (item?.type !== "app") return false;
+    if (!batchSelection.isActive.value) {
+      batchSelection.begin({ initialIds: [item.id], primaryId: item.id });
+      return true;
+    }
+    return batchSelection.replace(item.id, batchCurrentScope.value);
+  }
+
+  function getBatchDragPayload(item) {
+    if (!batchSelection.isActive.value || item?.type !== "app") return null;
+    if (!batchSelection.isSelected(item.id)) replaceBatchSelectionForDrag(item);
+    const snapshot = batchSelection.snapshot();
+    return {
+      draggedIds: snapshot.selectedIds,
+      layoutRevision: batchLayoutRevision.value,
+      leadId: item.id,
+      selectionRevision: snapshot.revision,
+    };
+  }
+
+  function clearBatchSelection() {
+    if (batchSelection.isFrozen.value) return false;
+    batchSelection.clear();
+    return true;
+  }
+
+  function selectAllCurrentBatchScope() {
+    return batchSelection.selectScope(batchCurrentScope.value);
+  }
+
+  function toggleFocusedBatchSelection(event = {}) {
+    const focused = findFocusedItem();
+    if (focused?.item?.type !== "app") return false;
+    return toggleBatchSelection(focused.item, event);
+  }
+
+  function requestBatchSelectionDelete() {
+    if (
+      !batchSelection.isActive.value ||
+      batchSelection.isFrozen.value ||
+      batchSelection.selectedCount.value === 0
+    ) return false;
+    const operation = batchSelection.snapshot();
+    openWarningDialog({
+      title: localizationText.t("launchpad.batch.deleteTitle"),
+      message: localizationText.t("launchpad.batch.deleteMessage", { count: operation.selectedIds.length }),
+      confirmText: localizationText.t("launchpad.batch.deleteConfirm"),
+      intent: "danger",
+      onConfirm: () => {
+        batchSelection.beginCommit();
+        try {
+          removeManagedAppsFromLaunchpad(operation.selectedIds);
+          batchSelection.reconcile(pages.value, { exitWhenEmpty: true });
+        } finally {
+          batchSelection.finishCommit({ keepActive: batchSelection.selectedCount.value > 0 });
+        }
+      },
+    });
+    return true;
+  }
+
+  function createFolderFromBatchSelection() {
+    if (
+      !batchSelection.isActive.value ||
+      batchSelection.isFrozen.value ||
+      batchSelection.selectedCount.value < 2
+    ) return false;
+    const operation = batchSelection.snapshot();
+    if (!batchSelection.freeze("create-folder")) return false;
+    let presentationOwnsFreeze = false;
+    try {
+      const plan = planGroupDrop({
+        basePages: pages.value,
+        baseRevision: batchLayoutRevision.value,
+        currentRevision: batchLayoutRevision.value,
+        draggedIds: operation.selectedIds,
+        folderName: localizationText.t("launchpad.newFolder"),
+        folderPageSize: folderPageSize.value,
+        intent: { type: "app-folder-create" },
+        leadId: operation.primaryId || operation.selectedIds[0],
+        makeFolderId: () => makeId("folder"),
+        pageSize: pageSize.value,
+      });
+      if (plan.status !== "accepted" || !plan.createdFolderId) {
+        const translatedReason = new Set([
+          "desktop-capacity",
+          "missing-dragged-id",
+          "revision-stale",
+        ]).has(plan.reason)
+          ? plan.reason
+          : "invalid-target";
+        showTransientNotice({
+          title: localizationText.t("launchpad.batch.createRejectedTitle"),
+          message: localizationText.t(`launchpad.batch.reasons.${translatedReason}`),
+          intent: "warning",
+          durationMs: 2600,
+        });
+        return false;
+      }
+      const presented = requireDragControls().presentCommittedFolderCreation({
+        basePages: pages.value,
+        baseRevision: batchLayoutRevision.value,
+        commit: () => {
+          if (openFolderId.value) {
+            commitOpenFolder(null, {
+              excludeCloseGhostIds: operation.selectedIds,
+            });
+          }
+          commitPages(plan.nextPages);
+          batchSelection.reconcile(plan.nextPages);
+          return true;
+        },
+        draggedIds: operation.selectedIds,
+        leadId: operation.primaryId || operation.selectedIds[0],
+        onComplete: () => requestFolderRename(plan.createdFolderId),
+        plan,
+        selectionRevision: operation.revision,
+      });
+      if (presented) {
+        presentationOwnsFreeze = true;
+        return true;
+      }
+      showTransientNotice({
+        title: localizationText.t("launchpad.batch.createRejectedTitle"),
+        message: localizationText.t("launchpad.batch.reasons.invalid-target"),
+        intent: "warning",
+        durationMs: 2600,
+      });
+      return false;
+    } finally {
+      if (!presentationOwnsFreeze) batchSelection.unfreeze("create-folder");
+    }
+  }
+
+  const batchGroupDropReasonKeys = new Set([
+    "desktop-capacity",
+    "desktop-page-missing",
+    "duplicate-layout-id",
+    "folder-missing",
+    "folder-page-capacity",
+    "folder-page-missing",
+    "invalid-target",
+    "missing-dragged-id",
+    "nested-folder-not-supported",
+    "revision-stale",
+    "selection-revision-stale",
+    "target-app-missing",
+    "target-in-selection",
+  ]);
+
+  function normalizeBatchGroupDropReason(reason) {
+    return batchGroupDropReasonKeys.has(reason) ? reason : "invalid-target";
+  }
+
+  function beginBatchGroupDrag(payload) {
+    if (payload?.standalone) return true;
+    if (!batchSelection.isActive.value || batchSelection.isFrozen.value) return false;
+    const snapshot = batchSelection.snapshot();
+    const expected = new Set(payload?.draggedIds || []);
+    if (
+      snapshot.revision !== payload?.selectionRevision ||
+      snapshot.selectedIds.length !== expected.size ||
+      snapshot.selectedIds.some((id) => !expected.has(id))
+    ) return false;
+    return batchSelection.freeze("group-drag");
+  }
+
+  function endBatchGroupDrag(group) {
+    if (group?.presentationOnly) {
+      batchSelection.unfreeze("create-folder");
+      return;
+    }
+    if (group?.standalone) return;
+    batchSelection.unfreeze("group-drag");
+  }
+
+  function planBatchGroupDrop(request) {
+    if (
+      (!request.standalone && request.selectionRevision !== batchSelection.revision.value) ||
+      request.baseRevision !== request.currentRevision
+    ) {
+      return {
+        nextPages: null,
+        placements: [],
+        reason: request.baseRevision !== request.currentRevision
+          ? "revision-stale"
+          : "selection-revision-stale",
+        status: "rejected",
+      };
+    }
+    return planGroupDrop({
+      basePages: request.basePages,
+      baseRevision: request.baseRevision,
+      currentRevision: request.currentRevision,
+      draggedIds: request.draggedIds,
+      folderName: localizationText.t("launchpad.newFolder"),
+      folderPageSize: folderPageSize.value,
+      intent: request.intent,
+      leadId: request.leadId,
+      makeFolderId: () => request.createdFolderId,
+      pageSize: pageSize.value,
+    });
+  }
+
+  function commitBatchGroupDrop(plan, operation) {
+    if (
+      plan?.status !== "accepted" ||
+      operation.baseRevision !== batchLayoutRevision.value ||
+      (!operation.standalone && operation.selectionRevision !== batchSelection.revision.value)
+    ) return false;
+    const activeFolderId = openFolderId.value;
+    const keepsActiveFolderOpen = Boolean(
+      activeFolderId &&
+      operation.intent?.type === "open-folder-slot" &&
+      operation.intent.folderId === activeFolderId
+    );
+    if (activeFolderId && !keepsActiveFolderOpen) {
+      // Capture the authoritative source folder before the atomic layout commit
+      // can remove it; the closing overlay then owns its visual handoff.
+      commitOpenFolder(null);
+    }
+    commitPages(plan.nextPages);
+    if (!operation.standalone) batchSelection.reconcile(plan.nextPages);
+    return true;
+  }
+
+  function showBatchGroupDropRejected(reason) {
+    const reasonKey = normalizeBatchGroupDropReason(reason);
+    showTransientNotice({
+      title: localizationText.t("launchpad.batch.moveRejectedTitle"),
+      message: localizationText.t(`launchpad.batch.reasons.${reasonKey}`),
+      intent: "warning",
+      durationMs: 2600,
+    });
+  }
+
   const documentCoordinator = createLaunchpadDocumentCoordinator({
     apps: apps.persistence,
     layout: layout.documentPersistence,
@@ -1042,6 +1354,7 @@ export function useLaunchpadController(options = {}) {
       showLayoutSaveFailed,
       showLayoutSaveRecovered,
     },
+    platform: nativePlatform,
     settings: settings.nativeIntegration,
     systemAppearance,
   });
@@ -1075,85 +1388,68 @@ export function useLaunchpadController(options = {}) {
     return outcome;
   }
   dragControls = useLaunchpadDrag({
-    canCreateDesktopPageAfterDrag,
-    canCreateFolderPageAfterDrag,
     cloneItem,
     clonePages,
+    commitGroupDrop: commitBatchGroupDrop,
     clearFolderPageTurnRequest,
     commitFolderPageTurnRequest,
     commitFolderPageIndex,
-    commitFolderSession,
     commitOpenFolder,
     commitPageIndex,
-    commitPages,
-    compactPages,
-    findFolder,
-    findInFolder,
     findTopLevel,
     finishHomeRevealSettleWindow,
     folderCols,
     folderPageIndex,
     folderPageRefs,
     folderPages,
-    folderPageSize,
     folderPanelRef,
-    folderPanelStyle,
-    folderSession,
-    folderViewportHeight,
-    getFolderChildPages,
+    folderPageSize,
+    getGroupLayoutRevision: () => batchLayoutRevision.value,
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
-    getPageSlotMotionGeometry,
-    getTopLevelIconMotionGeometry,
     gridCols,
     gridRows,
     iconBoundsRegistry,
     iconSize,
-    effectiveFolderIconSize,
-    insertAppIntoFolder,
-    insertTopLevelItem,
-    isFolderLayerActive,
     isHomeRevealSettling,
     isLayoutProjectionActive,
     isLaunchpadInteractionBlocked,
-    isTextlessMode,
     makeId,
+    onGroupDragEnd: endBatchGroupDrag,
+    onGroupDragStart: beginBatchGroupDrag,
+    onGroupDropRejected: showBatchGroupDropRejected,
     openFolderId,
     pageIndex,
     pageRefs,
     pages,
-    pageSize,
-    previewAppIntoFolderWithoutOverflow,
-    previewTopLevelItemWithoutOverflow,
-    removeEverywhere,
-    renderedFolder,
+    planGroupDrop: planBatchGroupDrop,
     requestFolderPageTurn,
-    requestFolderOpenWarmup,
-    replaceFolderWithItem,
     visualFolderPageIndex,
     visibleFolderRowCount,
-    withFolderPages,
-    wouldFolderInsertOverflow,
-    wouldTopLevelInsertOverflow,
   });
   const {
     cancelPreviewRaf,
     clearFolderPageTurn,
-    clearDragRelease,
     clearLayoutProjectionRelease,
     clearPageTurn,
     clearPendingTarget,
+    completeGroupRelease,
     disposeDrag,
     dragFolderHoverState,
     dragFolderTargetId,
     dragHitDebugState,
     dragMeta,
-    dragPreviewState,
-    dragReleaseState,
-    folderCreateReleaseState,
-    clearFolderCreateRelease,
-    completeFolderCreateRelease,
+    groupDragState,
     isDragActive,
+    projectedPages,
   } = dragControls;
+  const renderedActivePages = computed(() => (
+    isSearchMode.value ? activePages.value : projectedPages.value || activePages.value
+  ));
+  const renderedActivePageIndex = computed(() => (
+    isSearchMode.value
+      ? activePageIndex.value
+      : groupDragState.value?.desktopPageIndex ?? activePageIndex.value
+  ));
   const {
     cancelAltEditMode,
     clearAltEditTimer,
@@ -1164,6 +1460,7 @@ export function useLaunchpadController(options = {}) {
     isEditMode,
   } = useAltEditMode({
     isDragActive,
+    isBatchSelectionActive: () => batchSelection.isActive.value,
   });
   function closeTopmostModalFromKeyboard() {
     if (warningDialog.value) {
@@ -1217,21 +1514,23 @@ export function useLaunchpadController(options = {}) {
     requestFolderPageTurn,
     searchPageIndex,
     searchPages,
-    selectFirstIconInCurrentScope,
+    focusFirstIconInCurrentScope,
     visualFolderPageIndex,
   });
   const {
     handleGlobalKeydown,
   } = useLaunchpadKeyboard({
     closeTopmostModal: closeTopmostModalFromKeyboard,
+    clearBatchSelection,
     cancelAltEditMode,
     clearSearch,
-    clearSelectedIcon,
+    clearFocusedIcon,
     closeDesktop,
     commitFolderPageIndex,
     commitOpenFolder,
     commitPageIndex,
     commitSearchPageIndex,
+    createFolderFromBatchSelection,
     finishHomeRevealSettleWindow,
     focusDesktopSurface,
     folderPageIndex,
@@ -1243,6 +1542,7 @@ export function useLaunchpadController(options = {}) {
     hasFolderInteractionLayer: pageNavigation.hasFolderInteractionLayer,
     hideNativeWindowAfterCloseAnimation,
     isAltKeyEvent,
+    isBatchSelectionActive: () => batchSelection.isActive.value,
     isAppLaunching,
     isDesktopClosing,
     isDesktopOpen,
@@ -1254,23 +1554,26 @@ export function useLaunchpadController(options = {}) {
     isModalOpen: isModalOpenForKeyboard,
     isSearchMode,
     keyboardFocusArea,
-    moveSelectionByArrow,
+    moveFocusByArrow,
     openDesktop,
     openFolderId,
-    openSelectedIcon,
+    openFocusedIcon,
     pageIndex,
     pages,
     renderedFolder,
     requestFolderPageTurn,
+    requestBatchSelectionDelete,
     schedulePageGridMetrics,
     searchInputRef,
     searchPageIndex,
     searchPages,
     searchQuery,
-    selectFirstIconInCurrentScope,
-    selectedIcon,
-    selectionMatchesScope,
+    focusFirstIconInCurrentScope,
+    focusedIcon,
+    selectAllBatchScope: selectAllCurrentBatchScope,
+    focusMatchesScope,
     startFolderZoomFadeClose,
+    toggleFocusedBatchSelection,
     turnCurrentPage: pageNavigation.turnCurrentPage,
     visualFolderPageIndex,
   });
@@ -1311,6 +1614,8 @@ export function useLaunchpadController(options = {}) {
       }
     },
     isInteractionBlocked: () => !isDesktopOpen.value || isDragActive() || isAppLaunching.value,
+    getBatchDragPayload,
+    isBatchSelectionActive: () => batchSelection.isActive.value,
     isSearchMode,
     openApp,
     openFolder: (folder, event) => {
@@ -1330,6 +1635,7 @@ export function useLaunchpadController(options = {}) {
     pageRefs,
     renderedFolder,
     rootRef,
+    toggleBatchSelection,
   });
 
   useLaunchpadLifecycle({
@@ -1358,7 +1664,6 @@ export function useLaunchpadController(options = {}) {
     clearFolderCloseTimer,
     clearFolderCloseHandoffFrame,
     clearFolderPageTurn,
-    clearDragRelease,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     clearHomeRevealSettleTimer,
@@ -1441,6 +1746,7 @@ export function useLaunchpadController(options = {}) {
     isDesktopOpen,
     isDesktopClosing,
     isHomeInteractionDisabled,
+    isMultiSelectFixture,
     isAppLaunching,
     isNativeLayoutReady,
     isEditMode,
@@ -1507,10 +1813,9 @@ export function useLaunchpadController(options = {}) {
   };
 
   const desktopSurface = {
-    activePageIndex,
-    activePages,
+    activePageIndex: renderedActivePageIndex,
+    activePages: renderedActivePages,
     handleIconPointerDown,
-    clearDragRelease,
     commitActivePageIndex,
     desktopMainRef,
     desktopProjectionEpoch,
@@ -1521,11 +1826,8 @@ export function useLaunchpadController(options = {}) {
     dragFolderTargetId,
     dragHitDebugState,
     dragMeta,
-    dragPreviewState,
-    dragReleaseState,
-    folderCreateReleaseState,
-    clearFolderCreateRelease,
-    completeFolderCreateRelease,
+    groupDragState,
+    completeGroupRelease,
     folderOpenPreviewFrameGhostedIds,
     folderPageSize,
     getDesktopPageRenderMode,
@@ -1550,7 +1852,7 @@ export function useLaunchpadController(options = {}) {
     pageTrackScrub,
     resetAppCustomIcon,
     schedulePageGridMetrics,
-    selectedIcon,
+    focusedIcon,
     setPageRef,
     showMissingLaunchTargetBadge,
   };
@@ -1816,6 +2118,21 @@ export function useLaunchpadController(options = {}) {
     launchGhostStyle,
     resolvedSettingsTheme: settingsPanelModel.shell.resolvedSettingsTheme,
   };
+  const selection = {
+    batchCurrentScopeSelectedCount,
+    batchHiddenSelectedCount,
+    batchSelectedPageCounts,
+    clear: clearBatchSelection,
+    createFolder: createFolderFromBatchSelection,
+    enter: beginBatchSelection,
+    isActive: batchSelection.isActive,
+    isFrozen: batchSelection.isFrozen,
+    primaryId: batchSelection.primaryId,
+    requestDelete: requestBatchSelectionDelete,
+    selectedCount: batchSelection.selectedCount,
+    selectedIds: batchSelection.selectedIds,
+    selectCurrentScope: selectAllCurrentBatchScope,
+  };
 
   return {
     appActions,
@@ -1825,6 +2142,7 @@ export function useLaunchpadController(options = {}) {
     dialogs,
     folderFlow,
     folderOverlay,
+    selection,
     search,
     settingsPanel,
     settingsPanelModel,

@@ -47,33 +47,33 @@ function findTopLevel(sourcePages, itemId) {
 
 function createIconActivation(overrides = {}) {
   const calls = {
-    clearSelectedIcon: 0,
+    clearFocusedIcon: 0,
     commitOpenFolder: [],
     openApp: [],
-    selectFirstIconInCurrentScope: [],
+    focusFirstIconInCurrentScope: [],
   };
   const pages = ref(overrides.pages ?? [[desktopApp, folder], [searchApp]]);
   const iconBoundsRegistry = overrides.iconBoundsRegistry || createIconBoundsRegistry();
   const folderPages = ref(overrides.folderPages ?? [[folderApp]]);
   const renderedFolder = ref(overrides.renderedFolder ?? null);
   const searchPages = ref(overrides.searchPages ?? [[searchApp], [folderApp]]);
-  const selectedIcon = ref(overrides.selectedIcon ?? null);
+  const focusedIcon = ref(overrides.focusedIcon ?? null);
   const selectedItem = ref(overrides.selectedItem ?? null);
 
   const activationOptions = {
-    clearSelectedIcon: () => {
-      calls.clearSelectedIcon += 1;
+    clearFocusedIcon: () => {
+      calls.clearFocusedIcon += 1;
     },
     commitOpenFolder: (value) => calls.commitOpenFolder.push(value),
     findInFolder,
-    findSelectedItem: () => selectedItem.value,
+    findFocusedItem: () => selectedItem.value,
     findTopLevel,
     folderCols: ref(overrides.folderCols ?? 7),
     folderPageIndex: ref(overrides.folderPageIndex ?? 0),
     getFolderPages: () => folderPages.value,
     getRenderedFolder: () => renderedFolder.value,
     getSearchPages: () => searchPages.value,
-    getSelectedIcon: () => selectedIcon.value,
+    getFocusedIcon: () => focusedIcon.value,
     getVisibleDesktopPage: (page) => (page || []).slice(0, overrides.desktopLimit ?? 20),
     getVisibleFolderPage: (page) => (page || []).slice(0, overrides.folderLimit ?? 20),
     gridCols: ref(overrides.gridCols ?? 7),
@@ -86,7 +86,7 @@ function createIconActivation(overrides = {}) {
     pageIndex: ref(overrides.pageIndex ?? 0),
     pages,
     searchPageIndex: ref(overrides.searchPageIndex ?? 1),
-    selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
+    focusFirstIconInCurrentScope: (options) => calls.focusFirstIconInCurrentScope.push(options),
   };
   activationOptions.getCurrentIconScope = () => resolveCurrentIconScope(activationOptions);
   const activation = useLaunchpadIconActivation(activationOptions);
@@ -99,7 +99,7 @@ function createIconActivation(overrides = {}) {
     pages,
     renderedFolder,
     searchPages,
-    selectedIcon,
+    focusedIcon,
     selectedItem,
   };
 }
@@ -170,20 +170,20 @@ export function runLaunchpadIconActivationTests() {
   assert(folderScope.items[0].id === "folder-app", "folder scope should expose visible folder items");
 
   const noSelection = createIconActivation();
-  noSelection.activation.openSelectedIcon();
-  assert(noSelection.calls.selectFirstIconInCurrentScope.length === 1, "opening without selection should select the first icon");
+  noSelection.activation.openFocusedIcon();
+  assert(noSelection.calls.focusFirstIconInCurrentScope.length === 1, "opening without selection should select the first icon");
 
   const folderSelection = createIconActivation({
     selectedItem: { item: folder, scope: { area: "desktop", pageIndex: 0, folderId: null } },
   });
-  folderSelection.activation.openSelectedIcon();
+  folderSelection.activation.openFocusedIcon();
   assert(folderSelection.calls.commitOpenFolder.join(",") === "folder-1", "opening a selected desktop folder should open it");
-  assert(folderSelection.calls.clearSelectedIcon === 1, "opening a selected folder should clear selection");
+  assert(folderSelection.calls.clearFocusedIcon === 1, "opening a selected folder should clear selection");
 
   const appSelection = createIconActivation({
     selectedItem: { item: folderApp, scope: { area: "folder", pageIndex: 0, folderId: "folder-1" } },
   });
-  appSelection.activation.openSelectedIcon();
+  appSelection.activation.openFocusedIcon();
   assert(appSelection.calls.openApp.length === 1, "opening a selected app should call openApp");
   assert(appSelection.calls.openApp[0].source.type === "folder", "folder app selection should preserve folder source");
 
@@ -193,7 +193,7 @@ export function runLaunchpadIconActivationTests() {
   assert(explicit.activation.normalizeLaunchSource(folderApp, { type: "folder" }).folderId === "folder-1", "folder launch sources should default to the rendered folder id");
 
   const selectedSource = createIconActivation({
-    selectedIcon: { area: "search", id: searchApp.id, pageIndex: 4, folderId: null },
+    focusedIcon: { area: "search", id: searchApp.id, pageIndex: 4, folderId: null },
   });
   assert(selectedSource.activation.normalizeLaunchSource(searchApp).pageIndex === 4, "selected icon metadata should be reused when it matches the app");
 

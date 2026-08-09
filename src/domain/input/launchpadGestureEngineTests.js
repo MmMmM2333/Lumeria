@@ -12,6 +12,7 @@ function dispatch(engine, type, overrides = {}) {
     pointerType: overrides.pointerType ?? "touch",
     button: overrides.button ?? 0,
     buttons: overrides.buttons,
+    dragOnHold: overrides.dragOnHold === true,
     isPrimary: overrides.isPrimary ?? true,
     x: overrides.x ?? 300,
     y: overrides.y ?? 120,
@@ -127,6 +128,35 @@ export function runLaunchpadGestureEngineTests() {
     "releasing a stationary held icon should open its context menu and clear its armed presentation"
   );
 
+  const batchHoldEngine = createLaunchpadGestureEngine();
+  dispatch(batchHoldEngine, "pointerDown", {
+    dragOnHold: true,
+    pointerType: "mouse",
+    target: { id: "app-batch-hold", kind: "icon" },
+    x: 330,
+    y: 160,
+  });
+  const batchHeld = batchHoldEngine.dispatch({ type: "deadline", kind: "hold", time: 420 });
+  assert(
+    batchHeld.commands.length === 1 &&
+      batchHeld.commands[0].type === "startDrag" &&
+      batchHeld.commands[0].pointer.x === 330 &&
+      batchHeld.commands[0].pointer.y === 160 &&
+      batchHeld.targetPresentation === null,
+    "batch long-press should begin gathering at the hold deadline before pointer movement"
+  );
+  const batchHeldRelease = dispatch(batchHoldEngine, "pointerUp", {
+    pointerType: "mouse",
+    target: { id: "app-batch-hold", kind: "icon" },
+    time: 460,
+    x: 330,
+    y: 160,
+  });
+  assert(
+    batchHeldRelease.commands[0]?.type === "finishDrag",
+    "releasing a stationary batch gather should finish through the atomic drag path"
+  );
+
   const mouseHoldEngine = createLaunchpadGestureEngine();
   dispatch(mouseHoldEngine, "pointerDown", {
     pointerType: "mouse",
@@ -175,7 +205,10 @@ export function runLaunchpadGestureEngineTests() {
     x: 314,
   });
   assert(
-    withinArmedSlop.commands.length === 0 && crossedArmedSlop.commands[0]?.type === "startDrag",
+    withinArmedSlop.commands.length === 0 &&
+      crossedArmedSlop.commands[0]?.type === "startDrag" &&
+      crossedArmedSlop.commands[0]?.dragAnchor?.x === 300 &&
+      crossedArmedSlop.commands[0]?.dragAnchor?.y === 120,
     "armed drag distance should start from the pointer position captured at the hold boundary"
   );
 

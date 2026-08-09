@@ -1,13 +1,11 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { matchesIconFocus } from "../../../domain/iconFocus.js";
+import { GROUP_RELEASE_MODE } from "../../../domain/groupReleasePlan.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
-import {
-  isActiveDraggedLaunchItem,
-  isReleaseGhostLaunchItem,
-} from "./dragVisibility.js";
+import { isActiveDraggedLaunchItem } from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
@@ -43,6 +41,50 @@ export function normalizeFolderIdSet(...sources) {
 
 function readPrimaryFolderId(ids) {
   return ids.values().next().value || null;
+}
+
+function countSelectedFolderChildren(folder, selectedIds) {
+  if (folder?.type !== "folder" || !selectedIds.size) return 0;
+  const children = getFolderPreviewChildren(folder);
+  return children.reduce(
+    (count, child) => count + (selectedIds.has(child?.id) ? 1 : 0),
+    0
+  );
+}
+
+function getFolderPreviewChildren(folder) {
+  return Array.isArray(folder?.childPages)
+    ? folder.childPages.flatMap((page) => page || [])
+    : folder?.children || [];
+}
+
+function getCreatedFolderReleaseOwnedIds(state, folderId) {
+  const group = state?.groupDragState;
+  if (
+    !folderId ||
+    group?.releaseCreatedFolderId !== folderId ||
+    !["committing", "accepted"].includes(group.phase)
+  ) return new Set();
+
+  const ids = new Set();
+  // During the committing frame the semantic release plan has not been
+  // published yet, but the group entries already contain both the dragged
+  // app(s) and the app that was used as the folder-create target.
+  for (const entry of group.entries || []) {
+    const id = entry?.item?.id;
+    if (id) ids.add(id);
+  }
+  // Once accepted, use the plan as the authoritative landing ownership. The
+  // target-kind check keeps unrelated point/folder releases from suppressing
+  // a thumbnail child merely because an id happens to be present in entries.
+  for (const entry of group.releasePlan?.entries || []) {
+    if (
+      entry?.mode !== GROUP_RELEASE_MODE.CREATED_FOLDER &&
+      entry?.target?.kind !== "created-folder"
+    ) continue;
+    if (entry.id) ids.add(entry.id);
+  }
+  return ids;
 }
 
 export function normalizeDesktopHandoffState(state = {}) {
@@ -405,7 +447,6 @@ export function makeDesktopRenderPlanSignature(plan) {
       isFolderClosingHandoff: entry.isFolderClosingHandoff,
       isFolderSourceGhosted: entry.isFolderSourceGhosted,
       isInteractivePage: entry.isInteractivePage,
-      isReleaseGhostItem: entry.isReleaseGhostItem,
       item: makeItemRenderSignature(entry.item),
       key: entry.key,
       layoutTarget: makeTargetSignature(entry.layoutTarget),
@@ -441,6 +482,8 @@ export function getDesktopFrame(state) {
 
 export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const state = normalizeDesktopHandoffState(inputState);
+  const selectedAppIds = normalizeFolderIdSet(state.selectedAppIds);
+  const draggedItemIds = normalizeFolderIdSet(state.dragMeta?.draggedIds);
   const pages = state.activePages || [];
   const activePageIndex = state.activePageIndex || 0;
   const desktopFrame = getDesktopFrame(state);
@@ -546,14 +589,19 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
       const key = `${source.type}:${pageIndex}:${item.id}`;
       const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
-      const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
-      const isFolderCreateReleaseItem = item.type === "folder" && state.folderCreateReleaseState?.folderId === item.id;
+      const isCreatedFolderRelease = item.type === "folder" &&
+        state.groupDragState?.releaseCreatedFolderId === item.id &&
+        (state.groupDragState.phase === "committing" || state.groupDragState.phase === "accepted");
       const isFolderSourceGhosted = item.type === "folder" && folderPresentation?.isSourceGhosted === true;
-      const suppressedFolderPreviewChildId = item.type === "folder" &&
-        state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
-        ? state.dragReleaseState.suppressFolderPreviewChildId || null
-        : null;
-      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff || isFolderSourceGhosted;
+      const createdFolderReleaseOwnedIds = item.type === "folder"
+        ? getCreatedFolderReleaseOwnedIds(state, item.id)
+        : new Set();
+      const suppressedFolderPreviewChildIds = item.type === "folder"
+        ? getFolderPreviewChildren(item)
+          .filter((child) => draggedItemIds.has(child?.id) || createdFolderReleaseOwnedIds.has(child?.id))
+          .map((child) => child.id)
+        : [];
+      const suppressLabelRevealAfterGhost = isFolderClosingHandoff || isFolderSourceGhosted;
 
       entries.push({
         boundsEntry: isInteractivePage ? {
@@ -574,15 +622,19 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         index,
         isActiveDraggedItem,
         isActiveFolderClosingHandoff,
+        isCreatedFolderRelease,
         isFolderClosingHandoff,
         isFolderSourceGhosted,
         isInteractivePage,
-        isReleaseGhostItem,
-        isFolderCreateReleaseItem,
         item,
         key,
         layoutTarget,
         nodeState: {
+          batchSelected: Boolean(
+            state.isBatchSelectionActive &&
+            item.type === "app" &&
+            selectedAppIds.has(item.id)
+          ),
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: sizing.compact,
@@ -599,7 +651,8 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || isFolderCreateReleaseItem || isFolderSourceGhosted
+            isFolderSourceGhosted ||
+            isCreatedFolderRelease
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
@@ -615,12 +668,15 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
-          selected: !isFolderClosingHandoff && isInteractivePage && matchesIconSelection(
-            state.selectedIcon,
+          focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
+            state.focusedIcon,
             state.isSearchMode ? "search" : "desktop",
             item.id,
             pageIndex
           ),
+          selectedChildCount: state.isBatchSelectionActive
+            ? countSelectedFolderChildren(item, selectedAppIds)
+            : 0,
           source,
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
@@ -629,7 +685,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             folderPresentation?.dropTarget?.active === true ||
             folderDropFrameSuppressedIds.has(item.id)
           ),
-          suppressedFolderPreviewChildId,
+          suppressedFolderPreviewChildIds,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         },

@@ -2,10 +2,11 @@ import { Container, Matrix } from "pixi.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motion, parallel } from "../animation/motionTween.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { getStageScale } from "../geometry/stageCoordinates.js";
+import { clientRectToStageVisualRect, getStageScale } from "../geometry/stageCoordinates.js";
 
 export const FOLDER_PREVIEW_SLOT_RELEASE_MODE = "folder-preview-slot";
 export const FOLDER_CENTER_ABSORB_RELEASE_MODE = "folder-center-absorb";
+export const CREATED_FOLDER_RELEASE_MODE = "created-folder";
 
 const CLEAR_REASON = "folder-release-clear";
 const DESTROY_REASON = "destroyed";
@@ -173,8 +174,65 @@ function resetContainerTransform(node) {
   node.rotation = 0;
 }
 
+function suppressCreatedFolderReleaseLabel(node, reason = "created-folder-release-label-hide") {
+  const label = node?.labelText;
+  if (!label) return;
+  killMotionOf(label, null, { reason });
+  killMotionOf(label.scale, null, { reason });
+  label.visible = false;
+  // Visibility owns the release suppression. Keep renderable enabled so a
+  // pooled IconNode can be reused by a normal labeled state without a stale
+  // non-renderable flag surviving this handoff.
+  label.renderable = true;
+  label.alpha = 0;
+  label.scale.set(1, 1);
+}
+
+function restoreCreatedFolderReleaseLabel(node, reason = "created-folder-release-label-restore") {
+  const label = node?.labelText;
+  if (!label) return;
+  killMotionOf(label, null, { reason });
+  killMotionOf(label.scale, null, { reason });
+  const textless = node.state?.textless === true || node.textless === true;
+  label.visible = !textless;
+  label.renderable = true;
+  label.alpha = textless ? 0 : 1;
+  label.scale.set(1, 1);
+}
+
 function isFolderReleaseMode(mode) {
-  return mode === FOLDER_PREVIEW_SLOT_RELEASE_MODE || mode === FOLDER_CENTER_ABSORB_RELEASE_MODE;
+  return mode === FOLDER_PREVIEW_SLOT_RELEASE_MODE ||
+    mode === FOLDER_CENTER_ABSORB_RELEASE_MODE ||
+    mode === CREATED_FOLDER_RELEASE_MODE;
+}
+
+function readCreatedFolderFallbackPose(active) {
+  const targetFolderNode = active?.targetFolderNode;
+  const release = active?.release;
+  const state = active?.state || {};
+  const slotIndex = Number.isFinite(Number(release?.targetPreviewSlotIndex))
+    ? Number(release.targetPreviewSlotIndex)
+    : null;
+  if (!targetFolderNode || slotIndex == null) return null;
+  const clientRect = targetFolderNode.getFolderPreviewChildBounds?.(state.stageRect, slotIndex);
+  const stageRect = clientRectToStageVisualRect(clientRect, state.stageRect || {});
+  if (!stageRect || stageRect.width <= 0 || stageRect.height <= 0) return null;
+  const previewIconSize = Math.max(1, readFinite(release.size?.width, 64));
+  const matrix = {
+    a: stageRect.width / previewIconSize,
+    b: 0,
+    c: 0,
+    d: stageRect.height / previewIconSize,
+  };
+  if (!Object.values(matrix).every(Number.isFinite)) return null;
+  return {
+    center: {
+      x: stageRect.left + stageRect.width / 2,
+      y: stageRect.top + stageRect.height / 2,
+    },
+    matrix,
+    targetChildId: release.item?.id || null,
+  };
 }
 
 export class FolderReleaseController {
@@ -199,11 +257,16 @@ export class FolderReleaseController {
     this.motionControl = null;
     this.completeKey = null;
     this.previousOnRender = this.layer.onRender;
+    this.didInstallRenderHook = options.installRenderHook !== false;
     this.renderHook = (renderer) => {
       this.previousOnRender?.call(this.layer, renderer);
-      this.syncFrame({ isRenderFrame: true });
+      this.renderFrame();
     };
-    this.layer.onRender = this.renderHook;
+    if (this.didInstallRenderHook) this.layer.onRender = this.renderHook;
+  }
+
+  renderFrame() {
+    this.syncFrame({ isRenderFrame: true });
   }
 
   getTargetPose(active = this.active) {
@@ -236,16 +299,22 @@ export class FolderReleaseController {
         previewIconSize: Math.max(1, readFinite(release.size?.width, 64)),
       }
     );
-    if (!pose?.center || !pose?.matrix) return null;
+    const fallbackPose = release.releaseMode === CREATED_FOLDER_RELEASE_MODE
+      ? readCreatedFolderFallbackPose(active)
+      : null;
+    const livePoseMatchesChild = pose?.center && pose?.matrix &&
+      (!pose.targetChildId || pose.targetChildId === release.item?.id);
+    const resolvedPose = livePoseMatchesChild ? pose : fallbackPose;
+    if (!resolvedPose?.center || !resolvedPose?.matrix) return null;
     const center = {
-      x: readFinite(pose.center.x, Number.NaN),
-      y: readFinite(pose.center.y, Number.NaN),
+      x: readFinite(resolvedPose.center.x, Number.NaN),
+      y: readFinite(resolvedPose.center.y, Number.NaN),
     };
-    const matrix = readMatrixBasis(pose.matrix);
+    const matrix = readMatrixBasis(resolvedPose.matrix);
     if (!matrix) return null;
     if (![center.x, center.y, matrix.a, matrix.b, matrix.c, matrix.d].every(Number.isFinite)) return null;
-    if (pose.targetChildId && pose.targetChildId !== release.item?.id) return null;
-    return { ...pose, center, matrix };
+    if (resolvedPose.targetChildId && resolvedPose.targetChildId !== release.item?.id) return null;
+    return { ...resolvedPose, center, matrix };
   }
 
   update(options = {}) {
@@ -254,6 +323,10 @@ export class FolderReleaseController {
       this.clear(CLEAR_REASON);
       return false;
     }
+
+    // Release reparents the preview below this follower. Keep the preview's
+    // former layer-level order on its new top-level owner.
+    this.targetFollower.zIndex = previewNode.zIndex;
 
     const isNewRelease = this.active?.release?.key !== release.key;
     if (isNewRelease) {
@@ -270,6 +343,7 @@ export class FolderReleaseController {
         state: options,
         targetFolderNode,
         targetMatrix: null,
+        labelSuppressedNode: null,
       };
       motionRuntime.recordCoordinationEvent({
         action: "folder-release",
@@ -290,6 +364,14 @@ export class FolderReleaseController {
         return true;
       }
       this.active.targetFolderNode = targetFolderNode;
+    }
+
+    if (
+      release.releaseMode === CREATED_FOLDER_RELEASE_MODE &&
+      this.active.labelSuppressedNode !== previewNode
+    ) {
+      suppressCreatedFolderReleaseLabel(previewNode);
+      this.active.labelSuppressedNode = previewNode;
     }
 
     this.syncFrame();
@@ -320,6 +402,16 @@ export class FolderReleaseController {
     this.poseProgress.value = 0;
     this.poseFrame.setFromMatrix(makeMatrix(active.startMatrix));
 
+    // A pooled group ghost may still carry a gather/layout motion from the
+    // frame before release ownership transfers.  Cancel those tracks after
+    // capturing the rendered pose; otherwise they can write the old stack
+    // position back into the reparented ghost on the next frame.
+    killMotionOf(active.previewNode, null, { reason: "folder-release-start" });
+    killMotionOf(active.previewNode.scale, null, { reason: "folder-release-start" });
+    if (active.release.releaseMode === CREATED_FOLDER_RELEASE_MODE) {
+      suppressCreatedFolderReleaseLabel(active.previewNode);
+      active.labelSuppressedNode = active.previewNode;
+    }
     active.previewNode.removeFromParent();
     this.poseFrame.addChild(active.previewNode);
     resetContainerTransform(active.previewNode);
@@ -585,18 +677,22 @@ export class FolderReleaseController {
   }
 
   clear(reason = CLEAR_REASON) {
+    const active = this.active;
     if (this.motionControl && !this.motionControl.completed) this.motionControl.cancel(reason);
     this.motionControl = null;
     killMotionOf(this.approachFrame, null, { reason });
     killMotionOf(this.poseProgress, null, { reason });
     killMotionOf(this.centerTimelineProgress, null, { reason });
-    const previewNode = this.active?.previewNode;
+    const previewNode = active?.previewNode;
     if (previewNode) killMotionOf(previewNode, "alpha", { reason });
     if (previewNode?.labelText) {
       killMotionOf(previewNode.labelText, null, { reason });
       killMotionOf(previewNode.labelText.scale, null, { reason });
     }
     this.restorePreviewParent();
+    if (active?.release?.releaseMode === CREATED_FOLDER_RELEASE_MODE) {
+      restoreCreatedFolderReleaseLabel(active.labelSuppressedNode || previewNode, reason);
+    }
     this.active = null;
     this.targetFollower.visible = false;
     resetContainerTransform(this.targetFollower);
@@ -608,7 +704,9 @@ export class FolderReleaseController {
 
   destroy() {
     this.clear(DESTROY_REASON);
-    if (this.layer?.onRender === this.renderHook) this.layer.onRender = this.previousOnRender || null;
+    if (this.didInstallRenderHook && this.layer?.onRender === this.renderHook) {
+      this.layer.onRender = this.previousOnRender || null;
+    }
     this.previousOnRender = null;
     this.renderHook = null;
     if (!this.targetFollower.destroyed) this.targetFollower.destroy({ children: true });

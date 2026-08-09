@@ -28,7 +28,7 @@ function createNavigation(overrides = {}) {
     },
     searchPageIndex: ref(overrides.searchPageIndex ?? 0),
     searchPages: ref(overrides.searchPages ?? [[]]),
-    selectFirstIconInCurrentScope: () => {},
+    focusFirstIconInCurrentScope: () => {},
     visualFolderPageIndex: ref(overrides.visualFolderPageIndex ?? overrides.folderPageIndex ?? 0),
   });
   return { calls, navigation };

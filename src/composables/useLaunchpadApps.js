@@ -880,7 +880,7 @@ export function useLaunchpadApps(options) {
     hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...removedCatalogIds]));
     options.commitPagesAfterDeletion(next);
     const removedIdSet = new Set(removedIds);
-    if (removedIdSet.has(options.selectedIcon?.value?.id)) options.clearSelectedIcon?.();
+    if (removedIdSet.has(options.focusedIcon?.value?.id)) options.clearFocusedIcon?.();
     appManagerSelectedIds.value = appManagerSelectedIds.value.filter((id) => !removedIdSet.has(id));
     if (removedIdSet.has(editorSession.value?.originalAppId)) closeManagedAppEditor();
     if (options.renderedFolder.value && options.openFolderId.value && !options.findFolder(options.pages.value, options.openFolderId.value)) {
@@ -1376,6 +1376,7 @@ export function useLaunchpadApps(options) {
     persistence: Object.freeze({ capture: capturePersistence, restore: restorePersistence }),
     presentation,
     removeManagedAppFromLaunchpad,
+    removeManagedAppsFromLaunchpad,
     removeScanKeywordBlacklistItem,
     removeScanRoot,
     removeSelectedManagedAppsFromLaunchpad,

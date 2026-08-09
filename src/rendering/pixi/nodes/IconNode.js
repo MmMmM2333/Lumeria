@@ -32,9 +32,9 @@ import {
 } from "./iconFolderHoverState.js";
 import { getIconLabelRenderState } from "./iconLabelLayout.js";
 import {
-  drawSelectionFrame,
-  getSelectionFrameRect as getSelectionFrameRectForIcon,
-} from "./iconSelectionFrame.js";
+  drawFocusFrame,
+  getFocusFrameRect as getFocusFrameRectForIcon,
+} from "./iconFocusFrame.js";
 import {
   getEditButtonActionAt,
   getIconHitAreaRect,
@@ -174,7 +174,20 @@ export class IconNode extends Container {
     this.interactionPhase = null;
     this.onAction = options.onAction || (() => {});
 
-    this.selectionFrame = new Graphics();
+    this.focusFrame = new Graphics();
+    this.batchSelectionBadge = new Container();
+    this.batchSelectionBadgeBackground = new Graphics();
+    this.batchSelectionBadgeText = new Text({
+      text: "",
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: 12,
+        fontWeight: "800",
+        lineHeight: 12,
+      },
+    });
     this.jiggleWrap = new Container();
     this.visualWrap = new Container();
     this.folderThumb = new Graphics();
@@ -227,15 +240,23 @@ export class IconNode extends Container {
     this.hitAreaSig = "";
     this.labelRenderSig = "";
     this.missingBadgeSig = "";
-    this.selectionFrameSig = "";
+    this.focusFrameSig = "";
+    this.batchSelectionBadgeSig = "";
 
     this.iconSprite.anchor.set(0.5);
     this.emojiText.anchor.set(0.5);
     this.missingBadge.visible = false;
+    this.batchSelectionBadge.visible = false;
+    this.batchSelectionBadge.eventMode = "none";
+    this.batchSelectionBadgeText.anchor.set(0.5);
+    this.batchSelectionBadge.addChild(
+      this.batchSelectionBadgeBackground,
+      this.batchSelectionBadgeText
+    );
     this.missingBadgeText.anchor.set(0.5);
     this.missingBadge.addChild(this.missingBadgeBackground);
     this.missingBadge.addChild(this.missingBadgeText);
-    this.addChild(this.selectionFrame);
+    this.addChild(this.focusFrame);
     this.addChild(this.jiggleWrap);
     this.jiggleWrap.addChild(this.visualWrap);
     this.visualWrap.addChild(this.folderThumb);
@@ -250,6 +271,7 @@ export class IconNode extends Container {
     this.visualWrap.addChild(this.removeButton);
     this.visualWrap.addChild(this.changeButton);
     this.visualWrap.addChild(this.resetButton);
+    this.visualWrap.addChild(this.batchSelectionBadge);
     this.folderFlashOverlay.visible = false;
     this.folderCreateBackdrop.visible = false;
     this.folderCreateFlashOverlay.visible = false;
@@ -294,6 +316,7 @@ export class IconNode extends Container {
     this.renderLabel(state);
     this.renderEditButtons(state);
     this.renderFrame(state);
+    this.renderBatchSelectionBadge(state);
     this.updateHitArea(state);
     this.updateJiggle(state);
     this.setInteractionPhase(
@@ -532,8 +555,8 @@ export class IconNode extends Container {
     this.hitArea = this.hitAreaRect;
   }
 
-  getSelectionFrameRect() {
-    return getSelectionFrameRectForIcon({
+  getFocusFrameRect() {
+    return getFocusFrameRectForIcon({
       iconSize: this.iconSize,
       labelText: this.labelText,
       maxWidth: this.state?.cellWidth,
@@ -542,7 +565,7 @@ export class IconNode extends Container {
   }
 
   renderFrame(state) {
-    const rect = this.getSelectionFrameRect();
+    const rect = this.getFocusFrameRect();
     const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     const sig = [
@@ -552,18 +575,56 @@ export class IconNode extends Container {
       numberSig(rect.height),
       numberSig(this.iconSize),
       boolSig(state.dropTarget),
+      boolSig(state.batchSelected),
       boolSig(isAppFolderCreateHover),
       boolSig(isFolderDropHover),
-      boolSig(state.selected),
+      boolSig(state.focused),
     ].join(":");
-    if (this.selectionFrameSig === sig) return;
-    this.selectionFrameSig = sig;
-    drawSelectionFrame(this.selectionFrame, rect, this.iconSize, {
+    if (this.focusFrameSig === sig) return;
+    this.focusFrameSig = sig;
+    drawFocusFrame(this.focusFrame, rect, this.iconSize, {
+      batchSelected: state.batchSelected,
       dropTarget: state.dropTarget,
       isAppFolderCreateHover,
       isFolderDropHover,
-      selected: state.selected,
+      focused: state.focused,
     });
+  }
+
+  renderBatchSelectionBadge(state) {
+    const selectedChildCount = Math.max(0, Number(state.selectedChildCount) || 0);
+    const isSelectedApp = Boolean(state.batchSelected && this.item?.type === "app");
+    const isSelectedFolder = Boolean(this.item?.type === "folder" && selectedChildCount > 0);
+    const label = isSelectedApp
+      ? "✓"
+      : selectedChildCount > 99
+        ? "99+"
+        : String(selectedChildCount);
+    const size = Math.max(18, Math.min(25, this.iconSize * 0.31));
+    const sig = [
+      boolSig(isSelectedApp),
+      boolSig(isSelectedFolder),
+      label,
+      numberSig(size),
+      numberSig(this.iconSize),
+      numberSig(this.getVisualOffsetY()),
+    ].join(":");
+    if (this.batchSelectionBadgeSig === sig) return;
+    this.batchSelectionBadgeSig = sig;
+    this.batchSelectionBadge.visible = isSelectedApp || isSelectedFolder;
+    if (!this.batchSelectionBadge.visible) return;
+    this.batchSelectionBadge.position.set(
+      this.iconSize * 0.39,
+      this.getVisualOffsetY() - this.iconSize * 0.39
+    );
+    this.batchSelectionBadgeBackground
+      .clear()
+      .circle(0, 0, size / 2)
+      .fill({ color: 0x1687ff, alpha: 1 })
+      .stroke({ color: 0xffffff, alpha: 0.96, width: Math.max(1.5, size * 0.08) });
+    this.batchSelectionBadgeText.text = label;
+    setTextStyleValue(this.batchSelectionBadgeText, "fontSize", isSelectedFolder && label.length > 2 ? size * 0.35 : size * 0.5);
+    setTextStyleValue(this.batchSelectionBadgeText, "lineHeight", size * 0.55);
   }
 
   hideFolderChildren() {
@@ -616,7 +677,14 @@ export class IconNode extends Container {
       this.emojiText.visible = true;
       setTextValue(this.emojiText, this.item?.emoji || "◼");
       setTextStyleValue(this.emojiText, "fontSize", this.iconSize);
-      setTextStyleValue(this.emojiText, "lineHeight", this.iconSize);
+      // Folder thumbnail children use Pixi Text's natural line height. Keep
+      // slot-release ghosts on that same raster style; rendering a 16px glyph
+      // into a 16px line box avoids the old 64px-texture sampling jump.
+      setTextStyleValue(
+        this.emojiText,
+        "lineHeight",
+        state.folderPreviewRelease === true ? 0 : this.iconSize
+      );
     }
     this.renderMissingBadge(state);
     this.updateAppFolderCreateHoverAnimation(state);
@@ -675,11 +743,15 @@ export class IconNode extends Container {
     this.activateFolderPreviewMask(thumb);
     this.drawFolderFlashOverlay(size, thumb);
     this.folderChildrenWrap.visible = true;
+    const suppressedChildIds = new Set(state.suppressedFolderPreviewChildIds || []);
 
     while (this.folderChildNodes.length < Math.max(9, plan.items.length)) {
       const childContainer = new Container();
       const childSprite = new Sprite();
-      const childEmoji = new Text({ text: "", style: { fill: 0xffffff, fontSize: 14 } });
+      const childEmoji = new Text({
+        text: "",
+        style: { align: "center", fill: 0xffffff, fontSize: 14, lineHeight: 0 },
+      });
       childSprite.anchor.set(0.5);
       childEmoji.anchor.set(0.5);
       childContainer.addChild(childSprite);
@@ -699,8 +771,10 @@ export class IconNode extends Container {
       node.renderable = Boolean(child);
       node.folderPreviewChildId = child?.id || null;
       if (!child) continue;
-      if (child.id === state.suppressedFolderPreviewChildId) {
+      if (suppressedChildIds.has(child.id)) {
         node.renderable = false;
+        childSprite.visible = false;
+        childEmoji.visible = false;
         continue;
       }
       const childId = child.id;
@@ -719,6 +793,7 @@ export class IconNode extends Container {
       } else {
         setTextValue(childEmoji, child.emoji || "◼");
         setTextStyleValue(childEmoji, "fontSize", thumb.childSize);
+        setTextStyleValue(childEmoji, "lineHeight", 0);
       }
     }
     this.renderMissingBadge({ ...state, launchTargetStatus: null });

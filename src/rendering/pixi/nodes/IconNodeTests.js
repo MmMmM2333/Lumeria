@@ -76,7 +76,7 @@ export async function runIconNodeTests() {
       item: { id: "app-interaction", name: "Interaction App", type: "app" },
       opening: false,
       removable: true,
-      selected: false,
+      focused: false,
       source: { index: 0, pageIndex: 0, type: "page" },
       stageHeight: 600,
       stageWidth: 800,
@@ -300,7 +300,7 @@ export async function runIconNodeTests() {
       stageWidth: 800,
       textless: false,
     };
-    node.setState({ ...folderNodeState, suppressedFolderPreviewChildId: "folder-child-b" });
+    node.setState({ ...folderNodeState, suppressedFolderPreviewChildIds: ["folder-child-b"] });
     assert(node.folderChildNodes[0].visible === true, "unsuppressed folder preview child should remain visible");
     assert(node.folderChildNodes[1].visible === true, "suppressed folder preview child should stay transform-visible");
     assert(node.folderChildNodes[1].renderable === false, "suppressed folder preview child should not be drawable while the release ghost owns it");

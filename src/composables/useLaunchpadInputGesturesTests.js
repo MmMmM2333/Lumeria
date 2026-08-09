@@ -132,6 +132,7 @@ function createHarness(options = {}) {
     getDesktopTargetAtPoint: () => null,
     isFolderAppLaunchClosing: ref(false),
     isFolderClosing: ref(false),
+    isBatchSelectionActive: () => options.batch === true,
     isInteractionBlocked: () => false,
     isSearchMode: ref(false),
     openApp: (item) => calls.openedApps.push(item.id),
@@ -170,6 +171,77 @@ export function runLaunchpadInputGesturesTests() {
         captureTarget.releasedPointers.join(",") === "18",
       "a stationary mouse hold should put the icon back without opening or activating it"
     );
+    gestures.disposeInputGestures();
+  }
+
+  {
+    const { calls, eventTarget, gestures } = createHarness();
+    const source = { type: "page", pageIndex: 0, index: 0 };
+    const captureTarget = createPointerCaptureTarget();
+    gestures.handleIconPointerDown(
+      makePointerEvent(23, {
+        clientX: 300,
+        clientY: 120,
+        pointerType: "mouse",
+        target: captureTarget,
+        timeStamp: 0,
+      }),
+      { id: "app-a", type: "app" },
+      source
+    );
+    eventTarget.dispatch("pointermove", makePointerEvent(23, {
+      buttons: 1,
+      clientX: 308,
+      clientY: 120,
+      pointerType: "mouse",
+      target: captureTarget,
+      timeStamp: 200,
+      type: "pointermove",
+    }));
+    eventTarget.advanceTo(420);
+    eventTarget.dispatch("pointermove", makePointerEvent(23, {
+      buttons: 1,
+      clientX: 314,
+      clientY: 120,
+      pointerType: "mouse",
+      target: captureTarget,
+      timeStamp: 440,
+      type: "pointermove",
+    }));
+    assert(
+      calls.dragStarts.length === 1 &&
+        calls.dragStarts[0].dragAnchor?.x === 300 &&
+        calls.dragStarts[0].dragAnchor?.y === 120,
+      "a drag started after the hold slop should retain the original press anchor"
+    );
+    gestures.disposeInputGestures();
+  }
+
+  {
+    const { calls, eventTarget, gestures } = createHarness({ batch: true });
+    const source = { type: "page", pageIndex: 0, index: 0 };
+    const captureTarget = createPointerCaptureTarget();
+    gestures.handleIconPointerDown(
+      makePointerEvent(181, { pointerType: "mouse", target: captureTarget }),
+      { id: "app-a", type: "app" },
+      source
+    );
+    eventTarget.advanceTo(420);
+    assert(
+      calls.dragStarts.length === 1 &&
+        calls.dragStarts[0].clientX === 300 &&
+        calls.dragStarts[0].clientY === 120 &&
+        gestures.iconGesturePresentation.value === null,
+      "batch long-press should start gathering at the hold deadline without waiting for movement"
+    );
+    eventTarget.dispatch("pointerup", makePointerEvent(181, {
+      buttons: 0,
+      pointerType: "mouse",
+      target: captureTarget,
+      timeStamp: 460,
+      type: "pointerup",
+    }));
+    assert(calls.dragFinishes.length === 1, "a stationary batch gather should finish through drag controls");
     gestures.disposeInputGestures();
   }
 

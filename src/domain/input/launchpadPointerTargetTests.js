@@ -107,13 +107,15 @@ export function runLaunchpadPointerTargetTests() {
 
   for (const blockedState of [
     { dragMeta: { item: app } },
+    { isBatchSelectionActive: true },
     { isDialogOpen: true },
+    { isEditMode: true },
     { isHomeInteractionDisabled: true },
     { isSettingsPanelOpen: true },
   ]) {
     assert(
       isLaunchpadContextMenuInteractionBlocked(blockedState),
-      "drag, dialog, disabled-home, and settings states should each block context-menu routing"
+      "drag, batch selection, Alt edit, dialog, disabled-home, and settings states should each block context-menu routing"
     );
   }
 

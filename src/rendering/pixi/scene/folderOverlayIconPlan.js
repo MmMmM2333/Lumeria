@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { matchesIconFocus } from "../../../domain/iconFocus.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 
@@ -51,16 +51,17 @@ export function makeFolderIconNodeState(options = {}) {
     iconSize = 64,
     iconGesturePresentation = null,
     isActiveDraggedItem = false,
+    isBatchSelectionActive = false,
     isEditMode = false,
     isIconOpening = null,
     isInteractivePage = false,
-    isReleaseGhostItem = false,
     isTextlessMode = false,
     item = null,
     launchTargetStatusById = null,
     openingGhostItemIds = null,
     pageIndex = 0,
-    selectedIcon = null,
+    focusedIcon = null,
+    selectedAppIds = null,
     showMissingLaunchTargetBadge = true,
     slot = null,
     source = null,
@@ -68,12 +69,18 @@ export function makeFolderIconNodeState(options = {}) {
     stageWidth = 1,
   } = options;
   const itemId = item?.id;
-  const ghosted = Boolean(isReleaseGhostItem ||
-    (isInteractivePage && (
+  const ghosted = Boolean(isInteractivePage && (
       openingGhostItemIds?.has(itemId) ||
       closingGhostKeys?.has(itemId)
-    )));
+    ));
   return {
+    batchSelected: Boolean(
+      isBatchSelectionActive &&
+      item?.type === "app" &&
+      (selectedAppIds instanceof Set
+        ? selectedAppIds.has(itemId)
+        : (selectedAppIds || []).includes?.(itemId))
+    ),
     cellHeight: slot?.height,
     cellWidth: slot?.width,
     compact: false,
@@ -96,7 +103,7 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
     opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
     removable: item?.type === "app",
-    selected: isInteractivePage && matchesIconSelection(selectedIcon, "folder", itemId, pageIndex, folderId),
+    focused: isInteractivePage && matchesIconFocus(focusedIcon, "folder", itemId, pageIndex, folderId),
     source,
     stageHeight,
     stageWidth,

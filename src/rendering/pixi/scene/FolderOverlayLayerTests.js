@@ -374,7 +374,6 @@ export async function runFolderOverlayLayerTests() {
     const pages = overrides.folderPages || folderResizePages;
     return {
       dragMeta: null,
-      dragReleaseGhostId: null,
       folderCloseIconGhosts: [],
       folderGridStyle: {
         gridTemplateColumns: "repeat(3, var(--folder-icon-cell-width))",
@@ -399,7 +398,7 @@ export async function runFolderOverlayLayerTests() {
       isEditMode: false,
       isFolderClosing: false,
       isIconOpening: () => false,
-      selectedIcon: null,
+      focusedIcon: null,
       isTextlessMode: false,
       launchTargetStatusById: {},
       renderedFolder: {
@@ -485,7 +484,7 @@ export async function runFolderOverlayLayerTests() {
       },
       height: 767,
       isEditMode: true,
-      selectedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
+      focusedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
       width: 900,
     });
     layer.update(state);
@@ -493,7 +492,7 @@ export async function runFolderOverlayLayerTests() {
 
     const key = `${folderId}:0:${page[0].id}`;
     const node = layer.iconNodes.get(key);
-    const frame = node?.getSelectionFrameRect();
+    const frame = node?.getFocusFrameRect();
     assert(node && frame, "large-icon frame setup should render the selected folder icon");
     assert(node.state.iconSize + 24 <= node.state.cellWidth + 0.001, "large folder icons should reserve horizontal interaction padding");
     assert(frame.width <= node.state.cellWidth + 0.001, "large folder selection frames should stay inside their cell");
@@ -526,7 +525,7 @@ export async function runFolderOverlayLayerTests() {
       },
       height: 825,
       isEditMode: true,
-      selectedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
+      focusedIcon: { area: "folder", folderId, id: page[0].id, pageIndex: 0 },
       width: 1415,
     });
     layer.update(state);
@@ -548,15 +547,16 @@ export async function runFolderOverlayLayerTests() {
     layer.pageTrackMotion = null;
     layer.pageTrack = null;
     const mode = layer.getResizeLayoutMode({
-      dragReleaseGhostId: "page-b-1",
-      dragReleaseState: {
+      dragMeta: {
+        draggedIds: ["page-b-1"],
+        item: { id: "page-b-1", type: "app" },
         source: { folderId: "folder-resize", pageIndex: 1, type: "folder" },
       },
       folderPageIndex: 0,
       renderedFolder: { id: "folder-resize" },
       visualFolderPageIndex: 0,
     });
-    assert(mode === "page-turn", "cross-page folder releases should preserve page-turn resize mode after dragMeta clears");
+    assert(mode === "page-turn", "cross-page folder drags should preserve page-turn resize mode through visual release");
   }
 
   {
@@ -601,8 +601,8 @@ export async function runFolderOverlayLayerTests() {
 
     const releaseState = makeFolderResizeState({
       ...baseState,
-      dragReleaseGhostId: movingItem.id,
-      dragReleaseState: {
+      dragMeta: {
+        draggedIds: [movingItem.id],
         item: movingItem,
         source: { folderId, index: 0, pageIndex: 0, type: "folder" },
       },
@@ -613,9 +613,9 @@ export async function runFolderOverlayLayerTests() {
     const xMotion = getBaseAnimation(movingNode, "x");
 
     assert(initialX !== target.x, "release-backed node setup should move the hidden real icon to a new slot");
-    assert(movingNode.visible === false && movingNode.state.ghosted === true, "release-backed real icon should stay hidden behind the drag preview");
-    assert(nearlyEqual(movingNode.x, target.x), "release-backed hidden real icon should snap to the release target before it is revealed");
-    assert(!xMotion, "release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+    assert(movingNode.visible === false && movingNode.state.dragging === true, "the shared drag owner should keep the real folder icon hidden through visual release");
+    assert(nearlyEqual(movingNode.x, target.x), "the hidden real folder icon should snap to the release target before it is revealed");
+    assert(!xMotion, "the hidden real folder icon should not keep a layout spring that can twitch after reveal");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -838,12 +838,6 @@ export async function runFolderOverlayLayerTests() {
     });
     const expandedState = makeFolderResizeState({
       ...expandedDragState,
-      dragMeta: null,
-      dragReleaseGhostId: insertedItem.id,
-      dragReleaseState: {
-        item: insertedItem,
-        source: { folderId, index: 0, pageIndex: 0, type: "folder" },
-      },
     });
     layer.update(expandedState);
     const initialReleaseTarget = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
@@ -1139,8 +1133,8 @@ export async function runFolderOverlayLayerTests() {
     const expandedPage = compactPages[0].slice();
     expandedPage.push(insertedItem);
     const expandedState = makeFolderResizeState({
-      dragReleaseGhostId: insertedItem.id,
-      dragReleaseState: {
+      dragMeta: {
+        draggedIds: [insertedItem.id],
         item: insertedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },

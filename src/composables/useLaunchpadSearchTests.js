@@ -9,11 +9,11 @@ const testApps = [
 
 function createSearchFlow(overrides = {}) {
   const calls = {
-    clearSelectedIcon: 0,
+    clearFocusedIcon: 0,
     commitOpenFolder: [],
     commitSearchPageIndex: [],
     schedulePageGridMetrics: 0,
-    selectFirstIconInCurrentScope: [],
+    focusFirstIconInCurrentScope: [],
   };
   const pages = ref(overrides.pages ?? [[testApps[0], testApps[1]], [testApps[2]]]);
   const pageIndex = ref(overrides.pageIndex ?? 1);
@@ -21,8 +21,8 @@ function createSearchFlow(overrides = {}) {
   const openFolderId = ref(overrides.openFolderId ?? "folder-1");
   const pageSize = ref(overrides.pageSize ?? 1);
   const search = useLaunchpadSearch({
-    clearSelectedIcon: () => {
-      calls.clearSelectedIcon += 1;
+    clearFocusedIcon: () => {
+      calls.clearFocusedIcon += 1;
     },
     collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item.type === "app")),
     commitOpenFolder: (value) => {
@@ -42,7 +42,7 @@ function createSearchFlow(overrides = {}) {
       calls.schedulePageGridMetrics += 1;
     },
     searchPageIndex,
-    selectFirstIconInCurrentScope: (options) => calls.selectFirstIconInCurrentScope.push(options),
+    focusFirstIconInCurrentScope: (options) => calls.focusFirstIconInCurrentScope.push(options),
   });
 
   return {
@@ -77,9 +77,9 @@ export async function runLaunchpadSearchTests() {
   assert(input.calls.commitOpenFolder.length === 1 && input.calls.commitOpenFolder[0] === null, "typing a search should request folder close with null");
   assert(input.calls.schedulePageGridMetrics === 1, "typing a search should schedule page metrics");
   await nextTick();
-  assert(input.calls.selectFirstIconInCurrentScope.length === 1, "typing a search should select the first result on next tick");
-  assert(input.calls.selectFirstIconInCurrentScope[0].force === true, "search result selection should force focus");
-  assert(input.calls.clearSelectedIcon === 0, "typing a non-empty search should not clear selection immediately");
+  assert(input.calls.focusFirstIconInCurrentScope.length === 1, "typing a search should select the first result on next tick");
+  assert(input.calls.focusFirstIconInCurrentScope[0].force === true, "search result selection should force focus");
+  assert(input.calls.clearFocusedIcon === 0, "typing a non-empty search should not clear selection immediately");
 
   const chinese = createSearchFlow({
     pages: [[{ id: "settings", type: "app", name: "设置" }]],
@@ -95,20 +95,20 @@ export async function runLaunchpadSearchTests() {
   input.search.clearSearch();
   assert(input.search.searchQuery.value === "", "clearSearch should clear the query");
   assert(input.calls.commitSearchPageIndex.join(",") === "0,0", "clearSearch should reset search pagination");
-  assert(input.calls.clearSelectedIcon === 1, "clearSearch should clear selection by default");
+  assert(input.calls.clearFocusedIcon === 1, "clearSearch should clear selection by default");
   assert(input.calls.schedulePageGridMetrics === 2, "clearSearch should schedule metrics");
 
-  const selectFirst = createSearchFlow();
-  selectFirst.search.clearSearch({ selectFirst: true });
+  const focusFirst = createSearchFlow();
+  focusFirst.search.clearSearch({ focusFirst: true });
   await nextTick();
-  assert(selectFirst.calls.selectFirstIconInCurrentScope.length === 1, "clearSearch can select the first icon on request");
-  assert(selectFirst.calls.clearSelectedIcon === 0, "clearSearch should not clear selection when selecting the first icon");
+  assert(focusFirst.calls.focusFirstIconInCurrentScope.length === 1, "clearSearch can select the first icon on request");
+  assert(focusFirst.calls.clearFocusedIcon === 0, "clearSearch should not clear selection when selecting the first icon");
 
-  const keepSelection = createSearchFlow();
-  keepSelection.search.clearSearch({ keepSelection: true });
-  assert(keepSelection.calls.clearSelectedIcon === 0, "clearSearch should preserve selection when requested");
+  const keepFocus = createSearchFlow();
+  keepFocus.search.clearSearch({ keepFocus: true });
+  assert(keepFocus.calls.clearFocusedIcon === 0, "clearSearch should preserve selection when requested");
   await nextTick();
-  assert(keepSelection.calls.selectFirstIconInCurrentScope.length === 0, "keepSelection should not schedule first-icon selection");
+  assert(keepFocus.calls.focusFirstIconInCurrentScope.length === 0, "keepFocus should not schedule first-icon selection");
 
   const dragActive = createSearchFlow({ isDragActive: true });
   dragActive.search.handleSearchInput({ target: { value: "mail" } });
@@ -117,6 +117,6 @@ export async function runLaunchpadSearchTests() {
 
   const blankInput = createSearchFlow();
   blankInput.search.handleSearchInput({ target: { value: "" } });
-  assert(blankInput.calls.clearSelectedIcon === 1, "blank search input should clear selection");
-  assert(blankInput.calls.selectFirstIconInCurrentScope.length === 0, "blank search input should not select the first result");
+  assert(blankInput.calls.clearFocusedIcon === 1, "blank search input should clear selection");
+  assert(blankInput.calls.focusFirstIconInCurrentScope.length === 0, "blank search input should not select the first result");
 }
