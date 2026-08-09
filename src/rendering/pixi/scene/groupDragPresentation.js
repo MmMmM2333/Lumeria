@@ -6,6 +6,9 @@ function safePoint(point) {
   };
 }
 
+export const GROUP_FOLLOWER_DELAY_STEP_MS = 26;
+export const GROUP_FOLLOWER_DELAY_CAP = 5;
+
 export function appendGroupTrailPoint(points, point, options = {}) {
   const maxPoints = Math.max(2, Math.floor(Number(options.maxPoints) || 14));
   const minDistance = Math.max(0, Number(options.minDistance) || 5);
@@ -18,16 +21,41 @@ export function appendGroupTrailPoint(points, point, options = {}) {
       Number(options.timeMs ?? point?.time) || ((Number(last?.time) || 0) + (last ? 16 : 0))
     ),
   };
-  if (last && Math.hypot(nextPoint.x - last.x, nextPoint.y - last.y) < minDistance) return next;
+  if (last && Math.hypot(nextPoint.x - last.x, nextPoint.y - last.y) < minDistance) {
+    // Keep the trail bounded without losing its authoritative endpoint. The
+    // follower clock must eventually converge on the latest pointer position
+    // even when the final movement is smaller than the sampling threshold.
+    next[next.length - 1] = nextPoint;
+    return next;
+  }
   next.push(nextPoint);
   return next.slice(-maxPoints);
 }
 
-export function sampleGroupTrailPoint(points, delayMs = 0) {
+export function getGroupFollowerDelayMs(visualIndex, options = {}) {
+  const index = Math.max(0, Math.floor(Number(visualIndex) || 0));
+  const delayStepMs = Math.max(
+    1,
+    Number(options.delayStepMs) || GROUP_FOLLOWER_DELAY_STEP_MS
+  );
+  return Math.min(index, GROUP_FOLLOWER_DELAY_CAP) * delayStepMs;
+}
+
+export function getGroupTrailSettleDurationMs(visualCount, options = {}) {
+  const count = Math.max(1, Math.floor(Number(visualCount) || 1));
+  return getGroupFollowerDelayMs(Math.max(0, count - 1), options);
+}
+
+export function sampleGroupTrailPoint(points, delayMs = 0, options = {}) {
   const trail = (points || []).map(safePoint);
   if (!trail.length) return null;
   if (trail.length === 1) return trail[0];
-  const targetTime = trail[trail.length - 1].time - Math.max(0, Number(delayMs) || 0);
+  const latestTime = trail[trail.length - 1].time;
+  const requestedTime = Number(options.timeMs);
+  const presentationTime = Number.isFinite(requestedTime)
+    ? Math.max(latestTime, requestedTime)
+    : latestTime;
+  const targetTime = presentationTime - Math.max(0, Number(delayMs) || 0);
   if (targetTime <= trail[0].time) return trail[0];
   for (let index = 1; index < trail.length; index += 1) {
     const right = trail[index];
@@ -62,8 +90,11 @@ export function makeGroupFollowerTarget(center, trail, visualIndex, visualCount,
   const point = safePoint(center);
   const index = Math.max(0, Math.floor(Number(visualIndex) || 0));
   if (index === 0 || options.reducedMotion) return makeGroupStackTarget(point, index, visualCount);
-  const delayStepMs = Math.max(1, Number(options.delayStepMs) || 26);
-  const sampled = sampleGroupTrailPoint(trail, Math.min(index, 5) * delayStepMs);
+  const sampled = sampleGroupTrailPoint(
+    trail,
+    getGroupFollowerDelayMs(index, options),
+    { timeMs: options.timeMs }
+  );
   if (!sampled) return makeGroupStackTarget(point, index, visualCount);
   const stackOffset = makeGroupStackTarget({ x: 0, y: 0 }, index, visualCount);
   const desired = {

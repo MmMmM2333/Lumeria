@@ -20,7 +20,7 @@ import {
 } from "./folderReleaseController.js";
 
 const GENERIC_RELEASE_DURATION = 0.24;
-const GENERIC_REJECT_DURATION = 0.2;
+const GENERIC_RETURN_DURATION = 0.2;
 const TARGET_RETARGET_EPSILON = 0.75;
 const MAX_MISSING_POINT_FRAMES = 2;
 const CREATED_FOLDER_FRAME_DURATION = 0.18;
@@ -215,7 +215,7 @@ export class GroupReleaseController {
     const group = options.group;
     const plan = group?.releasePlan;
     if (!plan?.key || !Array.isArray(plan.entries) || !plan.entries.length ||
-      !["accepted", "rejected"].includes(group?.phase)) {
+      !["accepted", "rejected", "cancelling"].includes(group?.phase)) {
       this.clear("group-release-inactive");
       return;
     }
@@ -517,10 +517,10 @@ export class GroupReleaseController {
     const entry = context.entry;
     const group = context.group;
     const node = context.node;
-    const isReject = entry.mode === GROUP_RELEASE_MODE.REJECT_RETURN;
-    const targetScale = isReject ? Math.max(0.35, finite(entry.originScale, 1)) : 1;
-    const targetAlpha = isReject ? Math.max(0, finite(entry.originAlpha, 1)) : 1;
-    const velocity = isReject || group.reducedMotion === true
+    const isReturn = entry.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
+    const targetScale = isReturn ? Math.max(0.35, finite(entry.originScale, 1)) : 1;
+    const targetAlpha = isReturn ? Math.max(0, finite(entry.originAlpha, 1)) : 1;
+    const velocity = isReturn || group.reducedMotion === true
       ? { x: 0, y: 0 }
       : toStageVelocity(entry.velocity, context.state);
     const generation = lane.generation + 1;
@@ -533,9 +533,9 @@ export class GroupReleaseController {
     const positionMotion = motion(node)
       .delay(delay)
       .interrupt("retarget");
-    if (isReject) {
+    if (isReturn) {
       positionMotion
-        .duration(GENERIC_REJECT_DURATION)
+        .duration(GENERIC_RETURN_DURATION)
         .ease("power2.out")
         .handoff();
     } else {
@@ -544,9 +544,9 @@ export class GroupReleaseController {
     const scaleMotion = motion(node.scale)
       .delay(delay)
       .interrupt("retarget");
-    if (isReject) {
+    if (isReturn) {
       scaleMotion
-        .duration(GENERIC_REJECT_DURATION)
+        .duration(GENERIC_RETURN_DURATION)
         .ease("power2.out")
         .handoff();
     } else {
@@ -561,13 +561,13 @@ export class GroupReleaseController {
       scaleMotion.to({ x: targetScale, y: targetScale }),
       motion(node)
         .delay(delay)
-        .duration(isReject ? GENERIC_REJECT_DURATION : GENERIC_RELEASE_DURATION)
+        .duration(isReturn ? GENERIC_RETURN_DURATION : GENERIC_RELEASE_DURATION)
         .ease("power2.out")
         .handoff()
         .interrupt("retarget")
         .to({ alpha: targetAlpha }),
     ];
-    if (node.labelText?.visible && !isReject) {
+    if (node.labelText?.visible && !isReturn) {
       animations.push(
         motion(node.labelText)
           .duration(Math.min(GENERIC_RELEASE_DURATION, 0.14))
@@ -612,11 +612,11 @@ export class GroupReleaseController {
     if (!node || node.destroyed || !target) return;
     node.position.set(finite(target.x), finite(target.y));
     const entry = lane.context?.entry;
-    const isReject = entry?.mode === GROUP_RELEASE_MODE.REJECT_RETURN;
-    const scale = isReject ? Math.max(0.35, finite(entry?.originScale, 1)) : 1;
+    const isReturn = entry?.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
+    const scale = isReturn ? Math.max(0.35, finite(entry?.originScale, 1)) : 1;
     node.scale.set(scale, scale);
-    node.alpha = Math.max(0, finite(entry?.originAlpha, 1));
-    if (node.labelText && !isReject) {
+    node.alpha = isReturn ? Math.max(0, finite(entry?.originAlpha, 1)) : 1;
+    if (node.labelText && !isReturn) {
       node.labelText.alpha = 1;
       node.labelText.scale.set(1);
     }

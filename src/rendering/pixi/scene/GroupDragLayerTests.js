@@ -135,7 +135,25 @@ export async function runGroupDragLayerTests() {
     assert(layer.nodes.length === 12, "the layer should allocate only the bounded representative count");
     assert(layer.nodes.every((node) => node.eventMode === "none"), "pooled representative nodes must not receive pointer events");
     assert(layer.entryBadges[3].container.visible && layer.entryBadges[3].text.text === "+2", "bundle representatives should expose an additional-member badge");
-    assert(layer.trail.context.instructions.length === 0, "reduced motion should not draw a pointer trail");
+    assert(!("trail" in layer), "batch dragging should not allocate a visible pointer-trail graphics layer");
+    assert(layer.badge.visible === true, "the aggregate count badge should remain visible while the group is interactive");
+
+    layer.update(makeState({
+      center: { x: 320, y: 240 },
+      dropStatus: "accepted",
+      entries,
+      key: "group-a",
+      phase: "accepted",
+      pointer: { x: 320, y: 240 },
+      reducedMotion: true,
+      releasePlan: { entries: [], key: "group-a-release" },
+      totalCount: 20,
+      trail: [],
+    }));
+    assert(
+      layer.badge.visible === false,
+      "the aggregate count badge should leave with pointer ownership instead of lingering during release"
+    );
 
     layer.update(makeState({
       center: { x: 360, y: 260 },
@@ -149,6 +167,51 @@ export async function runGroupDragLayerTests() {
     }));
     assert(layer.nodes.length === 12, "shrinking a drag should retain the node pool for reuse");
     assert(layer.nodes[0].visible && layer.nodes[1].visible && !layer.nodes[2].visible, "unused pooled nodes should be hidden");
+
+    const stationaryEntries = entries.slice(0, 4);
+    layer.update(makeState({
+      center: { x: 220, y: 260 },
+      entries: stationaryEntries,
+      key: "stationary-follow",
+      phase: "gathering",
+      pointer: { x: 220, y: 260 },
+      reducedMotion: false,
+      totalCount: 4,
+      trail: [{ time: 0, x: 220, y: 260 }],
+    }));
+    for (let index = 0; index < 20; index += 1) motionRuntime.step(1 / 60);
+    layer.update(makeState({
+      center: { x: 420, y: 260 },
+      entries: stationaryEntries,
+      key: "stationary-follow",
+      phase: "dragging",
+      pointer: { x: 420, y: 260 },
+      reducedMotion: false,
+      totalCount: 4,
+      trail: [
+        { time: 0, x: 220, y: 260 },
+        { time: 120, x: 420, y: 260 },
+      ],
+    }));
+    const stationaryFollower = layer.nodes[3];
+    const followerXBeforeIdleFrames = stationaryFollower.position.x;
+    for (let index = 0; index < 10; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    const followerXAfterIdleFrames = stationaryFollower.position.x;
+    assert(
+      followerXAfterIdleFrames > followerXBeforeIdleFrames + 20,
+      "followers should consume the remaining pointer history after mouse movement stops"
+    );
+    for (let index = 0; index < 4; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      Math.abs(stationaryFollower.position.x - followerXAfterIdleFrames) < 0.01,
+      "the stationary follower clock should settle instead of running indefinitely"
+    );
 
     const lead = makeEntry("folder-create-lead", 0);
     layer.update(makeState({

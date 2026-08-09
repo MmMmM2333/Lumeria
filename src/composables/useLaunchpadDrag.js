@@ -220,6 +220,15 @@ export function useLaunchpadDrag(options) {
     return Boolean(activeDrag);
   }
 
+  function canUserCancelDrag(drag = activeDrag) {
+    return Boolean(
+      drag?.group &&
+      drag.group.standalone !== true &&
+      drag.group.presentationOnly !== true &&
+      ["gathering", "dragging"].includes(drag.group.phase)
+    );
+  }
+
   function setLayoutProjectionActive(value) {
     if (options.isLayoutProjectionActive && typeof options.isLayoutProjectionActive === "object") {
       options.isLayoutProjectionActive.value = Boolean(value);
@@ -360,6 +369,23 @@ export function useLaunchpadDrag(options) {
     };
   }
 
+  function getBatchCancelZoneRect() {
+    if (!canUserCancelDrag() || typeof options.getBatchCancelZoneRect !== "function") {
+      return null;
+    }
+    const rect = cloneRect(options.getBatchCancelZoneRect());
+    return rect?.width > 0 && rect?.height > 0 ? rect : null;
+  }
+
+  function isPointerInsideBatchCancelZone(drag = activeDrag) {
+    const rect = getBatchCancelZoneRect();
+    return Boolean(
+      drag?.pointer &&
+      rect &&
+      isPointInsideRect(rect, drag.pointer.x, drag.pointer.y)
+    );
+  }
+
   function getSourceCellSize(source, fallbackRect) {
     const isFolder = source?.type === "folder";
     const rect = isFolder ? getFolderPageRect(source.pageIndex) : getPageRect(source?.pageIndex);
@@ -449,7 +475,16 @@ export function useLaunchpadDrag(options) {
       return null;
     }
     const group = activeDrag.group;
+    const holdsReleaseLayout = Boolean(
+      group.presentationOnly === true &&
+      group.releaseCreatedFolderId &&
+      group.releaseLayoutAnchorId &&
+      (group.phase === "committing" || group.phase === "accepted")
+    );
     const state = {
+      canCancel: canUserCancelDrag(activeDrag),
+      cancelArmed: group.cancelArmed === true,
+      cancelSource: group.cancelSource || null,
       center: getPointerCenter(activeDrag),
       draggedIds: [...group.draggedIds],
       dropReason: group.dropReason,
@@ -463,6 +498,8 @@ export function useLaunchpadDrag(options) {
       projectedPages: group.projectedPages,
       reducedMotion: prefersReducedMotion(),
       releaseCreatedFolderId: group.releaseCreatedFolderId,
+      releaseLayoutAnchorId: holdsReleaseLayout ? group.releaseLayoutAnchorId : null,
+      releaseLayoutPages: holdsReleaseLayout ? group.basePages : null,
       releasePlan: group.releasePlan,
       releaseStatus: group.releaseStatus || null,
       releaseSettledIds: group.releaseSettledIds || [],
@@ -483,6 +520,46 @@ export function useLaunchpadDrag(options) {
       previewFrame = 0;
       publishGroupState();
     });
+  }
+
+  function enterBatchCancelZone() {
+    const group = activeDrag?.group;
+    if (!group || group.cancelArmed) return false;
+    group.cancelArmed = true;
+    group.cancelSource = null;
+    group.intent = { type: "cancel" };
+    group.intentKey = "cancel";
+    group.dropReason = null;
+    group.dropStatus = "cancel";
+    group.projectedPages = null;
+    projectedPages.value = null;
+    clearIntentTimer();
+    clearPageTurn();
+    clearFolderPageTurn();
+    clearPendingTarget();
+    dragHitDebugState.value = null;
+    publishGroupState();
+    return true;
+  }
+
+  function leaveBatchCancelZone() {
+    const group = activeDrag?.group;
+    if (!group?.cancelArmed) return false;
+    group.cancelArmed = false;
+    group.intent = null;
+    group.intentKey = null;
+    group.dropReason = null;
+    group.dropStatus = null;
+    evaluateIntent({ force: true });
+    return true;
+  }
+
+  function syncBatchCancelZone() {
+    if (!canUserCancelDrag()) return false;
+    const armed = isPointerInsideBatchCancelZone();
+    if (armed) enterBatchCancelZone();
+    else leaveBatchCancelZone();
+    return armed;
   }
 
   function calcDesktopInsertIndex(clientX, clientY, targetPageIndex = getVisualDesktopPageIndex()) {
@@ -1043,7 +1120,7 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function restoreUncommittedVirtualNavigation(drag) {
+  function restoreUncommittedNavigation(drag) {
     const group = drag?.group;
     if (!group || group.didCommit) return;
     if (group.desktopPageIndex >= options.pages.value.length) {
@@ -1057,16 +1134,36 @@ export function useLaunchpadDrag(options) {
       );
       group.virtualFolderPageIndex = null;
     }
+    if (
+      group.autoOpenedFolderId &&
+      options.openFolderId.value === group.autoOpenedFolderId
+    ) {
+      options.commitOpenFolder(group.baseOpenFolderId || null);
+      group.autoOpenedFolderId = null;
+    }
   }
 
-  function rejectDrop(reason, optionsArg = {}) {
+  function beginReturnToOrigin({
+    cancelSource = null,
+    dropReason = null,
+    dropStatus,
+    keyPrefix,
+    phase,
+  }) {
     const drag = activeDrag;
-    restoreUncommittedVirtualNavigation(drag);
-    drag.group.phase = "rejected";
-    drag.group.dropStatus = "rejected";
-    drag.group.dropReason = reason || "invalid-target";
+    if (!drag?.group) return false;
+    clearIntentTimer();
+    clearPageTurn();
+    clearFolderPageTurn();
+    restoreUncommittedNavigation(drag);
+    drag.group.cancelArmed = false;
+    drag.group.cancelSource = cancelSource;
+    drag.group.phase = phase;
+    drag.group.dropStatus = dropStatus;
+    drag.group.dropReason = dropReason;
     drag.group.projectedPages = null;
-    const releaseKey = `group-release-reject-${groupKey}-${drag.group.leadId}`;
+    projectedPages.value = null;
+    const releaseKey = `${keyPrefix}-${groupKey}-${drag.group.leadId}`;
     const fallbackById = Object.fromEntries(
       drag.group.entries
         .filter((entry) => entry?.item?.id)
@@ -1080,22 +1177,46 @@ export function useLaunchpadDrag(options) {
       key: releaseKey,
       offset: drag.offset,
       pointer: drag.pointer,
-      rejected: true,
+      returnToOrigin: true,
       velocity: drag.velocity,
     });
     drag.group.releaseSettledIds = [];
     drag.group.releaseStatus = "pending";
     clearPendingTarget();
     publishGroupState();
-    if (optionsArg.notify !== false && reason !== "same-placement") {
-      options.onGroupDropRejected?.(reason || "invalid-target", {
-        standalone: drag.group.standalone,
-      });
-    }
     if (prefersReducedMotion()) {
       drag.group.visualCompleted = true;
       endDrag();
     }
+    return true;
+  }
+
+  function rejectDrop(reason, optionsArg = {}) {
+    const drag = activeDrag;
+    const normalizedReason = reason || "invalid-target";
+    if (!beginReturnToOrigin({
+      dropReason: normalizedReason,
+      dropStatus: "rejected",
+      keyPrefix: "group-release-reject",
+      phase: "rejected",
+    })) return false;
+    if (optionsArg.notify !== false && reason !== "same-placement") {
+      options.onGroupDropRejected?.(normalizedReason, {
+        standalone: drag.group.standalone,
+      });
+    }
+    return true;
+  }
+
+  function cancelDrop(source = "unknown") {
+    if (!canUserCancelDrag()) return false;
+    return beginReturnToOrigin({
+      cancelSource: String(source || "unknown"),
+      dropReason: null,
+      dropStatus: "cancelled",
+      keyPrefix: "group-release-cancel",
+      phase: "cancelling",
+    });
   }
 
   function acceptDrop(plan, resolved) {
@@ -1217,6 +1338,11 @@ export function useLaunchpadDrag(options) {
     if (!draggedIds.length || !leadLocation || !targetLocation) {
       throw new Error("Folder creation presentation requires valid lead and target locations");
     }
+    const releaseLayoutAnchorId = leadLocation.kind === "desktop"
+      ? leadLocation.item.id
+      : plan.emptiedFolderIds?.includes(leadLocation.folderId)
+        ? leadLocation.folderId
+        : null;
 
     const activePageIndex = options.pageIndex.value;
     const activeFolderPageIndex = options.folderPageIndex.value;
@@ -1255,6 +1381,8 @@ export function useLaunchpadDrag(options) {
       group: {
         basePages,
         baseRevision: request.baseRevision,
+        cancelArmed: false,
+        cancelSource: null,
         createdFolderId: plan.createdFolderId,
         desktopPageIndex: targetLocation.pageIndex,
         didCommit: false,
@@ -1271,6 +1399,7 @@ export function useLaunchpadDrag(options) {
         presentationOnly: true,
         projectedPages: null,
         releaseCreatedFolderId: plan.createdFolderId,
+        releaseLayoutAnchorId,
         releasePlan: null,
         releaseSettledIds: [],
         releaseStatus: null,
@@ -1339,7 +1468,7 @@ export function useLaunchpadDrag(options) {
     clearPageTurn();
     clearFolderPageTurn();
     clearFolderHoverTimers();
-    restoreUncommittedVirtualNavigation(activeDrag);
+    restoreUncommittedNavigation(activeDrag);
     activeDrag = null;
     pendingDragStart = null;
     dragMeta.value = null;
@@ -1409,6 +1538,8 @@ export function useLaunchpadDrag(options) {
         baseOpenFolderId: options.openFolderId.value,
         basePages: options.clonePages(options.pages.value),
         baseRevision: payload.layoutRevision,
+        cancelArmed: false,
+        cancelSource: null,
         createdFolderId: options.makeId("folder"),
         desktopPageIndex: options.pageIndex.value,
         didCommit: false,
@@ -1544,7 +1675,10 @@ export function useLaunchpadDrag(options) {
       activeDrag.pointer,
       { timeMs: sample.time }
     );
+    maybeCloseAutoOpenedFolder(activeDrag.pointer.x, activeDrag.pointer.y);
+    const cancelArmed = syncBatchCancelZone();
     scheduleVisualPublish();
+    if (cancelArmed) return;
     if (options.openFolderId.value) {
       clearPageTurn();
       scheduleFolderPageTurn(activeDrag.pointer.x);
@@ -1577,6 +1711,10 @@ export function useLaunchpadDrag(options) {
     activeDrag.velocity = sample.velocity;
     activeDrag.lastPointerTime = sample.time;
     activeDrag.pointer = { x: Number(event.clientX), y: Number(event.clientY) };
+    if (syncBatchCancelZone()) {
+      cancelDrop("drop-zone");
+      return;
+    }
     clearIntentTimer();
     commitPendingEdgeTurns();
     const outcome = evaluateIntent({ force: true });
@@ -1595,7 +1733,11 @@ export function useLaunchpadDrag(options) {
   }
 
   function cancelDrag(event = {}) {
+    if (event.userInitiatedCancel === true) {
+      return cancelDrop(event.cancelSource || "explicit");
+    }
     finishDrag({ ...event, type: "pointercancel" });
+    return true;
   }
 
   function disposeDrag() {

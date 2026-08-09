@@ -201,6 +201,9 @@ function createAtomicDragHarness(initialPages, options = {}) {
     folderPageSize: ref(4),
     folderViewportHeight: ref(400),
     getGroupLayoutRevision: () => revision.value,
+    getBatchCancelZoneRect: options.cancelZoneRect
+      ? () => options.cancelZoneRect
+      : undefined,
     getNewFolderName: () => "New Folder",
     gridCols: ref(2),
     gridRows: ref(2),
@@ -340,6 +343,135 @@ export async function runLaunchpadDragTests() {
     assert(harness.calls.dragEnds.length === 1, "visual ownership should release once after landing");
   });
 
+  await withMockPointerEnvironment(async () => {
+    const a = app("cancel-zone-a");
+    const b = app("cancel-zone-b");
+    const originalPages = [[a, b]];
+    const harness = createAtomicDragHarness(originalPages, {
+      cancelZoneRect: {
+        bottom: 80,
+        height: 60,
+        left: 0,
+        right: 400,
+        top: 20,
+        width: 400,
+      },
+    });
+    const target = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(21, target, { clientX: 48, clientY: 152 }),
+      a,
+      { index: 0, pageIndex: 0, type: "page" },
+      {
+        draggedIds: [a.id, b.id],
+        layoutRevision: 0,
+        leadId: a.id,
+        selectionRevision: 2,
+      }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(21, target, {
+      clientX: 180,
+      clientY: 40,
+      timeStamp: 130,
+    }));
+    assert(
+      harness.drag.groupDragState.value?.cancelArmed === true &&
+        harness.drag.groupDragState.value?.dropStatus === "cancel" &&
+        harness.drag.projectedPages.value === null,
+      "moving the captured pointer into the toolbar cancel geometry should arm cancellation and clear previews"
+    );
+
+    harness.drag.updateDragPointer(makePointerEvent(21, target, {
+      clientX: 180,
+      clientY: 180,
+      timeStamp: 145,
+    }));
+    assert(
+      harness.drag.groupDragState.value?.cancelArmed === false &&
+        harness.drag.groupDragState.value?.dropStatus !== "cancel",
+      "leaving the cancel geometry before release should resume normal drop planning"
+    );
+
+    harness.drag.updateDragPointer(makePointerEvent(21, target, {
+      clientX: 180,
+      clientY: 40,
+      timeStamp: 160,
+    }));
+    harness.drag.finishDrag(makePointerEvent(21, target, {
+      button: 0,
+      buttons: 0,
+      clientX: 180,
+      clientY: 40,
+      timeStamp: 175,
+      type: "pointerup",
+    }));
+    const cancelling = harness.drag.groupDragState.value;
+    assert(
+      cancelling?.phase === "cancelling" &&
+        cancelling.dropStatus === "cancelled" &&
+        cancelling.cancelSource === "drop-zone",
+      "releasing in the cancel zone should enter a distinct user-cancelled return phase"
+    );
+    assert(
+      cancelling?.releasePlan?.entries.every((entry) => entry.mode === "return-to-origin"),
+      "cancelled representatives should animate back to their original positions"
+    );
+    assert(
+      harness.calls.commits.length === 0 &&
+        harness.calls.rejected.length === 0 &&
+        JSON.stringify(harness.pages.value) === JSON.stringify(originalPages),
+      "cancellation should neither commit nor report a rejected drop"
+    );
+    settleRelease(harness.drag);
+    assert(
+      harness.drag.groupDragState.value === null &&
+        harness.calls.dragEnds[0]?.phase === "cancelling",
+      "the cancelled return should release drag ownership only after every representative settles"
+    );
+  });
+
+  await withMockPointerEnvironment(async () => {
+    const a = app("escape-a");
+    const b = app("escape-b");
+    const harness = createAtomicDragHarness([[a, b]]);
+    const target = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(22, target, { clientX: 48, clientY: 152 }),
+      a,
+      { index: 0, pageIndex: 0, type: "page" },
+      {
+        draggedIds: [a.id, b.id],
+        layoutRevision: 0,
+        leadId: a.id,
+        selectionRevision: 3,
+      }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(22, target, {
+      clientX: 220,
+      clientY: 210,
+      timeStamp: 130,
+    }));
+    const cancelled = harness.drag.cancelDrag({
+      cancelSource: "keyboard",
+      userInitiatedCancel: true,
+    });
+    assert(cancelled === true, "Escape should be accepted for an active batch drag");
+    assert(
+      harness.drag.groupDragState.value?.phase === "cancelling" &&
+        harness.drag.groupDragState.value?.cancelSource === "keyboard",
+      "keyboard cancellation should use the same return-to-origin lifecycle as the top cancel zone"
+    );
+    assert(
+      harness.calls.commits.length === 0 && harness.calls.rejected.length === 0,
+      "keyboard cancellation should remain separate from accepted and rejected drops"
+    );
+    settleRelease(harness.drag);
+  });
+
   await withMockPointerEnvironment(async ({ timers }) => {
     const a = app("a");
     const b = app("b");
@@ -415,8 +547,10 @@ export async function runLaunchpadDragTests() {
     assert(presented && commitCount === 1, "toolbar folder creation should commit once through the shared presentation owner");
     assert(
       harness.drag.groupDragState.value?.phase === "committing" &&
-        harness.drag.groupDragState.value?.releaseCreatedFolderId === "folder-created",
-      "toolbar creation should hide the real folder while source applications are release-owned"
+        harness.drag.groupDragState.value?.releaseCreatedFolderId === "folder-created" &&
+        harness.drag.groupDragState.value?.releaseLayoutAnchorId === "a" &&
+        harness.drag.groupDragState.value?.releaseLayoutPages?.[0]?.map((item) => item.id).join(",") === "a,b,c",
+      "toolbar creation should hide the real folder and retain the pre-commit desktop layout while source applications are release-owned"
     );
     harness.drag.finishDrag(makePointerEvent(99, { getBoundingClientRect: () => ({}) }, {
       button: 0,

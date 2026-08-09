@@ -87,7 +87,7 @@ export function runGroupReleaseControllerTests() {
     node.scale.set(1.08);
     node.alpha = 0.82;
     const rejectPlan = {
-      entries: [makeEntry("app", GROUP_RELEASE_MODE.REJECT_RETURN, {
+      entries: [makeEntry("app", GROUP_RELEASE_MODE.RETURN_TO_ORIGIN, {
         fallback: { x: 100, y: 90 },
         originAlpha: 0.82,
         originScale: 1.08,
@@ -98,8 +98,29 @@ export function runGroupReleaseControllerTests() {
     const rejectGroup = { ...group, phase: "rejected", releasePlan: rejectPlan };
     controller.update(makeState(rejectGroup, node));
     stepUntil(callbacks, () => callbacks.length > 0);
-    assert(callbacks.length === 1 && callbacks[0].outcome === "settled", "reject return should settle through the same explicit callback channel");
-    assert(Math.abs(node.scale.x - 1.08) < 0.01 && Math.abs(node.alpha - 0.82) < 0.01, "reject return should restore the source visual scale and alpha");
+    assert(callbacks.length === 1 && callbacks[0].outcome === "settled", "origin return should settle through the same explicit callback channel");
+    assert(Math.abs(node.scale.x - 1.08) < 0.01 && Math.abs(node.alpha - 0.82) < 0.01, "origin return should restore the source visual scale and alpha");
+
+    controller.clear("cancel-return-test-reset");
+    callbacks.length = 0;
+    node.position.set(360, 260);
+    const cancelPlan = {
+      ...rejectPlan,
+      key: "plan-cancel-return",
+    };
+    const cancelGroup = {
+      ...group,
+      key: "group-cancel-return",
+      phase: "cancelling",
+      releasePlan: cancelPlan,
+    };
+    controller.update(makeState(cancelGroup, node));
+    assert(controller.lanes.size === 1, "the cancelling phase should create the same origin-return release lane");
+    stepUntil(callbacks, () => callbacks.length > 0);
+    assert(
+      callbacks.length === 1 && callbacks[0].outcome === "settled",
+      "a user-cancelled release should settle through the normal completion channel"
+    );
 
     controller.clear("created-folder-test-reset");
     callbacks.length = 0;

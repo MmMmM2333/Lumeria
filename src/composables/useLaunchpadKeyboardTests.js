@@ -22,9 +22,21 @@ function makeKeyEvent(key, overrides = {}) {
 }
 
 function createKeyboard(overrides = {}) {
-  const calls = { closeDesktop: 0, closeTopmostModal: 0, openFocusedIcon: 0, turnCurrentPage: [] };
+  const calls = {
+    cancelActiveDrag: 0,
+    clearBatchSelection: 0,
+    closeDesktop: 0,
+    closeTopmostModal: 0,
+    openFocusedIcon: 0,
+    turnCurrentPage: [],
+  };
   const keyboard = useLaunchpadKeyboard({
     cancelAltEditMode: () => {},
+    cancelActiveDrag: () => {
+      calls.cancelActiveDrag += 1;
+      return overrides.cancelDrag !== false;
+    },
+    clearBatchSelection: () => { calls.clearBatchSelection += 1; },
     clearSearch: () => {},
     clearFocusedIcon: () => {},
     closeDesktop: () => { calls.closeDesktop += 1; },
@@ -44,7 +56,8 @@ function createKeyboard(overrides = {}) {
     isAppLaunching: ref(false),
     isDesktopClosing: ref(false),
     isDesktopOpen: ref(true),
-    isDragActive: () => false,
+    isBatchSelectionActive: () => Boolean(overrides.batch),
+    isDragActive: () => Boolean(overrides.dragActive),
     isFolderAppLaunchClosing: ref(false),
     isFolderClosing: ref(false),
     isFolderZoomFadeClosing: ref(false),
@@ -67,6 +80,21 @@ function createKeyboard(overrides = {}) {
 }
 
 export function runLaunchpadKeyboardTests() {
+  const dragging = createKeyboard({ batch: true, dragActive: true });
+  const dragEscape = makeKeyEvent("Escape");
+  dragging.keyboard.handleGlobalKeydown(dragEscape);
+  assert(
+    dragging.calls.cancelActiveDrag === 1 &&
+      dragging.calls.clearBatchSelection === 0 &&
+      dragging.calls.closeDesktop === 0,
+    "Escape should cancel the active batch drag without exiting batch selection"
+  );
+  assert(dragEscape.preventDefaultCalled === 1, "a handled drag cancellation should consume Escape");
+
+  const batch = createKeyboard({ batch: true });
+  batch.keyboard.handleGlobalKeydown(makeKeyEvent("Escape"));
+  assert(batch.calls.clearBatchSelection === 1, "Escape without an active drag should still exit batch selection");
+
   const modal = createKeyboard({ hasModal: true });
   const modalEscape = makeKeyEvent("Escape");
   modal.keyboard.handleGlobalKeydown(modalEscape);

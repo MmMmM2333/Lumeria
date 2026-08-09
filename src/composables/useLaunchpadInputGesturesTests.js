@@ -103,6 +103,7 @@ function createHarness(options = {}) {
   const activePageIndex = ref(0);
   const calls = {
     contextMenus: [],
+    dragCancels: [],
     dragFinishes: [],
     dragStarts: [],
     dragUpdates: [],
@@ -119,6 +120,7 @@ function createHarness(options = {}) {
     commitFolderPageIndex: () => {},
     commitOpenFolder: () => {},
     dragControls: {
+      cancelDrag: (event) => calls.dragCancels.push(event),
       finishDrag: (event) => calls.dragFinishes.push(event),
       startDrag: (event) => calls.dragStarts.push(event),
       updateDragPointer: (event) => calls.dragUpdates.push(event),
@@ -146,6 +148,41 @@ function createHarness(options = {}) {
 }
 
 export function runLaunchpadInputGesturesTests() {
+  {
+    const { calls, eventTarget, gestures } = createHarness({ batch: true });
+    const source = { type: "page", pageIndex: 0, index: 0 };
+    const captureTarget = createPointerCaptureTarget();
+    gestures.handleIconPointerDown(
+      makePointerEvent(17, {
+        pointerType: "mouse",
+        target: captureTarget,
+      }),
+      { id: "app-a", type: "app" },
+      source
+    );
+    eventTarget.advanceTo(420);
+    const output = gestures.cancelInputGesture({
+      cancelSource: "keyboard",
+      userInitiatedCancel: true,
+    });
+
+    assert(output?.handled === true, "Escape cancellation should be handled by the active drag gesture");
+    assert(calls.dragStarts.length === 1, "the batch hold should own a drag before cancellation");
+    assert(
+      calls.dragCancels.length === 1 &&
+        calls.dragCancels[0].cancelSource === "keyboard" &&
+        calls.dragCancels[0].userInitiatedCancel === true,
+      "user cancellation metadata should reach the drag controller"
+    );
+    assert(calls.dragFinishes.length === 0, "cancelling must not reinterpret the interaction as a drop");
+    assert(
+      captureTarget.releasedPointers.join(",") === "17" &&
+        eventTarget.listenerCount("pointermove") === 0,
+      "cancelling should release pointer capture and global pointer ownership"
+    );
+    gestures.disposeInputGestures();
+  }
+
   {
     const { calls, eventTarget, gestures } = createHarness();
     const source = { type: "page", pageIndex: 0, index: 0 };

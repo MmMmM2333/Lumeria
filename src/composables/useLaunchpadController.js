@@ -1123,7 +1123,6 @@ export function useLaunchpadController(options = {}) {
         },
         draggedIds: operation.selectedIds,
         leadId: operation.primaryId || operation.selectedIds[0],
-        onComplete: () => requestFolderRename(plan.createdFolderId),
         plan,
         selectionRevision: operation.revision,
       });
@@ -1177,12 +1176,11 @@ export function useLaunchpadController(options = {}) {
   }
 
   function endBatchGroupDrag(group) {
-    if (group?.presentationOnly) {
-      batchSelection.unfreeze("create-folder");
-      return;
-    }
     if (group?.standalone) return;
-    batchSelection.unfreeze("group-drag");
+    batchSelection.unfreeze(group?.presentationOnly ? "create-folder" : "group-drag");
+    if (group?.didCommit === true && group.releaseCreatedFolderId) {
+      batchSelection.deselectAll();
+    }
   }
 
   function planBatchGroupDrop(request) {
@@ -1404,6 +1402,7 @@ export function useLaunchpadController(options = {}) {
     folderPages,
     folderPanelRef,
     folderPageSize,
+    getBatchCancelZoneRect: options.getBatchCancelZoneRect,
     getGroupLayoutRevision: () => batchLayoutRevision.value,
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
     gridCols,
@@ -1520,6 +1519,14 @@ export function useLaunchpadController(options = {}) {
   const {
     handleGlobalKeydown,
   } = useLaunchpadKeyboard({
+    cancelActiveDrag: () => {
+      if (groupDragState.value?.canCancel !== true) return false;
+      const output = cancelInputGesture({
+        cancelSource: "keyboard",
+        userInitiatedCancel: true,
+      });
+      return output?.handled === true;
+    },
     closeTopmostModal: closeTopmostModalFromKeyboard,
     clearBatchSelection,
     cancelAltEditMode,

@@ -4,7 +4,10 @@ import { clientPointToStageVisualPoint } from "../geometry/stageCoordinates.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { GroupReleaseController } from "./GroupReleaseController.js";
-import { makeGroupFollowerTarget } from "./groupDragPresentation.js";
+import {
+  getGroupTrailSettleDurationMs,
+  makeGroupFollowerTarget,
+} from "./groupDragPresentation.js";
 import { makeIconVisualSpec } from "./iconVisualSpec.js";
 import {
   isFolderSlotReleaseMode,
@@ -13,6 +16,12 @@ import {
 
 const GROUP_GATHER_DURATION_SECONDS = 0.22;
 const GROUP_HOVER_LABEL_SCALE = 0.72;
+const GROUP_INTERACTIVE_PHASES = new Set(["gathering", "dragging"]);
+const GROUP_RELEASE_PHASES = new Set(["accepted", "rejected", "cancelling"]);
+
+function isGroupReleasePhase(phase) {
+  return phase === "committing" || GROUP_RELEASE_PHASES.has(phase);
+}
 
 function toStagePoint(point, state) {
   return clientPointToStageVisualPoint(point, state.stageRect) || { x: 0, y: 0 };
@@ -107,9 +116,7 @@ function makeVisualStateKey(entry, state, group, visualSpec) {
 }
 
 function resolveEntryReleaseVisual(entry, state, group, visualSpec, resolveFolderNode) {
-  const releaseOwnsVisual = group.phase === "committing" ||
-    group.phase === "accepted" ||
-    group.phase === "rejected";
+  const releaseOwnsVisual = isGroupReleasePhase(group.phase);
   const releaseEntry = releaseOwnsVisual
     ? group.releasePlan?.entries?.find((candidate) => candidate?.id === entry.item?.id)
     : null;
@@ -143,9 +150,7 @@ function resolveEntryReleaseVisual(entry, state, group, visualSpec, resolveFolde
 
 function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolderNode) {
   node.stageRect = state.stageRect;
-  const releaseOwnsVisual = group.phase === "committing" ||
-    group.phase === "accepted" ||
-    group.phase === "rejected";
+  const releaseOwnsVisual = isGroupReleasePhase(group.phase);
   const releaseVisual = resolveEntryReleaseVisual(
     entry,
     state,
@@ -283,9 +288,6 @@ export class GroupDragLayer extends Container {
     super();
     this.eventMode = "none";
     this.sortableChildren = true;
-    this.trail = new Graphics();
-    this.trail.eventMode = "none";
-    this.trail.zIndex = 1;
     this.badge = new Container();
     this.badge.eventMode = "none";
     this.badge.zIndex = 1000;
@@ -308,25 +310,109 @@ export class GroupDragLayer extends Container {
     this.activeEntryIds = new Set();
     this.phase = null;
     this.badgeSignature = null;
-    this.trailSignature = null;
-    this.trailSource = null;
     this.stageTrailSource = null;
     this.stageTrailOffset = null;
     this.stageTrailRectKey = "";
     this.stageTrailCache = [];
+    this.followerClock = { time: 0 };
+    this.followerClockKey = null;
+    this.followerClockTarget = 0;
+    this.followerFrame = null;
     this.resolveFolderNode = options.resolveFolderNode || (() => null);
     this.resolvePointTarget = options.resolvePointTarget || (() => null);
     this.onReleaseSettled = options.onReleaseSettled || (() => {});
     this.onReleaseAborted = options.onReleaseAborted || (() => {});
+    // GroupReleaseController composes this hook with its own release-frame
+    // resolver. The clock tween below keeps the renderer alive after the
+    // physical pointer stops, so followers can consume the rest of the trail.
+    this.onRender = () => this.renderFollowerFrame();
     this.releaseController = new GroupReleaseController(this, {
       onEntryAbort: (payload) => this.onReleaseAborted(payload),
       onEntryComplete: (payload) => this.onReleaseSettled(payload),
       resolveFolderNode: (payload) => this.resolveFolderNode(payload),
       resolvePointTarget: (payload) => this.resolvePointTarget(payload),
     });
-    this.addChild(this.trail);
     this.addChild(this.badge);
     this.visible = false;
+  }
+
+  clearFollowerClock(reason = "group-follower-clock-clear") {
+    if (this.followerClockKey != null || this.followerFrame) {
+      killMotionOf(this.followerClock, "time", { reason });
+    }
+    this.followerClock.time = 0;
+    this.followerClockKey = null;
+    this.followerClockTarget = 0;
+    this.followerFrame = null;
+  }
+
+  syncFollowerClock(group, stageTrail, nodePointerCenter, visualSpec) {
+    if (
+      group.phase !== "dragging" ||
+      group.reducedMotion === true ||
+      group.entries.length <= 1 ||
+      stageTrail.length < 2
+    ) {
+      this.clearFollowerClock("group-follower-clock-inactive");
+      return null;
+    }
+
+    const latestTime = Number(stageTrail[stageTrail.length - 1]?.time) || 0;
+    const settleDurationMs = getGroupTrailSettleDurationMs(group.entries.length);
+    const targetTime = latestTime + settleDurationMs;
+    const isNewClock = this.followerClockKey !== group.key;
+    const previousTime = isNewClock
+      ? latestTime
+      : Math.max(latestTime, Number(this.followerClock.time) || latestTime);
+    const currentTime = Math.min(previousTime, targetTime);
+    this.followerClock.time = currentTime;
+    this.followerClockKey = group.key;
+    this.followerFrame = {
+      entryCount: group.entries.length,
+      groupKey: group.key,
+      maxDistance: Math.max(64, visualSpec.iconSize * 1.18),
+      nodePointerCenter,
+      stageTrail,
+    };
+
+    if (targetTime > currentTime + 0.001 && this.followerClockTarget !== targetTime) {
+      this.followerClockTarget = targetTime;
+      motion(this.followerClock)
+        .duration((targetTime - currentTime) / 1000)
+        .ease("linear")
+        .overlay()
+        .interrupt("retarget")
+        .to({ time: targetTime })
+        .start();
+    } else if (targetTime <= currentTime + 0.001) {
+      this.followerClockTarget = targetTime;
+    }
+    return currentTime;
+  }
+
+  renderFollowerFrame() {
+    const frame = this.followerFrame;
+    if (
+      !frame ||
+      !this.visible ||
+      this.activeKey !== frame.groupKey ||
+      this.phase !== "dragging"
+    ) return;
+    for (let index = 1; index < frame.entryCount; index += 1) {
+      const node = this.nodes[index];
+      if (!node?.visible || node.parent !== this) continue;
+      const target = makeGroupFollowerTarget(
+        frame.nodePointerCenter,
+        frame.stageTrail,
+        index,
+        frame.entryCount,
+        {
+          maxDistance: frame.maxDistance,
+          timeMs: this.followerClock.time,
+        }
+      );
+      node.position.set(target.x, target.y);
+    }
   }
 
   acquireNode(index) {
@@ -359,13 +445,11 @@ export class GroupDragLayer extends Container {
 
   clear() {
     this.releaseController?.clear?.("group-drag-clear");
+    this.clearFollowerClock("group-drag-clear");
     this.activeKey = null;
     this.activeEntryIds.clear();
     this.phase = null;
     this.visible = false;
-    this.trail.clear();
-    this.trailSignature = null;
-    this.trailSource = null;
     this.stageTrailSource = null;
     this.stageTrailOffset = null;
     this.stageTrailRectKey = "";
@@ -392,7 +476,6 @@ export class GroupDragLayer extends Container {
     this.activeKey = group.key;
     this.phase = group.phase;
     this.visible = true;
-    this.drawTrail(group, state);
 
     const entries = group.entries;
     const visualSpec = resolveVisualSpec(group, state);
@@ -428,10 +511,16 @@ export class GroupDragLayer extends Container {
       }));
       this.stageTrailCache = stageTrail;
     }
+    const followerTime = this.syncFollowerClock(
+      group,
+      stageTrail,
+      nodePointerCenter,
+      visualSpec
+    );
     const nextEntryIds = new Set();
     const releaseNodes = new Map();
     const releasePlan = group.releasePlan;
-    const isReleasePhase = group.phase === "accepted" || group.phase === "rejected";
+    const isReleasePhase = GROUP_RELEASE_PHASES.has(group.phase);
     const releaseState = {
       ...state,
       groupState: group,
@@ -469,6 +558,7 @@ export class GroupDragLayer extends Container {
         {
           maxDistance: Math.max(64, visualSpec.iconSize * 1.18),
           reducedMotion: group.reducedMotion === true,
+          timeMs: followerTime,
         }
       );
 
@@ -487,7 +577,7 @@ export class GroupDragLayer extends Container {
           continue;
         }
         if (isReleasePhase) {
-          // The release controller owns the first accepted/rejected frame.
+          // The release controller owns the first accepted/rejected/cancelling frame.
           // Do not let a gather tween run for one frame and steal its start pose.
           node.alpha = 1;
         } else if (index === 0) {
@@ -551,50 +641,20 @@ export class GroupDragLayer extends Container {
     }
   }
 
-  drawTrail(group, state) {
-    const stageRect = state.stageRect || {};
-    const sourceChanged = this.trailSource !== group.trail;
-    const signature = [
-      group.phase,
-      group.dropStatus,
-      group.reducedMotion ? 1 : 0,
-      stageRect.left,
-      stageRect.top,
-      stageRect.width,
-      stageRect.height,
-    ].join("|");
-    if (!sourceChanged && signature === this.trailSignature) return;
-    this.trailSource = group.trail;
-    this.trailSignature = signature;
-    this.trail.clear();
-    if (group.reducedMotion) return;
-    const points = (group.trail || []).map((point) => toStagePoint(point, state));
-    if (
-      group.totalCount <= 1 ||
-      points.length < 2 ||
-      group.phase === "accepted" ||
-      group.phase === "rejected"
-    ) return;
-    const color = group.dropStatus === "rejected" ? 0xff7070 : 0x63b8ff;
-    for (let index = 1; index < points.length; index += 1) {
-      const alpha = (index / points.length) * 0.3;
-      this.trail
-        .moveTo(points[index - 1].x, points[index - 1].y)
-        .lineTo(points[index].x, points[index].y)
-        .stroke({ alpha, color, width: 2 + index / points.length * 3 });
-    }
-  }
-
   updateBadge(group, pointerCenter, state, visualSpec) {
-    this.badge.visible = group.totalCount > 1;
+    this.badge.visible = group.totalCount > 1 && GROUP_INTERACTIVE_PHASES.has(group.phase);
     if (!this.badge.visible) return;
     const iconSize = visualSpec?.iconSize || state.iconSize;
-    const text = group.phase === "rejected" ? `× ${group.totalCount}` : String(group.totalCount);
+    const text = ["rejected", "cancelling"].includes(group.phase)
+      ? `× ${group.totalCount}`
+      : String(group.totalCount);
     const color = group.dropStatus === "rejected"
       ? 0xe34d59
-      : group.dropStatus === "accepted"
-        ? 0x2fa66a
-        : 0x2478d4;
+      : group.dropStatus === "cancelled"
+        ? 0x64748b
+        : group.dropStatus === "accepted"
+          ? 0x2fa66a
+          : 0x2478d4;
     const width = Math.max(28, 15 + text.length * 9);
     const signature = `${text}:${color}:${width}`;
     if (signature !== this.badgeSignature) {
@@ -641,6 +701,8 @@ export class GroupDragLayer extends Container {
     this.releaseController?.destroy?.();
     this.releaseController = null;
     this.clear();
+    this.onRender = null;
+    this.followerClock = null;
     super.destroy(options);
   }
 }

@@ -121,7 +121,10 @@
 
     <LaunchpadSelectionToolbar
       v-if="isBatchSelectionActive"
+      ref="selectionToolbarRef"
       :can-create-folder="batchSelectedCount >= 2"
+      :cancel-active="isBatchDragCancelActive"
+      :cancel-armed="isBatchDragCancelArmed"
       :disabled="isBatchSelectionFrozen"
       :hidden-count="batchHiddenSelectedCount"
       :scope-selected-count="batchCurrentScopeSelectedCount"
@@ -209,9 +212,11 @@ import "./styles/settings.css";
 const appVersion = appPackage.version;
 const localizationText = useLocalization();
 const localizationRuntime = useLocalizationRuntime();
+const selectionToolbarRef = ref(null);
 const controller = useLaunchpadController({
   activateLocale: localizationRuntime.activate,
   appVersion,
+  getBatchCancelZoneRect: () => selectionToolbarRef.value?.getBoundingClientRect?.() || null,
   localizationText,
   openIconContextMenu,
 });
@@ -350,6 +355,8 @@ const {
   getVisibleDesktopPage,
   folderPageSize,
 } = desktopSurface;
+const isBatchDragCancelActive = computed(() => groupDragState.value?.canCancel === true);
+const isBatchDragCancelArmed = computed(() => groupDragState.value?.cancelArmed === true);
 const {
   folderOpenPreviewFrameGhostedIds,
   isFolderLayerActive,

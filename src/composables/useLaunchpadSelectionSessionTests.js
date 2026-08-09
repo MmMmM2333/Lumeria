@@ -56,4 +56,14 @@ export function runLaunchpadSelectionSessionTests() {
   assert(!session.toggle("app-a"), "committing should freeze selection");
   session.reconcile([], { exitWhenEmpty: true });
   assert(!session.isActive.value, "reconcile may close an empty completed session");
+
+  const activeEmptySession = useLaunchpadSelectionSession();
+  activeEmptySession.begin({ initialIds: ["app-a", "app-b"], primaryId: "app-a" });
+  assert(activeEmptySession.deselectAll(), "deselectAll should clear a mutable active selection");
+  assert(
+    activeEmptySession.isActive.value &&
+      activeEmptySession.selectedCount.value === 0 &&
+      activeEmptySession.primaryId.value === null,
+    "deselectAll should preserve batch mode while removing every selected item"
+  );
 }

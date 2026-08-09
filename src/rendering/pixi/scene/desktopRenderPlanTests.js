@@ -427,6 +427,62 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const lead = { id: "release-layout-lead", type: "app" };
+    const selected = { id: "release-layout-selected", type: "app" };
+    const follower = { id: "release-layout-follower", type: "app" };
+    const tail = { id: "release-layout-tail", type: "app" };
+    const folder = {
+      childPages: [[lead, selected]],
+      children: [lead, selected],
+      id: "release-layout-folder",
+      type: "folder",
+    };
+    const basePages = [[lead, selected, follower, tail]];
+    const committedPages = [[folder, follower, tail]];
+    const basePlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: basePages,
+      gridCols: 4,
+      gridRows: 1,
+    }));
+    const releasePlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: committedPages,
+      dragMeta: { draggedIds: [lead.id, selected.id], item: lead },
+      gridCols: 4,
+      gridRows: 1,
+      groupDragState: {
+        phase: "accepted",
+        releaseCreatedFolderId: folder.id,
+        releaseLayoutAnchorId: lead.id,
+        releaseLayoutPages: basePages,
+      },
+    }));
+    const settledPlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: committedPages,
+      gridCols: 4,
+      gridRows: 1,
+    }));
+    const getTarget = (plan, id) => plan.entries.find((entry) => entry.item.id === id)?.layoutTarget;
+    const baseLeadTarget = getTarget(basePlan, lead.id);
+    const baseFollowerTarget = getTarget(basePlan, follower.id);
+    const releaseFolderTarget = getTarget(releasePlan, folder.id);
+    const releaseFollowerTarget = getTarget(releasePlan, follower.id);
+    const settledFollowerTarget = getTarget(settledPlan, follower.id);
+
+    assert(
+      releaseFolderTarget.x === baseLeadTarget.x && releaseFolderTarget.y === baseLeadTarget.y,
+      "presentation-only folder creation should form the new folder in the vacated lead slot"
+    );
+    assert(
+      releaseFollowerTarget.x === baseFollowerTarget.x && releaseFollowerTarget.y === baseFollowerTarget.y,
+      "unselected desktop icons should retain their pre-commit layout while folder creation releases"
+    );
+    assert(
+      settledFollowerTarget.x !== baseFollowerTarget.x || settledFollowerTarget.y !== baseFollowerTarget.y,
+      "releasing visual ownership should expose the committed layout target for the normal settle"
+    );
+  }
+
+  {
     const folder = { id: "folder-static", type: "folder" };
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],

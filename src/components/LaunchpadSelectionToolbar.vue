@@ -1,74 +1,100 @@
 <template>
   <section
-    class="launchpad-selection-toolbar settings-theme-scope"
+    ref="rootRef"
+    :class="[
+      'launchpad-selection-toolbar',
+      'settings-theme-scope',
+      cancelActive && 'launchpad-selection-toolbar-cancel-active',
+      cancelArmed && 'launchpad-selection-toolbar-cancel-armed',
+    ]"
     role="toolbar"
-    :aria-label="t('launchpad.batch.toolbarLabel')"
-    :aria-busy="disabled"
+    :aria-label="cancelActive ? t('launchpad.batch.cancelDrag') : t('launchpad.batch.toolbarLabel')"
+    :aria-busy="disabled && !cancelActive"
     @contextmenu.stop.prevent
     @pointerdown.stop
   >
-    <button
-      type="button"
-      class="launchpad-selection-toolbar-button launchpad-selection-toolbar-close"
-      :aria-label="t('launchpad.batch.done')"
-      :disabled="disabled"
-      @click="$emit('close')"
+    <div
+      v-if="cancelActive"
+      class="launchpad-selection-toolbar-cancel"
+      aria-live="polite"
     >
-      <DismissIcon aria-hidden="true" />
-    </button>
-
-    <div class="launchpad-selection-toolbar-summary" aria-live="polite">
-      <strong>{{ t("launchpad.batch.selectedCount", { count: selectedCount }) }}</strong>
-      <span v-if="hiddenCount > 0">
-        {{ t("launchpad.batch.hiddenCount", { count: hiddenCount }) }}
+      <span class="launchpad-selection-toolbar-cancel-icon" aria-hidden="true">
+        <DismissIcon />
       </span>
+      <span class="launchpad-selection-toolbar-cancel-copy">
+        <strong>
+          {{ cancelArmed ? t("launchpad.batch.releaseToCancel") : t("launchpad.batch.cancelDrag") }}
+        </strong>
+        <span>{{ t("launchpad.batch.cancelDragHint") }}</span>
+      </span>
+      <kbd>Esc</kbd>
     </div>
 
-    <div class="launchpad-selection-toolbar-actions">
+    <template v-else>
       <button
         type="button"
-        class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action"
+        class="launchpad-selection-toolbar-button launchpad-selection-toolbar-close"
+        :aria-label="t('launchpad.batch.done')"
         :disabled="disabled"
-        @click="$emit('select-scope')"
+        @click="$emit('close')"
       >
-        <SelectAllOnIcon aria-hidden="true" />
-        <span>{{ t("launchpad.batch.selectScope") }}</span>
-        <span v-if="scopeSelectedCount > 0" class="launchpad-selection-toolbar-action-count">
-          {{ scopeSelectedCount }}
-        </span>
+        <DismissIcon aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action"
-        :disabled="disabled || !canCreateFolder"
-        @click="$emit('create-folder')"
-      >
-        <FolderAddIcon aria-hidden="true" />
-        <span>{{ t("launchpad.batch.createFolder") }}</span>
-      </button>
-      <button
-        type="button"
-        class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action launchpad-selection-toolbar-danger"
-        :disabled="disabled || selectedCount === 0"
-        @click="$emit('delete')"
-      >
-        <DeleteIcon aria-hidden="true" />
-        <span>{{ t("launchpad.batch.delete") }}</span>
-      </button>
-    </div>
 
-    <button
-      type="button"
-      class="launchpad-selection-toolbar-button launchpad-selection-toolbar-done"
-      :disabled="disabled"
-      @click="$emit('close')"
-    >
-      {{ t("launchpad.batch.done") }}
-    </button>
+      <div class="launchpad-selection-toolbar-summary" aria-live="polite">
+        <strong>{{ t("launchpad.batch.selectedCount", { count: selectedCount }) }}</strong>
+        <span v-if="hiddenCount > 0">
+          {{ t("launchpad.batch.hiddenCount", { count: hiddenCount }) }}
+        </span>
+      </div>
+
+      <div class="launchpad-selection-toolbar-actions">
+        <button
+          type="button"
+          class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action"
+          :disabled="disabled"
+          @click="$emit('select-scope')"
+        >
+          <SelectAllOnIcon aria-hidden="true" />
+          <span>{{ t("launchpad.batch.selectScope") }}</span>
+          <span v-if="scopeSelectedCount > 0" class="launchpad-selection-toolbar-action-count">
+            {{ scopeSelectedCount }}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action"
+          :disabled="disabled || !canCreateFolder"
+          @click="$emit('create-folder')"
+        >
+          <FolderAddIcon aria-hidden="true" />
+          <span>{{ t("launchpad.batch.createFolder") }}</span>
+        </button>
+        <button
+          type="button"
+          class="launchpad-selection-toolbar-button launchpad-selection-toolbar-action launchpad-selection-toolbar-danger"
+          :disabled="disabled || selectedCount === 0"
+          @click="$emit('delete')"
+        >
+          <DeleteIcon aria-hidden="true" />
+          <span>{{ t("launchpad.batch.delete") }}</span>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="launchpad-selection-toolbar-button launchpad-selection-toolbar-done"
+        :disabled="disabled"
+        @click="$emit('close')"
+      >
+        {{ t("launchpad.batch.done") }}
+      </button>
+    </template>
   </section>
 </template>
 
 <script setup>
+import { ref } from "vue";
 import DeleteIcon from "~icons/fluent/delete-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-20-regular";
 import FolderAddIcon from "~icons/fluent/folder-add-20-regular";
@@ -77,6 +103,8 @@ import { useLocalization } from "../i18n/localization.js";
 
 defineProps({
   canCreateFolder: { type: Boolean, default: false },
+  cancelActive: { type: Boolean, default: false },
+  cancelArmed: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   hiddenCount: { type: Number, default: 0 },
   scopeSelectedCount: { type: Number, default: 0 },
@@ -86,4 +114,9 @@ defineProps({
 defineEmits(["close", "create-folder", "delete", "select-scope"]);
 
 const { t } = useLocalization();
+const rootRef = ref(null);
+
+defineExpose({
+  getBoundingClientRect: () => rootRef.value?.getBoundingClientRect?.() || null,
+});
 </script>

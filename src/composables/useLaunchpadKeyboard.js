@@ -103,7 +103,12 @@ export function useLaunchpadKeyboard(options) {
       return;
     }
     if (!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value) return;
-    if (options.isDragActive()) return;
+    if (options.isDragActive()) {
+      if (event.key === "Escape" && options.cancelActiveDrag?.()) {
+        event.preventDefault();
+      }
+      return;
+    }
     if (event.key === "Escape") {
       handleEscapeKey(event);
       return;

@@ -71,7 +71,7 @@ async function dispatchIconPointer(page, id, options = {}) {
   });
 }
 
-async function enterBatchSelection(page) {
+async function enterBatchSelectionOf(page, ids) {
   await page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     state.enterBatchSelection();
@@ -80,12 +80,17 @@ async function enterBatchSelection(page) {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     return Boolean(state.isBatchSelectionActive);
   })).toBe(true);
-  await dispatchIconPointer(page, "app-0-safari", { pointerId: 41 });
-  await dispatchIconPointer(page, "app-1-mail", { pointerId: 42 });
+  for (let index = 0; index < ids.length; index += 1) {
+    await dispatchIconPointer(page, ids[index], { pointerId: 41 + index });
+  }
   await expect.poll(async () => page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     return [...state.batchSelectedIds];
-  })).toEqual(["app-0-safari", "app-1-mail"]);
+  })).toEqual(ids);
+}
+
+async function enterBatchSelection(page) {
+  await enterBatchSelectionOf(page, ["app-0-safari", "app-1-mail"]);
 }
 
 async function createSmallFolder(page) {
@@ -102,27 +107,29 @@ async function createSmallFolder(page) {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     return !state.groupDragState;
   }, null, { timeout: 4_000 });
-  const folderId = await page.evaluate(() => {
+  const result = await page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return state.activePages.flat().find((item) => item.type === "folder" && item.children?.length === 2)?.id || null;
+    return {
+      batch: state.isBatchSelectionActive,
+      folderId: state.activePages.flat()
+        .find((item) => item.type === "folder" && item.children?.length === 2)?.id || null,
+      openFolderId: state.openFolderId,
+      selectedIds: [...state.batchSelectedIds],
+    };
   });
-  if (!folderId) throw new Error("small test folder was not created");
-  // Folder creation focuses the inline title editor; finish that editor before
-  // starting the next pointer-owned drag.
-  await page.keyboard.press("Escape");
-  await page.evaluate(() => document.activeElement?.blur?.());
+  if (!result.folderId) throw new Error("small test folder was not created");
+  expect(result).toMatchObject({
+    batch: true,
+    openFolderId: null,
+    selectedIds: [],
+  });
   await page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     state.clearBatchSelection();
-    state.commitOpenFolder(null);
     state.commitActivePageIndex(0);
   });
-  await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return !state.openFolderId;
-  }, null, { timeout: 4_000 });
   await page.waitForTimeout(500);
-  return folderId;
+  return result.folderId;
 }
 
 async function readReleasePlan(page) {
@@ -415,4 +422,170 @@ test("created-folder release keeps the hover frame center continuous on pointeru
   expect(Math.abs(continuity.firstReleaseCenter.x - continuity.hoverCenter.x)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(continuity.firstReleaseCenter.y - continuity.hoverCenter.y)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(continuity.folderNodeY - continuity.folderLayoutY)).toBeLessThanOrEqual(0.001);
+});
+
+test("toolbar batch folder creation contains release visuals and holds the pre-commit layout", async ({ page }) => {
+  test.setTimeout(30_000);
+  await waitForFixture(page);
+  const selectedIds = [
+    "app-0-safari",
+    "app-1-mail",
+    "app-2-photos",
+    "app-3-music",
+    "app-4-calendar",
+    "app-5-maps",
+    "app-6-messages",
+    "app-7-notes",
+    "app-8-reminders",
+    "app-9-facetime",
+    "app-10-weather",
+    "app-11-clock",
+    "app-12-books",
+    "app-13-tv",
+  ];
+  const followerId = "app-14-podcasts";
+  await enterBatchSelectionOf(page, selectedIds);
+
+  const release = await page.evaluate(async ({ followerId, selectedIds }) => {
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const state = root?.setupState;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const readTarget = (id) => {
+      const target = layer.lastDesktopRenderPlan?.entries
+        ?.find((entry) => entry.item?.id === id)?.layoutTarget;
+      return target ? { x: target.x, y: target.y } : null;
+    };
+    const beforeSelectedTargets = Object.fromEntries(
+      selectedIds.map((id) => [id, readTarget(id)])
+    );
+    const beforeFollowerTarget = readTarget(followerId);
+    state.createFolderFromBatchSelection();
+
+    return new Promise((resolve, reject) => {
+      let frames = 0;
+      const sample = () => {
+        frames += 1;
+        const group = state.groupDragState;
+        if (group?.phase === "accepted" && group.releasePlan) {
+          const folderId = group.releaseCreatedFolderId;
+          const anchorId = group.releaseLayoutAnchorId;
+          const folderTarget = readTarget(folderId);
+          const followerTarget = readTarget(followerId);
+          if (!folderTarget || !followerTarget) {
+            requestAnimationFrame(sample);
+            return;
+          }
+          resolve({
+            anchorId,
+            badgeVisible: layer.groupDragLayer.badge.visible,
+            beforeAnchorTarget: beforeSelectedTargets[anchorId] || null,
+            beforeFollowerTarget,
+            folderId,
+            folderTarget,
+            followerTarget,
+            releaseEntries: group.releasePlan.entries.map((entry) => ({
+              mode: entry.mode,
+              slotIndex: entry.target?.slotIndex ?? null,
+            })),
+          });
+          return;
+        }
+        if (frames >= 90) {
+          reject(new Error("toolbar folder release did not reach the accepted phase"));
+          return;
+        }
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+  }, { followerId, selectedIds });
+
+  expect(release.badgeVisible).toBe(false);
+  expect(release.releaseEntries.filter((entry) => entry.mode === "created-folder"))
+    .toHaveLength(9);
+  expect(release.releaseEntries
+    .filter((entry) => entry.mode === "created-folder")
+    .every((entry) => entry.slotIndex >= 0 && entry.slotIndex < 9)).toBe(true);
+  expect(release.releaseEntries.slice(9)
+    .every((entry) => entry.mode === "folder-center-absorb")).toBe(true);
+  expect(release.folderTarget).toEqual(release.beforeAnchorTarget);
+  expect(release.followerTarget).toEqual(release.beforeFollowerTarget);
+
+  const settled = await page.evaluate(async ({ beforeFollowerTarget, folderId, followerId }) => {
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const state = root?.setupState;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    const deadline = performance.now() + 5_000;
+    while (performance.now() < deadline) {
+      const followerTarget = layer?.lastDesktopRenderPlan?.entries
+        ?.find((entry) => entry.item?.id === followerId)?.layoutTarget;
+      const hasSettledLayout = followerTarget && (
+        followerTarget.x !== beforeFollowerTarget.x ||
+        followerTarget.y !== beforeFollowerTarget.y
+      );
+      if (!state.groupDragState && hasSettledLayout) {
+        const folder = state.activePages.flat().find((item) => item.id === folderId);
+        return {
+          batch: state.isBatchSelectionActive,
+          childCount: folder?.children?.length || 0,
+          followerTarget: { x: followerTarget.x, y: followerTarget.y },
+          openFolderId: state.openFolderId,
+          selectedIds: [...state.batchSelectedIds],
+        };
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    throw new Error("committed desktop layout did not settle after release ownership ended");
+  }, {
+    beforeFollowerTarget: release.beforeFollowerTarget,
+    folderId: release.folderId,
+    followerId,
+  });
+
+  expect(settled).toMatchObject({
+    batch: true,
+    childCount: 14,
+    openFolderId: null,
+    selectedIds: [],
+  });
+  expect(settled.followerTarget).not.toEqual(release.beforeFollowerTarget);
 });

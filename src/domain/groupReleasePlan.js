@@ -3,10 +3,17 @@ export const GROUP_RELEASE_MODE = Object.freeze({
   FOLDER_PREVIEW_SLOT: "folder-preview-slot",
   FOLDER_CENTER_ABSORB: "folder-center-absorb",
   CREATED_FOLDER: "created-folder",
-  REJECT_RETURN: "reject-return",
+  RETURN_TO_ORIGIN: "return-to-origin",
 });
 
 const PREVIEW_SLOT_LIMIT = 9;
+
+function getPreviewSlotLimit(folderPageSize) {
+  return Math.min(
+    PREVIEW_SLOT_LIMIT,
+    Math.max(0, Math.floor(Number(folderPageSize) || PREVIEW_SLOT_LIMIT))
+  );
+}
 
 function clonePoint(point, fallback = { x: 0, y: 0 }) {
   return {
@@ -49,10 +56,7 @@ function getClosedFolderReleaseMode(basePages, target, folderPageSize) {
   if (!folder) return GROUP_RELEASE_MODE.FOLDER_CENTER_ABSORB;
   const pages = getFolderPages(folder, folderPageSize);
   const beforeCount = pages.reduce((count, page) => count + page.length, 0);
-  const previewLimit = Math.min(
-    PREVIEW_SLOT_LIMIT,
-    Math.max(0, Math.floor(Number(folderPageSize) || PREVIEW_SLOT_LIMIT))
-  );
+  const previewLimit = getPreviewSlotLimit(folderPageSize);
   const canUsePreview = pages.length === 1 && beforeCount < previewLimit;
   const targetIndex = Number(target?.index);
   return canUsePreview && Number.isFinite(targetIndex) && targetIndex >= 0 && targetIndex < previewLimit
@@ -75,13 +79,22 @@ function resolvePlacement(placements, entry) {
 
 function resolveMode(placement, options) {
   const target = placement?.target;
-  if (!target) return options.rejected ? GROUP_RELEASE_MODE.REJECT_RETURN : GROUP_RELEASE_MODE.POINT_HANDOFF;
+  if (!target) return options.returnToOrigin
+    ? GROUP_RELEASE_MODE.RETURN_TO_ORIGIN
+    : GROUP_RELEASE_MODE.POINT_HANDOFF;
   if (target.kind === "closed-folder") {
     return getClosedFolderReleaseMode(options.basePages, target, options.folderPageSize);
   }
-  if (target.kind === "created-folder") return GROUP_RELEASE_MODE.CREATED_FOLDER;
+  if (target.kind === "created-folder") {
+    const targetIndex = Number(target.index);
+    return Number.isFinite(targetIndex) && targetIndex >= 0 && targetIndex < getPreviewSlotLimit(options.folderPageSize)
+      ? GROUP_RELEASE_MODE.CREATED_FOLDER
+      : GROUP_RELEASE_MODE.FOLDER_CENTER_ABSORB;
+  }
   if (target.kind === "desktop" || target.kind === "folder") return GROUP_RELEASE_MODE.POINT_HANDOFF;
-  return options.rejected ? GROUP_RELEASE_MODE.REJECT_RETURN : GROUP_RELEASE_MODE.POINT_HANDOFF;
+  return options.returnToOrigin
+    ? GROUP_RELEASE_MODE.RETURN_TO_ORIGIN
+    : GROUP_RELEASE_MODE.POINT_HANDOFF;
 }
 
 function makeTarget(placement, mode) {
@@ -144,6 +157,10 @@ export function makeGroupReleasePlan(options = {}) {
           pointer: { ...fallbackPointer },
         },
         fallback: clonePoint(fallbackPoint, fallbackPointer),
+        originAlpha: Number.isFinite(Number(entry?.originAlpha))
+          ? Math.max(0, Number(entry.originAlpha))
+          : entry?.originKind === "folder-hidden" ? 0 : 1,
+        originScale: Math.max(0.01, Number(entry?.originScale) || 1),
         target: makeTarget(placement, mode),
         velocity: { ...velocity },
       };

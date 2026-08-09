@@ -94,6 +94,25 @@ export function runGroupReleasePlanTests() {
   });
   assert(desktopPlan.entries[0].mode === GROUP_RELEASE_MODE.POINT_HANDOFF, "desktop placement should use point handoff");
 
+  const returnPlan = makeGroupReleasePlan({
+    entries: [{
+      ...entry("source"),
+      originAlpha: 0.7,
+      originScale: 0.62,
+    }],
+    fallbackById: { source: { x: 40, y: 60 } },
+    key: "release-return",
+    returnToOrigin: true,
+  });
+  assert(
+    returnPlan.entries[0].mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN,
+    "an explicit return should preserve the source-origin release mode"
+  );
+  assert(
+    returnPlan.entries[0].originAlpha === 0.7 && returnPlan.entries[0].originScale === 0.62,
+    "origin returns should preserve their gather source opacity and scale"
+  );
+
   const createdPlan = makeGroupReleasePlan({
     basePages: [[app("source")]],
     entries: [entry("source")],
@@ -107,5 +126,23 @@ export function runGroupReleasePlanTests() {
       createdPlan.entries[0].target.slotIndex === 0 &&
       createdPlan.entries[0].target.expectedChildId === "source",
     "created-folder release should preserve the committed child slot and identity for the visual handoff"
+  );
+
+  const createdOverflowPlan = makeGroupReleasePlan({
+    basePages: [[app("source")]],
+    entries: [entry("source")],
+    folderPageSize: 36,
+    key: "release-created-folder-overflow",
+    placements: [placement("source", { folderId: "new-folder", index: 9, kind: "created-folder" })],
+  });
+  assert(
+    createdOverflowPlan.entries[0].mode === GROUP_RELEASE_MODE.FOLDER_CENTER_ABSORB,
+    "created-folder children beyond the visible 3x3 thumbnail should absorb into the folder center"
+  );
+  assert(
+    createdOverflowPlan.entries[0].target.kind === "created-folder" &&
+      createdOverflowPlan.entries[0].target.folderId === "new-folder" &&
+      createdOverflowPlan.entries[0].target.slotIndex == null,
+    "created-folder overflow should retain folder identity without publishing an out-of-frame slot"
   );
 }

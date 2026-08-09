@@ -91,6 +91,13 @@ export function useLaunchpadSelectionSession() {
     publish([]);
   }
 
+  function deselectAll() {
+    if (!isActive.value || isFrozen.value) return false;
+    rangeAnchor.value = null;
+    publish([]);
+    return true;
+  }
+
   function replace(id, scope = null) {
     if (!isActive.value || isFrozen.value) return false;
     const normalized = normalizeIds([id]);
@@ -202,6 +209,7 @@ export function useLaunchpadSelectionSession() {
     begin,
     beginCommit,
     clear,
+    deselectAll,
     finishCommit,
     freeze,
     frozenReason,

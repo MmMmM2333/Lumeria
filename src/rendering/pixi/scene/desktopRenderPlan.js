@@ -480,6 +480,47 @@ export function getDesktopFrame(state) {
   };
 }
 
+function makeReleaseLayoutTargets(state, desktopFrame, pageWidth, targetX) {
+  const group = state.groupDragState;
+  const releasePages = group?.releaseLayoutPages;
+  if (
+    !Array.isArray(releasePages) ||
+    !group.releaseLayoutAnchorId ||
+    !group.releaseCreatedFolderId ||
+    (group.phase !== "committing" && group.phase !== "accepted")
+  ) return new Map();
+
+  const targets = new Map();
+  releasePages.forEach((page, pageIndex) => {
+    const visibleItems = state.getVisibleDesktopPage(page);
+    const metrics = getDesktopGridMetrics({
+      cols: state.gridCols,
+      height: desktopFrame.height,
+      isSearchMode: state.isSearchMode,
+      paddingTop: state.desktopGridDebugOptions?.paddingTop,
+      rows: state.gridRows,
+      visibleCount: visibleItems.length,
+      width: desktopFrame.width,
+    });
+    visibleItems.forEach((item, index) => {
+      if (!item?.id) return;
+      const slot = getGridSlotRect(metrics, index);
+      const sizing = getDesktopIconSizing(state, slot);
+      const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
+      const y = desktopFrame.top + slot.top + slot.height / 2;
+      const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
+      targets.set(item.id, item.type === "folder"
+        ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
+        : { x, y });
+    });
+  });
+
+  const anchorTarget = targets.get(group.releaseLayoutAnchorId);
+  if (!anchorTarget) return new Map();
+  targets.set(group.releaseCreatedFolderId, { ...anchorTarget });
+  return targets;
+}
+
 export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const state = normalizeDesktopHandoffState(inputState);
   const selectedAppIds = normalizeFolderIdSet(state.selectedAppIds);
@@ -489,6 +530,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const desktopFrame = getDesktopFrame(state);
   const pageWidth = desktopFrame.width;
   const targetX = -activePageIndex * pageWidth;
+  const releaseLayoutTargets = makeReleaseLayoutTargets(state, desktopFrame, pageWidth, targetX);
   const effectiveFolderSourceGhostedIds = options.effectiveFolderSourceGhostedIds || state.folderSourceGhostedIds;
   const folderDropFrameSuppressedIds = options.folderDropFrameSuppressedIds || new Set();
   const folderHandoffEntries = options.folderHandoffEntries || new Map();
@@ -538,9 +580,10 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
       const y = desktopFrame.top + slot.top + slot.height / 2;
       const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
-      const stableLayoutTarget = item?.type === "folder"
+      const committedLayoutTarget = item?.type === "folder"
         ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
         : { x, y };
+      const stableLayoutTarget = releaseLayoutTargets.get(item?.id) || committedLayoutTarget;
       const stableScreenTarget = item?.type === "folder"
         ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
         : null;

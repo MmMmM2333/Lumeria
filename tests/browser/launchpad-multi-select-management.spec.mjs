@@ -210,10 +210,12 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
       ...(item.children || []).map((child) => child.id),
     ]));
     return {
+      batch: state.isBatchSelectionActive,
       beforeRelease,
       duplicateIds: [...new Set(allIds.filter((id, index) => allIds.indexOf(id) !== index))],
       folderChildren: folder?.children?.map((child) => child.id) || [],
       groupEnded: state.groupDragState == null,
+      openFolderId: state.openFolderId,
       selectedIds: [...state.batchSelectedIds],
     };
   });
@@ -233,7 +235,176 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
   ]);
   expect(result.duplicateIds).toEqual([]);
   expect(result.groupEnded).toBe(true);
-  expect(result.selectedIds).toEqual(["app-0-safari", "app-1-mail"]);
+  expect(result.batch).toBe(true);
+  expect(result.openFolderId).toBeNull();
+  expect(result.selectedIds).toEqual([]);
+});
+
+test("top cancel zone and Escape return a batch drag without changing layout", async ({ page }) => {
+  await waitForFixture(page);
+  await page.evaluate(() => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    state.enterBatchSelection();
+  });
+  await dispatchIconPointer(page, "app-0-safari", { pointerId: 71 });
+  await dispatchIconPointer(page, "app-1-mail", { pointerId: 72 });
+
+  const zoneResult = await page.evaluate(async () => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const before = JSON.stringify(state.activePages);
+    const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
+      area: "desktop",
+      id: "app-0-safari",
+      pageIndex: 0,
+    });
+    const start = {
+      x: (bounds.left + bounds.right) / 2,
+      y: (bounds.top + bounds.bottom) / 2,
+    };
+    const target = document.elementFromPoint(start.x, start.y);
+    const init = {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: start.x,
+      clientY: start.y,
+      isPrimary: true,
+      pointerId: 73,
+      pointerType: "mouse",
+      view: window,
+    };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+    await wait(540);
+    const toolbar = document.querySelector(".launchpad-selection-toolbar-cancel-active");
+    if (!toolbar) throw new Error("Batch cancel zone did not replace the selection toolbar");
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const cancelPoint = {
+      x: toolbarRect.left + toolbarRect.width / 2,
+      y: toolbarRect.top + toolbarRect.height / 2,
+    };
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: cancelPoint.x,
+      clientY: cancelPoint.y,
+    }));
+    await wait(80);
+    const armed = {
+      cancelArmed: state.groupDragState?.cancelArmed,
+      dropStatus: state.groupDragState?.dropStatus,
+      text: toolbar.textContent,
+    };
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      ...init,
+      buttons: 0,
+      clientX: cancelPoint.x,
+      clientY: cancelPoint.y,
+    }));
+    await wait(20);
+    const release = {
+      cancelSource: state.groupDragState?.cancelSource,
+      modes: state.groupDragState?.releasePlan?.entries?.map((entry) => entry.mode) || [],
+      phase: state.groupDragState?.phase,
+    };
+    await wait(450);
+    return {
+      armed,
+      batch: state.isBatchSelectionActive,
+      frozen: state.isBatchSelectionFrozen,
+      groupEnded: state.groupDragState == null,
+      layoutUnchanged: JSON.stringify(state.activePages) === before,
+      release,
+      selectedIds: [...state.batchSelectedIds],
+    };
+  });
+
+  expect(zoneResult.armed).toMatchObject({
+    cancelArmed: true,
+    dropStatus: "cancel",
+  });
+  expect(zoneResult.armed.text).toContain("松开以取消本次拖拽");
+  expect(zoneResult.release).toMatchObject({
+    cancelSource: "drop-zone",
+    phase: "cancelling",
+  });
+  expect(zoneResult.release.modes.every((mode) => mode === "return-to-origin")).toBe(true);
+  expect(zoneResult).toMatchObject({
+    batch: true,
+    frozen: false,
+    groupEnded: true,
+    layoutUnchanged: true,
+    selectedIds: ["app-0-safari", "app-1-mail"],
+  });
+
+  const escapeResult = await page.evaluate(async () => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const before = JSON.stringify(state.activePages);
+    const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
+      area: "desktop",
+      id: "app-0-safari",
+      pageIndex: 0,
+    });
+    const start = {
+      x: (bounds.left + bounds.right) / 2,
+      y: (bounds.top + bounds.bottom) / 2,
+    };
+    const target = document.elementFromPoint(start.x, start.y);
+    const init = {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: start.x,
+      clientY: start.y,
+      isPrimary: true,
+      pointerId: 74,
+      pointerType: "mouse",
+      view: window,
+    };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+    await wait(540);
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: start.x + 90,
+      clientY: start.y + 40,
+    }));
+    await wait(60);
+    const escape = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      code: "Escape",
+      key: "Escape",
+    });
+    window.dispatchEvent(escape);
+    await wait(20);
+    const release = {
+      cancelSource: state.groupDragState?.cancelSource,
+      phase: state.groupDragState?.phase,
+    };
+    await wait(450);
+    return {
+      batch: state.isBatchSelectionActive,
+      defaultPrevented: escape.defaultPrevented,
+      groupEnded: state.groupDragState == null,
+      layoutUnchanged: JSON.stringify(state.activePages) === before,
+      release,
+      selectedIds: [...state.batchSelectedIds],
+    };
+  });
+
+  expect(escapeResult).toMatchObject({
+    batch: true,
+    defaultPrevented: true,
+    groupEnded: true,
+    layoutUnchanged: true,
+    release: {
+      cancelSource: "keyboard",
+      phase: "cancelling",
+    },
+    selectedIds: ["app-0-safari", "app-1-mail"],
+  });
 });
 
 test("Alt quick edit remains mutually exclusive with batch deletion", async ({ page }) => {
