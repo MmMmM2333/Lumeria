@@ -1,13 +1,14 @@
 import { Container, Graphics, Text } from "pixi.js";
+import {
+  GROUP_TRANSFER_OUTCOME,
+  GROUP_TRANSFER_PHASE,
+  isInteractiveGroupTransferPhase,
+} from "../../../domain/groupTransferSession.js";
 import { IconNode } from "../nodes/IconNode.js";
 import { clientPointToStageVisualPoint } from "../geometry/stageCoordinates.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { GroupReleaseController } from "./GroupReleaseController.js";
-import {
-  GROUP_RELEASE_ROLE,
-  GROUP_RELEASE_START_KIND,
-} from "../../../domain/groupReleasePopulation.js";
 import {
   getGroupTrailSettleDurationMs,
   makeGroupFollowerTarget,
@@ -17,29 +18,44 @@ import {
   isFolderSlotReleaseMode,
   makeFolderSlotReleaseVisualSpec,
 } from "./folderReleaseVisual.js";
+import {
+  makeFolderShellVisualKey,
+  makeItemVisualKey,
+} from "./visualOwnershipRegistry.js";
 
 const GROUP_GATHER_DURATION_SECONDS = 0.22;
 const GROUP_HOVER_LABEL_SCALE = 0.72;
 const GROUP_RELEASE_PREWARM_BATCH_SIZE = 1;
-const GROUP_INTERACTIVE_PHASES = new Set(["gathering", "dragging"]);
-const GROUP_RELEASE_PHASES = new Set(["accepted", "rejected", "cancelling"]);
+const GROUP_RUNTIME_PHASES = new Set([
+  GROUP_TRANSFER_PHASE.RELEASING,
+  GROUP_TRANSFER_PHASE.RETURNING,
+]);
 
 function isGroupReleasePhase(phase) {
-  return phase === "committing" || GROUP_RELEASE_PHASES.has(phase);
+  return GROUP_RUNTIME_PHASES.has(phase);
 }
 
 function getEntryZIndex(entry, index, group) {
-  if (entry?.releaseRole === GROUP_RELEASE_ROLE.FOLDER_CREATE_TARGET) return 600;
-  if (entry?.releaseRole === GROUP_RELEASE_ROLE.LEAD) return 800;
-  if (entry?.item?.id === group?.leadId || entry?.originKind === "lead") return 800;
+  if (Number.isFinite(Number(entry?.zBand))) return Number(entry.zBand);
+  if (entry?.releaseRole === "folder-create-target") return 600;
+  if (entry?.releaseRole === "lead") return 900;
+  if (entry?.item?.id === group?.leadId || entry?.originKind === "lead") return 900;
   if (entry?.originKind === "folder-create-target") return 600;
   return 400 - index;
 }
 
 function getReleaseStart(entry) {
   const start = entry?.releaseStart;
-  if (!start || start.kind === GROUP_RELEASE_START_KIND.CURRENT_POSE) return null;
+  if (!start || start.kind === "current-pose") return null;
   return start;
+}
+
+function getEntryActorKey(entry) {
+  const actorKey = entry?.actorKey;
+  if (typeof actorKey !== "string" || !actorKey) {
+    throw new Error(`Group drag entry is missing actorKey: ${String(entry?.item?.id || "unknown")}`);
+  }
+  return actorKey;
 }
 
 function toStagePoint(point, state) {
@@ -137,7 +153,7 @@ function makeVisualStateKey(entry, state, group, visualSpec) {
 function resolveEntryReleaseVisual(entry, state, group, visualSpec, resolveFolderNode) {
   const releaseOwnsVisual = isGroupReleasePhase(group.phase);
   const releaseEntry = releaseOwnsVisual
-    ? group.releasePlan?.entries?.find((candidate) => candidate?.id === entry.item?.id)
+    ? group.runtimePlan?.entries?.find((candidate) => candidate?.id === entry.item?.id)
     : null;
   if (!releaseEntry || !isFolderSlotReleaseMode(releaseEntry.mode)) {
     return { folderSlot: false, scaleMultiplier: 1, visualSpec };
@@ -326,7 +342,7 @@ export class GroupDragLayer extends Container {
     this.nodes = [];
     this.entryBadges = [];
     this.activeKey = null;
-    this.activeEntryIds = new Set();
+    this.activeNodesByActorKey = new Map();
     this.phase = null;
     this.badgeSignature = null;
     this.stageTrailSource = null;
@@ -343,18 +359,201 @@ export class GroupDragLayer extends Container {
     this.onReleaseSettled = options.onReleaseSettled || (() => {});
     this.onReleaseAborted = options.onReleaseAborted || (() => {});
     this.onPrewarmRequest = options.onPrewarmRequest || (() => {});
+    this.onRenderRequest = options.onRenderRequest || this.onPrewarmRequest;
+    this.onVisualOwnershipChange = options.onVisualOwnershipChange || (() => {});
+    this.visualOwnership = options.visualOwnership || null;
+    this.visualOwnershipToken = null;
+    this.ownedVisualKeys = new Set();
+    this.ownershipKeysByActor = new Map();
+    this.settledOwnershipActorKeys = new Set();
+    this.pendingFolderActorHandoffs = new Map();
+    this.ownershipRuntimePlanKey = null;
     // GroupReleaseController composes this hook with its own release-frame
     // resolver. The clock tween below keeps the renderer alive after the
     // physical pointer stops, so followers can consume the rest of the trail.
     this.onRender = () => this.renderFollowerFrame();
     this.releaseController = new GroupReleaseController(this, {
-      onEntryAbort: (payload) => this.onReleaseAborted(payload),
-      onEntryComplete: (payload) => this.onReleaseSettled(payload),
+      onEntryAbort: (payload) => this.finishReleaseActor(payload, true),
+      onEntryComplete: (payload) => this.finishReleaseActor(payload, false),
+      onFolderShellComplete: (payload) => this.finishFolderShellActor(payload),
+      onRenderRequest: (reason) => this.onRenderRequest(reason),
       resolveFolderNode: (payload) => this.resolveFolderNode(payload),
       resolvePointTarget: (payload) => this.resolvePointTarget(payload),
     });
     this.addChild(this.badge);
     this.visible = false;
+  }
+
+  releaseAllVisualOwnership(reason = "group-transfer-ownership-clear") {
+    const token = this.visualOwnershipToken;
+    if (token != null && this.visualOwnership) {
+      this.visualOwnership.releaseByToken(token);
+    }
+    const changed = this.ownedVisualKeys.size > 0 || token != null;
+    this.visualOwnershipToken = null;
+    this.ownedVisualKeys.clear();
+    this.ownershipKeysByActor.clear();
+    this.settledOwnershipActorKeys.clear();
+    this.pendingFolderActorHandoffs.clear();
+    this.ownershipRuntimePlanKey = null;
+    if (changed) this.onVisualOwnershipChange(reason);
+  }
+
+  syncVisualOwnership(group = null) {
+    const isActive = Boolean(
+      group?.key &&
+      group.phase !== GROUP_TRANSFER_PHASE.SETTLED
+    );
+    if (!isActive || !this.visualOwnership) {
+      this.releaseAllVisualOwnership("group-transfer-inactive");
+      return { folderShellIds: new Set(), itemIds: new Set() };
+    }
+
+    const token = `group-transfer:${group.key}`;
+    if (this.visualOwnershipToken !== token) {
+      this.releaseAllVisualOwnership("group-transfer-session-replaced");
+      this.visualOwnershipToken = token;
+    }
+    const runtimePlanKey = group.runtimePlan?.key || null;
+    if (runtimePlanKey !== this.ownershipRuntimePlanKey) {
+      this.ownershipRuntimePlanKey = runtimePlanKey;
+      this.settledOwnershipActorKeys.clear();
+      this.pendingFolderActorHandoffs.clear();
+    }
+
+    const desired = new Set();
+    const keysByActor = new Map();
+    const actorByKey = new Map();
+    const actors = group.presentationPlan?.actors || [];
+    for (const actor of actors) {
+      if (!actor?.key || this.settledOwnershipActorKeys.has(actor.key)) continue;
+      const keys = actor.role === "folder-shell"
+        ? [makeFolderShellVisualKey(actor.endAnchor?.folderId)]
+        : (actor.memberIds || []).map(makeItemVisualKey);
+      const normalizedKeys = keys.filter(Boolean);
+      keysByActor.set(actor.key, normalizedKeys);
+      for (const key of normalizedKeys) {
+        desired.add(key);
+        actorByKey.set(key, actor.key);
+      }
+    }
+    const ownsCommittedShells = group.outcome === GROUP_TRANSFER_OUTCOME.ACCEPTED && [
+      GROUP_TRANSFER_PHASE.COMMITTING,
+      GROUP_TRANSFER_PHASE.RELEASING,
+    ].includes(group.phase);
+    const prospectiveFolderIds = ownsCommittedShells
+      ? [
+        group.semanticPlan?.effects?.createdFolderId,
+        ...(group.semanticPlan?.effects?.emptiedFolderIds || []),
+      ].filter(Boolean)
+      : [];
+    for (const folderId of prospectiveFolderIds) {
+      const actorKey = `folderShell:${folderId}`;
+      const key = makeFolderShellVisualKey(folderId);
+      if (!this.settledOwnershipActorKeys.has(actorKey) && key) {
+        desired.add(key);
+        if (!keysByActor.has(actorKey)) keysByActor.set(actorKey, [key]);
+        actorByKey.set(key, actorKey);
+      }
+    }
+
+    for (const key of desired) {
+      this.visualOwnership.acquire(key, {
+        actorKey: actorByKey.get(key) || null,
+        folderId: key.startsWith("folderShell:") ? key.slice("folderShell:".length) : null,
+        kind: "group-transfer",
+        token,
+      });
+    }
+    for (const key of this.ownedVisualKeys) {
+      if (!desired.has(key)) this.visualOwnership.release(key, token);
+    }
+    this.ownedVisualKeys = desired;
+    this.ownershipKeysByActor = keysByActor;
+
+    const itemIds = new Set();
+    const folderShellIds = new Set();
+    for (const key of desired) {
+      if (key.startsWith("item:")) itemIds.add(key.slice("item:".length));
+      if (key.startsWith("folderShell:")) folderShellIds.add(key.slice("folderShell:".length));
+    }
+    return { folderShellIds, itemIds };
+  }
+
+  finishReleaseActor(payload, aborted) {
+    const actorKey = payload?.actorKey || null;
+    if (aborted) {
+      if (payload?.node && !payload.node.destroyed) payload.node.visible = false;
+      for (const node of this.nodes) {
+        if (node && !node.destroyed) node.visible = false;
+      }
+      for (const badge of this.entryBadges) badge.container.visible = false;
+      this.releaseController.hideFolderShellActors?.();
+      this.releaseAllVisualOwnership("group-transfer-actor-aborted");
+      this.onReleaseAborted({ ...payload, actorKey });
+      return;
+    }
+    const shellActorKey = this.getCreatedFolderShellActorKey(payload);
+    if (actorKey && shellActorKey && !this.settledOwnershipActorKeys.has(shellActorKey)) {
+      this.pendingFolderActorHandoffs.set(actorKey, { payload: { ...payload, actorKey }, shellActorKey });
+      return;
+    }
+    this.handoffReleaseActor({ ...payload, actorKey });
+  }
+
+  getCreatedFolderShellActorKey(payload) {
+    const runtimePlan = payload?.runtimePlan || null;
+    const actorKey = payload?.actorKey || null;
+    const entry = runtimePlan?.entries?.find((candidate) => candidate?.actorKey === actorKey) || null;
+    if (entry?.mode !== "created-folder") return null;
+    const folderId = entry.target?.folderId || payload?.release?.targetFolderId || null;
+    const shellActor = runtimePlan?.shellActors?.find((candidate) => (
+      candidate?.role === "folder-shell" &&
+      (!folderId || candidate.endAnchor?.folderId === folderId)
+    ));
+    return shellActor?.key || null;
+  }
+
+  releaseActorOwnership(actorKey) {
+    if (!actorKey) return;
+    this.settledOwnershipActorKeys.add(actorKey);
+    const keys = this.ownershipKeysByActor.get(actorKey) || [];
+    for (const key of keys) {
+      this.visualOwnership?.release?.(key, this.visualOwnershipToken);
+      this.ownedVisualKeys.delete(key);
+    }
+    this.ownershipKeysByActor.delete(actorKey);
+  }
+
+  handoffReleaseActor(payload, options = {}) {
+    const actorKey = payload?.actorKey || null;
+    if (payload?.node && !payload.node.destroyed) payload.node.visible = false;
+    this.releaseActorOwnership(actorKey);
+    this.pendingFolderActorHandoffs.delete(actorKey);
+    if (options.notifyOwnership !== false) {
+      this.onVisualOwnershipChange("group-transfer-actor-handoff");
+    }
+    this.onReleaseSettled({ ...payload, actorKey });
+  }
+
+  finishFolderShellActor(payload = {}) {
+    const actorKey = payload.actorKey || null;
+    if (!actorKey || (payload.planKey && payload.planKey !== this.ownershipRuntimePlanKey)) return false;
+    if (this.settledOwnershipActorKeys.has(actorKey)) return true;
+
+    const queued = [...this.pendingFolderActorHandoffs.values()]
+      .filter((entry) => entry.shellActorKey === actorKey);
+    this.releaseController.hideFolderShellActors?.();
+    for (const entry of queued) {
+      const node = entry.payload?.node;
+      if (node && !node.destroyed) node.visible = false;
+    }
+    this.releaseActorOwnership(actorKey);
+    for (const entry of queued) {
+      this.handoffReleaseActor(entry.payload, { notifyOwnership: false });
+    }
+    this.onVisualOwnershipChange("group-transfer-folder-shell-handoff");
+    return true;
   }
 
   clearFollowerClock(reason = "group-follower-clock-clear") {
@@ -437,6 +636,51 @@ export class GroupDragLayer extends Container {
     }
   }
 
+  bindEntryNodes(entries, options = {}) {
+    if (this.nodes.length < entries.length) this.acquireNode(entries.length - 1);
+
+    const previousNodesByActorKey = options.retainExisting === false
+      ? new Map()
+      : this.activeNodesByActorKey;
+    const actorKeys = entries.map(getEntryActorKey);
+    const uniqueActorKeys = new Set(actorKeys);
+    if (uniqueActorKeys.size !== actorKeys.length) {
+      throw new Error("Group drag entries must have unique actorKey values");
+    }
+
+    const badgeByNode = new Map(
+      this.nodes.map((node, index) => [node, this.entryBadges[index]])
+    );
+    const retainedNodesByActorKey = new Map();
+    const reservedNodes = new Set();
+    for (const actorKey of actorKeys) {
+      const node = previousNodesByActorKey.get(actorKey);
+      if (!node || !badgeByNode.has(node) || reservedNodes.has(node)) continue;
+      retainedNodesByActorKey.set(actorKey, node);
+      reservedNodes.add(node);
+    }
+
+    const freeNodes = this.nodes.filter((node) => !reservedNodes.has(node));
+    const activeNodes = [];
+    const nextNodesByActorKey = new Map();
+    for (const actorKey of actorKeys) {
+      const node = retainedNodesByActorKey.get(actorKey) || freeNodes.shift();
+      if (!node) throw new Error(`Group drag node pool exhausted for actor: ${actorKey}`);
+      activeNodes.push(node);
+      nextNodesByActorKey.set(actorKey, node);
+    }
+
+    const activeNodeSet = new Set(activeNodes);
+    const inactiveNodes = this.nodes.filter((node) => !activeNodeSet.has(node));
+    this.nodes = [...activeNodes, ...inactiveNodes];
+    this.entryBadges = this.nodes.map((node) => badgeByNode.get(node));
+    this.activeNodesByActorKey = nextNodesByActorKey;
+    return {
+      actorKeys,
+      retainedActorKeys: new Set(retainedNodesByActorKey.keys()),
+    };
+  }
+
   acquireNode(index) {
     while (this.nodes.length <= index) {
       const node = new IconNode({ onAction: () => {} });
@@ -481,9 +725,10 @@ export class GroupDragLayer extends Container {
 
   clear() {
     this.releaseController?.clear?.("group-drag-clear");
+    this.releaseAllVisualOwnership("group-drag-clear");
     this.clearFollowerClock("group-drag-clear");
     this.activeKey = null;
-    this.activeEntryIds.clear();
+    this.activeNodesByActorKey.clear();
     this.phase = null;
     this.prewarmTargetCount = 0;
     this.visible = false;
@@ -514,8 +759,10 @@ export class GroupDragLayer extends Container {
       return;
     }
     const entries = group.entries;
-    const isReleasePhase = GROUP_RELEASE_PHASES.has(group.phase);
+    const isReleasePhase = GROUP_RUNTIME_PHASES.has(group.phase);
+    const isNewGroup = this.activeKey !== group.key;
     if (isReleasePhase && this.nodes.length < entries.length) {
+      if (isNewGroup) this.activeNodesByActorKey.clear();
       this.activeKey = group.key;
       this.phase = group.phase;
       this.visible = true;
@@ -525,11 +772,9 @@ export class GroupDragLayer extends Container {
       this.prewarmReleaseNodes();
       return;
     }
-    const isNewGroup = this.activeKey !== group.key;
-    const previousEntryIds = isNewGroup ? new Set() : this.activeEntryIds;
     this.activeKey = group.key;
     this.phase = group.phase;
-    this.prewarmTargetCount = GROUP_INTERACTIVE_PHASES.has(group.phase) || group.phase === "committing"
+    this.prewarmTargetCount = isInteractiveGroupTransferPhase(group.phase) || group.phase === GROUP_TRANSFER_PHASE.COMMITTING
       ? Math.max(0, Math.floor(Number(group.releaseVisualCount) || 0))
       : 0;
     this.visible = true;
@@ -538,7 +783,10 @@ export class GroupDragLayer extends Container {
     // Release-lane cancellation can restore the previous motion's final
     // scale.  Synchronize the plan before pooled nodes receive their new
     // release visual state so that cancellation cannot overwrite this frame.
-    this.releaseController.preparePlan?.(group.releasePlan?.key || null);
+    this.releaseController.preparePlan?.(group.runtimePlan?.key || null);
+    const { actorKeys, retainedActorKeys } = this.bindEntryNodes(entries, {
+      retainExisting: !isNewGroup,
+    });
     const visualOffsetY = getIconVisualOffsetY(visualSpec.textless);
     const pointerCenter = toStagePoint(group.center || group.pointer, state);
     const nodePointerCenter = {
@@ -573,9 +821,12 @@ export class GroupDragLayer extends Container {
       nodePointerCenter,
       visualSpec
     );
-    const nextEntryIds = new Set();
     const releaseNodes = new Map();
-    const releasePlan = group.releasePlan;
+    const runtimePlan = group.runtimePlan;
+    const settledActorKeys = new Set([
+      ...(group.settledActorKeys || []),
+      ...this.settledOwnershipActorKeys,
+    ]);
     const releaseState = {
       ...state,
       groupState: group,
@@ -584,12 +835,17 @@ export class GroupDragLayer extends Container {
     };
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
+      const actorKey = actorKeys[index];
       const entryId = entry.item.id;
-      const isNewEntry = !previousEntryIds.has(entryId);
+      const isNewEntry = !retainedActorKeys.has(actorKey);
       const releaseStart = isReleasePhase ? getReleaseStart(entry) : null;
       const releaseStartPoint = releaseStart?.point || entry.origin;
-      nextEntryIds.add(entryId);
-      const node = this.acquireNode(index);
+      const node = this.nodes[index];
+      if (isReleasePhase && settledActorKeys.has(actorKey)) {
+        node.visible = false;
+        this.entryBadges[index].container.visible = false;
+        continue;
+      }
       const releaseSourceCenter = isReleasePhase && node.parent === this
         ? (isNewEntry
           ? toStagePoint(releaseStartPoint, state)
@@ -645,12 +901,12 @@ export class GroupDragLayer extends Container {
           restoreNodeVisualCenter(this, node, releaseSourceCenter);
         }
         node.alpha = entry.originKind === "folder-hidden" ? 0 : 0.82;
-        if (group.phase === "committing") {
+        if (group.phase === GROUP_TRANSFER_PHASE.COMMITTING) {
           node.alpha = 1;
           continue;
         }
         if (isReleasePhase) {
-          // The release controller owns the first accepted/rejected/cancelling frame.
+          // The release controller owns the first releasing/returning frame.
           // Do not let a gather tween run for one frame and steal its start pose.
           node.alpha = Number.isFinite(Number(releaseStart?.alpha))
             ? Math.max(0, Number(releaseStart.alpha))
@@ -700,7 +956,7 @@ export class GroupDragLayer extends Container {
         restoreNodeVisualCenter(this, node, releaseSourceCenter);
       }
 
-      if (group.phase === "dragging" || group.phase === "gathering") {
+      if (isInteractiveGroupTransferPhase(group.phase)) {
         killMotionOf(node, null, { reason: "group-drag-history-sample" });
         killMotionOf(node.scale, null, { reason: "group-drag-history-sample" });
         node.position.set(stackTarget.x, stackTarget.y);
@@ -714,12 +970,15 @@ export class GroupDragLayer extends Container {
       this.nodes[index].visible = false;
     }
     this.prewarmReleaseNodes();
-    this.activeEntryIds = nextEntryIds;
     this.updateBadge(group, pointerCenter, state, visualSpec);
-    if (releasePlan) {
+    if (runtimePlan) {
       this.releaseController.update({
         ...releaseState,
-        group: { ...group, releasePlan },
+        group: {
+          ...group,
+          runtimePlan,
+          settledActorKeys: [...settledActorKeys],
+        },
         nodes: releaseNodes,
       });
     } else {
@@ -728,17 +987,17 @@ export class GroupDragLayer extends Container {
   }
 
   updateBadge(group, pointerCenter, state, visualSpec) {
-    this.badge.visible = group.totalCount > 1 && GROUP_INTERACTIVE_PHASES.has(group.phase);
+    this.badge.visible = group.totalCount > 1 && isInteractiveGroupTransferPhase(group.phase);
     if (!this.badge.visible) return;
     const iconSize = visualSpec?.iconSize || state.iconSize;
-    const text = ["rejected", "cancelling"].includes(group.phase)
+    const text = group.cancelArmed
       ? `× ${group.totalCount}`
       : String(group.totalCount);
-    const color = group.dropStatus === "rejected"
+    const color = group.cancelArmed
+      ? 0x64748b
+      : group.intentPlan?.status === "rejected"
       ? 0xe34d59
-      : group.dropStatus === "cancelled"
-        ? 0x64748b
-        : group.dropStatus === "accepted"
+        : group.intentPlan?.status === "accepted"
           ? 0x2fa66a
           : 0x2478d4;
     const width = Math.max(28, 15 + text.length * 9);

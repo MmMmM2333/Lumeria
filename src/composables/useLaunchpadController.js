@@ -35,7 +35,7 @@ import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
 import { useLaunchpadInputGestures } from "./useLaunchpadInputGestures.js";
 import { useLaunchpadSelectionSession } from "./useLaunchpadSelectionSession.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
-import { planGroupDrop } from "../domain/groupDropPlanner.js";
+import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -1078,19 +1078,22 @@ export function useLaunchpadController(options = {}) {
     if (!batchSelection.freeze("create-folder")) return false;
     let presentationOwnsFreeze = false;
     try {
-      const plan = planGroupDrop({
+      const plan = planGroupTransfer({
         basePages: pages.value,
         baseRevision: batchLayoutRevision.value,
         currentRevision: batchLayoutRevision.value,
-        draggedIds: operation.selectedIds,
         folderName: localizationText.t("launchpad.newFolder"),
         folderPageSize: folderPageSize.value,
-        intent: { type: "app-folder-create" },
+        intent: {
+          anchorId: operation.primaryId || operation.selectedIds[0],
+          type: "toolbar-folder-create",
+        },
         leadId: operation.primaryId || operation.selectedIds[0],
         makeFolderId: () => makeId("folder"),
         pageSize: pageSize.value,
+        selectedIds: operation.selectedIds,
       });
-      if (plan.status !== "accepted" || !plan.createdFolderId) {
+      if (plan.status !== "accepted" || !plan.effects.createdFolderId) {
         const translatedReason = new Set([
           "desktop-capacity",
           "missing-dragged-id",
@@ -1106,7 +1109,7 @@ export function useLaunchpadController(options = {}) {
         });
         return false;
       }
-      const presented = requireDragControls().presentCommittedFolderCreation({
+      const presented = requireDragControls().startCommittedGroupTransfer({
         basePages: pages.value,
         baseRevision: batchLayoutRevision.value,
         commit: () => {
@@ -1175,13 +1178,13 @@ export function useLaunchpadController(options = {}) {
 
   function endBatchGroupDrag(group) {
     if (group?.standalone) return;
-    batchSelection.unfreeze(group?.presentationOnly ? "create-folder" : "group-drag");
-    if (group?.didCommit === true && group.releaseCreatedFolderId) {
+    batchSelection.unfreeze(group?.origin === "toolbar" ? "create-folder" : "group-drag");
+    if (group?.didCommit === true && group.semanticPlan?.effects?.createdFolderId) {
       batchSelection.deselectAll();
     }
   }
 
-  function planBatchGroupDrop(request) {
+  function planBatchGroupTransfer(request) {
     if (
       (!request.standalone && request.selectionRevision !== batchSelection.revision.value) ||
       request.baseRevision !== request.currentRevision
@@ -1195,17 +1198,17 @@ export function useLaunchpadController(options = {}) {
         status: "rejected",
       };
     }
-    return planGroupDrop({
+    return planGroupTransfer({
       basePages: request.basePages,
       baseRevision: request.baseRevision,
       currentRevision: request.currentRevision,
-      draggedIds: request.draggedIds,
       folderName: localizationText.t("launchpad.newFolder"),
       folderPageSize: folderPageSize.value,
       intent: request.intent,
       leadId: request.leadId,
       makeFolderId: () => request.createdFolderId,
       pageSize: pageSize.value,
+      selectedIds: request.draggedIds,
     });
   }
 
@@ -1218,7 +1221,7 @@ export function useLaunchpadController(options = {}) {
     const activeFolderId = openFolderId.value;
     const keepsActiveFolderOpen = Boolean(
       activeFolderId &&
-      operation.intent?.type === "open-folder-slot" &&
+      operation.intent?.type === "folder-slot" &&
       operation.intent.folderId === activeFolderId
     );
     if (activeFolderId && !keepsActiveFolderOpen) {
@@ -1419,7 +1422,7 @@ export function useLaunchpadController(options = {}) {
     pageIndex,
     pageRefs,
     pages,
-    planGroupDrop: planBatchGroupDrop,
+    planGroupTransfer: planBatchGroupTransfer,
     requestFolderPageTurn,
     visualFolderPageIndex,
     visibleFolderRowCount,

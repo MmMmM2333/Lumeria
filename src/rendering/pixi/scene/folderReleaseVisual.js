@@ -1,5 +1,5 @@
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
-import { GROUP_RELEASE_MODE } from "../../../domain/groupReleasePlan.js";
+import { GROUP_TRANSFER_RUNTIME_MODE } from "./groupTransferRuntimeAdapter.js";
 
 /**
  * Slot releases must be rasterized at the same logical size as the folder
@@ -7,8 +7,8 @@ import { GROUP_RELEASE_MODE } from "../../../domain/groupReleasePlan.js";
  * its sampling and is visible as a brightness/sharpness jump at handoff.
  */
 export function isFolderSlotReleaseMode(mode) {
-  return mode === GROUP_RELEASE_MODE.FOLDER_PREVIEW_SLOT ||
-    mode === GROUP_RELEASE_MODE.CREATED_FOLDER;
+  return mode === GROUP_TRANSFER_RUNTIME_MODE.FOLDER_PREVIEW_SLOT ||
+    mode === GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER;
 }
 
 export function getFolderSlotReleaseIconSize(folderIconSize = 64) {

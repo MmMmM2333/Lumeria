@@ -688,7 +688,7 @@ function applyImmediateFolderSourceGhosting() {
     folderSourceGhostedIds: props.folderSourceGhostedIds,
     isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
-  layer.applyImmediateGroupReleaseSourceGhosting?.(props.groupDragState);
+  layer.applyImmediateGroupTransferOwnership?.(props.groupDragState);
   app.render?.();
   return true;
 }
@@ -1162,12 +1162,12 @@ watch(
 watch(
   () => [
     props.groupDragState?.phase,
-    props.groupDragState?.releaseCreatedFolderId,
-    props.groupDragState?.releasePlan?.key,
+    props.groupDragState?.presentationPlan,
+    props.groupDragState?.runtimePlan?.key,
   ],
   () => {
-    // Created-folder source ids are derived from the semantic group plan,
-    // rather than the folder-only ghosting props above.
+    // Transfer ownership is acquired synchronously before the next desktop
+    // plan can reveal committed live nodes.
     applyImmediateFolderSourceGhosting();
   },
   { flush: "sync" }

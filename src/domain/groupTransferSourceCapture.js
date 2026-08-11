@@ -1,8 +1,3 @@
-function normalizePositiveInteger(value, fallback = 1) {
-  const number = Math.floor(Number(value));
-  return Number.isFinite(number) && number > 0 ? number : fallback;
-}
-
 function centerOfRect(rect, fallback) {
   if (!rect) return { ...fallback };
   return {
@@ -16,7 +11,7 @@ function getFolderPages(folder) {
   return [Array.isArray(folder?.children) ? folder.children : []];
 }
 
-export function indexGroupDragSources(pages) {
+export function indexGroupTransferSources(pages) {
   const apps = new Map();
   const order = [];
   for (let pageIndex = 0; pageIndex < (pages || []).length; pageIndex += 1) {
@@ -95,14 +90,14 @@ function withMemberIdentity(entry) {
   };
 }
 
-export function resolveGroupGatherEntries(options = {}) {
+export function captureGroupTransferSourceEntries(options = {}) {
   const draggedIds = Array.from(new Set((options.draggedIds || []).filter(Boolean)));
   const leadId = options.leadId || draggedIds[0] || null;
   const activePageIndex = Math.max(0, Number(options.activePageIndex) || 0);
   const activeFolderPageIndex = Math.max(0, Number(options.activeFolderPageIndex) || 0);
   const pointer = options.pointer || { x: 0, y: 0 };
   const leadCenter = centerOfRect(options.leadRect, pointer);
-  const index = indexGroupDragSources(options.pages);
+  const index = indexGroupTransferSources(options.pages);
   const dragged = new Set(draggedIds);
   const orderedIds = [];
   if (leadId && dragged.has(leadId)) orderedIds.push(leadId);
@@ -244,108 +239,4 @@ export function resolveGroupGatherEntries(options = {}) {
       source: location,
     })];
   });
-}
-
-function getBundleDescriptor(entry) {
-  if (entry.originKind === "desktop-page") {
-    const pageIndex = entry.source?.kind === "folder"
-      ? entry.source.ownerPageIndex
-      : entry.source?.pageIndex;
-    return {
-      key: `desktop-page:${pageIndex}`,
-      originKind: "desktop-page-bundle",
-    };
-  }
-  if (entry.originKind === "folder-page") {
-    return {
-      key: `folder-page:${entry.source?.folderId}:${entry.source?.folderPageIndex}`,
-      originKind: "folder-page-bundle",
-    };
-  }
-  if (entry.originKind === "folder-hidden") {
-    return {
-      key: `folder:${entry.source?.folderId}`,
-      originKind: "folder-bundle",
-    };
-  }
-  if (entry.originKind === "count-only") {
-    return { key: "count-only", originKind: "count-only" };
-  }
-  return null;
-}
-
-function aggregateGatherEntries(entries) {
-  const exact = [];
-  const bundles = new Map();
-  for (const entry of entries || []) {
-    const descriptor = getBundleDescriptor(entry);
-    if (!descriptor) {
-      exact.push(withMemberIdentity(entry));
-      continue;
-    }
-    const existing = bundles.get(descriptor.key);
-    if (existing) {
-      existing.bundleCount += 1;
-      existing.memberIds.push(entry.item.id);
-      existing.order = Math.min(existing.order, entry.order);
-      existing.delayMs = Math.min(existing.delayMs, entry.delayMs);
-      continue;
-    }
-    bundles.set(descriptor.key, {
-      ...withMemberIdentity(entry),
-      bundleKey: descriptor.key,
-      originKind: descriptor.originKind,
-    });
-  }
-  return {
-    bundles: [...bundles.values()].sort((left, right) => left.order - right.order),
-    exact: exact.sort((left, right) => left.order - right.order),
-  };
-}
-
-function collapseDesktopPageBundles(bundles, maxBundles) {
-  const desktopBundles = bundles.filter((entry) => entry.originKind === "desktop-page-bundle");
-  if (desktopBundles.length <= maxBundles) return bundles;
-  const mergedByDirection = new Map();
-  for (const entry of desktopBundles) {
-    const direction = entry.direction === "left" ? "left" : "right";
-    const existing = mergedByDirection.get(direction);
-    if (!existing) {
-      mergedByDirection.set(direction, {
-        ...entry,
-        bundleKey: `desktop-pages:${direction}`,
-        memberIds: [...entry.memberIds],
-      });
-      continue;
-    }
-    existing.bundleCount += entry.bundleCount;
-    existing.memberIds.push(...entry.memberIds);
-    existing.order = Math.min(existing.order, entry.order);
-    existing.delayMs = Math.min(existing.delayMs, entry.delayMs);
-  }
-  return [
-    ...bundles.filter((entry) => entry.originKind !== "desktop-page-bundle"),
-    ...mergedByDirection.values(),
-  ].sort((left, right) => left.order - right.order);
-}
-
-export function selectGroupGatherRepresentatives(entries, maxVisible = 12, options = {}) {
-  const limit = normalizePositiveInteger(maxVisible, 12);
-  const maxBundles = normalizePositiveInteger(options.maxBundles, 3);
-  const aggregated = aggregateGatherEntries(entries);
-  const bundles = collapseDesktopPageBundles(aggregated.bundles, maxBundles);
-  const selected = [];
-  const selectedIds = new Set();
-  const append = (entry) => {
-    if (!entry?.item?.id || selectedIds.has(entry.item.id) || selected.length >= limit) return;
-    selectedIds.add(entry.item.id);
-    selected.push(entry);
-  };
-  append(aggregated.exact.find((entry) => entry.originKind === "lead"));
-  for (const kind of ["visible-desktop", "open-folder-visible", "folder-preview"]) {
-    append(aggregated.exact.find((entry) => entry.originKind === kind));
-  }
-  for (const entry of bundles.slice(0, maxBundles)) append(entry);
-  for (const entry of aggregated.exact) append(entry);
-  return selected.sort((left, right) => left.order - right.order);
 }

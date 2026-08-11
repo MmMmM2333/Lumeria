@@ -279,9 +279,9 @@ export async function runDesktopLayerTests() {
   const V = ICON_BOUNDS_VARIANT;
   makeLayer.iconBoundsRegistry = createIconBoundsRegistry();
   const {
-    FolderVisualOwnershipRegistry,
+    VisualOwnershipRegistry: FolderVisualOwnershipRegistry,
     makeDesktopSourceVisualKey,
-  } = await import("./folderVisualOwnershipRegistry.js");
+  } = await import("./visualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
   const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
   const { Container } = await import("pixi.js");
@@ -327,7 +327,7 @@ export async function runDesktopLayerTests() {
     layer.groupDragLayer.addChild(releaseNode);
 
     const pose = layer.resolveGroupReleasePoint({
-      entry: { id: item.id, mode: "return-to-origin" },
+      entry: { id: item.id, mode: "return" },
       node: releaseNode,
       state: { stageRect: { height: 320, left: 0, top: 0, width: 480 } },
       target: { area: "desktop", id: null, kind: null, pageIndex: null },
@@ -385,6 +385,8 @@ export async function runDesktopLayerTests() {
         item: movingItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([movingItem.id]),
     };
     layer.update(releaseState);
     const targetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
@@ -441,6 +443,90 @@ export async function runDesktopLayerTests() {
   {
     motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
+    const fillerA = { id: "cancel-layout-filler-a", name: "Filler A", type: "app" };
+    const fillerB = { id: "cancel-layout-filler-b", name: "Filler B", type: "app" };
+    const draggedA = { id: "cancel-layout-dragged-a", name: "Dragged A", type: "app" };
+    const draggedB = { id: "cancel-layout-dragged-b", name: "Dragged B", type: "app" };
+    const folderChild = { id: "cancel-layout-folder-child", name: "Folder Child", type: "app" };
+    const folder = {
+      childPages: [[folderChild]],
+      children: [folderChild],
+      id: "cancel-layout-folder",
+      name: "Folder",
+      type: "folder",
+    };
+    const originalItems = [fillerA, fillerB, draggedA, draggedB, folder];
+    const projectedItems = [fillerA, fillerB, folder, draggedA, draggedB];
+    const groupPresentation = {
+      key: "cancel-layout-group",
+      presentationPlan: {
+        actors: [draggedA, draggedB, folderChild].map((item) => ({
+          key: `actor:${item.id}`,
+          memberIds: [item.id],
+          role: "item",
+        })),
+      },
+    };
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    layer.updateGroupDragLayer = () => {};
+    const baseState = {
+      ...makeDesktopQuiescenceState(folder),
+      activePages: [originalItems],
+      desktopFrame: { height: 260, left: 0, top: 0, width: 1000 },
+      gridCols: 5,
+      gridRows: 1,
+      height: 260,
+      stageRect: { height: 260, left: 0, top: 0, width: 1000 },
+      width: 1000,
+    };
+    layer.update(baseState);
+    for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+      motionRuntime.step(1 / 60);
+    }
+
+    const folderNode = layer.iconNodes.get(`page:0:${folder.id}`);
+    const originalFolderX = folderNode.x;
+    const draggingGroup = {
+      ...groupPresentation,
+      phase: "dragging",
+    };
+    layer.update({
+      ...baseState,
+      activePages: [projectedItems],
+      groupDragState: draggingGroup,
+    });
+    for (let frame = 0; frame < 8; frame += 1) motionRuntime.step(1 / 60);
+    assert(
+      !nearlyEqual(folderNode.x, originalFolderX),
+      "cancel return setup should project the folder into the vacated earlier slot"
+    );
+
+    const returningGroup = {
+      ...groupPresentation,
+      phase: "returning",
+    };
+    layer.update({
+      ...baseState,
+      groupDragState: returningGroup,
+    });
+    layer.applyImmediateGroupTransferOwnership(returningGroup);
+    for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+      motionRuntime.step(1 / 60);
+    }
+
+    assert(
+      nearlyEqual(folderNode.x, originalFolderX),
+      "canceling a mixed desktop/folder-child drag should let the folder shell finish returning to its original slot"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
     const target = { id: "created-target-layout-target", name: "Target", type: "app" };
     const dragged = { id: "created-target-layout-dragged", name: "Dragged", type: "app" };
     const folder = {
@@ -460,9 +546,8 @@ export async function runDesktopLayerTests() {
           { item: target, originKind: "folder-create-target" },
         ],
         key: "created-target-layout",
-        phase: "accepted",
-        releaseCreatedFolderId: folder.id,
-        releasePlan: {
+        phase: "releasing",
+        runtimePlan: {
           entries: [target, dragged].map((item, slotIndex) => ({
             id: item.id,
             mode: "created-folder",
@@ -476,6 +561,8 @@ export async function runDesktopLayerTests() {
         },
         totalCount: 1,
       },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([target.id, dragged.id]),
     });
     const folderNode = layer.findIconNodeByItemId(folder.id);
     const folderEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.item.id === folder.id);
@@ -556,9 +643,8 @@ export async function runDesktopLayerTests() {
       groupDragState: {
         entries: releaseEntries,
         key: "created-release-brightness",
-        phase: "accepted",
-        releaseCreatedFolderId: folder.id,
-        releasePlan: {
+        phase: "releasing",
+        runtimePlan: {
           entries: releaseEntries.map((entry, index) => ({
             id: entry.item.id,
             mode: "created-folder",
@@ -569,6 +655,8 @@ export async function runDesktopLayerTests() {
         },
         totalCount: 1,
       },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([dragged.id, target.id]),
     });
 
     assert(
@@ -612,6 +700,7 @@ export async function runDesktopLayerTests() {
       ...makeDesktopQuiescenceState(item),
       dragMeta,
       groupDragState,
+      groupTransferOwnedItemIds: new Set([item.id]),
     };
 
     layer.update(baseState);

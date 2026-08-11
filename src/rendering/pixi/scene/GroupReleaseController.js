@@ -7,7 +7,8 @@ import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getAppFolderCreateTargetPadding } from "../nodes/iconFolderHoverState.js";
 import { drawFolderThumbFrame } from "../nodes/folderThumbDrawing.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
-import { GROUP_RELEASE_MODE } from "../../../domain/groupReleasePlan.js";
+import { GROUP_TRANSFER_RUNTIME_MODE } from "./groupTransferRuntimeAdapter.js";
+import { GROUP_TRANSFER_PHASE } from "../../../domain/groupTransferSession.js";
 import {
   getFolderSlotReleaseIconSize,
   isFolderSlotReleaseMode,
@@ -24,8 +25,10 @@ const GENERIC_RETURN_DURATION = 0.2;
 const TARGET_RETARGET_EPSILON = 0.75;
 const TARGET_SCALE_RETARGET_EPSILON = 0.002;
 const MAX_MISSING_POINT_FRAMES = 2;
-const CREATED_FOLDER_FRAME_DURATION = 0.18;
-const CREATED_FOLDER_FRAME_RETARGET_EPSILON = 0.5;
+const ALIGNED_POINT_RENDER_FRAMES = 2;
+const POINT_ALIGNMENT_DEVICE_EPSILON = 0.5;
+const FOLDER_SHELL_DURATION = 0.18;
+const FOLDER_SHELL_RETARGET_EPSILON = 0.5;
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -64,10 +67,21 @@ function makeTargetKey(target) {
   ].join(":");
 }
 
+function getPointDeviceScale(state = {}) {
+  const stageRect = state.stageRect || {};
+  const resolution = Math.max(0.01, finite(state.deviceResolution, 1));
+  const width = Math.max(0.01, finite(state.width, finite(stageRect.width, 1)));
+  const height = Math.max(0.01, finite(state.height, finite(stageRect.height, 1)));
+  return {
+    x: resolution * Math.max(0.01, finite(stageRect.width, width) / width),
+    y: resolution * Math.max(0.01, finite(stageRect.height, height) / height),
+  };
+}
+
 function isFolderMode(mode) {
-  return mode === GROUP_RELEASE_MODE.FOLDER_PREVIEW_SLOT ||
-    mode === GROUP_RELEASE_MODE.FOLDER_CENTER_ABSORB ||
-    mode === GROUP_RELEASE_MODE.CREATED_FOLDER;
+  return mode === GROUP_TRANSFER_RUNTIME_MODE.FOLDER_PREVIEW_SLOT ||
+    mode === GROUP_TRANSFER_RUNTIME_MODE.FOLDER_CENTER_ABSORB ||
+    mode === GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER;
 }
 
 function toLayerFallback(entry, state) {
@@ -109,7 +123,7 @@ function readNodeCenterInLayer(layer, node) {
   return point(center);
 }
 
-function readCreatedFolderFrameTarget(layer, folderNode, state, fallback) {
+function readFolderShellTarget(layer, folderNode, state, fallback) {
   if (!folderNode || folderNode.destroyed) return null;
   const baseSize = Math.max(
     1,
@@ -140,7 +154,7 @@ function readCreatedFolderFrameTarget(layer, folderNode, state, fallback) {
   return { center: fallbackPoint, scale: 1, size: baseSize };
 }
 
-function readCreatedFolderFrameSource(layer, node, entry, state, targetSize, release = null) {
+function readFolderShellSource(layer, node, entry, state, targetSize, release = null) {
   const center = readNodeCenterInLayer(layer, node) || toLayerFallback(entry, state);
   if (!center) return null;
   const sourceIconSize = Math.max(
@@ -179,15 +193,15 @@ function readReleaseSourceMetrics(node, state) {
 
 function frameTargetEqual(left, right) {
   return Boolean(left && right) &&
-    Math.abs(finite(left.center?.x) - finite(right.center?.x)) <= CREATED_FOLDER_FRAME_RETARGET_EPSILON &&
-    Math.abs(finite(left.center?.y) - finite(right.center?.y)) <= CREATED_FOLDER_FRAME_RETARGET_EPSILON &&
+    Math.abs(finite(left.center?.x) - finite(right.center?.x)) <= FOLDER_SHELL_RETARGET_EPSILON &&
+    Math.abs(finite(left.center?.y) - finite(right.center?.y)) <= FOLDER_SHELL_RETARGET_EPSILON &&
     Math.abs(finite(left.scale) - finite(right.scale)) <= 0.005;
 }
 
 function normalizeMode(mode) {
-  if (mode === GROUP_RELEASE_MODE.FOLDER_PREVIEW_SLOT) return FOLDER_PREVIEW_SLOT_RELEASE_MODE;
-  if (mode === GROUP_RELEASE_MODE.CREATED_FOLDER) return CREATED_FOLDER_RELEASE_MODE;
-  if (mode === GROUP_RELEASE_MODE.FOLDER_CENTER_ABSORB) return FOLDER_CENTER_ABSORB_RELEASE_MODE;
+  if (mode === GROUP_TRANSFER_RUNTIME_MODE.FOLDER_PREVIEW_SLOT) return FOLDER_PREVIEW_SLOT_RELEASE_MODE;
+  if (mode === GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER) return CREATED_FOLDER_RELEASE_MODE;
+  if (mode === GROUP_TRANSFER_RUNTIME_MODE.FOLDER_CENTER_ABSORB) return FOLDER_CENTER_ABSORB_RELEASE_MODE;
   throw new Error(`Unsupported folder release mode: ${String(mode)}`);
 }
 
@@ -205,18 +219,21 @@ export class GroupReleaseController {
     this.resolvePointTarget = options.resolvePointTarget || (() => null);
     this.onEntryComplete = options.onEntryComplete || (() => {});
     this.onEntryAbort = options.onEntryAbort || (() => {});
-    this.createdFolderFrame = new Graphics({ label: "created-folder-release-frame" });
-    this.createdFolderFrame.eventMode = "none";
-    this.createdFolderFrame.zIndex = 300;
-    this.createdFolderFrame.visible = false;
-    this.createdFolderFrameKey = null;
-    this.createdFolderFrameMotion = null;
-    this.createdFolderFrameTarget = null;
-    this.createdFolderFrameContext = null;
-    this.createdFolderFrameSize = null;
+    this.onFolderShellComplete = options.onFolderShellComplete || (() => {});
+    this.onRenderRequest = options.onRenderRequest || (() => {});
+    this.folderShellFrame = new Graphics({ label: "group-transfer-folder-shell" });
+    this.folderShellFrame.eventMode = "none";
+    this.folderShellFrame.zIndex = 100;
+    this.folderShellFrame.visible = false;
+    this.folderShellFrameKey = null;
+    this.folderShellFrameMotion = null;
+    this.folderShellFrameTarget = null;
+    this.folderShellFrameContext = null;
+    this.folderShellFrameSize = null;
+    this.folderShellCompletionKey = null;
     this.lanes = new Map();
     this.planKey = null;
-    this.layer.addChild(this.createdFolderFrame);
+    this.layer.addChild(this.folderShellFrame);
     this.previousOnRender = this.layer.onRender;
     this.didInstallRenderHook = options.installRenderHook !== false;
     this.renderHook = (renderer) => {
@@ -228,9 +245,9 @@ export class GroupReleaseController {
 
   update(options = {}) {
     const group = options.group;
-    const plan = group?.releasePlan;
+    const plan = group?.runtimePlan;
     if (!plan?.key || !Array.isArray(plan.entries) || !plan.entries.length ||
-      !["accepted", "rejected", "cancelling"].includes(group?.phase)) {
+      ![GROUP_TRANSFER_PHASE.RELEASING, GROUP_TRANSFER_PHASE.RETURNING].includes(group?.phase)) {
       this.clear("group-release-inactive");
       return;
     }
@@ -238,10 +255,12 @@ export class GroupReleaseController {
     this.preparePlan(plan.key);
 
     const nodes = options.nodes instanceof Map ? options.nodes : new Map();
+    const settledActorKeys = new Set(group.settledActorKeys || []);
     const seen = new Set();
     const createdContexts = [];
     for (const entry of plan.entries) {
       if (!entry?.id) continue;
+      if (entry.actorKey && settledActorKeys.has(entry.actorKey)) continue;
       const node = nodes.get(entry.id);
       const laneKey = `${plan.key}:${entry.id}`;
       seen.add(laneKey);
@@ -253,7 +272,7 @@ export class GroupReleaseController {
         plan,
         state: options,
       };
-      if (entry.mode === GROUP_RELEASE_MODE.CREATED_FOLDER) createdContexts.push(context);
+      if (entry.mode === GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER) createdContexts.push(context);
       if (isFolderMode(entry.mode)) {
         this.updateFolderLane(laneKey, existing, context);
       } else {
@@ -267,8 +286,12 @@ export class GroupReleaseController {
       this.lanes.delete(laneKey);
     }
 
-    if (createdContexts.length) this.updateCreatedFolderFrame(createdContexts, options, plan);
-    else this.clearCreatedFolderFrame("created-folder-release-not-active");
+    const folderShellActor = (plan.shellActors || []).find((actor) => actor?.role === "folder-shell") || null;
+    if (folderShellActor && !settledActorKeys.has(folderShellActor.key) && createdContexts.length) {
+      this.updateFolderShellActor(folderShellActor, createdContexts, options, plan);
+    } else if (!folderShellActor || settledActorKeys.has(folderShellActor.key) || !this.folderShellFrameKey) {
+      this.clearFolderShellActor("group-transfer-folder-shell-inactive");
+    }
   }
 
   /**
@@ -284,12 +307,12 @@ export class GroupReleaseController {
     this.planKey = key;
   }
 
-  updateCreatedFolderFrame(contexts, state, plan) {
+  updateFolderShellActor(shellActor, contexts, state, plan) {
     const context = [...contexts]
       .sort((left, right) => finite(left.entry?.target?.slotIndex, finite(left.entry?.target?.index, 0)) -
         finite(right.entry?.target?.slotIndex, finite(right.entry?.target?.index, 0)))[0];
     if (!context?.entry) {
-      this.clearCreatedFolderFrame("created-folder-frame-context-missing");
+      this.clearFolderShellActor("group-transfer-folder-shell-context-missing");
       return;
     }
     const entry = context.entry;
@@ -301,7 +324,7 @@ export class GroupReleaseController {
       state,
       target,
     });
-    const folderTarget = readCreatedFolderFrameTarget(
+    const folderTarget = readFolderShellTarget(
       this.layer,
       targetFolderNode,
       state,
@@ -311,7 +334,7 @@ export class GroupReleaseController {
       scale: 1,
       size: Math.max(1, finite(state.visualSpec?.iconSize, finite(state.iconSize, 64))),
     };
-    const source = readCreatedFolderFrameSource(
+    const source = readFolderShellSource(
       this.layer,
       context.node,
       entry,
@@ -320,86 +343,110 @@ export class GroupReleaseController {
       context.release
     );
     if (!source) {
-      this.clearCreatedFolderFrame("created-folder-frame-source-missing");
+      this.clearFolderShellActor("group-transfer-folder-shell-source-missing");
       return;
     }
 
-    const frameKey = `${plan?.key || this.planKey || "created-folder"}:${target.folderId || ""}`;
-    const isNewFrame = this.createdFolderFrameKey !== frameKey;
+    const frameKey = `${plan?.key || this.planKey || "group-transfer"}:${shellActor.key}`;
+    const isNewFrame = this.folderShellFrameKey !== frameKey;
     if (isNewFrame) {
-      this.clearCreatedFolderFrame("created-folder-frame-replace");
-      this.createdFolderFrameKey = frameKey;
-      this.createdFolderFrameTarget = null;
-      this.createdFolderFrameContext = context;
-      this.createdFolderFrameSize = folderTarget.size;
+      this.clearFolderShellActor("group-transfer-folder-shell-replace");
+      this.folderShellFrameKey = frameKey;
+      this.folderShellCompletionKey = null;
+      this.folderShellFrameTarget = null;
+      this.folderShellFrameSize = folderTarget.size;
+      this.folderShellFrame.zIndex = Number(shellActor.zBand) || 100;
       drawFolderThumbFrame(
-        this.createdFolderFrame,
+        this.folderShellFrame,
         folderTarget.size,
         getFolderThumbMetrics(folderTarget.size),
         0
       );
-      this.createdFolderFrame.position.set(source.center.x, source.center.y);
-      this.createdFolderFrame.scale.set(source.scale);
-      this.createdFolderFrame.alpha = 1;
-      this.createdFolderFrame.visible = true;
+      this.folderShellFrame.position.set(source.center.x, source.center.y);
+      this.folderShellFrame.scale.set(source.scale);
+      this.folderShellFrame.alpha = 1;
+      this.folderShellFrame.visible = true;
     } else {
-      this.createdFolderFrameContext = context;
-      if (Math.abs(finite(this.createdFolderFrameSize, 0) - folderTarget.size) > 0.01) {
-        this.createdFolderFrameSize = folderTarget.size;
+      if (Math.abs(finite(this.folderShellFrameSize, 0) - folderTarget.size) > 0.01) {
+        this.folderShellFrameSize = folderTarget.size;
         drawFolderThumbFrame(
-          this.createdFolderFrame,
+          this.folderShellFrame,
           folderTarget.size,
           getFolderThumbMetrics(folderTarget.size),
           0
         );
       }
-      this.createdFolderFrame.visible = true;
+      this.folderShellFrame.visible = true;
     }
+    this.folderShellFrameContext = { context, plan, shellActor, state };
 
     const nextTarget = {
       center: { ...folderTarget.center },
       scale: folderTarget.scale,
     };
-    if (!frameTargetEqual(this.createdFolderFrameTarget, nextTarget)) {
-      this.createdFolderFrameTarget = nextTarget;
-      this.createdFolderFrameMotion?.cancel?.("created-folder-frame-retarget");
-      this.createdFolderFrameMotion = parallel([
-        motion(this.createdFolderFrame)
-          .duration(context.group?.reducedMotion ? 0 : CREATED_FOLDER_FRAME_DURATION)
+    if (!frameTargetEqual(this.folderShellFrameTarget, nextTarget)) {
+      this.folderShellFrameTarget = nextTarget;
+      this.folderShellFrameMotion?.cancel?.("group-transfer-folder-shell-retarget");
+      this.folderShellFrameMotion = parallel([
+        motion(this.folderShellFrame)
+          .duration(context.group?.reducedMotion ? 0 : FOLDER_SHELL_DURATION)
           .ease("power3.out")
           .handoff()
           .interrupt("retarget")
           .to({ x: nextTarget.center.x, y: nextTarget.center.y }),
-        motion(this.createdFolderFrame.scale)
-          .duration(context.group?.reducedMotion ? 0 : CREATED_FOLDER_FRAME_DURATION)
+        motion(this.folderShellFrame.scale)
+          .duration(context.group?.reducedMotion ? 0 : FOLDER_SHELL_DURATION)
           .ease("power3.out")
           .handoff()
           .interrupt("retarget")
           .to({ x: nextTarget.scale, y: nextTarget.scale }),
       ], {
         onComplete: () => {
-          if (this.createdFolderFrameKey === frameKey) this.createdFolderFrameMotion = null;
+          if (this.folderShellFrameKey !== frameKey) return;
+          this.folderShellFrameMotion = null;
+          this.completeFolderShellActor(frameKey);
         },
       });
     }
   }
 
-  clearCreatedFolderFrame(reason = "created-folder-frame-clear") {
-    this.createdFolderFrameMotion?.cancel?.(reason);
-    this.createdFolderFrameMotion = null;
-    if (this.createdFolderFrame) {
-      killMotionOf(this.createdFolderFrame, null, { reason });
-      killMotionOf(this.createdFolderFrame.scale, null, { reason });
-      this.createdFolderFrame.visible = false;
-      this.createdFolderFrame.alpha = 0;
-      this.createdFolderFrame.position.set(0, 0);
-      this.createdFolderFrame.scale.set(1, 1);
-      this.createdFolderFrame.clear();
+  completeFolderShellActor(frameKey) {
+    if (!frameKey || this.folderShellFrameKey !== frameKey || this.folderShellCompletionKey === frameKey) return;
+    this.folderShellCompletionKey = frameKey;
+    motionRuntime.afterFrame(() => {
+      if (this.folderShellFrameKey !== frameKey || this.folderShellCompletionKey !== frameKey) return;
+      const saved = this.folderShellFrameContext;
+      const actorKey = saved?.shellActor?.key || null;
+      if (!actorKey) return;
+      this.onFolderShellComplete({
+        actorKey,
+        folderId: saved.shellActor?.endAnchor?.folderId || saved.context?.entry?.target?.folderId || null,
+        planKey: saved.plan?.key || this.planKey,
+      });
+    });
+  }
+
+  clearFolderShellActor(reason = "group-transfer-folder-shell-clear") {
+    this.folderShellFrameMotion?.cancel?.(reason);
+    this.folderShellFrameMotion = null;
+    if (this.folderShellFrame) {
+      killMotionOf(this.folderShellFrame, null, { reason });
+      killMotionOf(this.folderShellFrame.scale, null, { reason });
+      this.folderShellFrame.visible = false;
+      this.folderShellFrame.alpha = 0;
+      this.folderShellFrame.position.set(0, 0);
+      this.folderShellFrame.scale.set(1, 1);
+      this.folderShellFrame.clear();
     }
-    this.createdFolderFrameKey = null;
-    this.createdFolderFrameTarget = null;
-    this.createdFolderFrameContext = null;
-    this.createdFolderFrameSize = null;
+    this.folderShellFrameKey = null;
+    this.folderShellFrameTarget = null;
+    this.folderShellFrameContext = null;
+    this.folderShellFrameSize = null;
+    this.folderShellCompletionKey = null;
+  }
+
+  hideFolderShellActors() {
+    this.clearFolderShellActor("group-transfer-folder-shell-handoff");
   }
 
   updateFolderLane(laneKey, existing, context) {
@@ -483,12 +530,15 @@ export class GroupReleaseController {
     let lane = existing;
     if (!lane) {
       lane = {
+        alignedRenderFrames: 0,
+        alignmentFrameRequested: false,
         control: null,
         completionScheduled: false,
         generation: 0,
         kind: "point",
         key: laneKey,
         missingRenderFrames: 0,
+        motionSettled: false,
         settled: false,
         target: null,
         targetKey: null,
@@ -497,19 +547,14 @@ export class GroupReleaseController {
     }
     lane.context = context;
     lane.node = context.node;
-    if (!context.node || context.node.destroyed) {
-      lane.missingRenderFrames += 1;
-      return;
-    }
+    if (!context.node || context.node.destroyed) return;
     const target = this.readPointTarget(context);
-    if (!target) {
-      lane.missingRenderFrames += 1;
-      return;
-    }
+    if (!target) return;
     lane.missingRenderFrames = 0;
     if (lane.settled) return;
     if (lane.control?.completed) {
-      this.settleLane(lane, "settled");
+      lane.motionSettled = true;
+      if (!this.isPointLaneAligned(lane, target)) this.startPointMotion(lane, target);
       return;
     }
     if (lane.control && pointPosesEqual(lane.target, target)) return;
@@ -525,7 +570,7 @@ export class GroupReleaseController {
       target: context.entry.target || {},
     });
     const entry = context.entry;
-    const isReturn = entry.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
+    const isReturn = entry.mode === GROUP_TRANSFER_RUNTIME_MODE.RETURN;
     const fallbackScaleValue = isReturn ? Math.max(0.35, finite(entry.originScale, 1)) : 1;
     const fallbackScale = { x: fallbackScaleValue, y: fallbackScaleValue };
     const resolvedPoint = resolved?.point;
@@ -535,10 +580,7 @@ export class GroupReleaseController {
         scale: scale(resolved.scale, fallbackScale),
       };
     }
-    const fallbackPoint = toLayerFallback(entry, context.state);
-    return fallbackPoint
-      ? { point: fallbackPoint, scale: fallbackScale }
-      : null;
+    return null;
   }
 
   startPointMotion(lane, target) {
@@ -546,8 +588,12 @@ export class GroupReleaseController {
     const entry = context.entry;
     const group = context.group;
     const node = context.node;
-    const isReturn = entry.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
-    const targetAlpha = isReturn ? Math.max(0, finite(entry.originAlpha, 1)) : 1;
+    const isReturn = entry.mode === GROUP_TRANSFER_RUNTIME_MODE.RETURN;
+    const targetAlpha = entry.alphaPolicy?.kind === "fade-out"
+      ? Math.max(0, finite(entry.alphaPolicy.to, 0))
+      : isReturn
+        ? Math.max(0, finite(entry.originAlpha, 1))
+        : 1;
     const velocity = isReturn || group.reducedMotion === true
       ? { x: 0, y: 0 }
       : toStageVelocity(entry.velocity, context.state);
@@ -555,6 +601,9 @@ export class GroupReleaseController {
     lane.generation = generation;
     lane.settled = false;
     lane.completionScheduled = false;
+    lane.alignedRenderFrames = 0;
+    lane.alignmentFrameRequested = false;
+    lane.motionSettled = false;
     lane.target = { ...target };
     lane.targetKey = makeTargetKey(target);
     const delay = lane.control ? 0 : Math.max(0, finite(entry.delayMs)) / 1000;
@@ -608,9 +657,42 @@ export class GroupReleaseController {
     lane.control = parallel(animations, {
       onComplete: () => {
         if (lane.generation !== generation || lane.settled) return;
-        this.settleLane(lane, "settled");
+        lane.motionSettled = true;
+        this.onRenderRequest("group-point-release-alignment");
       },
     });
+  }
+
+  isPointLaneAligned(lane, target) {
+    const node = lane?.node;
+    if (!node || node.destroyed || !target || !lane.motionSettled || !lane.control?.completed) return false;
+    const deviceScale = getPointDeviceScale(lane.context?.state);
+    return Math.abs(finite(node.position?.x) - finite(target.point?.x)) * deviceScale.x <= POINT_ALIGNMENT_DEVICE_EPSILON &&
+      Math.abs(finite(node.position?.y) - finite(target.point?.y)) * deviceScale.y <= POINT_ALIGNMENT_DEVICE_EPSILON &&
+      Math.abs(finite(node.scale?.x, 1) - finite(target.scale?.x, 1)) * deviceScale.x <= POINT_ALIGNMENT_DEVICE_EPSILON &&
+      Math.abs(finite(node.scale?.y, 1) - finite(target.scale?.y, 1)) * deviceScale.y <= POINT_ALIGNMENT_DEVICE_EPSILON;
+  }
+
+  syncPointAlignment(lane, target) {
+    if (!this.isPointLaneAligned(lane, target)) {
+      lane.alignedRenderFrames = 0;
+      lane.alignmentFrameRequested = false;
+      return false;
+    }
+    lane.alignedRenderFrames += 1;
+    if (lane.alignedRenderFrames >= ALIGNED_POINT_RENDER_FRAMES) {
+      this.settleLane(lane, "settled");
+      return true;
+    }
+    if (!lane.alignmentFrameRequested) {
+      lane.alignmentFrameRequested = true;
+      motionRuntime.afterFrame(() => {
+        if (!lane || lane.settled) return;
+        lane.alignmentFrameRequested = false;
+        this.onRenderRequest("group-point-release-alignment-confirm");
+      });
+    }
+    return false;
   }
 
   settleLane(lane, outcome, release = null, reason = null) {
@@ -620,12 +702,16 @@ export class GroupReleaseController {
     lane.settled = true;
     const context = lane.context || {};
     const payload = {
+      actorKey: context.entry?.actorKey || null,
       entryId: context.entry?.id || release?.item?.id || null,
       id: context.entry?.id || release?.item?.id || null,
+      memberIds: [...(context.entry?.memberIds || [])],
+      node: context.node || null,
       outcome: outcome === "aborted" ? "aborted" : "settled",
       planKey: context.plan?.key || this.planKey,
       reason: reason || null,
       release: release || null,
+      runtimePlan: context.plan || null,
     };
     motionRuntime.afterFrame(() => {
       if (!lane || !lane.settled) return;
@@ -640,7 +726,7 @@ export class GroupReleaseController {
     if (!node || node.destroyed || !target) return;
     node.position.set(finite(target.point?.x), finite(target.point?.y));
     const entry = lane.context?.entry;
-    const isReturn = entry?.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
+    const isReturn = entry?.mode === GROUP_TRANSFER_RUNTIME_MODE.RETURN;
     node.scale.set(
       Math.max(0.01, finite(target.scale?.x, 1)),
       Math.max(0.01, finite(target.scale?.y, 1))
@@ -653,12 +739,9 @@ export class GroupReleaseController {
   }
 
   renderFrame() {
-    if (this.createdFolderFrameContext) {
-      this.updateCreatedFolderFrame(
-        [this.createdFolderFrameContext],
-        this.createdFolderFrameContext.state || {},
-        { key: this.planKey }
-      );
+    if (this.folderShellFrameContext) {
+      const saved = this.folderShellFrameContext;
+      this.updateFolderShellActor(saved.shellActor, [saved.context], saved.state, saved.plan);
     }
     for (const lane of this.lanes.values()) {
       if (lane.kind === "folder") {
@@ -674,7 +757,9 @@ export class GroupReleaseController {
         if (target) {
           lane.missingRenderFrames = 0;
           if (lane.control?.completed) {
-            this.settleLane(lane, "settled");
+            lane.motionSettled = true;
+            if (this.isPointLaneAligned(lane, target)) this.syncPointAlignment(lane, target);
+            else this.startPointMotion(lane, target);
           } else if (!lane.control || !pointPosesEqual(lane.target, target)) {
             this.startPointMotion(lane, target);
           }
@@ -682,7 +767,7 @@ export class GroupReleaseController {
           lane.missingRenderFrames += 1;
         }
       }
-      if (lane.missingRenderFrames >= MAX_MISSING_POINT_FRAMES && !lane.control) {
+      if (lane.missingRenderFrames >= MAX_MISSING_POINT_FRAMES) {
         this.settleLane(lane, "aborted", null, "target-unavailable");
       }
     }
@@ -704,7 +789,7 @@ export class GroupReleaseController {
   clear(reason = "group-release-clear") {
     for (const lane of this.lanes.values()) this.clearLane(lane, reason);
     this.lanes.clear();
-    this.clearCreatedFolderFrame(reason);
+    this.clearFolderShellActor(reason);
     this.planKey = null;
   }
 
@@ -715,11 +800,11 @@ export class GroupReleaseController {
     }
     this.previousOnRender = null;
     this.renderHook = null;
-    if (this.createdFolderFrame && !this.createdFolderFrame.destroyed) {
-      this.createdFolderFrame.removeFromParent();
-      this.createdFolderFrame.destroy({ children: true });
+    if (this.folderShellFrame && !this.folderShellFrame.destroyed) {
+      this.folderShellFrame.removeFromParent();
+      this.folderShellFrame.destroy({ children: true });
     }
-    this.createdFolderFrame = null;
+    this.folderShellFrame = null;
     this.layer = null;
   }
 }

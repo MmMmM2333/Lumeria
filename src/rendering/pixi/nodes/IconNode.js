@@ -289,9 +289,9 @@ export class IconNode extends Container {
     const wasGhosted = Boolean(this.state?.ghosted);
     const wasDragging = Boolean(this.state?.dragging);
     const wasFolder = this.isFolder;
-    const shouldRevealLabelAfterGroupReturn = Boolean(
-      wasDragging &&
-      this.state?.revealLabelAfterGroupReturn &&
+    const shouldRevealLabelAfterVisualHandoff = Boolean(
+      (wasDragging || wasGhosted) &&
+      this.state?.revealLabelAfterVisualHandoff &&
       !state.dragging &&
       !state.ghosted &&
       !state.opening
@@ -331,12 +331,12 @@ export class IconNode extends Container {
       suppressInteractionFeedback ? null : state.interactionPhase,
       { immediate: suppressInteractionFeedback }
     );
-    if (shouldRevealLabelAfterGroupReturn) this.revealLabelAfterGhost();
+    if (shouldRevealLabelAfterVisualHandoff) this.revealLabelAfterGhost();
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
       this.resetFolderPreviewAfterGhost();
       if (this.folderHandoffLabelRevealInProgress) return;
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
-      else this.revealLabelAfterGhost();
+      else if (!shouldRevealLabelAfterVisualHandoff) this.revealLabelAfterGhost();
     }
   }
 

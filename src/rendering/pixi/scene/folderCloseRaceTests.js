@@ -3,11 +3,11 @@ import { FolderClosingGhostController } from "./folderClosingGhostController.js"
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
   makeFolderPageTrackVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 
 function makeTimerHost() {
   let nextId = 1;

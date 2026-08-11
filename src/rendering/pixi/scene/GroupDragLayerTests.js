@@ -1,4 +1,9 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
+import {
+  makeFolderShellVisualKey,
+  makeItemVisualKey,
+  VisualOwnershipRegistry,
+} from "./visualOwnershipRegistry.js";
 
 function installPixiTextTestDom() {
   if (!("CanvasRenderingContext2D" in globalThis)) {
@@ -48,6 +53,7 @@ function app(id) {
 
 function makeEntry(id, order, overrides = {}) {
   return {
+    actorKey: `item:${id}`,
     bundleCount: 1,
     delayMs: order * 10,
     item: app(id),
@@ -149,10 +155,10 @@ export async function runGroupDragLayerTests() {
       entries: gatedEntries,
       key: "gated-release",
       leadId: gatedEntries[0].item.id,
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 260, y: 210 },
       reducedMotion: false,
-      releasePlan: {
+      runtimePlan: {
         entries: gatedEntries.map((entry, index) => ({
           fallback: { x: 420 + index * 4, y: 300 },
           id: entry.item.id,
@@ -167,23 +173,299 @@ export async function runGroupDragLayerTests() {
     prewarmLayer.update(gatedState);
     assert(
       prewarmLayer.nodes.length === 6 &&
-        prewarmLayer.activeEntryIds.size === 0 &&
+        prewarmLayer.activeNodesByActorKey.size === 0 &&
         prewarmLayer.releaseController.lanes.size === 0,
       "the frame that finishes pool allocation should not also construct every release lane"
     );
     prewarmLayer.update(gatedState);
     assert(
-      prewarmLayer.activeEntryIds.size === 6 &&
+      prewarmLayer.activeNodesByActorKey.size === 6 &&
         prewarmLayer.releaseController.lanes.size === 6,
       "release lanes should start together on the render after the pool becomes ready"
     );
   } finally {
     prewarmLayer.destroy({ children: true });
   }
+
+  const ownershipRegistry = new VisualOwnershipRegistry();
+  const ownershipEvents = [];
+  let ownershipSettled = 0;
+  let ownershipAborted = 0;
+  const ownershipLayer = new GroupDragLayer({
+    onReleaseAborted: () => {
+      ownershipAborted += 1;
+    },
+    onReleaseSettled: () => {
+      ownershipSettled += 1;
+    },
+    resolvePointTarget: () => ({
+      point: { x: 420, y: 300 },
+      scale: { x: 1, y: 1 },
+    }),
+    visualOwnership: ownershipRegistry,
+  });
+  const unsubscribeOwnership = ownershipRegistry.subscribe((change) => {
+    ownershipEvents.push({
+      change,
+      nodeVisible: ownershipLayer.nodes[0]?.visible === true,
+      shellOwned: ownershipRegistry.hasOwner(makeFolderShellVisualKey("ownership-folder")),
+    });
+  });
+  try {
+    const ownershipEntry = makeEntry("ownership-app", 0, {
+      actorKey: "item:ownership-app",
+      zBand: 900,
+    });
+    const ownershipRuntimePlan = {
+      entries: [{
+        actorKey: "item:ownership-app",
+        fallback: { x: 420, y: 300 },
+        id: ownershipEntry.item.id,
+        memberIds: [ownershipEntry.item.id],
+        mode: "point-handoff",
+        target: { area: "desktop", id: ownershipEntry.item.id, kind: "desktop" },
+      }],
+      key: "plan-ownership-handoff",
+      status: "pending",
+    };
+    const ownershipGroup = {
+      center: { x: 260, y: 210 },
+      entries: [ownershipEntry],
+      key: "ownership-handoff",
+      outcome: "accepted",
+      phase: "releasing",
+      pointer: { x: 260, y: 210 },
+      presentationPlan: {
+        actors: [
+          {
+            endAnchor: { itemId: ownershipEntry.item.id, kind: "desktop-slot" },
+            key: "item:ownership-app",
+            memberIds: [ownershipEntry.item.id],
+            role: "lead",
+          },
+        ],
+      },
+      reducedMotion: false,
+      runtimePlan: ownershipRuntimePlan,
+      semanticPlan: { effects: {} },
+      totalCount: 1,
+      trail: [],
+    };
+    ownershipLayer.syncVisualOwnership(ownershipGroup);
+    assert(
+      ownershipRegistry.hasOwner(makeItemVisualKey(ownershipEntry.item.id)),
+      "an accepted transfer should acquire item ownership before live layout is exposed"
+    );
+    ownershipLayer.update(makeState(ownershipGroup));
+    ownershipLayer.update(makeState(ownershipGroup));
+    for (let index = 0; index < 180 && ownershipSettled === 0; index += 1) {
+      motionRuntime.step(1 / 60);
+      ownershipLayer.onRender?.();
+    }
+    const itemReleaseEvent = ownershipEvents.find((event) => (
+      event.change?.type === "release" && event.change?.key === makeItemVisualKey(ownershipEntry.item.id)
+    ));
+    assert(
+      ownershipSettled === 1 && itemReleaseEvent?.nodeVisible === false,
+      "the transfer actor must be hidden before its item ownership key is released"
+    );
+    assert(ownershipRegistry.snapshot().length === 0, "an ordinary item handoff should release its only visual owner");
+
+    ownershipLayer.clear();
+    ownershipSettled = 0;
+    const createdFolderId = "ownership-created-folder";
+    const createdEntries = [
+      makeEntry("ownership-created-a", 0, { actorKey: "item:ownership-created-a" }),
+      makeEntry("ownership-created-b", 1, { actorKey: "item:ownership-created-b" }),
+    ];
+    const createdRuntimePlan = {
+      entries: createdEntries.map((entry, slotIndex) => ({
+        actorKey: entry.actorKey,
+        id: entry.item.id,
+        memberIds: [entry.item.id],
+        mode: "created-folder",
+        target: {
+          expectedChildId: entry.item.id,
+          folderId: createdFolderId,
+          slotIndex,
+        },
+      })),
+      key: "plan-created-ownership-handoff",
+      shellActors: [{
+        endAnchor: { folderId: createdFolderId, kind: "folder-shell" },
+        key: `folderShell:${createdFolderId}`,
+        role: "folder-shell",
+      }],
+    };
+    const createdOwnershipGroup = {
+      ...ownershipGroup,
+      entries: createdEntries,
+      key: "created-ownership-handoff",
+      presentationPlan: {
+        actors: [
+          ...createdEntries.map((entry) => ({
+            endAnchor: { folderId: createdFolderId, kind: "folder-preview-slot" },
+            key: entry.actorKey,
+            memberIds: [entry.item.id],
+            role: "exact",
+          })),
+          ...createdRuntimePlan.shellActors,
+        ],
+      },
+      runtimePlan: createdRuntimePlan,
+      semanticPlan: { effects: { createdFolderId } },
+      totalCount: 2,
+    };
+    ownershipLayer.syncVisualOwnership(createdOwnershipGroup);
+    const createdNodeA = ownershipLayer.acquireNode(0);
+    const createdNodeB = ownershipLayer.acquireNode(1);
+    createdNodeA.visible = true;
+    createdNodeB.visible = true;
+    ownershipLayer.finishReleaseActor({
+      actorKey: createdEntries[0].actorKey,
+      node: createdNodeA,
+      runtimePlan: createdRuntimePlan,
+    }, false);
+    assert(
+      createdNodeA.visible === true &&
+        ownershipRegistry.hasOwner(makeItemVisualKey(createdEntries[0].item.id)) &&
+        ownershipSettled === 0,
+      "a preview actor that arrives before its created-folder shell should retain the ghost until the shell handoff"
+    );
+    ownershipLayer.finishFolderShellActor({
+      actorKey: `folderShell:${createdFolderId}`,
+      folderId: createdFolderId,
+      planKey: createdRuntimePlan.key,
+    });
+    assert(
+      createdNodeA.visible === false &&
+        !ownershipRegistry.hasOwner(makeFolderShellVisualKey(createdFolderId)) &&
+        !ownershipRegistry.hasOwner(makeItemVisualKey(createdEntries[0].item.id)) &&
+        ownershipRegistry.hasOwner(makeItemVisualKey(createdEntries[1].item.id)) &&
+        ownershipSettled === 1,
+      "the shell handoff should reveal the live folder and atomically flush every preview actor already waiting at its slot"
+    );
+
+    ownershipLayer.clear();
+    const partialEntries = [
+      makeEntry("partial-a", 0, { actorKey: "item:partial-a", zBand: 900 }),
+      makeEntry("partial-b", 1, { actorKey: "item:partial-b", zBand: 301 }),
+    ];
+    const partialRuntimePlan = {
+      entries: partialEntries.map((entry, index) => ({
+        actorKey: entry.actorKey,
+        fallback: { x: 420 + index * 72, y: 300 },
+        id: entry.item.id,
+        memberIds: [entry.item.id],
+        mode: "point-handoff",
+        target: { area: "desktop", id: entry.item.id, kind: "desktop" },
+      })),
+      key: "plan-partial-handoff",
+      status: "pending",
+    };
+    const partialGroup = {
+      center: { x: 260, y: 210 },
+      entries: partialEntries,
+      key: "partial-handoff",
+      outcome: "accepted",
+      phase: "releasing",
+      pointer: { x: 260, y: 210 },
+      presentationPlan: {
+        actors: partialEntries.map((entry) => ({
+          endAnchor: { itemId: entry.item.id, kind: "desktop-slot" },
+          key: entry.actorKey,
+          memberIds: [entry.item.id],
+          role: entry.item.id === "partial-a" ? "lead" : "exact",
+        })),
+      },
+      reducedMotion: false,
+      runtimePlan: partialRuntimePlan,
+      semanticPlan: { effects: {} },
+      settledActorKeys: [],
+      totalCount: 2,
+      trail: [],
+    };
+    ownershipLayer.syncVisualOwnership(partialGroup);
+    ownershipLayer.update(makeState(partialGroup));
+    ownershipLayer.update(makeState(partialGroup));
+    const partialNodeA = ownershipLayer.nodes[0];
+    const partialNodeB = ownershipLayer.nodes[1];
+    ownershipLayer.finishReleaseActor({
+      actorKey: "item:partial-a",
+      node: partialNodeA,
+      runtimePlan: partialRuntimePlan,
+    }, false);
+    partialGroup.settledActorKeys = ["item:partial-a"];
+    ownershipLayer.syncVisualOwnership(partialGroup);
+    ownershipLayer.update(makeState(partialGroup));
+    assert(
+      partialNodeA.visible === false && partialNodeB.visible === true,
+      "a handed-off actor must stay hidden while the remaining group actors continue releasing"
+    );
+    assert(
+      !ownershipRegistry.hasOwner(makeItemVisualKey("partial-a")) &&
+        ownershipRegistry.hasOwner(makeItemVisualKey("partial-b")) &&
+        ownershipLayer.releaseController.lanes.size === 1,
+      "a handed-off actor must leave both visual ownership and its runtime lane without disturbing active actors"
+    );
+
+    ownershipLayer.clear();
+    ownershipEvents.length = 0;
+    const abortGroup = {
+      ...ownershipGroup,
+      key: "ownership-abort",
+      presentationPlan: {
+        actors: ["abort-a", "abort-b"].map((id) => ({
+          endAnchor: { itemId: id, kind: "desktop-slot" },
+          key: `item:${id}`,
+          memberIds: [id],
+          role: "exact",
+        })),
+      },
+      runtimePlan: {
+        entries: ["abort-a", "abort-b"].map((id) => ({ actorKey: `item:${id}`, id })),
+        key: "plan-ownership-abort",
+      },
+      semanticPlan: { effects: {} },
+    };
+    ownershipLayer.syncVisualOwnership(abortGroup);
+    const abortNodeA = ownershipLayer.acquireNode(0);
+    const abortNodeB = ownershipLayer.acquireNode(1);
+    abortNodeA.visible = true;
+    abortNodeB.visible = true;
+    ownershipLayer.finishReleaseActor({
+      actorKey: "item:abort-a",
+      node: abortNodeA,
+      runtimePlan: abortGroup.runtimePlan,
+    }, true);
+    const abortReleaseEvent = ownershipEvents.find((event) => event.change?.type === "releaseByToken");
+    assert(
+      ownershipAborted === 1 &&
+        ownershipRegistry.snapshot().length === 0 &&
+        abortNodeA.visible === false &&
+        abortNodeB.visible === false &&
+        abortReleaseEvent?.nodeVisible === false,
+      "a visual abort should hide every actor before atomically releasing all transfer ownership"
+    );
+  } finally {
+    unsubscribeOwnership();
+    ownershipLayer.destroy({ children: true });
+    motionRuntime.reset();
+  }
   let releaseSettled = 0;
   const layer = new GroupDragLayer({
     onReleaseSettled: () => {
       releaseSettled += 1;
+    },
+    resolvePointTarget: ({ entry, node }) => {
+      const visualOffset = node?.visualWrap?.position || { x: 0, y: 0 };
+      return {
+        point: {
+          x: (Number(entry?.fallback?.x) || 480) - (Number(visualOffset.x) || 0),
+          y: (Number(entry?.fallback?.y) || 300) - (Number(visualOffset.y) || 0),
+        },
+        scale: { x: 1, y: 1 },
+      };
     },
   });
   try {
@@ -215,13 +497,12 @@ export async function runGroupDragLayerTests() {
 
     layer.update(makeState({
       center: { x: 320, y: 240 },
-      dropStatus: "accepted",
       entries,
       key: "group-a",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 320, y: 240 },
       reducedMotion: true,
-      releasePlan: { entries: [], key: "group-a-release" },
+      runtimePlan: { entries: [], key: "group-a-release" },
       totalCount: 20,
       trail: [],
     }));
@@ -254,9 +535,9 @@ export async function runGroupDragLayerTests() {
     const releaseOnlyEntry = makeEntry("expanded-12", 12, {
       releaseRole: "member",
       releaseStart: {
-        alpha: 0,
-        kind: "stack-tail",
-        point: { x: 320, y: 240 },
+        alpha: 1,
+        kind: "source-origin",
+        point: { x: 44, y: 78 },
         scale: 0.72,
       },
     });
@@ -266,10 +547,10 @@ export async function runGroupDragLayerTests() {
       entries: expandedEntries,
       key: "expanded-release",
       leadId: "expanded-0",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 320, y: 240 },
       reducedMotion: false,
-      releasePlan: {
+      runtimePlan: {
         entries: expandedEntries.map((entry, index) => ({
           delayMs: index * 8,
           fallback: { x: 480 + index * 2, y: 300 },
@@ -325,11 +606,11 @@ export async function runGroupDragLayerTests() {
         `scaleX: ${[...(releaseOnlyScaleXChannel?.base?.keys?.() || [])].join(",")})`
     );
     assert(
-      layer.nodes[12].position.x === 320 &&
-        layer.nodes[12].position.y === 240 &&
-        layer.nodes[12].alpha === 0 &&
+      layer.nodes[12].position.x === 44 &&
+        layer.nodes[12].position.y === 78 &&
+        layer.nodes[12].alpha === 1 &&
         Math.abs(layer.nodes[12].scale.x - 0.72) < 0.001,
-      "a release-only pooled node should begin invisibly at the declared stack-tail pose"
+      "a release-only pooled node should begin at its semantic source pose"
     );
 
     layer.clear();
@@ -346,10 +627,10 @@ export async function runGroupDragLayerTests() {
       entries: [roleTarget, roleLead],
       key: "role-z-order",
       leadId: roleLead.item.id,
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 320, y: 240 },
       reducedMotion: true,
-      releasePlan: {
+      runtimePlan: {
         entries: [roleTarget, roleLead].map((entry, index) => ({
           fallback: { x: 500 + index * 20, y: 300 },
           id: entry.item.id,
@@ -446,7 +727,7 @@ export async function runGroupDragLayerTests() {
       phase: "committing",
       pointer: { x: 300, y: 220 },
       reducedMotion: false,
-      releasePlan: makePointReleasePlan("single-visual", { x: 420, y: 300 }),
+      runtimePlan: makePointReleasePlan("single-visual", { x: 420, y: 300 }),
       totalCount: 1,
       trail: [],
     }));
@@ -477,7 +758,7 @@ export async function runGroupDragLayerTests() {
       },
     });
     layer.update(singleState);
-    const singleNode = layer.nodes[0];
+    let singleNode = layer.nodes[0];
     assert(
       singleNode.state.compact === false &&
         singleNode.state.singleLineLabel === false &&
@@ -522,8 +803,8 @@ export async function runGroupDragLayerTests() {
     );
     layer.update(makeState({
       ...hoverGroup,
-      phase: "accepted",
-      releasePlan: makePointReleasePlan(hoverEntry.item.id, { x: 420, y: 300 }),
+      phase: "releasing",
+      runtimePlan: makePointReleasePlan(hoverEntry.item.id, { x: 420, y: 300 }),
     }));
     assert(
       hoverReleaseNode.iconSprite.alpha === 1 &&
@@ -547,10 +828,10 @@ export async function runGroupDragLayerTests() {
       center: { x: 260, y: 210 },
       entries: [slotEntry],
       key: "slot-release",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 260, y: 210 },
       reducedMotion: true,
-      releasePlan: {
+      runtimePlan: {
         entries: [{
           id: slotEntry.item.id,
           mode: "folder-preview-slot",
@@ -587,7 +868,7 @@ export async function runGroupDragLayerTests() {
       releaseRole: "member",
       releaseStart: {
         alpha: 0,
-        kind: "stack-tail",
+        kind: "source-origin",
         point: { x: 300, y: 220 },
         scale: 0.72,
       },
@@ -598,10 +879,10 @@ export async function runGroupDragLayerTests() {
       entries: [releaseOnlySlotEntry],
       key: "release-only-slot",
       leadId: "another-lead",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 300, y: 220 },
       reducedMotion: false,
-      releasePlan: {
+      runtimePlan: {
         entries: [{
           delayMs: 0,
           id: releaseOnlySlotEntry.item.id,
@@ -641,7 +922,7 @@ export async function runGroupDragLayerTests() {
       releaseRole: "member",
       releaseStart: {
         alpha: 0,
-        kind: "stack-tail",
+        kind: "source-origin",
         point: { x: 300, y: 220 },
         scale: 0.72,
       },
@@ -652,10 +933,10 @@ export async function runGroupDragLayerTests() {
       entries: [releaseOnlyCenterEntry],
       key: "release-only-center",
       leadId: "another-lead",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 300, y: 220 },
       reducedMotion: false,
-      releasePlan: {
+      runtimePlan: {
         entries: [{
           delayMs: 100,
           id: releaseOnlyCenterEntry.item.id,
@@ -727,10 +1008,11 @@ export async function runGroupDragLayerTests() {
     );
     layer.update(makeState({
       ...continuityGroup,
-      entries: [continuityDraggedApp, continuityTargetApp],
-      phase: "accepted",
-      releasePlan: {
+      entries: [continuityTargetApp, continuityDraggedApp],
+      phase: "releasing",
+      runtimePlan: {
         entries: [continuityTargetApp, continuityDraggedApp].map((entry, slotIndex) => ({
+          actorKey: entry.actorKey,
           id: entry.item.id,
           mode: "created-folder",
           target: {
@@ -741,26 +1023,34 @@ export async function runGroupDragLayerTests() {
           },
         })),
         key: "plan-created-folder-continuity",
+        shellActors: [{
+          endAnchor: { folderId: "slot-folder", kind: "folder-shell" },
+          key: "folderShell:slot-folder",
+          role: "folder-shell",
+          zBand: 100,
+        }],
       },
     }));
-    const continuityTargetNode = layer.nodes[1];
+    const continuityTargetNode = layer.nodes[0];
+    const continuityDraggedReleaseNode = layer.nodes[1];
     const draggedCenterAfterRelease = layer.toLocal(
       { x: 0, y: 0 },
-      continuityDraggedNode.visualWrap
+      continuityDraggedReleaseNode.visualWrap
     );
     const targetCenterAfterRelease = layer.toLocal(
       { x: 0, y: 0 },
       continuityTargetNode.visualWrap
     );
-    const continuityFrame = layer.releaseController.createdFolderFrame;
+    const continuityFrame = layer.releaseController.folderShellFrame;
     assert(
-      Math.abs(draggedCenterAfterRelease.x - draggedCenterBeforeRelease.x) < 0.001 &&
+      continuityDraggedReleaseNode === continuityDraggedNode &&
+        Math.abs(draggedCenterAfterRelease.x - draggedCenterBeforeRelease.x) < 0.001 &&
         Math.abs(draggedCenterAfterRelease.y - draggedCenterBeforeRelease.y) < 0.001 &&
         Math.abs(targetCenterAfterRelease.x - continuityTargetApp.origin.x) < 0.001 &&
         Math.abs(targetCenterAfterRelease.y - continuityTargetApp.origin.y) < 0.001 &&
         Math.abs(continuityFrame.position.x - continuityTargetApp.origin.x) < 0.001 &&
         Math.abs(continuityFrame.position.y - continuityTargetApp.origin.y) < 0.001,
-      "created-folder release must preserve both app visual centers and start its frame at target B without a labeled-to-textless jump"
+      "created-folder release must preserve actor-to-node identity and both app visual centers when source ordering puts target B before dragged A"
     );
 
     layer.clear();
@@ -773,10 +1063,10 @@ export async function runGroupDragLayerTests() {
       center: { x: 260, y: 210 },
       entries: [draggedApp, targetApp],
       key: "created-folder-z-order",
-      phase: "accepted",
+      phase: "releasing",
       pointer: { x: 260, y: 210 },
       reducedMotion: false,
-      releasePlan: {
+      runtimePlan: {
         entries: [draggedApp, targetApp].map((entry, index) => ({
           id: entry.item.id,
           mode: "created-folder",
@@ -788,6 +1078,12 @@ export async function runGroupDragLayerTests() {
           },
         })),
         key: "plan-created-folder-z-order",
+        shellActors: [{
+          endAnchor: { folderId: "slot-folder", kind: "folder-shell" },
+          key: "folderShell:slot-folder",
+          role: "folder-shell",
+          zBand: 100,
+        }],
       },
       totalCount: 1,
       trail: [],
@@ -795,7 +1091,7 @@ export async function runGroupDragLayerTests() {
     const createdLanesById = new Map(
       [...layer.releaseController.lanes.values()].map((lane) => [lane.context.entry.id, lane])
     );
-    const frame = layer.releaseController.createdFolderFrame;
+    const frame = layer.releaseController.folderShellFrame;
     const draggedFollower = createdLanesById.get(draggedApp.item.id)?.controller?.targetFollower;
     const targetFollower = createdLanesById.get(targetApp.item.id)?.controller?.targetFollower;
     layer.sortChildren();
@@ -808,9 +1104,11 @@ export async function runGroupDragLayerTests() {
     layer.resolveFolderNode = () => null;
     layer.clear();
 
-    // Restore the unchanged-state probe after the isolated handoff scenario;
-    // it intentionally reuses the same pooled node.
+    // Restore the unchanged-state probe after the isolated handoff scenario.
+    // A cleared session may take any free pooled node; identity is guaranteed
+    // only while the same actor remains active within one transfer session.
     layer.update(singleState);
+    singleNode = layer.nodes[0];
 
     let stateCalls = 0;
     const originalSetState = singleNode.setState.bind(singleNode);
@@ -828,12 +1126,13 @@ export async function runGroupDragLayerTests() {
       groupState: {
         ...singleState.groupState,
         center: { x: 260, y: 210 },
-        phase: "accepted",
-        releasePlan: makePointReleasePlan("single-visual", { x: 420, y: 300 }),
+        phase: "releasing",
+        runtimePlan: makePointReleasePlan("single-visual", { x: 420, y: 300 }),
       },
     });
     for (let index = 0; index < 180 && releaseSettled === pointReleaseSettledBefore; index += 1) {
       motionRuntime.step(1 / 60);
+      layer.onRender?.();
     }
     assert(
       releaseSettled === pointReleaseSettledBefore + 1,
@@ -853,7 +1152,7 @@ export async function runGroupDragLayerTests() {
 
     layer.clear();
     assert(
-      !layer.visible && layer.activeEntryIds.size === 0 && layer.nodes.every((node) => !node.visible),
+      !layer.visible && layer.activeNodesByActorKey.size === 0 && layer.nodes.every((node) => !node.visible),
       "clearing should release every pooled visual owner"
     );
   } finally {

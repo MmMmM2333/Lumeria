@@ -6,9 +6,9 @@ import {
   makeFolderPanelTargetKey,
 } from "./folderHandoffCoordinator.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 
 function makeGhost() {
   return {

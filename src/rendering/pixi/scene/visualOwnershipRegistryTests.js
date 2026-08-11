@@ -1,16 +1,18 @@
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+  makeFolderShellVisualKey,
+  makeItemVisualKey,
+} from "./visualOwnershipRegistry.js";
 
-export function runFolderVisualOwnershipRegistryTests() {
+export function runVisualOwnershipRegistryTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Folder visual ownership registry test failed] ${message}`);
+    if (!condition) throw new Error(`[Visual ownership registry test failed] ${message}`);
   };
 
   {
-    const registry = new FolderVisualOwnershipRegistry();
+    const registry = new VisualOwnershipRegistry();
     const key = makeDesktopSourceVisualKey("folder-a");
     registry.acquire(key, { folderId: "folder-a", kind: "opening", token: 1 });
 
@@ -23,7 +25,36 @@ export function runFolderVisualOwnershipRegistryTests() {
   }
 
   {
-    const registry = new FolderVisualOwnershipRegistry();
+    const registry = new VisualOwnershipRegistry();
+    const token = "transfer-1";
+    const keys = [
+      makeItemVisualKey("app-a"),
+      makeItemVisualKey("app-b"),
+      makeFolderShellVisualKey("folder-created"),
+    ];
+    assert(
+      registry.acquireMany(keys, { actorKey: "group-release", kind: "group-transfer", token }) === 3,
+      "a transfer session should acquire every item and shell before committing data"
+    );
+    assert(
+      keys.every((key) => registry.isOwnedBy(key, token)),
+      "item and folder-shell keys should share the transfer token"
+    );
+    registry.acquire(makeItemVisualKey("app-a"), {
+      actorKey: "replacement",
+      kind: "group-transfer",
+      token: "transfer-2",
+    });
+    assert(
+      registry.isOwnedBy(makeItemVisualKey("app-a"), "transfer-2") && registry.snapshot().length === 3,
+      "ownership transfer should replace one key atomically without duplicating its visual owner"
+    );
+    assert(registry.releaseByToken(token) === 2, "releaseByToken should preserve transferred keys");
+    assert(registry.snapshot().length === 1, "only the replacement owner should remain");
+  }
+
+  {
+    const registry = new VisualOwnershipRegistry();
     registry.acquire(makeDesktopSourceVisualKey("folder-a"), { folderId: "folder-a", kind: "detached", token: "a" });
     registry.acquire(makeDesktopSourceVisualKey("folder-b"), { folderId: "folder-b", kind: "opening", token: "b" });
     registry.acquire(makeFolderIconVisualKey("folder-a", "app-a"), { folderId: "folder-a", kind: "detached", token: "a" });
@@ -34,7 +65,7 @@ export function runFolderVisualOwnershipRegistryTests() {
   }
 
   {
-    const registry = new FolderVisualOwnershipRegistry();
+    const registry = new VisualOwnershipRegistry();
     const key = makeDesktopSourceVisualKey("folder-a");
     const changes = [];
     const unsubscribe = registry.subscribe((change, snapshot) => {

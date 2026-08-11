@@ -1,14 +1,10 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { matchesIconFocus } from "../../../domain/iconFocus.js";
-import { GROUP_RELEASE_MODE } from "../../../domain/groupReleasePlan.js";
+import { GROUP_TRANSFER_PHASE } from "../../../domain/groupTransferSession.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
-import {
-  getReturningGroupDragItemIds,
-  isActiveDraggedLaunchItem,
-} from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
@@ -59,35 +55,6 @@ function getFolderPreviewChildren(folder) {
   return Array.isArray(folder?.childPages)
     ? folder.childPages.flatMap((page) => page || [])
     : folder?.children || [];
-}
-
-function getCreatedFolderReleaseOwnedIds(state, folderId) {
-  const group = state?.groupDragState;
-  if (
-    !folderId ||
-    group?.releaseCreatedFolderId !== folderId ||
-    !["committing", "accepted"].includes(group.phase)
-  ) return new Set();
-
-  const ids = new Set();
-  // During the committing frame the semantic release plan has not been
-  // published yet, but the group entries already contain both the dragged
-  // app(s) and the app that was used as the folder-create target.
-  for (const entry of group.entries || []) {
-    const id = entry?.item?.id;
-    if (id) ids.add(id);
-  }
-  // Once accepted, use the plan as the authoritative landing ownership. The
-  // target-kind check keeps unrelated point/folder releases from suppressing
-  // a thumbnail child merely because an id happens to be present in entries.
-  for (const entry of group.releasePlan?.entries || []) {
-    if (
-      entry?.mode !== GROUP_RELEASE_MODE.CREATED_FOLDER &&
-      entry?.target?.kind !== "created-folder"
-    ) continue;
-    if (entry.id) ids.add(entry.id);
-  }
-  return ids;
 }
 
 export function normalizeDesktopHandoffState(state = {}) {
@@ -483,58 +450,22 @@ export function getDesktopFrame(state) {
   };
 }
 
-function makeReleaseLayoutTargets(state, desktopFrame, pageWidth, targetX) {
-  const group = state.groupDragState;
-  const releasePages = group?.releaseLayoutPages;
-  if (
-    !Array.isArray(releasePages) ||
-    !group.releaseLayoutAnchorId ||
-    !group.releaseCreatedFolderId ||
-    (group.phase !== "committing" && group.phase !== "accepted")
-  ) return new Map();
-
-  const targets = new Map();
-  releasePages.forEach((page, pageIndex) => {
-    const visibleItems = state.getVisibleDesktopPage(page);
-    const metrics = getDesktopGridMetrics({
-      cols: state.gridCols,
-      height: desktopFrame.height,
-      isSearchMode: state.isSearchMode,
-      paddingTop: state.desktopGridDebugOptions?.paddingTop,
-      rows: state.gridRows,
-      visibleCount: visibleItems.length,
-      width: desktopFrame.width,
-    });
-    visibleItems.forEach((item, index) => {
-      if (!item?.id) return;
-      const slot = getGridSlotRect(metrics, index);
-      const sizing = getDesktopIconSizing(state, slot);
-      const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
-      const y = desktopFrame.top + slot.top + slot.height / 2;
-      const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
-      targets.set(item.id, item.type === "folder"
-        ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
-        : { x, y });
-    });
-  });
-
-  const anchorTarget = targets.get(group.releaseLayoutAnchorId);
-  if (!anchorTarget) return new Map();
-  targets.set(group.releaseCreatedFolderId, { ...anchorTarget });
-  return targets;
-}
-
 export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const state = normalizeDesktopHandoffState(inputState);
   const selectedAppIds = normalizeFolderIdSet(state.selectedAppIds);
-  const draggedItemIds = normalizeFolderIdSet(state.dragMeta?.draggedIds);
-  const returningGroupDragItemIds = getReturningGroupDragItemIds(state);
+  const ownedItemIds = normalizeFolderIdSet(state.groupTransferOwnedItemIds);
+  const ownedFolderShellIds = normalizeFolderIdSet(state.groupTransferOwnedFolderShellIds);
+  const hasVisualHandoff = [
+    GROUP_TRANSFER_PHASE.RELEASING,
+    GROUP_TRANSFER_PHASE.RETURNING,
+  ].includes(state.groupDragState?.phase);
+  const transferActorsAreTextless = Number(state.groupDragState?.totalCount) > 1 ||
+    state.groupDragState?.visualSpec?.textless === true;
   const pages = state.activePages || [];
   const activePageIndex = state.activePageIndex || 0;
   const desktopFrame = getDesktopFrame(state);
   const pageWidth = desktopFrame.width;
   const targetX = -activePageIndex * pageWidth;
-  const releaseLayoutTargets = makeReleaseLayoutTargets(state, desktopFrame, pageWidth, targetX);
   const effectiveFolderSourceGhostedIds = options.effectiveFolderSourceGhostedIds || state.folderSourceGhostedIds;
   const folderDropFrameSuppressedIds = options.folderDropFrameSuppressedIds || new Set();
   const folderHandoffEntries = options.folderHandoffEntries || new Map();
@@ -587,7 +518,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const committedLayoutTarget = item?.type === "folder"
         ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
         : { x, y };
-      const stableLayoutTarget = releaseLayoutTargets.get(item?.id) || committedLayoutTarget;
+      const stableLayoutTarget = committedLayoutTarget;
       const stableScreenTarget = item?.type === "folder"
         ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
         : null;
@@ -635,17 +566,15 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const layoutTarget = pinnedLayoutTarget || stableLayoutTarget;
       const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
       const key = `${source.type}:${pageIndex}:${item.id}`;
-      const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
-      const isCreatedFolderRelease = item.type === "folder" &&
-        state.groupDragState?.releaseCreatedFolderId === item.id &&
-        (state.groupDragState.phase === "committing" || state.groupDragState.phase === "accepted");
+      const isActiveDraggedItem = Boolean(
+        [GROUP_TRANSFER_PHASE.GATHERING, GROUP_TRANSFER_PHASE.DRAGGING].includes(state.groupDragState?.phase) &&
+        ownedItemIds.has(item.id)
+      );
+      const isGroupTransferShellOwned = item.type === "folder" && ownedFolderShellIds.has(item.id);
       const isFolderSourceGhosted = item.type === "folder" && folderPresentation?.isSourceGhosted === true;
-      const createdFolderReleaseOwnedIds = item.type === "folder"
-        ? getCreatedFolderReleaseOwnedIds(state, item.id)
-        : new Set();
       const suppressedFolderPreviewChildIds = item.type === "folder"
         ? getFolderPreviewChildren(item)
-          .filter((child) => draggedItemIds.has(child?.id) || createdFolderReleaseOwnedIds.has(child?.id))
+          .filter((child) => ownedItemIds.has(child?.id))
           .map((child) => child.id)
         : [];
       const suppressLabelRevealAfterGhost = isFolderClosingHandoff || isFolderSourceGhosted;
@@ -669,7 +598,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         index,
         isActiveDraggedItem,
         isActiveFolderClosingHandoff,
-        isCreatedFolderRelease,
+        isGroupTransferShellOwned,
         isFolderClosingHandoff,
         isFolderSourceGhosted,
         isInteractivePage,
@@ -699,7 +628,8 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
             isFolderSourceGhosted ||
-            isCreatedFolderRelease
+            ownedItemIds.has(item.id) ||
+            isGroupTransferShellOwned
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
@@ -715,7 +645,10 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
-          revealLabelAfterGroupReturn: returningGroupDragItemIds.has(item.id),
+          revealLabelAfterVisualHandoff: hasVisualHandoff && (
+            isGroupTransferShellOwned ||
+            (transferActorsAreTextless && ownedItemIds.has(item.id))
+          ),
           focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
             state.focusedIcon,
             state.isSearchMode ? "search" : "desktop",

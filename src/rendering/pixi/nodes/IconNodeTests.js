@@ -123,7 +123,7 @@ export async function runIconNodeTests() {
     node.setState({
       ...interactionNodeState,
       dragging: true,
-      revealLabelAfterGroupReturn: true,
+      revealLabelAfterVisualHandoff: true,
     });
     assert(node.visible === false, "a returning real icon should stay hidden while the release ghost owns it");
     node.setState({ ...interactionNodeState, dragging: false });
@@ -143,7 +143,26 @@ export async function runIconNodeTests() {
 
     motionRuntime.reset();
     node.labelText.alpha = 1;
-    node.setState({ ...interactionNodeState, dragging: true, revealLabelAfterGroupReturn: false });
+    node.setState({
+      ...interactionNodeState,
+      ghosted: true,
+      revealLabelAfterVisualHandoff: true,
+    });
+    assert(node.visible === false, "an ownership-ghosted icon should remain hidden behind its transfer actor");
+    node.setState({ ...interactionNodeState, ghosted: false });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 0),
+      "an ownership-ghosted icon should reveal its label from zero at the actor-to-live handoff"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    assert(nearlyEqual(node.labelText.alpha, 1), "the ownership handoff label should finish fully visible");
+
+    motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({ ...interactionNodeState, dragging: true, revealLabelAfterVisualHandoff: false });
     node.setState({ ...interactionNodeState, dragging: false });
     assert(
       nearlyEqual(node.labelText.alpha, 1),

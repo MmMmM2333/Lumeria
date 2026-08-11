@@ -1,9 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { GROUP_TRANSFER_PHASE } from "../../../domain/groupTransferSession.js";
 import { getGridSlotRect } from "../geometry/gridGeometry.js";
-import {
-  getReturningGroupDragItemIds,
-  isActiveDraggedLaunchItem,
-} from "./dragVisibility.js";
 import {
   makeFolderIconNodeState,
   makeFolderIconRenderPlan,
@@ -32,6 +29,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     getFolderPageRenderMode = null,
     getVisibleFolderPage = null,
     groupDragState = null,
+    groupTransferOwnedItemIds = null,
     iconSize = 64,
     iconGesturePresentation = null,
     isClosing = false,
@@ -60,8 +58,15 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
-  const dragState = { dragMeta, groupDragState, isBatchSelectionActive };
-  const returningGroupDragItemIds = getReturningGroupDragItemIds(dragState);
+  const ownedItemIds = groupTransferOwnedItemIds instanceof Set
+    ? groupTransferOwnedItemIds
+    : new Set(groupTransferOwnedItemIds || []);
+  const hasVisualHandoff = [
+    GROUP_TRANSFER_PHASE.RELEASING,
+    GROUP_TRANSFER_PHASE.RETURNING,
+  ].includes(groupDragState?.phase);
+  const transferActorsAreTextless = Number(groupDragState?.totalCount) > 1 ||
+    groupDragState?.visualSpec?.textless === true;
   const entries = [];
 
   (folderPages || []).forEach((page, pageIndex) => {
@@ -92,7 +97,10 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         slot: stableSlot,
       });
       const { key, source, x, y } = iconPlan;
-      const isActiveDraggedItem = isActiveDraggedLaunchItem(item, dragState);
+      const isActiveDraggedItem = Boolean(
+        [GROUP_TRANSFER_PHASE.GATHERING, GROUP_TRANSFER_PHASE.DRAGGING].includes(groupDragState?.phase) &&
+        ownedItemIds.has(item.id)
+      );
       const hasActiveOpeningGhost = openingGhostItemIds?.has(item.id) === true;
       const targetCenter = makeFolderIconTargetCenter({ geometry, isTextlessMode, targetTrackX, x, y });
       const stableTargetCenter = makeFolderIconTargetCenter({
@@ -108,6 +116,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         folderPageSize,
         iconSize,
         iconGesturePresentation,
+        groupTransferOwned: ownedItemIds.has(item.id),
         isActiveDraggedItem,
         isBatchSelectionActive,
         isEditMode,
@@ -118,7 +127,9 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         launchTargetStatusById,
         openingGhostItemIds,
         pageIndex,
-        revealLabelAfterGroupReturn: returningGroupDragItemIds.has(item.id),
+        revealLabelAfterVisualHandoff: hasVisualHandoff &&
+          transferActorsAreTextless &&
+          ownedItemIds.has(item.id),
         focusedIcon,
         selectedAppIds,
         showMissingLaunchTargetBadge,

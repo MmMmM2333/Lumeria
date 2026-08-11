@@ -10,7 +10,6 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
-import { resolveGroupReleaseVisualLimit } from "../../../domain/groupReleasePopulation.js";
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
@@ -18,9 +17,9 @@ import { makeSyntheticPointerEvent } from "./iconSceneHelpers.js";
 import { FolderOverlayLayer } from "./FolderOverlayLayer.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
@@ -171,23 +170,6 @@ function makeIdListSignature(value) {
     .join(",");
 }
 
-function getCreatedFolderReleaseSourceIds(group) {
-  if (
-    !group?.releaseCreatedFolderId ||
-    !["committing", "accepted"].includes(group.phase)
-  ) return new Set();
-
-  const ids = new Set();
-  for (const entry of group.entries || []) {
-    const id = entry?.item?.id;
-    if (id) ids.add(id);
-  }
-  for (const entry of group.releasePlan?.entries || []) {
-    if (entry?.id) ids.add(entry.id);
-  }
-  return ids;
-}
-
 function makePointerOnlyPlanSnapshot(state, effectiveFolderSourceGhostedIds, folderDropFrameSuppressedIds, folderHandoffEntries) {
   const group = state.groupDragState;
   const renderedFolder = state.singleStageFolderState?.renderedFolder;
@@ -227,9 +209,10 @@ function makePointerOnlyPlanSnapshot(state, effectiveFolderSourceGhostedIds, fol
       hover.targetId || "",
       hover.targetType || "",
       group.phase,
-      group.releaseCreatedFolderId || "",
       group.totalCount || 0,
       makeIdListSignature(state.dragMeta?.draggedIds),
+      makeIdListSignature(state.groupTransferOwnedFolderShellIds),
+      makeIdListSignature(state.groupTransferOwnedItemIds),
       makeIdListSignature(state.selectedAppIds),
       makeIdListSignature(effectiveFolderSourceGhostedIds),
       makeIdListSignature(state.folderClosingHandoffIds || state.folderClosingHandoffId),
@@ -421,7 +404,7 @@ export class DesktopLayer extends Container {
     this.onGroupReleaseComplete = options.onGroupReleaseComplete || (() => {});
     if (!options.iconBoundsRegistry) throw new Error("DesktopLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
-    this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
+    this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.renderCopy = {
       newFolderName: String(options.renderCopy?.newFolderName || ""),
@@ -468,10 +451,13 @@ export class DesktopLayer extends Container {
     });
     this.groupDragLayer = new GroupDragLayer({
       onPrewarmRequest: (reason) => this.onFolderRenderRequest(reason),
+      onRenderRequest: (reason) => this.onFolderRenderRequest(reason),
       onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),
       onReleaseSettled: (payload) => this.onGroupReleaseComplete(payload),
+      onVisualOwnershipChange: (reason) => this.onFolderRenderRequest(reason),
       resolveFolderNode: (payload) => this.resolveGroupReleaseFolderNode(payload),
       resolvePointTarget: (payload) => this.resolveGroupReleasePoint(payload),
+      visualOwnership: this.visualOwnership,
     });
     this.folderDropStrokeLayer = new FolderDropTargetLayer({ part: "stroke" });
     this.dragHitDebugLayer = new DragHitDebugLayer();
@@ -600,6 +586,21 @@ export class DesktopLayer extends Container {
 
   update(state) {
     state = normalizeDesktopHandoffState(state);
+    const groupTransferOwnership = this.groupDragLayer?.syncVisualOwnership?.(state.groupDragState) || {
+      folderShellIds: new Set(),
+      itemIds: new Set(),
+    };
+    state = {
+      ...state,
+      groupTransferOwnedFolderShellIds: normalizeFolderIdSet(
+        state.groupTransferOwnedFolderShellIds,
+        groupTransferOwnership.folderShellIds
+      ),
+      groupTransferOwnedItemIds: normalizeFolderIdSet(
+        state.groupTransferOwnedItemIds,
+        groupTransferOwnership.itemIds
+      ),
+    };
     const effectiveFolderSourceGhostedIds = normalizeFolderIdSet(
       state.folderSourceGhostedIds,
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
@@ -681,7 +682,7 @@ export class DesktopLayer extends Container {
         let node = this.iconNodes.get(key);
         const isNewNode = !node;
         const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (
-          entry.isActiveDraggedItem || entry.isCreatedFolderRelease
+          entry.isActiveDraggedItem || entry.isGroupTransferShellOwned
         );
         const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
         if (isNewNode) {
@@ -741,11 +742,14 @@ export class DesktopLayer extends Container {
 
       this.emptyText.visible = plan.emptyText.visible;
       this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
-      const createdFolderReleaseSourceIds = getCreatedFolderReleaseSourceIds(state.groupDragState);
+      const groupTransferOwnedItemIds = state.groupTransferOwnedItemIds || new Set();
+      const groupTransferOwnedFolderShellIds = state.groupTransferOwnedFolderShellIds || new Set();
       for (const [key, node] of this.iconNodes) {
         if (seen.has(key)) continue;
         this.retireIconNode(key, node, {
-          immediate: pageTrackScopeChanged || createdFolderReleaseSourceIds.has(node?.item?.id),
+          immediate: pageTrackScopeChanged ||
+            groupTransferOwnedItemIds.has(node?.item?.id) ||
+            groupTransferOwnedFolderShellIds.has(node?.item?.id),
         });
       }
 
@@ -959,6 +963,7 @@ export class DesktopLayer extends Container {
       this.onFolderGeometryChange(this.singleStageFolderLayer.update({
         ...state.singleStageFolderState,
         desktopPageTrackOffset,
+        groupTransferOwnedItemIds: state.groupTransferOwnedItemIds,
       }));
       return;
     }
@@ -1067,11 +1072,11 @@ export class DesktopLayer extends Container {
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
       releasePrewarmCount: state.isBatchSelectionActive
-        ? resolveGroupReleaseVisualLimit({
-          folderPageSize: state.folderPageSize,
-          gridCols: state.gridCols,
-          gridRows: state.gridRows,
-        })
+        ? Math.max(
+          1,
+          Number(state.folderPageSize) || 1,
+          (Number(state.gridCols) || 1) * (Number(state.gridRows) || 1)
+        )
         : 0,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
@@ -1079,24 +1084,38 @@ export class DesktopLayer extends Container {
     });
   }
 
-  /**
-   * The accepted group state can arrive before the scheduled desktop render.
-   * Hide the old desktop owners in that same synchronous handoff so the
-   * release layer never shares a frame with a dimmed/hovered source icon.
-   */
-  applyImmediateGroupReleaseSourceGhosting(group) {
-    const sourceIds = getCreatedFolderReleaseSourceIds(group);
-    if (!sourceIds.size) return false;
+  applyImmediateGroupTransferOwnership(group) {
+    const ownership = this.groupDragLayer.syncVisualOwnership(group);
+    if (!ownership.itemIds.size && !ownership.folderShellIds.size) return false;
     let changed = false;
     for (const node of this.iconNodes.values()) {
-      if (!node?.state || !sourceIds.has(node.item?.id) || node.state.ghosted === true) continue;
-      killMotionOf(node, null, { reason: "group-release-source-handoff" });
-      killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });
+      if (!node?.state) continue;
+      const isDirectlyOwned = ownership.itemIds.has(node.item?.id) ||
+        ownership.folderShellIds.has(node.item?.id);
+      const suppressedFolderPreviewChildIds = node.item?.type === "folder"
+        ? (node.item.childPages || [node.item.children || []])
+          .flatMap((page) => page || [])
+          .filter((child) => ownership.itemIds.has(child?.id))
+          .map((child) => child.id)
+        : [];
+      if (!isDirectlyOwned && !suppressedFolderPreviewChildIds.length) continue;
+      if (isDirectlyOwned) {
+        killMotionOf(node, null, { reason: "group-release-source-handoff" });
+        killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });
+      }
       node.setState({
         ...node.state,
-        ghosted: true,
+        ghosted: isDirectlyOwned || node.state.ghosted === true,
+        suppressedFolderPreviewChildIds,
         suppressLabelRevealAfterGhost: true,
       });
+      changed = true;
+    }
+    for (const node of this.singleStageFolderLayer?.iconNodes?.values?.() || []) {
+      if (!node?.state || !ownership.itemIds.has(node.item?.id)) continue;
+      killMotionOf(node, null, { reason: "group-release-folder-source-handoff" });
+      killMotionOf(node.scale, null, { reason: "group-release-folder-source-handoff" });
+      node.setState({ ...node.state, ghosted: true });
       changed = true;
     }
     return changed;
@@ -1116,6 +1135,53 @@ export class DesktopLayer extends Container {
   }
 
   resolveGroupReleasePoint({ entry, node: releaseNode, target, state } = {}) {
+    const semanticAnchor = target?.semanticAnchor || null;
+    const makeResolvedPoint = (visualTarget, targetScale = { x: 1, y: 1 }) => ({
+      point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
+      scale: targetScale,
+    });
+    if (semanticAnchor?.kind?.startsWith("desktop-page-edge-")) {
+      const goesLeft = semanticAnchor.kind.endsWith("-left");
+      return makeResolvedPoint({
+        x: goesLeft ? -28 : Math.max(1, Number(state?.width) || 1) + 28,
+        y: Math.max(1, Number(state?.height) || 1) * 0.5,
+      }, { x: 0.72, y: 0.72 });
+    }
+    if (semanticAnchor?.kind?.startsWith("folder-page-edge-")) {
+      const panel = this.singleStageFolderLayer?.panelGeometry || null;
+      if (!panel) return null;
+      const goesLeft = semanticAnchor.kind.endsWith("-left");
+      return makeResolvedPoint({
+        x: goesLeft ? panel.left - 24 : panel.left + panel.width + 24,
+        y: panel.top + panel.height * 0.5,
+      }, { x: 0.62, y: 0.62 });
+    }
+    if (semanticAnchor?.kind === "folder-preview-slot") {
+      const previewRect = this.iconBoundsRegistry?.getBounds?.(
+        BOUNDS_KIND.PREVIEW_CHILD,
+        BOUNDS_VARIANT.RENDERED,
+        {
+          childId: semanticAnchor.itemId || entry?.id,
+          folderId: semanticAnchor.folderId,
+          slotIndex: semanticAnchor.slotIndex,
+        }
+      );
+      const previewStageRect = clientRectToStageVisualRect(previewRect, state?.stageRect);
+      if (!previewStageRect) return null;
+      const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
+        targetStageRect: previewStageRect,
+      });
+      return makeResolvedPoint({
+        x: previewStageRect.left + previewStageRect.width / 2,
+        y: previewStageRect.top + previewStageRect.height / 2,
+      }, targetScale);
+    }
+    if (semanticAnchor?.kind === "folder-center") {
+      const folderNode = this.resolveGroupReleaseFolderNode({ target: semanticAnchor });
+      const pose = folderNode?.getFolderCenterReleasePose?.(this.groupDragLayer);
+      if (!pose?.center) return null;
+      return makeResolvedPoint(pose.center, { x: 0.35, y: 0.35 });
+    }
     const targetId = target?.id || entry?.id || null;
     if (!targetId) return null;
     const nodeCandidates = [

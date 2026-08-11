@@ -20,11 +20,11 @@ import {
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
   makeFolderPageTrackVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 
 const K = ICON_BOUNDS_KIND;
 const V = ICON_BOUNDS_VARIANT;
@@ -612,6 +612,8 @@ export async function runFolderOverlayLayerTests() {
         item: movingItem,
         source: { folderId, index: 0, pageIndex: 0, type: "folder" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([movingItem.id]),
       folderPages: [[neighborItem, movingItem]],
     });
     layer.update(releaseState);
@@ -694,6 +696,8 @@ export async function runFolderOverlayLayerTests() {
         item: secondPageItem,
         source: { folderId, index: 0, pageIndex: 1, type: "folder" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([secondPageItem.id]),
     });
     layer.update(dragState);
     assert(
@@ -821,6 +825,8 @@ export async function runFolderOverlayLayerTests() {
         item: insertedItem,
         source: { folderId, index: 0, pageIndex: 0, type: "folder" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(4, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(4, var(--folder-icon-cell-height))",
@@ -1144,6 +1150,8 @@ export async function runFolderOverlayLayerTests() {
         item: insertedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
@@ -1240,6 +1248,8 @@ export async function runFolderOverlayLayerTests() {
         item: insertedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
@@ -1408,6 +1418,8 @@ export async function runFolderOverlayLayerTests() {
         item: insertedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
@@ -1472,6 +1484,8 @@ export async function runFolderOverlayLayerTests() {
         item: insertedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
@@ -1571,6 +1585,8 @@ export async function runFolderOverlayLayerTests() {
         item: draggedItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([draggedItem.id]),
       folderGridStyle: {
         gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
         gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
@@ -1713,6 +1729,8 @@ export async function runFolderOverlayLayerTests() {
         item: { id: "page-a-1", name: "Page A 1", type: "app" },
         source: { area: "folder", folderId: "folder-resize", pageIndex: 0 },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set(["page-a-1"]),
       folderGridStyle: {
         gridTemplateRows: "repeat(3, var(--folder-icon-cell-height))",
       },

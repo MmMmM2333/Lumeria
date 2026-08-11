@@ -48,6 +48,7 @@ export function makeFolderIconNodeState(options = {}) {
     closingGhostKeys = null,
     folderId = null,
     folderPageSize = 0,
+    groupTransferOwned = false,
     iconSize = 64,
     iconGesturePresentation = null,
     isActiveDraggedItem = false,
@@ -60,7 +61,7 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatusById = null,
     openingGhostItemIds = null,
     pageIndex = 0,
-    revealLabelAfterGroupReturn = false,
+    revealLabelAfterVisualHandoff = false,
     focusedIcon = null,
     selectedAppIds = null,
     showMissingLaunchTargetBadge = true,
@@ -70,10 +71,13 @@ export function makeFolderIconNodeState(options = {}) {
     stageWidth = 1,
   } = options;
   const itemId = item?.id;
-  const ghosted = Boolean(isInteractivePage && (
+  const ghosted = Boolean(
+    groupTransferOwned ||
+    (isInteractivePage && (
       openingGhostItemIds?.has(itemId) ||
       closingGhostKeys?.has(itemId)
-    ));
+    ))
+  );
   return {
     batchSelected: Boolean(
       isBatchSelectionActive &&
@@ -104,7 +108,7 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
     opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
     removable: item?.type === "app",
-    revealLabelAfterGroupReturn,
+    revealLabelAfterVisualHandoff,
     focused: isInteractivePage && matchesIconFocus(focusedIcon, "folder", itemId, pageIndex, folderId),
     source,
     stageHeight,

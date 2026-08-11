@@ -36,6 +36,8 @@ export function runFolderOverlayRenderPlanTests() {
     geometry,
     getFolderPageRenderMode: (pageIndex) => pageIndex === 1 ? "empty" : "interactive",
     getVisibleFolderPage: (page) => page,
+    groupDragState: { phase: "dragging" },
+    groupTransferOwnedItemIds: new Set([appB.id]),
     iconSize: 56,
     iconGesturePresentation: {
       phase: "pressing",
@@ -79,19 +81,41 @@ export function runFolderOverlayRenderPlanTests() {
     getFolderPageRenderMode: () => "interactive",
     getVisibleFolderPage: (page) => page,
     groupDragState: {
-      phase: "rejected",
-      releasePlan: {
-        entries: [appA, appB].map((item) => ({ id: item.id, mode: "return-to-origin" })),
-      },
+      phase: "returning",
       totalCount: 2,
     },
+    groupTransferOwnedItemIds: new Set([appA.id, appB.id]),
     iconSize: 56,
     isBatchSelectionActive: true,
     localMetrics,
   });
   assert(
-    returningPlan.entries.every((entry) => entry.nodeState.revealLabelAfterGroupReturn === true),
+    returningPlan.entries.every((entry) => entry.nodeState.revealLabelAfterVisualHandoff === true),
     "visible folder children should use the same deferred label reveal when a batch drag returns"
+  );
+
+  const singleReturningPlan = makeFolderOverlayRenderPlan({
+    cols: 2,
+    dragMeta: { draggedIds: [appA.id], item: appA },
+    folderId: folder.id,
+    folderPageIndex: 0,
+    folderPages: [[appA]],
+    folderPageSize: 4,
+    geometry,
+    getFolderPageRenderMode: () => "interactive",
+    getVisibleFolderPage: (page) => page,
+    groupDragState: {
+      phase: "returning",
+      totalCount: 1,
+      visualSpec: { textless: false },
+    },
+    groupTransferOwnedItemIds: new Set([appA.id]),
+    iconSize: 56,
+    localMetrics,
+  });
+  assert(
+    singleReturningPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+    "a labeled single folder-child ghost should hand its visible label back without restarting a fade"
   );
 
   const visualOpeningPlan = makeFolderOverlayRenderPlan({

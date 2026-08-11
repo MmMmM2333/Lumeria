@@ -115,10 +115,11 @@ export function useLaunchpadKeyboard(options) {
     }
     if (options.isModalOpen?.()) return;
     if (isAltSpaceShortcut(event) && handleAltSpaceKey(event)) return;
-    if (!options.isBatchSelectionActive?.()) options.handleAltKeyDown(event);
+    const isBatchSelectionActive = Boolean(options.isBatchSelectionActive?.());
+    if (!isBatchSelectionActive) options.handleAltKeyDown(event);
     if (options.isAltKeyEvent(event)) return;
     const isTypingInInput = isTextEntryElement(event.target);
-    if (options.isBatchSelectionActive?.() && !isTypingInInput) {
+    if (isBatchSelectionActive && !isTypingInInput) {
       const normalizedKey = String(event.key || "").toLowerCase();
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && normalizedKey === "a") {
         event.preventDefault();
@@ -140,6 +141,16 @@ export function useLaunchpadKeyboard(options) {
         options.toggleFocusedBatchSelection?.(event);
         return;
       }
+    }
+    if (
+      isBatchSelectionActive &&
+      (
+        event.key === "Backspace" ||
+        (!event.ctrlKey && !event.metaKey && !event.altKey && event.key?.length === 1)
+      )
+    ) {
+      event.preventDefault();
+      return;
     }
     if (event.key === "Tab") {
       handleTabKey(event);

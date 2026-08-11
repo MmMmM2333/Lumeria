@@ -1,10 +1,10 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
   clearMotionPreferencesForTests,

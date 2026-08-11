@@ -1,8 +1,7 @@
 import {
-  indexGroupDragSources,
-  resolveGroupGatherEntries,
-  selectGroupGatherRepresentatives,
-} from "./groupGatherOrigins.js";
+  captureGroupTransferSourceEntries,
+  indexGroupTransferSources,
+} from "./groupTransferSourceCapture.js";
 
 function app(id) {
   return { id, name: id, type: "app" };
@@ -19,20 +18,20 @@ function folder(id, childIds) {
   };
 }
 
-export function runGroupGatherOriginsTests() {
+export function runGroupTransferSourceCaptureTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Group gather origins test failed] ${message}`);
+    if (!condition) throw new Error(`[Group transfer source capture test failed] ${message}`);
   };
   const childIds = Array.from({ length: 12 }, (_, index) => `folder-app-${index}`);
   const pages = [
     [app("lead"), folder("folder-a", childIds)],
     [app("other-page")],
   ];
-  const indexed = indexGroupDragSources(pages);
+  const indexed = indexGroupTransferSources(pages);
   assert(indexed.apps.get("folder-app-8").flatIndex === 8, "folder children should keep a stable flattened preview index");
   assert(indexed.apps.get("folder-app-9").flatIndex === 9, "children after the first nine should remain distinguishable");
 
-  const entries = resolveGroupGatherEntries({
+  const entries = captureGroupTransferSourceEntries({
     activeFolderPageIndex: 0,
     activePageIndex: 0,
     draggedIds: ["lead", "other-page", "folder-app-8", "folder-app-9"],
@@ -54,50 +53,7 @@ export function runGroupGatherOriginsTests() {
   assert(byId.get("folder-app-9").originKind === "folder-hidden", "non-preview folder apps should burst from the folder center");
   assert(byId.get("folder-app-9").originScale < byId.get("folder-app-8").originScale, "hidden folder apps should begin at a smaller scale");
 
-  const many = Array.from({ length: 30 }, (_, index) => ({
-    ...entries[index % entries.length],
-    item: app(`representative-${index}`),
-    order: index,
-    originKind: index === 0 ? "lead" : index === 20 ? "folder-hidden" : "visible-desktop",
-  }));
-  const representatives = selectGroupGatherRepresentatives(many, 8);
-  assert(representatives.length === 8, "representative rendering should enforce its visual cap");
-  assert(representatives.some((entry) => entry.originKind === "folder-bundle"), "the cap should preserve a hidden-folder bundle");
-
-  const bundled = selectGroupGatherRepresentatives([
-    ...entries,
-    ...["hidden-a", "hidden-b", "hidden-c"].map((id, offset) => ({
-      ...byId.get("folder-app-9"),
-      item: app(id),
-      order: 10 + offset,
-      source: { ...byId.get("folder-app-9").source, folderId: "folder-a" },
-    })),
-    ...["remote-a", "remote-b"].map((id, offset) => ({
-      ...byId.get("other-page"),
-      item: app(id),
-      order: 20 + offset,
-      source: { kind: "desktop", pageIndex: 1 },
-    })),
-  ], 12);
-  const folderBundle = bundled.find((entry) => entry.originKind === "folder-bundle");
-  const pageBundle = bundled.find((entry) => entry.originKind === "desktop-page-bundle");
-  assert(folderBundle.bundleCount === 4 && folderBundle.memberIds.length === 4, "hidden children from one folder should share one counted proxy");
-  assert(pageBundle.bundleCount === 3 && pageBundle.memberIds.length === 3, "apps from one remote desktop page should share one counted proxy");
-
-  const manyRemotePages = selectGroupGatherRepresentatives([
-    makeEntryForRemotePage("left-1", -1, 0),
-    makeEntryForRemotePage("left-2", -2, 1),
-    makeEntryForRemotePage("right-1", 1, 2),
-    makeEntryForRemotePage("right-2", 2, 3),
-  ], 12, { maxBundles: 3 });
-  assert(manyRemotePages.length === 2, "more than three remote page sources should collapse by direction");
-  assert(
-    manyRemotePages.find((entry) => entry.direction === "left")?.bundleCount === 2 &&
-      manyRemotePages.find((entry) => entry.direction === "right")?.bundleCount === 2,
-    "collapsed page-edge proxies should preserve the total count on each side"
-  );
-
-  const remoteFolderEntries = resolveGroupGatherEntries({
+  const remoteFolderEntries = captureGroupTransferSourceEntries({
     activeFolderPageIndex: 0,
     activePageIndex: 0,
     draggedIds: ["folder-app-7"],
@@ -109,7 +65,7 @@ export function runGroupGatherOriginsTests() {
     pointer: { x: 60, y: 70 },
   });
   assert(remoteFolderEntries[0].originKind === "lead", "the pressed remote-page child remains the visual lead");
-  const remoteFollowerEntries = resolveGroupGatherEntries({
+  const remoteFollowerEntries = captureGroupTransferSourceEntries({
     activeFolderPageIndex: 0,
     activePageIndex: 0,
     draggedIds: ["lead", "folder-app-7"],
@@ -123,19 +79,4 @@ export function runGroupGatherOriginsTests() {
   const remoteFollower = remoteFollowerEntries.find((entry) => entry.item.id === "folder-app-7");
   assert(remoteFollower.originKind === "folder-page", "children on another open-folder page should enter from the panel edge");
   assert(remoteFollower.origin.x > 720, "a later folder page should enter from the right panel edge");
-}
-
-function makeEntryForRemotePage(id, relativePageIndex, order) {
-  return {
-    bundleCount: 1,
-    delayMs: 20 + order,
-    direction: relativePageIndex < 0 ? "left" : "right",
-    item: app(id),
-    memberIds: [id],
-    order,
-    origin: { x: relativePageIndex < 0 ? -20 : 920, y: 200 },
-    originKind: "desktop-page",
-    originScale: 0.7,
-    source: { kind: "desktop", pageIndex: relativePageIndex },
-  };
 }

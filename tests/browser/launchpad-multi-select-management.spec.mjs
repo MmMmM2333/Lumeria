@@ -141,6 +141,23 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
   await expect.poll(async () => (await readManagementState(page)).batch).toBe(true);
   await expect.poll(async () => (await readManagementState(page)).selectedIds).toEqual([]);
 
+  await page.keyboard.press("q");
+  expect(await page.evaluate(() => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      code: "KeyW",
+      key: "w",
+    });
+    window.dispatchEvent(event);
+    return {
+      defaultPrevented: event.defaultPrevented,
+      isSearchMode: state.isSearchMode,
+      searchQuery: state.searchQuery,
+    };
+  })).toEqual({ defaultPrevented: true, isSearchMode: false, searchQuery: "" });
+
   await dispatchIconPointer(page, "app-0-safari", { pointerId: 41 });
   await expect.poll(async () => (await readManagementState(page)).selectedIds).toEqual([
     "app-0-safari",
@@ -191,8 +208,15 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
     await wait(100);
     const beforeRelease = {
       intent: state.groupDragState?.intent,
+      outcome: state.groupDragState?.outcome,
+      phase: state.groupDragState?.phase,
+      plan: state.groupDragState?.intentPlan
+        ? {
+          reason: state.groupDragState.intentPlan.reason || null,
+          status: state.groupDragState.intentPlan.status,
+        }
+        : null,
       projected: state.groupDragState?.projectedPages,
-      status: state.groupDragState?.dropStatus,
     };
     window.dispatchEvent(new PointerEvent("pointerup", {
       ...init,
@@ -226,10 +250,12 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
   expect(result.beforeRelease).toEqual({
     intent: {
       targetAppId: "app-2-photos",
-      type: "app-folder-create",
+      type: "application",
     },
+    outcome: null,
+    phase: "dragging",
+    plan: { reason: null, status: "accepted" },
     projected: null,
-    status: "accepted",
   });
   expect(result.folderChildren).toEqual([
     "app-2-photos",
@@ -295,7 +321,6 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
     await wait(80);
     const armed = {
       cancelArmed: state.groupDragState?.cancelArmed,
-      dropStatus: state.groupDragState?.dropStatus,
       text: toolbar.textContent,
     };
     window.dispatchEvent(new PointerEvent("pointerup", {
@@ -307,7 +332,8 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
     await wait(20);
     const release = {
       cancelSource: state.groupDragState?.cancelSource,
-      modes: state.groupDragState?.releasePlan?.entries?.map((entry) => entry.mode) || [],
+      modes: state.groupDragState?.runtimePlan?.entries?.map((entry) => entry.mode) || [],
+      outcome: state.groupDragState?.outcome,
       phase: state.groupDragState?.phase,
     };
     const settleDeadline = performance.now() + 3_000;
@@ -325,14 +351,14 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
 
   expect(zoneResult.armed).toMatchObject({
     cancelArmed: true,
-    dropStatus: "cancel",
   });
   expect(zoneResult.armed.text).toContain("松开以取消本次拖拽");
   expect(zoneResult.release).toMatchObject({
     cancelSource: "drop-zone",
-    phase: "cancelling",
+    outcome: "cancelled",
+    phase: "returning",
   });
-  expect(zoneResult.release.modes.every((mode) => mode === "return-to-origin")).toBe(true);
+  expect(zoneResult.release.modes.every((mode) => mode === "return")).toBe(true);
   expect(zoneResult).toMatchObject({
     batch: true,
     frozen: false,
@@ -385,6 +411,7 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
     await wait(20);
     const release = {
       cancelSource: state.groupDragState?.cancelSource,
+      outcome: state.groupDragState?.outcome,
       phase: state.groupDragState?.phase,
     };
     const settleDeadline = performance.now() + 3_000;
@@ -406,7 +433,8 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
     layoutUnchanged: true,
     release: {
       cancelSource: "keyboard",
-      phase: "cancelling",
+      outcome: "cancelled",
+      phase: "returning",
     },
     selectedIds: ["app-0-safari", "app-1-mail"],
   });
@@ -529,9 +557,10 @@ test("reduced motion rejects an invalid group drop without stagger", async ({ pa
     }));
     await wait(70);
     const rejected = {
+      intentType: state.groupDragState?.intent?.type,
       phase: state.groupDragState?.phase,
-      reason: state.groupDragState?.dropReason,
-      status: state.groupDragState?.dropStatus,
+      reason: state.groupDragState?.intentPlan?.reason,
+      status: state.groupDragState?.intentPlan?.status,
     };
     window.dispatchEvent(new PointerEvent("pointerup", {
       ...init,
@@ -554,6 +583,7 @@ test("reduced motion rejects an invalid group drop without stagger", async ({ pa
     groupEnded: true,
     reducedMotion: true,
     rejected: {
+      intentType: "invalid",
       phase: "dragging",
       reason: "invalid-target",
       status: "rejected",
@@ -657,6 +687,10 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     let releaseIds = [];
     const reachedTargetIds = new Set();
     const ownershipRegressions = [];
+    const ownershipVisibilityFlashes = [];
+    const settledActorReappearances = [];
+    const firstHandoffLabelAlphaById = new Map();
+    let sawPartialLabelAlpha = false;
     const deadline = performance.now() + 5_000;
     while (state.groupDragState && performance.now() < deadline) {
       await frame();
@@ -668,6 +702,18 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
         const releaseGhost = layer.groupDragLayer.nodes[entryIndex];
         const liveTarget = layer.findIconNodeByItemId(entry.item?.id);
         if (!releaseGhost || !liveTarget) return;
+        const isOwned = layer.visualOwnership.hasOwner(`item:${entry.item.id}`);
+        const labelAlpha = Number(liveTarget.labelText?.alpha);
+        if (liveTarget.visible && isOwned) {
+          ownershipVisibilityFlashes.push(entry.item.id);
+        }
+        if (liveTarget.visible && !isOwned && releaseGhost.visible) {
+          settledActorReappearances.push(entry.item.id);
+        }
+        if (liveTarget.visible && !isOwned && !firstHandoffLabelAlphaById.has(entry.item.id)) {
+          firstHandoffLabelAlphaById.set(entry.item.id, labelAlpha);
+        }
+        sawPartialLabelAlpha ||= labelAlpha > 0 && labelAlpha < 1;
         const delta = pointDistance(readVisualCenter(releaseGhost), readVisualCenter(liveTarget));
         if (delta <= 1) reachedTargetIds.add(entry.item.id);
         else if (reachedTargetIds.has(entry.item.id) && delta > 6) {
@@ -683,6 +729,14 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     }
     await frame();
     const liveNode = layer.findIconNodeByItemId(leadId);
+    for (const id of releaseIds) {
+      const liveTarget = layer.findIconNodeByItemId(id);
+      const labelAlpha = Number(liveTarget?.labelText?.alpha);
+      if (liveTarget?.visible && !firstHandoffLabelAlphaById.has(id)) {
+        firstHandoffLabelAlphaById.set(id, labelAlpha);
+      }
+      sawPartialLabelAlpha ||= labelAlpha > 0 && labelAlpha < 1;
+    }
     const handoffCenterMaxDelta = Math.max(...releaseIds.map((id, index) => {
       const releaseGhost = layer.groupDragLayer.nodes[index];
       const liveTarget = layer.findIconNodeByItemId(id);
@@ -691,9 +745,7 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     const readLabelAlphas = () => releaseIds.map(
       (id) => Number(layer.findIconNodeByItemId(id)?.labelText?.alpha)
     );
-    const firstLabelAlphas = readLabelAlphas();
-    let finalLabelAlphas = firstLabelAlphas;
-    let sawPartialLabelAlpha = finalLabelAlphas.some((alpha) => alpha > 0 && alpha < 1);
+    let finalLabelAlphas = readLabelAlphas();
     const labelDeadline = performance.now() + 1_000;
     while (Math.min(...finalLabelAlphas) < 0.999 && performance.now() < labelDeadline) {
       await frame();
@@ -703,7 +755,8 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     return {
       dragIconSize,
       finalLabelAlphaMin: Math.min(...finalLabelAlphas),
-      firstLabelAlphaMax: Math.max(...firstLabelAlphas),
+      firstHandoffLabelAlphaMax: Math.max(...firstHandoffLabelAlphaById.values()),
+      handoffLabelCount: firstHandoffLabelAlphaById.size,
       groupEnded: state.groupDragState == null,
       handoffCenterMaxDelta,
       lastReleaseScale,
@@ -711,9 +764,11 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       liveIconSize: liveNode?.iconSize || 0,
       liveWorldSize: readWorldIconSize(liveNode),
       ownershipRegressions,
+      ownershipVisibilityFlashes: [...new Set(ownershipVisibilityFlashes)],
       releaseEntryCount,
       sawPartialLabelAlpha,
       selectedCount: selectedIds.length,
+      settledActorReappearances: [...new Set(settledActorReappearances)],
     };
   });
 
@@ -728,7 +783,10 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
   expect(Math.abs(result.lastReleaseWorldSize - result.liveWorldSize)).toBeLessThan(0.5);
   expect(result.handoffCenterMaxDelta).toBeLessThan(0.5);
   expect(result.ownershipRegressions).toEqual([]);
-  expect(result.firstLabelAlphaMax).toBeLessThan(0.05);
+  expect(result.ownershipVisibilityFlashes).toEqual([]);
+  expect(result.settledActorReappearances).toEqual([]);
+  expect(result.handoffLabelCount).toBe(result.releaseEntryCount);
+  expect(result.firstHandoffLabelAlphaMax).toBeLessThan(0.9);
   expect(result.sawPartialLabelAlpha).toBe(true);
   expect(result.finalLabelAlphaMin).toBeGreaterThan(0.99);
 });

@@ -7,7 +7,7 @@ import {
   useLaunchpadDrag,
 } from "./useLaunchpadDrag.js";
 import { PAGE_TURN_DELAY } from "./launchpadConstants.js";
-import { planGroupDrop } from "../domain/groupDropPlanner.js";
+import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
 import {
   createIconBoundsRegistry,
   ICON_BOUNDS_KIND,
@@ -68,7 +68,7 @@ async function withMockPointerEnvironment(run) {
 
 function settleRelease(drag) {
   const state = drag?.groupDragState?.value;
-  const plan = state?.releasePlan;
+  const plan = state?.runtimePlan;
   if (!plan?.entries?.length) return;
   for (const entry of plan.entries) {
     drag.completeGroupRelease({
@@ -141,6 +141,7 @@ function createAtomicDragHarness(initialPages, options = {}) {
     commits: [],
     dragEnds: [],
     dragStarts: [],
+    pageIndexes: [],
     rejected: [],
   };
   const pageRect = options.pageRect || {
@@ -206,6 +207,7 @@ function createAtomicDragHarness(initialPages, options = {}) {
       openFolderId.value = next;
     },
     commitPageIndex: (next) => {
+      calls.pageIndexes.push(next);
       pageIndex.value = next;
     },
     compactPages: (next) => next,
@@ -249,12 +251,13 @@ function createAtomicDragHarness(initialPages, options = {}) {
     pageRefs,
     pages,
     pageSize: ref(pageSize),
-    planGroupDrop: (request) => planGroupDrop({
+    planGroupTransfer: (request) => planGroupTransfer({
       ...request,
       folderName: "New Folder",
       folderPageSize,
       makeFolderId: () => request.createdFolderId,
       pageSize,
+      selectedIds: request.draggedIds,
     }),
     renderedFolder,
     requestFolderOpenWarmup: () => {},
@@ -298,6 +301,15 @@ export async function runLaunchpadDragTests() {
     { smoothing: 0.5 }
   );
   assert(velocity.velocity.x === 500 && velocity.velocity.y === -250, "velocity should use elapsed milliseconds");
+  const idleVelocity = samplePointerVelocity(
+    { pointer: velocity.pointer, time: velocity.time, velocity: velocity.velocity },
+    { clientX: 30, clientY: 10, timeStamp: 240 },
+    { maxDeltaMs: 80, smoothing: 0.5 }
+  );
+  assert(
+    idleVelocity.velocity.x === 0 && idleVelocity.velocity.y === 0,
+    "an unchanged pointer held beyond the velocity sampling window should release without stale momentum"
+  );
 
   await withMockPointerEnvironment(async () => {
     const a = app("anchor-source");
@@ -364,7 +376,7 @@ export async function runLaunchpadDragTests() {
     harness.drag.cancelDrag({ cancelSource: "keyboard", userInitiatedCancel: true });
     assert(
       harness.drag.groupDragState.value?.entries.length === 13 &&
-        harness.drag.groupDragState.value?.releasePlan?.entries.length === 13,
+        harness.drag.groupDragState.value?.runtimePlan?.entries.length === 13,
       "releasing a thirteen-item group should expand ownership to every selected application"
     );
     settleRelease(harness.drag);
@@ -424,12 +436,15 @@ export async function runLaunchpadDragTests() {
       type: "pointerup",
     }));
     const releaseEntries = harness.drag.groupDragState.value?.entries || [];
+    const ownedIds = releaseEntries.flatMap((entry) => entry.memberIds || []);
+    const overflowEntry = releaseEntries.find((entry) => (entry.memberIds?.length || 0) > 1);
     assert(
-      releaseEntries.length === 14 &&
-        releaseEntries.slice(0, 13).map((entry) => entry.item.id).join(",") ===
-          selected.map((item) => item.id).join(",") &&
-        releaseEntries.at(-1)?.item?.id === targetApp.id,
-      "folder creation should release every selected app and append target B without replacement"
+      new Set(ownedIds).size === 14 &&
+        ownedIds.length === 14 &&
+        ownedIds.includes(targetApp.id) &&
+        overflowEntry?.memberIds.length === 5 &&
+        harness.drag.groupDragState.value?.shellActors.length === 1,
+      "folder creation should give all selected apps and target B one owner while aggregating overflow"
     );
     settleRelease(harness.drag);
   });
@@ -509,7 +524,6 @@ export async function runLaunchpadDragTests() {
     }));
     assert(
       harness.drag.groupDragState.value?.cancelArmed === true &&
-        harness.drag.groupDragState.value?.dropStatus === "cancel" &&
         harness.drag.projectedPages.value === null,
       "moving the captured pointer into the toolbar cancel geometry should arm cancellation and clear previews"
     );
@@ -520,8 +534,7 @@ export async function runLaunchpadDragTests() {
       timeStamp: 145,
     }));
     assert(
-      harness.drag.groupDragState.value?.cancelArmed === false &&
-        harness.drag.groupDragState.value?.dropStatus !== "cancel",
+      harness.drag.groupDragState.value?.cancelArmed === false,
       "leaving the cancel geometry before release should resume normal drop planning"
     );
 
@@ -540,13 +553,13 @@ export async function runLaunchpadDragTests() {
     }));
     const cancelling = harness.drag.groupDragState.value;
     assert(
-      cancelling?.phase === "cancelling" &&
-        cancelling.dropStatus === "cancelled" &&
+      cancelling?.phase === "returning" &&
+        cancelling.outcome === "cancelled" &&
         cancelling.cancelSource === "drop-zone",
       "releasing in the cancel zone should enter a distinct user-cancelled return phase"
     );
     assert(
-      cancelling?.releasePlan?.entries.every((entry) => entry.mode === "return-to-origin"),
+      cancelling?.runtimePlan?.entries.every((entry) => entry.mode === "return"),
       "cancelled representatives should animate back to their original positions"
     );
     assert(
@@ -558,7 +571,8 @@ export async function runLaunchpadDragTests() {
     settleRelease(harness.drag);
     assert(
       harness.drag.groupDragState.value === null &&
-        harness.calls.dragEnds[0]?.phase === "cancelling",
+        harness.calls.dragEnds[0]?.phase === "settled" &&
+        harness.calls.dragEnds[0]?.outcome === "cancelled",
       "the cancelled return should release drag ownership only after every representative settles"
     );
   });
@@ -592,9 +606,10 @@ export async function runLaunchpadDragTests() {
     });
     assert(cancelled === true, "Escape should be accepted for an active batch drag");
     assert(
-      harness.drag.groupDragState.value?.phase === "cancelling" &&
+      harness.drag.groupDragState.value?.phase === "returning" &&
+        harness.drag.groupDragState.value?.outcome === "cancelled" &&
         harness.drag.groupDragState.value?.cancelSource === "keyboard",
-      "keyboard cancellation should use the same return-to-origin lifecycle as the top cancel zone"
+      "keyboard cancellation should use the same semantic return lifecycle as the top cancel zone"
     );
     assert(
       harness.calls.commits.length === 0 && harness.calls.rejected.length === 0,
@@ -636,7 +651,7 @@ export async function runLaunchpadDragTests() {
         "b,a,e,f|c,d",
       "desktop overflow should preserve stable group and displaced-item order across pages"
     );
-    assert(harness.drag.groupDragState.value?.phase === "accepted", "overflowing representatives should release to committed slots");
+    assert(harness.drag.groupDragState.value?.phase === "releasing", "overflowing representatives should release to committed slots");
     assert(harness.calls.rejected.length === 0, "valid desktop overflow should not cross the rejection boundary");
     flushTimers(timers, harness.drag);
   });
@@ -648,20 +663,19 @@ export async function runLaunchpadDragTests() {
     const harness = createAtomicDragHarness([[a, b, c]]);
     let commitCount = 0;
     let completed = 0;
-    const plan = planGroupDrop({
+    const plan = planGroupTransfer({
       basePages: harness.pages.value,
       baseRevision: 0,
-      createdFolderId: "folder-created",
       currentRevision: 0,
-      draggedIds: ["a", "b"],
       folderName: "New Folder",
       folderPageSize: 4,
-      intent: { type: "app-folder-create" },
+      intent: { anchorId: "a", type: "toolbar-folder-create" },
       leadId: "a",
       makeFolderId: () => "folder-created",
       pageSize: 4,
+      selectedIds: ["a", "b"],
     });
-    const presented = harness.drag.presentCommittedFolderCreation({
+    const presented = harness.drag.startCommittedGroupTransfer({
       basePages: harness.pages.value,
       baseRevision: 0,
       commit: () => {
@@ -681,10 +695,9 @@ export async function runLaunchpadDragTests() {
     assert(presented && commitCount === 1, "toolbar folder creation should commit once through the shared presentation owner");
     assert(
       harness.drag.groupDragState.value?.phase === "committing" &&
-        harness.drag.groupDragState.value?.releaseCreatedFolderId === "folder-created" &&
-        harness.drag.groupDragState.value?.releaseLayoutAnchorId === "a" &&
-        harness.drag.groupDragState.value?.releaseLayoutPages?.[0]?.map((item) => item.id).join(",") === "a,b,c",
-      "toolbar creation should hide the real folder and retain the pre-commit desktop layout while source applications are release-owned"
+        harness.drag.groupDragState.value?.semanticPlan?.effects?.createdFolderId === "folder-created" &&
+        harness.drag.groupDragState.value?.outcome === "accepted",
+      "toolbar creation should enter the same committing session while source applications are actor-owned"
     );
     harness.drag.finishDrag(makePointerEvent(99, { getBoundingClientRect: () => ({}) }, {
       button: 0,
@@ -696,7 +709,7 @@ export async function runLaunchpadDragTests() {
       "an unrelated pointer release must not reinterpret a committed toolbar presentation as another drop"
     );
     await nextTick();
-    assert(harness.drag.groupDragState.value?.phase === "accepted", "toolbar creation should resolve real landing targets after render");
+    assert(harness.drag.groupDragState.value?.phase === "releasing", "toolbar creation should resolve real landing targets after render");
     flushTimers(timers, harness.drag);
     assert(completed === 1 && !harness.drag.isDragActive(), "the lightweight gather should complete once and release interaction ownership");
   });
@@ -709,20 +722,19 @@ export async function runLaunchpadDragTests() {
       gridRows: 5,
       pageSize: 35,
     });
-    const plan = planGroupDrop({
+    const plan = planGroupTransfer({
       basePages: harness.pages.value,
       baseRevision: 0,
-      createdFolderId: "folder-created",
       currentRevision: 0,
-      draggedIds: selected.map((item) => item.id),
       folderName: "New Folder",
       folderPageSize: 35,
-      intent: { type: "app-folder-create" },
+      intent: { anchorId: selected[0].id, type: "toolbar-folder-create" },
       leadId: selected[0].id,
       makeFolderId: () => "folder-created",
       pageSize: 35,
+      selectedIds: selected.map((item) => item.id),
     });
-    const presented = harness.drag.presentCommittedFolderCreation({
+    const presented = harness.drag.startCommittedGroupTransfer({
       basePages: harness.pages.value,
       baseRevision: 0,
       commit: () => {
@@ -743,12 +755,14 @@ export async function runLaunchpadDragTests() {
     );
     await nextTick();
     const releaseState = harness.drag.groupDragState.value;
+    const releaseOwnedIds = releaseState?.entries.flatMap((entry) => entry.memberIds || []) || [];
     assert(
-      releaseState?.entries.length === 35 &&
-        releaseState.releasePlan?.entries.length === 35 &&
-        releaseState.entries.map((entry) => entry.item.id).join(",") ===
-          selected.map((item) => item.id).join(","),
-      "creating a folder from a complete 5x7 page should animate all thirty-five source applications"
+      releaseState?.entries.length === 10 &&
+        releaseState.runtimePlan?.entries.length === 10 &&
+        new Set(releaseOwnedIds).size === 35 &&
+        releaseOwnedIds.length === 35 &&
+        releaseState.entries.filter((entry) => entry.memberIds.length > 1).length === 1,
+      "full-page folder creation should render nine exact previews and one aggregate owning all overflow"
     );
     settleRelease(harness.drag);
   });
@@ -1014,7 +1028,7 @@ export async function runLaunchpadDragTests() {
     const releaseState = harness.drag.groupDragState.value;
     assert(harness.calls.commits.length === 1, "app-on-app folder creation should commit exactly once");
     assert(
-      releaseState?.releaseCreatedFolderId === "folder-created",
+      releaseState?.semanticPlan?.effects?.createdFolderId === "folder-created",
       `folder creation should retain the real folder id until visual release completes (intent: ${releaseState?.intent?.type || "none"})`
     );
     assert(
@@ -1090,6 +1104,101 @@ export async function runLaunchpadDragTests() {
     }));
     assert(harness.calls.commits.length === 1, "a sticky edge release should commit folder creation");
     assert(harness.pages.value[0][0]?.type === "folder", "the sticky release should create a folder instead of a slot reorder");
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const previousPageApp = app("previous-page-app");
+    const targetApp = app("first-cell-target");
+    const draggedApp = app("first-cell-dragged");
+    const harness = createAtomicDragHarness([[previousPageApp], [targetApp, draggedApp]]);
+    harness.pageIndex.value = 1;
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 200, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 1 },
+      { height: 64, left: 16, top: 120, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 0, pageIndex: 1 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(154, sourceElement, { clientX: 232, clientY: 152 }),
+      draggedApp,
+      { index: 1, pageIndex: 1, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(154, sourceElement, {
+      clientX: 48,
+      clientY: 152,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the first-cell fixture should resolve its target before pointer release");
+    assert(
+      harness.drag.groupDragState.value?.intent?.targetAppId === targetApp.id,
+      "the overlapping edge zone should still resolve the rendered first-cell app"
+    );
+    assert(
+      !flushTimerByDelay(timers, PAGE_TURN_DELAY),
+      "an accepted first-cell target should disarm the overlapping desktop edge-turn timer"
+    );
+    harness.drag.finishDrag(makePointerEvent(154, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 48,
+      clientY: 152,
+      timeStamp: 160,
+      type: "pointerup",
+    }));
+    assert(
+      harness.pageIndex.value === 1 && harness.pages.value[1]?.[0]?.type === "folder",
+      "an accepted first-cell app target should win over the overlapping desktop edge-turn zone"
+    );
+    assert(
+      !harness.calls.pageIndexes.includes(0),
+      "an accepted first-cell target must never publish the neighboring page, even transiently"
+    );
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const previousPageApp = app("quick-previous-page-app");
+    const targetApp = app("quick-first-cell-target");
+    const draggedApp = app("quick-first-cell-dragged");
+    const harness = createAtomicDragHarness([[previousPageApp], [targetApp, draggedApp]]);
+    harness.pageIndex.value = 1;
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 200, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 1 },
+      { height: 64, left: 16, top: 120, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 0, pageIndex: 1 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(155, sourceElement, { clientX: 232, clientY: 152 }),
+      draggedApp,
+      { index: 1, pageIndex: 1, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(155, sourceElement, {
+      clientX: 48,
+      clientY: 152,
+      timeStamp: 140,
+    }));
+    harness.drag.finishDrag(makePointerEvent(155, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 48,
+      clientY: 152,
+      timeStamp: 141,
+      type: "pointerup",
+    }));
+    assert(
+      !harness.calls.pageIndexes.includes(0) && harness.pages.value[1]?.[0]?.type === "folder",
+      "a quick first-cell release should resolve its target before committing any pending edge turn"
+    );
     flushTimers(timers, harness.drag);
   });
 

@@ -35,11 +35,11 @@ import {
   makeFolderOpeningGeometrySnapshot,
 } from "./folderOpeningGeometrySnapshot.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
   makeFolderPageTrackVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 import { FolderVisualCommitQueue } from "./folderVisualCommitQueue.js";
 import { clientPointToStageVisualPoint, clientRectToStageVisualRect, makeStageVirtualElement } from "../geometry/stageCoordinates.js";
 import {
@@ -720,7 +720,7 @@ export class FolderOverlayLayer extends Container {
       transitionPort: this.transitionPort,
     });
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
-    this.visualOwnership = options.visualOwnership || new FolderVisualOwnershipRegistry();
+    this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
     this.ownedVisualTokens = new Set();
     this.openingPanelReadyFrame = null;
     this.panelAlphaTarget = null;
@@ -1145,6 +1145,7 @@ export class FolderOverlayLayer extends Container {
       getFolderPageRenderMode: state.getFolderPageRenderMode,
       getVisibleFolderPage: state.getVisibleFolderPage,
       groupDragState: state.groupDragState,
+      groupTransferOwnedItemIds: state.groupTransferOwnedItemIds,
       iconSize,
       iconGesturePresentation: state.iconGesturePresentation,
       isBatchSelectionActive: state.isBatchSelectionActive,
