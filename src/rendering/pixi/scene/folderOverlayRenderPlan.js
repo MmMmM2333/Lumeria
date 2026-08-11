@@ -1,6 +1,9 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getGridSlotRect } from "../geometry/gridGeometry.js";
-import { isActiveDraggedLaunchItem } from "./dragVisibility.js";
+import {
+  getReturningGroupDragItemIds,
+  isActiveDraggedLaunchItem,
+} from "./dragVisibility.js";
 import {
   makeFolderIconNodeState,
   makeFolderIconRenderPlan,
@@ -28,6 +31,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     geometry = null,
     getFolderPageRenderMode = null,
     getVisibleFolderPage = null,
+    groupDragState = null,
     iconSize = 64,
     iconGesturePresentation = null,
     isClosing = false,
@@ -56,7 +60,8 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     visualFolderPageIndex = folderPageIndex,
   } = options;
   const previewSlotById = makePreviewSlotById(previewSlots);
-  const dragState = { dragMeta };
+  const dragState = { dragMeta, groupDragState, isBatchSelectionActive };
+  const returningGroupDragItemIds = getReturningGroupDragItemIds(dragState);
   const entries = [];
 
   (folderPages || []).forEach((page, pageIndex) => {
@@ -113,6 +118,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         launchTargetStatusById,
         openingGhostItemIds,
         pageIndex,
+        revealLabelAfterGroupReturn: returningGroupDragItemIds.has(item.id),
         focusedIcon,
         selectedAppIds,
         showMissingLaunchTargetBadge,

@@ -22,6 +22,7 @@ import {
 const GENERIC_RELEASE_DURATION = 0.24;
 const GENERIC_RETURN_DURATION = 0.2;
 const TARGET_RETARGET_EPSILON = 0.75;
+const TARGET_SCALE_RETARGET_EPSILON = 0.002;
 const MAX_MISSING_POINT_FRAMES = 2;
 const CREATED_FOLDER_FRAME_DURATION = 0.18;
 const CREATED_FOLDER_FRAME_RETARGET_EPSILON = 0.5;
@@ -38,15 +39,29 @@ function point(value, fallback = { x: 0, y: 0 }) {
   };
 }
 
-function pointsEqual(left, right, epsilon = TARGET_RETARGET_EPSILON) {
+function scale(value, fallback = { x: 1, y: 1 }) {
+  return {
+    x: Math.max(0.01, finite(value?.x, finite(fallback?.x, 1))),
+    y: Math.max(0.01, finite(value?.y, finite(fallback?.y, 1))),
+  };
+}
+
+function pointPosesEqual(left, right) {
   return Boolean(left && right) &&
-    Math.abs(finite(left.x) - finite(right.x)) <= epsilon &&
-    Math.abs(finite(left.y) - finite(right.y)) <= epsilon;
+    Math.abs(finite(left.point?.x) - finite(right.point?.x)) <= TARGET_RETARGET_EPSILON &&
+    Math.abs(finite(left.point?.y) - finite(right.point?.y)) <= TARGET_RETARGET_EPSILON &&
+    Math.abs(finite(left.scale?.x, 1) - finite(right.scale?.x, 1)) <= TARGET_SCALE_RETARGET_EPSILON &&
+    Math.abs(finite(left.scale?.y, 1) - finite(right.scale?.y, 1)) <= TARGET_SCALE_RETARGET_EPSILON;
 }
 
 function makeTargetKey(target) {
   if (!target) return "missing";
-  return `${Math.round(finite(target.x) * 2) / 2}:${Math.round(finite(target.y) * 2) / 2}`;
+  return [
+    Math.round(finite(target.point?.x) * 2) / 2,
+    Math.round(finite(target.point?.y) * 2) / 2,
+    Math.round(finite(target.scale?.x, 1) * 1000) / 1000,
+    Math.round(finite(target.scale?.y, 1) * 1000) / 1000,
+  ].join(":");
 }
 
 function isFolderMode(mode) {
@@ -437,6 +452,10 @@ export class GroupReleaseController {
       },
       key: laneKey,
       releaseMode: internalMode,
+      delayMs: Math.max(0, finite(entry.delayMs)),
+      revealFromAlpha: entry.startAlpha != null && Number.isFinite(Number(entry.startAlpha))
+        ? Math.max(0, Number(entry.startAlpha))
+        : null,
       size: {
         height: releaseIconSize,
         width: releaseIconSize,
@@ -493,7 +512,7 @@ export class GroupReleaseController {
       this.settleLane(lane, "settled");
       return;
     }
-    if (lane.control && pointsEqual(lane.target, target)) return;
+    if (lane.control && pointPosesEqual(lane.target, target)) return;
     this.startPointMotion(lane, target);
   }
 
@@ -505,11 +524,21 @@ export class GroupReleaseController {
       state: context.state,
       target: context.entry.target || {},
     });
-    const resolvedPoint = resolved?.point || resolved;
+    const entry = context.entry;
+    const isReturn = entry.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
+    const fallbackScaleValue = isReturn ? Math.max(0.35, finite(entry.originScale, 1)) : 1;
+    const fallbackScale = { x: fallbackScaleValue, y: fallbackScaleValue };
+    const resolvedPoint = resolved?.point;
     if (resolvedPoint && Number.isFinite(Number(resolvedPoint.x)) && Number.isFinite(Number(resolvedPoint.y))) {
-      return point(resolvedPoint);
+      return {
+        point: point(resolvedPoint),
+        scale: scale(resolved.scale, fallbackScale),
+      };
     }
-    return toLayerFallback(context.entry, context.state);
+    const fallbackPoint = toLayerFallback(entry, context.state);
+    return fallbackPoint
+      ? { point: fallbackPoint, scale: fallbackScale }
+      : null;
   }
 
   startPointMotion(lane, target) {
@@ -518,7 +547,6 @@ export class GroupReleaseController {
     const group = context.group;
     const node = context.node;
     const isReturn = entry.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
-    const targetScale = isReturn ? Math.max(0.35, finite(entry.originScale, 1)) : 1;
     const targetAlpha = isReturn ? Math.max(0, finite(entry.originAlpha, 1)) : 1;
     const velocity = isReturn || group.reducedMotion === true
       ? { x: 0, y: 0 }
@@ -555,10 +583,10 @@ export class GroupReleaseController {
     const animations = [
       positionMotion.to({
         velocity,
-        x: target.x,
-        y: target.y,
+        x: target.point.x,
+        y: target.point.y,
       }),
-      scaleMotion.to({ x: targetScale, y: targetScale }),
+      scaleMotion.to({ x: target.scale.x, y: target.scale.y }),
       motion(node)
         .delay(delay)
         .duration(isReturn ? GENERIC_RETURN_DURATION : GENERIC_RELEASE_DURATION)
@@ -610,11 +638,13 @@ export class GroupReleaseController {
     const node = lane?.node;
     const target = lane?.target;
     if (!node || node.destroyed || !target) return;
-    node.position.set(finite(target.x), finite(target.y));
+    node.position.set(finite(target.point?.x), finite(target.point?.y));
     const entry = lane.context?.entry;
     const isReturn = entry?.mode === GROUP_RELEASE_MODE.RETURN_TO_ORIGIN;
-    const scale = isReturn ? Math.max(0.35, finite(entry?.originScale, 1)) : 1;
-    node.scale.set(scale, scale);
+    node.scale.set(
+      Math.max(0.01, finite(target.scale?.x, 1)),
+      Math.max(0.01, finite(target.scale?.y, 1))
+    );
     node.alpha = isReturn ? Math.max(0, finite(entry?.originAlpha, 1)) : 1;
     if (node.labelText && !isReturn) {
       node.labelText.alpha = 1;
@@ -645,7 +675,7 @@ export class GroupReleaseController {
           lane.missingRenderFrames = 0;
           if (lane.control?.completed) {
             this.settleLane(lane, "settled");
-          } else if (!lane.control || !pointsEqual(lane.target, target)) {
+          } else if (!lane.control || !pointPosesEqual(lane.target, target)) {
             this.startPointMotion(lane, target);
           }
         } else {

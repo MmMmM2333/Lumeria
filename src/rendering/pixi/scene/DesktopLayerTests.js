@@ -284,6 +284,7 @@ export async function runDesktopLayerTests() {
   } = await import("./folderVisualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
   const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
+  const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
@@ -302,6 +303,52 @@ export async function runDesktopLayerTests() {
     });
     layer.singleStageFolderLayer.onRenderRequest("folder-resize-layout");
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+  }
+
+  {
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    const item = { id: "responsive-release-target", name: "Responsive Target", type: "app" };
+    const targetNode = new Container();
+    targetNode.item = item;
+    targetNode.iconSize = 53.4;
+    targetNode.position.set(240, 160);
+    targetNode.visualWrap = new Container();
+    targetNode.visualWrap.position.set(0, -14);
+    targetNode.addChild(targetNode.visualWrap);
+    layer.visualRoot.addChild(targetNode);
+    layer.iconNodes.set(`page:0:${item.id}`, targetNode);
+    const releaseNode = new Container();
+    releaseNode.iconSize = 64;
+    releaseNode.visualWrap = new Container();
+    releaseNode.addChild(releaseNode.visualWrap);
+    layer.groupDragLayer.addChild(releaseNode);
+
+    const pose = layer.resolveGroupReleasePoint({
+      entry: { id: item.id, mode: "return-to-origin" },
+      node: releaseNode,
+      state: { stageRect: { height: 320, left: 0, top: 0, width: 480 } },
+      target: { area: "desktop", id: null, kind: null, pageIndex: null },
+    });
+    assert(
+      nearlyEqual(pose?.point?.x, 240) &&
+        nearlyEqual(pose?.point?.y, 146) &&
+        nearlyEqual(pose?.scale?.x, 0.834375) &&
+        nearlyEqual(pose?.scale?.y, 0.834375),
+      "desktop point releases should resolve the target visual center and responsive visual scale as one pose"
+    );
+    releaseNode.position.set(pose.point.x, pose.point.y);
+    releaseNode.scale.set(pose.scale.x, pose.scale.y);
+    const targetVisualCenter = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, targetNode.visualWrap);
+    const releaseVisualCenter = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, releaseNode.visualWrap);
+    assert(
+      nearlyEqual(releaseVisualCenter.x, targetVisualCenter.x) &&
+        nearlyEqual(releaseVisualCenter.y, targetVisualCenter.y),
+      "the release ghost visual center should match the live icon visual center at handoff"
+    );
+
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
   }

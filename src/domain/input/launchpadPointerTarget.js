@@ -59,6 +59,7 @@ export function resolveLaunchpadContextMenuTarget({
   clientX,
   clientY,
   folderId = null,
+  folderPanelRect = null,
   getIconAtPoint,
   isFolderLayerActive = false,
   isInteractionBlocked = false,
@@ -86,12 +87,12 @@ export function resolveLaunchpadContextMenuTarget({
     };
   }
 
-  if (
-    isSearchMode ||
-    isFolderLayerActive ||
-    !rectContainsPoint(mainRect, x, y)
-  ) {
-    return null;
+  if (isSearchMode) return null;
+  if (isFolderLayerActive) {
+    return folderId && rectContainsPoint(folderPanelRect, x, y)
+      ? { folderId, kind: "folder-surface" }
+      : null;
   }
+  if (!rectContainsPoint(mainRect, x, y)) return null;
   return { kind: "surface" };
 }

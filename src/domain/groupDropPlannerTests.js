@@ -63,8 +63,18 @@ export function runGroupDropPlannerTests() {
     leadId: "c",
     intent: { type: "desktop-slot", pageIndex: 1, index: 0 },
   });
-  assert(full.status === "rejected" && full.reason === "desktop-capacity", "desktop capacity should reject the whole group");
-  assert(full.nextPages === null, "rejected plans should not expose a partial layout");
+  assert(full.status === "accepted", "desktop drops should cascade overflow instead of rejecting a full target page");
+  assert(
+    full.nextPages[1].map((item) => item.id).join(",") === "c,d,e,f" &&
+      full.nextPages[2].map((item) => item.id).join(",") === "g",
+    "desktop overflow should preserve row-major order while creating the next page"
+  );
+  assert(
+    full.placements.map((placement) => (
+      `${placement.id}:${placement.target.pageIndex}:${placement.target.index}`
+    )).join(",") === "c:1:0,d:1:1,e:1:2",
+    "desktop placements should describe every dragged item's final committed page and slot"
+  );
 
   const appendedDesktopPage = planGroupDrop({
     ...common,

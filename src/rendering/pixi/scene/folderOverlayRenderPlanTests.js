@@ -68,6 +68,32 @@ export function runFolderOverlayRenderPlanTests() {
   assert(entryB.nodeState.interactionPhase == null, "non-target folder icons should remain visually idle");
   assert(!entryB.openingGhostInput, "dragged entries should not create opening ghost input");
 
+  const returningPlan = makeFolderOverlayRenderPlan({
+    cols: 2,
+    dragMeta: { draggedIds: [appA.id, appB.id], item: appA },
+    folderId: folder.id,
+    folderPageIndex: 0,
+    folderPages: [[appA, appB]],
+    folderPageSize: 4,
+    geometry,
+    getFolderPageRenderMode: () => "interactive",
+    getVisibleFolderPage: (page) => page,
+    groupDragState: {
+      phase: "rejected",
+      releasePlan: {
+        entries: [appA, appB].map((item) => ({ id: item.id, mode: "return-to-origin" })),
+      },
+      totalCount: 2,
+    },
+    iconSize: 56,
+    isBatchSelectionActive: true,
+    localMetrics,
+  });
+  assert(
+    returningPlan.entries.every((entry) => entry.nodeState.revealLabelAfterGroupReturn === true),
+    "visible folder children should use the same deferred label reveal when a batch drag returns"
+  );
+
   const visualOpeningPlan = makeFolderOverlayRenderPlan({
     cols: 2,
     folderId: folder.id,

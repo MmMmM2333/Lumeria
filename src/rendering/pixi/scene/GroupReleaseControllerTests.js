@@ -50,7 +50,10 @@ export function runGroupReleaseControllerTests() {
   node.scale.set(1);
   node.alpha = 1;
   const callbacks = [];
-  let target = { x: 300, y: 220 };
+  let target = {
+    point: { x: 300, y: 220 },
+    scale: { x: 0.75, y: 0.75 },
+  };
   const controller = new GroupReleaseController(layer, {
     onEntryAbort: (payload) => callbacks.push({ ...payload, callback: "abort" }),
     onEntryComplete: (payload) => callbacks.push({ ...payload, callback: "complete" }),
@@ -72,17 +75,27 @@ export function runGroupReleaseControllerTests() {
     for (let index = 0; index < 12; index += 1) motionRuntime.step(1 / 60);
     assert(node.position.x > 20 && node.position.x < 300, "point handoff should preserve a continuous in-flight pose");
 
-    target = { x: 360, y: 260 };
+    target = {
+      point: { x: 360, y: 260 },
+      scale: { x: 0.625, y: 0.625 },
+    };
     controller.update(makeState(group, node));
     stepUntil(callbacks, () => callbacks.length > 0);
     assert(callbacks.length === 1, "a retargeted point lane should settle exactly once");
     assert(callbacks[0].callback === "complete", "point handoff should report a settled completion");
     assert(callbacks[0].planKey === "plan-point" && callbacks[0].entryId === "app", "completion should carry the semantic plan identity");
     assert(Math.abs(node.position.x - 360) < 0.01 && Math.abs(node.position.y - 260) < 0.01, "retargeted point handoff should snap to the final live target");
+    assert(
+      Math.abs(node.scale.x - 0.625) < 0.01 && Math.abs(node.scale.y - 0.625) < 0.01,
+      "point handoff should finish at the live target's visual scale"
+    );
 
     controller.clear("test-reset");
     callbacks.length = 0;
-    target = { x: 100, y: 90 };
+    target = {
+      point: { x: 100, y: 90 },
+      scale: { x: 0.834375, y: 0.834375 },
+    };
     node.position.set(360, 260);
     node.scale.set(1.08);
     node.alpha = 0.82;
@@ -99,7 +112,10 @@ export function runGroupReleaseControllerTests() {
     controller.update(makeState(rejectGroup, node));
     stepUntil(callbacks, () => callbacks.length > 0);
     assert(callbacks.length === 1 && callbacks[0].outcome === "settled", "origin return should settle through the same explicit callback channel");
-    assert(Math.abs(node.scale.x - 1.08) < 0.01 && Math.abs(node.alpha - 0.82) < 0.01, "origin return should restore the source visual scale and alpha");
+    assert(
+      Math.abs(node.scale.x - 0.834375) < 0.01 && Math.abs(node.alpha - 0.82) < 0.01,
+      "origin return should match the live target scale while restoring the source alpha"
+    );
 
     controller.clear("cancel-return-test-reset");
     callbacks.length = 0;

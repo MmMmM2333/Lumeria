@@ -200,7 +200,10 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
       clientX: targetX,
       clientY: targetY,
     }));
-    await wait(850);
+    const releaseDeadline = performance.now() + 3_000;
+    while (state.groupDragState && performance.now() < releaseDeadline) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
     const folder = state.activePages
       .flat()
       .find((item) => item.type === "folder" &&
@@ -307,7 +310,8 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
       modes: state.groupDragState?.releasePlan?.entries?.map((entry) => entry.mode) || [],
       phase: state.groupDragState?.phase,
     };
-    await wait(450);
+    const settleDeadline = performance.now() + 3_000;
+    while (state.groupDragState && performance.now() < settleDeadline) await wait(16);
     return {
       armed,
       batch: state.isBatchSelectionActive,
@@ -383,7 +387,8 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
       cancelSource: state.groupDragState?.cancelSource,
       phase: state.groupDragState?.phase,
     };
-    await wait(450);
+    const settleDeadline = performance.now() + 3_000;
+    while (state.groupDragState && performance.now() < settleDeadline) await wait(16);
     return {
       batch: state.isBatchSelectionActive,
       defaultPrevented: escape.defaultPrevented,
@@ -555,4 +560,175 @@ test("reduced motion rejects an invalid group drop without stagger", async ({ pa
     },
     selectedIds: ["app-0-safari", "app-1-mail"],
   });
+});
+
+test("responsive full-page return keeps the visual pose continuous and fades labels in", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1600, height: 800 });
+  await waitForFixture(page);
+
+  const result = await page.evaluate(async () => {
+    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const state = root?.setupState;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    if (!state || !layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+
+    state.enterBatchSelection();
+    await frame();
+    state.selectCurrentBatchScope();
+    await frame();
+    const selectedIds = [...state.batchSelectedIds];
+    const leadId = selectedIds[0];
+    const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
+      area: "desktop",
+      id: leadId,
+      pageIndex: 0,
+    });
+    const start = {
+      x: (bounds.left + bounds.right) / 2,
+      y: (bounds.top + bounds.bottom) / 2,
+    };
+    const target = document.elementFromPoint(start.x, start.y);
+    const init = {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: start.x,
+      clientY: start.y,
+      isPrimary: true,
+      pointerId: 81,
+      pointerType: "mouse",
+      view: window,
+    };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+    await wait(540);
+    const dragIconSize = layer.groupDragLayer.nodes[0]?.iconSize || 0;
+    const invalidPoint = { x: -80, y: -80 };
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: invalidPoint.x,
+      clientY: invalidPoint.y,
+    }));
+    await wait(80);
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      ...init,
+      buttons: 0,
+      clientX: invalidPoint.x,
+      clientY: invalidPoint.y,
+    }));
+
+    const readWorldIconSize = (node) => {
+      const visual = node?.visualWrap || node;
+      const matrix = visual?.worldTransform;
+      if (!matrix) return null;
+      return Number(node.iconSize) * Math.hypot(Number(matrix.a), Number(matrix.b));
+    };
+    const readVisualCenter = (node) => {
+      const visual = node?.visualWrap || node;
+      const center = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, visual);
+      return { x: center.x, y: center.y };
+    };
+    const pointDistance = (left, right) => Math.hypot(left.x - right.x, left.y - right.y);
+    let lastReleaseWorldSize = null;
+    let lastReleaseScale = null;
+    let releaseEntryCount = 0;
+    let releaseIds = [];
+    const reachedTargetIds = new Set();
+    const ownershipRegressions = [];
+    const deadline = performance.now() + 5_000;
+    while (state.groupDragState && performance.now() < deadline) {
+      await frame();
+      const group = state.groupDragState;
+      if (!group) break;
+      releaseEntryCount = Math.max(releaseEntryCount, group.entries?.length || 0);
+      releaseIds = group.entries?.map((entry) => entry.item?.id).filter(Boolean) || releaseIds;
+      group.entries?.forEach((entry, entryIndex) => {
+        const releaseGhost = layer.groupDragLayer.nodes[entryIndex];
+        const liveTarget = layer.findIconNodeByItemId(entry.item?.id);
+        if (!releaseGhost || !liveTarget) return;
+        const delta = pointDistance(readVisualCenter(releaseGhost), readVisualCenter(liveTarget));
+        if (delta <= 1) reachedTargetIds.add(entry.item.id);
+        else if (reachedTargetIds.has(entry.item.id) && delta > 6) {
+          ownershipRegressions.push({ delta, id: entry.item.id });
+        }
+      });
+      const index = group.entries?.findIndex((entry) => entry.item?.id === leadId) ?? -1;
+      const releaseNode = index >= 0 ? layer.groupDragLayer.nodes[index] : null;
+      if (releaseNode?.visible) {
+        lastReleaseWorldSize = readWorldIconSize(releaseNode);
+        lastReleaseScale = releaseNode.scale.x;
+      }
+    }
+    await frame();
+    const liveNode = layer.findIconNodeByItemId(leadId);
+    const handoffCenterMaxDelta = Math.max(...releaseIds.map((id, index) => {
+      const releaseGhost = layer.groupDragLayer.nodes[index];
+      const liveTarget = layer.findIconNodeByItemId(id);
+      return pointDistance(readVisualCenter(releaseGhost), readVisualCenter(liveTarget));
+    }));
+    const readLabelAlphas = () => releaseIds.map(
+      (id) => Number(layer.findIconNodeByItemId(id)?.labelText?.alpha)
+    );
+    const firstLabelAlphas = readLabelAlphas();
+    let finalLabelAlphas = firstLabelAlphas;
+    let sawPartialLabelAlpha = finalLabelAlphas.some((alpha) => alpha > 0 && alpha < 1);
+    const labelDeadline = performance.now() + 1_000;
+    while (Math.min(...finalLabelAlphas) < 0.999 && performance.now() < labelDeadline) {
+      await frame();
+      finalLabelAlphas = readLabelAlphas();
+      sawPartialLabelAlpha ||= finalLabelAlphas.some((alpha) => alpha > 0 && alpha < 1);
+    }
+    return {
+      dragIconSize,
+      finalLabelAlphaMin: Math.min(...finalLabelAlphas),
+      firstLabelAlphaMax: Math.max(...firstLabelAlphas),
+      groupEnded: state.groupDragState == null,
+      handoffCenterMaxDelta,
+      lastReleaseScale,
+      lastReleaseWorldSize,
+      liveIconSize: liveNode?.iconSize || 0,
+      liveWorldSize: readWorldIconSize(liveNode),
+      ownershipRegressions,
+      releaseEntryCount,
+      sawPartialLabelAlpha,
+      selectedCount: selectedIds.length,
+    };
+  });
+
+  expect(result).toMatchObject({
+    dragIconSize: 64,
+    groupEnded: true,
+    releaseEntryCount: 33,
+    selectedCount: 33,
+  });
+  expect(result.liveIconSize).toBeLessThan(result.dragIconSize);
+  expect(result.lastReleaseScale).toBeLessThan(1);
+  expect(Math.abs(result.lastReleaseWorldSize - result.liveWorldSize)).toBeLessThan(0.5);
+  expect(result.handoffCenterMaxDelta).toBeLessThan(0.5);
+  expect(result.ownershipRegressions).toEqual([]);
+  expect(result.firstLabelAlphaMax).toBeLessThan(0.05);
+  expect(result.sawPartialLabelAlpha).toBe(true);
+  expect(result.finalLabelAlphaMin).toBeGreaterThan(0.99);
 });

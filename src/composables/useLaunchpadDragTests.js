@@ -143,12 +143,20 @@ function createAtomicDragHarness(initialPages, options = {}) {
     dragStarts: [],
     rejected: [],
   };
-  const pageRect = {
+  const pageRect = options.pageRect || {
     bottom: 500,
     height: 400,
     left: 0,
     right: 400,
     top: 100,
+    width: 400,
+  };
+  const desktopMainRect = options.desktopMainRect || {
+    bottom: 520,
+    height: 440,
+    left: 0,
+    right: 400,
+    top: 80,
     width: 400,
   };
   const pageRefs = [
@@ -158,12 +166,24 @@ function createAtomicDragHarness(initialPages, options = {}) {
   const folderPageRefs = [
     { getBoundingClientRect: () => ({ ...pageRect, left: 150, right: 350, width: 200 }) },
   ];
+  const folderPanelRect = options.folderPanelRect || {
+    bottom: 520,
+    height: 440,
+    left: 100,
+    right: 400,
+    top: 80,
+    width: 300,
+  };
   const folderPanelRef = ref({
-    getBoundingClientRect: () => ({ bottom: 520, height: 440, left: 100, right: 400, top: 80, width: 300 }),
+    getBoundingClientRect: () => folderPanelRect,
   });
   const folderPageTurnRequest = ref(null);
   const iconBoundsRegistry = createIconBoundsRegistry();
   const visualFolderPageIndex = computed(() => folderPageTurnRequest.value?.targetIndex ?? folderPageIndex.value);
+  const gridCols = Math.max(1, Number(options.gridCols) || 2);
+  const gridRows = Math.max(1, Number(options.gridRows) || 2);
+  const pageSize = Math.max(1, Number(options.pageSize) || gridCols * gridRows);
+  const folderPageSize = Math.max(1, Number(options.folderPageSize) || 4);
 
   const drag = useLaunchpadDrag({
     clearFolderPageTurnRequest: () => {
@@ -189,6 +209,9 @@ function createAtomicDragHarness(initialPages, options = {}) {
       pageIndex.value = next;
     },
     compactPages: (next) => next,
+    desktopMainRef: ref({
+      getBoundingClientRect: () => desktopMainRect,
+    }),
     effectiveFolderIconSize: ref(56),
     findTopLevel,
     finishHomeRevealSettleWindow: () => {},
@@ -198,15 +221,15 @@ function createAtomicDragHarness(initialPages, options = {}) {
     folderPages,
     folderPageTurnRequest,
     folderPanelRef,
-    folderPageSize: ref(4),
+    folderPageSize: ref(folderPageSize),
     folderViewportHeight: ref(400),
     getGroupLayoutRevision: () => revision.value,
     getBatchCancelZoneRect: options.cancelZoneRect
       ? () => options.cancelZoneRect
       : undefined,
     getNewFolderName: () => "New Folder",
-    gridCols: ref(2),
-    gridRows: ref(2),
+    gridCols: ref(gridCols),
+    gridRows: ref(gridRows),
     iconBoundsRegistry,
     iconSize: ref(64),
     isFolderLayerActive: computed(() => Boolean(openFolderId.value)),
@@ -225,13 +248,13 @@ function createAtomicDragHarness(initialPages, options = {}) {
     pageIndex,
     pageRefs,
     pages,
-    pageSize: ref(4),
+    pageSize: ref(pageSize),
     planGroupDrop: (request) => planGroupDrop({
       ...request,
       folderName: "New Folder",
-      folderPageSize: 4,
+      folderPageSize,
       makeFolderId: () => request.createdFolderId,
-      pageSize: 4,
+      pageSize,
     }),
     renderedFolder,
     requestFolderOpenWarmup: () => {},
@@ -301,6 +324,114 @@ export async function runLaunchpadDragTests() {
       buttons: 0,
       type: "pointercancel",
     }));
+  });
+
+  await withMockPointerEnvironment(async () => {
+    const selected = Array.from({ length: 13 }, (_, index) => app(`release-${index}`));
+    const harness = createAtomicDragHarness([selected], {
+      folderPageSize: 13,
+      gridCols: 13,
+      gridRows: 1,
+      pageSize: 13,
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    selected.forEach((item, index) => {
+      harness.iconBoundsRegistry.registerBounds(
+        ICON_BOUNDS_KIND.LAUNCH,
+        ICON_BOUNDS_VARIANT.RENDERED,
+        { area: "desktop", id: item.id, pageIndex: 0 },
+        { height: 64, left: 12 + index * 28, top: 300, width: 64 },
+        { area: "desktop", id: item.id, index, pageIndex: 0 }
+      );
+    });
+    harness.drag.startDrag(
+      makePointerEvent(153, sourceElement, { clientX: 48, clientY: 152 }),
+      selected[0],
+      { index: 0, pageIndex: 0, type: "page" },
+      {
+        draggedIds: selected.map((item) => item.id),
+        layoutRevision: 0,
+        leadId: selected[0].id,
+        selectionRevision: 13,
+      }
+    );
+    assert(
+      harness.drag.groupDragState.value?.entries.length === 12,
+      "the interactive drag should remain bounded to twelve representatives"
+    );
+    harness.drag.cancelDrag({ cancelSource: "keyboard", userInitiatedCancel: true });
+    assert(
+      harness.drag.groupDragState.value?.entries.length === 13 &&
+        harness.drag.groupDragState.value?.releasePlan?.entries.length === 13,
+      "releasing a thirteen-item group should expand ownership to every selected application"
+    );
+    settleRelease(harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const selected = Array.from({ length: 13 }, (_, index) => app(`folder-release-${index}`));
+    const targetApp = app("folder-target-b");
+    const harness = createAtomicDragHarness([[...selected, targetApp]], {
+      folderPageSize: 14,
+      gridCols: 14,
+      gridRows: 1,
+      pageSize: 14,
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    selected.forEach((item, index) => {
+      harness.iconBoundsRegistry.registerBounds(
+        ICON_BOUNDS_KIND.LAUNCH,
+        ICON_BOUNDS_VARIANT.RENDERED,
+        { area: "desktop", id: item.id, pageIndex: 0 },
+        { height: 64, left: 12 + index * 28, top: 300, width: 64 },
+        { area: "desktop", id: item.id, index, pageIndex: 0 }
+      );
+    });
+    const targetRect = { height: 64, left: 200, top: 150, width: 64 };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      targetRect,
+      { area: "desktop", id: targetApp.id, index: 13, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(154, sourceElement, { clientX: 48, clientY: 152 }),
+      selected[0],
+      { index: 0, pageIndex: 0, type: "page" },
+      {
+        draggedIds: selected.map((item) => item.id),
+        layoutRevision: 0,
+        leadId: selected[0].id,
+        selectionRevision: 14,
+      }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(154, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    flushTimers(timers, harness.drag);
+    harness.drag.finishDrag(makePointerEvent(154, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 232,
+      clientY: 182,
+      type: "pointerup",
+    }));
+    const releaseEntries = harness.drag.groupDragState.value?.entries || [];
+    assert(
+      releaseEntries.length === 14 &&
+        releaseEntries.slice(0, 13).map((entry) => entry.item.id).join(",") ===
+          selected.map((item) => item.id).join(",") &&
+        releaseEntries.at(-1)?.item?.id === targetApp.id,
+      "folder creation should release every selected app and append target B without replacement"
+    );
+    settleRelease(harness.drag);
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
@@ -480,7 +611,6 @@ export async function runLaunchpadDragTests() {
     const e = app("e");
     const f = app("f");
     const harness = createAtomicDragHarness([[a, b, c, d], [e, f]]);
-    const original = JSON.stringify(harness.pages.value);
     const target = { getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }) };
     harness.drag.startDrag(
       makePointerEvent(11, target),
@@ -500,10 +630,14 @@ export async function runLaunchpadDragTests() {
       clientY: 180,
       type: "pointerup",
     }));
-    assert(harness.calls.commits.length === 0, "strict desktop capacity should reject the whole group");
-    assert(JSON.stringify(harness.pages.value) === original, "rejection must preserve the exact original layout");
-    assert(harness.drag.groupDragState.value?.phase === "rejected", "rejected representatives should return to source proxies");
-    assert(harness.calls.rejected[0] === "desktop-capacity", "capacity reason should cross the UI boundary");
+    assert(harness.calls.commits.length === 1, "desktop overflow should commit the whole group atomically");
+    assert(
+      harness.pages.value.map((page) => page.map((item) => item.id).join(",")).join("|") ===
+        "b,a,e,f|c,d",
+      "desktop overflow should preserve stable group and displaced-item order across pages"
+    );
+    assert(harness.drag.groupDragState.value?.phase === "accepted", "overflowing representatives should release to committed slots");
+    assert(harness.calls.rejected.length === 0, "valid desktop overflow should not cross the rejection boundary");
     flushTimers(timers, harness.drag);
   });
 
@@ -565,6 +699,58 @@ export async function runLaunchpadDragTests() {
     assert(harness.drag.groupDragState.value?.phase === "accepted", "toolbar creation should resolve real landing targets after render");
     flushTimers(timers, harness.drag);
     assert(completed === 1 && !harness.drag.isDragActive(), "the lightweight gather should complete once and release interaction ownership");
+  });
+
+  await withMockPointerEnvironment(async () => {
+    const selected = Array.from({ length: 35 }, (_, index) => app(`full-page-${index}`));
+    const harness = createAtomicDragHarness([selected], {
+      folderPageSize: 35,
+      gridCols: 7,
+      gridRows: 5,
+      pageSize: 35,
+    });
+    const plan = planGroupDrop({
+      basePages: harness.pages.value,
+      baseRevision: 0,
+      createdFolderId: "folder-created",
+      currentRevision: 0,
+      draggedIds: selected.map((item) => item.id),
+      folderName: "New Folder",
+      folderPageSize: 35,
+      intent: { type: "app-folder-create" },
+      leadId: selected[0].id,
+      makeFolderId: () => "folder-created",
+      pageSize: 35,
+    });
+    const presented = harness.drag.presentCommittedFolderCreation({
+      basePages: harness.pages.value,
+      baseRevision: 0,
+      commit: () => {
+        harness.pages.value = plan.nextPages;
+        harness.revision.value += 1;
+        return true;
+      },
+      draggedIds: selected.map((item) => item.id),
+      leadId: selected[0].id,
+      plan,
+      selectionRevision: 35,
+    });
+    assert(presented, "full-page toolbar folder creation should enter the shared release presentation");
+    assert(
+      harness.drag.groupDragState.value?.entries.length <= 12 &&
+        harness.drag.groupDragState.value?.releaseVisualCount === 35,
+      "the committing gather should retain twelve visuals while advertising the full release-pool target"
+    );
+    await nextTick();
+    const releaseState = harness.drag.groupDragState.value;
+    assert(
+      releaseState?.entries.length === 35 &&
+        releaseState.releasePlan?.entries.length === 35 &&
+        releaseState.entries.map((entry) => entry.item.id).join(",") ===
+          selected.map((item) => item.id).join(","),
+      "creating a folder from a complete 5x7 page should animate all thirty-five source applications"
+    );
+    settleRelease(harness.drag);
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
@@ -976,6 +1162,151 @@ export async function runLaunchpadDragTests() {
     }));
     assert(harness.calls.commits.length === 0, "pointer cancellation should need no compensating commit");
     assert(harness.drag.dragMeta.value === null && harness.drag.groupDragState.value === null, "cancellation should release all visual ownership immediately");
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const a = app("auto-open-source");
+    const targetFolder = folder("auto-open-folder", ["x", "y"]);
+    const harness = createAtomicDragHarness([[a, targetFolder]], {
+      folderPanelRect: {
+        bottom: 520,
+        height: 220,
+        left: 100,
+        right: 400,
+        top: 300,
+        width: 300,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    const targetRect = { height: 64, left: 200, top: 150, width: 64 };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetFolder.id, pageIndex: 0 },
+      targetRect,
+      { area: "desktop", id: targetFolder.id, index: 1, item: targetFolder, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(21, sourceElement, { clientX: 48, clientY: 152 }),
+      a,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(21, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    flushTimers(timers, harness.drag);
+    flushTimers(timers, harness.drag);
+    assert(harness.openFolderId.value === targetFolder.id, "hovering a folder should auto-open it for the active drag");
+
+    harness.drag.updateDragPointer(makePointerEvent(21, sourceElement, {
+      clientX: 233,
+      clientY: 182,
+      timeStamp: 160,
+    }));
+    assert(
+      harness.openFolderId.value === targetFolder.id,
+      "an auto-opened folder must stay open while the pointer has not entered its panel"
+    );
+
+    harness.drag.updateDragPointer(makePointerEvent(21, sourceElement, {
+      clientX: 180,
+      clientY: 340,
+      timeStamp: 190,
+    }));
+    flushTimers(timers, harness.drag);
+    assert(harness.openFolderId.value === targetFolder.id, "entering the auto-opened panel should retain folder ownership");
+
+    harness.drag.updateDragPointer(makePointerEvent(21, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 220,
+    }));
+    flushTimers(timers, harness.drag);
+    flushTimers(timers, harness.drag);
+    assert(
+      harness.openFolderId.value === null,
+      "leaving an entered auto-opened panel should close once without stale hover timers reopening it"
+    );
+    harness.drag.cancelDrag(makePointerEvent(21, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 50,
+      clientY: 240,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = folder("folder-drag-out", ["x", "y", "z"]);
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 400,
+        top: 80,
+        width: 400,
+      },
+      openFolderId: sourceFolder.id,
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 80,
+        right: 360,
+        top: 100,
+        width: 280,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 56, left: 220, top: 180, width: 56 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(22, sourceElement, { clientX: 248, clientY: 208 }),
+      sourceFolder.children[0],
+      { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" },
+      {
+        draggedIds: ["x", "y"],
+        layoutRevision: 0,
+        leadId: "x",
+        selectionRevision: 2,
+      }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(22, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 140,
+    }));
+    assert(
+      harness.openFolderId.value === null,
+      "a folder-source group drag should close the folder as soon as it crosses outside the entered panel"
+    );
+
+    harness.drag.finishDrag(makePointerEvent(22, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 170,
+      type: "pointerup",
+    }));
+    await nextTick();
+    const committedFolder = findFolder(harness.pages.value, sourceFolder.id)?.item;
+    assert(harness.calls.commits.length === 1, "dragging a selected folder group onto the desktop should commit exactly once");
+    assert(
+      findTopLevel(harness.pages.value, "x")?.item?.type === "app" &&
+        findTopLevel(harness.pages.value, "y")?.item?.type === "app",
+      "every dragged folder child should become a top-level desktop item"
+    );
+    assert(
+      committedFolder?.children?.map((item) => item.id).join(",") === "z",
+      "the source folder should retain only children outside the dragged selection"
+    );
+    settleRelease(harness.drag);
+    flushTimers(timers, harness.drag);
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {

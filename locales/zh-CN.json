@@ -1033,6 +1033,7 @@
         "contextMenu": {
           "label": "{name} 菜单",
           "surfaceLabel": "启动台菜单",
+          "folderSurfaceLabel": "文件夹菜单",
           "batchManage": "批量管理",
           "remove": "从启动台移除",
           "exclude": "移除并从扫描中排除",

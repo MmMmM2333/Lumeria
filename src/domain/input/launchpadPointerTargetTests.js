@@ -11,6 +11,7 @@ export function runLaunchpadPointerTargetTests() {
 
   const app = { id: "app-a", name: "App A", type: "app" };
   const folderApp = { id: "app-folder", name: "Folder App", type: "app" };
+  const folderPanelRect = { bottom: 420, height: 240, left: 180, right: 620, top: 180, width: 440 };
   const mainRect = { bottom: 500, height: 400, left: 100, right: 700, top: 100, width: 600 };
 
   assert(
@@ -47,6 +48,7 @@ export function runLaunchpadPointerTargetTests() {
     clientX: 320,
     clientY: 260,
     folderId: "folder-a",
+    folderPanelRect,
     getIconAtPoint: (x, y, options) => {
       requestedOptions = { options, x, y };
       return {
@@ -81,10 +83,34 @@ export function runLaunchpadPointerTargetTests() {
   });
   assert(surfaceRoute?.kind === "surface", "blank points inside the desktop main rectangle should resolve to the surface menu");
 
-  for (const state of [
-    { isSearchMode: true },
-    { isFolderLayerActive: true },
-  ]) {
+  const folderSurfaceRoute = resolveLaunchpadContextMenuTarget({
+    clientX: 400,
+    clientY: 360,
+    folderId: "folder-a",
+    folderPanelRect,
+    getIconAtPoint: () => null,
+    isFolderLayerActive: true,
+    mainRect,
+  });
+  assert(
+    folderSurfaceRoute?.kind === "folder-surface" && folderSurfaceRoute.folderId === "folder-a",
+    "blank points inside an open folder panel should resolve to a folder-scoped surface menu"
+  );
+
+  assert(
+    resolveLaunchpadContextMenuTarget({
+      clientX: 120,
+      clientY: 360,
+      folderId: "folder-a",
+      folderPanelRect,
+      getIconAtPoint: () => null,
+      isFolderLayerActive: true,
+      mainRect,
+    }) === null,
+    "blank points outside the folder panel should not resolve to the folder surface menu"
+  );
+
+  for (const state of [{ isSearchMode: true }]) {
     const route = resolveLaunchpadContextMenuTarget({
       clientX: 400,
       clientY: 400,
@@ -92,7 +118,7 @@ export function runLaunchpadPointerTargetTests() {
       mainRect,
       ...state,
     });
-    assert(route === null, "blank search and folder points should not resolve to a surface menu");
+    assert(route === null, "blank search points should not resolve to a surface menu");
   }
 
   assert(

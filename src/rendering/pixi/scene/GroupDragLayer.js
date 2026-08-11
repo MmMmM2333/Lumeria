@@ -5,6 +5,10 @@ import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { GroupReleaseController } from "./GroupReleaseController.js";
 import {
+  GROUP_RELEASE_ROLE,
+  GROUP_RELEASE_START_KIND,
+} from "../../../domain/groupReleasePopulation.js";
+import {
   getGroupTrailSettleDurationMs,
   makeGroupFollowerTarget,
 } from "./groupDragPresentation.js";
@@ -16,11 +20,26 @@ import {
 
 const GROUP_GATHER_DURATION_SECONDS = 0.22;
 const GROUP_HOVER_LABEL_SCALE = 0.72;
+const GROUP_RELEASE_PREWARM_BATCH_SIZE = 1;
 const GROUP_INTERACTIVE_PHASES = new Set(["gathering", "dragging"]);
 const GROUP_RELEASE_PHASES = new Set(["accepted", "rejected", "cancelling"]);
 
 function isGroupReleasePhase(phase) {
   return phase === "committing" || GROUP_RELEASE_PHASES.has(phase);
+}
+
+function getEntryZIndex(entry, index, group) {
+  if (entry?.releaseRole === GROUP_RELEASE_ROLE.FOLDER_CREATE_TARGET) return 600;
+  if (entry?.releaseRole === GROUP_RELEASE_ROLE.LEAD) return 800;
+  if (entry?.item?.id === group?.leadId || entry?.originKind === "lead") return 800;
+  if (entry?.originKind === "folder-create-target") return 600;
+  return 400 - index;
+}
+
+function getReleaseStart(entry) {
+  const start = entry?.releaseStart;
+  if (!start || start.kind === GROUP_RELEASE_START_KIND.CURRENT_POSE) return null;
+  return start;
 }
 
 function toStagePoint(point, state) {
@@ -318,10 +337,12 @@ export class GroupDragLayer extends Container {
     this.followerClockKey = null;
     this.followerClockTarget = 0;
     this.followerFrame = null;
+    this.prewarmTargetCount = 0;
     this.resolveFolderNode = options.resolveFolderNode || (() => null);
     this.resolvePointTarget = options.resolvePointTarget || (() => null);
     this.onReleaseSettled = options.onReleaseSettled || (() => {});
     this.onReleaseAborted = options.onReleaseAborted || (() => {});
+    this.onPrewarmRequest = options.onPrewarmRequest || (() => {});
     // GroupReleaseController composes this hook with its own release-frame
     // resolver. The clock tween below keeps the renderer alive after the
     // physical pointer stops, so followers can consume the rest of the trail.
@@ -391,6 +412,7 @@ export class GroupDragLayer extends Container {
   }
 
   renderFollowerFrame() {
+    this.prewarmReleaseNodes();
     const frame = this.followerFrame;
     if (
       !frame ||
@@ -443,12 +465,27 @@ export class GroupDragLayer extends Container {
     return this.nodes[index];
   }
 
+  prewarmReleaseNodes() {
+    const targetCount = Math.max(0, Math.floor(Number(this.prewarmTargetCount) || 0));
+    if (this.nodes.length >= targetCount) return false;
+    const start = this.nodes.length;
+    const end = Math.min(targetCount, start + GROUP_RELEASE_PREWARM_BATCH_SIZE);
+    this.acquireNode(end - 1);
+    for (let index = start; index < end; index += 1) {
+      this.nodes[index].visible = false;
+      this.entryBadges[index].container.visible = false;
+    }
+    this.onPrewarmRequest("group-release-pool-prewarm");
+    return true;
+  }
+
   clear() {
     this.releaseController?.clear?.("group-drag-clear");
     this.clearFollowerClock("group-drag-clear");
     this.activeKey = null;
     this.activeEntryIds.clear();
     this.phase = null;
+    this.prewarmTargetCount = 0;
     this.visible = false;
     this.stageTrailSource = null;
     this.stageTrailOffset = null;
@@ -469,15 +506,34 @@ export class GroupDragLayer extends Container {
     const group = state.groupState;
     if (!group?.key || !group.entries?.length) {
       this.clear();
+      this.prewarmTargetCount = Math.max(
+        0,
+        Math.floor(Number(state.releasePrewarmCount) || 0)
+      );
+      this.prewarmReleaseNodes();
+      return;
+    }
+    const entries = group.entries;
+    const isReleasePhase = GROUP_RELEASE_PHASES.has(group.phase);
+    if (isReleasePhase && this.nodes.length < entries.length) {
+      this.activeKey = group.key;
+      this.phase = group.phase;
+      this.visible = true;
+      this.badge.visible = false;
+      this.prewarmTargetCount = entries.length;
+      this.clearFollowerClock("group-release-pool-prewarm");
+      this.prewarmReleaseNodes();
       return;
     }
     const isNewGroup = this.activeKey !== group.key;
     const previousEntryIds = isNewGroup ? new Set() : this.activeEntryIds;
     this.activeKey = group.key;
     this.phase = group.phase;
+    this.prewarmTargetCount = GROUP_INTERACTIVE_PHASES.has(group.phase) || group.phase === "committing"
+      ? Math.max(0, Math.floor(Number(group.releaseVisualCount) || 0))
+      : 0;
     this.visible = true;
 
-    const entries = group.entries;
     const visualSpec = resolveVisualSpec(group, state);
     // Release-lane cancellation can restore the previous motion's final
     // scale.  Synchronize the plan before pooled nodes receive their new
@@ -520,7 +576,6 @@ export class GroupDragLayer extends Container {
     const nextEntryIds = new Set();
     const releaseNodes = new Map();
     const releasePlan = group.releasePlan;
-    const isReleasePhase = GROUP_RELEASE_PHASES.has(group.phase);
     const releaseState = {
       ...state,
       groupState: group,
@@ -531,11 +586,13 @@ export class GroupDragLayer extends Container {
       const entry = entries[index];
       const entryId = entry.item.id;
       const isNewEntry = !previousEntryIds.has(entryId);
+      const releaseStart = isReleasePhase ? getReleaseStart(entry) : null;
+      const releaseStartPoint = releaseStart?.point || entry.origin;
       nextEntryIds.add(entryId);
       const node = this.acquireNode(index);
       const releaseSourceCenter = isReleasePhase && node.parent === this
         ? (isNewEntry
-          ? toStagePoint(entry.origin, state)
+          ? toStagePoint(releaseStartPoint, state)
           : readNodeVisualCenter(this, node))
         : null;
       const releaseVisual = setNodeVisualState(
@@ -548,8 +605,23 @@ export class GroupDragLayer extends Container {
       );
       this.updateEntryBadge(index, entry, state);
       node.visible = true;
-      node.zIndex = index === 0 ? 800 : 400 - index;
+      node.zIndex = getEntryZIndex(entry, index, group);
       releaseNodes.set(entryId, node);
+      if (isReleasePhase) {
+        // Gathering/follower motion uses the overlay base lane. Once a release
+        // plan owns the node, that lane must not survive underneath drag or
+        // handoff and regain write ownership after the release lane settles.
+        killMotionOf(node, "x,y,alpha", {
+          lane: "base",
+          laneKey: "overlay",
+          reason: "group-release-ownership",
+        });
+        killMotionOf(node.scale, "x,y", {
+          lane: "base",
+          laneKey: "overlay",
+          reason: "group-release-ownership",
+        });
+      }
       const stackTarget = makeGroupFollowerTarget(
         nodePointerCenter,
         stageTrail,
@@ -563,10 +635,11 @@ export class GroupDragLayer extends Container {
       );
 
       if (isNewEntry) {
-        const origin = toNodeStagePoint(entry.origin, state, visualOffsetY);
+        const origin = toNodeStagePoint(releaseStartPoint, state, visualOffsetY);
         node.position.set(origin.x, origin.y);
         node.scale.set(
-          Math.max(0.08, Number(entry.originScale) || 1) * releaseVisual.scaleMultiplier
+          Math.max(0.08, Number(releaseStart?.scale ?? entry.originScale) || 1) *
+            releaseVisual.scaleMultiplier
         );
         if (releaseVisual.folderSlot) {
           restoreNodeVisualCenter(this, node, releaseSourceCenter);
@@ -579,7 +652,19 @@ export class GroupDragLayer extends Container {
         if (isReleasePhase) {
           // The release controller owns the first accepted/rejected/cancelling frame.
           // Do not let a gather tween run for one frame and steal its start pose.
-          node.alpha = 1;
+          node.alpha = Number.isFinite(Number(releaseStart?.alpha))
+            ? Math.max(0, Number(releaseStart.alpha))
+            : 1;
+          if (!releaseStart && group.reducedMotion) {
+            node.position.set(stackTarget.x, stackTarget.y);
+            node.scale.set(
+              (index === 0 ? 1.08 : Math.max(0.76, 1 - index * 0.018)) *
+                releaseVisual.scaleMultiplier
+            );
+            node.alpha = 1;
+            updateReleaseLabel(node, state, { immediate: true });
+          }
+          continue;
         } else if (index === 0) {
           // The lead must remain under the pointer immediately; a delayed
           // gather tween is the source of the old first-frame drag lag.
@@ -628,6 +713,7 @@ export class GroupDragLayer extends Container {
     for (let index = entries.length; index < this.nodes.length; index += 1) {
       this.nodes[index].visible = false;
     }
+    this.prewarmReleaseNodes();
     this.activeEntryIds = nextEntryIds;
     this.updateBadge(group, pointerCenter, state, visualSpec);
     if (releasePlan) {
@@ -703,6 +789,7 @@ export class GroupDragLayer extends Container {
     this.clear();
     this.onRender = null;
     this.followerClock = null;
+    this.onPrewarmRequest = null;
     super.destroy(options);
   }
 }

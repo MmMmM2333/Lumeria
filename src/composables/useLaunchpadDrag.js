@@ -21,8 +21,15 @@ import {
   selectGroupGatherRepresentatives,
 } from "../domain/groupGatherOrigins.js";
 import { makeGroupReleasePlan } from "../domain/groupReleasePlan.js";
+import {
+  makeGroupReleasePopulation,
+  resolveGroupReleaseVisualLimit,
+} from "../domain/groupReleasePopulation.js";
 import { prefersReducedMotion } from "../rendering/pixi/animation/motionPreferences.js";
-import { appendGroupTrailPoint } from "../rendering/pixi/scene/groupDragPresentation.js";
+import {
+  appendGroupTrailPoint,
+  makeGroupReleaseDelayMs,
+} from "../rendering/pixi/scene/groupDragPresentation.js";
 import { makeIconVisualSpec } from "../rendering/pixi/scene/iconVisualSpec.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
@@ -339,6 +346,14 @@ export function useLaunchpadDrag(options) {
     return options.pageRefs?.[index]?.getBoundingClientRect?.() || null;
   }
 
+  function isInsideDesktopDropRegion(clientX, clientY, pageRect) {
+    if (!pageRect || isPointInsideRect(pageRect, clientX, clientY)) return true;
+    if (!activeDrag?.group?.returnedFromFolder) return false;
+    const desktopMain = getDomRefElement(options.desktopMainRef?.value);
+    const desktopMainRect = desktopMain?.getBoundingClientRect?.() || null;
+    return Boolean(desktopMainRect && isPointInsideRect(desktopMainRect, clientX, clientY));
+  }
+
   function getFolderPageRect(index = options.folderPageIndex.value) {
     return options.folderPageRefs?.[index]?.getBoundingClientRect?.() ||
       options.folderPageRefs?.find(Boolean)?.getBoundingClientRect?.() ||
@@ -399,7 +414,7 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function buildGatherEntriesFromSnapshot(snapshot) {
+  function buildGatherPopulationFromSnapshot(snapshot) {
     const viewportRect = getPageRect(snapshot.activePageIndex) || {
       height: Number(globalThis.innerHeight) || 1,
       left: 0,
@@ -439,11 +454,14 @@ export function useLaunchpadDrag(options) {
       pointer: snapshot.pointer,
       viewportRect,
     });
-    return selectGroupGatherRepresentatives(entries, GROUP_DRAG_VISUAL_LIMIT);
+    return {
+      allEntries: entries,
+      dragEntries: selectGroupGatherRepresentatives(entries, GROUP_DRAG_VISUAL_LIMIT),
+    };
   }
 
-  function buildGatherEntries(descriptor, drag) {
-    return buildGatherEntriesFromSnapshot({
+  function buildGatherPopulation(descriptor, drag) {
+    return buildGatherPopulationFromSnapshot({
       activeFolderPageIndex: options.folderPageIndex.value,
       activePageIndex: options.pageIndex.value,
       draggedIds: drag.group.draggedIds,
@@ -453,6 +471,48 @@ export function useLaunchpadDrag(options) {
       pages: drag.group.basePages,
       pointer: descriptor.startPoint,
     });
+  }
+
+  function getReleaseVisualLimit() {
+    return resolveGroupReleaseVisualLimit({
+      folderPageSize: options.folderPageSize?.value,
+      gridCols: options.gridCols?.value,
+      gridRows: options.gridRows?.value,
+    });
+  }
+
+  function getReleaseVisualCount(group) {
+    const potentialTargetCount = group.presentationOnly === true ? 0 : 1;
+    const continuityCount = (group.dragEntries?.length || 0) + potentialTargetCount;
+    const semanticCount = (group.allEntries?.length || 0) + potentialTargetCount;
+    return Math.max(
+      continuityCount,
+      Math.min(getReleaseVisualLimit(), semanticCount)
+    );
+  }
+
+  function buildReleaseEntries(drag, targetEntry = null) {
+    const entries = makeGroupReleasePopulation({
+      allEntries: drag.group.allEntries,
+      dragEntries: drag.group.dragEntries,
+      leadId: drag.group.leadId,
+      spawnPoint: getPointerCenter(drag),
+      targetEntry,
+      visualLimit: getReleaseVisualLimit(),
+    });
+    const reducedMotion = prefersReducedMotion();
+    return entries.map((entry, order) => ({
+      ...entry,
+      delayMs: makeGroupReleaseDelayMs(order, entries.length, { reducedMotion }),
+    }));
+  }
+
+  function getPublishedGroupEntries(group) {
+    if (
+      ["accepted", "rejected", "cancelling"].includes(group.phase) &&
+      group.releaseEntries?.length
+    ) return group.releaseEntries;
+    return group.dragEntries || [];
   }
 
   function makeActiveDragVisualSpec(drag = activeDrag) {
@@ -490,14 +550,16 @@ export function useLaunchpadDrag(options) {
       dropReason: group.dropReason,
       dropStatus: group.dropStatus,
       desktopPageIndex: group.desktopPageIndex,
-      entries: group.entries,
+      entries: getPublishedGroupEntries(group),
       intent: group.intent,
       key: group.key,
+      leadId: group.leadId,
       phase: group.phase,
       pointer: { ...activeDrag.pointer },
       projectedPages: group.projectedPages,
       reducedMotion: prefersReducedMotion(),
       releaseCreatedFolderId: group.releaseCreatedFolderId,
+      releaseVisualCount: getReleaseVisualCount(group),
       releaseLayoutAnchorId: holdsReleaseLayout ? group.releaseLayoutAnchorId : null,
       releaseLayoutPages: holdsReleaseLayout ? group.basePages : null,
       releasePlan: group.releasePlan,
@@ -627,6 +689,17 @@ export function useLaunchpadDrag(options) {
     return intentRect ? expandRect(intentRect, FOLDER_HOVER_STICKY_MARGIN) : null;
   }
 
+  function getSuppressedTopLevelTargetId(point) {
+    const group = activeDrag?.group;
+    const suppressed = group?.suppressedTarget;
+    if (!suppressed?.targetId || !suppressed.stickyRect || !point) return null;
+    if (!isPointInsideRect(suppressed.stickyRect, point.x, point.y)) {
+      group.suppressedTarget = null;
+      return null;
+    }
+    return suppressed.targetId;
+  }
+
   function lockTopLevelTarget(target) {
     const stickyRect = getTargetStickyRect(target);
     if (!activeDrag?.group || !target?.item?.id || !stickyRect) return;
@@ -659,13 +732,14 @@ export function useLaunchpadDrag(options) {
   function getTopLevelTargetAtPoint(point) {
     if (!activeDrag || activeDrag.item.type === "folder" || !point) return null;
     const selectedIds = new Set(activeDrag.group.draggedIds);
+    const suppressedTargetId = getSuppressedTopLevelTargetId(point);
     const hit = options.iconBoundsRegistry.getAtPoint(
       BOUNDS_KIND.TOP_LEVEL,
       point.x,
       point.y,
       { excludeId: activeDrag.group.leadId }
     );
-    if (hit?.id && !selectedIds.has(hit.id)) {
+    if (hit?.id && hit.id !== suppressedTargetId && !selectedIds.has(hit.id)) {
       const found = options.findTopLevel(options.pages.value, hit.id);
       if (found) return { ...found, rect: hit.rect };
     }
@@ -674,7 +748,7 @@ export function useLaunchpadDrag(options) {
     const pageIndex = getVisualDesktopPageIndex();
     for (let index = 0; index < (options.pages.value[pageIndex] || []).length; index += 1) {
       const item = options.pages.value[pageIndex][index];
-      if (!item?.id || selectedIds.has(item.id)) continue;
+      if (!item?.id || item.id === suppressedTargetId || selectedIds.has(item.id)) continue;
       const target = getTopLevelTargetById(item.id);
       if (!target) continue;
       const candidateRect = expandRect(target.rect, FOLDER_HIT_CANDIDATE_MARGIN);
@@ -693,19 +767,68 @@ export function useLaunchpadDrag(options) {
     return Boolean(intentRect && point && isPointInsideRect(intentRect, point.x, point.y));
   }
 
-  function maybeCloseAutoOpenedFolder(clientX, clientY) {
+  function leaveFolderTransit() {
     const group = activeDrag?.group;
-    if (!group?.autoOpenedFolderId || options.openFolderId.value !== group.autoOpenedFolderId) return;
-    const panel = getDomRefElement(options.folderPanelRef.value);
-    const rect = panel?.getBoundingClientRect?.();
-    if (!rect || isPointInsideRect(rect, clientX, clientY)) return;
-    group.autoOpenedFolderId = null;
+    const transit = group?.folderTransit;
+    if (!transit?.folderId || options.openFolderId.value !== transit.folderId) return false;
+    const locked = group.lockedTarget?.targetId === transit.folderId
+      ? group.lockedTarget
+      : null;
+    const target = locked ? null : getTopLevelTargetById(transit.folderId);
+    const stickyRect = locked?.stickyRect || getTargetStickyRect(target);
+    clearPendingTarget();
+    clearFolderPageTurn();
+    group.returnedFromFolder = true;
+    group.folderTransit = null;
+    group.suppressedTarget = stickyRect
+      ? { stickyRect: cloneRect(stickyRect), targetId: transit.folderId }
+      : null;
     options.commitOpenFolder(null);
+    return true;
   }
 
-  function resolveDropIntent(clientX, clientY) {
+  function syncFolderTransit(clientX, clientY, syncOptions = {}) {
+    const group = activeDrag?.group;
+    const transit = group?.folderTransit;
+    if (!transit?.folderId || options.openFolderId.value !== transit.folderId) return "none";
+    const panel = getDomRefElement(options.folderPanelRef.value);
+    const rect = panel?.getBoundingClientRect?.();
+    const inside = Boolean(rect && isPointInsideRect(rect, clientX, clientY));
+    if (inside) {
+      transit.hasEnteredPanel = true;
+      group.suppressedTarget = null;
+      return "inside";
+    }
+    if (!transit.hasEnteredPanel && syncOptions.finalize !== true) return "awaiting-entry";
+    leaveFolderTransit();
+    return "desktop";
+  }
+
+  function resolveDropIntent(clientX, clientY, resolveOptions = {}) {
     const point = getPointerCenter() || { x: clientX, y: clientY };
-    maybeCloseAutoOpenedFolder(clientX, clientY);
+    const transitPhase = syncFolderTransit(clientX, clientY, resolveOptions);
+    if (transitPhase === "awaiting-entry") {
+      const pageIndex = getVisualDesktopPageIndex();
+      const pageRect = getPageRect(pageIndex);
+      if (pageRect && !isPointInsideRect(pageRect, clientX, clientY)) {
+        return {
+          fallbackPoint: point,
+          intent: { reason: "invalid-target", type: "invalid" },
+          locked: false,
+          target: null,
+        };
+      }
+      return {
+        fallbackPoint: point,
+        intent: {
+          index: calcDesktopInsertIndex(clientX, clientY, pageIndex),
+          pageIndex,
+          type: "desktop-slot",
+        },
+        locked: false,
+        target: null,
+      };
+    }
     const openFolderId = options.openFolderId.value;
     if (openFolderId && activeDrag.item.type !== "folder") {
       const panel = getDomRefElement(options.folderPanelRef.value);
@@ -754,7 +877,7 @@ export function useLaunchpadDrag(options) {
 
     const pageIndex = getVisualDesktopPageIndex();
     const pageRect = getPageRect(pageIndex);
-    if (pageRect && !isPointInsideRect(pageRect, clientX, clientY)) {
+    if (!isInsideDesktopDropRegion(clientX, clientY, pageRect)) {
       return {
         fallbackPoint: point,
         intent: { reason: "invalid-target", type: "invalid" },
@@ -820,7 +943,10 @@ export function useLaunchpadDrag(options) {
       clearFolderHoverTimers();
       return;
     }
-    if (activeDrag.group.pendingOpenFolderId === target.item.id || activeDrag.group.autoOpenedFolderId === target.item.id) return;
+    if (
+      activeDrag.group.pendingOpenFolderId === target.item.id ||
+      activeDrag.group.folderTransit?.folderId === target.item.id
+    ) return;
     clearFolderHoverTimers();
     activeDrag.group.pendingOpenFolderId = target.item.id;
     folderHoverFlashTimer = window.setTimeout(() => {
@@ -836,7 +962,11 @@ export function useLaunchpadDrag(options) {
       folderHoverTimer = null;
       if (!activeDrag || activeDrag.group.pendingOpenFolderId !== target.item.id) return;
       activeDrag.group.pendingOpenFolderId = null;
-      activeDrag.group.autoOpenedFolderId = target.item.id;
+      activeDrag.group.folderTransit = {
+        folderId: target.item.id,
+        hasEnteredPanel: false,
+        origin: "auto",
+      };
       dragFolderHoverState.value = {
         ...dragFolderHoverState.value,
         phase: "opening",
@@ -868,7 +998,9 @@ export function useLaunchpadDrag(options) {
   function evaluateIntent(optionsArg = {}) {
     intentTimer = null;
     if (!activeDrag || options.isLaunchpadInteractionBlocked()) return null;
-    const resolved = resolveDropIntent(activeDrag.pointer.x, activeDrag.pointer.y);
+    const resolved = resolveDropIntent(activeDrag.pointer.x, activeDrag.pointer.y, {
+      finalize: optionsArg.finalizeFolderTransit === true,
+    });
     const nextIntentKey = intentKey(resolved.intent);
     let plan = activeDrag.group.lastPlan;
     if (
@@ -1079,7 +1211,7 @@ export function useLaunchpadDrag(options) {
     const placements = new Map((plan.placements || []).map((placement) => [placement.id, placement]));
     const fallback = resolved.fallbackPoint || getPointerCenter();
     const fallbackById = {};
-    for (const entry of drag.group.entries) {
+    for (const entry of drag.group.releaseEntries || []) {
       fallbackById[entry.item.id] = getPlacementReleasePoint(
         placements.get(entry.item.id),
         fallback
@@ -1087,7 +1219,7 @@ export function useLaunchpadDrag(options) {
     }
     return makeGroupReleasePlan({
       basePages: drag.group.basePages,
-      entries: drag.group.entries,
+      entries: drag.group.releaseEntries,
       fallbackById,
       fallbackPoint: fallback,
       folderPageSize: Number(options.folderPageSize?.value) || 9,
@@ -1135,11 +1267,11 @@ export function useLaunchpadDrag(options) {
       group.virtualFolderPageIndex = null;
     }
     if (
-      group.autoOpenedFolderId &&
-      options.openFolderId.value === group.autoOpenedFolderId
+      group.folderTransit?.origin === "auto" &&
+      options.openFolderId.value === group.folderTransit.folderId
     ) {
       options.commitOpenFolder(group.baseOpenFolderId || null);
-      group.autoOpenedFolderId = null;
+      group.folderTransit = null;
     }
   }
 
@@ -1164,14 +1296,15 @@ export function useLaunchpadDrag(options) {
     drag.group.projectedPages = null;
     projectedPages.value = null;
     const releaseKey = `${keyPrefix}-${groupKey}-${drag.group.leadId}`;
+    drag.group.releaseEntries = buildReleaseEntries(drag);
     const fallbackById = Object.fromEntries(
-      drag.group.entries
+      drag.group.releaseEntries
         .filter((entry) => entry?.item?.id)
         .map((entry) => [entry.item.id, entry.origin])
     );
     drag.group.releasePlan = makeGroupReleasePlan({
       basePages: drag.group.basePages,
-      entries: drag.group.entries,
+      entries: drag.group.releaseEntries,
       fallbackById,
       folderPageSize: Number(options.folderPageSize?.value) || 9,
       key: releaseKey,
@@ -1249,15 +1382,7 @@ export function useLaunchpadDrag(options) {
     } else {
       options.commitPageIndex(drag.group.desktopPageIndex);
     }
-    if (
-      folderCreateTargetEntry &&
-      !drag.group.entries.some((entry) => entry.item.id === folderCreateTargetEntry.item.id)
-    ) {
-      drag.group.entries = [
-        ...drag.group.entries.slice(0, Math.max(1, GROUP_DRAG_VISUAL_LIMIT - 1)),
-        folderCreateTargetEntry,
-      ];
-    }
+    drag.group.releaseEntries = buildReleaseEntries(drag, folderCreateTargetEntry);
     drag.group.phase = "accepted";
     drag.group.dropStatus = "accepted";
     drag.group.dropReason = null;
@@ -1389,7 +1514,8 @@ export function useLaunchpadDrag(options) {
         draggedIds,
         dropReason: null,
         dropStatus: "accepted",
-        entries: [],
+        allEntries: [],
+        dragEntries: [],
         intent: { type: "app-folder-create" },
         intentKey: null,
         key: `group-create-${groupKey}-${leadId}`,
@@ -1401,6 +1527,7 @@ export function useLaunchpadDrag(options) {
         releaseCreatedFolderId: plan.createdFolderId,
         releaseLayoutAnchorId,
         releasePlan: null,
+        releaseEntries: null,
         releaseSettledIds: [],
         releaseStatus: null,
         selectionRevision: request.selectionRevision,
@@ -1410,7 +1537,7 @@ export function useLaunchpadDrag(options) {
         visualCompleted: false,
       },
     };
-    activeDrag.group.entries = buildGatherEntriesFromSnapshot({
+    const gatherPopulation = buildGatherPopulationFromSnapshot({
       activeFolderPageIndex,
       activePageIndex,
       draggedIds,
@@ -1420,6 +1547,8 @@ export function useLaunchpadDrag(options) {
       pages: basePages,
       pointer,
     });
+    activeDrag.group.allEntries = gatherPopulation.allEntries;
+    activeDrag.group.dragEntries = gatherPopulation.dragEntries;
     dragMeta.value = {
       draggedIds: [...draggedIds],
       item: activeDrag.item,
@@ -1446,6 +1575,7 @@ export function useLaunchpadDrag(options) {
     nextTick(() => {
       if (activeDrag !== drag) return;
       drag.group.phase = "accepted";
+      drag.group.releaseEntries = buildReleaseEntries(drag);
       const fallbackPoint = centerRect(getRenderedFolderRect(plan.createdFolderId), viewportCenter);
       drag.group.releasePlan = makeReleasePlan(
         plan,
@@ -1534,7 +1664,6 @@ export function useLaunchpadDrag(options) {
       start: descriptor.anchorPoint || descriptor.startPoint,
       velocity: zeroVelocity(),
       group: {
-        autoOpenedFolderId: null,
         baseOpenFolderId: options.openFolderId.value,
         basePages: options.clonePages(options.pages.value),
         baseRevision: payload.layoutRevision,
@@ -1546,7 +1675,16 @@ export function useLaunchpadDrag(options) {
         draggedIds: [...payload.draggedIds],
         dropReason: null,
         dropStatus: null,
-        entries: [],
+        folderTransit: descriptor.source?.type === "folder" &&
+          options.openFolderId.value === descriptor.source.folderId
+          ? {
+            folderId: descriptor.source.folderId,
+            hasEnteredPanel: true,
+            origin: "source",
+          }
+          : null,
+        allEntries: [],
+        dragEntries: [],
         intent: null,
         intentKey: null,
         key: `group-drag-${groupKey}-${payload.leadId}`,
@@ -1559,16 +1697,21 @@ export function useLaunchpadDrag(options) {
         planRevision: payload.layoutRevision,
         projectedPages: null,
         releasePlan: null,
+        releaseEntries: null,
         releaseSettledIds: [],
         releaseStatus: null,
         releaseCreatedFolderId: null,
+        returnedFromFolder: false,
         selectionRevision: payload.selectionRevision,
         standalone: payload.standalone === true,
+        suppressedTarget: null,
         trail: appendGroupTrailPoint([], descriptor.startPoint, { timeMs: startedAt }),
         virtualFolderPageIndex: null,
       },
     };
-    activeDrag.group.entries = buildGatherEntries(descriptor, activeDrag);
+    const gatherPopulation = buildGatherPopulation(descriptor, activeDrag);
+    activeDrag.group.allEntries = gatherPopulation.allEntries;
+    activeDrag.group.dragEntries = gatherPopulation.dragEntries;
     dragMeta.value = {
       draggedIds: [...activeDrag.group.draggedIds],
       item: activeDrag.item,
@@ -1675,10 +1818,16 @@ export function useLaunchpadDrag(options) {
       activeDrag.pointer,
       { timeMs: sample.time }
     );
-    maybeCloseAutoOpenedFolder(activeDrag.pointer.x, activeDrag.pointer.y);
+    const folderTransitPhase = syncFolderTransit(activeDrag.pointer.x, activeDrag.pointer.y);
     const cancelArmed = syncBatchCancelZone();
     scheduleVisualPublish();
     if (cancelArmed) return;
+    if (folderTransitPhase === "awaiting-entry") {
+      clearPageTurn();
+      clearFolderPageTurn();
+      scheduleIntentEvaluation();
+      return;
+    }
     if (options.openFolderId.value) {
       clearPageTurn();
       scheduleFolderPageTurn(activeDrag.pointer.x);
@@ -1717,7 +1866,10 @@ export function useLaunchpadDrag(options) {
     }
     clearIntentTimer();
     commitPendingEdgeTurns();
-    const outcome = evaluateIntent({ force: true });
+    const outcome = evaluateIntent({
+      finalizeFolderTransit: true,
+      force: true,
+    });
     clearPageTurn();
     clearFolderPageTurn();
     clearFolderHoverTimers();

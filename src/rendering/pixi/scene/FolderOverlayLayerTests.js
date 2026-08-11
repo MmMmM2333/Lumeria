@@ -253,8 +253,9 @@ export async function runFolderOverlayLayerTests() {
     layer.panelGeometry = { height: 220, left: 120, top: 140, width: 360 };
     layer.stageRect = { height: 600, left: 0, top: 0, width: 800 };
 
-    const makeEvent = (clientX, clientY) => ({
+    const makeEvent = (clientX, clientY, button = 0) => ({
       nativeEvent: {
+        button,
         clientX,
         clientY,
         preventDefault() {
@@ -269,6 +270,11 @@ export async function runFolderOverlayLayerTests() {
     layer.handlePointerDown(makeEvent(180, 200));
     layer.handlePointerDown(makeEvent(40, 200));
     assert(calls.join(",") === "prevent,stop,panel,prevent,stop,outside", "folder pointer down should route panel hits separately from outside hits");
+    layer.handlePointerDown(makeEvent(40, 200, 2));
+    assert(
+      calls.join(",") === "prevent,stop,panel,prevent,stop,outside",
+      "right pointer down outside the folder must not invoke the primary-button close route"
+    );
   }
 
   {

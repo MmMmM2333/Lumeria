@@ -1,6 +1,7 @@
 import {
   getActiveDragItemId,
   getActiveDragItemIds,
+  getReturningGroupDragItemIds,
   isActiveDraggedLaunchItem,
 } from "./dragVisibility.js";
 
@@ -27,4 +28,24 @@ export function runDragVisibilityTests() {
   };
   assert(isActiveDraggedLaunchItem({ id: "app-c" }, groupState), "every app owned by a group drag should hide its real node");
   assert(!isActiveDraggedLaunchItem({ id: "app-d" }, groupState), "unselected apps should remain visible during a group drag");
+
+  const returnState = {
+    ...groupState,
+    groupDragState: {
+      phase: "cancelling",
+      releasePlan: {
+        entries: [
+          { id: "app-a", mode: "return-to-origin" },
+          { id: "app-c", mode: "point-handoff" },
+        ],
+      },
+    },
+    isBatchSelectionActive: true,
+  };
+  assert(getReturningGroupDragItemIds(returnState).has("app-a"), "batch origin returns should expose deferred label reveal ids");
+  assert(!getReturningGroupDragItemIds(returnState).has("app-c"), "non-return release lanes should not defer label reveal");
+  assert(
+    getReturningGroupDragItemIds({ ...returnState, isBatchSelectionActive: false }).size === 0,
+    "ordinary single-drag releases should keep their existing label behavior"
+  );
 }

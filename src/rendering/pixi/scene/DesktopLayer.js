@@ -10,6 +10,7 @@ import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
+import { resolveGroupReleaseVisualLimit } from "../../../domain/groupReleasePopulation.js";
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
 import { resolveDesktopBoundsTargets, resolveFolderPreviewChildBoundsTargets } from "./desktopBoundsTargets.js";
 import { makeFolderThumbPreviewRect } from "./folderOverlayTargets.js";
@@ -70,6 +71,93 @@ const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
 const DESKTOP_RESIZE_LAYOUT_REASON = "desktop-resize-layout";
 const MOTION_TARGET_EPSILON = 0.0001;
+
+function readTransformAxisLengths(node) {
+  const matrix = node?.worldTransform;
+  if (!matrix) return null;
+  const x = Math.hypot(Number(matrix.a), Number(matrix.b));
+  const y = Math.hypot(Number(matrix.c), Number(matrix.d));
+  return Number.isFinite(x) && x > 0 && Number.isFinite(y) && y > 0
+    ? { x, y }
+    : null;
+}
+
+function getVisualTransformNode(node) {
+  return node?.visualWrap && !node.visualWrap.destroyed
+    ? node.visualWrap
+    : node;
+}
+
+function readVisualCenterInLayer(layer, node) {
+  const visual = getVisualTransformNode(node);
+  if (!layer || !visual || visual.destroyed) return null;
+  const center = layer.toLocal({ x: 0, y: 0 }, visual);
+  return Number.isFinite(Number(center?.x)) && Number.isFinite(Number(center?.y))
+    ? { x: Number(center.x), y: Number(center.y) }
+    : null;
+}
+
+function resolveReleaseRootPoint(releaseNode, visualTarget, targetScale) {
+  if (!visualTarget || !releaseNode || releaseNode.destroyed) return visualTarget;
+  const releaseVisual = getVisualTransformNode(releaseNode);
+  if (!releaseVisual || releaseVisual === releaseNode || releaseVisual.destroyed) return visualTarget;
+  const localVisualCenter = releaseNode.toLocal({ x: 0, y: 0 }, releaseVisual);
+  if (
+    !Number.isFinite(Number(localVisualCenter?.x)) ||
+    !Number.isFinite(Number(localVisualCenter?.y))
+  ) return visualTarget;
+  const scaleX = Math.max(0.01, Math.abs(Number(targetScale?.x) || Number(releaseNode.scale?.x) || 1));
+  const scaleY = Math.max(0.01, Math.abs(Number(targetScale?.y) || Number(releaseNode.scale?.y) || 1));
+  return {
+    x: visualTarget.x - Number(localVisualCenter.x) * scaleX,
+    y: visualTarget.y - Number(localVisualCenter.y) * scaleY,
+  };
+}
+
+function resolvePointReleaseTargetScale(layer, releaseNode, options = {}) {
+  if (!layer || !releaseNode || releaseNode.destroyed) return null;
+  const releaseVisual = getVisualTransformNode(releaseNode);
+  if (!releaseVisual || releaseVisual.destroyed) return null;
+  layer.toLocal({ x: 0, y: 0 }, releaseVisual);
+  const releaseAxes = readTransformAxisLengths(releaseVisual);
+  const releaseIconSize = Number(releaseNode.iconSize);
+  if (!releaseAxes || !Number.isFinite(releaseIconSize) || releaseIconSize <= 0) return null;
+
+  let targetWorldSize = null;
+  const targetNode = options.targetNode;
+  if (targetNode && !targetNode.destroyed) {
+    const targetVisual = getVisualTransformNode(targetNode);
+    const targetIconSize = Number(targetNode.iconSize);
+    if (targetVisual && !targetVisual.destroyed && Number.isFinite(targetIconSize) && targetIconSize > 0) {
+      layer.toLocal({ x: 0, y: 0 }, targetVisual);
+      const targetAxes = readTransformAxisLengths(targetVisual);
+      if (targetAxes) {
+        targetWorldSize = {
+          x: targetIconSize * targetAxes.x,
+          y: targetIconSize * targetAxes.y,
+        };
+      }
+    }
+  } else if (options.targetStageRect) {
+    const layerAxes = readTransformAxisLengths(layer);
+    const width = Number(options.targetStageRect.width);
+    const height = Number(options.targetStageRect.height);
+    if (layerAxes && Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+      targetWorldSize = {
+        x: width * layerAxes.x,
+        y: height * layerAxes.y,
+      };
+    }
+  }
+  if (!targetWorldSize) return null;
+
+  const currentScaleX = Math.max(0.01, Math.abs(Number(releaseNode.scale?.x) || 1));
+  const currentScaleY = Math.max(0.01, Math.abs(Number(releaseNode.scale?.y) || 1));
+  return {
+    x: Math.max(0.01, currentScaleX * targetWorldSize.x / (releaseIconSize * releaseAxes.x)),
+    y: Math.max(0.01, currentScaleY * targetWorldSize.y / (releaseIconSize * releaseAxes.y)),
+  };
+}
 
 function makeIdListSignature(value) {
   if (!value) return "";
@@ -379,6 +467,7 @@ export class DesktopLayer extends Container {
       onTargetActive: (folderId) => this.holdFolderDropFrameSuppression(folderId),
     });
     this.groupDragLayer = new GroupDragLayer({
+      onPrewarmRequest: (reason) => this.onFolderRenderRequest(reason),
       onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),
       onReleaseSettled: (payload) => this.onGroupReleaseComplete(payload),
       resolveFolderNode: (payload) => this.resolveGroupReleaseFolderNode(payload),
@@ -977,6 +1066,13 @@ export class DesktopLayer extends Container {
       iconSize: state.iconSize,
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
+      releasePrewarmCount: state.isBatchSelectionActive
+        ? resolveGroupReleaseVisualLimit({
+          folderPageSize: state.folderPageSize,
+          gridCols: state.gridCols,
+          gridRows: state.gridRows,
+        })
+        : 0,
       showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
       stageRect: state.stageRect,
       width: state.width,
@@ -1019,8 +1115,8 @@ export class DesktopLayer extends Container {
     return null;
   }
 
-  resolveGroupReleasePoint({ target, state } = {}) {
-    const targetId = target?.id || null;
+  resolveGroupReleasePoint({ entry, node: releaseNode, target, state } = {}) {
+    const targetId = target?.id || entry?.id || null;
     if (!targetId) return null;
     const nodeCandidates = [
       this.findIconNodeByItemId(targetId),
@@ -1029,13 +1125,15 @@ export class DesktopLayer extends Container {
     ];
     for (const node of nodeCandidates) {
       if (!node || node.destroyed || !this.groupDragLayer) continue;
-      const local = this.groupDragLayer.toLocal({ x: 0, y: 0 }, node);
-      if (Number.isFinite(local.x) && Number.isFinite(local.y)) {
-        // IconNode.position is the layout/root center. The group ghost uses
-        // the same root convention, so a live Pixi node must not receive the
-        // visual label offset a second time (the registry fallback below is a
-        // visual-rect center and does need that conversion).
-        return { x: local.x, y: local.y };
+      const visualTarget = readVisualCenterInLayer(this.groupDragLayer, node);
+      if (visualTarget) {
+        const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
+          targetNode: node,
+        });
+        return {
+          point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
+          scale: targetScale,
+        };
       }
     }
     const area = target?.area === "folder" ? "folder" : "desktop";
@@ -1051,9 +1149,16 @@ export class DesktopLayer extends Container {
     );
     const stageRect = clientRectToStageVisualRect(rect, state?.stageRect);
     if (!stageRect) return null;
-    return {
+    const visualTarget = {
       x: stageRect.left + stageRect.width / 2,
-      y: stageRect.top + stageRect.height / 2 - (Number(state?.visualOffsetY) || 0),
+      y: stageRect.top + stageRect.height / 2,
+    };
+    const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
+      targetStageRect: stageRect,
+    });
+    return {
+      point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
+      scale: targetScale,
     };
   }
 

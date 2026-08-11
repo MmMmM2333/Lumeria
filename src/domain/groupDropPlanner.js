@@ -157,6 +157,15 @@ function ensurePage(pages, pageIndex) {
   while (pages.length <= pageIndex) pages.push([]);
 }
 
+function cascadeDesktopOverflow(pages, startPageIndex, pageSize) {
+  for (let pageIndex = startPageIndex; pageIndex < pages.length; pageIndex += 1) {
+    if (pages[pageIndex].length <= pageSize) continue;
+    const overflow = pages[pageIndex].splice(pageSize);
+    ensurePage(pages, pageIndex + 1);
+    pages[pageIndex + 1].unshift(...overflow);
+  }
+}
+
 function makePlacements(orderedIds, index, target) {
   return orderedIds.map((id, offset) => ({
     id,
@@ -284,15 +293,23 @@ export function planGroupDrop(options = {}) {
       return rejected("desktop-page-missing", basePages, orderedDraggedIds);
     }
     ensurePage(nextPages, targetPageIndex);
-    if (nextPages[targetPageIndex].length + draggedItems.length > pageSize) {
-      return rejected("desktop-capacity", basePages, orderedDraggedIds);
-    }
     const index = Math.max(0, Math.min(nextPages[targetPageIndex].length, Math.floor(Number(intent.index) || 0)));
     nextPages[targetPageIndex].splice(index, 0, ...draggedItems);
-    placements.push(...makePlacements(orderedDraggedIds, index, {
-      kind: "desktop",
-      pageIndex: targetPageIndex,
-    }));
+    cascadeDesktopOverflow(nextPages, targetPageIndex, pageSize);
+    for (let order = 0; order < orderedDraggedIds.length; order += 1) {
+      const id = orderedDraggedIds[order];
+      const location = findTopLevel(nextPages, id);
+      if (!location) throw new Error(`Group drop planner lost desktop item: ${id}`);
+      placements.push({
+        id,
+        order,
+        target: {
+          index: location.index,
+          kind: "desktop",
+          pageIndex: location.pageIndex,
+        },
+      });
+    }
   } else if (intent.type === "open-folder-slot") {
     const target = findTopLevel(nextPages, intent.folderId);
     if (!target || target.item.type !== "folder") return rejected("folder-missing", basePages, orderedDraggedIds);

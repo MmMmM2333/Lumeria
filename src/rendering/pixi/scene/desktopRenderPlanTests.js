@@ -368,6 +368,33 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const appA = { id: "return-label-a", type: "app" };
+    const appB = { id: "return-label-b", type: "app" };
+    const makeReturnPlan = (phase, modes) => buildDesktopRenderPlan(makeBaseState({
+      activePages: [[appA, appB]],
+      dragMeta: { draggedIds: [appA.id, appB.id], item: appA },
+      groupDragState: {
+        phase,
+        releasePlan: {
+          entries: [appA, appB].map((item, index) => ({ id: item.id, mode: modes[index] })),
+        },
+        totalCount: 2,
+      },
+      isBatchSelectionActive: true,
+    }));
+    const returningPlan = makeReturnPlan("cancelling", ["return-to-origin", "return-to-origin"]);
+    assert(
+      returningPlan.entries.every((entry) => entry.nodeState.revealLabelAfterGroupReturn === true),
+      "every visible batch item returning to origin should carry the deferred label reveal intent"
+    );
+    const acceptedPlan = makeReturnPlan("accepted", ["point-handoff", "point-handoff"]);
+    assert(
+      acceptedPlan.entries.every((entry) => entry.nodeState.revealLabelAfterGroupReturn === false),
+      "accepted point handoffs should not inherit the return-only label reveal"
+    );
+  }
+
+  {
     const folder = { id: "folder-created-release", type: "folder" };
     const makePlanForPhase = (phase) => buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],

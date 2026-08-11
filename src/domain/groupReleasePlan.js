@@ -156,6 +156,10 @@ export function makeGroupReleasePlan(options = {}) {
           offset: { ...fallbackOffset },
           pointer: { ...fallbackPointer },
         },
+        startAlpha: entry?.releaseStart?.alpha != null &&
+          Number.isFinite(Number(entry.releaseStart.alpha))
+          ? Math.max(0, Number(entry.releaseStart.alpha))
+          : null,
         fallback: clonePoint(fallbackPoint, fallbackPointer),
         originAlpha: Number.isFinite(Number(entry?.originAlpha))
           ? Math.max(0, Number(entry.originAlpha))

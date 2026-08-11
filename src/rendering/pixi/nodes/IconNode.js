@@ -287,7 +287,15 @@ export class IconNode extends Container {
   setState(state) {
     state = { draggable: true, ...state };
     const wasGhosted = Boolean(this.state?.ghosted);
+    const wasDragging = Boolean(this.state?.dragging);
     const wasFolder = this.isFolder;
+    const shouldRevealLabelAfterGroupReturn = Boolean(
+      wasDragging &&
+      this.state?.revealLabelAfterGroupReturn &&
+      !state.dragging &&
+      !state.ghosted &&
+      !state.opening
+    );
     const shouldRestoreLabelAfterGhost = Boolean(this.state?.suppressLabelRevealAfterGhost || state.suppressLabelRevealAfterGhost);
     this.item = state.item;
     this.source = state.source;
@@ -323,6 +331,7 @@ export class IconNode extends Container {
       suppressInteractionFeedback ? null : state.interactionPhase,
       { immediate: suppressInteractionFeedback }
     );
+    if (shouldRevealLabelAfterGroupReturn) this.revealLabelAfterGhost();
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
       this.resetFolderPreviewAfterGhost();
       if (this.folderHandoffLabelRevealInProgress) return;

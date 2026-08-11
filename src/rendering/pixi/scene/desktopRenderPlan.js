@@ -5,7 +5,10 @@ import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTarg
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
-import { isActiveDraggedLaunchItem } from "./dragVisibility.js";
+import {
+  getReturningGroupDragItemIds,
+  isActiveDraggedLaunchItem,
+} from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
@@ -525,6 +528,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const state = normalizeDesktopHandoffState(inputState);
   const selectedAppIds = normalizeFolderIdSet(state.selectedAppIds);
   const draggedItemIds = normalizeFolderIdSet(state.dragMeta?.draggedIds);
+  const returningGroupDragItemIds = getReturningGroupDragItemIds(state);
   const pages = state.activePages || [];
   const activePageIndex = state.activePageIndex || 0;
   const desktopFrame = getDesktopFrame(state);
@@ -711,6 +715,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
+          revealLabelAfterGroupReturn: returningGroupDragItemIds.has(item.id),
           focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
             state.focusedIcon,
             state.isSearchMode ? "search" : "desktop",

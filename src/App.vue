@@ -371,6 +371,7 @@ const {
 const {
   commitOpenFolder,
   confirmDissolveFolder,
+  folderPanelRef,
   requestFolderRename,
 } = folderOverlay;
 
@@ -987,6 +988,11 @@ function openSurfaceContextMenu(event) {
   }) || false;
 }
 
+function openFolderSurfaceContextMenu(event, folderId) {
+  if (isContextMenuInteractionBlocked() || !folderId) return false;
+  return launchpadOverlaysRef.value?.openFolderSurfaceContextMenu(event, folderId) || false;
+}
+
 function handleChromeContextMenuRequest(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
@@ -1001,6 +1007,9 @@ function handleContextMenuRequest(event) {
     clientX: event?.clientX,
     clientY: event?.clientY,
     folderId,
+    folderPanelRect: openFolderId.value
+      ? folderPanelRef.value?.getBoundingClientRect?.() || null
+      : null,
     getIconAtPoint: (x, y, options) => iconBoundsRegistry.getAtPoint(
       ICON_BOUNDS_KIND.LAUNCH,
       x,
@@ -1015,12 +1024,19 @@ function handleContextMenuRequest(event) {
   if (target?.kind === "icon") {
     return openIconContextMenu(event, target.item, target.source);
   }
+  if (target?.kind === "folder-surface") {
+    return openFolderSurfaceContextMenu(event, target.folderId);
+  }
   if (target?.kind === "surface") return openSurfaceContextMenu(event);
   launchpadOverlaysRef.value?.closeContextMenu();
   return false;
 }
 
 function handleContextMenuAction({ action, item, source, kind } = {}) {
+  if (kind === "folder-surface") {
+    if (action === "batch-manage") enterBatchSelection();
+    return;
+  }
   if (kind === "surface") {
     if (action === "batch-manage") enterBatchSelection();
     if (action === "compact-pages") confirmForceFillAllPages();

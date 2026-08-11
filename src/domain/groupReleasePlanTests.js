@@ -46,6 +46,21 @@ export function runGroupReleasePlanTests() {
   );
   assert(previewPlan.entries[0].target.slotIndex === 8, "preview release should preserve the target slot index");
 
+  const revealPlan = makeGroupReleasePlan({
+    basePages: firstPageWithEight,
+    entries: [{
+      ...entry("release-only"),
+      releaseStart: { alpha: 0, kind: "stack-tail" },
+    }],
+    folderPageSize: 9,
+    key: "release-reveal",
+    placements: [placement("release-only", { folderId: "target", index: 8, kind: "closed-folder" })],
+  });
+  assert(
+    revealPlan.entries[0].startAlpha === 0,
+    "release-only opacity should cross the semantic plan boundary explicitly"
+  );
+
   const centerPlan = makeGroupReleasePlan({
     basePages: [[folder("target", 9)]],
     entries: [entry("dragged")],

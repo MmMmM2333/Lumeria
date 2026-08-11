@@ -105,6 +105,81 @@ export async function runGroupDragLayerTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Group drag layer test failed] ${message}`);
   };
+  let prewarmRequests = 0;
+  const prewarmLayer = new GroupDragLayer({
+    onPrewarmRequest: () => {
+      prewarmRequests += 1;
+    },
+  });
+  try {
+    const prewarmEntries = [makeEntry("prewarm-0", 0), makeEntry("prewarm-1", 1)];
+    prewarmLayer.update(makeState({
+      center: { x: 260, y: 210 },
+      entries: prewarmEntries,
+      key: "prewarm-group",
+      phase: "gathering",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: true,
+      releaseVisualCount: 10,
+      totalCount: 10,
+      trail: [],
+    }));
+    assert(
+      prewarmLayer.nodes.length === 3 &&
+        prewarmLayer.nodes.slice(2).every((node) => !node.visible),
+      "one group update should allocate only one invisible release-pool batch"
+    );
+    prewarmLayer.onRender?.();
+    assert(
+      prewarmLayer.nodes.length === 4 &&
+        prewarmLayer.nodes.slice(2).every((node) => !node.visible),
+      "subsequent render frames should continue one-at-a-time prewarming without exposing pooled nodes"
+    );
+    prewarmLayer.update(makeState(null, { releasePrewarmCount: 6 }));
+    assert(
+      prewarmLayer.nodes.length === 5 &&
+        prewarmLayer.nodes.every((node) => !node.visible) &&
+        prewarmRequests >= 3,
+      "passive batch-mode prewarming should continue while no drag presentation is active"
+    );
+
+    const gatedEntries = Array.from({ length: 6 }, (_, index) => makeEntry(`gated-${index}`, index));
+    const gatedState = makeState({
+      center: { x: 260, y: 210 },
+      entries: gatedEntries,
+      key: "gated-release",
+      leadId: gatedEntries[0].item.id,
+      phase: "accepted",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: false,
+      releasePlan: {
+        entries: gatedEntries.map((entry, index) => ({
+          fallback: { x: 420 + index * 4, y: 300 },
+          id: entry.item.id,
+          mode: "point-handoff",
+          target: { area: "desktop", id: entry.item.id, kind: "desktop" },
+        })),
+        key: "plan-gated-release",
+      },
+      totalCount: 6,
+      trail: [],
+    });
+    prewarmLayer.update(gatedState);
+    assert(
+      prewarmLayer.nodes.length === 6 &&
+        prewarmLayer.activeEntryIds.size === 0 &&
+        prewarmLayer.releaseController.lanes.size === 0,
+      "the frame that finishes pool allocation should not also construct every release lane"
+    );
+    prewarmLayer.update(gatedState);
+    assert(
+      prewarmLayer.activeEntryIds.size === 6 &&
+        prewarmLayer.releaseController.lanes.size === 6,
+      "release lanes should start together on the render after the pool becomes ready"
+    );
+  } finally {
+    prewarmLayer.destroy({ children: true });
+  }
   let releaseSettled = 0;
   const layer = new GroupDragLayer({
     onReleaseSettled: () => {
@@ -155,6 +230,142 @@ export async function runGroupDragLayerTests() {
       "the aggregate count badge should leave with pointer ownership instead of lingering during release"
     );
 
+    layer.clear();
+    motionRuntime.reset();
+    const boundedDragEntries = Array.from(
+      { length: 12 },
+      (_, index) => makeEntry(`expanded-${index}`, index)
+    );
+    layer.update(makeState({
+      center: { x: 320, y: 240 },
+      entries: boundedDragEntries,
+      key: "expanded-release",
+      leadId: "expanded-0",
+      phase: "dragging",
+      pointer: { x: 320, y: 240 },
+      reducedMotion: false,
+      totalCount: 13,
+      trail: [],
+    }));
+    const preservedLeadPosition = {
+      x: layer.nodes[0].position.x,
+      y: layer.nodes[0].position.y,
+    };
+    const releaseOnlyEntry = makeEntry("expanded-12", 12, {
+      releaseRole: "member",
+      releaseStart: {
+        alpha: 0,
+        kind: "stack-tail",
+        point: { x: 320, y: 240 },
+        scale: 0.72,
+      },
+    });
+    const expandedEntries = [...boundedDragEntries, releaseOnlyEntry];
+    const expandedReleaseState = makeState({
+      center: { x: 320, y: 240 },
+      entries: expandedEntries,
+      key: "expanded-release",
+      leadId: "expanded-0",
+      phase: "accepted",
+      pointer: { x: 320, y: 240 },
+      reducedMotion: false,
+      releasePlan: {
+        entries: expandedEntries.map((entry, index) => ({
+          delayMs: index * 8,
+          fallback: { x: 480 + index * 2, y: 300 },
+          id: entry.item.id,
+          memberIds: [entry.item.id],
+          mode: "point-handoff",
+          order: index,
+          target: { area: "desktop", id: entry.item.id, kind: "desktop" },
+          velocity: { x: 0, y: 0 },
+        })),
+        key: "plan-expanded-release",
+      },
+      totalCount: 13,
+      trail: [],
+    });
+    layer.update(expandedReleaseState);
+    assert(layer.nodes.length === 13, "release should grow the reusable node pool beyond the drag representative cap");
+    assert(
+      Math.abs(layer.nodes[0].position.x - preservedLeadPosition.x) < 0.001 &&
+        Math.abs(layer.nodes[0].position.y - preservedLeadPosition.y) < 0.001,
+      "existing drag representatives should continue from their current poses"
+    );
+    layer.update(expandedReleaseState);
+    const releaseOnlyXChannel = motionRuntime.getChannel(layer.nodes[12], "x");
+    const releaseOnlyYChannel = motionRuntime.getChannel(layer.nodes[12], "y");
+    const releaseOnlyScaleXChannel = motionRuntime.getChannel(layer.nodes[12].scale, "x");
+    const competingOverlayIds = expandedEntries
+      .filter((_entry, index) => {
+        const node = layer.nodes[index];
+        return motionRuntime.getChannel(node, "x")?.base?.has("overlay") ||
+          motionRuntime.getChannel(node, "y")?.base?.has("overlay") ||
+          motionRuntime.getChannel(node.scale, "x")?.base?.has("overlay") ||
+          motionRuntime.getChannel(node.scale, "y")?.base?.has("overlay");
+      })
+      .map((entry) => entry.item.id);
+    assert(
+      competingOverlayIds.length === 0,
+      `release ownership should clear every existing follower overlay (${competingOverlayIds.join(",")})`
+    );
+    assert(
+      ["drag", "handoff"].includes(releaseOnlyXChannel?.activeBaseKey) &&
+        ["drag", "handoff"].includes(releaseOnlyYChannel?.activeBaseKey) &&
+        ["drag", "handoff"].includes(releaseOnlyScaleXChannel?.activeBaseKey) &&
+        releaseOnlyXChannel.base.size === 1 &&
+        releaseOnlyYChannel.base.size === 1 &&
+        releaseOnlyScaleXChannel.base.size === 1 &&
+        !releaseOnlyXChannel.base.has("overlay") &&
+        !releaseOnlyYChannel.base.has("overlay") &&
+        !releaseOnlyScaleXChannel.base.has("overlay"),
+      `a release-only node should have one release owner instead of retaining a competing stack overlay ` +
+        `(x: ${[...(releaseOnlyXChannel?.base?.keys?.() || [])].join(",")}; ` +
+        `y: ${[...(releaseOnlyYChannel?.base?.keys?.() || [])].join(",")}; ` +
+        `scaleX: ${[...(releaseOnlyScaleXChannel?.base?.keys?.() || [])].join(",")})`
+    );
+    assert(
+      layer.nodes[12].position.x === 320 &&
+        layer.nodes[12].position.y === 240 &&
+        layer.nodes[12].alpha === 0 &&
+        Math.abs(layer.nodes[12].scale.x - 0.72) < 0.001,
+      "a release-only pooled node should begin invisibly at the declared stack-tail pose"
+    );
+
+    layer.clear();
+    const roleTarget = makeEntry("role-target-b", 0, {
+      releaseRole: "folder-create-target",
+      releaseStart: { alpha: 1, kind: "source-origin", point: { x: 500, y: 220 }, scale: 1 },
+    });
+    const roleLead = makeEntry("role-lead-a", 1, {
+      releaseRole: "lead",
+      releaseStart: { kind: "current-pose" },
+    });
+    layer.update(makeState({
+      center: { x: 320, y: 240 },
+      entries: [roleTarget, roleLead],
+      key: "role-z-order",
+      leadId: roleLead.item.id,
+      phase: "accepted",
+      pointer: { x: 320, y: 240 },
+      reducedMotion: true,
+      releasePlan: {
+        entries: [roleTarget, roleLead].map((entry, index) => ({
+          fallback: { x: 500 + index * 20, y: 300 },
+          id: entry.item.id,
+          mode: "point-handoff",
+          target: { area: "desktop", id: entry.item.id, kind: "desktop" },
+        })),
+        key: "plan-role-z-order",
+      },
+      totalCount: 1,
+      trail: [],
+    }));
+    assert(
+      layer.nodes[1].zIndex > layer.nodes[0].zIndex,
+      "dragged icon A should remain above folder target B even if entry order changes"
+    );
+
     layer.update(makeState({
       center: { x: 360, y: 260 },
       entries: entries.slice(0, 2),
@@ -165,7 +376,7 @@ export async function runGroupDragLayerTests() {
       totalCount: 2,
       trail: [],
     }));
-    assert(layer.nodes.length === 12, "shrinking a drag should retain the node pool for reuse");
+    assert(layer.nodes.length === 13, "shrinking a drag should retain the release high-water node pool for reuse");
     assert(layer.nodes[0].visible && layer.nodes[1].visible && !layer.nodes[2].visible, "unused pooled nodes should be hidden");
 
     const stationaryEntries = entries.slice(0, 4);
@@ -372,6 +583,119 @@ export async function runGroupDragLayerTests() {
 
     layer.clear();
     motionRuntime.reset();
+    const releaseOnlySlotEntry = makeEntry("release-only-slot-app", 12, {
+      releaseRole: "member",
+      releaseStart: {
+        alpha: 0,
+        kind: "stack-tail",
+        point: { x: 300, y: 220 },
+        scale: 0.72,
+      },
+    });
+    const settledBeforeReleaseOnlySlot = releaseSettled;
+    layer.update(makeState({
+      center: { x: 300, y: 220 },
+      entries: [releaseOnlySlotEntry],
+      key: "release-only-slot",
+      leadId: "another-lead",
+      phase: "accepted",
+      pointer: { x: 300, y: 220 },
+      reducedMotion: false,
+      releasePlan: {
+        entries: [{
+          delayMs: 0,
+          id: releaseOnlySlotEntry.item.id,
+          mode: "folder-preview-slot",
+          startAlpha: 0,
+          target: {
+            expectedChildId: releaseOnlySlotEntry.item.id,
+            folderId: "slot-folder",
+            kind: "closed-folder",
+            slotIndex: 0,
+          },
+        }],
+        key: "plan-release-only-slot",
+      },
+      totalCount: 13,
+      trail: [],
+    }));
+    const releaseOnlySlotNode = layer.nodes[0];
+    assert(releaseOnlySlotNode.alpha === 0, "a folder-bound release-only node should retain its invisible first frame");
+    for (let index = 0; index < 180 && releaseSettled === settledBeforeReleaseOnlySlot; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      releaseOnlySlotNode.alpha > 0.99,
+      `a release-only node should fade into its folder preview landing (alpha: ${releaseOnlySlotNode.alpha})`
+    );
+    assert(
+      releaseSettled > settledBeforeReleaseOnlySlot,
+      "folder preview ownership should settle after the release-only node becomes visible"
+    );
+
+    layer.clear();
+    motionRuntime.reset();
+    slotFolder.getFolderCenterReleasePose = () => ({ center: { x: 420, y: 300 } });
+    const releaseOnlyCenterEntry = makeEntry("release-only-center-app", 13, {
+      releaseRole: "member",
+      releaseStart: {
+        alpha: 0,
+        kind: "stack-tail",
+        point: { x: 300, y: 220 },
+        scale: 0.72,
+      },
+    });
+    const settledBeforeCenterAbsorb = releaseSettled;
+    layer.update(makeState({
+      center: { x: 300, y: 220 },
+      entries: [releaseOnlyCenterEntry],
+      key: "release-only-center",
+      leadId: "another-lead",
+      phase: "accepted",
+      pointer: { x: 300, y: 220 },
+      reducedMotion: false,
+      releasePlan: {
+        entries: [{
+          delayMs: 100,
+          id: releaseOnlyCenterEntry.item.id,
+          mode: "folder-center-absorb",
+          startAlpha: 0,
+          target: { folderId: "slot-folder", kind: "closed-folder" },
+        }],
+        key: "plan-release-only-center",
+      },
+      totalCount: 14,
+      trail: [],
+    }));
+    const releaseOnlyCenterNode = layer.nodes[0];
+    for (let index = 0; index < 5; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      releaseOnlyCenterNode.alpha === 0,
+      "a center-absorb member should remain invisible until its release delay starts"
+    );
+    for (let index = 0; index < 8; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      releaseOnlyCenterNode.alpha > 0.1,
+      "a center-absorb member should become visible while travelling from the stack tail"
+    );
+    for (let index = 0; index < 120 && releaseSettled === settledBeforeCenterAbsorb; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      releaseOnlyCenterNode.alpha < 0.01 && releaseSettled > settledBeforeCenterAbsorb,
+      "a center-absorb member should fade out at the folder center before ownership settles"
+    );
+
+    layer.clear();
+    motionRuntime.reset();
     const continuityDraggedApp = makeEntry("created-folder-continuity-dragged", 0);
     const continuityTargetApp = makeEntry("created-folder-continuity-target", 1, {
       origin: { x: 515, y: 275 },
@@ -498,6 +822,7 @@ export async function runGroupDragLayerTests() {
     assert(stateCalls === 0, "unchanged pointer frames should not rebuild IconNode state");
 
     motionRuntime.reset();
+    const pointReleaseSettledBefore = releaseSettled;
     layer.update({
       ...singleState,
       groupState: {
@@ -507,10 +832,13 @@ export async function runGroupDragLayerTests() {
         releasePlan: makePointReleasePlan("single-visual", { x: 420, y: 300 }),
       },
     });
-    for (let index = 0; index < 180 && releaseSettled === 0; index += 1) {
+    for (let index = 0; index < 180 && releaseSettled === pointReleaseSettledBefore; index += 1) {
       motionRuntime.step(1 / 60);
     }
-    assert(releaseSettled === 1, "accepted release should report one explicit visual settlement");
+    assert(
+      releaseSettled === pointReleaseSettledBefore + 1,
+      "accepted release should report one explicit visual settlement"
+    );
     assert(
       singleNode.alpha > 0.99 &&
         Math.abs(singleNode.scale.x - 1) < 0.01 &&

@@ -1033,6 +1033,7 @@
         "contextMenu": {
           "label": "{name} menu",
           "surfaceLabel": "Launchpad menu",
+          "folderSurfaceLabel": "Folder menu",
           "batchManage": "Batch manage",
           "remove": "Remove from Launchpad",
           "exclude": "Remove and exclude from scans",

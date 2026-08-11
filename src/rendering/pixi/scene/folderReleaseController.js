@@ -13,6 +13,7 @@ const DESTROY_REASON = "destroyed";
 const CENTER_ABSORB_DURATION = 0.24;
 const CENTER_ABSORB_FADE_DELAY = 0.1;
 const CENTER_ABSORB_FADE_DURATION = 0.14;
+const RELEASE_REVEAL_DURATION = 0.1;
 const TARGET_CENTER_DEVICE_EPSILON = 0.5;
 const TARGET_SIZE_DEVICE_EPSILON = 0.5;
 const TARGET_ROTATION_EPSILON = Math.PI / 360;
@@ -421,28 +422,34 @@ export class FolderReleaseController {
     this.syncTargetPose(targetPose);
   }
 
-  startReleaseMotion(velocity) {
+  startReleaseMotion(velocity, options = {}) {
     const active = this.active;
     if (!active) return;
     const isCenterAbsorb = active.release.releaseMode === FOLDER_CENTER_ABSORB_RELEASE_MODE;
     const centerTimelineValue = Math.max(0, Math.min(1, readFinite(this.centerTimelineProgress.value, 0)));
     const centerElapsed = CENTER_ABSORB_DURATION * centerTimelineValue;
     const centerRemainingDuration = Math.max(0.001, CENTER_ABSORB_DURATION - centerElapsed);
+    const releaseDelay = options.retarget === true
+      ? 0
+      : Math.max(0, readFinite(active.release.delayMs)) / 1000;
     const animations = isCenterAbsorb
       ? [
         motion(this.approachFrame)
+          .delay(releaseDelay)
           .duration(centerRemainingDuration)
           .ease("power2.in")
           .handoff()
           .interrupt("retarget")
           .to({ x: 0, y: 0 }),
         motion(this.poseProgress)
+          .delay(releaseDelay)
           .duration(centerRemainingDuration)
           .ease("power2.in")
           .handoff()
           .interrupt("retarget")
           .to({ value: 1 }),
         motion(this.centerTimelineProgress)
+          .delay(releaseDelay)
           .duration(centerRemainingDuration)
           .ease("linear")
           .handoff()
@@ -451,17 +458,40 @@ export class FolderReleaseController {
       ]
       : [
         motion(this.approachFrame)
+          .delay(releaseDelay)
           .preset("handoff")
           .drag()
           .interrupt("retarget")
           .to({ velocity, x: 0, y: 0 }),
         motion(this.poseProgress)
+          .delay(releaseDelay)
           .preset("handoff")
           .handoff()
           .interrupt("retarget")
           .to({ value: 1 }),
       ];
-    if (isCenterAbsorb && readFinite(active.previewNode.alpha, 1) > 0.001) {
+    const shouldReveal = active.release.revealFromAlpha != null &&
+      Number.isFinite(Number(active.release.revealFromAlpha)) &&
+      readFinite(active.previewNode.alpha, 1) < 0.999;
+    if (isCenterAbsorb && shouldReveal) {
+      animations.push(
+        motion(active.previewNode)
+          .handoff()
+          .interrupt("retarget")
+          .to({
+            alpha: 1,
+            delay: releaseDelay,
+            duration: RELEASE_REVEAL_DURATION,
+            ease: "power2.out",
+          })
+          .to({
+            alpha: 0,
+            delay: Math.max(0, CENTER_ABSORB_FADE_DELAY - RELEASE_REVEAL_DURATION),
+            duration: CENTER_ABSORB_FADE_DURATION,
+            ease: "power2.in",
+          })
+      );
+    } else if (isCenterAbsorb && readFinite(active.previewNode.alpha, 1) > 0.001) {
       const fadeDelay = Math.max(0, CENTER_ABSORB_FADE_DELAY - centerElapsed);
       const fadeDuration = Math.max(
         0.001,
@@ -469,12 +499,22 @@ export class FolderReleaseController {
       );
       animations.push(
         motion(active.previewNode)
-          .delay(fadeDelay)
+          .delay(releaseDelay + fadeDelay)
           .duration(Math.min(CENTER_ABSORB_FADE_DURATION, fadeDuration))
           .ease("power2.in")
           .handoff()
           .interrupt("retarget")
           .to({ alpha: 0 })
+      );
+    } else if (shouldReveal) {
+      animations.push(
+        motion(active.previewNode)
+          .delay(releaseDelay)
+          .duration(RELEASE_REVEAL_DURATION)
+          .ease("power2.out")
+          .handoff()
+          .interrupt("retarget")
+          .to({ alpha: 1 })
       );
     }
     const label = active.previewNode.labelText;
@@ -546,7 +586,7 @@ export class FolderReleaseController {
     this.poseProgress.value = 0;
     this.poseFrame.setFromMatrix(makeMatrix(active.startMatrix));
     active.previewNode.pivot.set(active.localVisualAnchor.x, active.localVisualAnchor.y);
-    this.startReleaseMotion(relativeVelocity);
+    this.startReleaseMotion(relativeVelocity, { retarget: true });
     this.syncTargetPose(targetPose);
     motionRuntime.recordCoordinationEvent({
       action: "folder-release",

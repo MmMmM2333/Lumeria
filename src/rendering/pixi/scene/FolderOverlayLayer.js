@@ -1144,6 +1144,7 @@ export class FolderOverlayLayer extends Container {
       geometry,
       getFolderPageRenderMode: state.getFolderPageRenderMode,
       getVisibleFolderPage: state.getVisibleFolderPage,
+      groupDragState: state.groupDragState,
       iconSize,
       iconGesturePresentation: state.iconGesturePresentation,
       isBatchSelectionActive: state.isBatchSelectionActive,
@@ -2806,6 +2807,7 @@ export class FolderOverlayLayer extends Container {
 
   handlePointerDown(event) {
     const native = event?.nativeEvent || event;
+    if (typeof native?.button === "number" && native.button !== 0) return;
 
     const clientX = native.clientX ?? (this.stageRect?.left || 0) + (event?.global?.x || 0);
     const clientY = native.clientY ?? (this.stageRect?.top || 0) + (event?.global?.y || 0);

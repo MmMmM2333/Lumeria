@@ -119,6 +119,38 @@ export async function runIconNodeTests() {
     );
 
     motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({
+      ...interactionNodeState,
+      dragging: true,
+      revealLabelAfterGroupReturn: true,
+    });
+    assert(node.visible === false, "a returning real icon should stay hidden while the release ghost owns it");
+    node.setState({ ...interactionNodeState, dragging: false });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 0),
+      "the real icon should take ownership with its label hidden in the same state transition"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.04);
+    assert(
+      node.labelText.alpha > 0 && node.labelText.alpha < 1,
+      "the returned icon label should be visibly fading midway through the handoff reveal"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    assert(nearlyEqual(node.labelText.alpha, 1), "the returned icon label should finish fully visible");
+
+    motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({ ...interactionNodeState, dragging: true, revealLabelAfterGroupReturn: false });
+    node.setState({ ...interactionNodeState, dragging: false });
+    assert(
+      nearlyEqual(node.labelText.alpha, 1),
+      "ordinary drag ownership release should keep the existing immediate label behavior"
+    );
+
+    motionRuntime.reset();
     node.updateJiggle({ editing: true, dragging: false, ghosted: false, jiggleSeed: 0 });
     snapshot = motionRuntime.debugSnapshot();
     const jiggleAnimations = snapshot.animations.filter((animation) => animation.lane === "additive" && ["rotation", "y"].includes(animation.prop));
