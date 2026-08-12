@@ -1055,6 +1055,7 @@
           "deleteMessage": "Remove the selected {count} apps from Launchpad? This action cannot currently be undone.",
             "deleteConfirm": "Delete",
             "createRejectedTitle": "Could not create folder",
+            "createInvalidSelection": "The current selection cannot be made into a folder.",
             "moveRejectedTitle": "Could not move selected apps",
             "reasons": {
               "desktop-capacity": "The target page does not have enough space.",
@@ -1069,7 +1070,7 @@
               "selection-revision-stale": "The selection changed. Please try again.",
               "target-app-missing": "The target app no longer exists.",
               "target-in-selection": "Selected apps cannot be dropped onto themselves.",
-              "invalid-target": "The current selection cannot be made into a folder."
+              "invalid-target": "The selected apps cannot be placed here."
             }
         }
     },

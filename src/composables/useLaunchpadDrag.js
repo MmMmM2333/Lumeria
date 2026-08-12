@@ -15,6 +15,7 @@ import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
 import {
   captureGroupTransferSourceEntries,
   indexGroupTransferSources,
@@ -373,6 +374,75 @@ export function useLaunchpadDrag(options) {
     );
   }
 
+  function makeDesktopSourceSnapshot(draggedIds) {
+    const pages = options.pages.value || [];
+    const selectedIds = new Set(draggedIds || []);
+    const rects = new Map();
+    let pageSpan = null;
+    // Only groups leave additional member slots that must remain insertion
+    // targets. Standalone drags keep live app-on-app targeting after reflow.
+    if (selectedIds.size <= 1) {
+      return { pageIndex: options.pageIndex.value, pageSpan, rects };
+    }
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+      for (const item of pages[pageIndex] || []) {
+        if (!item?.id || !selectedIds.has(item.id)) continue;
+        const stableRecord = options.iconBoundsRegistry.getBounds(
+          BOUNDS_KIND.TOP_LEVEL,
+          BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
+          item.id
+        );
+        const stableRect = stageLayoutRecordToClientRect(stableRecord);
+        if (!pageSpan && Number(stableRecord?.meta?.stageRect?.width) > 0) {
+          pageSpan = Number(stableRecord.meta.stageRect.width);
+        }
+        const rect = stableRect || (item.type === "folder"
+          ? getRenderedFolderRect(item.id)
+          : getRenderedLaunchRect({
+            area: "desktop",
+            id: item.id,
+            pageIndex,
+          }));
+        if (rect) rects.set(item.id, cloneRect(rect));
+      }
+    }
+    return {
+      pageIndex: options.pageIndex.value,
+      pageSpan,
+      rects,
+    };
+  }
+
+  function isPointInsideSnapshottedDesktopSource(point) {
+    const snapshot = activeDrag?.group?.desktopSourceSnapshot;
+    const pageSpan = snapshot?.pageSpan || getDesktopNavigationRect()?.width;
+    if (!point || !snapshot?.rects?.size || !Number.isFinite(pageSpan) || pageSpan <= 0) {
+      return false;
+    }
+    const pageDelta = Number(snapshot.pageIndex) - getVisualDesktopPageIndex();
+    const offsetX = pageDelta * pageSpan;
+    for (const rect of snapshot.rects.values()) {
+      if (isPointInsideRect(rect, point.x - offsetX, point.y)) return true;
+    }
+    return false;
+  }
+
+  function hasNavigatedDesktopPage() {
+    const snapshotPageIndex = activeDrag?.group?.desktopSourceSnapshot?.pageIndex;
+    return Number.isFinite(Number(snapshotPageIndex)) &&
+      Number(snapshotPageIndex) !== getVisualDesktopPageIndex();
+  }
+
+  function getStableTopLevelRect(targetId) {
+    return stageLayoutRecordToClientRect(
+      options.iconBoundsRegistry.getBounds(
+        BOUNDS_KIND.TOP_LEVEL,
+        BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
+        targetId
+      )
+    );
+  }
+
   function getVisualDesktopPageIndex(drag = activeDrag) {
     return Math.max(
       0,
@@ -382,6 +452,19 @@ export function useLaunchpadDrag(options) {
 
   function getPageRect(index = getVisualDesktopPageIndex()) {
     return options.pageRefs?.[index]?.getBoundingClientRect?.() || null;
+  }
+
+  function getDesktopNavigationRect() {
+    const desktopMain = getDomRefElement(options.desktopMainRef?.value);
+    return desktopMain?.getBoundingClientRect?.() || getPageRect();
+  }
+
+  function getDesktopPageTurnDirection(clientX, clientY) {
+    const rect = getDesktopNavigationRect();
+    if (!rect || clientY < rect.top || clientY > rect.bottom) return 0;
+    if (clientX <= rect.left + PAGE_EDGE_SIZE) return -1;
+    if (clientX >= rect.right - PAGE_EDGE_SIZE) return 1;
+    return 0;
   }
 
   function isInsideDesktopDropRegion(clientX, clientY, pageRect) {
@@ -728,7 +811,10 @@ export function useLaunchpadDrag(options) {
     if (activeDrag.group.draggedIds.includes(targetId)) return null;
     const found = options.findTopLevel(options.pages.value, targetId);
     if (!found?.item) return null;
-    const rect = getRenderedFolderRect(targetId) ||
+    const stableRect = hasNavigatedDesktopPage()
+      ? getStableTopLevelRect(targetId)
+      : null;
+    const rect = stableRect || getRenderedFolderRect(targetId) ||
       getRenderedLaunchRect({
         area: "desktop",
         id: targetId,
@@ -782,6 +868,10 @@ export function useLaunchpadDrag(options) {
   function getLockedTopLevelTarget(point) {
     const locked = activeDrag?.group?.lockedTarget;
     if (!locked?.targetId) return null;
+    if (isPointInsideSnapshottedDesktopSource(point)) {
+      clearLockedTarget();
+      return null;
+    }
     const target = getTopLevelTargetById(locked.targetId);
     if (!target) {
       clearLockedTarget();
@@ -801,15 +891,18 @@ export function useLaunchpadDrag(options) {
     if (!activeDrag || activeDrag.item.type === "folder" || !point) return null;
     const selectedIds = new Set(activeDrag.group.draggedIds);
     const suppressedTargetId = getSuppressedTopLevelTargetId(point);
-    const hit = options.iconBoundsRegistry.getAtPoint(
-      BOUNDS_KIND.TOP_LEVEL,
-      point.x,
-      point.y,
-      { excludeId: activeDrag.group.leadId }
-    );
-    if (hit?.id && hit.id !== suppressedTargetId && !selectedIds.has(hit.id)) {
-      const found = options.findTopLevel(options.pages.value, hit.id);
-      if (found) return { ...found, rect: hit.rect };
+    if (isPointInsideSnapshottedDesktopSource(point)) return null;
+    if (!hasNavigatedDesktopPage()) {
+      const hit = options.iconBoundsRegistry.getAtPoint(
+        BOUNDS_KIND.TOP_LEVEL,
+        point.x,
+        point.y,
+        { excludeId: activeDrag.group.leadId }
+      );
+      if (hit?.id && hit.id !== suppressedTargetId && !selectedIds.has(hit.id)) {
+        const found = options.findTopLevel(options.pages.value, hit.id);
+        if (found) return { ...found, rect: hit.rect };
+      }
     }
 
     const dragRect = getDragVisualRect();
@@ -878,7 +971,7 @@ export function useLaunchpadDrag(options) {
     if (transitPhase === "awaiting-entry") {
       const pageIndex = getVisualDesktopPageIndex();
       const pageRect = getPageRect(pageIndex);
-      if (pageRect && !isPointInsideRect(pageRect, clientX, clientY)) {
+      if (pageRect && !isPointInsideRect(pageRect, point.x, point.y)) {
         return {
           fallbackPoint: point,
           intent: { reason: "invalid-target", type: "invalid" },
@@ -889,7 +982,7 @@ export function useLaunchpadDrag(options) {
       return {
         fallbackPoint: point,
         intent: {
-          index: calcDesktopInsertIndex(clientX, clientY, pageIndex),
+          index: calcDesktopInsertIndex(point.x, point.y, pageIndex),
           pageIndex,
           type: "desktop-slot",
         },
@@ -944,7 +1037,7 @@ export function useLaunchpadDrag(options) {
 
     const pageIndex = getVisualDesktopPageIndex();
     const pageRect = getPageRect(pageIndex);
-    if (!isInsideDesktopDropRegion(clientX, clientY, pageRect)) {
+    if (!isInsideDesktopDropRegion(point.x, point.y, pageRect)) {
       return {
         fallbackPoint: point,
         intent: { reason: "invalid-target", type: "invalid" },
@@ -955,7 +1048,7 @@ export function useLaunchpadDrag(options) {
     return {
       fallbackPoint: point,
       intent: {
-        index: calcDesktopInsertIndex(clientX, clientY, pageIndex),
+        index: calcDesktopInsertIndex(point.x, point.y, pageIndex),
         pageIndex,
         type: "desktop-slot",
       },
@@ -1099,14 +1192,8 @@ export function useLaunchpadDrag(options) {
     intentTimer = window.setTimeout(evaluateIntent, GROUP_DROP_INTENT_DELAY_MS);
   }
 
-  function scheduleDesktopPageTurn(clientX) {
-    const rect = getPageRect();
-    if (!rect) return clearPageTurn();
-    const direction = clientX <= rect.left + PAGE_EDGE_SIZE
-      ? -1
-      : clientX >= rect.right - PAGE_EDGE_SIZE
-        ? 1
-        : 0;
+  function scheduleDesktopPageTurn(clientX, clientY) {
+    const direction = getDesktopPageTurnDirection(clientX, clientY);
     const currentIndex = getVisualDesktopPageIndex();
     const targetIndex = currentIndex + direction;
     const createsPage = targetIndex === options.pages.value.length;
@@ -1213,35 +1300,25 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function commitPendingEdgeTurns() {
-    let didCommit = false;
-    if (pageTurnTimer) {
-      const targetIndex = pageTurnTimer.targetIndex;
-      clearPageTurn();
-      activeDrag.group.desktopPageIndex = targetIndex;
-      if (targetIndex < options.pages.value.length) options.commitPageIndex(targetIndex);
-      didCommit = true;
+  function commitPendingFolderPageTurn() {
+    if (!folderPageTurnTimer) return false;
+    const pending = folderPageTurnTimer;
+    if (pending.timer) window.clearTimeout(pending.timer);
+    folderPageTurnTimer = null;
+    const committed = pending.token != null
+      ? options.commitFolderPageTurnRequest?.(pending.token, {
+        allowCreate: pending.allowCreate,
+        folderId: options.openFolderId.value,
+        phase: "open",
+      })
+      : false;
+    if (!committed) {
+      options.commitFolderPageIndex(pending.targetIndex, {
+        allowCreate: pending.allowCreate,
+      });
     }
-    if (folderPageTurnTimer) {
-      const pending = folderPageTurnTimer;
-      if (pending.timer) window.clearTimeout(pending.timer);
-      folderPageTurnTimer = null;
-      const committed = pending.token != null
-        ? options.commitFolderPageTurnRequest?.(pending.token, {
-          allowCreate: pending.allowCreate,
-          folderId: options.openFolderId.value,
-          phase: "open",
-        })
-        : false;
-      if (!committed) {
-        options.commitFolderPageIndex(pending.targetIndex, {
-          allowCreate: pending.allowCreate,
-        });
-      }
-      if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
-      didCommit = true;
-    }
-    return didCommit;
+    if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
+    return true;
   }
 
   function isAcceptedTopLevelOutcome(outcome) {
@@ -1690,6 +1767,7 @@ export function useLaunchpadDrag(options) {
         cancelArmed: false,
         cancelSource: null,
         createdFolderId: options.makeId("folder"),
+        desktopSourceSnapshot: makeDesktopSourceSnapshot(payload.draggedIds),
         desktopPageIndex: options.pageIndex.value,
         didCommit: false,
         draggedIds: [...payload.draggedIds],
@@ -1858,7 +1936,7 @@ export function useLaunchpadDrag(options) {
       scheduleFolderPageTurn(activeDrag.pointer.x);
     } else {
       clearFolderPageTurn();
-      scheduleDesktopPageTurn(activeDrag.pointer.x);
+      scheduleDesktopPageTurn(activeDrag.pointer.x, activeDrag.pointer.y);
     }
     scheduleIntentEvaluation();
   }
@@ -1897,16 +1975,27 @@ export function useLaunchpadDrag(options) {
     if (isAcceptedTopLevelOutcome(outcome)) {
       clearPageTurn();
       clearFolderPageTurn();
-    } else if (commitPendingEdgeTurns()) {
-      outcome = evaluateIntent({
-        finalizeFolderTransit: true,
-        force: true,
-      });
+    } else {
+      clearPageTurn();
+      if (commitPendingFolderPageTurn()) {
+        outcome = evaluateIntent({
+          finalizeFolderTransit: true,
+          force: true,
+        });
+      }
     }
     clearPageTurn();
     clearFolderPageTurn();
     clearFolderHoverTimers();
     if (!outcome || outcome.plan.status === "rejected") {
+      const isUnavailableDesktopEdge =
+        outcome?.plan?.reason === "invalid-target" &&
+        !options.openFolderId.value &&
+        getDesktopPageTurnDirection(activeDrag.pointer.x, activeDrag.pointer.y) !== 0;
+      if (isUnavailableDesktopEdge) {
+        returnNoop("navigation-edge");
+        return;
+      }
       rejectDrop(outcome?.plan?.reason || "invalid-target");
       return;
     }

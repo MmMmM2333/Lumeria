@@ -806,6 +806,75 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
+    const targetApp = app("previous-page-target");
+    const draggedApp = app("previous-page-dragged");
+    const harness = createAtomicDragHarness([[targetApp], [draggedApp]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 400,
+        top: 80,
+        width: 400,
+      },
+    });
+    harness.pageIndex.value = 1;
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: -384, top: 120, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 0, pageIndex: 0 }
+    );
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.TOP_LEVEL,
+      ICON_BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
+      targetApp.id,
+      { height: 64, left: 16, top: 120, width: 64 },
+      {
+        area: "desktop",
+        id: targetApp.id,
+        index: 0,
+        pageIndex: 0,
+        stageHeight: 520,
+        stageRect: { height: 520, left: 0, top: 0, width: 400 },
+        stageWidth: 400,
+      }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(161, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 1, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(161, sourceElement, {
+      clientX: 10,
+      clientY: 152,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, PAGE_TURN_DELAY), "the previous-page target fixture should turn after the full dwell");
+    harness.drag.updateDragPointer(makePointerEvent(161, sourceElement, {
+      clientX: 48,
+      clientY: 152,
+      timeStamp: 1_100,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the previous-page target should resolve after navigation");
+    assert(
+      harness.drag.groupDragState.value?.intent?.targetAppId === targetApp.id,
+      "an original target should remain hittable after its page moves into the viewport"
+    );
+    harness.drag.cancelDrag(makePointerEvent(161, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 48,
+      clientY: 152,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("x"), app("y")], [app("e"), app("f")]],
       children: [app("x"), app("y"), app("e"), app("f")],
@@ -1108,6 +1177,342 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
+    const previousPageApp = app("outer-edge-previous-page-app");
+    const firstCellApp = app("outer-edge-first-cell-app");
+    const draggedApp = app("outer-edge-dragged-app");
+    const harness = createAtomicDragHarness([[previousPageApp], [firstCellApp, draggedApp]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 960,
+        top: 80,
+        width: 960,
+      },
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 96,
+        right: 864,
+        top: 100,
+        width: 768,
+      },
+    });
+    harness.pageIndex.value = 1;
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 300, top: 120, width: 64 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(156, sourceElement, { clientX: 301, clientY: 121 }),
+      draggedApp,
+      { index: 1, pageIndex: 1, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(156, sourceElement, {
+      clientX: 100,
+      clientY: 121,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the first-cell slot fixture should resolve before release");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "desktop-slot" &&
+        harness.drag.groupDragState.value?.intent?.pageIndex === 1 &&
+        harness.drag.groupDragState.value?.intent?.index === 0,
+      "a top-left anchored drag should resolve the first desktop slot from its visual center"
+    );
+    assert(
+      !flushTimerByDelay(timers, PAGE_TURN_DELAY),
+      "the first desktop cell must stay outside the outer navigation hot zone"
+    );
+    harness.drag.finishDrag(makePointerEvent(156, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 100,
+      clientY: 121,
+      timeStamp: 160,
+      type: "pointerup",
+    }));
+    assert(
+      harness.pageIndex.value === 1 &&
+        harness.pages.value[1].map((item) => item.id).join(",") === `${draggedApp.id},${firstCellApp.id}`,
+      "the first-cell release should reorder the current page without visiting the previous page"
+    );
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const firstSelectedApp = app("projected-first-selected-app");
+    const projectedFirstApp = app("projected-first-target-app");
+    const draggedApp = app("projected-first-dragged-app");
+    const harness = createAtomicDragHarness([[firstSelectedApp, projectedFirstApp, draggedApp]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 960,
+        top: 80,
+        width: 960,
+      },
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 96,
+        right: 864,
+        top: 100,
+        width: 768,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 600, top: 300, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: firstSelectedApp.id, pageIndex: 0 },
+      { height: 64, left: 145, top: 132, width: 64 },
+      { area: "desktop", id: firstSelectedApp.id, index: 0, pageIndex: 0 }
+    );
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: projectedFirstApp.id, pageIndex: 0 },
+      { height: 64, left: 535, top: 132, width: 64 },
+      { area: "desktop", id: projectedFirstApp.id, index: 1, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(159, sourceElement, { clientX: 601, clientY: 301 }),
+      draggedApp,
+      { index: 2, pageIndex: 0, type: "page" },
+      {
+        draggedIds: [firstSelectedApp.id, draggedApp.id],
+        layoutRevision: 0,
+        leadId: draggedApp.id,
+        selectionRevision: 2,
+      }
+    );
+
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: projectedFirstApp.id, pageIndex: 0 },
+      { height: 64, left: 145, top: 132, width: 64 },
+      { area: "desktop", id: projectedFirstApp.id, index: 0, pageIndex: 0 }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(159, sourceElement, {
+      clientX: 146,
+      clientY: 133,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the projected first-cell fixture should resolve before release");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "desktop-slot" &&
+        harness.drag.groupDragState.value?.intent?.index === 0,
+      "an app that only moved under the pointer because of projection must not become a folder-create target"
+    );
+    harness.drag.finishDrag(makePointerEvent(159, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 146,
+      clientY: 133,
+      timeStamp: 160,
+      type: "pointerup",
+    }));
+    assert(
+      harness.pages.value[0].slice(0, 2).map((item) => item.id).join(",") ===
+        `${firstSelectedApp.id},${draggedApp.id}`,
+      "the first-cell release should commit the selected block into the slot instead of creating a folder"
+    );
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const previousPageApp = app("pending-edge-previous-page-app");
+    const firstCellApp = app("pending-edge-first-cell-app");
+    const draggedApp = app("pending-edge-dragged-app");
+    const harness = createAtomicDragHarness([[previousPageApp], [firstCellApp, draggedApp]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 960,
+        top: 80,
+        width: 960,
+      },
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 96,
+        right: 864,
+        top: 100,
+        width: 768,
+      },
+    });
+    harness.pageIndex.value = 1;
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 300, top: 120, width: 64 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(157, sourceElement, { clientX: 301, clientY: 121 }),
+      draggedApp,
+      { index: 1, pageIndex: 1, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(157, sourceElement, {
+      clientX: 80,
+      clientY: 121,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the pending edge fixture should resolve before release");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "desktop-slot" &&
+        harness.drag.groupDragState.value?.intent?.pageIndex === 1 &&
+        harness.drag.groupDragState.value?.intent?.index === 0,
+      "the visual center should remain a valid current-page slot while the pointer arms navigation"
+    );
+    harness.drag.finishDrag(makePointerEvent(157, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 80,
+      clientY: 121,
+      timeStamp: 160,
+      type: "pointerup",
+    }));
+    assert(
+      harness.pageIndex.value === 1 &&
+        !harness.calls.pageIndexes.includes(0) &&
+        harness.pages.value[1].map((item) => item.id).join(",") === `${draggedApp.id},${firstCellApp.id}`,
+      "releasing before the edge dwell expires should drop on the current page"
+    );
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const firstCellApp = app("unavailable-edge-first-cell-app");
+    const draggedApp = app("unavailable-edge-dragged-app");
+    const harness = createAtomicDragHarness([[firstCellApp, draggedApp]], {
+      desktopMainRect: {
+        bottom: 520,
+        height: 440,
+        left: 0,
+        right: 960,
+        top: 80,
+        width: 960,
+      },
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 96,
+        right: 864,
+        top: 100,
+        width: 768,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 300, top: 120, width: 64 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(158, sourceElement, { clientX: 301, clientY: 121 }),
+      draggedApp,
+      { index: 1, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(158, sourceElement, {
+      clientX: 40,
+      clientY: 121,
+      timeStamp: 140,
+    }));
+    assert(flushTimerByDelay(timers, 42), "the unavailable edge fixture should resolve before release");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "invalid",
+      "an icon whose visual center leaves the grid should not manufacture a desktop slot"
+    );
+    harness.drag.finishDrag(makePointerEvent(158, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 40,
+      clientY: 121,
+      timeStamp: 160,
+      type: "pointerup",
+    }));
+    assert(
+      harness.calls.commits.length === 0 && harness.calls.rejected.length === 0,
+      "releasing against an unavailable navigation edge should return naturally without a warning"
+    );
+    assert(
+      harness.pages.value[0].map((item) => item.id).join(",") === `${firstCellApp.id},${draggedApp.id}`,
+      "an unavailable edge release must preserve the authoritative layout"
+    );
+    flushTimers(timers, harness.drag);
+  });
+
+  for (const [name, anchorOffset] of [
+    ["top-left", 1],
+    ["center", 32],
+    ["bottom-right", 63],
+  ]) {
+    await withMockPointerEnvironment(async ({ timers }) => {
+      const items = [app(`${name}-a`), app(`${name}-b`), app(`${name}-c`), app(`${name}-dragged`)];
+      const harness = createAtomicDragHarness([items], {
+        desktopMainRect: {
+          bottom: 520,
+          height: 440,
+          left: 0,
+          right: 960,
+          top: 80,
+          width: 960,
+        },
+        pageRect: {
+          bottom: 500,
+          height: 400,
+          left: 96,
+          right: 864,
+          top: 100,
+          width: 768,
+        },
+      });
+      const sourceElement = {
+        getBoundingClientRect: () => ({ height: 64, left: 600, top: 300, width: 64 }),
+      };
+      const pointerId = 160 + anchorOffset;
+      harness.drag.startDrag(
+        makePointerEvent(pointerId, sourceElement, {
+          clientX: 600 + anchorOffset,
+          clientY: 300 + anchorOffset,
+        }),
+        items[3],
+        { index: 3, pageIndex: 0, type: "page" }
+      );
+      const destinationCenter = { x: 490, y: 170 };
+      const releasePoint = {
+        x: destinationCenter.x - (32 - anchorOffset),
+        y: destinationCenter.y - (32 - anchorOffset),
+      };
+      harness.drag.updateDragPointer(makePointerEvent(pointerId, sourceElement, {
+        clientX: releasePoint.x,
+        clientY: releasePoint.y,
+        timeStamp: 140,
+      }));
+      assert(flushTimerByDelay(timers, 42), `${name} anchor should resolve before release`);
+      assert(
+        harness.drag.groupDragState.value?.center?.x === destinationCenter.x &&
+          harness.drag.groupDragState.value?.center?.y === destinationCenter.y,
+        `${name} anchor should preserve the requested visual center`
+      );
+      harness.drag.finishDrag(makePointerEvent(pointerId, sourceElement, {
+        button: 0,
+        buttons: 0,
+        clientX: releasePoint.x,
+        clientY: releasePoint.y,
+        timeStamp: 160,
+        type: "pointerup",
+      }));
+      assert(
+        harness.pages.value[0].map((item) => item.id).join(",") ===
+          `${items[0].id},${items[3].id},${items[1].id},${items[2].id}`,
+        `${name} anchor should resolve the same second desktop slot`
+      );
+      flushTimers(timers, harness.drag);
+    });
+  }
+
+  await withMockPointerEnvironment(async ({ timers }) => {
     const previousPageApp = app("previous-page-app");
     const targetApp = app("first-cell-target");
     const draggedApp = app("first-cell-dragged");
@@ -1208,7 +1613,11 @@ export async function runLaunchpadDragTests() {
     const c = app("c");
     const harness = createAtomicDragHarness([[a, b, c]]);
     const target = { getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }) };
-    harness.drag.startDrag(makePointerEvent(12, target), a, { index: 0, pageIndex: 0, type: "page" });
+    harness.drag.startDrag(
+      makePointerEvent(12, target, { clientX: 48, clientY: 152 }),
+      a,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
     assert(harness.calls.dragStarts[0].standalone === true, "ordinary single-item drags should normalize into the shared payload");
     assert(harness.drag.groupDragState.value?.draggedIds.join(",") === "a", "ordinary drags should expose the shared group visual state");
     harness.drag.finishDrag(makePointerEvent(12, target, {

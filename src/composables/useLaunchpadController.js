@@ -1133,7 +1133,7 @@ export function useLaunchpadController(options = {}) {
       }
       showTransientNotice({
         title: localizationText.t("launchpad.batch.createRejectedTitle"),
-        message: localizationText.t("launchpad.batch.reasons.invalid-target"),
+        message: localizationText.t("launchpad.batch.createInvalidSelection"),
         intent: "warning",
         durationMs: 2600,
       });

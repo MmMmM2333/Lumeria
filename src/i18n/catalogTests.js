@@ -19,6 +19,14 @@ export function runCatalogTests() {
   assert(translateMessage("zh-CN", "common.actions.cancel") === "取消", "the Chinese catalog should translate semantic keys");
   assert(translateMessage("en-US", "common.actions.cancel") === "Cancel", "the English catalog should translate semantic keys");
   assert(
+    translateMessage("zh-CN", "launchpad.batch.reasons.invalid-target") === "此处不能放置所选应用。",
+    "an invalid move target should describe placement rather than folder creation"
+  );
+  assert(
+    translateMessage("zh-CN", "launchpad.batch.createInvalidSelection") === "当前选择无法创建文件夹。",
+    "toolbar folder creation should keep its dedicated invalid-selection message"
+  );
+  assert(
     translateMessage("en-US", "errors.launch.title", { appName: "Calculator" }) === "Could not open Calculator",
     "catalog translation should interpolate named values"
   );

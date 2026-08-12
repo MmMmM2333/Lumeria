@@ -1055,6 +1055,7 @@
           "deleteMessage": "将从启动台移除所选的 {count} 个应用。此操作暂时无法撤销。",
             "deleteConfirm": "删除",
             "createRejectedTitle": "无法创建文件夹",
+            "createInvalidSelection": "当前选择无法创建文件夹。",
             "moveRejectedTitle": "无法移动所选应用",
             "reasons": {
               "desktop-capacity": "目标页面没有足够空间。",
@@ -1069,7 +1070,7 @@
               "selection-revision-stale": "选择内容已经变化，请重试。",
               "target-app-missing": "目标应用已不存在。",
               "target-in-selection": "不能把所选应用放到自身上。",
-              "invalid-target": "当前选择无法创建文件夹。"
+              "invalid-target": "此处不能放置所选应用。"
             }
         }
     },

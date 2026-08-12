@@ -1154,6 +1154,351 @@ test("a first-cell app target wins over the overlapping desktop page-turn zone",
   }, ids)).toEqual({ activePageIndex: 1, folderCreated: true });
 });
 
+for (const viewport of [
+  { height: 650, label: "960x650", width: 960 },
+  { height: 1080, label: "1920x1080", width: 1920 },
+]) {
+  test(`a top-left anchored first-slot release stays on the current page at ${viewport.label}`, async ({ page }) => {
+    test.setTimeout(30_000);
+    await page.setViewportSize({ height: viewport.height, width: viewport.width });
+    await waitForFixture(page);
+    const ids = await page.evaluate(() => {
+      const state = document.querySelector("#app").__vue_app__._instance.setupState;
+      const apps = state.activePages[1].filter((item) => item.type === "app");
+      if (apps.length < 5) throw new Error("The second fixture page needs five apps");
+      state.commitActivePageIndex(1);
+      return { firstId: apps[0].id, sourceId: apps[4].id };
+    });
+    await expect.poll(async () => page.evaluate(() => (
+      document.querySelector("#app").__vue_app__._instance.setupState.activePageIndex
+    ))).toBe(1);
+    await page.waitForTimeout(500);
+    await enterBatchSelectionOf(page, [ids.firstId, ids.sourceId]);
+
+    const result = await page.evaluate(async ({ firstId, sourceId }) => {
+      const state = document.querySelector("#app").__vue_app__._instance.setupState;
+      const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+      const readBounds = (id) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
+        area: "desktop",
+        id,
+        pageIndex: 1,
+      });
+      const firstBounds = readBounds(firstId);
+      const sourceBounds = readBounds(sourceId);
+      const mainRect = document.querySelector("main.desktop-main")?.getBoundingClientRect();
+      if (!firstBounds || !sourceBounds || !mainRect) throw new Error("First-slot drag geometry is unavailable");
+      const sourcePoint = { x: sourceBounds.left + 1, y: sourceBounds.top + 1 };
+      const releasePoint = { x: firstBounds.left + 1, y: firstBounds.top + 1 };
+      const firstCenter = {
+        x: firstBounds.left + firstBounds.width / 2,
+        y: firstBounds.top + firstBounds.height / 2,
+      };
+      const target = document.elementFromPoint(sourcePoint.x, sourcePoint.y);
+      if (!target) throw new Error("The source top-left point is outside the viewport");
+      const init = {
+        bubbles: true,
+        button: 0,
+        cancelable: true,
+        clientX: sourcePoint.x,
+        clientY: sourcePoint.y,
+        isPrimary: true,
+        pointerId: 246,
+        pointerType: "mouse",
+        view: window,
+      };
+      target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+      await wait(560);
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        ...init,
+        buttons: 1,
+        clientX: sourcePoint.x + 12,
+        clientY: sourcePoint.y + 4,
+      }));
+      await wait(80);
+      if (!state.groupDragState) throw new Error("The edge fixture did not activate an icon drag");
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        ...init,
+        buttons: 1,
+        clientX: releasePoint.x,
+        clientY: releasePoint.y,
+      }));
+      await wait(90);
+      const group = state.groupDragState;
+      const beforeRelease = {
+        activePageIndex: state.activePageIndex,
+        center: group?.center || null,
+        intent: group?.intent || null,
+        navigationBoundary: mainRect.left + 92,
+        pointer: group?.pointer || null,
+      };
+      const pageIndexes = [state.activePageIndex];
+      window.dispatchEvent(new PointerEvent("pointerup", {
+        ...init,
+        buttons: 0,
+        clientX: releasePoint.x,
+        clientY: releasePoint.y,
+      }));
+      const deadline = performance.now() + 5_000;
+      while (state.groupDragState && performance.now() < deadline) {
+        pageIndexes.push(state.activePageIndex);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+      pageIndexes.push(state.activePageIndex);
+      return {
+        activePageIndex: state.activePageIndex,
+        beforeRelease,
+        firstCenter,
+        firstPageFirstId: state.activePages[0][0]?.id || null,
+        groupEnded: state.groupDragState == null,
+        pageIndexes: [...new Set(pageIndexes)],
+        secondPageFirstIds: state.activePages[1].slice(0, 2).map((item) => item.id),
+        transientNotice: state.transientNotice?.message || null,
+      };
+    }, ids);
+
+    expect(result.beforeRelease).toMatchObject({
+      activePageIndex: 1,
+      intent: { index: 0, pageIndex: 1, type: "desktop-slot" },
+    });
+    expect(Math.abs(result.beforeRelease.center.x - result.firstCenter.x)).toBeLessThanOrEqual(0.1);
+    expect(Math.abs(result.beforeRelease.center.y - result.firstCenter.y)).toBeLessThanOrEqual(0.1);
+    expect(result.beforeRelease.pointer.x).toBeGreaterThan(result.beforeRelease.navigationBoundary);
+    expect(result).toMatchObject({
+      activePageIndex: 1,
+      firstPageFirstId: "app-0-safari",
+      groupEnded: true,
+      pageIndexes: [1],
+      secondPageFirstIds: [ids.firstId, ids.sourceId],
+      transientNotice: null,
+    });
+  });
+}
+
+test("the desktop navigation edge turns only after its full dwell", async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.setViewportSize({ height: 650, width: 960 });
+
+  const runEdgeScenario = async ({ cancel, dwellMs, pointerId }) => {
+    await waitForFixture(page);
+    return page.evaluate(async ({ cancel: shouldCancel, dwellMs: dwell, pointerId: id }) => {
+      const state = document.querySelector("#app").__vue_app__._instance.setupState;
+      const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      state.commitActivePageIndex(1);
+      await wait(500);
+      const source = state.activePages[1].find((item) => item.type === "app");
+      const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
+        area: "desktop",
+        id: source.id,
+        pageIndex: 1,
+      });
+      const mainRect = document.querySelector("main.desktop-main")?.getBoundingClientRect();
+      if (!bounds || !mainRect) throw new Error("Desktop edge drag geometry is unavailable");
+      const sourcePoint = {
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      };
+      const edgePoint = {
+        x: mainRect.left + 20,
+        y: sourcePoint.y,
+      };
+      const target = document.elementFromPoint(sourcePoint.x, sourcePoint.y);
+      if (!target) throw new Error("The edge fixture source is outside the viewport");
+      const beforeLayout = JSON.stringify(state.activePages);
+      const init = {
+        bubbles: true,
+        button: 0,
+        cancelable: true,
+        clientX: sourcePoint.x,
+        clientY: sourcePoint.y,
+        isPrimary: true,
+        pointerId: id,
+        pointerType: "mouse",
+        view: window,
+      };
+      target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+      await wait(560);
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        ...init,
+        buttons: 1,
+        clientX: sourcePoint.x + 12,
+        clientY: sourcePoint.y + 4,
+      }));
+      await wait(80);
+      if (!state.groupDragState) throw new Error("The edge fixture did not activate an icon drag");
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        ...init,
+        buttons: 1,
+        clientX: edgePoint.x,
+        clientY: edgePoint.y,
+      }));
+      const pageIndexes = [];
+      const dwellDeadline = performance.now() + dwell;
+      while (performance.now() < dwellDeadline) {
+        pageIndexes.push(state.activePageIndex);
+        await frame();
+      }
+      const beforeRelease = {
+        activePageIndex: state.activePageIndex,
+        desktopPageIndex: state.groupDragState?.desktopPageIndex ?? null,
+        phase: state.groupDragState?.phase || null,
+        pointerX: state.groupDragState?.pointer?.x ?? null,
+      };
+      window.dispatchEvent(new PointerEvent(shouldCancel ? "pointercancel" : "pointerup", {
+        ...init,
+        buttons: 0,
+        clientX: edgePoint.x,
+        clientY: edgePoint.y,
+      }));
+      const settleDeadline = performance.now() + 5_000;
+      while (state.groupDragState && performance.now() < settleDeadline) await frame();
+      pageIndexes.push(state.activePageIndex);
+      return {
+        beforeRelease,
+        edgeBoundary: mainRect.left + 92,
+        groupEnded: state.groupDragState == null,
+        layoutUnchanged: JSON.stringify(state.activePages) === beforeLayout,
+        pageIndexes: [...new Set(pageIndexes)],
+        transientNotice: state.transientNotice?.message || null,
+      };
+    }, { cancel, dwellMs, pointerId });
+  };
+
+  const quickRelease = await runEdgeScenario({ cancel: false, dwellMs: 150, pointerId: 247 });
+  expect(quickRelease.beforeRelease).toMatchObject({
+    activePageIndex: 1,
+    desktopPageIndex: 1,
+    phase: "dragging",
+  });
+  expect(quickRelease.beforeRelease.pointerX).toBeLessThan(quickRelease.edgeBoundary);
+  expect(quickRelease).toMatchObject({
+    groupEnded: true,
+    layoutUnchanged: true,
+    pageIndexes: [1],
+    transientNotice: null,
+  });
+
+  const fullDwell = await runEdgeScenario({ cancel: true, dwellMs: 1_200, pointerId: 248 });
+  expect(fullDwell.beforeRelease).toMatchObject({
+    activePageIndex: 0,
+    desktopPageIndex: 0,
+    phase: "dragging",
+  });
+  expect(fullDwell.beforeRelease.pointerX).toBeLessThan(fullDwell.edgeBoundary);
+  expect(fullDwell).toMatchObject({
+    groupEnded: true,
+    layoutUnchanged: true,
+    pageIndexes: [1, 0],
+    transientNotice: null,
+  });
+});
+
+test("an app target remains semantic after desktop edge navigation", async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.setViewportSize({ height: 650, width: 960 });
+  await waitForFixture(page);
+
+  const result = await page.evaluate(async () => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    const readStableBounds = (id) => {
+      const record = state.iconBoundsRegistry.getBounds("topLevel", "stableStageLayout", id);
+      const stageRect = record?.meta?.stageRect;
+      const stageWidth = Number(record?.meta?.stageWidth);
+      const stageHeight = Number(record?.meta?.stageHeight);
+      if (!record || !stageRect || !stageWidth || !stageHeight) return null;
+      const scaleX = stageRect.width / stageWidth;
+      const scaleY = stageRect.height / stageHeight;
+      return {
+        height: record.height * scaleY,
+        left: stageRect.left + record.left * scaleX,
+        top: stageRect.top + record.top * scaleY,
+        width: record.width * scaleX,
+      };
+    };
+    const firstPageTarget = state.activePages[0].find((item) => item.type === "app");
+    const secondPageSource = state.activePages[1].find((item) => item.type === "app");
+    state.commitActivePageIndex(1);
+    await wait(500);
+    const readBounds = (id, pageIndex) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
+      area: "desktop",
+      id,
+      pageIndex,
+    });
+    const sourceBounds = readBounds(secondPageSource.id, 1);
+    const mainRect = document.querySelector("main.desktop-main")?.getBoundingClientRect();
+    if (!sourceBounds || !mainRect) throw new Error("Cross-page target geometry is unavailable");
+    const sourcePoint = {
+      x: sourceBounds.left + sourceBounds.width / 2,
+      y: sourceBounds.top + sourceBounds.height / 2,
+    };
+    const edgePoint = { x: mainRect.left + 20, y: sourcePoint.y };
+    const target = document.elementFromPoint(sourcePoint.x, sourcePoint.y);
+    if (!target) throw new Error("Cross-page source is outside the viewport");
+    const init = {
+      bubbles: true,
+      button: 0,
+      cancelable: true,
+      clientX: sourcePoint.x,
+      clientY: sourcePoint.y,
+      isPrimary: true,
+      pointerId: 249,
+      pointerType: "mouse",
+      view: window,
+    };
+    target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+    await wait(560);
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: sourcePoint.x + 12,
+      clientY: sourcePoint.y + 4,
+    }));
+    await wait(80);
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: edgePoint.x,
+      clientY: edgePoint.y,
+    }));
+    const navigationDeadline = performance.now() + 1_500;
+    while (state.activePageIndex !== 0 && performance.now() < navigationDeadline) await frame();
+    await wait(120);
+    const targetBounds = readStableBounds(firstPageTarget.id);
+    if (!targetBounds) throw new Error("The first-page target did not render after navigation");
+    const targetPoint = {
+      x: targetBounds.left + targetBounds.width / 2,
+      y: targetBounds.top + targetBounds.height / 2,
+    };
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      ...init,
+      buttons: 1,
+      clientX: targetPoint.x,
+      clientY: targetPoint.y,
+    }));
+    await wait(90);
+    const beforeCancel = {
+      activePageIndex: state.activePageIndex,
+      intent: state.groupDragState?.intent || null,
+      targetId: firstPageTarget.id,
+    };
+    window.dispatchEvent(new PointerEvent("pointercancel", {
+      ...init,
+      buttons: 0,
+      clientX: targetPoint.x,
+      clientY: targetPoint.y,
+    }));
+    return beforeCancel;
+  });
+
+  expect(result).toMatchObject({
+    activePageIndex: 0,
+    intent: { type: "application" },
+  });
+  expect(result.intent.targetAppId).toBe(result.targetId);
+});
+
 test("toolbar batch folder creation uses committed layout with bounded actors and complete ownership", async ({ page }) => {
   test.setTimeout(30_000);
   await waitForFixture(page);
