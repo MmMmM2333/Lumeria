@@ -363,11 +363,20 @@ function makeFolderDropTargetSignature(dropTarget) {
   };
 }
 
+function makeFolderDropTargetExitSignature(exitTransition) {
+  if (!exitTransition) return null;
+  return {
+    mode: exitTransition.mode || null,
+    targetId: exitTransition.targetId || null,
+  };
+}
+
 function makeFolderPresentationSignature(presentation) {
   if (!presentation) return null;
   return {
     acceptsDropHover: presentation.acceptsDropHover === true,
     dropTarget: makeFolderDropTargetSignature(presentation.dropTarget),
+    dropTargetExit: makeFolderDropTargetExitSignature(presentation.dropTargetExit),
     geometry: presentation.geometry ? {
       geometryVersion: presentation.geometry.geometryVersion || null,
       hitRect: makeRectSignature(presentation.geometry.hitRect),
@@ -428,6 +437,7 @@ export function makeDesktopRenderPlanSignature(plan) {
       stableScreenTarget: entry.stableScreenTarget,
     })),
     folderDropTarget: makeFolderDropTargetSignature(plan.folderDropTarget),
+    folderDropTargetExit: makeFolderDropTargetExitSignature(plan.folderDropTargetExit),
     height: state.height,
     pageRefs: plan.pageRefs.map((entry) => ({ pageIndex: entry.pageIndex })),
     pageTrack: plan.pageTrack,
@@ -475,6 +485,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const pageRefs = [];
   const clearFolderPreviewChildIds = [];
   let folderDropTarget = null;
+  let folderDropTargetExit = null;
 
   for (const page of pages) {
     for (const item of page || []) {
@@ -555,6 +566,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         })
         : null;
       if (folderPresentation?.dropTarget?.active) folderDropTarget = folderPresentation.dropTarget;
+      if (folderPresentation?.dropTargetExit) folderDropTargetExit = folderPresentation.dropTargetExit;
       const effectiveFolderHandoffEntry = item?.type === "folder" && !shouldRetireStaleHandoff
         ? existingFolderHandoffEntry
         : null;
@@ -695,6 +707,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     },
     entries,
     folderDropTarget,
+    folderDropTargetExit,
     pageRefs,
     pageTrack: {
       debugMetadata: {

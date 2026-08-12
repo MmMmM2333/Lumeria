@@ -190,6 +190,8 @@ export function runDesktopRenderPlanTests() {
     assert(entry.isActiveFolderClosingHandoff === false, "test setup should model a new open without an active closing handoff");
     assert(entry.folderPresentation.handoff.retainsSourceVisibility === false, "released closing handoff state should not retain visibility during a new open");
     assert(entry.nodeState.ghosted === true, "opening source ghosting should hide the real desktop folder even with a released stale handoff entry");
+    assert(plan.folderDropTargetExit?.mode === "immediate", "opening render plans should request immediate drop-frame retirement");
+    assert(plan.folderDropTargetExit?.targetId === folder.id, "opening render plans should target the opening folder's drop frame");
   }
 
   {

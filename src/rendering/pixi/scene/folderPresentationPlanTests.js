@@ -74,7 +74,15 @@ export function runFolderPresentationPlanTests() {
 
   {
     const folderId = "folder-opening-source";
+    const hoverState = {
+      key: "hover-opening-source",
+      phase: "opening",
+      targetId: folderId,
+      targetType: "folder",
+    };
     const presentation = resolveFolderPresentationState({
+      dragFolderHoverState: hoverState,
+      dragFolderTargetId: folderId,
       existingHandoffEntry: makeReleasedEntry(folderId),
       folderId,
       geometry: {
@@ -93,6 +101,10 @@ export function runFolderPresentationPlanTests() {
     assert(presentation.handoff.pinsLayout === false, "inactive released handoffs should not pin layout during a new open");
     assert(presentation.sourceVisible === false, "opening source ghosting should hide the real desktop folder");
     assert(presentation.isSourceGhosted === true, "opening source ghosting should route through the normal source ghost path");
+    assert(presentation.acceptsDropHover === true, "opening transit should retain the logical folder target until panel entry");
+    assert(presentation.dropTarget === null, "a ghosted opening source should not leave an independent desktop drop frame");
+    assert(presentation.dropTargetExit?.mode === "immediate", "opening frame ownership should immediately retire the desktop drop frame");
+    assert(presentation.dropTargetExit?.targetId === folderId, "opening frame ownership should retire only the opening folder's drop frame");
   }
 
   {

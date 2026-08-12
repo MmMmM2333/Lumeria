@@ -115,7 +115,10 @@ export function resolveFolderPresentationState(options = {}) {
   const hasHoverIntent = acceptsDropHover && isFolderHoverIntentFor(folderId, dragFolderHoverState);
   const hasDropTargetIntent = acceptsDropHover && dragFolderTargetId === folderId;
   const padding = getFolderHoverTargetPadding(iconSize);
-  const dropTarget = (hasHoverIntent || hasDropTargetIntent) && geometry.hoverRect
+  const dropTargetExit = isOpeningSourceGhosted && isSourceGhosted
+    ? { mode: "immediate", targetId: folderId }
+    : null;
+  const dropTarget = !isSourceGhosted && (hasHoverIntent || hasDropTargetIntent) && geometry.hoverRect
     ? {
       active: true,
       geometryVersion: geometry.geometryVersion,
@@ -137,6 +140,7 @@ export function resolveFolderPresentationState(options = {}) {
   return {
     acceptsDropHover,
     dropTarget,
+    dropTargetExit,
     geometry,
     handoff: {
       blocksHover,

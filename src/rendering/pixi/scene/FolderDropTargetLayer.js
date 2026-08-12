@@ -280,7 +280,11 @@ class FolderDropTargetFrame extends Container {
     this.graphics.scale.set(1);
   }
 
-  clear() {
+  clear(options = {}) {
+    if (options.immediate === true) {
+      this.clearImmediate();
+      return;
+    }
     if (this.restorePending) {
       this.finishClear();
       return;
@@ -315,6 +319,17 @@ class FolderDropTargetFrame extends Container {
       })
       .start();
     this.applyFrame();
+  }
+
+  clearImmediate() {
+    const exitingTargetId = this.activeTargetId || this.exitingTargetId || this.currentTarget?.targetId || this.targetKey || null;
+    this.lastDrawKey = null;
+    this.lastPhase = null;
+    this.targetKey = null;
+    this.activeTargetId = null;
+    killMotionOf(this.frame, null, { reason: "folder-drop-target-opening-handoff" });
+    if (exitingTargetId) this.onExitComplete(exitingTargetId);
+    this.finishClear();
   }
 
   finishShrink() {
@@ -430,9 +445,12 @@ export class FolderDropTargetLayer extends Container {
   update(target, context = {}) {
     const drawKey = makeDrawKey(target, this.part, context.stageRect);
     const nextTargetId = drawKey ? target?.targetId || makeTargetKey(target, drawKey) : null;
+    const immediateExitTargetId = context.exitTransition?.mode === "immediate"
+      ? context.exitTransition.targetId || null
+      : null;
     for (const [folderId, frame] of this.frames) {
       if (folderId === nextTargetId) continue;
-      frame.clear();
+      frame.clear({ immediate: folderId === immediateExitTargetId });
     }
     if (!nextTargetId) {
       this.activeTargetId = null;

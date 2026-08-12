@@ -1044,6 +1044,7 @@ export class DesktopLayer extends Container {
       ? plan.entries.find((entry) => entry.item?.id === target.targetId && entry.item?.type === "folder") || null
       : null;
     const context = {
+      exitTransition: plan?.folderDropTargetExit || null,
       stageRect: state.stageRect,
       targetNode: targetEntry ? this.iconNodes.get(targetEntry.key) || null : null,
     };

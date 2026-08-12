@@ -27,6 +27,90 @@ async function waitForIconBounds(page, id) {
   }, id);
 }
 
+async function readFolderDropFrameState(page, folderId) {
+  return page.evaluate((targetFolderId) => {
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    if (!layer) throw new Error("Pixi desktop layer is unavailable");
+    return {
+      fillVisible: layer.folderDropFillLayer?.getFrame?.(targetFolderId)?.visible === true,
+      planActive: layer.lastDesktopRenderPlan?.folderDropTarget?.targetId === targetFolderId,
+      strokeVisible: layer.folderDropStrokeLayer?.getFrame?.(targetFolderId)?.visible === true,
+    };
+  }, folderId);
+}
+
+async function startFolderDropFrameTrace(page, folderId) {
+  await page.evaluate((targetFolderId) => {
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    if (!layer) throw new Error("Pixi desktop layer is unavailable");
+    const trace = { active: true, samples: [] };
+    window.__folderDropFrameTrace = trace;
+    const sample = () => {
+      if (!trace.active) return;
+      const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+      const planActive = layer.lastDesktopRenderPlan?.folderDropTarget?.targetId === targetFolderId;
+      if (state?.openFolderId === targetFolderId && !planActive) {
+        trace.samples.push({
+          fillVisible: layer.folderDropFillLayer?.getFrame?.(targetFolderId)?.visible === true,
+          strokeVisible: layer.folderDropStrokeLayer?.getFrame?.(targetFolderId)?.visible === true,
+        });
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }, folderId);
+}
+
+async function stopFolderDropFrameTrace(page) {
+  return page.evaluate(() => {
+    const trace = window.__folderDropFrameTrace;
+    if (!trace) throw new Error("Folder drop-frame trace was not started");
+    trace.active = false;
+    delete window.__folderDropFrameTrace;
+    return trace.samples;
+  });
+}
+
 async function dispatchIconPointer(page, id, options = {}) {
   await waitForIconBounds(page, id);
   return page.evaluate(({ iconId, pointerId, type }) => {
@@ -324,6 +408,7 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
   const source = await readDesktopIconCenter(page, "app-2-photos");
   const folderPoint = await readDesktopIconCenter(page, folderId);
   const pointerId = 220;
+  await startFolderDropFrameTrace(page, folderId);
   await dispatchDragPointer(page, "pointerdown", source, pointerId);
   await page.waitForTimeout(560);
   await dispatchDragPointer(page, "pointermove", {
@@ -337,6 +422,13 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     return state.openFolderId;
   }), { timeout: 4_000 }).toBe(folderId);
+  await expect.poll(
+    () => readFolderDropFrameState(page, folderId),
+    { timeout: 2_000 }
+  ).toEqual({ fillVisible: false, planActive: false, strokeVisible: false });
+  const openingFrameSamples = await stopFolderDropFrameTrace(page);
+  expect(openingFrameSamples.length).toBeGreaterThan(0);
+  expect(openingFrameSamples.every((sample) => !sample.fillVisible && !sample.strokeVisible)).toBe(true);
   const geometry = await page.evaluate(({ folderPoint }) => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const rect = state.folderPanelRef?.getBoundingClientRect?.();
