@@ -1361,6 +1361,7 @@ export function useLaunchpadApps(options) {
     confirmResetScanRoots,
     editorModel,
     excludeManagedAppFromScan,
+    excludeManagedAppsFromScan,
     excludeSelectedManagedAppsFromScan,
     filteredManagedApps,
     getLaunchTargetPath,

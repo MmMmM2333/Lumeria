@@ -133,7 +133,7 @@ export function useLaunchpadKeyboard(options) {
       }
       if (event.key === "Delete") {
         event.preventDefault();
-        options.requestBatchSelectionDelete?.();
+        options.requestBatchSelectionRemove?.();
         return;
       }
       if (event.key === " " && !event.altKey) {

@@ -29,6 +29,7 @@ function createKeyboard(overrides = {}) {
     closeDesktop: 0,
     closeTopmostModal: 0,
     openFocusedIcon: 0,
+    requestBatchSelectionRemove: 0,
     turnCurrentPage: [],
   };
   const keyboard = useLaunchpadKeyboard({
@@ -68,6 +69,7 @@ function createKeyboard(overrides = {}) {
     moveFocusByArrow: () => {},
     openDesktop: () => {},
     openFocusedIcon: () => { calls.openFocusedIcon += 1; },
+    requestBatchSelectionRemove: () => { calls.requestBatchSelectionRemove += 1; },
     schedulePageGridMetrics: () => {},
     searchInputRef: ref(null),
     searchQuery,
@@ -95,6 +97,14 @@ export function runLaunchpadKeyboardTests() {
   const batch = createKeyboard({ batch: true });
   batch.keyboard.handleGlobalKeydown(makeKeyEvent("Escape"));
   assert(batch.calls.clearBatchSelection === 1, "Escape without an active drag should still exit batch selection");
+
+  const batchRemove = createKeyboard({ batch: true });
+  const batchDeleteKey = makeKeyEvent("Delete");
+  batchRemove.keyboard.handleGlobalKeydown(batchDeleteKey);
+  assert(
+    batchRemove.calls.requestBatchSelectionRemove === 1 && batchDeleteKey.preventDefaultCalled === 1,
+    "Delete should request the same batch removal flow as the toolbar"
+  );
 
   const batchSearch = createKeyboard({ batch: true });
   const batchPrintable = makeKeyEvent("q");

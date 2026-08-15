@@ -943,6 +943,7 @@ export function useLaunchpadController(options = {}) {
     confirmResetScanRoots,
     editorModel,
     excludeManagedAppFromScan,
+    excludeManagedAppsFromScan,
     excludeSelectedManagedAppsFromScan,
     filteredManagedApps,
     getLaunchTargetPath,
@@ -980,6 +981,15 @@ export function useLaunchpadController(options = {}) {
     scanRoots,
     showMissingLaunchTargetBadge,
   } = apps.presentation;
+  const batchSelectedApps = computed(() => {
+    const selectedIds = batchSelection.selectedIds.value;
+    return managedApps.value.filter((app) => selectedIds.has(app.id));
+  });
+  const canExcludeBatchSelectionFromScan = computed(() => (
+    batchSelection.selectedCount.value > 0
+    && batchSelectedApps.value.length === batchSelection.selectedCount.value
+    && batchSelectedApps.value.every(canExcludeManagedAppFromScan)
+  ));
 
   function beginBatchSelection(item = null) {
     if (isEditMode.value) return false;
@@ -1033,6 +1043,10 @@ export function useLaunchpadController(options = {}) {
     return true;
   }
 
+  function clearBatchSelectionItems() {
+    return batchSelection.deselectAll();
+  }
+
   function selectAllCurrentBatchScope() {
     return batchSelection.selectScope(batchCurrentScope.value);
   }
@@ -1043,7 +1057,18 @@ export function useLaunchpadController(options = {}) {
     return toggleBatchSelection(focused.item, event);
   }
 
-  function requestBatchSelectionDelete() {
+  function commitBatchSelectionRemoval(operation, remove) {
+    if (!batchSelection.beginCommit()) return false;
+    try {
+      const completed = remove(operation.selectedIds);
+      if (completed) batchSelection.reconcile(pages.value, { exitWhenEmpty: true });
+      return completed;
+    } finally {
+      batchSelection.finishCommit({ keepActive: batchSelection.selectedCount.value > 0 });
+    }
+  }
+
+  function requestBatchSelectionRemove() {
     if (
       !batchSelection.isActive.value ||
       batchSelection.isFrozen.value ||
@@ -1051,19 +1076,37 @@ export function useLaunchpadController(options = {}) {
     ) return false;
     const operation = batchSelection.snapshot();
     openWarningDialog({
-      title: localizationText.t("launchpad.batch.deleteTitle"),
-      message: localizationText.t("launchpad.batch.deleteMessage", { count: operation.selectedIds.length }),
-      confirmText: localizationText.t("launchpad.batch.deleteConfirm"),
-      intent: "danger",
-      onConfirm: () => {
-        batchSelection.beginCommit();
-        try {
-          removeManagedAppsFromLaunchpad(operation.selectedIds);
-          batchSelection.reconcile(pages.value, { exitWhenEmpty: true });
-        } finally {
-          batchSelection.finishCommit({ keepActive: batchSelection.selectedCount.value > 0 });
-        }
-      },
+      title: localizationText.t("launchpad.batch.removeTitle"),
+      message: localizationText.t("launchpad.batch.removeMessage", { count: operation.selectedIds.length }),
+      confirmText: localizationText.t("launchpad.batch.removeConfirm"),
+      cancelText: localizationText.t("common.actions.cancel"),
+      confirmAppearance: "outline",
+      confirmTone: "danger",
+      intent: "warning",
+      onConfirm: () => commitBatchSelectionRemoval(operation, removeManagedAppsFromLaunchpad),
+    });
+    return true;
+  }
+
+  function requestBatchSelectionExclude() {
+    if (
+      !batchSelection.isActive.value ||
+      batchSelection.isFrozen.value ||
+      !canExcludeBatchSelectionFromScan.value
+    ) return false;
+    const operation = batchSelection.snapshot();
+    openWarningDialog({
+      title: localizationText.t("launchpad.batch.excludeTitle"),
+      message: localizationText.t("launchpad.batch.excludeMessage", { count: operation.selectedIds.length }),
+      confirmText: localizationText.t("launchpad.batch.excludeConfirm"),
+      cancelText: localizationText.t("common.actions.cancel"),
+      confirmAppearance: "outline",
+      confirmTone: "danger",
+      intent: "warning",
+      onConfirm: () => commitBatchSelectionRemoval(
+        operation,
+        (selectedIds) => excludeManagedAppsFromScan(selectedIds.map((id) => ({ id })))
+      ),
     });
     return true;
   }
@@ -1572,7 +1615,7 @@ export function useLaunchpadController(options = {}) {
     pages,
     renderedFolder,
     requestFolderPageTurn,
-    requestBatchSelectionDelete,
+    requestBatchSelectionRemove,
     schedulePageGridMetrics,
     searchInputRef,
     searchPageIndex,
@@ -2129,16 +2172,18 @@ export function useLaunchpadController(options = {}) {
     resolvedSettingsTheme: settingsPanelModel.shell.resolvedSettingsTheme,
   };
   const selection = {
-    batchCurrentScopeSelectedCount,
     batchHiddenSelectedCount,
     batchSelectedPageCounts,
+    canExcludeFromScan: canExcludeBatchSelectionFromScan,
     clear: clearBatchSelection,
+    clearItems: clearBatchSelectionItems,
     createFolder: createFolderFromBatchSelection,
     enter: beginBatchSelection,
     isActive: batchSelection.isActive,
     isFrozen: batchSelection.isFrozen,
     primaryId: batchSelection.primaryId,
-    requestDelete: requestBatchSelectionDelete,
+    requestExclude: requestBatchSelectionExclude,
+    requestRemove: requestBatchSelectionRemove,
     selectedCount: batchSelection.selectedCount,
     selectedIds: batchSelection.selectedIds,
     selectCurrentScope: selectAllCurrentBatchScope,

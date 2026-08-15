@@ -269,6 +269,82 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
   expect(result.selectedIds).toEqual([]);
 });
 
+test("selection toolbar has one exit, clears in place, and guards scan exclusion", async ({ page }) => {
+  await waitForFixture(page);
+  await page.setViewportSize({ width: 900, height: 620 });
+  await page.evaluate(() => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    state.enterBatchSelection();
+  });
+
+  const toolbar = page.locator(".launchpad-selection-toolbar");
+  await expect(toolbar).toHaveAttribute("data-settings-theme", "dark");
+  await expect(page.getByRole("button", { exact: true, name: "完成" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "清除选择" })).toBeDisabled();
+  await expect(toolbar.locator(".launchpad-selection-toolbar-action-count")).toHaveCount(0);
+  const initialMetrics = await toolbar.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      background: style.background,
+      height: element.getBoundingClientRect().height,
+      overflowFree: element.scrollWidth <= element.clientWidth + 1,
+    };
+  });
+  expect(initialMetrics.background).not.toContain("linear-gradient");
+  expect(initialMetrics.height).toBeCloseTo(54, 0);
+  expect(initialMetrics.overflowFree).toBe(true);
+
+  await dispatchIconPointer(page, "app-0-safari", { pointerId: 91 });
+  await dispatchIconPointer(page, "app-1-mail", { pointerId: 92 });
+  await expect(page.getByRole("button", { name: "清除选择" })).toBeEnabled();
+  await page.getByRole("button", { name: "清除选择" }).click();
+  await expect.poll(async () => (await readManagementState(page)).selectedIds).toEqual([]);
+  await expect.poll(async () => (await readManagementState(page)).batch).toBe(true);
+
+  await dispatchIconPointer(page, "app-0-safari", { pointerId: 93 });
+  await dispatchIconPointer(page, "app-1-mail", { pointerId: 94 });
+  await page.getByRole("button", { exact: true, name: "移除选项" }).click();
+  const excludeItem = page.getByRole("menuitem", { name: "移除并从扫描中排除" });
+  await expect(excludeItem).toHaveAttribute("disabled", "");
+  await expect(excludeItem).toHaveAttribute("aria-disabled", "true");
+  await expect(excludeItem).toHaveAttribute("title", "所选应用中包含没有扫描来源的项目");
+  await page.getByRole("button", { exact: true, name: "移除选项" }).click();
+
+  await page.getByRole("button", { exact: true, name: "完成" }).click();
+  await expect.poll(async () => (await readManagementState(page)).batch).toBe(false);
+});
+
+test("eligible batch apps can be removed and excluded from future scans", async ({ page }) => {
+  await waitForFixture(page);
+  await page.evaluate(() => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    for (const id of ["app-0-safari", "app-1-mail"]) {
+      const app = state.settingsPanelState.managedApps.value.find((candidate) => candidate.id === id);
+      if (!app) throw new Error(`Missing managed fixture app: ${id}`);
+      app.origin = "catalog";
+    }
+    state.enterBatchSelection();
+  });
+  await dispatchIconPointer(page, "app-0-safari", { pointerId: 95 });
+  await dispatchIconPointer(page, "app-1-mail", { pointerId: 96 });
+
+  await page.getByRole("button", { exact: true, name: "移除选项" }).click();
+  const excludeItem = page.getByRole("menuitem", { name: "移除并从扫描中排除" });
+  await expect(excludeItem).toBeEnabled();
+  await excludeItem.click();
+
+  const dialog = page.getByRole("alertdialog", { name: "移除并从扫描中排除所选应用？" });
+  await expect(dialog).toContainText("所选的 2 个应用");
+  await dialog.locator("fluent-button").filter({ hasText: "移除并排除" }).click();
+  await expect.poll(async () => (await readManagementState(page)).batch).toBe(false);
+  await expect.poll(async () => (await readManagementState(page)).pageSizes).toEqual([33, 35, 28]);
+  const blacklist = await page.evaluate(() => {
+    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    return state.settingsPanelState.scanAppBlacklist.value.map((entry) => entry.catalogId).sort();
+  });
+  expect(blacklist).toEqual(["app-0-safari", "app-1-mail"]);
+});
+
 test("top cancel zone and Escape return a batch drag without changing layout", async ({ page }) => {
   await waitForFixture(page);
   await page.evaluate(() => {
@@ -440,7 +516,7 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
   });
 });
 
-test("Alt quick edit remains mutually exclusive with batch deletion", async ({ page }) => {
+test("Alt quick edit remains mutually exclusive with batch removal", async ({ page }) => {
   await waitForFixture(page);
 
   await page.evaluate(() => {
@@ -504,10 +580,11 @@ test("Alt quick edit remains mutually exclusive with batch deletion", async ({ p
     }));
   });
 
-  await page.getByRole("button", { exact: true, name: "删除" }).click();
-  const dialog = page.getByRole("alertdialog", { name: "删除所选应用？" });
+  await page.getByRole("button", { exact: true, name: "移除选项" }).click();
+  await page.getByRole("menuitem", { name: "从启动台移除" }).click();
+  const dialog = page.getByRole("alertdialog", { name: "从启动台移除所选应用？" });
   await expect(dialog).toContainText("所选的 2 个应用");
-  await dialog.locator("fluent-button").filter({ hasText: "删除" }).click();
+  await dialog.locator("fluent-button").filter({ hasText: "移除" }).click();
   await expect.poll(async () => readManagementState(page)).toMatchObject({
     batch: false,
     pageSizes: [33, 35, 28],

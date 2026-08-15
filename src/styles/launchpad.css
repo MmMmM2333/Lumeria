@@ -849,13 +849,13 @@ body {
   width: min(760px, calc(100vw - 40px));
   min-height: 54px;
   padding: 7px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--settings-row-border-strong);
   border-radius: 18px;
-  color: #fff;
-  background: linear-gradient(180deg, rgba(42, 48, 62, 0.94), rgba(23, 28, 39, 0.94));
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px) saturate(1.2);
-  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  color: var(--settings-text-primary);
+  background: color-mix(in srgb, var(--settings-panel-bg) 94%, transparent);
+  box-shadow: var(--shadow28, 0 18px 48px rgba(0, 0, 0, 0.34));
+  backdrop-filter: blur(20px) saturate(1.08);
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
   transform: translateX(-50%);
   animation: launchpad-selection-toolbar-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
@@ -863,14 +863,14 @@ body {
 
 .launchpad-selection-toolbar-cancel-active {
   pointer-events: none;
-  border-color: rgba(255, 255, 255, 0.24);
-  background: linear-gradient(180deg, rgba(53, 59, 72, 0.97), rgba(31, 36, 47, 0.97));
+  border-color: var(--settings-row-border-strong);
+  background: var(--settings-panel-bg);
 }
 
 .launchpad-selection-toolbar-cancel-armed {
   border-color: rgba(255, 177, 168, 0.82);
-  background: linear-gradient(180deg, rgba(104, 52, 54, 0.98), rgba(68, 34, 39, 0.98));
-  box-shadow: 0 18px 54px rgba(31, 8, 12, 0.44), inset 0 1px rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--settings-panel-bg) 72%, #8e3038 28%);
+  box-shadow: 0 18px 54px rgba(31, 8, 12, 0.4);
 }
 
 .launchpad-selection-toolbar-cancel {
@@ -890,7 +890,7 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--settings-row-bg);
 }
 
 .launchpad-selection-toolbar-cancel-icon svg {
@@ -912,17 +912,16 @@ body {
 
 .launchpad-selection-toolbar-cancel-copy span {
   margin-top: 3px;
-  color: rgba(255, 255, 255, 0.64);
+  color: var(--settings-text-muted);
   font-size: 11px;
 }
 
 .launchpad-selection-toolbar-cancel kbd {
   padding: 3px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--settings-row-border-strong);
   border-radius: 7px;
-  color: rgba(255, 255, 255, 0.86);
-  background: rgba(0, 0, 0, 0.2);
-  box-shadow: inset 0 -1px rgba(0, 0, 0, 0.22);
+  color: var(--settings-text-secondary);
+  background: var(--settings-row-bg);
   font: 600 11px/1.4 "Inter", "Segoe UI", sans-serif;
 }
 
@@ -957,12 +956,13 @@ body {
 
 .launchpad-selection-toolbar-summary span {
   margin-top: 3px;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--settings-text-muted);
   font-size: 11px;
 }
 
 .launchpad-selection-toolbar-actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
 }
@@ -979,12 +979,13 @@ body {
   background: transparent;
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   transition: background-color 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 
 .launchpad-selection-toolbar-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--settings-row-hover-bg);
 }
 
 .launchpad-selection-toolbar-button:active:not(:disabled) {
@@ -992,7 +993,7 @@ body {
 }
 
 .launchpad-selection-toolbar-button:focus-visible {
-  outline: 2px solid rgba(126, 188, 255, 0.95);
+  outline: 2px solid var(--settings-accent);
   outline-offset: 1px;
 }
 
@@ -1001,22 +1002,23 @@ body {
   cursor: default;
 }
 
-.launchpad-selection-toolbar-close {
-  width: 38px;
-  flex: 0 0 38px;
-}
-
 .launchpad-selection-toolbar-action {
+  flex: 0 0 auto;
   padding: 0 10px;
 }
 
-.launchpad-selection-toolbar-action-count {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(255, 255, 255, 0.12);
-  font-size: 10px;
+.launchpad-selection-toolbar-action > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.launchpad-selection-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  flex: 0 0 1px;
+  margin: 0 3px;
+  background: var(--settings-row-border-strong);
 }
 
 .launchpad-selection-toolbar-danger {
@@ -1027,16 +1029,69 @@ body {
   background: rgba(255, 82, 82, 0.14);
 }
 
+.launchpad-selection-toolbar-remove-menu {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.launchpad-selection-toolbar-remove-trigger {
+  gap: 5px;
+}
+
+.launchpad-selection-toolbar-remove-chevron {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+.launchpad-selection-toolbar-remove-menu-list {
+  min-width: 248px;
+  padding: 4px;
+  --colorNeutralBackground1: var(--settings-panel-bg);
+  --colorTransparentStroke: var(--settings-row-border-strong);
+  --shadow16: 0 18px 42px rgba(0, 0, 0, 0.32);
+  border-radius: 8px;
+}
+
+.launchpad-selection-toolbar-menu-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.launchpad-selection-toolbar-menu-danger {
+  --colorNeutralForeground2: rgba(255, 170, 160, 0.9);
+  --colorNeutralForeground2Hover: #ffb4a9;
+  --colorNeutralForeground2Pressed: #ff8f83;
+  --colorNeutralBackground1Hover: rgba(196, 43, 28, 0.16);
+  --colorNeutralBackground1Selected: rgba(196, 43, 28, 0.22);
+}
+
+.launchpad-selection-toolbar[data-settings-theme="light"] .launchpad-selection-toolbar-danger {
+  color: var(--colorPaletteRedForeground1);
+}
+
+.launchpad-selection-toolbar[data-settings-theme="light"] .launchpad-selection-toolbar-danger:hover:not(:disabled) {
+  background: var(--colorPaletteRedBackground1);
+}
+
+.launchpad-selection-toolbar[data-settings-theme="light"] .launchpad-selection-toolbar-menu-danger {
+  --colorNeutralForeground2: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Hover: var(--colorPaletteRedForeground1);
+  --colorNeutralForeground2Pressed: var(--colorPaletteRedForeground2);
+  --colorNeutralBackground1Hover: var(--colorPaletteRedBackground1);
+  --colorNeutralBackground1Selected: var(--colorPaletteRedBackground2);
+}
+
 .launchpad-selection-toolbar-done {
   min-width: 58px;
   padding: 0 13px;
-  color: #07111f;
-  background: #8cc8ff;
+  color: var(--colorNeutralForegroundOnBrand, #fff);
+  background: var(--colorBrandBackground, #0f6cbd);
   font-weight: 680;
 }
 
 .launchpad-selection-toolbar-done:hover:not(:disabled) {
-  background: #a7d6ff;
+  background: var(--colorBrandBackgroundHover, #115ea3);
 }
 
 @media (max-width: 760px) {
@@ -1045,7 +1100,7 @@ body {
     width: calc(100vw - 20px);
   }
 
-  .launchpad-selection-toolbar-action span:not(.launchpad-selection-toolbar-action-count) {
+  .launchpad-selection-toolbar-action span {
     display: none;
   }
 

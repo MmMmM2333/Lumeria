@@ -123,15 +123,18 @@
       v-if="isBatchSelectionActive"
       ref="selectionToolbarRef"
       :can-create-folder="batchSelectedCount >= 2"
+      :can-exclude-from-scan="canExcludeBatchSelectionFromScan"
       :cancel-active="isBatchDragCancelActive"
       :cancel-armed="isBatchDragCancelArmed"
       :disabled="isBatchSelectionFrozen"
       :hidden-count="batchHiddenSelectedCount"
-      :scope-selected-count="batchCurrentScopeSelectedCount"
+      :resolved-settings-theme="selectionToolbarTheme"
       :selected-count="batchSelectedCount"
+      @clear-selection="clearBatchSelectionItems"
       @close="clearBatchSelection"
       @create-folder="createFolderFromBatchSelection"
-      @delete="requestBatchSelectionDelete"
+      @exclude="requestBatchSelectionExclude"
+      @remove="requestBatchSelectionRemove"
       @select-scope="selectCurrentBatchScope"
     />
     <SettingsPanel :model="settingsPanelModel" />
@@ -236,19 +239,22 @@ const {
   shell,
 } = controller;
 const {
-  batchCurrentScopeSelectedCount,
   batchHiddenSelectedCount,
   batchSelectedPageCounts,
+  canExcludeFromScan: canExcludeBatchSelectionFromScan,
   clear: clearBatchSelection,
+  clearItems: clearBatchSelectionItems,
   createFolder: createFolderFromBatchSelection,
   enter: enterBatchSelection,
   isActive: isBatchSelectionActive,
   isFrozen: isBatchSelectionFrozen,
-  requestDelete: requestBatchSelectionDelete,
+  requestExclude: requestBatchSelectionExclude,
+  requestRemove: requestBatchSelectionRemove,
   selectedCount: batchSelectedCount,
   selectedIds: batchSelectedIds,
   selectCurrentScope: selectCurrentBatchScope,
 } = selection;
+const selectionToolbarTheme = settingsPanelModel.shell.resolvedSettingsTheme;
 const {
   rootRef,
   cx,
