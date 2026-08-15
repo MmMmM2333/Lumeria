@@ -129,6 +129,74 @@ export function runGroupTransferPresentationTests() {
       gather.actors.some((actor) => actor.startAnchor.kind === "folder-page-edge-right"),
     "gather should preserve independent desktop and open-folder page directions"
   );
+  const folderLeftGatherActor = gather.actors.find(
+    (actor) => actor.memberIds.includes("folder-left")
+  );
+  assert(
+    folderLeftGatherActor?.startAnchor?.itemId === "folder-left" &&
+      folderLeftGatherActor.startAnchor.index === 0 &&
+      !("laneY" in folderLeftGatherActor.startAnchor),
+    "folder page-edge anchors should preserve their semantic slot instead of freezing a normalized viewport lane"
+  );
+
+  const rowMembers = [
+    member("remote-top", { kind: "desktop", pageIndex: 0, index: 0 }, null, 0),
+    member("remote-bottom", { kind: "desktop", pageIndex: 0, index: 6 }, null, 1),
+    member("row-lead", { kind: "desktop", pageIndex: 1, index: 0 }, null, 2),
+  ];
+  const rowGather = makeGroupTransferPresentation({
+    currentActors: [],
+    currentView: {
+      desktopPageIndex: 1,
+      folderPageIndex: 0,
+      leadId: "row-lead",
+      openFolderId: null,
+    },
+    limits: {
+      desktopCols: 3,
+      desktopRows: 3,
+      maxBundles: 6,
+      maxGatherActors: 12,
+    },
+    phase: "gather",
+    sourceMembers: rowMembers,
+  });
+  const rowGatherBundles = rowGather.actors
+    .filter((actor) => actor.startAnchor.kind === "desktop-page-edge-left")
+    .sort((left, right) => left.startAnchor.laneY - right.startAnchor.laneY);
+  assert(
+    rowGatherBundles.length === 2 &&
+      Math.abs(rowGatherBundles[0].startAnchor.laneY - 1 / 6) < 0.0001 &&
+      Math.abs(rowGatherBundles[1].startAnchor.laneY - 5 / 6) < 0.0001,
+    "remote desktop actors from different source rows should keep independent normalized edge lanes"
+  );
+  const rowReturn = makeGroupTransferPresentation({
+    currentActors: rowGather.actors,
+    currentView: {
+      desktopPageIndex: 1,
+      folderPageIndex: 0,
+      leadId: "row-lead",
+      openFolderId: null,
+    },
+    limits: {
+      desktopCols: 3,
+      desktopRows: 3,
+      maxBundles: 6,
+    },
+    phase: "return",
+    sourceMembers: rowMembers,
+  });
+  const rowReturnBundles = rowReturn.actors
+    .filter((actor) => actor.endAnchor.kind === "desktop-page-edge-left")
+    .sort((left, right) => left.endAnchor.laneY - right.endAnchor.laneY);
+  assert(
+    rowReturnBundles.length === 2 &&
+      rowReturnBundles.every((actor, index) => (
+        actor.continuityKey === rowGatherBundles[index].continuityKey &&
+        actor.key !== rowGatherBundles[index].key
+      )),
+    "gather and return bundles should preserve visual continuity without conflating phase ownership keys"
+  );
 
   const releaseMembers = [
     member("visible-0", { kind: "desktop", pageIndex: 0, index: 0 }, { kind: "desktop", pageIndex: 2, index: 0 }, 0),
@@ -212,6 +280,55 @@ export function runGroupTransferPresentationTests() {
     "new folder framing should be an ordinary folder-shell actor"
   );
 
+  const centerContinuityMember = member(
+    "center-continuity",
+    { kind: "desktop", pageIndex: 0, index: 4 },
+    {
+      flatIndex: 9,
+      folderId: "existing-folder",
+      folderPageIndex: 1,
+      index: 0,
+      kind: "folder",
+      ownerIndex: 6,
+      ownerPageIndex: 0,
+    },
+    0
+  );
+  const centerContinuityRelease = makeGroupTransferPresentation({
+    currentActors: [{
+      continuityKey: "item:center-continuity",
+      key: "item:center-continuity",
+      memberIds: ["center-continuity"],
+      role: "lead",
+    }],
+    currentView: {
+      desktopPageIndex: 0,
+      folderPageIndex: 0,
+      leadId: "center-continuity",
+      openFolderId: null,
+    },
+    limits: { folderPageSize: 9, maxBundles: 4, maxContinuityActors: 12 },
+    phase: "release",
+    transferPlan: {
+      effects: {
+        createdFolderId: null,
+        finalDesktopPageIndex: 0,
+        finalFolderPageIndex: null,
+        finalOpenFolderId: null,
+      },
+      members: [centerContinuityMember],
+      status: "accepted",
+    },
+  });
+  const centerContinuityActor = centerContinuityRelease.actors[0];
+  assert(
+    centerContinuityActor?.role === "bundle" &&
+      centerContinuityActor.key === "bundle:release:folder-center:existing-folder" &&
+      centerContinuityActor.continuityKey === "item:center-continuity" &&
+      centerContinuityActor.startAnchor?.actorKey === "item:center-continuity",
+    "a center-absorb bundle should retain the currently visible actor node and pose while taking new semantic ownership"
+  );
+
   const returning = makeGroupTransferPresentation({
     currentActors: gather.actors,
     currentView: {
@@ -236,5 +353,65 @@ export function runGroupTransferPresentationTests() {
       plan.actors.every((actor) => actor.startAnchor?.kind)
     )),
     "every presentation actor should declare a semantic or captured-pose start anchor"
+  );
+
+  const visibilityMembers = [
+    member("desktop-behind-folder", { kind: "desktop", pageIndex: 1, index: 4 }, null, 0),
+    member("folder-other-page", {
+      flatIndex: 0,
+      folderId: "open-folder",
+      folderPageIndex: 0,
+      index: 0,
+      kind: "folder",
+      ownerIndex: 2,
+      ownerPageIndex: 1,
+    }, null, 1),
+    member("folder-visible-lead", {
+      flatIndex: 4,
+      folderId: "open-folder",
+      folderPageIndex: 1,
+      index: 1,
+      kind: "folder",
+      ownerIndex: 2,
+      ownerPageIndex: 1,
+    }, null, 2),
+  ];
+  const visibilityReturn = makeGroupTransferPresentation({
+    currentActors: [
+      { key: "item:desktop-behind-folder", memberIds: ["desktop-behind-folder"], role: "exact" },
+      { key: "bundle:gather:folder-left", memberIds: ["folder-other-page"], role: "bundle" },
+      { key: "item:folder-visible-lead", memberIds: ["folder-visible-lead"], role: "lead" },
+    ],
+    currentView: {
+      desktopPageIndex: 1,
+      folderPageIndex: 1,
+      leadId: "folder-visible-lead",
+      openFolderId: "open-folder",
+    },
+    limits: {
+      desktopCols: 3,
+      desktopRows: 3,
+      folderCols: 3,
+      folderRows: 3,
+      maxBundles: 6,
+    },
+    phase: "return",
+    sourceMembers: visibilityMembers,
+  });
+  const desktopEgressActor = visibilityReturn.actors.find(
+    (actor) => actor.memberIds.includes("desktop-behind-folder")
+  );
+  const clippedFolderActor = visibilityReturn.actors.find(
+    (actor) => actor.memberIds.includes("folder-other-page")
+  );
+  assert(
+    desktopEgressActor?.visibilityPolicy?.kind === "desktop-occluded-egress" &&
+      desktopEgressActor.alphaPolicy.kind === "fade-out",
+    "desktop return actors hidden behind an open folder should leave through the panel edge while fading"
+  );
+  assert(
+    clippedFolderActor?.visibilityPolicy?.kind === "folder-panel-clip" &&
+      clippedFolderActor.alphaPolicy.kind === "handoff",
+    "remote-page folder actors should stay opaque and use the outer folder-panel clip"
   );
 }

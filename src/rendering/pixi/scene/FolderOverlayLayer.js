@@ -4,7 +4,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
-import { getFolderGridMetrics, getFolderPanelGeometry, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   clearFrameGhost as clearFrameGhostState,
@@ -737,6 +737,7 @@ export class FolderOverlayLayer extends Container {
     this.resizeVisualLayoutStartMetrics = null;
     this.resizeVisualLayoutTargetMetrics = null;
     this.targetFolderGeometry = null;
+    this.stableFolderSlotContext = null;
     this.detachedClosingVisuals = [];
     this.closingDesktopPageTrackMirrorBaseline = null;
     this.closingDesktopPageTrackMirrorX = 0;
@@ -873,6 +874,7 @@ export class FolderOverlayLayer extends Container {
       this.resizeLayoutMetricsSnapshot = null;
       this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
       this.targetFolderGeometry = null;
+      this.stableFolderSlotContext = null;
       this.stableFolderCloseTarget = null;
       this.resetClosingDesktopPageTrackMirror();
       if (state.folderPanelRef) state.folderPanelRef.value = null;
@@ -1064,6 +1066,18 @@ export class FolderOverlayLayer extends Container {
       singleLineLabel: false,
       textless: state.isTextlessMode,
     });
+    this.stableFolderSlotContext = {
+      folderId,
+      iconSize: stableIconSize,
+      isTextlessMode: state.isTextlessMode,
+      metrics: { ...stableMetrics },
+      pageSpan: targetGeometry.panel.width,
+      stageHeight: state.height,
+      stageRect: state.stageRect ? { ...state.stageRect } : null,
+      stageWidth: state.width,
+      visualPageIndex: visualFolderPageIndex,
+      visualSpec: stableVisualSpec,
+    };
     const stableLocalMetrics = {
       ...stableMetrics,
       gridLeft: targetGeometry.grid.left - targetGeometry.panel.left,
@@ -1283,7 +1297,10 @@ export class FolderOverlayLayer extends Container {
       nextLayoutTargets.set(key, layoutTarget);
       const shouldSnapIconLayout = shouldSnapIconLayoutForResize &&
         (resizeGeometryMode !== "opening" || isFolderIconLayoutCoveredByVisual(node, hasVisualOwner));
-      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem;
+      const isGroupTransferOwned = state.groupTransferOwnedItemIds instanceof Set
+        ? state.groupTransferOwnedItemIds.has(item.id)
+        : (state.groupTransferOwnedItemIds || []).includes?.(item.id) === true;
+      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem || isGroupTransferOwned;
       if (shouldSnapIconLayout || shouldSnapDragHandoffLayout) {
         killMotionOf(node, "x,y", {
           lane: "base",
@@ -1751,6 +1768,52 @@ export class FolderOverlayLayer extends Container {
       return;
     }
     Promise.resolve().then(flush);
+  }
+
+  resolveStableIconSlotRecord(anchor = {}) {
+    const context = this.stableFolderSlotContext;
+    const folderId = anchor.folderId || context?.folderId || null;
+    const itemId = anchor.itemId || anchor.id || null;
+    const rawPageIndex = anchor.folderPageIndex ?? anchor.pageIndex ?? 0;
+    const pageIndex = Math.max(0, Number(rawPageIndex) || 0);
+    if (folderId && itemId) {
+      const registered = this.iconBoundsRegistry.getRecord(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
+        { area: "folder", folderId, id: itemId, pageIndex },
+        { expected: { area: "folder", folderId, id: itemId, pageIndex } }
+      );
+      if (registered) return registered;
+    }
+    const rawIndex = Number(anchor.index);
+    if (
+      !context ||
+      context.folderId !== folderId ||
+      !Number.isFinite(rawIndex) ||
+      !context.metrics ||
+      !context.stageRect
+    ) return null;
+    const index = Math.max(0, Math.floor(rawIndex));
+    const slot = getGridSlotRect(context.metrics, index);
+    const center = {
+      x: slot.left + slot.width / 2 +
+        (pageIndex - context.visualPageIndex) * context.pageSpan,
+      y: slot.top + slot.height / 2 + getIconVisualOffsetY(context.isTextlessMode),
+    };
+    return {
+      ...makeIconRect(center.x, center.y, context.iconSize),
+      meta: {
+        area: "folder",
+        folderId,
+        id: itemId,
+        index,
+        pageIndex,
+        stageHeight: context.stageHeight,
+        stageRect: { ...context.stageRect },
+        stageWidth: context.stageWidth,
+        visualSpec: context.visualSpec,
+      },
+    };
   }
 
   flushRegisteredIconBounds(options = {}) {

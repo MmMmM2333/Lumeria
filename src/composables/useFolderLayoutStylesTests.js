@@ -48,6 +48,10 @@ export function runFolderLayoutStylesTests() {
   );
   assert(!singleRow.folderGridStyle.value.gridTemplateRows.includes("1fr"), "folder rows should not use fractional height tracks");
   assert(singleRow.folderPanelStyle.value["--folder-icon-cell-height"] === "128px", "default folder icon cell height should include label space");
+  assert(
+    singleRow.folderPanelStyle.value["--folder-shell-min-height"] === "272px",
+    "single-row folder shells should stay compact instead of inheriting the minimum interaction viewport"
+  );
 
   const twoRows = createFolderLayoutStyles({
     folderPages: [makeItems(6)],

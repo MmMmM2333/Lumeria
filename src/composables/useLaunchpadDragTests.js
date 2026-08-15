@@ -179,6 +179,7 @@ function createAtomicDragHarness(initialPages, options = {}) {
     getBoundingClientRect: () => folderPanelRect,
   });
   const folderPageTurnRequest = ref(null);
+  let nextFolderPageTurnToken = 1;
   const iconBoundsRegistry = createIconBoundsRegistry();
   const visualFolderPageIndex = computed(() => folderPageTurnRequest.value?.targetIndex ?? folderPageIndex.value);
   const gridCols = Math.max(1, Number(options.gridCols) || 2);
@@ -195,7 +196,13 @@ function createAtomicDragHarness(initialPages, options = {}) {
     commitFolderPageIndex: (next) => {
       folderPageIndex.value = next;
     },
-    commitFolderPageTurnRequest: () => false,
+    commitFolderPageTurnRequest: (token) => {
+      const request = folderPageTurnRequest.value;
+      if (!request || request.token !== token) return false;
+      folderPageIndex.value = request.targetIndex;
+      folderPageTurnRequest.value = null;
+      return true;
+    },
     commitGroupDrop: (plan, operation) => {
       if (operation.baseRevision !== revision.value) return false;
       calls.commits.push({ operation, plan });
@@ -223,6 +230,9 @@ function createAtomicDragHarness(initialPages, options = {}) {
     folderPages,
     folderPageTurnRequest,
     folderPanelRef,
+    folderViewportRef: ref({
+      getBoundingClientRect: () => ({ ...pageRect, left: 150, right: 350, width: 200 }),
+    }),
     folderPageSize: ref(folderPageSize),
     folderViewportHeight: ref(400),
     getGroupLayoutRevision: () => revision.value,
@@ -261,7 +271,17 @@ function createAtomicDragHarness(initialPages, options = {}) {
     }),
     renderedFolder,
     requestFolderOpenWarmup: () => {},
-    requestFolderPageTurn: () => null,
+    requestFolderPageTurn: (targetIndex, requestOptions = {}) => {
+      const token = nextFolderPageTurnToken;
+      nextFolderPageTurnToken += 1;
+      folderPageTurnRequest.value = {
+        ...requestOptions,
+        folderId: requestOptions.folderId || openFolderId.value,
+        targetIndex,
+        token,
+      };
+      return token;
+    },
     visualFolderPageIndex,
     visibleFolderRowCount: ref(2),
   });
@@ -270,11 +290,14 @@ function createAtomicDragHarness(initialPages, options = {}) {
     calls,
     drag,
     folderPageIndex,
+    folderPageTurnRequest,
+    folderPanelRect,
     iconBoundsRegistry,
     openFolderId,
     pageIndex,
     pages,
     revision,
+    visualFolderPageIndex,
   };
 }
 
@@ -893,16 +916,31 @@ export async function runLaunchpadDragTests() {
       { folderId: sourceFolder.id, index: 0, pageIndex: 1, type: "folder" }
     );
     harness.drag.updateDragPointer(makePointerEvent(17, target, {
-      clientX: 390,
+      clientX: 345,
       clientY: 220,
       timeStamp: 140,
     }));
+    assert(
+      harness.folderPageIndex.value === 1 &&
+        harness.visualFolderPageIndex.value === 1 &&
+        harness.folderPageTurnRequest.value === null,
+      "folder edge navigation should remain on the source page until the full dwell elapses"
+    );
     assert(flushTimerByDelay(timers, PAGE_TURN_DELAY), "the final folder edge should schedule a deferred virtual page turn");
     assert(
       findFolder(harness.pages.value, sourceFolder.id).item.childPages.length === 2,
       "turning onto a virtual folder page must not mutate authoritative children"
     );
     assert(harness.folderPageIndex.value === 2, "the folder track may display the requested virtual page before data commit");
+    harness.drag.updateDragPointer(makePointerEvent(17, target, {
+      clientX: 300,
+      clientY: 220,
+      timeStamp: 980,
+    }));
+    assert(
+      harness.folderPageIndex.value === 2 && harness.visualFolderPageIndex.value === 2,
+      "a completed folder edge turn should stay latched through a small inward retreat"
+    );
     harness.drag.finishDrag(makePointerEvent(17, target, {
       button: 0,
       buttons: 0,
@@ -915,6 +953,138 @@ export async function runLaunchpadDragTests() {
     assert(harness.calls.commits.length === 1, "dropping on the virtual folder page should commit once");
     assert(committedFolder.childPages[2]?.map((item) => item.id).join(",") === "e", "the folder commit should materialize the requested page");
     assert(harness.folderPageIndex.value === 2, "the materialized folder page should remain active after commit");
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = {
+      childPages: [[app("border-edge-a")], [app("border-edge-b")]],
+      children: [app("border-edge-a"), app("border-edge-b")],
+      id: "folder-border-edge",
+      name: "folder-border-edge",
+      type: "folder",
+    };
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      openFolderId: sourceFolder.id,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ height: 56, left: 220, top: 180, width: 56 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(171, target, { clientX: 248, clientY: 208 }),
+      sourceFolder.childPages[0][0],
+      { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(171, target, {
+      clientX: harness.folderPanelRect.right - 2,
+      clientY: 220,
+      timeStamp: 140,
+    }));
+    assert(
+      flushTimerByDelay(timers, PAGE_TURN_DELAY),
+      "the visible folder panel border should be part of the drag page-turn envelope"
+    );
+    assert(
+      harness.folderPageIndex.value === 1,
+      "dwelling on the visible folder panel border should turn to the next page"
+    );
+    harness.drag.updateDragPointer(makePointerEvent(171, target, {
+      clientX: 300,
+      clientY: 220,
+      timeStamp: 980,
+    }));
+    assert(
+      !flushTimerByDelay(timers, PAGE_TURN_DELAY) && harness.folderPageIndex.value === 1,
+      "a small retreat after a border turn should stay latched instead of immediately reversing direction"
+    );
+    harness.drag.cancelDrag(makePointerEvent(171, target, {
+      button: 0,
+      buttons: 0,
+      clientX: harness.folderPanelRect.right - 2,
+      clientY: 220,
+      type: "pointercancel",
+    }));
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = {
+      childPages: [[app("offset-a")], [app("offset-b")]],
+      children: [app("offset-a"), app("offset-b")],
+      id: "folder-offset-edge",
+      name: "folder-offset-edge",
+      type: "folder",
+    };
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      openFolderId: sourceFolder.id,
+    });
+    const target = {
+      getBoundingClientRect: () => ({ height: 56, left: 220, top: 180, width: 56 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(169, target, { clientX: 226, clientY: 208 }),
+      sourceFolder.childPages[0][0],
+      { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(169, target, {
+      clientX: 345,
+      clientY: 220,
+      timeStamp: 140,
+    }));
+    assert(
+      flushTimerByDelay(timers, PAGE_TURN_DELAY),
+      "folder edge dwell should follow the pointer even when an off-center grab puts the drag visual outside the viewport"
+    );
+    assert(
+      harness.folderPageIndex.value === 1,
+      "an off-center folder drag should turn to the next page after the full dwell"
+    );
+    harness.drag.cancelDrag(makePointerEvent(169, target, {
+      button: 0,
+      buttons: 0,
+      clientX: 345,
+      clientY: 220,
+      type: "pointercancel",
+    }));
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = {
+      childPages: [[app("pre-dwell-a"), app("pre-dwell-b")], [app("pre-dwell-c")]],
+      children: [app("pre-dwell-a"), app("pre-dwell-b"), app("pre-dwell-c")],
+      id: "folder-pre-dwell-release",
+      name: "folder-pre-dwell-release",
+      type: "folder",
+    };
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      openFolderId: sourceFolder.id,
+    });
+    const target = { getBoundingClientRect: () => ({ height: 56, left: 220, top: 180, width: 56 }) };
+    harness.drag.startDrag(
+      makePointerEvent(170, target, { clientX: 248, clientY: 208 }),
+      sourceFolder.childPages[0][0],
+      { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(170, target, {
+      clientX: 345,
+      clientY: 220,
+      timeStamp: 140,
+    }));
+    harness.drag.finishDrag(makePointerEvent(170, target, {
+      button: 0,
+      buttons: 0,
+      clientX: 280,
+      clientY: 220,
+      type: "pointerup",
+    }));
+    await nextTick();
+    assert(
+      harness.folderPageIndex.value === 0 &&
+        harness.folderPageTurnRequest.value === null &&
+        !flushTimerByDelay(timers, PAGE_TURN_DELAY),
+      "releasing before the folder edge dwell completes must cancel navigation instead of force-committing the pending page"
+    );
     flushTimers(timers, harness.drag);
   });
 
@@ -937,7 +1107,7 @@ export async function runLaunchpadDragTests() {
       { folderId: sourceFolder.id, index: 0, pageIndex: 1, type: "folder" }
     );
     harness.drag.updateDragPointer(makePointerEvent(18, target, {
-      clientX: 390,
+      clientX: 345,
       clientY: 220,
       timeStamp: 140,
     }));
@@ -1756,6 +1926,70 @@ export async function runLaunchpadDragTests() {
       clientY: 240,
       type: "pointercancel",
     }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = folder("folder-source-reentry", ["x", "y", "z"]);
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      folderPanelRect: {
+        bottom: 500,
+        height: 200,
+        left: 100,
+        right: 400,
+        top: 300,
+        width: 300,
+      },
+      openFolderId: sourceFolder.id,
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 80,
+        right: 360,
+        top: 100,
+        width: 280,
+      },
+    });
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.TOP_LEVEL,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      sourceFolder.id,
+      { height: 64, left: 20, top: 208, width: 64 },
+      { area: "desktop", id: sourceFolder.id, index: 0, item: sourceFolder, pageIndex: 0 }
+    );
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 56, left: 220, top: 352, width: 56 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(171, sourceElement, { clientX: 248, clientY: 380 }),
+      sourceFolder.children[0],
+      { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(171, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 140,
+    }));
+    assert(harness.openFolderId.value === null, "the source folder should close after the drag exits its panel");
+    assert(flushTimerByDelay(timers, 42), "directly reaching the source folder should resolve a fresh target intent");
+    assert(
+      harness.drag.dragFolderTargetId.value === sourceFolder.id &&
+        harness.drag.groupDragState.value?.intent?.type === "folder-thumbnail",
+      "a one-row source folder should become a normal target directly after the drag exits its panel"
+    );
+    assert(flushTimerByDelay(timers, 540), "direct source-folder hover should reach the normal flash phase");
+    assert(flushTimerByDelay(timers, 920), "direct source-folder hover should schedule the normal reopen dwell");
+    assert(
+      harness.openFolderId.value === sourceFolder.id,
+      "a one-row source folder should reopen without requiring an artificial move away and back"
+    );
+    harness.drag.cancelDrag(makePointerEvent(171, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 50,
+      clientY: 240,
+      type: "pointercancel",
+    }));
+    flushTimers(timers, harness.drag);
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {

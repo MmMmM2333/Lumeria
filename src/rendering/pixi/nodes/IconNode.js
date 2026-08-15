@@ -190,6 +190,12 @@ export class IconNode extends Container {
     });
     this.jiggleWrap = new Container();
     this.visualWrap = new Container();
+    this.folderSlotReleaseVisual = new Container();
+    this.folderSlotReleaseSprite = new Sprite();
+    this.folderSlotReleaseEmoji = new Text({
+      text: "",
+      style: { align: "center", fill: 0xffffff, fontSize: 16, lineHeight: 0 },
+    });
     this.folderThumb = new Graphics();
     this.folderPreviewMask = new Graphics();
     this.folderPreviewMask.visible = false;
@@ -245,6 +251,14 @@ export class IconNode extends Container {
 
     this.iconSprite.anchor.set(0.5);
     this.emojiText.anchor.set(0.5);
+    this.folderSlotReleaseSprite.anchor.set(0.5);
+    this.folderSlotReleaseEmoji.anchor.set(0.5);
+    this.folderSlotReleaseVisual.addChild(
+      this.folderSlotReleaseSprite,
+      this.folderSlotReleaseEmoji
+    );
+    this.folderSlotReleaseVisual.eventMode = "none";
+    this.folderSlotReleaseVisual.visible = false;
     this.missingBadge.visible = false;
     this.batchSelectionBadge.visible = false;
     this.batchSelectionBadge.eventMode = "none";
@@ -259,6 +273,7 @@ export class IconNode extends Container {
     this.addChild(this.focusFrame);
     this.addChild(this.jiggleWrap);
     this.jiggleWrap.addChild(this.visualWrap);
+    this.jiggleWrap.addChild(this.folderSlotReleaseVisual);
     this.visualWrap.addChild(this.folderThumb);
     this.visualWrap.addChild(this.folderPreviewMask);
     this.visualWrap.addChild(this.folderChildrenWrap);
@@ -545,6 +560,46 @@ export class IconNode extends Container {
 
   getVisualOffsetY() {
     return getIconVisualOffsetY(this.textless);
+  }
+
+  prepareFolderSlotReleaseVisual(targetSize = 16) {
+    if (this.isFolder || !this.item) return false;
+    const size = Math.max(1, Number(targetSize) || 16);
+    const sourceSize = Math.max(1, Number(this.iconSize) || 64);
+    const texture = this.iconSprite.visible ? this.iconSprite.texture : null;
+    this.folderSlotReleaseSprite.visible = Boolean(texture);
+    this.folderSlotReleaseEmoji.visible = !texture;
+    if (texture) {
+      this.folderSlotReleaseSprite.texture = texture;
+      this.folderSlotReleaseSprite.width = size;
+      this.folderSlotReleaseSprite.height = size;
+    } else {
+      setTextValue(this.folderSlotReleaseEmoji, this.item.emoji || "◼");
+      setTextStyleValue(this.folderSlotReleaseEmoji, "fontSize", size);
+      setTextStyleValue(this.folderSlotReleaseEmoji, "lineHeight", 0);
+    }
+    this.folderSlotReleaseVisual.position.set(0, this.getVisualOffsetY());
+    this.folderSlotReleaseVisual.scale.set(sourceSize / size);
+    this.folderSlotReleaseVisual.alpha = 0;
+    this.folderSlotReleaseVisual.visible = true;
+    this.visualWrap.alpha = 1;
+    this.folderSlotReleaseVisualTargetSize = size;
+    return true;
+  }
+
+  clearFolderSlotReleaseVisual(reason = "folder-slot-release-visual-clear") {
+    killMotionOf(this.folderSlotReleaseVisual, "alpha", { reason });
+    this.folderSlotReleaseVisual.visible = false;
+    this.folderSlotReleaseVisual.alpha = 0;
+    this.folderSlotReleaseVisual.scale.set(1);
+    this.folderSlotReleaseVisualTargetSize = null;
+  }
+
+  commitFolderSlotReleaseVisual() {
+    if (!this.folderSlotReleaseVisual.visible) return false;
+    this.visualWrap.alpha = 0;
+    this.folderSlotReleaseVisual.alpha = 1;
+    return true;
   }
 
   updateHitArea(state) {

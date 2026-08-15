@@ -68,6 +68,7 @@ export function makeGroupTransferRuntimeEntries(options = {}) {
     entries.push({
       ...sourceEntry,
       actorKey: actor.key,
+      continuityKey: actor.continuityKey || actor.key,
       alphaPolicy: actor.alphaPolicy,
       bundleCount: Math.max(1, Number(actor.bundleCount) || actor.memberIds?.length || 1),
       delayMs: Math.min(72, Math.max(0, Number(actor.delayGroup) || 0) * 12),
@@ -84,6 +85,7 @@ export function makeGroupTransferRuntimeEntries(options = {}) {
           : "member",
       releaseStart: makeReleaseStart(actor, sourceEntry, phase),
       startAnchor: actor.startAnchor,
+      visibilityPolicy: actor.visibilityPolicy || { kind: "none" },
       zBand: Number(actor.zBand) || 0,
     });
   }
@@ -147,6 +149,7 @@ export function makeGroupTransferRuntimeReleasePlan(options = {}) {
     if (!id) throw new Error(`Group transfer release actor has no representative: ${String(actor?.key)}`);
     entries.push({
       actorKey: actor.key,
+      continuityKey: actor.continuityKey || actor.key,
       alphaPolicy: actor.alphaPolicy,
       delayMs: Math.min(72, Math.max(0, Number(actor.delayGroup) || 0) * 12),
       id,
@@ -158,6 +161,7 @@ export function makeGroupTransferRuntimeReleasePlan(options = {}) {
       originScale: 1,
       target: runtimeTarget(actor),
       velocity: { ...velocity },
+      visibilityPolicy: actor.visibilityPolicy || { kind: "none" },
       zBand: Number(actor.zBand) || 0,
     });
   }

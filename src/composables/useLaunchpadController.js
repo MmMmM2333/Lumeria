@@ -1403,6 +1403,7 @@ export function useLaunchpadController(options = {}) {
     folderPageRefs,
     folderPages,
     folderPanelRef,
+    folderViewportRef,
     folderPageSize,
     getBatchCancelZoneRect: options.getBatchCancelZoneRect,
     getGroupLayoutRevision: () => batchLayoutRevision.value,

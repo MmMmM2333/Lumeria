@@ -58,6 +58,14 @@ function getEntryActorKey(entry) {
   return actorKey;
 }
 
+function getEntryContinuityKey(entry) {
+  const continuityKey = entry?.continuityKey || getEntryActorKey(entry);
+  if (typeof continuityKey !== "string" || !continuityKey) {
+    throw new Error(`Group drag entry is missing continuityKey: ${String(entry?.item?.id || "unknown")}`);
+  }
+  return continuityKey;
+}
+
 function toStagePoint(point, state) {
   return clientPointToStageVisualPoint(point, state.stageRect) || { x: 0, y: 0 };
 }
@@ -81,14 +89,26 @@ function readNodeVisualCenter(layer, node) {
 }
 
 function restoreNodeVisualCenter(layer, node, target) {
-  if (!target || node?.parent !== layer) return false;
-  const current = readNodeVisualCenter(layer, node);
-  if (!current) return false;
+  const parent = node?.parent;
+  const visualNode = node?.visualWrap && !node.visualWrap.destroyed
+    ? node.visualWrap
+    : node;
+  if (!target || !parent || parent.destroyed || !visualNode || visualNode.destroyed) return false;
+  const current = parent.toLocal({ x: 0, y: 0 }, visualNode);
+  const desired = parent.toLocal(target, layer);
+  if (!current || !desired) return false;
   node.position.set(
-    node.position.x + target.x - current.x,
-    node.position.y + target.y - current.y
+    node.position.x + desired.x - current.x,
+    node.position.y + desired.y - current.y
   );
   return true;
+}
+
+function resetPooledActorStructure(node) {
+  if (!node || node.destroyed) return;
+  node.pivot.set(0, 0);
+  node.skew.set(0, 0);
+  node.rotation = 0;
 }
 
 function resolveVisualSpec(group, state) {
@@ -177,25 +197,19 @@ function resolveEntryReleaseVisual(entry, state, group, visualSpec, resolveFolde
   };
   return {
     folderSlot: true,
-    scaleMultiplier: Math.max(0.01, Number(visualSpec.iconSize) || 64) /
-      Math.max(0.01, releaseVisualSpec.iconSize),
-    visualSpec: releaseVisualSpec,
+    scaleMultiplier: 1,
+    targetVisualSpec: releaseVisualSpec,
+    visualSpec,
   };
 }
 
-function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolderNode) {
-  node.stageRect = state.stageRect;
+function applyNodeVisualState(node, entry, state, group, visualSpec, options = {}) {
   const releaseOwnsVisual = isGroupReleasePhase(group.phase);
-  const releaseVisual = resolveEntryReleaseVisual(
-    entry,
-    state,
-    group,
-    visualSpec,
-    resolveFolderNode
-  );
-  const releaseVisualSpec = releaseVisual.visualSpec;
-  const visualStateKey = makeVisualStateKey(entry, state, group, releaseVisualSpec);
+  const visualStateKey = makeVisualStateKey(entry, state, group, visualSpec);
   if (node.groupDragVisualStateKey !== visualStateKey) {
+    if (visualSpec.folderPreviewRelease !== true) {
+      node.clearFolderSlotReleaseVisual?.();
+    }
     if (releaseOwnsVisual) {
       // The lead can spend the preceding frames in the app-on-app hover state.
       // Group release nodes are pooled, so letting IconNode carry that state
@@ -207,9 +221,9 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
     }
     node.setState({
       batchSelected: false,
-      cellHeight: releaseVisualSpec.cellHeight,
-      cellWidth: releaseVisualSpec.cellWidth,
-      compact: releaseVisualSpec.compact,
+      cellHeight: visualSpec.cellHeight,
+      cellWidth: visualSpec.cellWidth,
+      compact: visualSpec.compact,
       draggable: false,
       dragging: false,
       dropTarget: false,
@@ -218,7 +232,7 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
       folderPreviewPageSize: state.folderPageSize,
       ghosted: false,
       hasCustomIcon: Boolean(entry.item.customIconPath || entry.item.customIconDataUrl),
-      iconSize: releaseVisualSpec.iconSize,
+      iconSize: visualSpec.iconSize,
       interactive: false,
       item: entry.item,
       launchTargetStatus: state.showMissingLaunchTargetBadge
@@ -228,14 +242,14 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
       preserveNodeScale: true,
       removable: false,
       focused: false,
-      singleLineLabel: releaseVisualSpec.singleLineLabel,
+      singleLineLabel: visualSpec.singleLineLabel,
       source: group.totalCount === 1
         ? group.source || entry.source || { type: "group-drag" }
         : entry.source || { type: "group-drag" },
       stageHeight: state.height,
       stageWidth: state.width,
-      textless: releaseVisualSpec.textless,
-      folderPreviewRelease: releaseVisualSpec.folderPreviewRelease === true,
+      textless: visualSpec.textless,
+      folderPreviewRelease: visualSpec.folderPreviewRelease === true,
     });
     node.groupDragVisualStateKey = visualStateKey;
   }
@@ -243,7 +257,7 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
     0.01,
     Number(node.groupDragReleaseScaleMultiplier) || 1
   );
-  const nextScaleMultiplier = Math.max(0.01, Number(releaseVisual.scaleMultiplier) || 1);
+  const nextScaleMultiplier = Math.max(0.01, Number(options.scaleMultiplier) || 1);
   if (Math.abs(previousScaleMultiplier - nextScaleMultiplier) > 0.0001) {
     const ratio = nextScaleMultiplier / previousScaleMultiplier;
     node.scale.set(
@@ -253,6 +267,20 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
   }
   node.groupDragReleaseScaleMultiplier = nextScaleMultiplier;
   node.eventMode = "none";
+}
+
+function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolderNode) {
+  node.stageRect = state.stageRect;
+  const releaseVisual = resolveEntryReleaseVisual(
+    entry,
+    state,
+    group,
+    visualSpec,
+    resolveFolderNode
+  );
+  applyNodeVisualState(node, entry, state, group, releaseVisual.visualSpec, {
+    scaleMultiplier: releaseVisual.scaleMultiplier,
+  });
   return releaseVisual;
 }
 
@@ -339,10 +367,18 @@ export class GroupDragLayer extends Container {
     this.badgeText.anchor.set(0.5);
     this.badge.addChild(this.badgeBackground);
     this.badge.addChild(this.badgeText);
+    this.folderClipActorLayer = new Container({ label: "group-drag-folder-clip-actors" });
+    this.folderClipActorLayer.eventMode = "none";
+    this.folderClipActorLayer.sortableChildren = true;
+    this.folderClipActorLayer.zIndex = 250;
+    this.folderClipMask = new Graphics({ label: "group-drag-folder-clip-mask" });
+    this.folderClipMask.eventMode = "none";
+    this.folderClipMaskSignature = "";
+    this.folderClipActorLayer.mask = this.folderClipMask;
     this.nodes = [];
     this.entryBadges = [];
     this.activeKey = null;
-    this.activeNodesByActorKey = new Map();
+    this.activeNodesByContinuityKey = new Map();
     this.phase = null;
     this.badgeSignature = null;
     this.stageTrailSource = null;
@@ -355,6 +391,7 @@ export class GroupDragLayer extends Container {
     this.followerFrame = null;
     this.prewarmTargetCount = 0;
     this.resolveFolderNode = options.resolveFolderNode || (() => null);
+    this.resolveFolderClipGeometry = options.resolveFolderClipGeometry || (() => null);
     this.resolvePointTarget = options.resolvePointTarget || (() => null);
     this.onReleaseSettled = options.onReleaseSettled || (() => {});
     this.onReleaseAborted = options.onReleaseAborted || (() => {});
@@ -377,9 +414,16 @@ export class GroupDragLayer extends Container {
       onEntryComplete: (payload) => this.finishReleaseActor(payload, false),
       onFolderShellComplete: (payload) => this.finishFolderShellActor(payload),
       onRenderRequest: (reason) => this.onRenderRequest(reason),
+      prepareFolderSlotVisual: ({ context, node }) => {
+        const targetVisualSpec = node?.groupDragFolderSlotTargetVisualSpec;
+        if (!context?.entry || !targetVisualSpec) return false;
+        return node.prepareFolderSlotReleaseVisual?.(targetVisualSpec.iconSize) === true;
+      },
       resolveFolderNode: (payload) => this.resolveFolderNode(payload),
       resolvePointTarget: (payload) => this.resolvePointTarget(payload),
     });
+    this.addChild(this.folderClipMask);
+    this.addChild(this.folderClipActorLayer);
     this.addChild(this.badge);
     this.visible = false;
   }
@@ -611,6 +655,7 @@ export class GroupDragLayer extends Container {
   }
 
   renderFollowerFrame() {
+    this.syncFolderClipMask();
     this.prewarmReleaseNodes();
     const frame = this.followerFrame;
     if (
@@ -621,7 +666,7 @@ export class GroupDragLayer extends Container {
     ) return;
     for (let index = 1; index < frame.entryCount; index += 1) {
       const node = this.nodes[index];
-      if (!node?.visible || node.parent !== this) continue;
+      if (!node?.visible || !this.isActorNodeParent(node.parent)) continue;
       const target = makeGroupFollowerTarget(
         frame.nodePointerCenter,
         frame.stageTrail,
@@ -636,48 +681,96 @@ export class GroupDragLayer extends Container {
     }
   }
 
+  isActorNodeParent(parent) {
+    return parent === this || parent === this.folderClipActorLayer;
+  }
+
+  syncFolderClipMask() {
+    const geometry = this.resolveFolderClipGeometry?.() || null;
+    const width = Number(geometry?.width);
+    const height = Number(geometry?.height);
+    if (!geometry || !Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+      return false;
+    }
+    const radius = Math.max(0, Number(geometry.radius) || 0);
+    const signature = `${width}:${height}:${radius}`;
+    if (signature !== this.folderClipMaskSignature) {
+      this.folderClipMaskSignature = signature;
+      this.folderClipMask
+        .clear()
+        .roundRect(0, 0, width, height, radius)
+        .fill({ color: 0xffffff, alpha: 1 });
+    }
+    this.folderClipMask.position.set(Number(geometry.x) || 0, Number(geometry.y) || 0);
+    this.folderClipMask.scale.set(
+      Math.max(0.0001, Math.abs(Number(geometry.scaleX) || 1)),
+      Math.max(0.0001, Math.abs(Number(geometry.scaleY) || 1))
+    );
+    this.folderClipMask.rotation = Number(geometry.rotation) || 0;
+    return true;
+  }
+
+  routeEntryNode(node, entry) {
+    if (!node || node.destroyed) return;
+    if (this.releaseController?.ownsActorNode(node)) return;
+    const targetParent = entry?.visibilityPolicy?.kind === "folder-panel-clip"
+      ? this.folderClipActorLayer
+      : this;
+    if (node.parent === targetParent) return;
+    if (targetParent === this.folderClipActorLayer) {
+      this.syncFolderClipMask();
+    }
+    targetParent.reparentChild(node);
+  }
+
   bindEntryNodes(entries, options = {}) {
     if (this.nodes.length < entries.length) this.acquireNode(entries.length - 1);
 
-    const previousNodesByActorKey = options.retainExisting === false
+    const previousNodesByContinuityKey = options.retainExisting === false
       ? new Map()
-      : this.activeNodesByActorKey;
+      : this.activeNodesByContinuityKey;
     const actorKeys = entries.map(getEntryActorKey);
-    const uniqueActorKeys = new Set(actorKeys);
-    if (uniqueActorKeys.size !== actorKeys.length) {
+    const continuityKeys = entries.map(getEntryContinuityKey);
+    if (new Set(actorKeys).size !== actorKeys.length) {
       throw new Error("Group drag entries must have unique actorKey values");
+    }
+    if (new Set(continuityKeys).size !== continuityKeys.length) {
+      throw new Error("Group drag entries must have unique continuityKey values");
     }
 
     const badgeByNode = new Map(
       this.nodes.map((node, index) => [node, this.entryBadges[index]])
     );
-    const retainedNodesByActorKey = new Map();
+    const retainedNodesByContinuityKey = new Map();
     const reservedNodes = new Set();
-    for (const actorKey of actorKeys) {
-      const node = previousNodesByActorKey.get(actorKey);
+    for (const continuityKey of continuityKeys) {
+      const node = previousNodesByContinuityKey.get(continuityKey);
       if (!node || !badgeByNode.has(node) || reservedNodes.has(node)) continue;
-      retainedNodesByActorKey.set(actorKey, node);
+      retainedNodesByContinuityKey.set(continuityKey, node);
       reservedNodes.add(node);
     }
 
     const freeNodes = this.nodes.filter((node) => !reservedNodes.has(node));
     const activeNodes = [];
-    const nextNodesByActorKey = new Map();
-    for (const actorKey of actorKeys) {
-      const node = retainedNodesByActorKey.get(actorKey) || freeNodes.shift();
-      if (!node) throw new Error(`Group drag node pool exhausted for actor: ${actorKey}`);
+    const nextNodesByContinuityKey = new Map();
+    for (const continuityKey of continuityKeys) {
+      const retainedNode = retainedNodesByContinuityKey.get(continuityKey);
+      const node = retainedNode || freeNodes.shift();
+      if (!node) throw new Error(`Group drag node pool exhausted for actor: ${continuityKey}`);
+      if (!retainedNode) resetPooledActorStructure(node);
       activeNodes.push(node);
-      nextNodesByActorKey.set(actorKey, node);
+      nextNodesByContinuityKey.set(continuityKey, node);
     }
 
     const activeNodeSet = new Set(activeNodes);
     const inactiveNodes = this.nodes.filter((node) => !activeNodeSet.has(node));
     this.nodes = [...activeNodes, ...inactiveNodes];
     this.entryBadges = this.nodes.map((node) => badgeByNode.get(node));
-    this.activeNodesByActorKey = nextNodesByActorKey;
+    this.activeNodesByContinuityKey = nextNodesByContinuityKey;
     return {
       actorKeys,
-      retainedActorKeys: new Set(retainedNodesByActorKey.keys()),
+      continuityKeys,
+      retainedContinuityKeys: new Set(retainedNodesByContinuityKey.keys()),
     };
   }
 
@@ -728,7 +821,7 @@ export class GroupDragLayer extends Container {
     this.releaseAllVisualOwnership("group-drag-clear");
     this.clearFollowerClock("group-drag-clear");
     this.activeKey = null;
-    this.activeNodesByActorKey.clear();
+    this.activeNodesByContinuityKey.clear();
     this.phase = null;
     this.prewarmTargetCount = 0;
     this.visible = false;
@@ -743,6 +836,10 @@ export class GroupDragLayer extends Container {
       node.visible = false;
       node.groupDragVisualStateKey = null;
       node.groupDragReleaseScaleMultiplier = 1;
+      node.groupDragFolderSlotTargetVisualSpec = null;
+      node.clearFolderSlotReleaseVisual?.("group-drag-clear");
+      if (node.parent === this.folderClipActorLayer) this.reparentChild(node);
+      resetPooledActorStructure(node);
     }
     for (const badge of this.entryBadges) badge.container.visible = false;
   }
@@ -762,7 +859,7 @@ export class GroupDragLayer extends Container {
     const isReleasePhase = GROUP_RUNTIME_PHASES.has(group.phase);
     const isNewGroup = this.activeKey !== group.key;
     if (isReleasePhase && this.nodes.length < entries.length) {
-      if (isNewGroup) this.activeNodesByActorKey.clear();
+      if (isNewGroup) this.activeNodesByContinuityKey.clear();
       this.activeKey = group.key;
       this.phase = group.phase;
       this.visible = true;
@@ -780,11 +877,12 @@ export class GroupDragLayer extends Container {
     this.visible = true;
 
     const visualSpec = resolveVisualSpec(group, state);
+    this.syncFolderClipMask();
     // Release-lane cancellation can restore the previous motion's final
     // scale.  Synchronize the plan before pooled nodes receive their new
     // release visual state so that cancellation cannot overwrite this frame.
     this.releaseController.preparePlan?.(group.runtimePlan?.key || null);
-    const { actorKeys, retainedActorKeys } = this.bindEntryNodes(entries, {
+    const { actorKeys, continuityKeys, retainedContinuityKeys } = this.bindEntryNodes(entries, {
       retainExisting: !isNewGroup,
     });
     const visualOffsetY = getIconVisualOffsetY(visualSpec.textless);
@@ -837,16 +935,17 @@ export class GroupDragLayer extends Container {
       const entry = entries[index];
       const actorKey = actorKeys[index];
       const entryId = entry.item.id;
-      const isNewEntry = !retainedActorKeys.has(actorKey);
+      const isNewEntry = !retainedContinuityKeys.has(continuityKeys[index]);
       const releaseStart = isReleasePhase ? getReleaseStart(entry) : null;
       const releaseStartPoint = releaseStart?.point || entry.origin;
       const node = this.nodes[index];
+      this.routeEntryNode(node, entry);
       if (isReleasePhase && settledActorKeys.has(actorKey)) {
         node.visible = false;
         this.entryBadges[index].container.visible = false;
         continue;
       }
-      const releaseSourceCenter = isReleasePhase && node.parent === this
+      const releaseSourceCenter = isReleasePhase && this.isActorNodeParent(node.parent)
         ? (isNewEntry
           ? toStagePoint(releaseStartPoint, state)
           : readNodeVisualCenter(this, node))
@@ -859,6 +958,7 @@ export class GroupDragLayer extends Container {
         visualSpec,
         this.resolveFolderNode
       );
+      node.groupDragFolderSlotTargetVisualSpec = releaseVisual.targetVisualSpec || null;
       this.updateEntryBadge(index, entry, state);
       node.visible = true;
       node.zIndex = getEntryZIndex(entry, index, group);

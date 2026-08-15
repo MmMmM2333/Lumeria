@@ -1,6 +1,9 @@
 import { nextTick, shallowRef } from "vue";
 import {
-  FOLDER_PAGE_EDGE_SIZE,
+  FOLDER_PAGE_EDGE_MAX_SIZE,
+  FOLDER_PAGE_EDGE_MIN_SIZE,
+  FOLDER_PAGE_EDGE_NEUTRAL_INSET,
+  FOLDER_PAGE_EDGE_RATIO,
   FOLDER_HOVER_STICKY_MARGIN,
   PAGE_EDGE_SIZE,
   PAGE_TURN_DELAY,
@@ -254,7 +257,7 @@ export function useLaunchpadDrag(options) {
   let previewFrame = 0;
   let intentTimer = null;
   let pageTurnTimer = null;
-  let folderPageTurnTimer = null;
+  let folderPageTurnState = { phase: "idle", timer: null };
   let folderHoverTimer = null;
   let folderHoverFlashTimer = null;
   let projectionReleaseTimer = null;
@@ -325,9 +328,14 @@ export function useLaunchpadDrag(options) {
   }
 
   function clearFolderPageTurn() {
-    if (folderPageTurnTimer) window.clearTimeout(folderPageTurnTimer.timer);
-    folderPageTurnTimer = null;
+    if (folderPageTurnState.timer) window.clearTimeout(folderPageTurnState.timer);
+    folderPageTurnState = { phase: "idle", timer: null };
     options.clearFolderPageTurnRequest?.("group-drag-clear");
+  }
+
+  function disarmFolderPageTurn() {
+    if (folderPageTurnState.timer) window.clearTimeout(folderPageTurnState.timer);
+    folderPageTurnState = { phase: "idle", timer: null };
   }
 
   function clearFolderHoverTimers() {
@@ -628,16 +636,28 @@ export function useLaunchpadDrag(options) {
     if (!group) return null;
     const transferPlan = presentationOptions.transferPlan || group.semanticPlan || null;
     const previousActors = group.presentationPlan?.actors || [];
+    const desktopCols = Math.max(1, Number(options.gridCols?.value) || 1);
+    const desktopRows = Math.max(1, Number(options.gridRows?.value) || 1);
+    const folderCols = Math.max(1, Number(options.folderCols?.value) || 1);
+    const folderPageSize = Math.max(1, Number(options.folderPageSize?.value) || 1);
+    const folderRows = Math.max(
+      1,
+      Number(options.visibleFolderRowCount?.value) || Math.ceil(folderPageSize / folderCols)
+    );
     const presentationPlan = makeGroupTransferPresentation({
       currentActors: previousActors,
       currentView: makePresentationCurrentView(group),
       limits: {
-        desktopPageSize: Math.max(
-          1,
-          (Number(options.gridCols?.value) || 1) * (Number(options.gridRows?.value) || 1)
+        desktopCols,
+        desktopPageSize: desktopCols * desktopRows,
+        desktopRows,
+        folderCols,
+        folderPageSize,
+        folderRows,
+        maxBundles: Math.min(
+          GROUP_DRAG_VISUAL_LIMIT,
+          Math.max(4, desktopRows * 2, folderRows * 2)
         ),
-        folderPageSize: Number(options.folderPageSize?.value) || 1,
-        maxBundles: 4,
         maxContinuityActors: GROUP_DRAG_VISUAL_LIMIT,
         maxGatherActors: GROUP_DRAG_VISUAL_LIMIT,
       },
@@ -811,7 +831,10 @@ export function useLaunchpadDrag(options) {
     if (activeDrag.group.draggedIds.includes(targetId)) return null;
     const found = options.findTopLevel(options.pages.value, targetId);
     if (!found?.item) return null;
-    const stableRect = hasNavigatedDesktopPage()
+    const isSourceFolderReentryTarget = activeDrag.group.returnedFromFolder &&
+      activeDrag.source?.type === "folder" &&
+      activeDrag.source.folderId === targetId;
+    const stableRect = hasNavigatedDesktopPage() || isSourceFolderReentryTarget
       ? getStableTopLevelRect(targetId)
       : null;
     const rect = stableRect || getRenderedFolderRect(targetId) ||
@@ -841,17 +864,6 @@ export function useLaunchpadDrag(options) {
   function getTargetStickyRect(target) {
     const intentRect = getTargetIntentRect(target?.rect);
     return intentRect ? expandRect(intentRect, FOLDER_HOVER_STICKY_MARGIN) : null;
-  }
-
-  function getSuppressedTopLevelTargetId(point) {
-    const group = activeDrag?.group;
-    const suppressed = group?.suppressedTarget;
-    if (!suppressed?.targetId || !suppressed.stickyRect || !point) return null;
-    if (!isPointInsideRect(suppressed.stickyRect, point.x, point.y)) {
-      group.suppressedTarget = null;
-      return null;
-    }
-    return suppressed.targetId;
   }
 
   function lockTopLevelTarget(target) {
@@ -890,7 +902,6 @@ export function useLaunchpadDrag(options) {
   function getTopLevelTargetAtPoint(point) {
     if (!activeDrag || activeDrag.item.type === "folder" || !point) return null;
     const selectedIds = new Set(activeDrag.group.draggedIds);
-    const suppressedTargetId = getSuppressedTopLevelTargetId(point);
     if (isPointInsideSnapshottedDesktopSource(point)) return null;
     if (!hasNavigatedDesktopPage()) {
       const hit = options.iconBoundsRegistry.getAtPoint(
@@ -899,7 +910,7 @@ export function useLaunchpadDrag(options) {
         point.y,
         { excludeId: activeDrag.group.leadId }
       );
-      if (hit?.id && hit.id !== suppressedTargetId && !selectedIds.has(hit.id)) {
+      if (hit?.id && !selectedIds.has(hit.id)) {
         const found = options.findTopLevel(options.pages.value, hit.id);
         if (found) return { ...found, rect: hit.rect };
       }
@@ -909,7 +920,7 @@ export function useLaunchpadDrag(options) {
     const pageIndex = getVisualDesktopPageIndex();
     for (let index = 0; index < (options.pages.value[pageIndex] || []).length; index += 1) {
       const item = options.pages.value[pageIndex][index];
-      if (!item?.id || item.id === suppressedTargetId || selectedIds.has(item.id)) continue;
+      if (!item?.id || selectedIds.has(item.id)) continue;
       const target = getTopLevelTargetById(item.id);
       if (!target) continue;
       const candidateRect = expandRect(target.rect, FOLDER_HIT_CANDIDATE_MARGIN);
@@ -932,18 +943,10 @@ export function useLaunchpadDrag(options) {
     const group = activeDrag?.group;
     const transit = group?.folderTransit;
     if (!transit?.folderId || options.openFolderId.value !== transit.folderId) return false;
-    const locked = group.lockedTarget?.targetId === transit.folderId
-      ? group.lockedTarget
-      : null;
-    const target = locked ? null : getTopLevelTargetById(transit.folderId);
-    const stickyRect = locked?.stickyRect || getTargetStickyRect(target);
     clearPendingTarget();
     clearFolderPageTurn();
     group.returnedFromFolder = true;
     group.folderTransit = null;
-    group.suppressedTarget = stickyRect
-      ? { stickyRect: cloneRect(stickyRect), targetId: transit.folderId }
-      : null;
     options.commitOpenFolder(null);
     return true;
   }
@@ -957,7 +960,6 @@ export function useLaunchpadDrag(options) {
     const inside = Boolean(rect && isPointInsideRect(rect, clientX, clientY));
     if (inside) {
       transit.hasEnteredPanel = true;
-      group.suppressedTarget = null;
       return "inside";
     }
     if (!transit.hasEnteredPanel && syncOptions.finalize !== true) return "awaiting-entry";
@@ -1231,26 +1233,63 @@ export function useLaunchpadDrag(options) {
     };
   }
 
-  function scheduleFolderPageTurn(clientX) {
-    const panel = getDomRefElement(options.folderPanelRef.value);
-    const rect = panel?.getBoundingClientRect?.();
-    if (!rect || !isPointInsideRect(rect, clientX, activeDrag.pointer.y)) {
-      clearFolderPageTurn();
+  function getFolderPageTurnGeometry() {
+    const viewport = getDomRefElement(options.folderViewportRef?.value);
+    const panel = getDomRefElement(options.folderPanelRef?.value);
+    const viewportRect = viewport?.getBoundingClientRect?.() ||
+      getFolderPageRect(Number(options.folderPageIndex.value) || 0) ||
+      null;
+    const panelRect = panel?.getBoundingClientRect?.() || viewportRect;
+    if (!viewportRect || !panelRect) return null;
+    return { panelRect, viewportRect };
+  }
+
+  function scheduleFolderPageTurn(clientX, clientY) {
+    const geometry = getFolderPageTurnGeometry();
+    const point = { x: clientX, y: clientY };
+    if (!geometry) {
+      disarmFolderPageTurn();
       return;
     }
-    const direction = clientX <= rect.left + FOLDER_PAGE_EDGE_SIZE
+    const { panelRect, viewportRect } = geometry;
+    const verticalRect = {
+      bottom: viewportRect.bottom,
+      left: panelRect.left,
+      right: panelRect.right,
+      top: viewportRect.top,
+    };
+    if (!isPointInsideRect(verticalRect, point.x, point.y)) {
+      disarmFolderPageTurn();
+      return;
+    }
+    const edgeSize = Math.min(
+      FOLDER_PAGE_EDGE_MAX_SIZE,
+      Math.max(FOLDER_PAGE_EDGE_MIN_SIZE, viewportRect.width * FOLDER_PAGE_EDGE_RATIO)
+    );
+    const leftInnerEdge = viewportRect.left + edgeSize;
+    const rightInnerEdge = viewportRect.right - edgeSize;
+    const direction = point.x <= leftInnerEdge
       ? -1
-      : clientX >= rect.right - FOLDER_PAGE_EDGE_SIZE
+      : point.x >= rightInnerEdge
         ? 1
         : 0;
-    if (folderPageTurnTimer) {
-      const pendingDirection = Math.sign(
-        folderPageTurnTimer.targetIndex - folderPageTurnTimer.fromIndex
-      );
-      if (direction === pendingDirection) return;
-      clearFolderPageTurn();
+
+    if (folderPageTurnState.phase === "latched") {
+      const neutralLeft = leftInnerEdge + FOLDER_PAGE_EDGE_NEUTRAL_INSET;
+      const neutralRight = rightInnerEdge - FOLDER_PAGE_EDGE_NEUTRAL_INSET;
+      if (point.x > neutralLeft && point.x < neutralRight) {
+        disarmFolderPageTurn();
+      }
+      return;
     }
-    const currentIndex = Number(options.visualFolderPageIndex?.value ?? options.folderPageIndex.value) || 0;
+
+    if (folderPageTurnState.phase === "armed") {
+      if (direction === folderPageTurnState.direction) return;
+      disarmFolderPageTurn();
+    }
+    if (!direction) return;
+
+    const currentIndex = Math.max(0, Number(options.folderPageIndex.value) || 0);
     const maxIndex = Math.max(0, options.folderPages.value.length - 1);
     const targetIndex = currentIndex + direction;
     const allowCreate = targetIndex === maxIndex + 1 &&
@@ -1260,70 +1299,49 @@ export function useLaunchpadDrag(options) {
         index: 0,
         type: "folder-slot",
       }).status === "accepted";
-    if (!direction || targetIndex < 0 || targetIndex > maxIndex + 1 || (targetIndex > maxIndex && !allowCreate)) {
-      clearFolderPageTurn();
+    if (targetIndex < 0 || targetIndex > maxIndex + 1 || (targetIndex > maxIndex && !allowCreate)) {
+      disarmFolderPageTurn();
       return;
     }
-    if (folderPageTurnTimer?.targetIndex === targetIndex) return;
-    clearFolderPageTurn();
-    const token = options.requestFolderPageTurn?.(targetIndex, {
-      allowCreate,
-      folderId: options.openFolderId.value,
-      phase: "open",
-      source: "group-drag",
-    });
-    folderPageTurnTimer = {
-      allowCreate,
-      fromIndex: currentIndex,
-      targetIndex,
-      token,
-      timer: window.setTimeout(() => {
-        const pending = folderPageTurnTimer;
-        folderPageTurnTimer = null;
-        if (!activeDrag || !pending) return;
-        const committed = pending.token != null
-          ? options.commitFolderPageTurnRequest?.(pending.token, {
-            allowCreate: pending.allowCreate,
-            folderId: options.openFolderId.value,
-            phase: "open",
-          })
-          : false;
-        if (!committed) {
-          options.commitFolderPageIndex(pending.targetIndex, {
-            allowCreate: pending.allowCreate,
-          });
-        }
-        if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
-        activeDrag.group.intentKey = null;
-        evaluateIntent({ force: true });
-      }, PAGE_TURN_DELAY),
-    };
-  }
 
-  function commitPendingFolderPageTurn() {
-    if (!folderPageTurnTimer) return false;
-    const pending = folderPageTurnTimer;
-    if (pending.timer) window.clearTimeout(pending.timer);
-    folderPageTurnTimer = null;
-    const committed = pending.token != null
-      ? options.commitFolderPageTurnRequest?.(pending.token, {
-        allowCreate: pending.allowCreate,
+    const armedState = {
+      allowCreate,
+      direction,
+      fromIndex: currentIndex,
+      phase: "armed",
+      targetIndex,
+      timer: null,
+    };
+    armedState.timer = window.setTimeout(() => {
+      if (!activeDrag || folderPageTurnState !== armedState) return;
+      const token = options.requestFolderPageTurn?.(armedState.targetIndex, {
+        allowCreate: armedState.allowCreate,
         folderId: options.openFolderId.value,
         phase: "open",
-      })
-      : false;
-    if (!committed) {
-      options.commitFolderPageIndex(pending.targetIndex, {
-        allowCreate: pending.allowCreate,
+        source: "group-drag",
       });
-    }
-    if (pending.allowCreate) activeDrag.group.virtualFolderPageIndex = pending.targetIndex;
-    return true;
-  }
-
-  function isAcceptedTopLevelOutcome(outcome) {
-    return outcome?.plan?.status === "accepted" &&
-      ["application", "folder-thumbnail"].includes(outcome?.resolved?.intent?.type);
+      const committed = token != null
+        ? options.commitFolderPageTurnRequest?.(token, {
+          allowCreate: armedState.allowCreate,
+          folderId: options.openFolderId.value,
+          phase: "open",
+        })
+        : false;
+      if (!committed) {
+        options.commitFolderPageIndex(armedState.targetIndex, {
+          allowCreate: armedState.allowCreate,
+        });
+      }
+      if (armedState.allowCreate) activeDrag.group.virtualFolderPageIndex = armedState.targetIndex;
+      folderPageTurnState = {
+        ...armedState,
+        phase: "latched",
+        timer: null,
+      };
+      activeDrag.group.intentKey = null;
+      evaluateIntent({ force: true });
+    }, PAGE_TURN_DELAY);
+    folderPageTurnState = armedState;
   }
 
   function makeFolderCreateTargetEntry(plan, resolved) {
@@ -1806,7 +1824,6 @@ export function useLaunchpadDrag(options) {
         shellActors: [],
         sourceMembers: [],
         standalone: payload.standalone === true,
-        suppressedTarget: null,
         trail: appendGroupTrailPoint([], descriptor.startPoint, { timeMs: startedAt }),
         virtualFolderPageIndex: null,
       },
@@ -1933,7 +1950,7 @@ export function useLaunchpadDrag(options) {
     }
     if (options.openFolderId.value) {
       clearPageTurn();
-      scheduleFolderPageTurn(activeDrag.pointer.x);
+      scheduleFolderPageTurn(activeDrag.pointer.x, activeDrag.pointer.y);
     } else {
       clearFolderPageTurn();
       scheduleDesktopPageTurn(activeDrag.pointer.x, activeDrag.pointer.y);
@@ -1972,18 +1989,6 @@ export function useLaunchpadDrag(options) {
       finalizeFolderTransit: true,
       force: true,
     });
-    if (isAcceptedTopLevelOutcome(outcome)) {
-      clearPageTurn();
-      clearFolderPageTurn();
-    } else {
-      clearPageTurn();
-      if (commitPendingFolderPageTurn()) {
-        outcome = evaluateIntent({
-          finalizeFolderTransit: true,
-          force: true,
-        });
-      }
-    }
     clearPageTurn();
     clearFolderPageTurn();
     clearFolderHoverTimers();

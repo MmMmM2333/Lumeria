@@ -336,8 +336,9 @@ export function runGroupReleaseControllerTests() {
         "created-folder releases must pass the committed child slot to the folder controller"
       );
       assert(
-        createdLane?.controller?.active?.release?.size?.width === 16,
-        "slot releases must use the folder thumbnail child logical size"
+        createdLane?.controller?.active?.release?.size?.width === 64 &&
+          createdLane?.controller?.active?.release?.targetVisualIconSize === 16,
+        "slot releases must preserve source geometry while declaring the folder thumbnail raster size separately"
       );
       assert(
         createdLane?.controller?.active?.release?.sourceSize === 64,

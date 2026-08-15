@@ -349,6 +349,152 @@ export async function runDesktopLayerTests() {
       "the release ghost visual center should match the live icon visual center at handoff"
     );
 
+    const topEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "remote-top", mode: "return" },
+      node: releaseNode,
+      state: {
+        gridCols: 3,
+        gridRows: 3,
+        height: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      },
+      target: {
+        semanticAnchor: {
+          kind: "desktop-page-edge-left",
+          laneY: 1 / 6,
+          pageIndex: 0,
+        },
+      },
+    });
+    const bottomEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "remote-bottom", mode: "return" },
+      node: releaseNode,
+      state: {
+        gridCols: 3,
+        gridRows: 3,
+        height: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      },
+      target: {
+        semanticAnchor: {
+          kind: "desktop-page-edge-left",
+          laneY: 5 / 6,
+          pageIndex: 0,
+        },
+      },
+    });
+    assert(
+      topEdgePose?.point?.y < 120 && bottomEdgePose?.point?.y > 220 &&
+        bottomEdgePose.point.y - topEdgePose.point.y > 150,
+      "desktop edge releases should resolve their semantic source rows instead of sharing the viewport midpoint"
+    );
+    layer.singleStageFolderLayer.panelGeometry = {
+      height: 220,
+      left: 100,
+      top: 50,
+      width: 300,
+    };
+    layer.singleStageFolderLayer.targetFolderGeometry = {
+      grid: { height: 140, left: 130, top: 90, width: 240 },
+      panel: layer.singleStageFolderLayer.panelGeometry,
+    };
+    layer.singleStageFolderLayer.resolveStableIconSlotRecord = (anchor) => ({
+      height: 56,
+      left: 160,
+      meta: {
+        stageHeight: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        stageWidth: 480,
+      },
+      top: Number(anchor?.index) >= 7 ? 170 : 90,
+      width: 56,
+    });
+    const folderTopEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-remote-top", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 0,
+          itemId: "folder-remote-top",
+          kind: "folder-page-edge-left",
+          laneY: 0.5,
+        },
+      },
+    });
+    const folderBottomEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-remote-bottom", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 7,
+          itemId: "folder-remote-bottom",
+          kind: "folder-page-edge-left",
+          laneY: 0.5,
+        },
+      },
+    });
+    assert(
+      nearlyEqual(folderTopEdgePose?.point?.y, 118) &&
+        nearlyEqual(folderBottomEdgePose?.point?.y, 198),
+      "folder edge releases should align to stable source slots instead of normalized viewport lanes"
+    );
+    const liveFolderTarget = new Container();
+    liveFolderTarget.item = { id: "folder-visible-stable", name: "Folder Visible Stable", type: "app" };
+    liveFolderTarget.iconSize = 56;
+    liveFolderTarget.position.set(330, 250);
+    liveFolderTarget.visualWrap = new Container();
+    liveFolderTarget.addChild(liveFolderTarget.visualWrap);
+    layer.singleStageFolderLayer.iconNodes.set("folder-a:0:folder-visible-stable", liveFolderTarget);
+    layer.singleStageFolderLayer.pageTrack.addChild(liveFolderTarget);
+    const stableFolderSlotPose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-visible-stable", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        area: "folder",
+        folderId: "folder-a",
+        id: "folder-visible-stable",
+        pageIndex: 0,
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 0,
+          itemId: "folder-visible-stable",
+          kind: "folder-open-slot",
+        },
+      },
+    });
+    assert(
+      nearlyEqual(stableFolderSlotPose?.point?.x, 188) &&
+        nearlyEqual(stableFolderSlotPose?.point?.y, 118),
+      "visible folder returns should use the same stable slot as the hidden real icon instead of chasing its live spring"
+    );
+    const egressPose = layer.resolveGroupReleasePoint({
+      entry: {
+        id: item.id,
+        mode: "return",
+        visibilityPolicy: { folderId: "folder-a", kind: "desktop-occluded-egress" },
+      },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: { area: "desktop", id: item.id, pageIndex: 0 },
+    });
+    assert(
+      egressPose && (
+        egressPose.point.x < 100 || egressPose.point.x > 400 ||
+        egressPose.point.y < 50 || egressPose.point.y > 270
+      ),
+      "desktop actors obscured by an open folder should animate beyond the panel instead of landing underneath it"
+    );
+
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
   }

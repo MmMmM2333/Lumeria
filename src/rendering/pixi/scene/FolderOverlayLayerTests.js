@@ -146,6 +146,15 @@ export async function runFolderOverlayLayerTests() {
   assert(dotsFrame.top === 513, "Pixi page dots should sit in the lower panel padding below the grid");
   assert(dotsFrame.height === 44, "Pixi page dots should expose a touch-sized hit height");
 
+  const compactDotsFrame = getFolderPageDotsFrame({
+    grid: { height: 280, left: 220, top: 264, width: 720 },
+    panel: { height: 272, left: 180, top: 200, width: 800 },
+  });
+  assert(
+    compactDotsFrame.top + compactDotsFrame.height / 2 > 200 + 272,
+    "single-row folder dots should remain below the compact panel instead of being enclosed by it"
+  );
+
   const fallbackDotsFrame = getFolderPageDotsFrame({
     panel: { height: 360, left: 180, top: 200, width: 800 },
   });
@@ -624,6 +633,55 @@ export async function runFolderOverlayLayerTests() {
     assert(movingNode.visible === false && movingNode.state.dragging === true, "the shared drag owner should keep the real folder icon hidden through visual release");
     assert(nearlyEqual(movingNode.x, target.x), "the hidden real folder icon should snap to the release target before it is revealed");
     assert(!xMotion, "the hidden real folder icon should not keep a layout spring that can twitch after reveal");
+
+    const returnState = makeFolderResizeState({
+      ...baseState,
+      dragMeta: {
+        draggedIds: [movingItem.id],
+        item: movingItem,
+        source: { folderId, index: 0, pageIndex: 0, type: "folder" },
+      },
+      groupDragState: { phase: "returning" },
+      groupTransferOwnedItemIds: new Set([movingItem.id]),
+      folderPages: [[movingItem, neighborItem]],
+    });
+    layer.update(returnState);
+    const returnTarget = layer.folderIconLayoutTargets.get(movingKey);
+    const returnXMotion = getBaseAnimation(movingNode, "x");
+
+    assert(
+      movingNode.visible === false && movingNode.state.dragging === false && movingNode.state.ghosted === true,
+      "ESC return should keep the real folder icon hidden until its release actor hands off ownership"
+    );
+    assert(
+      nearlyEqual(movingNode.x, returnTarget.x),
+      "ESC return should atomically synchronize the hidden real folder icon to its authoritative slot"
+    );
+    assert(
+      !returnXMotion,
+      "ESC return should not leave a hidden real folder icon spring that can reveal at an intermediate position"
+    );
+
+    const handedOffState = makeFolderResizeState({
+      ...returnState,
+      groupTransferOwnedItemIds: new Set(),
+    });
+    layer.update(handedOffState);
+    const handedOffTarget = layer.folderIconLayoutTargets.get(movingKey);
+    const handedOffXMotion = getBaseAnimation(movingNode, "x");
+
+    assert(
+      movingNode.visible === true && movingNode.state.ghosted === false,
+      "a settled release actor should reveal its real folder icon as soon as ownership is handed off"
+    );
+    assert(
+      nearlyEqual(movingNode.x, handedOffTarget.x),
+      "the first revealed frame after actor handoff should already use the authoritative slot"
+    );
+    assert(
+      !handedOffXMotion,
+      "actor handoff should not restart a layout spring after the real icon is revealed"
+    );
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();

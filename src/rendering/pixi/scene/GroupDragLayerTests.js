@@ -173,13 +173,13 @@ export async function runGroupDragLayerTests() {
     prewarmLayer.update(gatedState);
     assert(
       prewarmLayer.nodes.length === 6 &&
-        prewarmLayer.activeNodesByActorKey.size === 0 &&
+        prewarmLayer.activeNodesByContinuityKey.size === 0 &&
         prewarmLayer.releaseController.lanes.size === 0,
       "the frame that finishes pool allocation should not also construct every release lane"
     );
     prewarmLayer.update(gatedState);
     assert(
-      prewarmLayer.activeNodesByActorKey.size === 6 &&
+      prewarmLayer.activeNodesByContinuityKey.size === 6 &&
         prewarmLayer.releaseController.lanes.size === 6,
       "release lanes should start together on the render after the pool becomes ready"
     );
@@ -457,6 +457,16 @@ export async function runGroupDragLayerTests() {
     onReleaseSettled: () => {
       releaseSettled += 1;
     },
+    resolveFolderClipGeometry: () => ({
+      height: 220,
+      radius: 48,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      width: 300,
+      x: 100,
+      y: 50,
+    }),
     resolvePointTarget: ({ entry, node }) => {
       const visualOffset = node?.visualWrap?.position || { x: 0, y: 0 };
       return {
@@ -509,6 +519,60 @@ export async function runGroupDragLayerTests() {
     assert(
       layer.badge.visible === false,
       "the aggregate count badge should leave with pointer ownership instead of lingering during release"
+    );
+
+    layer.clear();
+    motionRuntime.reset();
+    const gatherBundle = makeEntry("continuity-bundle", 0, {
+      actorKey: "bundle:gather:desktop-left-row-2",
+      continuityKey: "bundle:desktop-left-row-2",
+      origin: { x: -24, y: 360 },
+      originKind: "desktop-page-bundle",
+    });
+    const bundleGroup = {
+      center: { x: 340, y: 260 },
+      entries: [gatherBundle],
+      key: "bundle-continuity",
+      phase: "dragging",
+      pointer: { x: 340, y: 260 },
+      reducedMotion: false,
+      totalCount: 2,
+      trail: [],
+    };
+    layer.update(makeState(bundleGroup));
+    const gatheredBundleNode = layer.nodes[0];
+    const gatheredBundlePose = {
+      x: gatheredBundleNode.position.x,
+      y: gatheredBundleNode.position.y,
+    };
+    const returnBundle = {
+      ...gatherBundle,
+      actorKey: "bundle:return:desktop-left-row-2",
+      releaseStart: { kind: "current-pose" },
+    };
+    layer.update(makeState({
+      ...bundleGroup,
+      entries: [returnBundle],
+      phase: "returning",
+      runtimePlan: {
+        entries: [{
+          actorKey: returnBundle.actorKey,
+          continuityKey: returnBundle.continuityKey,
+          fallback: { x: -28, y: 360 },
+          id: returnBundle.item.id,
+          memberIds: [...returnBundle.memberIds],
+          mode: "return",
+          target: { area: "desktop", id: returnBundle.item.id },
+          velocity: { x: 0, y: 0 },
+        }],
+        key: "plan-bundle-continuity",
+      },
+    }));
+    assert(
+      layer.nodes[0] === gatheredBundleNode &&
+        Math.abs(gatheredBundleNode.position.x - gatheredBundlePose.x) < 0.001 &&
+        Math.abs(gatheredBundleNode.position.y - gatheredBundlePose.y) < 0.001,
+      "a phase-specific bundle actor should reuse its continuity node without a first-frame origin reset"
     );
 
     layer.clear();
@@ -851,15 +915,159 @@ export async function runGroupDragLayerTests() {
     const slotNode = layer.nodes[0];
     const slotLane = [...layer.releaseController.lanes.values()][0];
     assert(
-      slotNode.iconSize === 16 &&
-        slotNode.state?.folderPreviewRelease === true &&
-        slotNode.emojiText.style.lineHeight === 0,
-      "folder slot release ghosts must render directly at the thumbnail child size"
+      slotNode.iconSize === 64 &&
+        slotNode.state?.folderPreviewRelease !== true &&
+        slotNode.labelText.visible === true &&
+        slotNode.folderSlotReleaseVisual?.visible !== true,
+      "folder slot release ghosts must preserve the grabbed source visual on the release handoff frame"
     );
     assert(
-      slotLane?.controller?.active?.release?.size?.width === 16 &&
+      slotLane?.controller?.active?.release?.size?.width === 64 &&
+        slotLane?.controller?.active?.release?.targetVisualIconSize === 16 &&
         Math.abs(slotLane?.controller?.active?.release?.sourceSize - (64 * 1.08)) < 0.001,
       "folder slot release must keep target and source metrics in the same handoff contract"
+    );
+    for (let index = 0; index < 12 && slotNode.folderSlotReleaseVisual?.visible !== true; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    assert(
+      slotNode.iconSize === 64 &&
+        slotNode.folderSlotReleaseVisual?.visible === true &&
+        slotNode.visualWrap.alpha === 1 &&
+        slotNode.folderSlotReleaseVisualTargetSize === 16 &&
+        slotNode.folderSlotReleaseEmoji.style.lineHeight === 0,
+      "folder slot release ghosts should blend in a target-sized thumbnail raster without removing the continuous source visual"
+    );
+
+    layer.clear();
+    motionRuntime.reset();
+    const staticSlotPoseResolver = slotFolder.getFolderPreviewChildReleasePose;
+    const movingSlotCenter = { x: 420, y: 300 };
+    slotFolder.getFolderPreviewChildReleasePose = (_relativeTo, _slotIndex, options = {}) => ({
+      center: { ...movingSlotCenter },
+      matrix: { a: 1, b: 0, c: 0, d: 1 },
+      targetChildId: options.expectedChildId,
+    });
+    const movingSlotEntry = makeEntry("moving-slot-release-app", 0, {
+      origin: { x: 180, y: 220 },
+    });
+    const movingSlotGroup = {
+      center: { x: 260, y: 210 },
+      entries: [movingSlotEntry],
+      key: "moving-slot-release",
+      phase: "releasing",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: false,
+      runtimePlan: {
+        entries: [{
+          id: movingSlotEntry.item.id,
+          mode: "folder-preview-slot",
+          target: {
+            expectedChildId: movingSlotEntry.item.id,
+            folderId: "slot-folder",
+            kind: "closed-folder",
+            slotIndex: 0,
+          },
+        }],
+        key: "plan-moving-slot-release",
+      },
+      totalCount: 1,
+      trail: [],
+    };
+    const movingSlotState = makeState(movingSlotGroup);
+    layer.update(movingSlotState);
+    for (let index = 0; index < 6; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    const movingSlotNode = layer.nodes[0];
+    layer.update(movingSlotState);
+    const movingSlotCenterBeforeTargetMove = layer.toLocal(
+      { x: 0, y: 0 },
+      movingSlotNode.visualWrap
+    );
+    movingSlotCenter.x += 120;
+    movingSlotCenter.y -= 36;
+    layer.onRender?.();
+    const movingSlotCenterAfterTargetMove = layer.toLocal(
+      { x: 0, y: 0 },
+      movingSlotNode.visualWrap
+    );
+    assert(
+      movingSlotCenterAfterTargetMove.x - movingSlotCenterBeforeTargetMove.x > 5 &&
+        movingSlotCenterAfterTargetMove.y - movingSlotCenterBeforeTargetMove.y < -1,
+      "a folder-slot release actor should keep following a moving folder after the release state is refreshed"
+    );
+    slotFolder.getFolderPreviewChildReleasePose = staticSlotPoseResolver;
+
+    layer.clear();
+    motionRuntime.reset();
+    const movingAbsorbCenter = { x: 420, y: 300 };
+    slotFolder.getFolderCenterReleasePose = () => ({ center: { ...movingAbsorbCenter } });
+    const movingAbsorbEntry = makeEntry("moving-center-absorb-app", 0, {
+      origin: { x: 180, y: 220 },
+    });
+    const movingAbsorbGroup = {
+      center: { x: 260, y: 210 },
+      entries: [movingAbsorbEntry],
+      key: "moving-center-absorb",
+      phase: "releasing",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: false,
+      runtimePlan: {
+        entries: [{
+          id: movingAbsorbEntry.item.id,
+          mode: "folder-center-absorb",
+          target: { folderId: "slot-folder", kind: "closed-folder" },
+        }],
+        key: "plan-moving-center-absorb",
+      },
+      totalCount: 1,
+      trail: [],
+    };
+    const movingAbsorbState = makeState(movingAbsorbGroup);
+    layer.update(movingAbsorbState);
+    for (let index = 0; index < 6; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    const movingAbsorbNode = layer.nodes[0];
+    layer.update(movingAbsorbState);
+    const movingAbsorbCenterBeforeTargetMove = layer.toLocal(
+      { x: 0, y: 0 },
+      movingAbsorbNode.visualWrap
+    );
+    movingAbsorbCenter.x += 120;
+    movingAbsorbCenter.y -= 36;
+    layer.onRender?.();
+    const movingAbsorbCenterAfterTargetMove = layer.toLocal(
+      { x: 0, y: 0 },
+      movingAbsorbNode.visualWrap
+    );
+    const distanceBeforeFade = Math.hypot(
+      movingAbsorbCenter.x - movingAbsorbCenterAfterTargetMove.x,
+      movingAbsorbCenter.y - movingAbsorbCenterAfterTargetMove.y
+    );
+    const alphaBeforeFade = movingAbsorbNode.alpha;
+    for (let index = 0; index < 5; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
+    const movingAbsorbCenterDuringFade = layer.toLocal(
+      { x: 0, y: 0 },
+      movingAbsorbNode.visualWrap
+    );
+    const distanceDuringFade = Math.hypot(
+      movingAbsorbCenter.x - movingAbsorbCenterDuringFade.x,
+      movingAbsorbCenter.y - movingAbsorbCenterDuringFade.y
+    );
+    assert(
+      movingAbsorbCenterAfterTargetMove.x - movingAbsorbCenterBeforeTargetMove.x > 5 &&
+        movingAbsorbCenterAfterTargetMove.y - movingAbsorbCenterBeforeTargetMove.y < -1 &&
+        movingAbsorbNode.alpha < alphaBeforeFade &&
+        distanceDuringFade < distanceBeforeFade,
+      "a fading center-absorb actor should keep approaching a moving folder after the release state is refreshed"
     );
 
     layer.clear();
@@ -1151,8 +1359,141 @@ export async function runGroupDragLayerTests() {
     );
 
     layer.clear();
+    motionRuntime.reset();
+    const egressEntry = makeEntry("desktop-egress", 0, {
+      alphaPolicy: { from: 1, kind: "fade-out", monotonic: true, to: 0 },
+      visibilityPolicy: { folderId: "folder-a", kind: "desktop-occluded-egress" },
+    });
+    const egressGroup = {
+      center: { x: 300, y: 220 },
+      entries: [egressEntry],
+      key: "desktop-egress-group",
+      phase: "dragging",
+      pointer: { x: 300, y: 220 },
+      reducedMotion: false,
+      totalCount: 1,
+      trail: [],
+    };
+    layer.update(makeState(egressGroup));
+    const egressNode = layer.nodes[0];
+    const egressSettledBefore = releaseSettled;
+    layer.update(makeState({
+      ...egressGroup,
+      phase: "returning",
+      runtimePlan: {
+        entries: [{
+          actorKey: egressEntry.actorKey,
+          alphaPolicy: egressEntry.alphaPolicy,
+          fallback: { x: 60, y: 40 },
+          id: egressEntry.item.id,
+          memberIds: [...egressEntry.memberIds],
+          mode: "return",
+          originAlpha: 1,
+          target: { area: "desktop", id: egressEntry.item.id },
+          velocity: { x: 0, y: 0 },
+          visibilityPolicy: egressEntry.visibilityPolicy,
+        }],
+        key: "plan-desktop-egress",
+      },
+    }));
+    for (let index = 0; index < 180 && releaseSettled === egressSettledBefore; index += 1) {
+      motionRuntime.step(1 / 60);
+      layer.onRender?.();
+    }
     assert(
-      !layer.visible && layer.activeNodesByActorKey.size === 0 && layer.nodes.every((node) => !node.visible),
+      releaseSettled === egressSettledBefore + 1 && egressNode.alpha < 0.01,
+      "an occluded desktop return should settle at zero alpha without an opaque handoff flash"
+    );
+
+    layer.clear();
+    motionRuntime.reset();
+    const clippedGatherEntry = makeEntry("folder-page-clipped", 0, {
+      actorKey: "bundle:gather:folder-page-left-row-1",
+      continuityKey: "bundle:folder-page-left-row-1",
+      originKind: "folder-page-bundle",
+    });
+    const clippedGroup = {
+      center: { x: 300, y: 220 },
+      entries: [clippedGatherEntry],
+      key: "folder-page-clip-group",
+      phase: "dragging",
+      pointer: { x: 300, y: 220 },
+      reducedMotion: false,
+      totalCount: 2,
+      trail: [],
+    };
+    layer.update(makeState(clippedGroup));
+    const clippedNode = layer.nodes[0];
+    const clippedReturnEntry = {
+      ...clippedGatherEntry,
+      actorKey: "bundle:return:folder-page-left-row-1",
+      alphaPolicy: { kind: "handoff", monotonic: true },
+      releaseStart: { kind: "current-pose" },
+      visibilityPolicy: { folderId: "folder-a", kind: "folder-panel-clip" },
+    };
+    layer.update(makeState({
+      ...clippedGroup,
+      entries: [clippedReturnEntry],
+      phase: "returning",
+      runtimePlan: {
+        entries: [{
+          actorKey: clippedReturnEntry.actorKey,
+          alphaPolicy: clippedReturnEntry.alphaPolicy,
+          continuityKey: clippedReturnEntry.continuityKey,
+          fallback: { x: 76, y: 160 },
+          id: clippedReturnEntry.item.id,
+          memberIds: [...clippedReturnEntry.memberIds],
+          mode: "return",
+          originAlpha: 1,
+          target: { area: "folder", id: clippedReturnEntry.item.id },
+          velocity: { x: 0, y: 0 },
+          visibilityPolicy: clippedReturnEntry.visibilityPolicy,
+        }],
+        key: "plan-folder-page-clip",
+      },
+    }));
+    assert(
+      layer.nodes[0] === clippedNode &&
+        clippedNode.parent === layer.folderClipActorLayer &&
+        layer.folderClipActorLayer.mask === layer.folderClipMask &&
+        clippedNode.alpha > 0.99,
+      "a remote folder-page return should preserve its node and route it through the outer-panel clip while staying opaque"
+    );
+
+    layer.clear();
+    const recycledNode = layer.nodes[0];
+    recycledNode.pivot.set(0, -14);
+    recycledNode.skew.set(0.12, -0.08);
+    recycledNode.rotation = 0.2;
+    layer.clear();
+    assert(
+      recycledNode.pivot.x === 0 &&
+        recycledNode.pivot.y === 0 &&
+        recycledNode.skew.x === 0 &&
+        recycledNode.skew.y === 0 &&
+        recycledNode.rotation === 0,
+      "returning an actor to the pool should clear structural transforms left by folder release ownership"
+    );
+
+    recycledNode.pivot.set(0, -14);
+    layer.update(makeState({
+      center: { x: 260, y: 210 },
+      entries: [makeEntry("recycled-desktop", 0)],
+      key: "recycled-desktop-group",
+      phase: "gathering",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: true,
+      totalCount: 1,
+      trail: [],
+    }));
+    assert(
+      layer.nodes[0] === recycledNode && recycledNode.pivot.x === 0 && recycledNode.pivot.y === 0,
+      "allocating a pooled actor for a new drag should enforce the neutral root-transform invariant"
+    );
+
+    layer.clear();
+    assert(
+      !layer.visible && layer.activeNodesByContinuityKey.size === 0 && layer.nodes.every((node) => !node.visible),
       "clearing should release every pooled visual owner"
     );
   } finally {

@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
+import { getDesktopGridMetrics } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
 import {
   ICON_BOUNDS_KIND,
@@ -110,6 +111,37 @@ function resolveReleaseRootPoint(releaseNode, visualTarget, targetScale) {
   return {
     x: visualTarget.x - Number(localVisualCenter.x) * scaleX,
     y: visualTarget.y - Number(localVisualCenter.y) * scaleY,
+  };
+}
+
+function resolvePanelEgressPoint(visualTarget, panel, extension = 32) {
+  if (!visualTarget || !panel) return visualTarget;
+  const center = {
+    x: Number(panel.left) + Number(panel.width) / 2,
+    y: Number(panel.top) + Number(panel.height) / 2,
+  };
+  let dx = Number(visualTarget.x) - center.x;
+  let dy = Number(visualTarget.y) - center.y;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return visualTarget;
+  if (Math.hypot(dx, dy) < 0.001) dx = 1;
+  const candidates = [];
+  if (Math.abs(dx) > 0.0001) {
+    const boundaryX = dx < 0 ? Number(panel.left) : Number(panel.left) + Number(panel.width);
+    const distance = (boundaryX - center.x) / dx;
+    if (distance > 0) candidates.push(distance);
+  }
+  if (Math.abs(dy) > 0.0001) {
+    const boundaryY = dy < 0 ? Number(panel.top) : Number(panel.top) + Number(panel.height);
+    const distance = (boundaryY - center.y) / dy;
+    if (distance > 0) candidates.push(distance);
+  }
+  const boundaryDistance = Math.min(...candidates);
+  if (!Number.isFinite(boundaryDistance)) return visualTarget;
+  const vectorLength = Math.max(0.001, Math.hypot(dx, dy));
+  const outsideDistance = Math.max(0, Number(extension) || 0);
+  return {
+    x: center.x + dx * boundaryDistance + dx / vectorLength * outsideDistance,
+    y: center.y + dy * boundaryDistance + dy / vectorLength * outsideDistance,
   };
 }
 
@@ -455,6 +487,7 @@ export class DesktopLayer extends Container {
       onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),
       onReleaseSettled: (payload) => this.onGroupReleaseComplete(payload),
       onVisualOwnershipChange: (reason) => this.onFolderRenderRequest(reason),
+      resolveFolderClipGeometry: () => this.resolveGroupFolderClipGeometry(),
       resolveFolderNode: (payload) => this.resolveGroupReleaseFolderNode(payload),
       resolvePointTarget: (payload) => this.resolveGroupReleasePoint(payload),
       visualOwnership: this.visualOwnership,
@@ -1067,6 +1100,8 @@ export class DesktopLayer extends Container {
       deviceResolution: state.deviceResolution,
       dragFolderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
+      gridCols: state.gridCols,
+      gridRows: state.gridRows,
       groupState: state.groupDragState,
       height: state.height,
       iconSize: state.iconSize,
@@ -1135,26 +1170,80 @@ export class DesktopLayer extends Container {
     return null;
   }
 
+  resolveGroupFolderClipGeometry() {
+    const panelNode = this.singleStageFolderLayer?.panel || null;
+    const panel = this.singleStageFolderLayer?.panelGeometry || null;
+    const layer = this.groupDragLayer;
+    if (!panelNode || panelNode.destroyed || !panel || !layer || layer.destroyed) return null;
+    const origin = layer.toLocal({ x: 0, y: 0 }, panelNode);
+    const xAxis = layer.toLocal({ x: 1, y: 0 }, panelNode);
+    const yAxis = layer.toLocal({ x: 0, y: 1 }, panelNode);
+    const scaleX = Math.hypot(xAxis.x - origin.x, xAxis.y - origin.y);
+    const scaleY = Math.hypot(yAxis.x - origin.x, yAxis.y - origin.y);
+    if (!Number.isFinite(scaleX) || scaleX <= 0 || !Number.isFinite(scaleY) || scaleY <= 0) {
+      return null;
+    }
+    return {
+      height: panel.height,
+      radius: 48,
+      rotation: Math.atan2(xAxis.y - origin.y, xAxis.x - origin.x),
+      scaleX,
+      scaleY,
+      width: panel.width,
+      x: origin.x,
+      y: origin.y,
+    };
+  }
+
   resolveGroupReleasePoint({ entry, node: releaseNode, target, state } = {}) {
     const semanticAnchor = target?.semanticAnchor || null;
-    const makeResolvedPoint = (visualTarget, targetScale = { x: 1, y: 1 }) => ({
-      point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
-      scale: targetScale,
-    });
+    const resolveStableFolderSlotStageRect = (anchor) => {
+      const record = this.singleStageFolderLayer?.resolveStableIconSlotRecord?.(anchor);
+      const clientRect = stageLayoutRecordToClientRect(record);
+      return clientRectToStageVisualRect(clientRect, state?.stageRect);
+    };
+    const makeResolvedPoint = (visualTarget, targetScale = { x: 1, y: 1 }) => {
+      const resolvedVisualTarget = entry?.visibilityPolicy?.kind === "desktop-occluded-egress"
+        ? resolvePanelEgressPoint(
+          visualTarget,
+          this.singleStageFolderLayer?.panelGeometry || null
+        )
+        : visualTarget;
+      return {
+        point: resolveReleaseRootPoint(releaseNode, resolvedVisualTarget, targetScale),
+        scale: targetScale,
+      };
+    };
     if (semanticAnchor?.kind?.startsWith("desktop-page-edge-")) {
       const goesLeft = semanticAnchor.kind.endsWith("-left");
+      const width = Math.max(1, Number(state?.width) || 1);
+      const height = Math.max(1, Number(state?.height) || 1);
+      const laneY = Math.max(0, Math.min(1, Number(semanticAnchor.laneY) || 0.5));
+      const metrics = getDesktopGridMetrics({
+        cols: state?.gridCols,
+        height,
+        rows: state?.gridRows,
+        width,
+      });
       return makeResolvedPoint({
-        x: goesLeft ? -28 : Math.max(1, Number(state?.width) || 1) + 28,
-        y: Math.max(1, Number(state?.height) || 1) * 0.5,
+        x: goesLeft ? -28 : width + 28,
+        y: metrics.gridTop + metrics.gridHeight * laneY,
       }, { x: 0.72, y: 0.72 });
     }
     if (semanticAnchor?.kind?.startsWith("folder-page-edge-")) {
       const panel = this.singleStageFolderLayer?.panelGeometry || null;
       if (!panel) return null;
       const goesLeft = semanticAnchor.kind.endsWith("-left");
+      const grid = this.singleStageFolderLayer?.targetFolderGeometry?.grid || null;
+      const laneY = Math.max(0, Math.min(1, Number(semanticAnchor.laneY) || 0.5));
+      const stableSlotRect = resolveStableFolderSlotStageRect(semanticAnchor);
       return makeResolvedPoint({
         x: goesLeft ? panel.left - 24 : panel.left + panel.width + 24,
-        y: panel.top + panel.height * 0.5,
+        y: stableSlotRect
+          ? stableSlotRect.top + stableSlotRect.height / 2
+          : grid
+            ? grid.top + grid.height * laneY
+            : panel.top + panel.height * laneY,
       }, { x: 0.62, y: 0.62 });
     }
     if (semanticAnchor?.kind === "folder-preview-slot") {
@@ -1183,6 +1272,17 @@ export class DesktopLayer extends Container {
       if (!pose?.center) return null;
       return makeResolvedPoint(pose.center, { x: 0.35, y: 0.35 });
     }
+    if (semanticAnchor?.kind === "folder-open-slot") {
+      const stableSlotRect = resolveStableFolderSlotStageRect(semanticAnchor);
+      if (!stableSlotRect) return null;
+      const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
+        targetStageRect: stableSlotRect,
+      });
+      return makeResolvedPoint({
+        x: stableSlotRect.left + stableSlotRect.width / 2,
+        y: stableSlotRect.top + stableSlotRect.height / 2,
+      }, targetScale);
+    }
     const targetId = target?.id || entry?.id || null;
     if (!targetId) return null;
     const nodeCandidates = [
@@ -1197,10 +1297,7 @@ export class DesktopLayer extends Container {
         const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
           targetNode: node,
         });
-        return {
-          point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
-          scale: targetScale,
-        };
+        return makeResolvedPoint(visualTarget, targetScale);
       }
     }
     const area = target?.area === "folder" ? "folder" : "desktop";
@@ -1223,10 +1320,7 @@ export class DesktopLayer extends Container {
     const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
       targetStageRect: stageRect,
     });
-    return {
-      point: resolveReleaseRootPoint(releaseNode, visualTarget, targetScale),
-      scale: targetScale,
-    };
+    return makeResolvedPoint(visualTarget, targetScale);
   }
 
   findFolderBoundsEntry(folderId) {

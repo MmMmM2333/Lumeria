@@ -221,6 +221,7 @@ export class GroupReleaseController {
     this.onEntryAbort = options.onEntryAbort || (() => {});
     this.onFolderShellComplete = options.onFolderShellComplete || (() => {});
     this.onRenderRequest = options.onRenderRequest || (() => {});
+    this.prepareFolderSlotVisual = options.prepareFolderSlotVisual || (() => false);
     this.folderShellFrame = new Graphics({ label: "group-transfer-folder-shell" });
     this.folderShellFrame.eventMode = "none";
     this.folderShellFrame.zIndex = 100;
@@ -305,6 +306,14 @@ export class GroupReleaseController {
     if (this.planKey === key) return;
     this.clear("group-release-replace");
     this.planKey = key;
+  }
+
+  ownsActorNode(node) {
+    if (!node || node.destroyed) return false;
+    for (const lane of this.lanes.values()) {
+      if (lane.kind === "folder" && lane.controller?.ownsActorNode(node)) return true;
+    }
+    return false;
   }
 
   updateFolderShellActor(shellActor, contexts, state, plan) {
@@ -470,6 +479,10 @@ export class GroupReleaseController {
         installRenderHook: false,
         onReleaseAbort: (release, reason) => this.settleLane(lane, "aborted", release, reason),
         onReleaseComplete: (release) => this.settleLane(lane, "settled", release),
+        onPrepareTargetVisual: (payload) => this.prepareFolderSlotVisual({
+          ...payload,
+          context: lane.context,
+        }),
       });
       this.lanes.set(laneKey, lane);
     }
@@ -487,11 +500,15 @@ export class GroupReleaseController {
     if (!lane.sourceMetrics || !lane.controller.active?.started) {
       lane.sourceMetrics = readReleaseSourceMetrics(context.node, context.state);
     }
-    const releaseIconSize = isFolderSlotReleaseMode(entry.mode)
+    const targetVisualIconSize = isFolderSlotReleaseMode(entry.mode)
       ? getFolderSlotReleaseIconSize(
         targetFolderNode?.iconSize || context.state.iconSize || context.state.visualSpec?.iconSize
       )
       : Math.max(1, finite(context.state.visualSpec?.iconSize, context.state.iconSize || 64));
+    const releaseIconSize = Math.max(
+      1,
+      finite(context.node?.iconSize, finite(context.state.visualSpec?.iconSize, context.state.iconSize || 64))
+    );
     const release = {
       item: {
         ...(entry.item || {}),
@@ -509,6 +526,7 @@ export class GroupReleaseController {
       },
       sourceIconSize: lane.sourceMetrics.sourceIconSize,
       sourceSize: lane.sourceMetrics.sourceSize,
+      targetVisualIconSize,
       targetFolderId: target.folderId || null,
       targetPreviewSlotIndex: Number.isFinite(Number(target.slotIndex)) ? Number(target.slotIndex) : null,
       velocity: point(entry.velocity),
@@ -731,7 +749,11 @@ export class GroupReleaseController {
       Math.max(0.01, finite(target.scale?.x, 1)),
       Math.max(0.01, finite(target.scale?.y, 1))
     );
-    node.alpha = isReturn ? Math.max(0, finite(entry?.originAlpha, 1)) : 1;
+    node.alpha = entry?.alphaPolicy?.kind === "fade-out"
+      ? Math.max(0, finite(entry.alphaPolicy.to, 0))
+      : isReturn
+        ? Math.max(0, finite(entry?.originAlpha, 1))
+        : 1;
     if (node.labelText && !isReturn) {
       node.labelText.alpha = 1;
       node.labelText.scale.set(1);

@@ -38,11 +38,34 @@ function desktopSlotAnchor(location) {
   };
 }
 
-function desktopEdgeAnchor(location, currentPageIndex) {
+function edgeLane(location, columns, rows) {
+  const columnCount = normalizePositiveInteger(columns, 1);
+  const rowCount = normalizePositiveInteger(rows, 1);
+  const rawIndex = Number(location?.index);
+  if (!Number.isFinite(rawIndex)) {
+    return { laneRow: null, laneY: 0.5 };
+  }
+  const laneRow = Math.min(
+    rowCount - 1,
+    Math.max(0, Math.floor(Math.max(0, rawIndex) / columnCount))
+  );
+  return {
+    laneRow,
+    laneY: (laneRow + 0.5) / rowCount,
+  };
+}
+
+function desktopEdgeAnchor(location, currentPageIndex, limits) {
   const direction = location.pageIndex < currentPageIndex ? "left" : "right";
+  const columns = normalizePositiveInteger(limits?.desktopCols, 1);
+  const rows = normalizePositiveInteger(
+    limits?.desktopRows,
+    Math.max(1, Math.ceil(normalizePositiveInteger(limits?.desktopPageSize, columns) / columns))
+  );
   return {
     direction,
     kind: `desktop-page-edge-${direction}`,
+    ...edgeLane(location, columns, rows),
     pageIndex: location.pageIndex,
   };
 }
@@ -57,13 +80,22 @@ function folderOpenSlotAnchor(location) {
   };
 }
 
-function folderPageEdgeAnchor(location, currentFolderPageIndex) {
+function folderPageEdgeAnchor(location, currentFolderPageIndex, limits) {
   const direction = location.folderPageIndex < currentFolderPageIndex ? "left" : "right";
+  const columns = normalizePositiveInteger(limits?.folderCols, 1);
+  const rows = normalizePositiveInteger(
+    limits?.folderRows,
+    Math.max(1, Math.ceil(normalizePositiveInteger(limits?.folderPageSize, columns) / columns))
+  );
+  const { laneRow } = edgeLane(location, columns, rows);
   return {
     direction,
     folderId: location.folderId,
     folderPageIndex: location.folderPageIndex,
+    index: location.index,
+    itemId: location.itemId || null,
     kind: `folder-page-edge-${direction}`,
+    laneRow,
   };
 }
 
@@ -83,42 +115,45 @@ function folderCenterAnchor(location) {
   };
 }
 
-function sourceAnchor(member, currentView) {
+function sourceAnchor(member, currentView, limits) {
   const source = { ...member.source, itemId: member.id };
   const desktopPageIndex = Math.max(0, Number(currentView.desktopPageIndex) || 0);
   if (source.kind === "desktop") {
     return source.pageIndex === desktopPageIndex
       ? desktopSlotAnchor(source)
-      : desktopEdgeAnchor(source, desktopPageIndex);
+      : desktopEdgeAnchor(source, desktopPageIndex, limits);
   }
 
   if (source.ownerPageIndex !== desktopPageIndex) {
-    return desktopEdgeAnchor({ pageIndex: source.ownerPageIndex }, desktopPageIndex);
+    return desktopEdgeAnchor({
+      index: source.ownerIndex,
+      pageIndex: source.ownerPageIndex,
+    }, desktopPageIndex, limits);
   }
   if (currentView.openFolderId === source.folderId) {
     const folderPageIndex = Math.max(0, Number(currentView.folderPageIndex) || 0);
     return source.folderPageIndex === folderPageIndex
       ? folderOpenSlotAnchor(source)
-      : folderPageEdgeAnchor(source, folderPageIndex);
+      : folderPageEdgeAnchor(source, folderPageIndex, limits);
   }
   return Number(source.flatIndex) < PREVIEW_SLOT_LIMIT
     ? folderPreviewAnchor(source)
     : folderCenterAnchor(source);
 }
 
-function destinationAnchor(member, effects) {
+function destinationAnchor(member, effects, limits) {
   const destination = { ...member.destination, itemId: member.id };
   const finalDesktopPageIndex = Math.max(0, Number(effects.finalDesktopPageIndex) || 0);
   if (destination.kind === "desktop") {
     return destination.pageIndex === finalDesktopPageIndex
       ? desktopSlotAnchor(destination)
-      : desktopEdgeAnchor(destination, finalDesktopPageIndex);
+      : desktopEdgeAnchor(destination, finalDesktopPageIndex, limits);
   }
   if (effects.finalOpenFolderId === destination.folderId) {
     const finalFolderPageIndex = Math.max(0, Number(effects.finalFolderPageIndex) || 0);
     return destination.folderPageIndex === finalFolderPageIndex
       ? folderOpenSlotAnchor(destination)
-      : folderPageEdgeAnchor(destination, finalFolderPageIndex);
+      : folderPageEdgeAnchor(destination, finalFolderPageIndex, limits);
   }
   return Number(destination.flatIndex) < PREVIEW_SLOT_LIMIT
     ? folderPreviewAnchor(destination)
@@ -127,8 +162,12 @@ function destinationAnchor(member, effects) {
 
 function anchorGroupKey(anchor) {
   if (!anchor) return "missing";
-  if (anchor.kind.startsWith("desktop-page-edge-")) return anchor.kind;
-  if (anchor.kind.startsWith("folder-page-edge-")) return `${anchor.kind}:${anchor.folderId}`;
+  if (anchor.kind.startsWith("desktop-page-edge-")) {
+    return `${anchor.kind}:page:${anchor.pageIndex}:row:${anchor.laneRow ?? "middle"}`;
+  }
+  if (anchor.kind.startsWith("folder-page-edge-")) {
+    return `${anchor.kind}:${anchor.folderId}:page:${anchor.folderPageIndex}:row:${anchor.laneRow ?? "middle"}`;
+  }
   if (anchor.kind === "folder-center") return `${anchor.kind}:${anchor.folderId}`;
   return `${anchor.kind}:${anchor.itemId || anchor.folderId || anchor.pageIndex || 0}`;
 }
@@ -144,9 +183,24 @@ function isExactAnchor(anchor) {
 function isFadingAnchor(anchor) {
   return Boolean(
     anchor?.kind === "folder-center" ||
-    anchor?.kind?.startsWith("desktop-page-edge-") ||
-    anchor?.kind?.startsWith("folder-page-edge-")
+    anchor?.kind?.startsWith("desktop-page-edge-")
   );
+}
+
+function visibilityPolicyFor(anchor, currentView) {
+  if (anchor?.kind?.startsWith("folder-page-edge-")) {
+    return {
+      folderId: anchor.folderId || currentView?.openFolderId || null,
+      kind: "folder-panel-clip",
+    };
+  }
+  if (anchor?.kind === "desktop-slot" && currentView?.openFolderId) {
+    return {
+      folderId: currentView.openFolderId,
+      kind: "desktop-occluded-egress",
+    };
+  }
+  return { kind: "none" };
 }
 
 function capturedPose(actorKey, memberId = null) {
@@ -157,8 +211,14 @@ function capturedPose(actorKey, memberId = null) {
   };
 }
 
-function alphaPolicyFor(anchor, role) {
+function alphaPolicyFor(anchor, role, visibilityPolicy = { kind: "none" }) {
   if (role === "folder-shell") return { kind: "handoff", monotonic: true };
+  if (visibilityPolicy.kind === "folder-panel-clip") {
+    return { kind: "handoff", monotonic: true };
+  }
+  if (visibilityPolicy.kind === "desktop-occluded-egress") {
+    return { from: 1, kind: "fade-out", monotonic: true, to: 0 };
+  }
   if (role === "bundle" || isFadingAnchor(anchor)) {
     return { from: 1, kind: "fade-out", monotonic: true, to: 0 };
   }
@@ -178,19 +238,22 @@ function zBandFor(role, sourceOrder) {
 function makeExactActor(member, options = {}) {
   const role = options.isLead ? "lead" : "exact";
   const key = `item:${member.id}`;
+  const visibilityPolicy = options.visibilityPolicy || { kind: "none" };
   return {
-    alphaPolicy: alphaPolicyFor(options.endAnchor, role),
+    alphaPolicy: alphaPolicyFor(options.endAnchor, role, visibilityPolicy),
     bundleCount: 1,
     countBadgeZBand: GROUP_TRANSFER_Z_BAND.COUNT_BADGE,
     delayGroup: Math.min(6, Math.max(0, Number(options.delayGroup) || 0)),
     endAnchor: options.endAnchor,
     item: cloneItem(member.item),
     key,
+    continuityKey: key,
     memberIds: [member.id],
     representativeId: member.id,
     role,
     sourceOrder: member.sourceOrder,
     startAnchor: options.startAnchor,
+    visibilityPolicy,
     zBand: zBandFor(role, member.sourceOrder),
   };
 }
@@ -198,19 +261,22 @@ function makeExactActor(member, options = {}) {
 function makeBundleActor(groupKey, members, options = {}) {
   const representative = members[0];
   const key = `bundle:${options.phase}:${groupKey}`;
+  const visibilityPolicy = options.visibilityPolicy || { kind: "none" };
   return {
-    alphaPolicy: alphaPolicyFor(options.endAnchor, "bundle"),
+    alphaPolicy: alphaPolicyFor(options.endAnchor, "bundle", visibilityPolicy),
     bundleCount: members.length,
     countBadgeZBand: GROUP_TRANSFER_Z_BAND.COUNT_BADGE,
     delayGroup: Math.min(6, Math.max(0, Number(options.delayGroup) || 0)),
     endAnchor: options.endAnchor,
     item: cloneItem(representative.item),
     key,
+    continuityKey: options.continuityKey || `bundle:${groupKey}`,
     memberIds: members.map((member) => member.id),
     representativeId: representative.id,
     role: "bundle",
     sourceOrder: representative.sourceOrder,
     startAnchor: options.startAnchor,
+    visibilityPolicy,
     zBand: GROUP_TRANSFER_Z_BAND.BUNDLE,
   };
 }
@@ -224,11 +290,13 @@ function makeFolderShellActor(folderId, delayGroup = 0) {
     endAnchor: { folderId, kind: "folder-shell" },
     item: null,
     key: `folderShell:${folderId}`,
+    continuityKey: `folderShell:${folderId}`,
     memberIds: [],
     representativeId: null,
     role: "folder-shell",
     sourceOrder: -1,
     startAnchor: capturedPose(`folderShell:${folderId}`),
+    visibilityPolicy: { kind: "none" },
     zBand: GROUP_TRANSFER_Z_BAND.FOLDER_SHELL,
   };
 }
@@ -246,6 +314,14 @@ function indexCurrentOwners(currentActors) {
 function currentStartAnchor(member, owners, fallbackAnchor) {
   const owner = owners.get(member.id);
   return owner ? capturedPose(owner.key, member.id) : fallbackAnchor;
+}
+
+function claimCurrentContinuityKey(member, owners, claimedKeys) {
+  const owner = owners.get(member.id);
+  const candidate = owner?.continuityKey || owner?.key || null;
+  if (!candidate || claimedKeys.has(candidate)) return null;
+  claimedKeys.add(candidate);
+  return candidate;
 }
 
 function groupMembers(members, anchorFor) {
@@ -269,8 +345,8 @@ function buildGatherActors(members, options) {
   const lead = members.find((member) => member.id === leadId) || members[0] || null;
   const remaining = members.filter((member) => member.id !== lead?.id);
   const edgeGroups = groupMembers(
-    remaining.filter((member) => !isExactAnchor(sourceAnchor(member, options.currentView))),
-    (member) => sourceAnchor(member, options.currentView)
+    remaining.filter((member) => !isExactAnchor(sourceAnchor(member, options.currentView, options.limits))),
+    (member) => sourceAnchor(member, options.currentView, options.limits)
   );
   const bundleGroups = edgeGroups.slice(0, maxBundles);
   const bundledIds = new Set(bundleGroups.flatMap((group) => group.members.map((member) => member.id)));
@@ -286,7 +362,7 @@ function buildGatherActors(members, options) {
     delayGroup: index,
     endAnchor: capturedPose(`item:${member.id}`, member.id),
     isLead: member.id === lead?.id,
-    startAnchor: sourceAnchor(member, options.currentView),
+    startAnchor: sourceAnchor(member, options.currentView, options.limits),
   }));
   for (const group of bundleGroups) {
     actors.push(makeBundleActor(group.key, group.members, {
@@ -297,7 +373,7 @@ function buildGatherActors(members, options) {
     }));
   }
   if (overflowMembers.length) {
-    const anchor = sourceAnchor(overflowMembers[0], options.currentView);
+    const anchor = sourceAnchor(overflowMembers[0], options.currentView, options.limits);
     actors.push(makeBundleActor("overflow", overflowMembers, {
       delayGroup: actors.length,
       endAnchor: capturedPose("bundle:gather:overflow"),
@@ -323,7 +399,7 @@ function buildDestinationActors(members, options) {
   const exactMembers = [];
   const remaining = [];
   for (const member of members) {
-    const anchor = destinationAnchor(member, options.effects);
+    const anchor = destinationAnchor(member, options.effects, options.limits);
     // Closed/new-folder overflow has one visual contract: a single +N actor.
     // Continuity keeps exact actors everywhere else, but must not re-expand
     // hidden folder members into several icons converging on the same center.
@@ -334,7 +410,7 @@ function buildDestinationActors(members, options) {
     else remaining.push(member);
   }
   const actors = exactMembers.map((member, index) => {
-    const endAnchor = destinationAnchor(member, options.effects);
+    const endAnchor = destinationAnchor(member, options.effects, options.limits);
     return makeExactActor(member, {
       delayGroup: index,
       endAnchor,
@@ -342,30 +418,43 @@ function buildDestinationActors(members, options) {
       startAnchor: currentStartAnchor(
         member,
         owners,
-        sourceAnchor(member, options.currentView)
+        sourceAnchor(member, options.currentView, options.limits)
       ),
+      visibilityPolicy: visibilityPolicyFor(endAnchor, options.currentView),
     });
   });
+  const claimedContinuityKeys = new Set(actors.map((actor) => actor.continuityKey));
   const maxBundles = normalizePositiveInteger(options.limits.maxBundles, 4);
-  const groups = groupMembers(remaining, (member) => destinationAnchor(member, options.effects));
+  const groups = groupMembers(
+    remaining,
+    (member) => destinationAnchor(member, options.effects, options.limits)
+  );
   const selectedGroups = groups.slice(0, maxBundles);
   const extraMembers = groups.slice(maxBundles).flatMap((group) => group.members);
   if (extraMembers.length) {
-    const anchor = destinationAnchor(extraMembers[0], options.effects);
+    const anchor = destinationAnchor(extraMembers[0], options.effects, options.limits);
     selectedGroups.push({ anchor, key: "overflow", members: extraMembers });
   }
   for (const group of selectedGroups) {
     const representative = group.members[0];
-    actors.push(makeBundleActor(group.key, group.members, {
+    const actor = makeBundleActor(group.key, group.members, {
+      continuityKey: claimCurrentContinuityKey(
+        representative,
+        owners,
+        claimedContinuityKeys
+      ),
       delayGroup: actors.length,
       endAnchor: group.anchor,
       phase: "release",
       startAnchor: currentStartAnchor(
         representative,
         owners,
-        sourceAnchor(representative, options.currentView)
+        sourceAnchor(representative, options.currentView, options.limits)
       ),
-    }));
+      visibilityPolicy: visibilityPolicyFor(group.anchor, options.currentView),
+    });
+    claimedContinuityKeys.add(actor.continuityKey);
+    actors.push(actor);
   }
   if (options.effects.createdFolderId) {
     actors.unshift(makeFolderShellActor(options.effects.createdFolderId));
@@ -379,23 +468,30 @@ function buildReturnActors(members, options) {
   const exactMembers = [];
   const groupedMembers = [];
   for (const member of members) {
-    const anchor = sourceAnchor(member, options.currentView);
+    const anchor = sourceAnchor(member, options.currentView, options.limits);
     if (isExactAnchor(anchor) || member.id === leadId) exactMembers.push(member);
     else groupedMembers.push(member);
   }
-  const actors = exactMembers.map((member, index) => makeExactActor(member, {
-    delayGroup: index,
-    endAnchor: sourceAnchor(member, options.currentView),
-    isLead: member.id === leadId,
-    startAnchor: currentStartAnchor(member, owners, capturedPose(`item:${member.id}`, member.id)),
-  }));
+  const actors = exactMembers.map((member, index) => {
+    const endAnchor = sourceAnchor(member, options.currentView, options.limits);
+    return makeExactActor(member, {
+      delayGroup: index,
+      endAnchor,
+      isLead: member.id === leadId,
+      startAnchor: currentStartAnchor(member, owners, capturedPose(`item:${member.id}`, member.id)),
+      visibilityPolicy: visibilityPolicyFor(endAnchor, options.currentView),
+    });
+  });
   const maxBundles = normalizePositiveInteger(options.limits.maxBundles, 4);
-  const groups = groupMembers(groupedMembers, (member) => sourceAnchor(member, options.currentView));
+  const groups = groupMembers(
+    groupedMembers,
+    (member) => sourceAnchor(member, options.currentView, options.limits)
+  );
   const selectedGroups = groups.slice(0, maxBundles);
   const extraMembers = groups.slice(maxBundles).flatMap((group) => group.members);
   if (extraMembers.length) {
     selectedGroups.push({
-      anchor: sourceAnchor(extraMembers[0], options.currentView),
+      anchor: sourceAnchor(extraMembers[0], options.currentView, options.limits),
       key: "overflow",
       members: extraMembers,
     });
@@ -411,6 +507,7 @@ function buildReturnActors(members, options) {
         owners,
         capturedPose(`bundle:return:${group.key}`, representative.id)
       ),
+      visibilityPolicy: visibilityPolicyFor(group.anchor, options.currentView),
     }));
   }
   return actors;
