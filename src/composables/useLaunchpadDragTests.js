@@ -141,6 +141,7 @@ function createAtomicDragHarness(initialPages, options = {}) {
     commits: [],
     dragEnds: [],
     dragStarts: [],
+    openFolders: [],
     pageIndexes: [],
     rejected: [],
   };
@@ -210,7 +211,8 @@ function createAtomicDragHarness(initialPages, options = {}) {
       revision.value += 1;
       return true;
     },
-    commitOpenFolder: (next) => {
+    commitOpenFolder: (next, commitOptions) => {
+      calls.openFolders.push({ next, options: commitOptions || null });
       openFolderId.value = next;
     },
     commitPageIndex: (next) => {
@@ -1993,6 +1995,70 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
+    const sourceFolder = folder("folder-source-reentry-noop", ["x", "y", "z"]);
+    const harness = createAtomicDragHarness([[sourceFolder]], {
+      folderPanelRect: {
+        bottom: 500,
+        height: 200,
+        left: 100,
+        right: 400,
+        top: 300,
+        width: 300,
+      },
+      openFolderId: sourceFolder.id,
+      pageRect: {
+        bottom: 500,
+        height: 400,
+        left: 80,
+        right: 360,
+        top: 100,
+        width: 280,
+      },
+    });
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.TOP_LEVEL,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      sourceFolder.id,
+      { height: 64, left: 20, top: 208, width: 64 },
+      { area: "desktop", id: sourceFolder.id, index: 0, item: sourceFolder, pageIndex: 0 }
+    );
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 56, left: 220, top: 352, width: 56 }),
+    };
+    harness.drag.startDrag(
+      makePointerEvent(172, sourceElement, { clientX: 248, clientY: 380 }),
+      sourceFolder.children[2],
+      { folderId: sourceFolder.id, index: 2, pageIndex: 0, type: "folder" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 140,
+    }));
+    assert(harness.openFolderId.value === null, "the last source-folder child should close its folder on exit");
+    assert(flushTimerByDelay(timers, 42), "same-folder reentry should resolve after the close transition");
+    assert(
+      harness.drag.dragFolderTargetId.value === sourceFolder.id &&
+        harness.drag.groupDragState.value?.intent?.type === "folder-thumbnail",
+      "a same-folder reentry target must remain published even when the planner reports same-placement"
+    );
+    assert(flushTimerByDelay(timers, 540), "same-folder reentry should reach the normal hover flash phase");
+    assert(flushTimerByDelay(timers, 920), "same-folder reentry should schedule the normal reopen dwell");
+    assert(
+      harness.openFolderId.value === sourceFolder.id,
+      "dragging the last child back onto its source folder should reopen it without a detour"
+    );
+    harness.drag.cancelDrag(makePointerEvent(172, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 50,
+      clientY: 240,
+      type: "pointercancel",
+    }));
+    flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = folder("folder-drag-out", ["x", "y", "z"]);
     const harness = createAtomicDragHarness([[sourceFolder]], {
       desktopMainRect: {
@@ -2035,6 +2101,11 @@ export async function runLaunchpadDragTests() {
     assert(
       harness.openFolderId.value === null,
       "a folder-source group drag should close the folder as soon as it crosses outside the entered panel"
+    );
+    const closeCall = harness.calls.openFolders.find((call) => call.next === null);
+    assert(
+      closeCall?.options?.excludeCloseGhostIds?.join(",") === "x,y",
+      "closing a folder during a drag should exclude the dragged children from close ghosts",
     );
 
     harness.drag.finishDrag(makePointerEvent(22, sourceElement, {

@@ -303,6 +303,10 @@ export async function runDesktopLayerTests() {
     });
     layer.singleStageFolderLayer.onRenderRequest("folder-resize-layout");
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
+    assert(
+      layer.children.indexOf(layer.folderDropStrokeLayer) < layer.children.indexOf(layer.groupDragLayer),
+      "folder drop stroke should render below the dragged actor"
+    );
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
   }
@@ -452,7 +456,7 @@ export async function runDesktopLayerTests() {
     liveFolderTarget.position.set(330, 250);
     liveFolderTarget.visualWrap = new Container();
     liveFolderTarget.addChild(liveFolderTarget.visualWrap);
-    layer.singleStageFolderLayer.iconNodes.set("folder-a:0:folder-visible-stable", liveFolderTarget);
+    layer.singleStageFolderLayer.iconNodes.set("folder-a:folder-visible-stable", liveFolderTarget);
     layer.singleStageFolderLayer.pageTrack.addChild(liveFolderTarget);
     const stableFolderSlotPose = layer.resolveGroupReleasePoint({
       entry: { id: "folder-visible-stable", mode: "return" },

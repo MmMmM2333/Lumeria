@@ -72,6 +72,15 @@ const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
 const DESKTOP_RESIZE_LAYOUT_REASON = "desktop-resize-layout";
 const MOTION_TARGET_EPSILON = 0.0001;
 
+function makeDesktopDragVisualSpec(plan = null) {
+  const entries = plan?.entries || [];
+  const activePageIndex = Number(plan?.activePageIndex) || 0;
+  const entry = entries.find((candidate) => (
+    candidate?.pageIndex === activePageIndex && candidate?.item?.type === "app"
+  )) || entries.find((candidate) => candidate?.pageIndex === activePageIndex) || entries[0];
+  return entry?.nodeState ? makeIconVisualSpecFromNodeState(entry.nodeState) : null;
+}
+
 function readTransformAxisLengths(node) {
   const matrix = node?.worldTransform;
   if (!matrix) return null;
@@ -520,8 +529,11 @@ export class DesktopLayer extends Container {
     this.addChild(this.visualRoot);
     this.addChild(this.desktopClosingUnderlayLayer);
     this.addChild(this.singleStageFolderLayer);
-    this.addChild(this.groupDragLayer);
     this.addChild(this.folderDropStrokeLayer);
+    // The stroke is part of the drop target chrome.  Keep it below the
+    // dragged actor so the actor can visibly enter the target instead of
+    // being painted underneath the folder outline.
+    this.addChild(this.groupDragLayer);
     this.addChild(this.singleStageDiagnosticsLayer);
     this.addChild(this.handoffDebugLayer);
     this.addChild(this.dragHitDebugLayer);
@@ -1098,8 +1110,10 @@ export class DesktopLayer extends Container {
   updateGroupDragLayer(state) {
     this.groupDragLayer?.update?.({
       deviceResolution: state.deviceResolution,
+      desktopVisualSpec: makeDesktopDragVisualSpec(this.lastDesktopRenderPlan),
       dragFolderHoverState: state.dragFolderHoverState,
       folderPageSize: state.folderPageSize,
+      folderVisualSpec: this.singleStageFolderLayer?.stableFolderSlotContext?.visualSpec || null,
       gridCols: state.gridCols,
       gridRows: state.gridRows,
       groupState: state.groupDragState,

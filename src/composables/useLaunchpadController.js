@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { createLaunchpadDocumentCoordinator } from "../application/launchpadDocumentCoordinator.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
@@ -504,6 +504,23 @@ export function useLaunchpadController(options = {}) {
       folderMotionGeometry.value = next;
     },
   });
+  const projectedPagesForLayout = shallowRef(null);
+  const folderPagesForLayout = computed(() => {
+    if (
+      isFolderClosing.value ||
+      isFolderAppLaunchClosing.value ||
+      isFolderZoomFadeClosing.value
+    ) return folderPages.value;
+    const folderId = renderedFolder.value?.id || openFolderId.value;
+    const projectedPages = projectedPagesForLayout.value;
+    if (!folderId || !Array.isArray(projectedPages)) return folderPages.value;
+    const projectedFolder = projectedPages
+      .flatMap((page) => page || [])
+      .find((item) => item?.type === "folder" && item.id === folderId);
+    if (!projectedFolder) return folderPages.value;
+    if (Array.isArray(projectedFolder.childPages)) return projectedFolder.childPages;
+    return [Array.isArray(projectedFolder.children) ? projectedFolder.children : []];
+  });
   setFolderPageTurnContextResolver(() => {
     const isClosingPhase = Boolean(
       isFolderClosing.value ||
@@ -622,6 +639,7 @@ export function useLaunchpadController(options = {}) {
     folderIconSize,
     folderIconSizeMode,
     folderPages,
+    folderPagesForLayout,
     folderRows,
     folderViewportHeight,
     getVisibleFolderPage,
@@ -1270,7 +1288,9 @@ export function useLaunchpadController(options = {}) {
     if (activeFolderId && !keepsActiveFolderOpen) {
       // Capture the authoritative source folder before the atomic layout commit
       // can remove it; the closing overlay then owns its visual handoff.
-      commitOpenFolder(null);
+      commitOpenFolder(null, {
+        excludeCloseGhostIds: operation.draggedIds,
+      });
     }
     commitPages(plan.nextPages);
     if (!operation.standalone) batchSelection.reconcile(plan.nextPages);
@@ -1467,6 +1487,7 @@ export function useLaunchpadController(options = {}) {
     pageRefs,
     pages,
     planGroupTransfer: planBatchGroupTransfer,
+    projectedPagesRef: projectedPagesForLayout,
     requestFolderPageTurn,
     visualFolderPageIndex,
     visibleFolderRowCount,

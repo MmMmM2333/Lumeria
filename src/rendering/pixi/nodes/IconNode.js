@@ -98,6 +98,16 @@ function setPositionValue(point, x, y) {
   point?.set?.(x, y);
 }
 
+function copyLabelPresentation(source, target) {
+  if (!source || !target) return;
+  setTextValue(target, source.text);
+  for (const prop of ["fontSize", "lineHeight", "wordWrap", "wordWrapWidth"]) {
+    setTextStyleValue(target, prop, source.style?.[prop]);
+  }
+  target.anchor.set(source.anchor?.x ?? 0.5, source.anchor?.y ?? 0);
+  target.position.set(source.position?.x ?? 0, source.position?.y ?? 0);
+}
+
 function getIconMotionLayer(source) {
   const type = source?.type || "";
   if (type === "folder") return "folder";
@@ -209,6 +219,7 @@ export class IconNode extends Container {
       style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
     });
     this.labelText = makeLabelText();
+    this.labelTransitionText = makeLabelText();
     this.missingBadge = new Container();
     this.missingBadgeBackground = new Graphics();
     this.missingBadgeText = new Text({
@@ -245,6 +256,7 @@ export class IconNode extends Container {
     this.hitAreaRect = new Rectangle();
     this.hitAreaSig = "";
     this.labelRenderSig = "";
+    this.labelTransitionBlendActive = false;
     this.missingBadgeSig = "";
     this.focusFrameSig = "";
     this.batchSelectionBadgeSig = "";
@@ -290,6 +302,9 @@ export class IconNode extends Container {
     this.folderFlashOverlay.visible = false;
     this.folderCreateBackdrop.visible = false;
     this.folderCreateFlashOverlay.visible = false;
+    this.labelTransitionText.eventMode = "none";
+    this.labelTransitionText.visible = false;
+    this.jiggleWrap.addChild(this.labelTransitionText);
     this.jiggleWrap.addChild(this.labelText);
 
     this.eventMode = "static";
@@ -1250,10 +1265,43 @@ export class IconNode extends Container {
       numberSig(labelState.x),
       numberSig(labelState.y),
     ].join(":");
-    if (this.labelRenderSig === sig) return;
+    if (this.labelRenderSig === sig) {
+      if (!state.visualSpecTransition?.active && this.labelTransitionBlendActive) {
+        this.finishLabelTransitionBlend();
+      }
+      return;
+    }
+    const shouldBlend = Boolean(
+      state.visualSpecTransition?.active &&
+      this.labelText.visible &&
+      this.labelText.text &&
+      !this.labelTransitionBlendActive
+    );
+    if (shouldBlend) {
+      copyLabelPresentation(this.labelText, this.labelTransitionText);
+      this.labelTransitionText.visible = true;
+      this.labelTransitionText.alpha = Math.max(0, Number(this.labelText.alpha) || 1);
+      this.labelText.alpha = 0;
+      this.labelTransitionBlendActive = true;
+      motion(this.labelTransitionText)
+        .preset("fade", { duration: 0.12 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 0, onComplete: () => this.finishLabelTransitionBlend() })
+        .start();
+      motion(this.labelText)
+        .preset("fade", { duration: 0.12 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 1 })
+        .start();
+    }
     this.labelRenderSig = sig;
     this.labelText.visible = labelState.visible;
-    if (!this.labelText.visible) return;
+    if (!this.labelText.visible) {
+      this.finishLabelTransitionBlend();
+      return;
+    }
     setTextStyleValue(this.labelText, "fontSize", labelState.fontSize);
     setTextStyleValue(this.labelText, "lineHeight", labelState.lineHeight);
     setTextStyleValue(this.labelText, "wordWrap", labelState.wordWrap);
@@ -1261,6 +1309,19 @@ export class IconNode extends Container {
     setTextValue(this.labelText, labelState.text);
     this.labelText.anchor.set(labelState.anchorX, labelState.anchorY);
     setPositionValue(this.labelText.position, labelState.x, labelState.y);
+    if (!state.visualSpecTransition?.active && this.labelTransitionBlendActive) {
+      this.finishLabelTransitionBlend();
+    }
+  }
+
+  finishLabelTransitionBlend() {
+    if (!this.labelTransitionBlendActive && !this.labelTransitionText.visible) return;
+    killMotionOf(this.labelTransitionText);
+    killMotionOf(this.labelText);
+    this.labelTransitionText.alpha = 0;
+    this.labelTransitionText.visible = false;
+    if (this.labelText.visible) this.labelText.alpha = 1;
+    this.labelTransitionBlendActive = false;
   }
 
   revealLabelAfterGhost(options = {}) {
@@ -1341,6 +1402,7 @@ export class IconNode extends Container {
     if (this.labelText) {
       this.labelText.renderable = !sourceHidden;
       if (sourceHidden) {
+        this.finishLabelTransitionBlend();
         this.folderHandoffLabelRevealInProgress = false;
         this.cancelFolderHandoffLabelFade();
         killMotionOf(this.labelText);

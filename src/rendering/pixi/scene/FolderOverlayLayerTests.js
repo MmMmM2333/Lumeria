@@ -505,13 +505,78 @@ export async function runFolderOverlayLayerTests() {
     layer.update(state);
     settleResizeUpdate(layer, state);
 
-    const key = `${folderId}:0:${page[0].id}`;
+    const key = `${folderId}:${page[0].id}`;
     const node = layer.iconNodes.get(key);
     const frame = node?.getFocusFrameRect();
     assert(node && frame, "large-icon frame setup should render the selected folder icon");
     assert(node.state.iconSize + 24 <= node.state.cellWidth + 0.001, "large folder icons should reserve horizontal interaction padding");
     assert(frame.width <= node.state.cellWidth + 0.001, "large folder selection frames should stay inside their cell");
     assert(node.hitArea.width <= node.state.cellWidth + 0.001, "large folder edit hit areas should stay inside their cell");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-stable-page-identity";
+    const movingItem = { id: "moving-between-pages", name: "Moving Between Pages", type: "app" };
+    const neighborItem = { id: "page-neighbor", name: "Page Neighbor", type: "app" };
+    const key = `${folderId}:${movingItem.id}`;
+    const initialPages = [[movingItem], [neighborItem]];
+    layer.update(makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(1, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPageIndex: 0,
+      folderPageSize: 1,
+      folderPages: initialPages,
+      visualFolderPageIndex: 0,
+    }));
+    motionRuntime.step(1);
+    const initialNode = layer.iconNodes.get(key);
+    assert(initialNode, "page identity setup should create the moving icon node");
+
+    const projectedPages = [[neighborItem], [movingItem]];
+    layer.update(makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(1, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPageIndex: 1,
+      folderPageSize: 1,
+      folderPageTurnToken: "stable-page-turn-1",
+      folderPages: projectedPages,
+      visualFolderPageIndex: 1,
+    }));
+    const forwardNode = layer.iconNodes.get(key);
+    assert(
+      forwardNode === initialNode && forwardNode.alpha === 1,
+      "moving an icon to another page should preserve its node and avoid an opening fade"
+    );
+
+    layer.update(makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(1, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPageIndex: 0,
+      folderPageSize: 1,
+      folderPageTurnToken: "stable-page-turn-2",
+      folderPages: initialPages,
+      visualFolderPageIndex: 0,
+    }));
+    assert(
+      layer.iconNodes.get(key) === initialNode && initialNode.alpha === 1,
+      "reversing a page move should keep the same node without a delayed fade-in"
+    );
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -546,7 +611,7 @@ export async function runFolderOverlayLayerTests() {
     layer.update(state);
     settleResizeUpdate(layer, state);
 
-    const key = `${folderId}:0:${page[0].id}`;
+    const key = `${folderId}:${page[0].id}`;
     const node = layer.iconNodes.get(key);
     const target = layer.folderIconLayoutTargets.get(key);
     const hitTop = target.y + node.hitArea.y;
@@ -572,6 +637,95 @@ export async function runFolderOverlayLayerTests() {
       visualFolderPageIndex: 0,
     });
     assert(mode === "page-turn", "cross-page folder drags should preserve page-turn resize mode through visual release");
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-page-return-settle";
+    const pageA = makeFolderResizeItems("return-page-a", 14);
+    const heldItem = { id: "return-held-item", name: "Return Held", type: "app" };
+    const pageB = [heldItem];
+    const dragMeta = {
+      draggedIds: [heldItem.id],
+      item: heldItem,
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const pageZeroStyle = {
+      gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+      gridTemplateRows: "repeat(2, var(--folder-icon-cell-height))",
+    };
+    const pageOneStyle = {
+      gridTemplateColumns: "repeat(7, var(--folder-icon-cell-width))",
+      gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+    };
+    const dragState = {
+      center: { x: 500, y: 380 },
+      entries: [],
+      key: "page-return-drag",
+      phase: "dragging",
+      pointer: { x: 500, y: 380 },
+      totalCount: 1,
+    };
+    const initialState = makeFolderResizeState({
+      dragMeta,
+      folderGridStyle: pageZeroStyle,
+      folderId,
+      folderPageIndex: 0,
+      folderPageSize: 14,
+      folderPages: [pageA, pageB],
+      groupDragState: dragState,
+      groupTransferOwnedItemIds: new Set([heldItem.id]),
+      visualFolderPageIndex: 0,
+    });
+    layer.update(initialState);
+    settleResizeUpdate(layer, initialState);
+    const movingNeighbor = layer.iconNodes.get(`${folderId}:${pageA[0].id}`);
+    const initialTarget = layer.folderIconLayoutTargets.get(`${folderId}:${pageA[0].id}`);
+    assert(movingNeighbor && initialTarget, "page-return setup should render a neighbor on the first page");
+
+    const pageOneState = makeFolderResizeState({
+      dragMeta,
+      folderGridStyle: pageOneStyle,
+      folderId,
+      folderPageIndex: 1,
+      folderPageSize: 14,
+      folderPageTurnToken: "page-return-forward",
+      folderPages: [pageA, pageB],
+      groupDragState: dragState,
+      groupTransferOwnedItemIds: new Set([heldItem.id]),
+      visualFolderPageIndex: 1,
+    });
+    layer.update(pageOneState);
+    for (let index = 0; index < 80; index += 1) motionRuntime.step(0.05);
+
+    const projectedPageA = [heldItem, ...pageA.slice(0, 13)];
+    const projectedPageB = [pageA[13]];
+    const returnState = makeFolderResizeState({
+      dragMeta,
+      folderGridStyle: pageZeroStyle,
+      folderId,
+      folderPageIndex: 0,
+      folderPageSize: 14,
+      folderPages: [projectedPageA, projectedPageB],
+      groupDragState: dragState,
+      groupTransferOwnedItemIds: new Set([heldItem.id]),
+      visualFolderPageIndex: 0,
+    });
+    layer.update(returnState);
+    const returnTarget = layer.folderIconLayoutTargets.get(`${folderId}:${pageA[0].id}`);
+    const returnMotion = getBaseAnimation(movingNeighbor, "x");
+    assert(returnTarget && returnTarget.x !== initialTarget.x, "returning to the first page should retarget the displaced neighbor");
+    assert(returnMotion, "the first reorder after a completed page return should keep a layout spring instead of flashing");
+    assert(
+      !nearlyEqual(movingNeighbor.x, returnTarget.x),
+      "the displaced neighbor should still be between its old and new slots during the page-return spring"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
   }
 
   {
@@ -610,7 +764,7 @@ export async function runFolderOverlayLayerTests() {
     });
     layer.update(baseState);
     settleResizeUpdate(layer, baseState);
-    const movingKey = `${folderId}:0:${movingItem.id}`;
+    const movingKey = `${folderId}:${movingItem.id}`;
     const movingNode = layer.iconNodes.get(movingKey);
     const initialX = movingNode?.x;
 
@@ -705,7 +859,7 @@ export async function runFolderOverlayLayerTests() {
     layer.update(initialState);
 
     const secondPageItem = folderResizePages[1][0];
-    const secondPageKey = `${folderId}:1:${secondPageItem.id}`;
+    const secondPageKey = `${folderId}:${secondPageItem.id}`;
     const secondPageNode = layer.iconNodes.get(secondPageKey);
     const initialTarget = layer.folderIconLayoutTargets.get(secondPageKey);
     assert(secondPageNode && initialTarget, "subpixel opening layout setup should create the adjacent-page icon");
@@ -801,7 +955,7 @@ export async function runFolderOverlayLayerTests() {
       id: largeIconItem.id,
       pageIndex: 0,
     });
-    const node = layer.iconNodes.get(`folder-large-icon-size:0:${largeIconItem.id}`);
+    const node = layer.iconNodes.get(`folder-large-icon-size:${largeIconItem.id}`);
 
     assert(nearlyEqual(stableRecord?.width, 88), "folder stable layout bounds should allow icon sizes above 56px");
     assert(nearlyEqual(renderedRecord?.meta?.visualSpec?.iconSize, 88), "folder rendered bounds should publish the larger visual spec");
@@ -1460,7 +1614,7 @@ export async function runFolderOverlayLayerTests() {
       motionRuntime.step(0.05);
       layer.update(compactState);
     }
-    const shiftedKey = `folder-opening-held:0:${shiftedItemId}`;
+    const shiftedKey = `folder-opening-held:${shiftedItemId}`;
     const shiftedNode = layer.iconNodes.get(shiftedKey);
     assert(shiftedNode?.visible === false, "arrived opening ghosts should keep real icons hidden while the folder is still opening");
     assert(layer.folderHandoff.hasOpeningGhost(shiftedItemId), "arrived opening ghosts should keep ownership so held-drag reorders can retarget them");
@@ -1614,7 +1768,7 @@ export async function runFolderOverlayLayerTests() {
     const compactGeometry = layer.update(compactState);
     settleResizeUpdate(layer, compactState);
 
-    const iconKey = "folder-opening-frame-layout:0:opening-frame-layout-7";
+    const iconKey = "folder-opening-frame-layout:opening-frame-layout-7";
     const iconNode = layer.iconNodes.get(iconKey);
     const initialTarget = layer.folderIconLayoutTargets.get(iconKey);
     assert(iconNode && initialTarget, "opening frame layout setup should create a settled visible folder icon");
@@ -1688,7 +1842,7 @@ export async function runFolderOverlayLayerTests() {
     layer.update(baseState);
     settleResizeUpdate(layer, baseState);
 
-    const iconKey = "folder-opening-layout:0:page-a-2";
+    const iconKey = "folder-opening-layout:page-a-2";
     const iconNode = layer.iconNodes.get(iconKey);
     const initialTarget = layer.folderIconLayoutTargets.get(iconKey);
     assert(iconNode && initialTarget, "opening layout commit setup should create a visible folder icon node");
@@ -1728,9 +1882,9 @@ export async function runFolderOverlayLayerTests() {
     layer.update(baseState);
     settleResizeUpdate(layer, baseState);
 
-    const iconKey = "folder-opening-owned:0:page-a-2";
+    const iconKey = "folder-opening-owned:page-a-2";
     const iconNode = layer.iconNodes.get(iconKey);
-    const visualKey = makeFolderIconVisualKey("folder-opening-owned", "page-a-2", 0);
+    const visualKey = makeFolderIconVisualKey("folder-opening-owned", "page-a-2");
     layer.acquireVisualOwnership(visualKey, {
       folderId: "folder-opening-owned",
       kind: "opening",
@@ -1778,7 +1932,7 @@ export async function runFolderOverlayLayerTests() {
     const compactGeometry = layer.update(compactState);
     settleResizeUpdate(layer, compactState);
     const livePageTrackX = layer.pageTrack.x;
-    const stableIconKey = "folder-resize:0:page-a-2";
+    const stableIconKey = "folder-resize:page-a-2";
     const stableIconNode = layer.iconNodes.get(stableIconKey);
     const stableIconInitialTarget = layer.folderIconLayoutTargets.get(stableIconKey);
     assert(stableIconNode && stableIconInitialTarget, "drag-driven page-turn resize test should start with a stable icon node");
@@ -2983,7 +3137,7 @@ export async function runFolderOverlayLayerTests() {
     layer.hideIconNodesForTransition("app-1", closingOwner);
     layer.hidePageTrackForTransition(closingOwner);
 
-    const iconKey = makeFolderIconVisualKey("folder-a", "app-1", 0);
+    const iconKey = makeFolderIconVisualKey("folder-a", "app-1");
     const pageTrackKey = makeFolderPageTrackVisualKey("folder-a");
     assert(iconNode.visible === false, "closing ownership should hide the real folder icon node");
     assert(layer.pageTrack.visible === false, "closing ownership should hide the page track");

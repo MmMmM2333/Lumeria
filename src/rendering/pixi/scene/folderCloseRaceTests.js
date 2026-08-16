@@ -198,7 +198,7 @@ function makeRaceHarness() {
     hideIconNodesForTransition(itemId, owner = {}) {
       for (const node of this.iconNodes.values()) {
         if (node.item?.id !== itemId) continue;
-        const key = makeFolderIconVisualKey(owner.folderId || this.currentFolderId, itemId, node.source?.pageIndex ?? 0);
+        const key = makeFolderIconVisualKey(owner.folderId || this.currentFolderId, itemId);
         if (key) this.acquireVisualOwnership(key, owner);
         node.visible = false;
       }
@@ -238,7 +238,7 @@ function makeRaceHarness() {
         visualOwnership.release(entry.key, token);
         if (!reveal || !entry.key?.startsWith("folderIcon:")) continue;
         for (const node of this.iconNodes.values()) {
-          const key = makeFolderIconVisualKey(entry.owner.folderId, node.item?.id, node.source?.pageIndex ?? 0);
+          const key = makeFolderIconVisualKey(entry.owner.folderId, node.item?.id);
           if (key === entry.key && !visualOwnership.hasOwner(key)) {
             node.visible = true;
             node.alpha = 1;

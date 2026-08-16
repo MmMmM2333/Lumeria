@@ -11,6 +11,7 @@ import {
   makeClosingPreviewSwapTargets,
   makePreviewSlotById,
 } from "./folderOverlayTargets.js";
+import { hasIconVisualSpecMismatch, makeIconVisualSpec } from "./iconVisualSpec.js";
 
 export function makeFolderOverlayRenderPlan(options = {}) {
   const {
@@ -67,6 +68,7 @@ export function makeFolderOverlayRenderPlan(options = {}) {
   ].includes(groupDragState?.phase);
   const transferActorsAreTextless = Number(groupDragState?.totalCount) > 1 ||
     groupDragState?.visualSpec?.textless === true;
+  const sourceVisualSpec = groupDragState?.visualSpec || null;
   const entries = [];
 
   (folderPages || []).forEach((page, pageIndex) => {
@@ -78,6 +80,14 @@ export function makeFolderOverlayRenderPlan(options = {}) {
     visibleItems.forEach((item, index) => {
       const slot = getGridSlotRect(localMetrics, index);
       const stableSlot = getGridSlotRect(stableLocalMetrics || localMetrics, index);
+      const targetVisualSpec = makeIconVisualSpec({
+        cellHeight: slot?.height,
+        cellWidth: slot?.width,
+        compact: false,
+        iconSize,
+        singleLineLabel: false,
+        textless: isTextlessMode,
+      });
       const iconPlan = makeFolderIconRenderPlan({
         folderId,
         geometry,
@@ -128,8 +138,10 @@ export function makeFolderOverlayRenderPlan(options = {}) {
         openingGhostItemIds,
         pageIndex,
         revealLabelAfterVisualHandoff: hasVisualHandoff &&
-          transferActorsAreTextless &&
-          ownedItemIds.has(item.id),
+          ownedItemIds.has(item.id) && (
+            transferActorsAreTextless ||
+            hasIconVisualSpecMismatch(sourceVisualSpec, targetVisualSpec)
+          ),
         focusedIcon,
         selectedAppIds,
         showMissingLaunchTargetBadge,

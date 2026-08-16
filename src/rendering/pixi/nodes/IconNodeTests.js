@@ -170,6 +170,51 @@ export async function runIconNodeTests() {
     );
 
     motionRuntime.reset();
+    const folderOwnershipNodeState = {
+      ...interactionNodeState,
+      item: { id: "folder-ownership", name: "Folder Ownership", type: "folder" },
+    };
+    node.labelText.alpha = 1;
+    node.setState({
+      ...folderOwnershipNodeState,
+      ghosted: true,
+      suppressLabelRevealAfterGhost: true,
+    });
+    node.setState({
+      ...folderOwnershipNodeState,
+      ghosted: false,
+    });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 1),
+      "a desktop folder ownership handoff should restore its label immediately instead of fading it from zero"
+    );
+
+    motionRuntime.reset();
+    node.setState({ ...interactionNodeState, visualSpecTransition: null });
+    const resizedLabelState = {
+      ...interactionNodeState,
+      cellHeight: 70,
+      cellWidth: 62,
+      iconSize: 48,
+      visualSpecTransition: { active: true, progress: 0.3 },
+    };
+    node.setState(resizedLabelState);
+    assert(
+      node.labelTransitionBlendActive === true &&
+        node.labelTransitionText.visible === true &&
+        nearlyEqual(node.labelText.alpha, 0),
+      "a visual-size handoff should crossfade the old label while applying the new label geometry"
+    );
+    motionRuntime.step(0.14);
+    node.setState({ ...resizedLabelState, visualSpecTransition: { active: false, progress: 1 } });
+    assert(
+      node.labelTransitionBlendActive === false &&
+        node.labelTransitionText.visible === false &&
+        nearlyEqual(node.labelText.alpha, 1),
+      "the visual-size handoff should leave only the settled label presentation"
+    );
+
+    motionRuntime.reset();
     node.updateJiggle({ editing: true, dragging: false, ghosted: false, jiggleSeed: 0 });
     snapshot = motionRuntime.debugSnapshot();
     const jiggleAnimations = snapshot.animations.filter((animation) => animation.lane === "additive" && ["rotation", "y"].includes(animation.prop));

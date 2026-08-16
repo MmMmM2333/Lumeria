@@ -836,8 +836,117 @@ export async function runGroupDragLayerTests() {
       "visual-center targets should be converted to the labeled node origin"
     );
 
-    motionRuntime.reset();
+    const transitionEntry = makeEntry("visual-spec-transition", 0, {
+      origin: { x: 120, y: 180 },
+    });
+    const transitionGroup = {
+      center: { x: 260, y: 210 },
+      entries: [transitionEntry],
+      folderTransit: { folderId: "folder-transition" },
+      intent: { folderId: "folder-transition", type: "folder-slot" },
+      key: "visual-spec-transition",
+      phase: "dragging",
+      pointer: { x: 260, y: 210 },
+      reducedMotion: false,
+      totalCount: 1,
+      trail: [],
+      visualSpec: {
+        cellHeight: 138,
+        cellWidth: 126,
+        compact: false,
+        iconSize: 92,
+        singleLineLabel: false,
+        textless: false,
+      },
+    };
+    const folderVisualSpec = {
+      cellHeight: 104,
+      cellWidth: 86,
+      compact: false,
+      iconSize: 64,
+      singleLineLabel: false,
+      textless: false,
+    };
+    layer.update(makeState(transitionGroup, { folderVisualSpec }));
+    const transitionNode = layer.nodes[0];
+    assert(
+      transitionNode.state.cellWidth === 126 && transitionNode.state.iconSize === 92,
+      "folder visual handoff should start from the grabbed desktop specification"
+    );
+    motionRuntime.step(0.09);
+    layer.update(makeState(transitionGroup, { folderVisualSpec }));
+    assert(
+      transitionNode.state.cellWidth < 126 && transitionNode.state.cellWidth > 86 &&
+        transitionNode.state.iconSize < 92 && transitionNode.state.iconSize > 64,
+      "folder visual handoff should interpolate icon and label geometry while the pointer remains down"
+    );
+    for (let index = 0; index < 8; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(makeState(transitionGroup, { folderVisualSpec }));
+    }
+    assert(
+      Math.abs(transitionNode.state.cellWidth - 86) < 0.001 &&
+        Math.abs(transitionNode.state.iconSize - 64) < 0.001,
+      "folder visual handoff should settle on the folder specification before release"
+    );
+    const desktopReturnGroup = {
+      ...transitionGroup,
+      folderTransit: null,
+      intent: { type: "desktop-slot" },
+    };
+    layer.update(makeState(desktopReturnGroup, { folderVisualSpec }));
+    motionRuntime.step(0.09);
+    layer.update(makeState(desktopReturnGroup, { folderVisualSpec }));
+    assert(
+      transitionNode.state.cellWidth < 126 && transitionNode.state.cellWidth > 86,
+      "leaving the folder should reverse the same visual handoff instead of snapping at release"
+    );
+
+    const folderOriginGroup = {
+      ...transitionGroup,
+      key: "folder-origin-visual-spec",
+      folderTransit: null,
+      intent: { index: 0, pageIndex: 0, type: "desktop-slot" },
+      source: { folderId: "folder-transition", index: 0, pageIndex: 0, type: "folder" },
+      visualSpec: folderVisualSpec,
+    };
+    const desktopVisualSpec = transitionGroup.visualSpec;
+    layer.update(makeState(folderOriginGroup, { desktopVisualSpec, folderVisualSpec }));
+    const folderOriginNode = layer.nodes[0];
+    assert(
+      folderOriginNode.state.cellWidth === 86 && folderOriginNode.state.iconSize === 64,
+      "a folder-origin drag should begin with the folder label and icon specification"
+    );
+    motionRuntime.step(0.09);
+    layer.update(makeState(folderOriginGroup, { desktopVisualSpec, folderVisualSpec }));
+    assert(
+      folderOriginNode.state.cellWidth < 126 && folderOriginNode.state.cellWidth > 86 &&
+        folderOriginNode.state.iconSize < 92 && folderOriginNode.state.iconSize > 64,
+      "leaving a folder should interpolate a folder-origin drag toward the desktop specification"
+    );
+    for (let index = 0; index < 8; index += 1) {
+      motionRuntime.step(0.05);
+      layer.update(makeState(folderOriginGroup, { desktopVisualSpec, folderVisualSpec }));
+    }
+    assert(
+      Math.abs(folderOriginNode.state.cellWidth - 126) < 0.001 &&
+        Math.abs(folderOriginNode.state.iconSize - 92) < 0.001,
+      "a folder-origin drag should settle on the desktop specification before release"
+    );
+
+    transitionNode.labelTransitionBlendActive = true;
+    transitionNode.labelTransitionText.visible = true;
+    transitionNode.labelText.visible = true;
+    transitionNode.labelText.alpha = 0;
     layer.clear();
+    assert(
+      transitionNode.labelTransitionBlendActive === false &&
+        transitionNode.labelTransitionText.visible === false &&
+        transitionNode.labelText.alpha === 1,
+      "clearing a pooled drag actor should stop any in-flight label handoff before reuse"
+    );
+
+    motionRuntime.reset();
     const hoverEntry = makeEntry("hover-release-app", 0, {
       origin: { x: 120, y: 180 },
     });

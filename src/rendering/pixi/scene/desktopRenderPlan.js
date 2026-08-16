@@ -1,6 +1,9 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { matchesIconFocus } from "../../../domain/iconFocus.js";
-import { GROUP_TRANSFER_PHASE } from "../../../domain/groupTransferSession.js";
+import {
+  GROUP_TRANSFER_OUTCOME,
+  GROUP_TRANSFER_PHASE,
+} from "../../../domain/groupTransferSession.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
@@ -8,11 +11,28 @@ import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
+import { hasIconVisualSpecMismatch, makeIconVisualSpec } from "./iconVisualSpec.js";
+import { GROUP_TRANSFER_RUNTIME_MODE } from "./groupTransferRuntimeAdapter.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
   if (source.type === "search") return "search";
   return "desktop";
+}
+
+function isAcceptedDesktopPointRelease(state, item) {
+  const group = state.groupDragState;
+  if (
+    item?.type !== "app" ||
+    Number(group?.totalCount) !== 1 ||
+    group?.phase !== GROUP_TRANSFER_PHASE.RELEASING ||
+    group?.outcome !== GROUP_TRANSFER_OUTCOME.ACCEPTED
+  ) return false;
+  const releaseEntry = group.runtimePlan?.entries?.find((entry) =>
+    entry?.id === item.id || entry?.memberIds?.includes?.(item.id)
+  );
+  return releaseEntry?.mode === GROUP_TRANSFER_RUNTIME_MODE.POINT_HANDOFF &&
+    releaseEntry?.target?.area === "desktop";
 }
 
 export function readNumber(value, fallback = 0) {
@@ -471,6 +491,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   ].includes(state.groupDragState?.phase);
   const transferActorsAreTextless = Number(state.groupDragState?.totalCount) > 1 ||
     state.groupDragState?.visualSpec?.textless === true;
+  const sourceVisualSpec = state.groupDragState?.visualSpec || null;
   const pages = state.activePages || [];
   const activePageIndex = state.activePageIndex || 0;
   const desktopFrame = getDesktopFrame(state);
@@ -523,6 +544,14 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     visibleItems.forEach((item, index) => {
       const slot = getGridSlotRect(metrics, index);
       const sizing = getDesktopIconSizing(state, slot);
+      const targetVisualSpec = makeIconVisualSpec({
+        cellHeight: slot.height,
+        cellWidth: slot.width,
+        compact: sizing.compact,
+        iconSize: sizing.iconSize,
+        singleLineLabel: sizing.singleLineLabel,
+        textless: state.isTextlessMode,
+      });
       const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
       const y = desktopFrame.top + slot.top + slot.height / 2;
       const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
@@ -589,7 +618,21 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           .filter((child) => ownedItemIds.has(child?.id))
           .map((child) => child.id)
         : [];
-      const suppressLabelRevealAfterGhost = isFolderClosingHandoff || isFolderSourceGhosted;
+      const isDesktopFolderTransferOwned = item.type === "folder" &&
+        ownedItemIds.has(item.id) &&
+        !isFolderClosingHandoff &&
+        !isFolderSourceGhosted;
+      const suppressLabelRevealAfterGhost = isFolderClosingHandoff ||
+        isFolderSourceGhosted ||
+        isDesktopFolderTransferOwned;
+      const shouldDeferLabelReveal = hasVisualHandoff &&
+        !isAcceptedDesktopPointRelease(state, item) && (
+        isGroupTransferShellOwned ||
+        (ownedItemIds.has(item.id) && (
+          transferActorsAreTextless ||
+          hasIconVisualSpecMismatch(sourceVisualSpec, targetVisualSpec)
+        ))
+      );
 
       entries.push({
         boundsEntry: isInteractivePage ? {
@@ -657,10 +700,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
-          revealLabelAfterVisualHandoff: hasVisualHandoff && (
-            isGroupTransferShellOwned ||
-            (transferActorsAreTextless && ownedItemIds.has(item.id))
-          ),
+          revealLabelAfterVisualHandoff: shouldDeferLabelReveal,
           focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
             state.focusedIcon,
             state.isSearchMode ? "search" : "desktop",

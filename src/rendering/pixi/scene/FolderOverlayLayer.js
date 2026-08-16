@@ -92,6 +92,7 @@ const FOLDER_RESIZE_LAYOUT_REASON = "folder-resize-layout";
 const FOLDER_DRAG_HANDOFF_LAYOUT_REASON = "folder-drag-handoff-layout";
 const FOLDER_PANEL_ZOOM_FADE_REASON = "folder-panel-zoom-fade";
 const FOLDER_RESIZE_SYNC_MIN_RENDERS = 2;
+const FOLDER_PAGE_TURN_SETTLE_RENDERS = 4;
 const FOLDER_PANEL_READY_PROGRESS = 0.985;
 const MAX_DETACHED_CLOSING_VISUALS = 2;
 const DETACHED_CLOSING_FRAME_TAIL_DURATION = 0.04;
@@ -736,6 +737,8 @@ export class FolderOverlayLayer extends Container {
     this.resizeVisualGeometryTargetKey = null;
     this.resizeVisualLayoutStartMetrics = null;
     this.resizeVisualLayoutTargetMetrics = null;
+    this.lastVisualFolderPageIndex = null;
+    this.pageTurnVisualSettle = null;
     this.targetFolderGeometry = null;
     this.stableFolderSlotContext = null;
     this.detachedClosingVisuals = [];
@@ -774,13 +777,56 @@ export class FolderOverlayLayer extends Container {
   }
 
   update(state) {
+    this.syncPageTurnVisualSettle(state);
     const prepared = this.prepareFolderOverlayState(state);
     if (prepared.done) return prepared.result;
     const resolved = this.resolveFolderOverlayGeometry(prepared);
     const synced = this.syncFolderOverlayNodes(resolved);
     this.startFolderOverlayTransitions(synced);
     this.finishResizeLayoutSyncFrame(synced);
+    this.advancePageTurnVisualSettle(state);
     return resolved.targetGeometry || resolved.geometry;
+  }
+
+  syncPageTurnVisualSettle(state = {}) {
+    const renderedFolderId = state.renderedFolder?.id || null;
+    const visualPageIndex = Number(state.visualFolderPageIndex ?? state.folderPageIndex ?? 0);
+    const hasActiveDrag = Boolean(renderedFolderId && state.dragMeta);
+    if (!renderedFolderId || !hasActiveDrag) {
+      this.lastVisualFolderPageIndex = renderedFolderId ? visualPageIndex : null;
+      this.pageTurnVisualSettle = null;
+      return;
+    }
+    const previousPageIndex = this.lastVisualFolderPageIndex;
+    if (previousPageIndex !== null && previousPageIndex !== visualPageIndex) {
+      this.pageTurnVisualSettle = {
+        folderId: renderedFolderId,
+        remainingRenders: FOLDER_PAGE_TURN_SETTLE_RENDERS,
+        targetIndex: visualPageIndex,
+      };
+    } else if (
+      this.pageTurnVisualSettle &&
+      (this.pageTurnVisualSettle.folderId !== renderedFolderId ||
+        this.pageTurnVisualSettle.targetIndex !== visualPageIndex)
+    ) {
+      this.pageTurnVisualSettle = null;
+    }
+    this.lastVisualFolderPageIndex = visualPageIndex;
+  }
+
+  isPageTurnVisualSettleActive(state = {}) {
+    const settle = this.pageTurnVisualSettle;
+    if (!settle || !state.dragMeta || settle.folderId !== state.renderedFolder?.id) return false;
+    const visualPageIndex = Number(state.visualFolderPageIndex ?? state.folderPageIndex ?? 0);
+    return settle.targetIndex === visualPageIndex && settle.remainingRenders > 0;
+  }
+
+  advancePageTurnVisualSettle(state = {}) {
+    const settle = this.pageTurnVisualSettle;
+    if (!settle || !state.dragMeta || settle.folderId !== state.renderedFolder?.id) return;
+    if (isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack)) return;
+    settle.remainingRenders -= 1;
+    if (settle.remainingRenders <= 0) this.pageTurnVisualSettle = null;
   }
 
   isDesktopCloseZoomFadeState(state = {}) {
@@ -872,6 +918,8 @@ export class FolderOverlayLayer extends Container {
       this.resizeLayoutSync = null;
       this.resizeLayoutSignature = null;
       this.resizeLayoutMetricsSnapshot = null;
+      this.lastVisualFolderPageIndex = null;
+      this.pageTurnVisualSettle = null;
       this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
       this.targetFolderGeometry = null;
       this.stableFolderSlotContext = null;
@@ -1476,6 +1524,7 @@ export class FolderOverlayLayer extends Container {
       state.folderPageTurnToken != null ||
       visualFolderPageIndex !== committedFolderPageIndex ||
       isCrossPageFolderDrag ||
+      this.isPageTurnVisualSettleActive(state) ||
       (state.dragMeta && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack))) {
       return "page-turn";
     }
@@ -1517,14 +1566,20 @@ export class FolderOverlayLayer extends Container {
   }
 
   beginResizeLayoutSync(state, sizeKey, layoutSignature, options = {}) {
+    const mode = this.getResizeLayoutMode(state, options);
     this.resizeLayoutSync = {
       layoutSignature,
-      mode: this.getResizeLayoutMode(state, options),
+      mode,
       remainingRenders: FOLDER_RESIZE_SYNC_MIN_RENDERS,
       sizeKey,
     };
     this.resizeLayoutSignature = layoutSignature;
-    this.cancelResizeLayoutMotions();
+    // A page turn is a live navigation gesture, not a layout replacement.
+    // Killing the page-track and icon springs here makes the first frames
+    // after reversing direction appear to flash/snap before a new spring is
+    // created.  Geometry/layout changes still use the existing cancellation
+    // path; page turns keep their current pose and are retargeted below.
+    if (mode !== "page-turn") this.cancelResizeLayoutMotions();
   }
 
   syncResizeLayoutState(state, sizeKey, layoutSignature, sizeChanged) {
@@ -1712,6 +1767,8 @@ export class FolderOverlayLayer extends Container {
     this.resizeLayoutSync = null;
     this.resizeLayoutSignature = null;
     this.resizeLayoutMetricsSnapshot = null;
+    this.lastVisualFolderPageIndex = null;
+    this.pageTurnVisualSettle = null;
     this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
     this.targetFolderGeometry = null;
     this.currentOpeningGeometrySnapshot = null;
@@ -2178,8 +2235,7 @@ export class FolderOverlayLayer extends Container {
     const source = node?.source || node?.state?.source || {};
     return makeFolderIconVisualKey(
       source.folderId || fallbackFolderId || this.currentFolderId,
-      node?.item?.id,
-      source.pageIndex ?? 0
+      node?.item?.id
     );
   }
 
@@ -2937,6 +2993,7 @@ export class FolderOverlayLayer extends Container {
           targetX: roundDebugValue(this.pageTrackMotion?.targetX),
         },
         pageTrackX: roundDebugValue(this.pageTrack?.x),
+        pageTurnVisualSettle: this.pageTurnVisualSettle ? { ...this.pageTurnVisualSettle } : null,
         resizeLayoutSync: this.resizeLayoutSync ? { ...this.resizeLayoutSync } : null,
       },
       openingGeometry: makeOpeningGeometryDebugSnapshot(

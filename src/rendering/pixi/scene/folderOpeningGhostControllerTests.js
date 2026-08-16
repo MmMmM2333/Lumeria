@@ -124,8 +124,7 @@ function makeLayer() {
     getIconNodeVisualKey(node, fallbackFolderId = null) {
       return makeFolderIconVisualKey(
         node?.state?.source?.folderId || fallbackFolderId || this.currentFolderId,
-        node?.item?.id,
-        node?.state?.source?.pageIndex ?? 0
+        node?.item?.id
       );
     },
     startFrameGhost(fromRect, toRect, options) {

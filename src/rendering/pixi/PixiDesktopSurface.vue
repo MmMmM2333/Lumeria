@@ -444,7 +444,11 @@ function createSingleStageFolderState(
   const source = props.folderOverlayState;
   if (!source) return null;
   const sourceFolder = source.renderedFolder?.value;
-  const projectedFolder = sourceFolder?.id
+  const isFolderClosing = Boolean(
+    source.isFolderClosing?.value ||
+    source.isFolderZoomFadeClosingFromFolderClose?.value
+  );
+  const projectedFolder = sourceFolder?.id && !isFolderClosing
     ? dragSnapshot.groupDragState?.projectedPages
       ?.flatMap((page) => page || [])
       .find((item) => item?.type === "folder" && item.id === sourceFolder.id) || null
@@ -475,7 +479,7 @@ function createSingleStageFolderState(
       desktopClosing: props.isDesktopClosing,
       gridStyle: source.folderGridStyle?.value,
       isAppLaunchClosing: source.isFolderAppLaunchClosing?.value,
-      isClosing: Boolean(source.isFolderClosing?.value || source.isFolderZoomFadeClosingFromFolderClose?.value),
+      isClosing: isFolderClosing,
       isZoomFadeClosing: source.isFolderZoomFadeClosing?.value,
       zoomFadeCloseReason: source.folderZoomFadeCloseReason?.value,
       openingOriginBounds: source.folderOpeningOriginBounds?.value,

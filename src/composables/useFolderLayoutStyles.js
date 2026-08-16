@@ -56,7 +56,8 @@ export function getFolderLayoutMetricsForRows(options = {}) {
 export function useFolderLayoutStyles(options) {
   const visibleFolderRowCount = computed(() => {
     const columnCount = Math.max(1, options.folderCols.value);
-    const maxRowCount = options.folderPages.value.reduce((maxRows, page) => {
+    const pagesForLayout = options.folderPagesForLayout?.value || options.folderPages.value;
+    const maxRowCount = pagesForLayout.reduce((maxRows, page) => {
       const visibleCount = options.getVisibleFolderPage(page).length;
       return Math.max(maxRows, Math.ceil(visibleCount / columnCount) || 1);
     }, 1);

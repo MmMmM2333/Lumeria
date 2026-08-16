@@ -59,7 +59,7 @@ export function runFolderOverlayRenderPlanTests() {
 
   assert(plan.entries.length === 2, "render plan should skip empty pages");
   const [entryA, entryB] = plan.entries;
-  assert(entryA.key === "folder-1:0:app-a", "entry should expose the folder icon key");
+  assert(entryA.key === "folder-1:app-a", "entry should expose a page-independent folder icon key");
   assert(entryA.x === 70 && entryA.y === 70, "entry should expose folder-local icon coordinates");
   assert(entryA.nodeState.draggable && entryA.nodeState.editing, "interactive entries should keep draggable edit state");
   assert(entryA.nodeState.interactionPhase === "pressing", "the matching folder icon should receive the pressing phase");
@@ -116,6 +116,37 @@ export function runFolderOverlayRenderPlanTests() {
   assert(
     singleReturningPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
     "a labeled single folder-child ghost should hand its visible label back without restarting a fade"
+  );
+
+  const mismatchedSingleReturningPlan = makeFolderOverlayRenderPlan({
+    cols: 2,
+    dragMeta: { draggedIds: [appA.id], item: appA },
+    folderId: folder.id,
+    folderPageIndex: 0,
+    folderPages: [[appA]],
+    folderPageSize: 4,
+    geometry,
+    getFolderPageRenderMode: () => "interactive",
+    getVisibleFolderPage: (page) => page,
+    groupDragState: {
+      phase: "returning",
+      totalCount: 1,
+      visualSpec: {
+        cellHeight: 132,
+        cellWidth: 116,
+        compact: false,
+        iconSize: 88,
+        singleLineLabel: false,
+        textless: false,
+      },
+    },
+    groupTransferOwnedItemIds: new Set([appA.id]),
+    iconSize: 56,
+    localMetrics,
+  });
+  assert(
+    mismatchedSingleReturningPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === true,
+    "a single folder-child handoff with different target sizing should defer the target label",
   );
 
   const visualOpeningPlan = makeFolderOverlayRenderPlan({

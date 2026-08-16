@@ -22,7 +22,10 @@ export function makeFolderIconRenderPlan(options = {}) {
   const y = (Number(slot?.top) || 0) + (Number(slot?.height) || 0) / 2;
   const source = { type: "folder", folderId, index: safeIndex, pageIndex: safePageIndex, slotIndex: safeIndex };
   return {
-    key: `${folderId}:${safePageIndex}:${item?.id}`,
+    // Page index describes layout, not identity.  An item can move between
+    // pages while a drag is still active; keeping it in the key recreates the
+    // IconNode and incorrectly runs the opening fade on a page turn.
+    key: `${folderId}:${item?.id}`,
     source,
     x,
     y,

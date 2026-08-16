@@ -2,9 +2,9 @@ export function makeDesktopSourceVisualKey(folderId) {
   return folderId ? `desktopSource:${folderId}` : null;
 }
 
-export function makeFolderIconVisualKey(folderId, itemId, pageIndex = 0) {
+export function makeFolderIconVisualKey(folderId, itemId) {
   if (!folderId || !itemId) return null;
-  return `folderIcon:${folderId}:${pageIndex}:${itemId}`;
+  return `folderIcon:${folderId}:${itemId}`;
 }
 
 export function makeFolderPageTrackVisualKey(folderId) {

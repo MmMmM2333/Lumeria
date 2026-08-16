@@ -23,7 +23,7 @@ export function runFolderOverlayIconPlanTests() {
     slot,
   });
 
-  assert(plan.key === "folder-1:2:app-1", "folder icon plan should include folder, page, and item id in its key");
+  assert(plan.key === "folder-1:app-1", "folder icon plan should use folder and item identity independently of page position");
   assert(plan.x === 1080 && plan.y === 80, "folder icon plan should position items inside the paged grid");
   assert(plan.source.type === "folder" && plan.source.folderId === "folder-1", "folder icon plan should build folder source metadata");
   assert(plan.source.index === 3 && plan.source.slotIndex === 3 && plan.source.pageIndex === 2, "folder icon plan should preserve index metadata");

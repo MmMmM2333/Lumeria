@@ -250,7 +250,9 @@ export function useLaunchpadDrag(options) {
   const dragFolderTargetId = shallowRef(null);
   const dragHitDebugState = shallowRef(null);
   const groupDragState = shallowRef(null);
-  const projectedPages = shallowRef(null);
+  const projectedPages = options.projectedPagesRef && typeof options.projectedPagesRef === "object"
+    ? options.projectedPagesRef
+    : shallowRef(null);
 
   let activeDrag = null;
   let pendingDragStart = null;
@@ -723,6 +725,7 @@ export function useLaunchpadDrag(options) {
       draggedIds: [...group.draggedIds],
       desktopPageIndex: group.desktopPageIndex,
       entries: getPublishedGroupEntries(group),
+      folderTransit: group.folderTransit ? { ...group.folderTransit } : null,
       intent: group.intent,
       intentPlan: group.lastPlan || null,
       key: group.key,
@@ -947,7 +950,12 @@ export function useLaunchpadDrag(options) {
     clearFolderPageTurn();
     group.returnedFromFolder = true;
     group.folderTransit = null;
-    options.commitOpenFolder(null);
+    group.projectedPages = null;
+    projectedPages.value = null;
+    group.projectionRefreshIntentKey = null;
+    options.commitOpenFolder(null, {
+      excludeCloseGhostIds: group.draggedIds,
+    });
     return true;
   }
 
@@ -1076,7 +1084,13 @@ export function useLaunchpadDrag(options) {
 
   function publishTarget(target, plan, resolved = null) {
     const isTopLevelIntent = ["application", "folder-thumbnail"].includes(resolved?.intent?.type);
-    if (!target || !isTopLevelIntent || plan.status !== "accepted") {
+    const isSameFolderReentryHover = plan?.status === "noop" &&
+      resolved?.intent?.type === "folder-thumbnail" &&
+      target?.item?.type === "folder" &&
+      activeDrag?.group?.returnedFromFolder === true &&
+      activeDrag?.source?.type === "folder" &&
+      activeDrag.source.folderId === target.item.id;
+    if (!target || !isTopLevelIntent || (plan.status !== "accepted" && !isSameFolderReentryHover)) {
       clearPendingTarget();
       return;
     }
@@ -1162,6 +1176,7 @@ export function useLaunchpadDrag(options) {
   function evaluateIntent(optionsArg = {}) {
     intentTimer = null;
     if (!activeDrag || options.isLaunchpadInteractionBlocked()) return null;
+    const group = activeDrag.group;
     const resolved = resolveDropIntent(activeDrag.pointer.x, activeDrag.pointer.y, {
       finalize: optionsArg.finalizeFolderTransit === true,
     });
@@ -1179,8 +1194,24 @@ export function useLaunchpadDrag(options) {
     }
     activeDrag.group.intent = resolved.intent;
     activeDrag.group.lastResolved = resolved;
-    updateLayoutProjection(activeDrag.group, resolved.intent, plan);
-    activeDrag.group.phase = activeDrag.hasMoved
+    updateLayoutProjection(group, resolved.intent, plan);
+    const canRefreshProjectedLayout = plan.status === "accepted" &&
+      ["desktop-slot", "folder-slot"].includes(resolved.intent?.type);
+    if (canRefreshProjectedLayout) {
+      if (group.projectionRefreshIntentKey !== nextIntentKey) {
+        group.projectionRefreshIntentKey = nextIntentKey;
+        nextTick(() => {
+          if (
+            activeDrag?.group !== group ||
+            !isInteractiveGroupTransferPhase(group.phase)
+          ) return;
+          evaluateIntent({ force: true });
+        });
+      }
+    } else {
+      group.projectionRefreshIntentKey = null;
+    }
+    group.phase = activeDrag.hasMoved
       ? GROUP_TRANSFER_PHASE.DRAGGING
       : GROUP_TRANSFER_PHASE.GATHERING;
     publishTarget(resolved.target, plan, resolved);
@@ -1630,6 +1661,7 @@ export function useLaunchpadDrag(options) {
         origin: "toolbar",
         outcome: GROUP_TRANSFER_OUTCOME.ACCEPTED,
         phase: GROUP_TRANSFER_PHASE.COMMITTING,
+        projectionRefreshIntentKey: null,
         projectedPages: null,
         reason: null,
         runtimePlan: null,
@@ -1811,6 +1843,7 @@ export function useLaunchpadDrag(options) {
         pendingOpenFolderId: null,
         phase: GROUP_TRANSFER_PHASE.GATHERING,
         planRevision: payload.layoutRevision,
+        projectionRefreshIntentKey: null,
         projectedPages: null,
         presentationPlan: null,
         reason: null,

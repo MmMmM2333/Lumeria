@@ -13,7 +13,12 @@ import {
   getGroupTrailSettleDurationMs,
   makeGroupFollowerTarget,
 } from "./groupDragPresentation.js";
-import { makeIconVisualSpec } from "./iconVisualSpec.js";
+import {
+  hasIconVisualSpecMismatch,
+  interpolateIconVisualSpec,
+  makeIconVisualSpec,
+  makeIconVisualSpecKey,
+} from "./iconVisualSpec.js";
 import {
   isFolderSlotReleaseMode,
   makeFolderSlotReleaseVisualSpec,
@@ -127,6 +132,20 @@ function resolveVisualSpec(group, state) {
     singleLineLabel: isMulti || spec.singleLineLabel === true,
     textless,
   };
+}
+
+function makeVisualSpecTransitionTarget(group, state, sourceSpec) {
+  const folderSpec = makeIconVisualSpec(state.folderVisualSpec);
+  const desktopSpec = makeIconVisualSpec(state.desktopVisualSpec);
+  const folderTransit = group?.folderTransit;
+  const folderDestination = group?.intent?.type === "folder-slot"
+    ? group.intent.folderId
+    : null;
+  const isFolderScope = Boolean(folderTransit?.folderId || folderDestination);
+  if (Number(group?.totalCount) !== 1) return sourceSpec;
+  if (isFolderScope && folderSpec) return folderSpec;
+  if (group?.source?.type === "folder" && desktopSpec) return desktopSpec;
+  return sourceSpec;
 }
 
 function stableAssetSignature(value) {
@@ -249,6 +268,7 @@ function applyNodeVisualState(node, entry, state, group, visualSpec, options = {
       stageHeight: state.height,
       stageWidth: state.width,
       textless: visualSpec.textless,
+      visualSpecTransition: options.visualSpecTransition || null,
       folderPreviewRelease: visualSpec.folderPreviewRelease === true,
     });
     node.groupDragVisualStateKey = visualStateKey;
@@ -269,7 +289,7 @@ function applyNodeVisualState(node, entry, state, group, visualSpec, options = {
   node.eventMode = "none";
 }
 
-function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolderNode) {
+function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolderNode, visualSpecTransition = null) {
   node.stageRect = state.stageRect;
   const releaseVisual = resolveEntryReleaseVisual(
     entry,
@@ -280,6 +300,7 @@ function setNodeVisualState(node, entry, state, group, visualSpec, resolveFolder
   );
   applyNodeVisualState(node, entry, state, group, releaseVisual.visualSpec, {
     scaleMultiplier: releaseVisual.scaleMultiplier,
+    visualSpecTransition,
   });
   return releaseVisual;
 }
@@ -405,6 +426,14 @@ export class GroupDragLayer extends Container {
     this.settledOwnershipActorKeys = new Set();
     this.pendingFolderActorHandoffs = new Map();
     this.ownershipRuntimePlanKey = null;
+    this.visualSpecTransitionClock = { progress: 1 };
+    this.visualSpecTransition = {
+      from: null,
+      groupKey: null,
+      key: "",
+      progress: 1,
+      to: null,
+    };
     // GroupReleaseController composes this hook with its own release-frame
     // resolver. The clock tween below keeps the renderer alive after the
     // physical pointer stops, so followers can consume the rest of the trail.
@@ -816,10 +845,81 @@ export class GroupDragLayer extends Container {
     return true;
   }
 
+  syncVisualSpecTransition(group, state, sourceSpec) {
+    const targetSpec = makeVisualSpecTransitionTarget(group, state, sourceSpec) || sourceSpec;
+    const groupKey = group?.key || null;
+    const targetKey = `${groupKey || ""}:${makeIconVisualSpecKey(targetSpec)}`;
+    const previous = this.visualSpecTransition;
+    const groupChanged = previous.groupKey !== groupKey;
+    const targetChanged = previous.key !== targetKey;
+    let currentSpec = previous.from && previous.to
+      ? interpolateIconVisualSpec(previous.from, previous.to, this.visualSpecTransitionClock.progress)
+      : sourceSpec;
+
+    if (groupChanged) {
+      currentSpec = sourceSpec;
+      this.visualSpecTransitionClock.progress = 1;
+    }
+
+    if (groupChanged || targetChanged) {
+      const needsMotion = hasIconVisualSpecMismatch(currentSpec, targetSpec);
+      this.visualSpecTransition = {
+        from: currentSpec,
+        groupKey,
+        key: targetKey,
+        progress: needsMotion ? 0 : 1,
+        to: targetSpec,
+      };
+      killMotionOf(this.visualSpecTransitionClock, "progress", {
+        reason: "group-drag-visual-spec-retarget",
+      });
+      this.visualSpecTransitionClock.progress = needsMotion ? 0 : 1;
+      if (needsMotion) {
+        motion(this.visualSpecTransitionClock)
+          .duration(0.18)
+          .ease("power2.out")
+          .overlay()
+          .interrupt("retarget")
+          .to({
+            onComplete: () => {
+              this.visualSpecTransition.progress = 1;
+              this.onRenderRequest("group-drag-visual-spec-complete");
+            },
+            onUpdate: () => this.onRenderRequest("group-drag-visual-spec"),
+            progress: 1,
+          })
+          .start();
+      }
+    }
+
+    const progress = Math.max(0, Math.min(1, Number(this.visualSpecTransitionClock.progress) || 0));
+    this.visualSpecTransition.progress = progress;
+    return {
+      active: hasIconVisualSpecMismatch(this.visualSpecTransition.from, this.visualSpecTransition.to) && progress < 1,
+      progress,
+      source: this.visualSpecTransition.from,
+      spec: interpolateIconVisualSpec(
+        this.visualSpecTransition.from || sourceSpec,
+        this.visualSpecTransition.to || targetSpec,
+        progress
+      ) || sourceSpec,
+      target: this.visualSpecTransition.to || targetSpec,
+    };
+  }
+
   clear() {
     this.releaseController?.clear?.("group-drag-clear");
     this.releaseAllVisualOwnership("group-drag-clear");
     this.clearFollowerClock("group-drag-clear");
+    killMotionOf(this.visualSpecTransitionClock, "progress", { reason: "group-drag-clear" });
+    this.visualSpecTransitionClock.progress = 1;
+    this.visualSpecTransition = {
+      from: null,
+      groupKey: null,
+      key: "",
+      progress: 1,
+      to: null,
+    };
     this.activeKey = null;
     this.activeNodesByContinuityKey.clear();
     this.phase = null;
@@ -837,6 +937,10 @@ export class GroupDragLayer extends Container {
       node.groupDragVisualStateKey = null;
       node.groupDragReleaseScaleMultiplier = 1;
       node.groupDragFolderSlotTargetVisualSpec = null;
+      // The label handoff owns two child Text targets.  Clear them with the
+      // pooled actor so a canceled drag cannot leave the previous label
+      // crossfade running into the next drag session.
+      node.finishLabelTransitionBlend?.();
       node.clearFolderSlotReleaseVisual?.("group-drag-clear");
       if (node.parent === this.folderClipActorLayer) this.reparentChild(node);
       resetPooledActorStructure(node);
@@ -876,7 +980,9 @@ export class GroupDragLayer extends Container {
       : 0;
     this.visible = true;
 
-    const visualSpec = resolveVisualSpec(group, state);
+    const sourceVisualSpec = resolveVisualSpec(group, state);
+    const visualSpecTransition = this.syncVisualSpecTransition(group, state, sourceVisualSpec);
+    const visualSpec = visualSpecTransition.spec;
     this.syncFolderClipMask();
     // Release-lane cancellation can restore the previous motion's final
     // scale.  Synchronize the plan before pooled nodes receive their new
@@ -956,7 +1062,8 @@ export class GroupDragLayer extends Container {
         state,
         group,
         visualSpec,
-        this.resolveFolderNode
+        this.resolveFolderNode,
+        visualSpecTransition
       );
       node.groupDragFolderSlotTargetVisualSpec = releaseVisual.targetVisualSpec || null;
       this.updateEntryBadge(index, entry, state);

@@ -414,6 +414,76 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const app = { id: "single-return-size-mismatch", type: "app" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragMeta: { draggedIds: [app.id], item: app },
+      groupDragState: {
+        phase: "returning",
+        totalCount: 1,
+        visualSpec: {
+          cellHeight: 132,
+          cellWidth: 116,
+          compact: false,
+          iconSize: 88,
+          singleLineLabel: false,
+          textless: false,
+        },
+      },
+      groupTransferOwnedItemIds: new Set([app.id]),
+    }));
+    assert(
+      plan.entries[0].nodeState.revealLabelAfterVisualHandoff === true,
+      "a single-icon handoff with different target sizing should defer the target label until visual ownership changes",
+    );
+  }
+
+  {
+    const app = { id: "single-desktop-release-label", type: "app" };
+    const makeReleasePlan = (owned) => buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragMeta: {
+        item: app,
+        source: { folderId: "folder-source", type: "folder" },
+      },
+      groupDragState: {
+        outcome: "accepted",
+        phase: "releasing",
+        runtimePlan: {
+          entries: [{
+            id: app.id,
+            memberIds: [app.id],
+            mode: "point-handoff",
+            target: { area: "desktop", id: app.id, kind: "desktop" },
+          }],
+        },
+        totalCount: 1,
+        visualSpec: {
+          cellHeight: 104,
+          cellWidth: 86,
+          compact: false,
+          iconSize: 64,
+          singleLineLabel: false,
+          textless: false,
+        },
+      },
+      groupTransferOwnedItemIds: owned ? new Set([app.id]) : new Set(),
+    }));
+    const ownedPlan = makeReleasePlan(true);
+    const releasedPlan = makeReleasePlan(false);
+    assert(
+      ownedPlan.entries[0].nodeState.ghosted === true &&
+        ownedPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+      "accepted desktop point releases should keep the real node hidden without arming a redundant label fade",
+    );
+    assert(
+      releasedPlan.entries[0].nodeState.ghosted === false &&
+        releasedPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+      "accepted desktop point releases should reveal the settled desktop label immediately after actor ownership ends",
+    );
+  }
+
+  {
     const folder = { id: "folder-created-release", type: "folder" };
     const makePlanForPhase = (phase) => buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],
@@ -430,6 +500,33 @@ export function runDesktopRenderPlanTests() {
     assert(
       acceptedEntry.nodeState.suppressLabelRevealAfterGhost === false,
       "folder creation release should use the normal reveal instead of inheriting folder handoff label suppression"
+    );
+  }
+
+  {
+    const folder = { id: "folder-desktop-owned", type: "folder" };
+    const ownedEntry = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragMeta: { draggedIds: [folder.id], item: folder },
+      groupDragState: { phase: "dragging", totalCount: 1 },
+      groupTransferOwnedItemIds: new Set([folder.id]),
+    })).entries[0];
+    const releasedEntry = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragMeta: { draggedIds: [folder.id], item: folder },
+      groupDragState: { phase: "releasing", totalCount: 1 },
+      groupTransferOwnedItemIds: new Set(),
+    })).entries[0];
+
+    assert(ownedEntry.nodeState.ghosted === true, "an existing desktop folder should hide its real node while the transfer actor owns it");
+    assert(
+      ownedEntry.nodeState.suppressLabelRevealAfterGhost === true,
+      "an ordinary desktop folder transfer should keep the existing label visible when the real node is restored"
+    );
+    assert(releasedEntry.nodeState.ghosted === false, "the desktop folder should become visible after transfer ownership ends");
+    assert(
+      releasedEntry.nodeState.suppressLabelRevealAfterGhost === false,
+      "label suppression should be scoped to the ownership frame instead of leaking into idle desktop rendering"
     );
   }
 
