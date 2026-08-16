@@ -109,10 +109,6 @@ export function runFolderReleaseControllerTests() {
       });
 
       const ghostBeforeMove = readCenter(layer, previewNode.visualWrap);
-      const relativeBeforeMove = {
-        x: ghostBeforeMove.x - targetPose.center.x,
-        y: ghostBeforeMove.y - targetPose.center.y,
-      };
       const crossRowShift = { x: 1161.6, y: -218.4 };
       targetPose.center.x += crossRowShift.x;
       targetPose.center.y += crossRowShift.y;
@@ -120,14 +116,34 @@ export function runFolderReleaseControllerTests() {
 
       const ghostAfterMove = readCenter(layer, previewNode.visualWrap);
       assert(
-        nearlyEqual(ghostAfterMove.x - ghostBeforeMove.x, crossRowShift.x) &&
-          nearlyEqual(ghostAfterMove.y - ghostBeforeMove.y, crossRowShift.y),
-        "the release ghost should inherit the target folder's full cross-row movement in the same render frame"
+        nearlyEqual(ghostAfterMove.x, ghostBeforeMove.x) &&
+          nearlyEqual(ghostAfterMove.y, ghostBeforeMove.y),
+        "a target reflow at zero approach progress must not teleport the release ghost with the folder"
       );
+
+      for (let frame = 0; frame < 6; frame += 1) {
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      const ghostBeforeProgressedMove = readCenter(layer, previewNode.visualWrap);
+      const followProgress = controller.poseProgress.value;
+      const progressedShift = { x: 120, y: -36 };
+      targetPose.center.x += progressedShift.x;
+      targetPose.center.y += progressedShift.y;
+      layer.onRender?.();
+      const ghostAfterProgressedMove = readCenter(layer, previewNode.visualWrap);
       assert(
-        nearlyEqual(ghostAfterMove.x - targetPose.center.x, relativeBeforeMove.x) &&
-          nearlyEqual(ghostAfterMove.y - targetPose.center.y, relativeBeforeMove.y),
-        "moving the target folder must not restart or distort the ghost's relative approach trajectory"
+        nearlyEqual(
+          ghostAfterProgressedMove.x - ghostBeforeProgressedMove.x,
+          progressedShift.x * followProgress,
+          0.01
+        ) &&
+          nearlyEqual(
+            ghostAfterProgressedMove.y - ghostBeforeProgressedMove.y,
+            progressedShift.y * followProgress,
+            0.01
+          ),
+        "a moving folder should influence the release ghost only in proportion to its current approach progress"
       );
 
       let previousSample = null;
@@ -184,6 +200,115 @@ export function runFolderReleaseControllerTests() {
       motionRuntime.step(1);
       layer.onRender?.();
       assert(completions.length === 1, "release completion must remain idempotent after later frames");
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
+    previewNode.visualWrap = new Container();
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+    previewNode.position.set(160, 520);
+    layer.addChild(previewNode);
+    const targetFolderNode = makeTargetFolderNode({
+      center: { x: 420, y: 520 },
+      matrix: { a: 0.28, b: 0, c: 0, d: 0.28 },
+    });
+    const aborts = [];
+    const controller = new FolderReleaseController(layer, {
+      onReleaseAbort: (_release, reason) => aborts.push(reason),
+    });
+    const release = {
+      item: { id: "app-dragged", type: "app" },
+      key: "release-parent-ownership-lost",
+      releaseMode: "folder-preview-slot",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-moving",
+      targetPreviewSlotIndex: 8,
+      velocity: { x: 0, y: 0 },
+    };
+
+    try {
+      controller.update({
+        height: 800,
+        previewNode,
+        release,
+        stageRect: { height: 800, left: 0, top: 0, width: 1400 },
+        targetFolderNode,
+        width: 1400,
+      });
+      layer.reparentChild(previewNode);
+      controller.renderFrame();
+      assert(
+        aborts.join(",") === "actor-parent-ownership-lost",
+        "a folder release must abort explicitly when another scene owner reparents its actor"
+      );
+    } finally {
+      controller.destroy();
+      if (!layer.destroyed) layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = new Container();
+    const previewNode = new Container();
+    previewNode.visualWrap = new Container();
+    previewNode.labelText = new Container();
+    previewNode.addChild(previewNode.visualWrap, previewNode.labelText);
+    previewNode.position.set(120, 180);
+    layer.addChild(previewNode);
+    const targetFolderNode = new Container();
+    targetFolderNode.item = { id: "folder-created", type: "folder" };
+    targetFolderNode.getFolderPreviewChildReleasePose = () => null;
+    targetFolderNode.getFolderPreviewChildBounds = (_stageRect, slotIndex) => ({
+      left: slotIndex === 1 ? 300 : 280,
+      top: 240,
+      width: 16,
+      height: 16,
+    });
+    const completions = [];
+    const aborts = [];
+    const controller = new FolderReleaseController(layer, {
+      onReleaseAbort: (_release, reason) => aborts.push(reason),
+      onReleaseComplete: (release) => completions.push(release.key),
+    });
+    const release = {
+      item: { id: "app-dragged", type: "app" },
+      key: "release-created-folder-fallback-slot",
+      releaseMode: "created-folder",
+      size: { height: 64, width: 64 },
+      targetFolderId: "folder-created",
+      targetPreviewSlotIndex: 1,
+      velocity: { x: 0, y: 0 },
+    };
+    try {
+      controller.update({
+        deviceResolution: 1,
+        height: 600,
+        previewNode,
+        release,
+        stageRect: { height: 600, left: 0, top: 0, width: 900 },
+        targetFolderNode,
+        width: 900,
+      });
+      for (let frame = 0; frame < 120 && !completions.length && !aborts.length; frame += 1) {
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      const terminal = readPose(layer, previewNode.visualWrap);
+      assert(aborts.length === 0 && completions.length === 1, "created-folder release should use deterministic slot geometry while the child is hidden");
+      assert(
+        nearlyEqual(terminal.center.x, 308, 0.25) && nearlyEqual(terminal.center.y, 248, 0.25),
+        "created-folder fallback should land the ghost in the committed preview slot"
+      );
     } finally {
       controller.destroy();
       if (!layer.destroyed) layer.destroy({ children: true });
@@ -279,10 +404,6 @@ export function runFolderReleaseControllerTests() {
         "starting a center absorb should preserve the currently rendered ghost center"
       );
 
-      const relativeBeforeMove = {
-        x: reboundGhostCenter.x - targetPose.center.x,
-        y: reboundGhostCenter.y - targetPose.center.y,
-      };
       const crossRowShift = { x: 1161.6, y: -218.4 };
       targetPose.center.x += crossRowShift.x;
       targetPose.center.y += crossRowShift.y;
@@ -290,14 +411,34 @@ export function runFolderReleaseControllerTests() {
 
       const ghostAfterMove = readCenter(layer, previewNode.visualWrap);
       assert(
-        nearlyEqual(ghostAfterMove.x - reboundGhostCenter.x, crossRowShift.x) &&
-          nearlyEqual(ghostAfterMove.y - reboundGhostCenter.y, crossRowShift.y),
-        "a center absorb should inherit the target folder's full cross-row movement in the same render frame"
+        nearlyEqual(ghostAfterMove.x, reboundGhostCenter.x) &&
+          nearlyEqual(ghostAfterMove.y, reboundGhostCenter.y),
+        "a center target reflow at zero approach progress must not teleport the absorbing ghost"
       );
+
+      for (let frame = 0; frame < 5; frame += 1) {
+        motionRuntime.step(1 / 60);
+        layer.onRender?.();
+      }
+      const ghostBeforeProgressedMove = readCenter(layer, previewNode.visualWrap);
+      const followProgress = controller.poseProgress.value;
+      const progressedShift = { x: 96, y: -24 };
+      targetPose.center.x += progressedShift.x;
+      targetPose.center.y += progressedShift.y;
+      layer.onRender?.();
+      const ghostAfterProgressedMove = readCenter(layer, previewNode.visualWrap);
       assert(
-        nearlyEqual(ghostAfterMove.x - targetPose.center.x, relativeBeforeMove.x) &&
-          nearlyEqual(ghostAfterMove.y - targetPose.center.y, relativeBeforeMove.y),
-        "moving the target folder must not restart or distort the center-absorb trajectory"
+        nearlyEqual(
+          ghostAfterProgressedMove.x - ghostBeforeProgressedMove.x,
+          progressedShift.x * followProgress,
+          0.01
+        ) &&
+          nearlyEqual(
+            ghostAfterProgressedMove.y - ghostBeforeProgressedMove.y,
+            progressedShift.y * followProgress,
+            0.01
+          ),
+        "a moving center target should influence the absorbing ghost only in proportion to approach progress"
       );
     } finally {
       controller.destroy();

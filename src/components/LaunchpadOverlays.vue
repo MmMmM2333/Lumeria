@@ -63,7 +63,18 @@
           {{ t("launchpad.contextMenu.dissolve") }}
         </fluent-menu-item>
       </template>
+      <template v-else-if="contextMenu.kind === 'folder-surface'">
+        <fluent-menu-item @click="runContextMenuAction('batch-manage')">
+          <SelectAllOnIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.batchManage") }}
+        </fluent-menu-item>
+      </template>
       <template v-else>
+        <fluent-menu-item @click="runContextMenuAction('batch-manage')">
+          <SelectAllOnIcon slot="start" class="icon-context-menu-item-icon" />
+          {{ t("launchpad.contextMenu.batchManage") }}
+        </fluent-menu-item>
+        <fluent-divider class="icon-context-menu-divider" role="separator" />
         <fluent-menu-item @click="runContextMenuAction('compact-pages')">
           <ArrowSortIcon slot="start" class="icon-context-menu-item-icon" />
           {{ t("settings.interface.layout.compactAction") }}
@@ -100,6 +111,7 @@ import FolderOpenIcon from "~icons/fluent/folder-open-20-regular";
 import OpenIcon from "~icons/fluent/open-20-regular";
 import RenameIcon from "~icons/fluent/rename-20-regular";
 import ScanObjectIcon from "~icons/fluent/scan-object-20-regular";
+import SelectAllOnIcon from "~icons/fluent/select-all-on-20-regular";
 import SettingsIcon from "~icons/fluent/settings-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { getIconSource } from "../domain/iconSource.js";
@@ -138,6 +150,7 @@ const contextMenuStyle = computed(() => {
 const contextMenuAriaLabel = computed(() => {
   if (!contextMenu.value) return "";
   if (contextMenu.value.kind === "surface") return t("launchpad.contextMenu.surfaceLabel");
+  if (contextMenu.value.kind === "folder-surface") return t("launchpad.contextMenu.folderSurfaceLabel");
   return t("launchpad.contextMenu.label", { name: contextMenu.value.item.name });
 });
 
@@ -202,6 +215,23 @@ function openSurfaceContextMenu(event, capabilities = {}) {
   return true;
 }
 
+function openFolderSurfaceContextMenu(event, folderId) {
+  if (!folderId) return false;
+  contextMenuRequestId += 1;
+  const requestId = contextMenuRequestId;
+  contextMenu.value = {
+    kind: "folder-surface",
+    anchorX: Number(event?.clientX) || 0,
+    anchorY: Number(event?.clientY) || 0,
+    folderId,
+    positioned: false,
+    x: 0,
+    y: 0,
+  };
+  void positionContextMenu(requestId);
+  return true;
+}
+
 function closeContextMenu() {
   if (!contextMenu.value) return false;
   contextMenuRequestId += 1;
@@ -223,6 +253,7 @@ function runContextMenuAction(action) {
   closeContextMenu();
   emit("context-menu-action", {
     action,
+    folderId: menu.folderId || null,
     item: menu.item || null,
     kind: menu.kind,
     source: menu.source || null,
@@ -268,6 +299,7 @@ function resolveLaunchGhostDuration() {
 
 defineExpose({
   closeContextMenu,
+  openFolderSurfaceContextMenu,
   openIconContextMenu,
   openSurfaceContextMenu,
 });

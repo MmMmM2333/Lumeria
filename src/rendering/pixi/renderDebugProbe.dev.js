@@ -367,7 +367,7 @@ function makeChildSnapshot({
         }
       })()
     : null;
-  const suppressed = child?.id === folderNode?.state?.suppressedFolderPreviewChildId;
+  const suppressed = (folderNode?.state?.suppressedFolderPreviewChildIds || []).includes(child?.id);
   const folderVisible = isDisplayNodeVisible(folderNode);
   const intersectsMask = mask?.clipBounds
     ? rectsIntersect(clientBounds, mask.clipBounds)
@@ -524,7 +524,7 @@ function makeFolderSnapshots({ app, batchBindings, layer, target }) {
         dragging: folderNode.state?.dragging === true,
         ghosted: folderNode.state?.ghosted === true,
         opening: folderNode.state?.opening === true,
-        suppressedFolderPreviewChildId: folderNode.state?.suppressedFolderPreviewChildId || null,
+        suppressedFolderPreviewChildIds: [...(folderNode.state?.suppressedFolderPreviewChildIds || [])],
       },
     });
   }

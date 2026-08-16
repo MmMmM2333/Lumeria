@@ -1,9 +1,9 @@
 import {
-  drawSelectionFrame,
-  getSelectionFrameRadius,
-  getSelectionFrameRect,
-  shouldDrawSelectionFrame,
-} from "./iconSelectionFrame.js";
+  drawFocusFrame,
+  getFocusFrameRadius,
+  getFocusFrameRect,
+  shouldDrawFocusFrame,
+} from "./iconFocusFrame.js";
 
 function makeGraphicsRecorder() {
   return {
@@ -27,21 +27,21 @@ function makeGraphicsRecorder() {
   };
 }
 
-export function runIconSelectionFrameTests() {
+export function runIconFocusFrameTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Pixi icon selection frame test failed] ${message}`);
+    if (!condition) throw new Error(`[Pixi icon focus frame test failed] ${message}`);
   };
 
-  assert(getSelectionFrameRadius(40) === 18, "radius should keep the lower bound");
-  assert(getSelectionFrameRadius(64) === 64 * 0.32, "radius should scale with regular icon sizes");
-  assert(getSelectionFrameRadius(120) === 28, "radius should keep the upper bound");
+  assert(getFocusFrameRadius(40) === 18, "radius should keep the lower bound");
+  assert(getFocusFrameRadius(64) === 64 * 0.32, "radius should scale with regular icon sizes");
+  assert(getFocusFrameRadius(120) === 28, "radius should keep the upper bound");
 
-  const iconOnlyRect = getSelectionFrameRect({ iconSize: 64, visualOffsetY: -4 });
+  const iconOnlyRect = getFocusFrameRect({ iconSize: 64, visualOffsetY: -4 });
   assert(iconOnlyRect.width >= 88, "icon-only frame should include minimum horizontal padding");
   assert(iconOnlyRect.height === 64 + 10 + 8, "icon-only frame should include vertical padding");
   assert(iconOnlyRect.top === -4 - 32 - 10, "icon-only frame should include visual offset and top padding");
 
-  const labelRect = getSelectionFrameRect({
+  const labelRect = getFocusFrameRect({
     iconSize: 64,
     labelText: {
       height: 34,
@@ -55,7 +55,7 @@ export function runIconSelectionFrameTests() {
   assert(labelRect.width === 156, "label frame should expand to label width plus padding");
   assert(labelRect.height === 42 + 34 - -32 + 10 + 8, "label frame should include the visible label bottom");
 
-  const heightDominatedRect = getSelectionFrameRect({
+  const heightDominatedRect = getFocusFrameRect({
     iconSize: 66,
     labelText: {
       height: 32,
@@ -71,7 +71,7 @@ export function runIconSelectionFrameTests() {
   assert(heightDominatedRect.width <= 90, "selection frames should stay within their cell width");
   assert(heightDominatedRect.width < heightDominatedRect.height, "two-line label height should not force a square frame");
 
-  const spaciousLargeIconRect = getSelectionFrameRect({
+  const spaciousLargeIconRect = getFocusFrameRect({
     iconSize: 128,
     labelText: {
       height: 16,
@@ -87,24 +87,24 @@ export function runIconSelectionFrameTests() {
   assert(spaciousLargeIconRect.width === spaciousLargeIconRect.height, "large icons should keep a balanced frame when their cell has room");
   assert(spaciousLargeIconRect.width < 255, "balanced frames should not expand to fill a spacious cell");
 
-  assert(shouldDrawSelectionFrame({ selected: true }), "selected icons should draw a frame");
-  assert(shouldDrawSelectionFrame({ dropTarget: true }), "drop targets should draw a frame");
-  assert(!shouldDrawSelectionFrame({ dropTarget: true, isFolderDropHover: true }), "folder hovers should suppress drop frame");
-  assert(!shouldDrawSelectionFrame({ dropTarget: true, isAppFolderCreateHover: true }), "app-folder hovers should suppress drop frame");
-  assert(!shouldDrawSelectionFrame(), "inactive icons should not draw a frame");
+  assert(shouldDrawFocusFrame({ focused: true }), "focused icons should draw a frame");
+  assert(shouldDrawFocusFrame({ dropTarget: true }), "drop targets should draw a frame");
+  assert(!shouldDrawFocusFrame({ dropTarget: true, isFolderDropHover: true }), "folder hovers should suppress drop frame");
+  assert(!shouldDrawFocusFrame({ dropTarget: true, isAppFolderCreateHover: true }), "app-folder hovers should suppress drop frame");
+  assert(!shouldDrawFocusFrame(), "inactive icons should not draw a frame");
 
   const hiddenFrame = makeGraphicsRecorder();
-  drawSelectionFrame(hiddenFrame, iconOnlyRect, 64, {});
+  drawFocusFrame(hiddenFrame, iconOnlyRect, 64, {});
   assert(hiddenFrame.calls.length === 1 && hiddenFrame.calls[0][0] === "clear", "hidden frames should only clear stale graphics");
 
-  const selectedFrame = makeGraphicsRecorder();
-  drawSelectionFrame(selectedFrame, iconOnlyRect, 64, { selected: true });
-  assert(selectedFrame.calls.some((call) => call[0] === "roundRect"), "selected frames should draw a rounded rectangle");
-  assert(selectedFrame.calls.some((call) => call[0] === "fill" && call[1].color === 0x000000 && call[1].alpha === 0.3), "selected frames should use the selected fill");
-  assert(selectedFrame.calls.some((call) => call[0] === "stroke" && call[1].width === 1), "selected frames should use a subtle stroke");
+  const focusedFrame = makeGraphicsRecorder();
+  drawFocusFrame(focusedFrame, iconOnlyRect, 64, { focused: true });
+  assert(focusedFrame.calls.some((call) => call[0] === "roundRect"), "focused icons should draw a rounded rectangle");
+  assert(focusedFrame.calls.some((call) => call[0] === "fill" && call[1].color === 0x000000 && call[1].alpha === 0.3), "focused icons should use the focus fill");
+  assert(focusedFrame.calls.some((call) => call[0] === "stroke" && call[1].width === 1), "focused icons should use a subtle stroke");
 
   const dropFrame = makeGraphicsRecorder();
-  drawSelectionFrame(dropFrame, iconOnlyRect, 64, { dropTarget: true });
+  drawFocusFrame(dropFrame, iconOnlyRect, 64, { dropTarget: true });
   assert(dropFrame.calls.some((call) => call[0] === "fill" && call[1].color === 0xffffff && call[1].alpha === 0.18), "drop frames should use the drop fill");
   assert(dropFrame.calls.some((call) => call[0] === "stroke" && call[1].width === 2), "drop frames should use a stronger stroke");
 }

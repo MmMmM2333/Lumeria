@@ -173,7 +173,7 @@ function createManagedAppRemovalHarness(pageItems, currentPageIndex) {
     removeEverywhere: helpers.removeEverywhere,
     renderedFolder,
     schedulePageGridMetrics: () => {},
-    selectedIcon: ref(null),
+    focusedIcon: ref(null),
     shouldUseNativeCatalog: () => false,
     showTransientNotice: (notice) => transientNotices.push(notice),
   });
@@ -527,8 +527,8 @@ export async function runLaunchpadAppsTests() {
     const launchCriticalDirtyIds = [];
     let openedScanKeywordSettingsCount = 0;
     let canceledInputGestureCount = 0;
-    let clearedSelectedIconCount = 0;
-    const selectedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
+    let clearedFocusedIconCount = 0;
+    const focusedIcon = ref({ area: "desktop", id: "win-app-1", pageIndex: 0 });
     const apps = useLaunchpadApps({
       appendAppsToPages: (sourcePages, selectedApps) => [[
         ...selectedApps.map((app) => ({ ...app })),
@@ -538,9 +538,9 @@ export async function runLaunchpadAppsTests() {
       cancelInputGesture: () => { canceledInputGestureCount += 1; },
       cloneItem: (item) => (item ? { ...item } : item),
       clonePages: (sourcePages) => sourcePages.map((page) => page.map((item) => ({ ...item }))),
-      clearSelectedIcon: () => {
-        clearedSelectedIconCount += 1;
-        selectedIcon.value = null;
+      clearFocusedIcon: () => {
+        clearedFocusedIconCount += 1;
+        focusedIcon.value = null;
       },
       collectAppsFromPages: (sourcePages) => sourcePages.flatMap((page) => page.filter((item) => item?.type === "app")),
       commitOpenFolder: () => {},
@@ -562,7 +562,7 @@ export async function runLaunchpadAppsTests() {
       removeEverywhere: (sourcePages, appId) => sourcePages.map((page) => page.filter((item) => item.id !== appId)),
       renderedFolder: ref(null),
       schedulePageGridMetrics: () => {},
-      selectedIcon,
+      focusedIcon,
       shouldUseNativeCatalog: () => true,
     });
     apps.persistence.restore({
@@ -692,7 +692,7 @@ export async function runLaunchpadAppsTests() {
     assert(pages.value.flat().some((app) => app.id === "win-app-store"), "removing a classic app should not remove a scanned Windows app");
     assert(hiddenAppIds.value.includes("win-app-1"), "removing a catalog app should keep it hidden across native layout merges");
     assert(canceledInputGestureCount === 1, "removing an app should cancel the active input gesture");
-    assert(clearedSelectedIconCount === 1, "removing an app should clear a selection that referenced the removed icon");
+    assert(clearedFocusedIconCount === 1, "removing an app should clear focus that referenced the removed icon");
 
     apps.openCreateManagedApp();
     apps.editorModel.name.value = "URL App";

@@ -27,3 +27,23 @@ test("inactive drag-preview folder mask cannot corrupt later sprite pixels", asy
   expect(result.baselineCorruptions.length, diagnostics).toBe(0);
   expect(result.motionCorruptions.length, diagnostics).toBe(0);
 });
+
+test("group-drag folder actors remain visible until they cross the rounded panel boundary", async ({ page }) => {
+  await page.goto("/tests/browser/fixtures/pixi-drag-preview-mask-batch.html");
+  await page.waitForFunction(() => window.pixiDragPreviewMaskBatchFixtureReady === true);
+
+  const result = await page.evaluate(() => window.runGroupDragFolderClipRegression());
+  const background = [0x11, 0x18, 0x27, 0xff];
+  const actor = [0xf4, 0x3f, 0x5e, 0xff];
+  const distance = (actual, expected) => Math.max(
+    ...actual.map((channel, index) => Math.abs(channel - expected[index]))
+  );
+  const diagnostics = JSON.stringify(result, null, 2);
+
+  expect(result.renderer).toBe("webgl");
+  expect(result.maskAttached).toBe(true);
+  expect(distance(result.inside, actor), diagnostics).toBeLessThanOrEqual(12);
+  expect(distance(result.straightEdgeInside, actor), diagnostics).toBeLessThanOrEqual(12);
+  expect(distance(result.outside, background), diagnostics).toBeLessThanOrEqual(12);
+  expect(distance(result.cornerOutside, background), diagnostics).toBeLessThanOrEqual(12);
+});

@@ -1,5 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { matchesIconFocus } from "../../../domain/iconFocus.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 
@@ -22,7 +22,10 @@ export function makeFolderIconRenderPlan(options = {}) {
   const y = (Number(slot?.top) || 0) + (Number(slot?.height) || 0) / 2;
   const source = { type: "folder", folderId, index: safeIndex, pageIndex: safePageIndex, slotIndex: safeIndex };
   return {
-    key: `${folderId}:${safePageIndex}:${item?.id}`,
+    // Page index describes layout, not identity.  An item can move between
+    // pages while a drag is still active; keeping it in the key recreates the
+    // IconNode and incorrectly runs the opening fade on a page turn.
+    key: `${folderId}:${item?.id}`,
     source,
     x,
     y,
@@ -48,19 +51,22 @@ export function makeFolderIconNodeState(options = {}) {
     closingGhostKeys = null,
     folderId = null,
     folderPageSize = 0,
+    groupTransferOwned = false,
     iconSize = 64,
     iconGesturePresentation = null,
     isActiveDraggedItem = false,
+    isBatchSelectionActive = false,
     isEditMode = false,
     isIconOpening = null,
     isInteractivePage = false,
-    isReleaseGhostItem = false,
     isTextlessMode = false,
     item = null,
     launchTargetStatusById = null,
     openingGhostItemIds = null,
     pageIndex = 0,
-    selectedIcon = null,
+    revealLabelAfterVisualHandoff = false,
+    focusedIcon = null,
+    selectedAppIds = null,
     showMissingLaunchTargetBadge = true,
     slot = null,
     source = null,
@@ -68,12 +74,21 @@ export function makeFolderIconNodeState(options = {}) {
     stageWidth = 1,
   } = options;
   const itemId = item?.id;
-  const ghosted = Boolean(isReleaseGhostItem ||
+  const ghosted = Boolean(
+    groupTransferOwned ||
     (isInteractivePage && (
       openingGhostItemIds?.has(itemId) ||
       closingGhostKeys?.has(itemId)
-    )));
+    ))
+  );
   return {
+    batchSelected: Boolean(
+      isBatchSelectionActive &&
+      item?.type === "app" &&
+      (selectedAppIds instanceof Set
+        ? selectedAppIds.has(itemId)
+        : (selectedAppIds || []).includes?.(itemId))
+    ),
     cellHeight: slot?.height,
     cellWidth: slot?.width,
     compact: false,
@@ -96,7 +111,8 @@ export function makeFolderIconNodeState(options = {}) {
     launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
     opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
     removable: item?.type === "app",
-    selected: isInteractivePage && matchesIconSelection(selectedIcon, "folder", itemId, pageIndex, folderId),
+    revealLabelAfterVisualHandoff,
+    focused: isInteractivePage && matchesIconFocus(focusedIcon, "folder", itemId, pageIndex, folderId),
     source,
     stageHeight,
     stageWidth,

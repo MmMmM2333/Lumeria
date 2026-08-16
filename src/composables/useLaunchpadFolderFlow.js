@@ -33,7 +33,6 @@ export function useLaunchpadFolderFlow(options) {
   const folderOpenProgress = ref(0);
   const folderOpenProgressTarget = ref(0);
   const folderClosingSnapshot = shallowRef(null);
-  const folderSession = shallowRef(null);
   const isFolderAppLaunchClosing = ref(false);
   const isFolderZoomFadeClosing = ref(false);
   const isFolderZoomFadeClosingFromFolderClose = ref(false);
@@ -321,10 +320,6 @@ export function useLaunchpadFolderFlow(options) {
     }, commitOptions?.waitForCloseGhosts ? FOLDER_CLOSE_GHOST_FALLBACK_DURATION : FOLDER_CLOSE_DURATION);
   }
 
-  function commitFolderSession(next) {
-    folderSession.value = next;
-  }
-
   function requestFolderOpenWarmup(folder, originBounds = null) {
     if (hasPreparedFirstFolderOpen || !folder?.id) return false;
     folderOpenWarmupRequest.value = {
@@ -388,7 +383,6 @@ export function useLaunchpadFolderFlow(options) {
     clearFolderCloseHandoffFrame,
     clearFolderZoomFadeCloseTimer,
     clearHomeRevealSettleTimer,
-    commitFolderSession,
     commitOpenFolder,
     desktopProjectionEpoch,
     finishFolderClose,
@@ -401,7 +395,6 @@ export function useLaunchpadFolderFlow(options) {
     folderOpenWarmupRequest,
     folderOpeningOriginBounds,
     folderPages,
-    folderSession,
     folderZoomFadeCloseReason,
     isFolderAppLaunchClosing,
     isFolderClosing,

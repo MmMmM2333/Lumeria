@@ -1,5 +1,6 @@
 import { Application, Container, Sprite, Texture } from "pixi.js";
 import { IconNode } from "/src/rendering/pixi/nodes/IconNode.js";
+import { GroupDragLayer } from "/src/rendering/pixi/scene/GroupDragLayer.js";
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -206,5 +207,65 @@ async function runRegression() {
   return result;
 }
 
+async function runGroupDragFolderClipRegression() {
+  const app = new Application();
+  await app.init({
+    antialias: false,
+    autoStart: false,
+    background: BACKGROUND,
+    height: HEIGHT,
+    preference: ["webgl"],
+    preserveDrawingBuffer: true,
+    resolution: 1,
+    width: WIDTH,
+  });
+  document.body.replaceChildren(app.canvas);
+
+  const renderer = app.renderer;
+  if (renderer.name !== "webgl") {
+    app.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
+    throw new Error(`WebGL renderer required, received ${renderer.name}`);
+  }
+
+  const panel = { height: 220, radius: 48, width: 300, x: 100, y: 80 };
+  const layer = new GroupDragLayer({
+    resolveFolderClipGeometry: () => ({
+      ...panel,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+    }),
+  });
+  layer.visible = true;
+  layer.syncFolderClipMask();
+  app.stage.addChild(layer);
+
+  const actor = new Sprite(Texture.WHITE);
+  actor.tint = 0xf43f5e;
+  actor.position.set(60, 40);
+  actor.width = 380;
+  actor.height = 300;
+  layer.folderClipActorLayer.addChild(actor);
+  renderer.render(app.stage);
+
+  const gl = renderer.gl;
+  gl.finish();
+  const result = {
+    cornerOutside: readPixel(gl, panel.x + 4, panel.y + 4),
+    inside: readPixel(gl, panel.x + panel.width / 2, panel.y + panel.height / 2),
+    maskAttached: layer.folderClipActorLayer.mask === layer.folderClipMask,
+    outside: readPixel(gl, panel.x - 10, panel.y + panel.height / 2),
+    renderer: renderer.name,
+    straightEdgeInside: readPixel(gl, panel.x + panel.width / 2, panel.y + 4),
+  };
+
+  app.destroy(
+    { removeView: true, releaseGlobalResources: true },
+    { children: true, texture: false, textureSource: false },
+  );
+  return result;
+}
+
 window.runPixiDragPreviewMaskBatchRegression = runRegression;
+window.runGroupDragFolderClipRegression = runGroupDragFolderClipRegression;
 window.pixiDragPreviewMaskBatchFixtureReady = true;

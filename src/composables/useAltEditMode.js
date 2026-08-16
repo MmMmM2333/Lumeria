@@ -5,15 +5,22 @@ export function useAltEditMode(options) {
   const isEditMode = ref(false);
   let altEditTimer = null;
   let isAltPressed = false;
+  let isAltReleasePending = false;
+
+  function getEventTarget() {
+    return options.eventTarget || globalThis.window;
+  }
 
   function clearAltEditTimer() {
-    if (altEditTimer) window.clearTimeout(altEditTimer);
+    if (altEditTimer) getEventTarget()?.clearTimeout?.(altEditTimer);
     altEditTimer = null;
   }
 
   function enterEditModeFromAlt() {
     altEditTimer = null;
-    if (isAltPressed) isEditMode.value = true;
+    if (isAltPressed && !isAltReleasePending && !options.isBatchSelectionActive?.()) {
+      isEditMode.value = true;
+    }
   }
 
   function isAltKeyEvent(event) {
@@ -21,27 +28,36 @@ export function useAltEditMode(options) {
   }
 
   function handleAltKeyDown(event) {
-    if (!isAltKeyEvent(event) || event.repeat || isAltPressed || options.isDragActive()) return;
+    if (!isAltKeyEvent(event)) return;
+    if (options.isBatchSelectionActive?.()) {
+      isAltPressed = true;
+      isAltReleasePending = true;
+      clearAltEditTimer();
+      return;
+    }
+    if (event.repeat || isAltPressed || isAltReleasePending || options.isDragActive()) return;
     isAltPressed = true;
     clearAltEditTimer();
-    altEditTimer = window.setTimeout(enterEditModeFromAlt, ALT_EDIT_DELAY);
+    altEditTimer = getEventTarget()?.setTimeout?.(enterEditModeFromAlt, ALT_EDIT_DELAY) || null;
   }
 
   function handleAltKeyUp(event) {
     if (!isAltKeyEvent(event)) return;
     isAltPressed = false;
+    isAltReleasePending = false;
     clearAltEditTimer();
     isEditMode.value = false;
   }
 
   function handleWindowBlur() {
     isAltPressed = false;
+    isAltReleasePending = false;
     clearAltEditTimer();
     isEditMode.value = false;
   }
 
   function cancelAltEditMode() {
-    isAltPressed = false;
+    isAltReleasePending = isAltReleasePending || isAltPressed;
     clearAltEditTimer();
     isEditMode.value = false;
   }

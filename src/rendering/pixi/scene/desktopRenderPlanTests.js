@@ -20,7 +20,7 @@ function makeBaseState(overrides = {}) {
     isSearchMode: false,
     isTextlessMode: false,
     launchTargetStatusById: {},
-    selectedIcon: null,
+    focusedIcon: null,
     setPageRef: () => {},
     showMissingLaunchTargetBadge: false,
     stageRect: { height: 300, left: 0, top: 0, width: 400 },
@@ -52,9 +52,11 @@ export function runDesktopRenderPlanTests() {
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[app, folder]],
       dragMeta: { item: app },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([app.id]),
       folderClosingHandoffIds: new Set([folder.id]),
       isIconOpening: (area, itemId) => area === "desktop" && itemId === app.id,
-      selectedIcon: { area: "desktop", folderId: null, id: app.id, pageIndex: 0 },
+      focusedIcon: { area: "desktop", folderId: null, id: app.id, pageIndex: 0 },
       showMissingLaunchTargetBadge: true,
       launchTargetStatusById: { [app.id]: { missing: true } },
     }), {
@@ -72,7 +74,7 @@ export function runDesktopRenderPlanTests() {
     const appEntry = plan.entries[0];
     assert(appEntry.key === "page:0:app-a", "app entry should expose the stable desktop node key");
     assert(appEntry.nodeState.dragging === true, "app entry should preserve drag state");
-    assert(appEntry.nodeState.opening === true && appEntry.nodeState.selected === true, "app entry should preserve icon lookup state");
+    assert(appEntry.nodeState.opening === true && appEntry.nodeState.focused === true, "app entry should preserve icon focus and opening state");
     assert(appEntry.nodeState.launchTargetStatus?.missing === true, "app entry should preserve launch target status");
     assert(appEntry.boundsEntry?.area === "desktop", "interactive app entry should expose bounds registration input");
     assert(Number.isFinite(appEntry.layoutTarget.x) && Number.isFinite(appEntry.layoutTarget.y), "app entry should expose a numeric layout target");
@@ -188,6 +190,8 @@ export function runDesktopRenderPlanTests() {
     assert(entry.isActiveFolderClosingHandoff === false, "test setup should model a new open without an active closing handoff");
     assert(entry.folderPresentation.handoff.retainsSourceVisibility === false, "released closing handoff state should not retain visibility during a new open");
     assert(entry.nodeState.ghosted === true, "opening source ghosting should hide the real desktop folder even with a released stale handoff entry");
+    assert(plan.folderDropTargetExit?.mode === "immediate", "opening render plans should request immediate drop-frame retirement");
+    assert(plan.folderDropTargetExit?.targetId === folder.id, "opening render plans should target the opening folder's drop frame");
   }
 
   {
@@ -323,36 +327,288 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
-    const folderA = { id: "folder-a", type: "folder" };
-    const folderB = { id: "folder-b", type: "folder" };
+    const selectedChildA = { id: "app-a", type: "app" };
+    const selectedChildB = { id: "app-b", type: "app" };
+    const unselectedChild = { id: "app-c", type: "app" };
+    const folderA = {
+      childPages: [[unselectedChild]],
+      children: [unselectedChild],
+      id: "folder-a",
+      type: "folder",
+    };
+    const folderB = {
+      childPages: [[selectedChildA, unselectedChild, selectedChildB]],
+      children: [selectedChildA, unselectedChild, selectedChildB],
+      id: "folder-b",
+      type: "folder",
+    };
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[folderA, folderB]],
-      dragReleaseState: {
-        suppressFolderPreviewChildId: "app-a",
-        suppressFolderPreviewFolderId: "folder-b",
+      dragMeta: {
+        draggedIds: [selectedChildA.id, selectedChildB.id],
+        item: selectedChildA,
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([selectedChildA.id, selectedChildB.id]),
       gridCols: 2,
       gridRows: 1,
     }));
 
-    assert(plan.entries[0].nodeState.suppressedFolderPreviewChildId == null, "non-target folder should not receive preview child suppression");
-    assert(plan.entries[1].nodeState.suppressedFolderPreviewChildId === "app-a", "target folder should receive preview child suppression");
+    assert(plan.entries[0].nodeState.suppressedFolderPreviewChildIds.length === 0, "folders without dragged children should not suppress preview slots");
+    assert(
+      plan.entries[1].nodeState.suppressedFolderPreviewChildIds.join(",") === "app-a,app-b",
+      "every dragged child represented in the first nine preview slots should transfer visual ownership"
+    );
   }
 
   {
     const folder = { id: "folder-created", type: "folder" };
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],
-      folderCreateReleaseState: {
-        folderId: folder.id,
-        key: "folder-create-release",
-      },
     }));
 
     const [entry] = plan.entries;
-    assert(entry.nodeState.ghosted === true, "folder-create release should ghost the real created folder until the handoff completes");
-    assert(entry.nodeState.suppressedFolderPreviewChildId == null, "folder-create release should not reuse the single child suppression path");
-    assert(entry.nodeState.suppressLabelRevealAfterGhost === false, "folder-create release should let the real folder label reveal after the handoff");
+    assert(entry.nodeState.ghosted === false, "new folders should be rendered by the normal desktop path");
+    assert(entry.nodeState.suppressedFolderPreviewChildIds.length === 0, "folders without dragged preview children should not suppress slots");
+    assert(entry.nodeState.suppressLabelRevealAfterGhost === false, "normal folders should not suppress their labels");
+  }
+
+  {
+    const appA = { id: "return-label-a", type: "app" };
+    const appB = { id: "return-label-b", type: "app" };
+    const makeReturnPlan = (phase) => buildDesktopRenderPlan(makeBaseState({
+      activePages: [[appA, appB]],
+      dragMeta: { draggedIds: [appA.id, appB.id], item: appA },
+      groupDragState: { phase, totalCount: 2 },
+      groupTransferOwnedItemIds: new Set([appA.id, appB.id]),
+      isBatchSelectionActive: true,
+    }));
+    const returningPlan = makeReturnPlan("returning");
+    assert(
+      returningPlan.entries.every((entry) => entry.nodeState.revealLabelAfterVisualHandoff === true),
+      "every visible batch item returning to origin should carry the deferred label reveal intent"
+    );
+    const acceptedPlan = makeReturnPlan("releasing");
+    assert(
+      acceptedPlan.entries.every((entry) => entry.nodeState.revealLabelAfterVisualHandoff === true),
+      "accepted point handoffs should fade labels in after visual ownership transfers"
+    );
+  }
+
+  {
+    const app = { id: "single-return-label", type: "app" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragMeta: { draggedIds: [app.id], item: app },
+      groupDragState: {
+        phase: "returning",
+        totalCount: 1,
+        visualSpec: { textless: false },
+      },
+      groupTransferOwnedItemIds: new Set([app.id]),
+    }));
+    assert(
+      plan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+      "a labeled single-icon ghost should hand its already-visible label back without restarting a fade"
+    );
+  }
+
+  {
+    const app = { id: "single-return-size-mismatch", type: "app" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragMeta: { draggedIds: [app.id], item: app },
+      groupDragState: {
+        phase: "returning",
+        totalCount: 1,
+        visualSpec: {
+          cellHeight: 132,
+          cellWidth: 116,
+          compact: false,
+          iconSize: 88,
+          singleLineLabel: false,
+          textless: false,
+        },
+      },
+      groupTransferOwnedItemIds: new Set([app.id]),
+    }));
+    assert(
+      plan.entries[0].nodeState.revealLabelAfterVisualHandoff === true,
+      "a single-icon handoff with different target sizing should defer the target label until visual ownership changes",
+    );
+  }
+
+  {
+    const app = { id: "single-desktop-release-label", type: "app" };
+    const makeReleasePlan = (owned) => buildDesktopRenderPlan(makeBaseState({
+      activePages: [[app]],
+      dragMeta: {
+        item: app,
+        source: { folderId: "folder-source", type: "folder" },
+      },
+      groupDragState: {
+        outcome: "accepted",
+        phase: "releasing",
+        runtimePlan: {
+          entries: [{
+            id: app.id,
+            memberIds: [app.id],
+            mode: "point-handoff",
+            target: { area: "desktop", id: app.id, kind: "desktop" },
+          }],
+        },
+        totalCount: 1,
+        visualSpec: {
+          cellHeight: 104,
+          cellWidth: 86,
+          compact: false,
+          iconSize: 64,
+          singleLineLabel: false,
+          textless: false,
+        },
+      },
+      groupTransferOwnedItemIds: owned ? new Set([app.id]) : new Set(),
+    }));
+    const ownedPlan = makeReleasePlan(true);
+    const releasedPlan = makeReleasePlan(false);
+    assert(
+      ownedPlan.entries[0].nodeState.ghosted === true &&
+        ownedPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+      "accepted desktop point releases should keep the real node hidden without arming a redundant label fade",
+    );
+    assert(
+      releasedPlan.entries[0].nodeState.ghosted === false &&
+        releasedPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+      "accepted desktop point releases should reveal the settled desktop label immediately after actor ownership ends",
+    );
+  }
+
+  {
+    const folder = { id: "folder-created-release", type: "folder" };
+    const makePlanForPhase = (phase) => buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      groupDragState: phase ? { phase } : null,
+      groupTransferOwnedFolderShellIds: phase ? new Set([folder.id]) : new Set(),
+    }));
+
+    const committingEntry = makePlanForPhase("committing").entries[0];
+    const acceptedEntry = makePlanForPhase("releasing").entries[0];
+    const idleEntry = makePlanForPhase(null).entries[0];
+    assert(committingEntry.nodeState.ghosted === true, "the new real folder should stay hidden while its target app joins the release layer");
+    assert(acceptedEntry.nodeState.ghosted === true, "the new real folder should stay hidden through staggered landing");
+    assert(idleEntry.nodeState.ghosted === false, "the new real folder should appear after group visual ownership ends");
+    assert(
+      acceptedEntry.nodeState.suppressLabelRevealAfterGhost === false,
+      "folder creation release should use the normal reveal instead of inheriting folder handoff label suppression"
+    );
+  }
+
+  {
+    const folder = { id: "folder-desktop-owned", type: "folder" };
+    const ownedEntry = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragMeta: { draggedIds: [folder.id], item: folder },
+      groupDragState: { phase: "dragging", totalCount: 1 },
+      groupTransferOwnedItemIds: new Set([folder.id]),
+    })).entries[0];
+    const releasedEntry = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragMeta: { draggedIds: [folder.id], item: folder },
+      groupDragState: { phase: "releasing", totalCount: 1 },
+      groupTransferOwnedItemIds: new Set(),
+    })).entries[0];
+
+    assert(ownedEntry.nodeState.ghosted === true, "an existing desktop folder should hide its real node while the transfer actor owns it");
+    assert(
+      ownedEntry.nodeState.suppressLabelRevealAfterGhost === true,
+      "an ordinary desktop folder transfer should keep the existing label visible when the real node is restored"
+    );
+    assert(releasedEntry.nodeState.ghosted === false, "the desktop folder should become visible after transfer ownership ends");
+    assert(
+      releasedEntry.nodeState.suppressLabelRevealAfterGhost === false,
+      "label suppression should be scoped to the ownership frame instead of leaking into idle desktop rendering"
+    );
+  }
+
+  {
+    const targetApp = { id: "folder-release-target", type: "app" };
+    const draggedApp = { id: "folder-release-dragged", type: "app" };
+    const folder = {
+      childPages: [[targetApp, draggedApp]],
+      children: [targetApp, draggedApp],
+      id: "folder-created-preview-ownership",
+      type: "folder",
+    };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      dragMeta: {
+        draggedIds: [draggedApp.id],
+        item: draggedApp,
+      },
+      groupDragState: {
+        phase: "releasing",
+      },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([draggedApp.id, targetApp.id]),
+    }));
+
+    assert(
+      plan.entries[0].nodeState.suppressedFolderPreviewChildIds.join(",") ===
+        `${targetApp.id},${draggedApp.id}`,
+      "created-folder release must suppress both the dragged app and the app that was the drop target from the committed thumbnail"
+    );
+  }
+
+  {
+    const lead = { id: "release-layout-lead", type: "app" };
+    const selected = { id: "release-layout-selected", type: "app" };
+    const follower = { id: "release-layout-follower", type: "app" };
+    const tail = { id: "release-layout-tail", type: "app" };
+    const folder = {
+      childPages: [[lead, selected]],
+      children: [lead, selected],
+      id: "release-layout-folder",
+      type: "folder",
+    };
+    const basePages = [[lead, selected, follower, tail]];
+    const committedPages = [[folder, follower, tail]];
+    const basePlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: basePages,
+      gridCols: 4,
+      gridRows: 1,
+    }));
+    const releasePlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: committedPages,
+      dragMeta: { draggedIds: [lead.id, selected.id], item: lead },
+      gridCols: 4,
+      gridRows: 1,
+      groupDragState: {
+        phase: "releasing",
+      },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([lead.id, selected.id]),
+    }));
+    const settledPlan = buildDesktopRenderPlan(makeBaseState({
+      activePages: committedPages,
+      gridCols: 4,
+      gridRows: 1,
+    }));
+    const getTarget = (plan, id) => plan.entries.find((entry) => entry.item.id === id)?.layoutTarget;
+    const baseLeadTarget = getTarget(basePlan, lead.id);
+    const releaseFolderTarget = getTarget(releasePlan, folder.id);
+    const releaseFollowerTarget = getTarget(releasePlan, follower.id);
+    const settledFolderTarget = getTarget(settledPlan, folder.id);
+    const settledFollowerTarget = getTarget(settledPlan, follower.id);
+
+    assert(
+      releaseFolderTarget.x === settledFolderTarget.x && releaseFolderTarget.y === settledFolderTarget.y &&
+        releaseFolderTarget.x === baseLeadTarget.x && releaseFolderTarget.y === baseLeadTarget.y,
+      "the owned folder shell should use the authoritative committed folder slot"
+    );
+    assert(
+      releaseFollowerTarget.x === settledFollowerTarget.x && releaseFollowerTarget.y === settledFollowerTarget.y,
+      "unselected desktop icons should use the committed layout without a second held-layout source"
+    );
   }
 
   {

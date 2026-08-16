@@ -6,9 +6,9 @@ import {
   setReducedMotionForTests,
 } from "../animation/motionPreferences.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 
 function makeTimerHost() {
   let nextId = 1;

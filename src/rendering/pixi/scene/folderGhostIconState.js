@@ -27,7 +27,7 @@ export function makeFolderGhostIconNodeState(options = {}) {
     opening: false,
     preserveNodeScale: true,
     removable: false,
-    selected: false,
+    focused: false,
     source: { type: sourceType, pageIndex: target.pageIndex ?? state.folderPageIndex },
     stageHeight: state.height,
     stageWidth: state.width,

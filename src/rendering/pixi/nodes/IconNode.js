@@ -32,9 +32,9 @@ import {
 } from "./iconFolderHoverState.js";
 import { getIconLabelRenderState } from "./iconLabelLayout.js";
 import {
-  drawSelectionFrame,
-  getSelectionFrameRect as getSelectionFrameRectForIcon,
-} from "./iconSelectionFrame.js";
+  drawFocusFrame,
+  getFocusFrameRect as getFocusFrameRectForIcon,
+} from "./iconFocusFrame.js";
 import {
   getEditButtonActionAt,
   getIconHitAreaRect,
@@ -96,6 +96,16 @@ function setTextValue(textNode, value) {
 function setPositionValue(point, x, y) {
   if (point?.x === x && point?.y === y) return;
   point?.set?.(x, y);
+}
+
+function copyLabelPresentation(source, target) {
+  if (!source || !target) return;
+  setTextValue(target, source.text);
+  for (const prop of ["fontSize", "lineHeight", "wordWrap", "wordWrapWidth"]) {
+    setTextStyleValue(target, prop, source.style?.[prop]);
+  }
+  target.anchor.set(source.anchor?.x ?? 0.5, source.anchor?.y ?? 0);
+  target.position.set(source.position?.x ?? 0, source.position?.y ?? 0);
 }
 
 function getIconMotionLayer(source) {
@@ -174,9 +184,28 @@ export class IconNode extends Container {
     this.interactionPhase = null;
     this.onAction = options.onAction || (() => {});
 
-    this.selectionFrame = new Graphics();
+    this.focusFrame = new Graphics();
+    this.batchSelectionBadge = new Container();
+    this.batchSelectionBadgeBackground = new Graphics();
+    this.batchSelectionBadgeText = new Text({
+      text: "",
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontSize: 12,
+        fontWeight: "800",
+        lineHeight: 12,
+      },
+    });
     this.jiggleWrap = new Container();
     this.visualWrap = new Container();
+    this.folderSlotReleaseVisual = new Container();
+    this.folderSlotReleaseSprite = new Sprite();
+    this.folderSlotReleaseEmoji = new Text({
+      text: "",
+      style: { align: "center", fill: 0xffffff, fontSize: 16, lineHeight: 0 },
+    });
     this.folderThumb = new Graphics();
     this.folderPreviewMask = new Graphics();
     this.folderPreviewMask.visible = false;
@@ -190,6 +219,7 @@ export class IconNode extends Container {
       style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
     });
     this.labelText = makeLabelText();
+    this.labelTransitionText = makeLabelText();
     this.missingBadge = new Container();
     this.missingBadgeBackground = new Graphics();
     this.missingBadgeText = new Text({
@@ -226,18 +256,36 @@ export class IconNode extends Container {
     this.hitAreaRect = new Rectangle();
     this.hitAreaSig = "";
     this.labelRenderSig = "";
+    this.labelTransitionBlendActive = false;
     this.missingBadgeSig = "";
-    this.selectionFrameSig = "";
+    this.focusFrameSig = "";
+    this.batchSelectionBadgeSig = "";
 
     this.iconSprite.anchor.set(0.5);
     this.emojiText.anchor.set(0.5);
+    this.folderSlotReleaseSprite.anchor.set(0.5);
+    this.folderSlotReleaseEmoji.anchor.set(0.5);
+    this.folderSlotReleaseVisual.addChild(
+      this.folderSlotReleaseSprite,
+      this.folderSlotReleaseEmoji
+    );
+    this.folderSlotReleaseVisual.eventMode = "none";
+    this.folderSlotReleaseVisual.visible = false;
     this.missingBadge.visible = false;
+    this.batchSelectionBadge.visible = false;
+    this.batchSelectionBadge.eventMode = "none";
+    this.batchSelectionBadgeText.anchor.set(0.5);
+    this.batchSelectionBadge.addChild(
+      this.batchSelectionBadgeBackground,
+      this.batchSelectionBadgeText
+    );
     this.missingBadgeText.anchor.set(0.5);
     this.missingBadge.addChild(this.missingBadgeBackground);
     this.missingBadge.addChild(this.missingBadgeText);
-    this.addChild(this.selectionFrame);
+    this.addChild(this.focusFrame);
     this.addChild(this.jiggleWrap);
     this.jiggleWrap.addChild(this.visualWrap);
+    this.jiggleWrap.addChild(this.folderSlotReleaseVisual);
     this.visualWrap.addChild(this.folderThumb);
     this.visualWrap.addChild(this.folderPreviewMask);
     this.visualWrap.addChild(this.folderChildrenWrap);
@@ -250,9 +298,13 @@ export class IconNode extends Container {
     this.visualWrap.addChild(this.removeButton);
     this.visualWrap.addChild(this.changeButton);
     this.visualWrap.addChild(this.resetButton);
+    this.visualWrap.addChild(this.batchSelectionBadge);
     this.folderFlashOverlay.visible = false;
     this.folderCreateBackdrop.visible = false;
     this.folderCreateFlashOverlay.visible = false;
+    this.labelTransitionText.eventMode = "none";
+    this.labelTransitionText.visible = false;
+    this.jiggleWrap.addChild(this.labelTransitionText);
     this.jiggleWrap.addChild(this.labelText);
 
     this.eventMode = "static";
@@ -265,7 +317,15 @@ export class IconNode extends Container {
   setState(state) {
     state = { draggable: true, ...state };
     const wasGhosted = Boolean(this.state?.ghosted);
+    const wasDragging = Boolean(this.state?.dragging);
     const wasFolder = this.isFolder;
+    const shouldRevealLabelAfterVisualHandoff = Boolean(
+      (wasDragging || wasGhosted) &&
+      this.state?.revealLabelAfterVisualHandoff &&
+      !state.dragging &&
+      !state.ghosted &&
+      !state.opening
+    );
     const shouldRestoreLabelAfterGhost = Boolean(this.state?.suppressLabelRevealAfterGhost || state.suppressLabelRevealAfterGhost);
     this.item = state.item;
     this.source = state.source;
@@ -294,17 +354,19 @@ export class IconNode extends Container {
     this.renderLabel(state);
     this.renderEditButtons(state);
     this.renderFrame(state);
+    this.renderBatchSelectionBadge(state);
     this.updateHitArea(state);
     this.updateJiggle(state);
     this.setInteractionPhase(
       suppressInteractionFeedback ? null : state.interactionPhase,
       { immediate: suppressInteractionFeedback }
     );
+    if (shouldRevealLabelAfterVisualHandoff) this.revealLabelAfterGhost();
     if (this.isFolder && wasGhosted && !state.ghosted && !state.dragging && !state.opening) {
       this.resetFolderPreviewAfterGhost();
       if (this.folderHandoffLabelRevealInProgress) return;
       if (shouldRestoreLabelAfterGhost) this.restoreLabelAfterGhost();
-      else this.revealLabelAfterGhost();
+      else if (!shouldRevealLabelAfterVisualHandoff) this.revealLabelAfterGhost();
     }
   }
 
@@ -515,6 +577,46 @@ export class IconNode extends Container {
     return getIconVisualOffsetY(this.textless);
   }
 
+  prepareFolderSlotReleaseVisual(targetSize = 16) {
+    if (this.isFolder || !this.item) return false;
+    const size = Math.max(1, Number(targetSize) || 16);
+    const sourceSize = Math.max(1, Number(this.iconSize) || 64);
+    const texture = this.iconSprite.visible ? this.iconSprite.texture : null;
+    this.folderSlotReleaseSprite.visible = Boolean(texture);
+    this.folderSlotReleaseEmoji.visible = !texture;
+    if (texture) {
+      this.folderSlotReleaseSprite.texture = texture;
+      this.folderSlotReleaseSprite.width = size;
+      this.folderSlotReleaseSprite.height = size;
+    } else {
+      setTextValue(this.folderSlotReleaseEmoji, this.item.emoji || "◼");
+      setTextStyleValue(this.folderSlotReleaseEmoji, "fontSize", size);
+      setTextStyleValue(this.folderSlotReleaseEmoji, "lineHeight", 0);
+    }
+    this.folderSlotReleaseVisual.position.set(0, this.getVisualOffsetY());
+    this.folderSlotReleaseVisual.scale.set(sourceSize / size);
+    this.folderSlotReleaseVisual.alpha = 0;
+    this.folderSlotReleaseVisual.visible = true;
+    this.visualWrap.alpha = 1;
+    this.folderSlotReleaseVisualTargetSize = size;
+    return true;
+  }
+
+  clearFolderSlotReleaseVisual(reason = "folder-slot-release-visual-clear") {
+    killMotionOf(this.folderSlotReleaseVisual, "alpha", { reason });
+    this.folderSlotReleaseVisual.visible = false;
+    this.folderSlotReleaseVisual.alpha = 0;
+    this.folderSlotReleaseVisual.scale.set(1);
+    this.folderSlotReleaseVisualTargetSize = null;
+  }
+
+  commitFolderSlotReleaseVisual() {
+    if (!this.folderSlotReleaseVisual.visible) return false;
+    this.visualWrap.alpha = 0;
+    this.folderSlotReleaseVisual.alpha = 1;
+    return true;
+  }
+
   updateHitArea(state) {
     const rect = getIconHitAreaRect({
       editing: state.editing,
@@ -532,8 +634,8 @@ export class IconNode extends Container {
     this.hitArea = this.hitAreaRect;
   }
 
-  getSelectionFrameRect() {
-    return getSelectionFrameRectForIcon({
+  getFocusFrameRect() {
+    return getFocusFrameRectForIcon({
       iconSize: this.iconSize,
       labelText: this.labelText,
       maxWidth: this.state?.cellWidth,
@@ -542,7 +644,7 @@ export class IconNode extends Container {
   }
 
   renderFrame(state) {
-    const rect = this.getSelectionFrameRect();
+    const rect = this.getFocusFrameRect();
     const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     const sig = [
@@ -552,18 +654,56 @@ export class IconNode extends Container {
       numberSig(rect.height),
       numberSig(this.iconSize),
       boolSig(state.dropTarget),
+      boolSig(state.batchSelected),
       boolSig(isAppFolderCreateHover),
       boolSig(isFolderDropHover),
-      boolSig(state.selected),
+      boolSig(state.focused),
     ].join(":");
-    if (this.selectionFrameSig === sig) return;
-    this.selectionFrameSig = sig;
-    drawSelectionFrame(this.selectionFrame, rect, this.iconSize, {
+    if (this.focusFrameSig === sig) return;
+    this.focusFrameSig = sig;
+    drawFocusFrame(this.focusFrame, rect, this.iconSize, {
+      batchSelected: state.batchSelected,
       dropTarget: state.dropTarget,
       isAppFolderCreateHover,
       isFolderDropHover,
-      selected: state.selected,
+      focused: state.focused,
     });
+  }
+
+  renderBatchSelectionBadge(state) {
+    const selectedChildCount = Math.max(0, Number(state.selectedChildCount) || 0);
+    const isSelectedApp = Boolean(state.batchSelected && this.item?.type === "app");
+    const isSelectedFolder = Boolean(this.item?.type === "folder" && selectedChildCount > 0);
+    const label = isSelectedApp
+      ? "✓"
+      : selectedChildCount > 99
+        ? "99+"
+        : String(selectedChildCount);
+    const size = Math.max(18, Math.min(25, this.iconSize * 0.31));
+    const sig = [
+      boolSig(isSelectedApp),
+      boolSig(isSelectedFolder),
+      label,
+      numberSig(size),
+      numberSig(this.iconSize),
+      numberSig(this.getVisualOffsetY()),
+    ].join(":");
+    if (this.batchSelectionBadgeSig === sig) return;
+    this.batchSelectionBadgeSig = sig;
+    this.batchSelectionBadge.visible = isSelectedApp || isSelectedFolder;
+    if (!this.batchSelectionBadge.visible) return;
+    this.batchSelectionBadge.position.set(
+      this.iconSize * 0.39,
+      this.getVisualOffsetY() - this.iconSize * 0.39
+    );
+    this.batchSelectionBadgeBackground
+      .clear()
+      .circle(0, 0, size / 2)
+      .fill({ color: 0x1687ff, alpha: 1 })
+      .stroke({ color: 0xffffff, alpha: 0.96, width: Math.max(1.5, size * 0.08) });
+    this.batchSelectionBadgeText.text = label;
+    setTextStyleValue(this.batchSelectionBadgeText, "fontSize", isSelectedFolder && label.length > 2 ? size * 0.35 : size * 0.5);
+    setTextStyleValue(this.batchSelectionBadgeText, "lineHeight", size * 0.55);
   }
 
   hideFolderChildren() {
@@ -616,7 +756,14 @@ export class IconNode extends Container {
       this.emojiText.visible = true;
       setTextValue(this.emojiText, this.item?.emoji || "◼");
       setTextStyleValue(this.emojiText, "fontSize", this.iconSize);
-      setTextStyleValue(this.emojiText, "lineHeight", this.iconSize);
+      // Folder thumbnail children use Pixi Text's natural line height. Keep
+      // slot-release ghosts on that same raster style; rendering a 16px glyph
+      // into a 16px line box avoids the old 64px-texture sampling jump.
+      setTextStyleValue(
+        this.emojiText,
+        "lineHeight",
+        state.folderPreviewRelease === true ? 0 : this.iconSize
+      );
     }
     this.renderMissingBadge(state);
     this.updateAppFolderCreateHoverAnimation(state);
@@ -675,11 +822,15 @@ export class IconNode extends Container {
     this.activateFolderPreviewMask(thumb);
     this.drawFolderFlashOverlay(size, thumb);
     this.folderChildrenWrap.visible = true;
+    const suppressedChildIds = new Set(state.suppressedFolderPreviewChildIds || []);
 
     while (this.folderChildNodes.length < Math.max(9, plan.items.length)) {
       const childContainer = new Container();
       const childSprite = new Sprite();
-      const childEmoji = new Text({ text: "", style: { fill: 0xffffff, fontSize: 14 } });
+      const childEmoji = new Text({
+        text: "",
+        style: { align: "center", fill: 0xffffff, fontSize: 14, lineHeight: 0 },
+      });
       childSprite.anchor.set(0.5);
       childEmoji.anchor.set(0.5);
       childContainer.addChild(childSprite);
@@ -699,8 +850,10 @@ export class IconNode extends Container {
       node.renderable = Boolean(child);
       node.folderPreviewChildId = child?.id || null;
       if (!child) continue;
-      if (child.id === state.suppressedFolderPreviewChildId) {
+      if (suppressedChildIds.has(child.id)) {
         node.renderable = false;
+        childSprite.visible = false;
+        childEmoji.visible = false;
         continue;
       }
       const childId = child.id;
@@ -719,6 +872,7 @@ export class IconNode extends Container {
       } else {
         setTextValue(childEmoji, child.emoji || "◼");
         setTextStyleValue(childEmoji, "fontSize", thumb.childSize);
+        setTextStyleValue(childEmoji, "lineHeight", 0);
       }
     }
     this.renderMissingBadge({ ...state, launchTargetStatus: null });
@@ -1111,10 +1265,43 @@ export class IconNode extends Container {
       numberSig(labelState.x),
       numberSig(labelState.y),
     ].join(":");
-    if (this.labelRenderSig === sig) return;
+    if (this.labelRenderSig === sig) {
+      if (!state.visualSpecTransition?.active && this.labelTransitionBlendActive) {
+        this.finishLabelTransitionBlend();
+      }
+      return;
+    }
+    const shouldBlend = Boolean(
+      state.visualSpecTransition?.active &&
+      this.labelText.visible &&
+      this.labelText.text &&
+      !this.labelTransitionBlendActive
+    );
+    if (shouldBlend) {
+      copyLabelPresentation(this.labelText, this.labelTransitionText);
+      this.labelTransitionText.visible = true;
+      this.labelTransitionText.alpha = Math.max(0, Number(this.labelText.alpha) || 1);
+      this.labelText.alpha = 0;
+      this.labelTransitionBlendActive = true;
+      motion(this.labelTransitionText)
+        .preset("fade", { duration: 0.12 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 0, onComplete: () => this.finishLabelTransitionBlend() })
+        .start();
+      motion(this.labelText)
+        .preset("fade", { duration: 0.12 })
+        .overlay()
+        .interrupt("retarget")
+        .to({ alpha: 1 })
+        .start();
+    }
     this.labelRenderSig = sig;
     this.labelText.visible = labelState.visible;
-    if (!this.labelText.visible) return;
+    if (!this.labelText.visible) {
+      this.finishLabelTransitionBlend();
+      return;
+    }
     setTextStyleValue(this.labelText, "fontSize", labelState.fontSize);
     setTextStyleValue(this.labelText, "lineHeight", labelState.lineHeight);
     setTextStyleValue(this.labelText, "wordWrap", labelState.wordWrap);
@@ -1122,6 +1309,19 @@ export class IconNode extends Container {
     setTextValue(this.labelText, labelState.text);
     this.labelText.anchor.set(labelState.anchorX, labelState.anchorY);
     setPositionValue(this.labelText.position, labelState.x, labelState.y);
+    if (!state.visualSpecTransition?.active && this.labelTransitionBlendActive) {
+      this.finishLabelTransitionBlend();
+    }
+  }
+
+  finishLabelTransitionBlend() {
+    if (!this.labelTransitionBlendActive && !this.labelTransitionText.visible) return;
+    killMotionOf(this.labelTransitionText);
+    killMotionOf(this.labelText);
+    this.labelTransitionText.alpha = 0;
+    this.labelTransitionText.visible = false;
+    if (this.labelText.visible) this.labelText.alpha = 1;
+    this.labelTransitionBlendActive = false;
   }
 
   revealLabelAfterGhost(options = {}) {
@@ -1202,6 +1402,7 @@ export class IconNode extends Container {
     if (this.labelText) {
       this.labelText.renderable = !sourceHidden;
       if (sourceHidden) {
+        this.finishLabelTransitionBlend();
         this.folderHandoffLabelRevealInProgress = false;
         this.cancelFolderHandoffLabelFade();
         killMotionOf(this.labelText);

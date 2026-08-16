@@ -211,7 +211,7 @@ function makeDesktopQuiescenceState(item = { id: "app-a", type: "app" }) {
     iconSize: 64,
     isFolderOpeningPreviewFrameGhosted: () => false,
     isIconOpening: () => false,
-    selectedIcon: null,
+    focusedIcon: null,
     isSearchMode: false,
     isTextlessMode: false,
     launchTargetStatusById: {},
@@ -234,7 +234,6 @@ function prepareLayerForDesktopQuiescenceTest(layer, item) {
     getDesktopSourceGhostedIds: () => new Set(),
     hasVisibleFolderSubstitute: () => false,
   };
-  layer.updateSingleStageDragPreviewLayer = () => {};
   layer.updateSingleStageFolderLayer = () => {};
   layer.pageTrackMotion = {
     control: null,
@@ -280,11 +279,12 @@ export async function runDesktopLayerTests() {
   const V = ICON_BOUNDS_VARIANT;
   makeLayer.iconBoundsRegistry = createIconBoundsRegistry();
   const {
-    FolderVisualOwnershipRegistry,
+    VisualOwnershipRegistry: FolderVisualOwnershipRegistry,
     makeDesktopSourceVisualKey,
-  } = await import("./folderVisualOwnershipRegistry.js");
+  } = await import("./visualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
   const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
+  const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
   };
@@ -303,6 +303,202 @@ export async function runDesktopLayerTests() {
     });
     layer.singleStageFolderLayer.onRenderRequest("folder-resize-layout");
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
+    assert(
+      layer.children.indexOf(layer.folderDropStrokeLayer) < layer.children.indexOf(layer.groupDragLayer),
+      "folder drop stroke should render below the dragged actor"
+    );
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+  }
+
+  {
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    const item = { id: "responsive-release-target", name: "Responsive Target", type: "app" };
+    const targetNode = new Container();
+    targetNode.item = item;
+    targetNode.iconSize = 53.4;
+    targetNode.position.set(240, 160);
+    targetNode.visualWrap = new Container();
+    targetNode.visualWrap.position.set(0, -14);
+    targetNode.addChild(targetNode.visualWrap);
+    layer.visualRoot.addChild(targetNode);
+    layer.iconNodes.set(`page:0:${item.id}`, targetNode);
+    const releaseNode = new Container();
+    releaseNode.iconSize = 64;
+    releaseNode.visualWrap = new Container();
+    releaseNode.addChild(releaseNode.visualWrap);
+    layer.groupDragLayer.addChild(releaseNode);
+
+    const pose = layer.resolveGroupReleasePoint({
+      entry: { id: item.id, mode: "return" },
+      node: releaseNode,
+      state: { stageRect: { height: 320, left: 0, top: 0, width: 480 } },
+      target: { area: "desktop", id: null, kind: null, pageIndex: null },
+    });
+    assert(
+      nearlyEqual(pose?.point?.x, 240) &&
+        nearlyEqual(pose?.point?.y, 146) &&
+        nearlyEqual(pose?.scale?.x, 0.834375) &&
+        nearlyEqual(pose?.scale?.y, 0.834375),
+      "desktop point releases should resolve the target visual center and responsive visual scale as one pose"
+    );
+    releaseNode.position.set(pose.point.x, pose.point.y);
+    releaseNode.scale.set(pose.scale.x, pose.scale.y);
+    const targetVisualCenter = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, targetNode.visualWrap);
+    const releaseVisualCenter = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, releaseNode.visualWrap);
+    assert(
+      nearlyEqual(releaseVisualCenter.x, targetVisualCenter.x) &&
+        nearlyEqual(releaseVisualCenter.y, targetVisualCenter.y),
+      "the release ghost visual center should match the live icon visual center at handoff"
+    );
+
+    const topEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "remote-top", mode: "return" },
+      node: releaseNode,
+      state: {
+        gridCols: 3,
+        gridRows: 3,
+        height: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      },
+      target: {
+        semanticAnchor: {
+          kind: "desktop-page-edge-left",
+          laneY: 1 / 6,
+          pageIndex: 0,
+        },
+      },
+    });
+    const bottomEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "remote-bottom", mode: "return" },
+      node: releaseNode,
+      state: {
+        gridCols: 3,
+        gridRows: 3,
+        height: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        width: 480,
+      },
+      target: {
+        semanticAnchor: {
+          kind: "desktop-page-edge-left",
+          laneY: 5 / 6,
+          pageIndex: 0,
+        },
+      },
+    });
+    assert(
+      topEdgePose?.point?.y < 120 && bottomEdgePose?.point?.y > 220 &&
+        bottomEdgePose.point.y - topEdgePose.point.y > 150,
+      "desktop edge releases should resolve their semantic source rows instead of sharing the viewport midpoint"
+    );
+    layer.singleStageFolderLayer.panelGeometry = {
+      height: 220,
+      left: 100,
+      top: 50,
+      width: 300,
+    };
+    layer.singleStageFolderLayer.targetFolderGeometry = {
+      grid: { height: 140, left: 130, top: 90, width: 240 },
+      panel: layer.singleStageFolderLayer.panelGeometry,
+    };
+    layer.singleStageFolderLayer.resolveStableIconSlotRecord = (anchor) => ({
+      height: 56,
+      left: 160,
+      meta: {
+        stageHeight: 320,
+        stageRect: { height: 320, left: 0, top: 0, width: 480 },
+        stageWidth: 480,
+      },
+      top: Number(anchor?.index) >= 7 ? 170 : 90,
+      width: 56,
+    });
+    const folderTopEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-remote-top", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 0,
+          itemId: "folder-remote-top",
+          kind: "folder-page-edge-left",
+          laneY: 0.5,
+        },
+      },
+    });
+    const folderBottomEdgePose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-remote-bottom", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 7,
+          itemId: "folder-remote-bottom",
+          kind: "folder-page-edge-left",
+          laneY: 0.5,
+        },
+      },
+    });
+    assert(
+      nearlyEqual(folderTopEdgePose?.point?.y, 118) &&
+        nearlyEqual(folderBottomEdgePose?.point?.y, 198),
+      "folder edge releases should align to stable source slots instead of normalized viewport lanes"
+    );
+    const liveFolderTarget = new Container();
+    liveFolderTarget.item = { id: "folder-visible-stable", name: "Folder Visible Stable", type: "app" };
+    liveFolderTarget.iconSize = 56;
+    liveFolderTarget.position.set(330, 250);
+    liveFolderTarget.visualWrap = new Container();
+    liveFolderTarget.addChild(liveFolderTarget.visualWrap);
+    layer.singleStageFolderLayer.iconNodes.set("folder-a:folder-visible-stable", liveFolderTarget);
+    layer.singleStageFolderLayer.pageTrack.addChild(liveFolderTarget);
+    const stableFolderSlotPose = layer.resolveGroupReleasePoint({
+      entry: { id: "folder-visible-stable", mode: "return" },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: {
+        area: "folder",
+        folderId: "folder-a",
+        id: "folder-visible-stable",
+        pageIndex: 0,
+        semanticAnchor: {
+          folderId: "folder-a",
+          folderPageIndex: 0,
+          index: 0,
+          itemId: "folder-visible-stable",
+          kind: "folder-open-slot",
+        },
+      },
+    });
+    assert(
+      nearlyEqual(stableFolderSlotPose?.point?.x, 188) &&
+        nearlyEqual(stableFolderSlotPose?.point?.y, 118),
+      "visible folder returns should use the same stable slot as the hidden real icon instead of chasing its live spring"
+    );
+    const egressPose = layer.resolveGroupReleasePoint({
+      entry: {
+        id: item.id,
+        mode: "return",
+        visibilityPolicy: { folderId: "folder-a", kind: "desktop-occluded-egress" },
+      },
+      node: releaseNode,
+      state: { height: 320, stageRect: { height: 320, left: 0, top: 0, width: 480 }, width: 480 },
+      target: { area: "desktop", id: item.id, pageIndex: 0 },
+    });
+    assert(
+      egressPose && (
+        egressPose.point.x < 100 || egressPose.point.x > 400 ||
+        egressPose.point.y < 50 || egressPose.point.y > 270
+      ),
+      "desktop actors obscured by an open folder should animate beyond the panel instead of landing underneath it"
+    );
+
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
   }
@@ -334,11 +530,13 @@ export async function runDesktopLayerTests() {
     const releaseState = {
       ...baseState,
       activePages: [[neighborItem, movingItem]],
-      dragReleaseGhostId: movingItem.id,
-      dragReleaseState: {
+      dragMeta: {
+        draggedIds: [movingItem.id],
         item: movingItem,
         source: { index: 0, pageIndex: 0, type: "page" },
       },
+      groupDragState: { phase: "dragging" },
+      groupTransferOwnedItemIds: new Set([movingItem.id]),
     };
     layer.update(releaseState);
     const targetRecord = iconBoundsRegistry.getRecord(K.LAUNCH, V.STABLE_STAGE_LAYOUT, {
@@ -349,9 +547,9 @@ export async function runDesktopLayerTests() {
     const expectedX = targetRecord.left + targetRecord.width / 2;
 
     assert(initialX !== expectedX, "desktop release-backed setup should move the hidden real icon to a new slot");
-    assert(movingNode.visible === false && movingNode.state.ghosted === true, "desktop release-backed real icon should stay hidden behind the drag preview");
-    assert(nearlyEqual(movingNode.x, expectedX), "desktop release-backed hidden real icon should snap to the release target before it is revealed");
-    assert(!getBaseAnimation(movingNode, "x"), "desktop release-backed hidden real icon should not keep a layout spring that can twitch after reveal");
+    assert(movingNode.visible === false && movingNode.state.dragging === true, "the shared drag owner should keep the real desktop icon hidden through visual release");
+    assert(nearlyEqual(movingNode.x, expectedX), "the hidden real desktop icon should snap to the release target before it is revealed");
+    assert(!getBaseAnimation(movingNode, "x"), "the hidden real desktop icon should not keep a layout spring that can twitch after reveal");
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -389,6 +587,302 @@ export async function runDesktopLayerTests() {
       !getBaseAnimation(node, "x") && !getBaseAnimation(node, "y"),
       "window resize layout sync should not leave a delayed icon layout spring"
     );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const fillerA = { id: "cancel-layout-filler-a", name: "Filler A", type: "app" };
+    const fillerB = { id: "cancel-layout-filler-b", name: "Filler B", type: "app" };
+    const draggedA = { id: "cancel-layout-dragged-a", name: "Dragged A", type: "app" };
+    const draggedB = { id: "cancel-layout-dragged-b", name: "Dragged B", type: "app" };
+    const folderChild = { id: "cancel-layout-folder-child", name: "Folder Child", type: "app" };
+    const folder = {
+      childPages: [[folderChild]],
+      children: [folderChild],
+      id: "cancel-layout-folder",
+      name: "Folder",
+      type: "folder",
+    };
+    const originalItems = [fillerA, fillerB, draggedA, draggedB, folder];
+    const projectedItems = [fillerA, fillerB, folder, draggedA, draggedB];
+    const groupPresentation = {
+      key: "cancel-layout-group",
+      presentationPlan: {
+        actors: [draggedA, draggedB, folderChild].map((item) => ({
+          key: `actor:${item.id}`,
+          memberIds: [item.id],
+          role: "item",
+        })),
+      },
+    };
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    layer.updateGroupDragLayer = () => {};
+    const baseState = {
+      ...makeDesktopQuiescenceState(folder),
+      activePages: [originalItems],
+      desktopFrame: { height: 260, left: 0, top: 0, width: 1000 },
+      gridCols: 5,
+      gridRows: 1,
+      height: 260,
+      stageRect: { height: 260, left: 0, top: 0, width: 1000 },
+      width: 1000,
+    };
+    layer.update(baseState);
+    for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+      motionRuntime.step(1 / 60);
+    }
+
+    const folderNode = layer.iconNodes.get(`page:0:${folder.id}`);
+    const originalFolderX = folderNode.x;
+    const draggingGroup = {
+      ...groupPresentation,
+      phase: "dragging",
+    };
+    layer.update({
+      ...baseState,
+      activePages: [projectedItems],
+      groupDragState: draggingGroup,
+    });
+    for (let frame = 0; frame < 8; frame += 1) motionRuntime.step(1 / 60);
+    assert(
+      !nearlyEqual(folderNode.x, originalFolderX),
+      "cancel return setup should project the folder into the vacated earlier slot"
+    );
+
+    const returningGroup = {
+      ...groupPresentation,
+      phase: "returning",
+    };
+    layer.update({
+      ...baseState,
+      groupDragState: returningGroup,
+    });
+    layer.applyImmediateGroupTransferOwnership(returningGroup);
+    for (let frame = 0; frame < 600 && motionRuntime.hasActiveWork(); frame += 1) {
+      motionRuntime.step(1 / 60);
+    }
+
+    assert(
+      nearlyEqual(folderNode.x, originalFolderX),
+      "canceling a mixed desktop/folder-child drag should let the folder shell finish returning to its original slot"
+    );
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const target = { id: "created-target-layout-target", name: "Target", type: "app" };
+    const dragged = { id: "created-target-layout-dragged", name: "Dragged", type: "app" };
+    const folder = {
+      childPages: [[target, dragged]],
+      children: [target, dragged],
+      id: "created-target-layout-folder",
+      name: "New Folder",
+      type: "folder",
+    };
+    const layer = new DesktopLayer({ iconBoundsRegistry });
+    layer.updateGroupDragLayer = () => {};
+    layer.update({
+      ...makeDesktopQuiescenceState(folder),
+      groupDragState: {
+        entries: [
+          { item: dragged, originKind: "lead" },
+          { item: target, originKind: "folder-create-target" },
+        ],
+        key: "created-target-layout",
+        phase: "releasing",
+        runtimePlan: {
+          entries: [target, dragged].map((item, slotIndex) => ({
+            id: item.id,
+            mode: "created-folder",
+            target: {
+              folderId: folder.id,
+              kind: "created-folder",
+              slotIndex,
+            },
+          })),
+          key: "created-target-layout-plan",
+        },
+        totalCount: 1,
+      },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([target.id, dragged.id]),
+    });
+    const folderNode = layer.findIconNodeByItemId(folder.id);
+    const folderEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.item.id === folder.id);
+    assert(folderNode?.state?.ghosted === true, "created-folder release target should remain hidden behind the release visuals");
+    assert(
+      nearlyEqual(folderNode?.position?.x, folderEntry?.layoutTarget?.x) &&
+        nearlyEqual(folderNode?.position?.y, folderEntry?.layoutTarget?.y) &&
+        !getBaseAnimation(folderNode, "x") &&
+        !getBaseAnimation(folderNode, "y"),
+      "created-folder release target should start at stable layout without the ordinary new-node entry spring"
+    );
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const dragged = { id: "created-release-dragged", name: "Dragged", type: "app" };
+    const target = { id: "created-release-target", name: "Target", type: "app" };
+    const folder = {
+      childPages: [[target, dragged]],
+      children: [target, dragged],
+      id: "created-release-folder",
+      name: "New Folder",
+      type: "folder",
+    };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.applyFolderSourceGhosting = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.singleStageDiagnosticsLayer = { update() {} };
+    layer.dragHitDebugLayer = { update() {} };
+
+    const makePreparedNode = (item) => {
+      const node = makeNode(item.id);
+      node.item = item;
+      node.renderable = true;
+      node.setState = (nextState) => {
+        node.state = nextState;
+        node.visible = !nextState.dragging && !nextState.ghosted;
+      };
+      return node;
+    };
+    const draggedNode = prepareLayerForDesktopQuiescenceTest(layer, dragged);
+    const targetNode = makePreparedNode(target);
+    layer.iconNodes.set(`page:0:${target.id}`, targetNode);
+
+    const baseState = {
+      ...makeDesktopQuiescenceState(dragged),
+      activePages: [[dragged, target]],
+      desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
+      gridCols: 2,
+      gridRows: 1,
+      height: 320,
+      stageRect: { height: 320, left: 0, top: 0, width: 480 },
+      width: 480,
+    };
+    layer.update(baseState);
+    draggedNode.alpha = 1;
+    targetNode.alpha = 1;
+    draggedNode.visible = true;
+    targetNode.visible = true;
+    draggedNode.renderable = true;
+    targetNode.renderable = true;
+
+    const folderNode = makePreparedNode(folder);
+    layer.iconNodes.set(`page:0:${folder.id}`, folderNode);
+    const releaseEntries = [
+      { item: dragged, originKind: "desktop" },
+      { item: target, originKind: "folder-create-target" },
+    ];
+    layer.update({
+      ...baseState,
+      activePages: [[folder]],
+      groupDragState: {
+        entries: releaseEntries,
+        key: "created-release-brightness",
+        phase: "releasing",
+        runtimePlan: {
+          entries: releaseEntries.map((entry, index) => ({
+            id: entry.item.id,
+            mode: "created-folder",
+            order: index,
+            target: { folderId: folder.id, kind: "created-folder", slotIndex: index },
+          })),
+          key: "created-release-brightness-plan",
+        },
+        totalCount: 1,
+      },
+      groupTransferOwnedFolderShellIds: new Set([folder.id]),
+      groupTransferOwnedItemIds: new Set([dragged.id, target.id]),
+    });
+
+    assert(
+      targetNode.visible === false && targetNode.renderable === false && targetNode.alpha === 0,
+      "created-folder release should retire the old target node immediately so it cannot overlap the full-alpha release ghost"
+    );
+    assert(
+      draggedNode.visible === false && draggedNode.renderable === false && draggedNode.alpha === 0,
+      "created-folder release should retire every real source node immediately once the release layer owns their visuals"
+    );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const item = { id: "pointer-cache-app", name: "Pointer Cache", type: "app" };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const node = prepareLayerForDesktopQuiescenceTest(layer, item);
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.applyFolderSourceGhosting = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.singleStageDiagnosticsLayer.update = () => {};
+    layer.dragHitDebugLayer = { update() {} };
+
+    const entries = [];
+    const dragMeta = {
+      draggedIds: [item.id],
+      item,
+      source: { index: 0, pageIndex: 0, type: "page" },
+    };
+    const groupDragState = {
+      center: { x: 180, y: 160 },
+      entries,
+      phase: "dragging",
+      pointer: { x: 180, y: 160 },
+      totalCount: 1,
+    };
+    const baseState = {
+      ...makeDesktopQuiescenceState(item),
+      dragMeta,
+      groupDragState,
+      groupTransferOwnedItemIds: new Set([item.id]),
+    };
+
+    layer.update(baseState);
+    const firstPlan = layer.lastDesktopRenderPlan;
+    layer.update({
+      ...baseState,
+      groupDragState: {
+        ...groupDragState,
+        center: { x: 260, y: 220 },
+        pointer: { x: 260, y: 220 },
+      },
+    });
+    const stablePointerPlan = layer.lastDesktopRenderPlan;
+    assert(
+      stablePointerPlan.entries === firstPlan.entries,
+      "pointer-only group drag updates should reuse the structural desktop plan"
+    );
+
+    layer.update({
+      ...baseState,
+      dragFolderTargetId: "folder-target",
+      groupDragState: {
+        ...groupDragState,
+        center: { x: 300, y: 240 },
+        pointer: { x: 300, y: 240 },
+      },
+    });
+    assert(
+      layer.lastDesktopRenderPlan.entries !== stablePointerPlan.entries,
+      "a changed folder target should invalidate the pointer-only desktop plan cache"
+    );
+    assert(node.state.dragging === true, "pointer-only plan test should keep the dragged icon state active");
     motionRuntime.reset();
   }
 
@@ -561,7 +1055,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.singleStageDragPreviewLayer = { update() {} };
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -609,7 +1102,7 @@ export async function runDesktopLayerTests() {
         iconSize: 64,
         isFolderOpeningPreviewFrameGhosted: () => false,
         isIconOpening: () => false,
-        selectedIcon: null,
+        focusedIcon: null,
         isSearchMode: true,
         isTextlessMode: false,
         launchTargetStatusById: {},
@@ -871,6 +1364,37 @@ export async function runDesktopLayerTests() {
     const pageTrack = makePageTrack([]);
     const layer = makeLayer(DesktopLayer, pageTrack);
     layer.markInteractiveBoundsDirty = () => {};
+    const transform = (y) => ({
+      desktopVisualTransform: { scale: 1, y },
+      height: 600,
+      width: 800,
+    });
+
+    layer.applyDesktopVisualTransform(transform(0));
+    layer.applyDesktopVisualTransform(transform(40));
+    const spring = getBaseAnimation(layer.visualRoot, "y");
+    assert(spring, "a changed desktop transform should start a spring");
+    motionRuntime.step(0.05);
+    const fromBeforeStableUpdate = spring.from;
+    layer.applyDesktopVisualTransform(transform(40));
+    assert(
+      spring.from === fromBeforeStableUpdate,
+      "a stable desktop transform should not restart its in-flight spring"
+    );
+
+    layer.applyDesktopVisualTransform(transform(50));
+    assert(
+      spring.to === 350 && spring.from !== fromBeforeStableUpdate,
+      "a changed desktop transform should still retarget the existing spring"
+    );
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    layer.markInteractiveBoundsDirty = () => {};
     const folderState = {
       renderedFolder: { id: "resize-snap-folder" },
     };
@@ -1001,7 +1525,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.updateSingleStageDragPreviewLayer = () => {};
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -1038,7 +1561,7 @@ export async function runDesktopLayerTests() {
       iconSize: 64,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isIconOpening: () => false,
-      selectedIcon: null,
+      focusedIcon: null,
       isSearchMode: false,
       isTextlessMode: false,
       launchTargetStatusById: {},
@@ -1124,7 +1647,6 @@ export async function runDesktopLayerTests() {
       getDesktopSourceGhostedIds: () => new Set(["folder-a"]),
       hasVisibleFolderSubstitute: () => false,
     };
-    layer.updateSingleStageDragPreviewLayer = () => {};
     layer.updateSingleStageFolderLayer = () => {};
     layer.pageTrackMotion = {
       control: null,
@@ -1157,7 +1679,7 @@ export async function runDesktopLayerTests() {
       iconSize: 64,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isIconOpening: () => false,
-      selectedIcon: null,
+      focusedIcon: null,
       isSearchMode: false,
       isTextlessMode: false,
       launchTargetStatusById: {},
@@ -1655,64 +2177,6 @@ export async function runDesktopLayerTests() {
 
     assert(folder.position.x === 18 && folder.position.y === 42, "handoff should apply the pinned position");
     assert(folder.scale.x === 1.087 && folder.scale.y === 1.086, "handoff should apply inverse shell scale");
-  }
-
-  {
-    const calls = [];
-    const pageTrack = makePageTrack([]);
-    const layer = makeLayer(DesktopLayer, pageTrack);
-    layer.singleStageDragPreviewLayer = {
-      update(state) {
-        calls.push(state);
-      },
-    };
-    const targetFolderNode = makeNode("folder-preview-target");
-    targetFolderNode.item = { id: "folder-preview-target", type: "folder" };
-    layer.iconNodes.set("desktop:folder-preview-target", targetFolderNode);
-    const previewState = { item: { id: "app-a", type: "app" } };
-    const releaseState = {
-      item: { id: "app-a", type: "app" },
-      releaseMode: "folder-preview-slot",
-      targetFolderId: "folder-preview-target",
-    };
-
-    layer.updateSingleStageDragPreviewLayer({
-      deviceResolution: 1.5,
-      dragFolderHoverState: { phase: "hover", targetType: "folder" },
-      dragPreviewState: previewState,
-      dragReleaseState: releaseState,
-      folderPageSize: 9,
-      height: 600,
-      iconSize: 64,
-      isTextlessMode: false,
-      launchTargetStatusById: {},
-      showMissingLaunchTargetBadge: true,
-      stageRect: { height: 600, left: 10, top: 20, width: 800 },
-      width: 800,
-    });
-
-    assert(calls[0].previewState === previewState, "root-stage drag preview should receive the active preview state");
-    assert(calls[0].releaseState === releaseState, "root-stage drag preview should receive the active release state");
-    assert(calls[0].targetFolderNode === targetFolderNode, "folder preview slot release should receive the current real target IconNode");
-    assert(calls[0].deviceResolution === 1.5, "folder preview slot release should receive renderer resolution for device-pixel handoff thresholds");
-
-    layer.updateSingleStageDragPreviewLayer({
-      deviceResolution: 2,
-      dragPreviewState: null,
-      dragReleaseState: null,
-      folderPageSize: 9,
-      height: 600,
-      iconSize: 64,
-      isTextlessMode: false,
-      launchTargetStatusById: {},
-      showMissingLaunchTargetBadge: true,
-      stageRect: { height: 600, left: 10, top: 20, width: 800 },
-      width: 800,
-    });
-
-    assert(calls[1].previewState === null, "root-stage drag preview should clear when no preview state is active");
-    assert(calls[1].releaseState === null, "root-stage drag preview should clear when no release state is active");
-    assert(calls[1].targetFolderNode == null, "root-stage drag preview should clear the live folder target with the release");
   }
 
   {

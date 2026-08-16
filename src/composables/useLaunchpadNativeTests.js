@@ -131,7 +131,7 @@ function makeOptions(overrides = {}) {
     removeEverywhere: layout.operations.removeEverywhere,
     renderedFolder: ref(null),
     schedulePageGridMetrics: () => {},
-    selectedIcon: ref(null),
+    focusedIcon: ref(null),
     shouldUseNativeCatalog: () => true,
   });
   const options = {

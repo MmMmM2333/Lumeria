@@ -154,14 +154,14 @@ export function useLaunchpadLaunchFlow(options) {
     options.setNativeWindowEffectsEnabled(false);
     options.setNativeWindowFrameEnabled?.(false);
     const shouldClearSearchAfterClose = Boolean(closeOptions?.clearSearch && options.isSearchMode());
-    options.clearSelectedIcon();
+    options.clearFocusedIcon();
     options.keyboardFocusArea.value = "desktop";
     options.searchInputRef.value?.blur?.();
     isDesktopClosing.value = true;
     isDesktopOpen.value = false;
     clearDesktopCloseTimer();
     desktopCloseTimer = window.setTimeout(() => {
-      if (shouldClearSearchAfterClose) options.clearSearch({ keepSelection: false });
+      if (shouldClearSearchAfterClose) options.clearSearch({ keepFocus: false });
       isDesktopClosing.value = false;
       clearDesktopCloseTimer();
     }, DESKTOP_CLOSE_DURATION);
@@ -219,7 +219,7 @@ export function useLaunchpadLaunchFlow(options) {
 
     clearAppLaunchTimer();
     appLaunchTimer = window.setTimeout(() => {
-      if (shouldClearSearchAfterLaunch) options.clearSearch({ keepSelection: false });
+      if (shouldClearSearchAfterLaunch) options.clearSearch({ keepFocus: false });
       options.clearOpeningIcon();
       isAppLaunching.value = false;
       clearAppLaunchTimer();

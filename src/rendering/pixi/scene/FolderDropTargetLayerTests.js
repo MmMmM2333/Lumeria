@@ -244,6 +244,40 @@ export async function runFolderDropTargetLayerTests() {
       onExitStart: (folderId) => callbacks.push(`start:${folderId}`),
       onTargetActive: (folderId) => callbacks.push(`active:${folderId}`),
     });
+    const target = {
+      active: true,
+      geometryVersion: "folder-opening:100",
+      hoverRect: { height: 64, left: 100, top: 80, width: 64 },
+      padding: 8,
+      phase: "opening",
+      targetId: "folder-opening",
+    };
+    try {
+      layer.update(target, { stageRect: { height: 600, left: 0, top: 0, width: 800 } });
+      stepMotion();
+      layer.update(null, {
+        exitTransition: { mode: "immediate", targetId: target.targetId },
+        stageRect: { height: 600, left: 0, top: 0, width: 800 },
+      });
+      assert(layer.visible === false, "opening handoff should hide the desktop drop frame in the same update");
+      assert(layer.getFrame(target.targetId) === null, "opening handoff should remove the drop frame without a shrink-out tail");
+      assert(callbacks.includes(`complete:${target.targetId}`), "opening handoff should release folder thumb suppression immediately");
+      stepMotion();
+      assert(layer.visible === false, "an immediately retired opening frame should not reappear on later motion frames");
+    } finally {
+      layer.destroy({ children: true });
+      motionRuntime.reset();
+    }
+  }
+
+  {
+    const callbacks = [];
+    const layer = new FolderDropTargetLayer({
+      part: "fill",
+      onExitComplete: (folderId) => callbacks.push(`complete:${folderId}`),
+      onExitStart: (folderId) => callbacks.push(`start:${folderId}`),
+      onTargetActive: (folderId) => callbacks.push(`active:${folderId}`),
+    });
     const firstTarget = {
       active: true,
       geometryVersion: "folder-a:100",

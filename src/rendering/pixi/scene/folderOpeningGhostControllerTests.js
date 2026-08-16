@@ -1,10 +1,10 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import {
-  FolderVisualOwnershipRegistry,
+  VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
   makeFolderIconVisualKey,
-} from "./folderVisualOwnershipRegistry.js";
+} from "./visualOwnershipRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import {
   clearMotionPreferencesForTests,
@@ -124,8 +124,7 @@ function makeLayer() {
     getIconNodeVisualKey(node, fallbackFolderId = null) {
       return makeFolderIconVisualKey(
         node?.state?.source?.folderId || fallbackFolderId || this.currentFolderId,
-        node?.item?.id,
-        node?.state?.source?.pageIndex ?? 0
+        node?.item?.id
       );
     },
     startFrameGhost(fromRect, toRect, options) {

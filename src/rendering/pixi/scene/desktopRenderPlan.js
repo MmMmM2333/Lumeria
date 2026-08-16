@@ -1,21 +1,38 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { matchesIconSelection } from "../../../domain/iconSelection.js";
+import { matchesIconFocus } from "../../../domain/iconFocus.js";
+import {
+  GROUP_TRANSFER_OUTCOME,
+  GROUP_TRANSFER_PHASE,
+} from "../../../domain/groupTransferSession.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
-import {
-  isActiveDraggedLaunchItem,
-  isReleaseGhostLaunchItem,
-} from "./dragVisibility.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
+import { hasIconVisualSpecMismatch, makeIconVisualSpec } from "./iconVisualSpec.js";
+import { GROUP_TRANSFER_RUNTIME_MODE } from "./groupTransferRuntimeAdapter.js";
 
 function sourceArea(source) {
   if (source.type === "folder") return "folder";
   if (source.type === "search") return "search";
   return "desktop";
+}
+
+function isAcceptedDesktopPointRelease(state, item) {
+  const group = state.groupDragState;
+  if (
+    item?.type !== "app" ||
+    Number(group?.totalCount) !== 1 ||
+    group?.phase !== GROUP_TRANSFER_PHASE.RELEASING ||
+    group?.outcome !== GROUP_TRANSFER_OUTCOME.ACCEPTED
+  ) return false;
+  const releaseEntry = group.runtimePlan?.entries?.find((entry) =>
+    entry?.id === item.id || entry?.memberIds?.includes?.(item.id)
+  );
+  return releaseEntry?.mode === GROUP_TRANSFER_RUNTIME_MODE.POINT_HANDOFF &&
+    releaseEntry?.target?.area === "desktop";
 }
 
 export function readNumber(value, fallback = 0) {
@@ -43,6 +60,21 @@ export function normalizeFolderIdSet(...sources) {
 
 function readPrimaryFolderId(ids) {
   return ids.values().next().value || null;
+}
+
+function countSelectedFolderChildren(folder, selectedIds) {
+  if (folder?.type !== "folder" || !selectedIds.size) return 0;
+  const children = getFolderPreviewChildren(folder);
+  return children.reduce(
+    (count, child) => count + (selectedIds.has(child?.id) ? 1 : 0),
+    0
+  );
+}
+
+function getFolderPreviewChildren(folder) {
+  return Array.isArray(folder?.childPages)
+    ? folder.childPages.flatMap((page) => page || [])
+    : folder?.children || [];
 }
 
 export function normalizeDesktopHandoffState(state = {}) {
@@ -351,11 +383,20 @@ function makeFolderDropTargetSignature(dropTarget) {
   };
 }
 
+function makeFolderDropTargetExitSignature(exitTransition) {
+  if (!exitTransition) return null;
+  return {
+    mode: exitTransition.mode || null,
+    targetId: exitTransition.targetId || null,
+  };
+}
+
 function makeFolderPresentationSignature(presentation) {
   if (!presentation) return null;
   return {
     acceptsDropHover: presentation.acceptsDropHover === true,
     dropTarget: makeFolderDropTargetSignature(presentation.dropTarget),
+    dropTargetExit: makeFolderDropTargetExitSignature(presentation.dropTargetExit),
     geometry: presentation.geometry ? {
       geometryVersion: presentation.geometry.geometryVersion || null,
       hitRect: makeRectSignature(presentation.geometry.hitRect),
@@ -405,7 +446,6 @@ export function makeDesktopRenderPlanSignature(plan) {
       isFolderClosingHandoff: entry.isFolderClosingHandoff,
       isFolderSourceGhosted: entry.isFolderSourceGhosted,
       isInteractivePage: entry.isInteractivePage,
-      isReleaseGhostItem: entry.isReleaseGhostItem,
       item: makeItemRenderSignature(entry.item),
       key: entry.key,
       layoutTarget: makeTargetSignature(entry.layoutTarget),
@@ -417,6 +457,7 @@ export function makeDesktopRenderPlanSignature(plan) {
       stableScreenTarget: entry.stableScreenTarget,
     })),
     folderDropTarget: makeFolderDropTargetSignature(plan.folderDropTarget),
+    folderDropTargetExit: makeFolderDropTargetExitSignature(plan.folderDropTargetExit),
     height: state.height,
     pageRefs: plan.pageRefs.map((entry) => ({ pageIndex: entry.pageIndex })),
     pageTrack: plan.pageTrack,
@@ -441,6 +482,16 @@ export function getDesktopFrame(state) {
 
 export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const state = normalizeDesktopHandoffState(inputState);
+  const selectedAppIds = normalizeFolderIdSet(state.selectedAppIds);
+  const ownedItemIds = normalizeFolderIdSet(state.groupTransferOwnedItemIds);
+  const ownedFolderShellIds = normalizeFolderIdSet(state.groupTransferOwnedFolderShellIds);
+  const hasVisualHandoff = [
+    GROUP_TRANSFER_PHASE.RELEASING,
+    GROUP_TRANSFER_PHASE.RETURNING,
+  ].includes(state.groupDragState?.phase);
+  const transferActorsAreTextless = Number(state.groupDragState?.totalCount) > 1 ||
+    state.groupDragState?.visualSpec?.textless === true;
+  const sourceVisualSpec = state.groupDragState?.visualSpec || null;
   const pages = state.activePages || [];
   const activePageIndex = state.activePageIndex || 0;
   const desktopFrame = getDesktopFrame(state);
@@ -455,6 +506,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
   const pageRefs = [];
   const clearFolderPreviewChildIds = [];
   let folderDropTarget = null;
+  let folderDropTargetExit = null;
 
   for (const page of pages) {
     for (const item of page || []) {
@@ -492,12 +544,21 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     visibleItems.forEach((item, index) => {
       const slot = getGridSlotRect(metrics, index);
       const sizing = getDesktopIconSizing(state, slot);
+      const targetVisualSpec = makeIconVisualSpec({
+        cellHeight: slot.height,
+        cellWidth: slot.width,
+        compact: sizing.compact,
+        iconSize: sizing.iconSize,
+        singleLineLabel: sizing.singleLineLabel,
+        textless: state.isTextlessMode,
+      });
       const x = pageIndex * pageWidth + desktopFrame.left + slot.left + slot.width / 2;
       const y = desktopFrame.top + slot.top + slot.height / 2;
       const visualOffsetY = getIconVisualOffsetY(state.isTextlessMode);
-      const stableLayoutTarget = item?.type === "folder"
+      const committedLayoutTarget = item?.type === "folder"
         ? makeSnappedFolderLayoutTarget(state, targetX, x, y, sizing.iconSize, visualOffsetY)
         : { x, y };
+      const stableLayoutTarget = committedLayoutTarget;
       const stableScreenTarget = item?.type === "folder"
         ? makeFolderStableScreenTarget(state, targetX, stableLayoutTarget, sizing.iconSize, visualOffsetY)
         : null;
@@ -534,6 +595,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         })
         : null;
       if (folderPresentation?.dropTarget?.active) folderDropTarget = folderPresentation.dropTarget;
+      if (folderPresentation?.dropTargetExit) folderDropTargetExit = folderPresentation.dropTargetExit;
       const effectiveFolderHandoffEntry = item?.type === "folder" && !shouldRetireStaleHandoff
         ? existingFolderHandoffEntry
         : null;
@@ -545,15 +607,32 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
       const layoutTarget = pinnedLayoutTarget || stableLayoutTarget;
       const source = { type: state.isSearchMode ? "search" : "page", pageIndex, index };
       const key = `${source.type}:${pageIndex}:${item.id}`;
-      const isActiveDraggedItem = isActiveDraggedLaunchItem(item, state);
-      const isReleaseGhostItem = isReleaseGhostLaunchItem(item, state);
-      const isFolderCreateReleaseItem = item.type === "folder" && state.folderCreateReleaseState?.folderId === item.id;
+      const isActiveDraggedItem = Boolean(
+        [GROUP_TRANSFER_PHASE.GATHERING, GROUP_TRANSFER_PHASE.DRAGGING].includes(state.groupDragState?.phase) &&
+        ownedItemIds.has(item.id)
+      );
+      const isGroupTransferShellOwned = item.type === "folder" && ownedFolderShellIds.has(item.id);
       const isFolderSourceGhosted = item.type === "folder" && folderPresentation?.isSourceGhosted === true;
-      const suppressedFolderPreviewChildId = item.type === "folder" &&
-        state.dragReleaseState?.suppressFolderPreviewFolderId === item.id
-        ? state.dragReleaseState.suppressFolderPreviewChildId || null
-        : null;
-      const suppressLabelRevealAfterGhost = isReleaseGhostItem || isFolderClosingHandoff || isFolderSourceGhosted;
+      const suppressedFolderPreviewChildIds = item.type === "folder"
+        ? getFolderPreviewChildren(item)
+          .filter((child) => ownedItemIds.has(child?.id))
+          .map((child) => child.id)
+        : [];
+      const isDesktopFolderTransferOwned = item.type === "folder" &&
+        ownedItemIds.has(item.id) &&
+        !isFolderClosingHandoff &&
+        !isFolderSourceGhosted;
+      const suppressLabelRevealAfterGhost = isFolderClosingHandoff ||
+        isFolderSourceGhosted ||
+        isDesktopFolderTransferOwned;
+      const shouldDeferLabelReveal = hasVisualHandoff &&
+        !isAcceptedDesktopPointRelease(state, item) && (
+        isGroupTransferShellOwned ||
+        (ownedItemIds.has(item.id) && (
+          transferActorsAreTextless ||
+          hasIconVisualSpecMismatch(sourceVisualSpec, targetVisualSpec)
+        ))
+      );
 
       entries.push({
         boundsEntry: isInteractivePage ? {
@@ -574,15 +653,19 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         index,
         isActiveDraggedItem,
         isActiveFolderClosingHandoff,
+        isGroupTransferShellOwned,
         isFolderClosingHandoff,
         isFolderSourceGhosted,
         isInteractivePage,
-        isReleaseGhostItem,
-        isFolderCreateReleaseItem,
         item,
         key,
         layoutTarget,
         nodeState: {
+          batchSelected: Boolean(
+            state.isBatchSelectionActive &&
+            item.type === "app" &&
+            selectedAppIds.has(item.id)
+          ),
           cellHeight: slot.height,
           cellWidth: slot.width,
           compact: sizing.compact,
@@ -599,7 +682,9 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             : null,
           folderPreviewPageSize: state.folderPageSize,
           ghosted: !isFolderClosingHandoff && (
-            isReleaseGhostItem || isFolderCreateReleaseItem || isFolderSourceGhosted
+            isFolderSourceGhosted ||
+            ownedItemIds.has(item.id) ||
+            isGroupTransferShellOwned
           ),
           hasCustomIcon: Boolean(item.customIconPath || item.customIconDataUrl),
           iconSize: sizing.iconSize,
@@ -615,12 +700,16 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           opening: !isFolderClosingHandoff && isInteractivePage && state.isIconOpening?.(state.isSearchMode ? "search" : "desktop", item.id, pageIndex),
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
-          selected: !isFolderClosingHandoff && isInteractivePage && matchesIconSelection(
-            state.selectedIcon,
+          revealLabelAfterVisualHandoff: shouldDeferLabelReveal,
+          focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
+            state.focusedIcon,
             state.isSearchMode ? "search" : "desktop",
             item.id,
             pageIndex
           ),
+          selectedChildCount: state.isBatchSelectionActive
+            ? countSelectedFolderChildren(item, selectedAppIds)
+            : 0,
           source,
           singleLineLabel: sizing.singleLineLabel,
           stageHeight: state.height,
@@ -629,7 +718,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             folderPresentation?.dropTarget?.active === true ||
             folderDropFrameSuppressedIds.has(item.id)
           ),
-          suppressedFolderPreviewChildId,
+          suppressedFolderPreviewChildIds,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
         },
@@ -658,6 +747,7 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
     },
     entries,
     folderDropTarget,
+    folderDropTargetExit,
     pageRefs,
     pageTrack: {
       debugMetadata: {

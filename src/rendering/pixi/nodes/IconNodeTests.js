@@ -76,7 +76,7 @@ export async function runIconNodeTests() {
       item: { id: "app-interaction", name: "Interaction App", type: "app" },
       opening: false,
       removable: true,
-      selected: false,
+      focused: false,
       source: { index: 0, pageIndex: 0, type: "page" },
       stageHeight: 600,
       stageWidth: 800,
@@ -116,6 +116,102 @@ export async function runIconNodeTests() {
     assert(
       snapshot.animations.filter((animation) => animation.lane === "additive").length === armedImpulseCount + 2,
       "release should stack one restorative impulse per scale axis"
+    );
+
+    motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({
+      ...interactionNodeState,
+      dragging: true,
+      revealLabelAfterVisualHandoff: true,
+    });
+    assert(node.visible === false, "a returning real icon should stay hidden while the release ghost owns it");
+    node.setState({ ...interactionNodeState, dragging: false });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 0),
+      "the real icon should take ownership with its label hidden in the same state transition"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.04);
+    assert(
+      node.labelText.alpha > 0 && node.labelText.alpha < 1,
+      "the returned icon label should be visibly fading midway through the handoff reveal"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    assert(nearlyEqual(node.labelText.alpha, 1), "the returned icon label should finish fully visible");
+
+    motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({
+      ...interactionNodeState,
+      ghosted: true,
+      revealLabelAfterVisualHandoff: true,
+    });
+    assert(node.visible === false, "an ownership-ghosted icon should remain hidden behind its transfer actor");
+    node.setState({ ...interactionNodeState, ghosted: false });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 0),
+      "an ownership-ghosted icon should reveal its label from zero at the actor-to-live handoff"
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    assert(nearlyEqual(node.labelText.alpha, 1), "the ownership handoff label should finish fully visible");
+
+    motionRuntime.reset();
+    node.labelText.alpha = 1;
+    node.setState({ ...interactionNodeState, dragging: true, revealLabelAfterVisualHandoff: false });
+    node.setState({ ...interactionNodeState, dragging: false });
+    assert(
+      nearlyEqual(node.labelText.alpha, 1),
+      "ordinary drag ownership release should keep the existing immediate label behavior"
+    );
+
+    motionRuntime.reset();
+    const folderOwnershipNodeState = {
+      ...interactionNodeState,
+      item: { id: "folder-ownership", name: "Folder Ownership", type: "folder" },
+    };
+    node.labelText.alpha = 1;
+    node.setState({
+      ...folderOwnershipNodeState,
+      ghosted: true,
+      suppressLabelRevealAfterGhost: true,
+    });
+    node.setState({
+      ...folderOwnershipNodeState,
+      ghosted: false,
+    });
+    assert(
+      node.visible === true && nearlyEqual(node.labelText.alpha, 1),
+      "a desktop folder ownership handoff should restore its label immediately instead of fading it from zero"
+    );
+
+    motionRuntime.reset();
+    node.setState({ ...interactionNodeState, visualSpecTransition: null });
+    const resizedLabelState = {
+      ...interactionNodeState,
+      cellHeight: 70,
+      cellWidth: 62,
+      iconSize: 48,
+      visualSpecTransition: { active: true, progress: 0.3 },
+    };
+    node.setState(resizedLabelState);
+    assert(
+      node.labelTransitionBlendActive === true &&
+        node.labelTransitionText.visible === true &&
+        nearlyEqual(node.labelText.alpha, 0),
+      "a visual-size handoff should crossfade the old label while applying the new label geometry"
+    );
+    motionRuntime.step(0.14);
+    node.setState({ ...resizedLabelState, visualSpecTransition: { active: false, progress: 1 } });
+    assert(
+      node.labelTransitionBlendActive === false &&
+        node.labelTransitionText.visible === false &&
+        nearlyEqual(node.labelText.alpha, 1),
+      "the visual-size handoff should leave only the settled label presentation"
     );
 
     motionRuntime.reset();
@@ -300,7 +396,7 @@ export async function runIconNodeTests() {
       stageWidth: 800,
       textless: false,
     };
-    node.setState({ ...folderNodeState, suppressedFolderPreviewChildId: "folder-child-b" });
+    node.setState({ ...folderNodeState, suppressedFolderPreviewChildIds: ["folder-child-b"] });
     assert(node.folderChildNodes[0].visible === true, "unsuppressed folder preview child should remain visible");
     assert(node.folderChildNodes[1].visible === true, "suppressed folder preview child should stay transform-visible");
     assert(node.folderChildNodes[1].renderable === false, "suppressed folder preview child should not be drawable while the release ghost owns it");

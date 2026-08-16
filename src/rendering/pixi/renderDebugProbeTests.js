@@ -116,7 +116,7 @@ function makeFolderHarness(options = {}) {
     renderable: true,
     state: {
       folderPreviewPageSize: 9,
-      suppressedFolderPreviewChildId: options.suppressed ? child.id : null,
+      suppressedFolderPreviewChildIds: options.suppressed ? [child.id] : [],
     },
     visible: true,
     visualWrap: {},

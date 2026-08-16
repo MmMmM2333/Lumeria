@@ -29,7 +29,7 @@ function createPageCommands(overrides = {}) {
   const calls = {
     assertNoDuplicateItemIds: 0,
     cancelInputGesture: 0,
-    clearSelectedIcon: 0,
+    clearFocusedIcon: 0,
     commitActivePageIndex: [],
     commitFolderPageIndex: [],
     commitOpenFolder: [],
@@ -44,7 +44,7 @@ function createPageCommands(overrides = {}) {
   const pages = shallowRef(overrides.pages ?? [[appA, folder], [appC]]);
   const pageIndex = ref(overrides.pageIndex ?? 2);
   const searchPageIndex = ref(overrides.searchPageIndex ?? 1);
-  const selectedIcon = ref(overrides.selectedIcon ?? null);
+  const focusedIcon = ref(overrides.focusedIcon ?? null);
   const folderPageIndex = ref(overrides.folderPageIndex ?? 3);
   const renderedFolder = ref(overrides.renderedFolder ?? null);
   const openFolderId = ref(overrides.openFolderId ?? null);
@@ -66,9 +66,9 @@ function createPageCommands(overrides = {}) {
     },
     chunkIntoPages,
     clonePages: helpers.clonePages,
-    clearSelectedIcon: () => {
-      calls.clearSelectedIcon += 1;
-      selectedIcon.value = null;
+    clearFocusedIcon: () => {
+      calls.clearFocusedIcon += 1;
+      focusedIcon.value = null;
     },
     compactPages: helpers.compactPages,
     commitActivePageIndex: (value) => calls.commitActivePageIndex.push(value),
@@ -104,7 +104,7 @@ function createPageCommands(overrides = {}) {
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
-    selectedIcon,
+    focusedIcon,
     searchPageIndex,
   });
 
@@ -188,7 +188,7 @@ export function runLaunchpadPageCommandsTests() {
     openFolderId: "folder-dissolve",
     pageSize: 3,
     pages: [[appA, dissolveTarget, appC], [appE]],
-    selectedIcon: { area: "desktop", id: "folder-dissolve", pageIndex: 0 },
+    focusedIcon: { area: "desktop", id: "folder-dissolve", pageIndex: 0 },
   });
   dissolve.commands.confirmDissolveFolder("folder-dissolve");
   assert(dissolve.calls.openWarningDialog.length === 1, "folder dissolve should require confirmation");
@@ -198,7 +198,7 @@ export function runLaunchpadPageCommandsTests() {
   dissolveDialog.onConfirm();
   assert(dissolve.pages.value.map((page) => page.map((item) => item.id).join(",")).join("|") === "app-a,app-b,app-d|app-c,app-e", "confirmed folder dissolve should preserve child order and cascade page overflow");
   assert(dissolve.calls.cancelInputGesture === 1, "confirmed folder dissolve should cancel the active input gesture");
-  assert(dissolve.calls.clearSelectedIcon === 1, "confirmed folder dissolve should clear a selection that referenced the removed folder");
+  assert(dissolve.calls.clearFocusedIcon === 1, "confirmed folder dissolve should clear a selection that referenced the removed folder");
   assert(dissolve.calls.commitOpenFolder.length === 1 && dissolve.calls.commitOpenFolder[0] === null, "confirmed folder dissolve should close the dissolved folder");
   assert(dissolve.calls.schedulePageGridMetrics === 1, "confirmed folder dissolve should refresh desktop metrics");
 

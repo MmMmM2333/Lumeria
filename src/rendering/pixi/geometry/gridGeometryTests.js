@@ -39,6 +39,20 @@ export function runGridGeometryTests() {
   });
   assert(stretchedSingleRow.cellHeight === 280, "folder cells should preserve the legacy stretch fallback without fixed height");
 
+  const singleRowPanel = getFolderPanelGeometry({
+    height: 1080,
+    panelStyle: { "--folder-shell-min-height": "272px" },
+    width: 1920,
+  });
+  assert(
+    singleRowPanel.panel.height === 272,
+    "single-row folder panels should preserve their compact shell height"
+  );
+  assert(
+    singleRowPanel.grid.bottom > singleRowPanel.panel.bottom,
+    "the stable interaction grid may extend past a compact shell without enlarging the visible panel"
+  );
+
   const constrainedRows = getFolderGridMetrics({
     cols: 2,
     fixedCellHeight: 80,

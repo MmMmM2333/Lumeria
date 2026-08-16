@@ -110,6 +110,23 @@ async function rightClickFolderChild(page) {
   throw new Error("Could not open a child icon context menu inside Productivity Suite");
 }
 
+async function rightClickFolderBlank(page) {
+  const canvas = page.locator("canvas.pixi-launchpad-canvas");
+  const bounds = await canvas.boundingBox();
+  if (!bounds) throw new Error("Pixi launchpad canvas has no visible bounds");
+  const folderMenu = page.getByRole("menu", { name: "文件夹菜单", exact: true });
+  const visibleMenu = page.locator("fluent-menu-list[role='menu']:visible");
+  for (let y = bounds.y + 120; y <= bounds.y + bounds.height - 100; y += 32) {
+    for (let x = bounds.x + 80; x <= bounds.x + bounds.width - 80; x += 32) {
+      await page.mouse.click(x, y, { button: "right" });
+      await page.waitForTimeout(16);
+      if (await folderMenu.isVisible()) return folderMenu;
+      if (await visibleMenu.count()) await page.keyboard.press("Escape");
+    }
+  }
+  throw new Error("Could not open the folder-scoped menu from blank panel space");
+}
+
 async function getDesktopSurfacePoint(page) {
   const desktopMain = page.locator(".desktop-main");
   await expect(desktopMain).toBeVisible();
@@ -377,7 +394,7 @@ test("search blank space suppresses the surface menu while search icons remain r
   await expect(search).toHaveValue("no-match-for-context-menu");
 });
 
-test("folder icon routing survives an open menu and folder blank space stays menu-free", async ({ page }) => {
+test("folder icon, blank panel, and outside context menus keep their scopes separate", async ({ page }) => {
   await page.goto("/");
   const { menu: iconMenu, point: iconPoint } = await rightClickFolderChild(page);
   const label = await iconMenu.getAttribute("aria-label");
@@ -387,9 +404,19 @@ test("folder icon routing survives an open menu and folder blank space stays men
   await expect(page.getByRole("menu", { name: "启动台菜单", exact: true })).toHaveCount(0);
 
   await page.keyboard.press("Escape");
-  const blankPoint = await getDesktopSurfacePoint(page);
-  await page.mouse.click(blankPoint.x, blankPoint.y, { button: "right" });
+  const outsidePoint = await getDesktopSurfacePoint(page);
+  await page.mouse.click(outsidePoint.x, outsidePoint.y, { button: "right" });
   await expect(page.locator("[role='menu']:visible")).toHaveCount(0);
+  await expect(page.locator("input.pixi-folder-name-input")).toBeVisible();
+
+  const folderMenu = await rightClickFolderBlank(page);
+  await expect(folderMenu.getByRole("menuitem", { name: "批量管理", exact: true })).toBeVisible();
+  await expect(folderMenu.getByRole("menuitem")).toHaveCount(1);
+  await expect(page.getByRole("menu", { name: "启动台菜单", exact: true })).toHaveCount(0);
+  await expect(page.locator("input.pixi-folder-name-input")).toBeVisible();
+
+  await folderMenu.getByRole("menuitem", { name: "批量管理", exact: true }).click();
+  await expect(page.getByRole("toolbar", { name: "批量管理", exact: true })).toBeVisible();
   await expect(page.locator("input.pixi-folder-name-input")).toBeVisible();
 });
 

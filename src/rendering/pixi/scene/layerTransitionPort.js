@@ -1,4 +1,4 @@
-import { makeDesktopSourceVisualKey } from "./folderVisualOwnershipRegistry.js";
+import { makeDesktopSourceVisualKey } from "./visualOwnershipRegistry.js";
 import { detachDisplayObject } from "./displayObjectLifecycle.js";
 
 function cloneFramePresentation(frame) {

@@ -23,7 +23,7 @@ export function useLaunchpadKeyboard(options) {
     if (!hasFolderInteractionLayer() || options.isFolderAppLaunchClosing.value || options.isFolderZoomFadeClosing?.value) return false;
     event.preventDefault();
     options.cancelAltEditMode?.();
-    options.clearSelectedIcon?.();
+    options.clearFocusedIcon?.();
     if (!options.startFolderZoomFadeClose?.({ reason: "desktop" })) return true;
     options.closeDesktop?.({ clearSearch: false });
     options.hideNativeWindowAfterCloseAnimation?.();
@@ -35,7 +35,7 @@ export function useLaunchpadKeyboard(options) {
     options.searchQuery.value = `${options.searchQuery.value}${text}`;
     options.commitSearchPageIndex(0);
     options.keyboardFocusArea.value = "desktop";
-    nextTick(() => options.selectFirstIconInCurrentScope({ force: true }));
+    nextTick(() => options.focusFirstIconInCurrentScope({ force: true }));
     options.schedulePageGridMetrics();
   }
 
@@ -43,8 +43,8 @@ export function useLaunchpadKeyboard(options) {
     if (!options.searchQuery.value || hasFolderInteractionLayer()) return;
     options.searchQuery.value = options.searchQuery.value.slice(0, -1);
     options.commitSearchPageIndex(0);
-    if (options.searchQuery.value) nextTick(() => options.selectFirstIconInCurrentScope({ force: true }));
-    else options.clearSelectedIcon();
+    if (options.searchQuery.value) nextTick(() => options.focusFirstIconInCurrentScope({ force: true }));
+    else options.clearFocusedIcon();
     options.schedulePageGridMetrics();
   }
 
@@ -54,8 +54,8 @@ export function useLaunchpadKeyboard(options) {
       options.keyboardFocusArea.value = "desktop";
       const panel = getElementFromRef(options.folderPanelRef);
       panel?.focus?.({ preventScroll: true });
-      if (!options.selectionMatchesScope(options.selectedIcon.value, options.getCurrentIconScope())) {
-        options.selectFirstIconInCurrentScope({ force: true });
+      if (!options.focusMatchesScope(options.focusedIcon.value, options.getCurrentIconScope())) {
+        options.focusFirstIconInCurrentScope({ force: true });
       }
       return;
     }
@@ -65,8 +65,8 @@ export function useLaunchpadKeyboard(options) {
     const isSearchFocused = options.keyboardFocusArea.value === "search" || activeElement === searchInput;
     if (isSearchFocused) {
       options.focusDesktopSurface();
-      if (!options.selectionMatchesScope(options.selectedIcon.value, options.getCurrentIconScope())) {
-        options.selectFirstIconInCurrentScope({ force: true });
+      if (!options.focusMatchesScope(options.focusedIcon.value, options.getCurrentIconScope())) {
+        options.focusFirstIconInCurrentScope({ force: true });
       }
     } else {
       options.keyboardFocusArea.value = "search";
@@ -77,10 +77,14 @@ export function useLaunchpadKeyboard(options) {
   function handleEscapeKey(event) {
     event.preventDefault();
     if (options.closeTopmostModal?.()) return;
+    if (options.isBatchSelectionActive?.()) {
+      options.clearBatchSelection?.();
+      return;
+    }
     if (hasFolderInteractionLayer() && !options.isFolderAppLaunchClosing.value) {
       if (options.isFolderClosing.value || options.isFolderZoomFadeClosing?.value) return;
       options.commitOpenFolder(null);
-      options.clearSelectedIcon();
+      options.clearFocusedIcon();
       return;
     }
     if (options.isSearchMode.value) {
@@ -99,15 +103,55 @@ export function useLaunchpadKeyboard(options) {
       return;
     }
     if (!options.isDesktopOpen.value || options.isDesktopClosing.value || options.isAppLaunching.value) return;
-    if (options.isDragActive()) return;
+    if (options.isDragActive()) {
+      if (event.key === "Escape" && options.cancelActiveDrag?.()) {
+        event.preventDefault();
+      }
+      return;
+    }
     if (event.key === "Escape") {
       handleEscapeKey(event);
       return;
     }
     if (options.isModalOpen?.()) return;
     if (isAltSpaceShortcut(event) && handleAltSpaceKey(event)) return;
-    options.handleAltKeyDown(event);
+    const isBatchSelectionActive = Boolean(options.isBatchSelectionActive?.());
+    if (!isBatchSelectionActive) options.handleAltKeyDown(event);
     if (options.isAltKeyEvent(event)) return;
+    const isTypingInInput = isTextEntryElement(event.target);
+    if (isBatchSelectionActive && !isTypingInInput) {
+      const normalizedKey = String(event.key || "").toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && normalizedKey === "a") {
+        event.preventDefault();
+        options.selectAllBatchScope?.();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && normalizedKey === "n") {
+        event.preventDefault();
+        options.createFolderFromBatchSelection?.();
+        return;
+      }
+      if (event.key === "Delete") {
+        event.preventDefault();
+        options.requestBatchSelectionRemove?.();
+        return;
+      }
+      if (event.key === " " && !event.altKey) {
+        event.preventDefault();
+        options.toggleFocusedBatchSelection?.(event);
+        return;
+      }
+    }
+    if (
+      isBatchSelectionActive &&
+      (
+        event.key === "Backspace" ||
+        (!event.ctrlKey && !event.metaKey && !event.altKey && event.key?.length === 1)
+      )
+    ) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === "Tab") {
       handleTabKey(event);
       return;
@@ -115,22 +159,22 @@ export function useLaunchpadKeyboard(options) {
     if (event.ctrlKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       options.keyboardFocusArea.value = "desktop";
-      options.turnCurrentPage(event.key === "ArrowRight" ? 1 : -1, { selectFirst: true, source: "keyboard" });
+      options.turnCurrentPage(event.key === "ArrowRight" ? 1 : -1, { focusFirst: true, source: "keyboard" });
       return;
     }
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
       event.preventDefault();
       options.keyboardFocusArea.value = "desktop";
-      options.moveSelectionByArrow(event.key);
+      options.moveFocusByArrow(event.key);
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      options.openSelectedIcon();
+      if (options.isBatchSelectionActive?.()) return;
+      options.openFocusedIcon();
       return;
     }
 
-    const isTypingInInput = isTextEntryElement(event.target);
     if (!isTypingInInput && event.key === "Backspace" && options.searchQuery.value) {
       event.preventDefault();
       deleteDesktopSearchText();

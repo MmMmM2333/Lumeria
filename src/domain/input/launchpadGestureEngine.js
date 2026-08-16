@@ -78,6 +78,7 @@ export function createLaunchpadGestureEngine(policyOverrides = {}) {
     if (pointer || !isPrimaryPointerDown(input)) return { handled: false, presentation: null, commands: [] };
     wheel = null;
     pointer = {
+      dragOnHold: input.dragOnHold === true,
       id: input.pointerId,
       lastTime: readNumber(input.time),
       lastX: readNumber(input.x),
@@ -130,7 +131,13 @@ export function createLaunchpadGestureEngine(policyOverrides = {}) {
         handled: true,
         presentation: null,
         targetPresentation: null,
-        commands: [{ type: "startDrag", pointer: input, target: pointer.target }],
+        commands: [{
+          dragAnchor: { x: pointer.startX, y: pointer.startY },
+          dragStartedFromThreshold: true,
+          type: "startDrag",
+          pointer: input,
+          target: pointer.target,
+        }],
         deadline: null,
       };
     }
@@ -170,6 +177,30 @@ export function createLaunchpadGestureEngine(policyOverrides = {}) {
     pointer.holdX = pointer.lastX;
     pointer.holdY = pointer.lastY;
     pointer.held = true;
+    if (pointer.dragOnHold) {
+      pointer.dragging = true;
+      return {
+        handled: true,
+        presentation: null,
+        targetPresentation: null,
+        commands: [{
+          dragAnchor: { x: pointer.startX, y: pointer.startY },
+          type: "startDrag",
+          pointer: {
+            button: 0,
+            buttons: 1,
+            isPrimary: true,
+            pointerId: pointer.id,
+            pointerType: pointer.pointerType,
+            time: pointer.lastTime,
+            x: pointer.lastX,
+            y: pointer.lastY,
+          },
+          target: pointer.target,
+        }],
+        deadline: null,
+      };
+    }
     return {
       handled: true,
       presentation: null,

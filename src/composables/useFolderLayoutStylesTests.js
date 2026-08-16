@@ -14,6 +14,7 @@ function createFolderLayoutStyles(overrides = {}) {
   const folderRows = ref(overrides.folderRows ?? 7);
   const folderCols = ref(overrides.folderCols ?? 5);
   const folderPages = ref(overrides.folderPages ?? [makeItems(5)]);
+  const folderPagesForLayout = ref(overrides.folderPagesForLayout ?? null);
   const folderIconSizeMode = ref(overrides.folderIconSizeMode ?? "match");
   const folderIconSize = ref(overrides.folderIconSize ?? 88);
   const iconSize = ref(overrides.iconSize ?? 72);
@@ -25,6 +26,7 @@ function createFolderLayoutStyles(overrides = {}) {
     folderIconSize,
     folderIconSizeMode,
     folderPages,
+    folderPagesForLayout,
     folderRows,
     folderViewportHeight,
     getVisibleFolderPage: (page) => (page || []).slice(0, folderRows.value * folderCols.value),
@@ -48,6 +50,10 @@ export function runFolderLayoutStylesTests() {
   );
   assert(!singleRow.folderGridStyle.value.gridTemplateRows.includes("1fr"), "folder rows should not use fractional height tracks");
   assert(singleRow.folderPanelStyle.value["--folder-icon-cell-height"] === "128px", "default folder icon cell height should include label space");
+  assert(
+    singleRow.folderPanelStyle.value["--folder-shell-min-height"] === "272px",
+    "single-row folder shells should stay compact instead of inheriting the minimum interaction viewport"
+  );
 
   const twoRows = createFolderLayoutStyles({
     folderPages: [makeItems(6)],
@@ -57,6 +63,20 @@ export function runFolderLayoutStylesTests() {
   assert(
     twoRows.folderGridStyle.value.gridTemplateRows === "repeat(2, var(--folder-icon-cell-height))",
     "multi-row folders should share the same fixed row template",
+  );
+
+  const projectedGrowth = createFolderLayoutStyles({
+    folderPages: [makeItems(5)],
+    folderPagesForLayout: [makeItems(6)],
+    folderViewportHeight: 500,
+  });
+  assert(
+    projectedGrowth.visibleFolderRowCount.value === 2,
+    "folder layout should use projected child pages while a drag is active",
+  );
+  assert(
+    projectedGrowth.folderGridStyle.value.gridTemplateRows === "repeat(2, var(--folder-icon-cell-height))",
+    "projected row growth should update the grid before drop",
   );
 
   const fullPage = createFolderLayoutStyles({

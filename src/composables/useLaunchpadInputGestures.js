@@ -165,7 +165,7 @@ export function useLaunchpadInputGestures(options) {
     else pageTrackScrub.value = scrub;
   }
 
-  function makeDragEvent(pointer, type) {
+  function makeDragEvent(pointer, type, extras = {}) {
     const original = pointerDetails?.event || {};
     return {
       ...original,
@@ -178,6 +178,7 @@ export function useLaunchpadInputGestures(options) {
       pointerType: pointer?.pointerType ?? original.pointerType,
       timeStamp: pointer?.time,
       type,
+      ...extras,
     };
   }
 
@@ -190,10 +191,14 @@ export function useLaunchpadInputGestures(options) {
       else options.commitOpenFolder?.(item.id, { originBounds: pointerDetails?.event?.folderOriginBounds });
       return;
     }
+    if (options.isBatchSelectionActive?.()) {
+      options.toggleBatchSelection?.(item, pointerDetails?.event, source);
+      return;
+    }
     options.openApp?.(item, source);
   }
 
-  function executeCommand(command) {
+  function executeCommand(command, context = {}) {
     if (command.type === "commitPage") {
       if (command.scope?.startsWith("folder:")) options.commitFolderPageIndex?.(command.pageIndex);
       else options.commitActivePageIndex?.(command.pageIndex);
@@ -204,10 +209,12 @@ export function useLaunchpadInputGestures(options) {
       return;
     }
     if (command.type === "surfaceTap") {
+      if (options.isBatchSelectionActive?.()) return;
       options.handleSurfaceTap?.(command.target);
       return;
     }
     if (command.type === "openContextMenu") {
+      if (options.isBatchSelectionActive?.()) return;
       if (pointerDetails?.item) {
         options.openIconContextMenu?.(
           makeDragEvent(command.pointer, "contextmenu"),
@@ -219,10 +226,15 @@ export function useLaunchpadInputGestures(options) {
     }
     if (command.type === "startDrag") {
       if (pointerDetails?.item) {
+        const batchPayload = options.getBatchDragPayload?.(pointerDetails.item) || null;
         options.dragControls?.startDrag?.(
-          makeDragEvent(command.pointer, "pointermove"),
+          makeDragEvent(command.pointer, "pointermove", {
+            dragAnchor: command.dragAnchor,
+            dragStartedFromThreshold: command.dragStartedFromThreshold === true,
+          }),
           pointerDetails.item,
-          pointerDetails.source
+          pointerDetails.source,
+          batchPayload
         );
       }
       return;
@@ -236,17 +248,20 @@ export function useLaunchpadInputGestures(options) {
       return;
     }
     if (command.type === "cancelDrag") {
-      options.dragControls?.finishDrag?.(makeDragEvent(command.pointer, "pointercancel"));
+      options.dragControls?.cancelDrag?.(makeDragEvent(command.pointer, "pointercancel", {
+        cancelSource: context.cancelSource || null,
+        userInitiatedCancel: context.userInitiatedCancel === true,
+      }));
     }
   }
 
-  function applyOutput(output, event, input) {
+  function applyOutput(output, event, input, commandContext = {}) {
     lastDispatchTime = readNumber(input?.time, lastDispatchTime);
     applyPresentation(output?.presentation);
     if (Object.prototype.hasOwnProperty.call(output || {}, "targetPresentation")) {
       iconGesturePresentation.value = output.targetPresentation;
     }
-    for (const command of output?.commands || []) executeCommand(command);
+    for (const command of output?.commands || []) executeCommand(command, commandContext);
     if (Object.prototype.hasOwnProperty.call(output || {}, "deadline")) scheduleDeadline(output.deadline);
     if (output?.handled) {
       event?.preventDefault?.();
@@ -257,6 +272,10 @@ export function useLaunchpadInputGestures(options) {
 
   function dispatchPointerDown(event, target, scope, details = null) {
     const input = normalizePointerInput("pointerDown", event, target, scope);
+    input.dragOnHold = Boolean(
+      options.isBatchSelectionActive?.() &&
+      details?.item?.type === "app"
+    );
     const output = applyOutput(engine.dispatch(input), event, input);
     if (details && (ownedPointerId == null || isSamePointer(ownedPointerId, event))) pointerDetails = details;
     if (!output.ownsPointer) return false;
@@ -356,10 +375,13 @@ export function useLaunchpadInputGestures(options) {
     pointerDetails = null;
   }
 
-  function cancelOwnedInteraction(event) {
+  function cancelOwnedInteraction(event, optionsArg = {}) {
     const time = readEventTime(event);
     const output = engine.dispatch({ type: "cancel", time });
-    applyOutput(output, null, { time });
+    applyOutput(output, null, { time }, {
+      cancelSource: optionsArg.cancelSource || null,
+      userInitiatedCancel: optionsArg.userInitiatedCancel === true,
+    });
     finishPointerOwnership();
     clearInteractionDeadlines();
     return output;
@@ -447,7 +469,7 @@ export function useLaunchpadInputGestures(options) {
   }
 
   function handleFolderOverlayPointerDown() {
-    cancelInputGesture("folder-overlay");
+    cancelInputGesture({ cancelSource: "folder-overlay" });
     if (!options.dragControls?.isDragActive?.()) options.commitOpenFolder?.(null);
   }
 
@@ -468,8 +490,8 @@ export function useLaunchpadInputGestures(options) {
     applyOutput(engine.dispatch(input), event, input);
   }
 
-  function cancelInputGesture() {
-    cancelOwnedInteraction(null);
+  function cancelInputGesture(optionsArg = {}) {
+    return cancelOwnedInteraction(null, optionsArg);
   }
 
   function disposeInputGestures() {

@@ -48,7 +48,7 @@ export function useLaunchpadPageNavigation(options) {
       options.finishHomeRevealSettleWindow();
       nextTick(() => requestAnimationFrameOnce(() => {
         options.commitPageIndex(next);
-        if (turnOptions?.selectFirst) nextTick(() => options.selectFirstIconInCurrentScope({ force: true }));
+        if (turnOptions?.focusFirst) nextTick(() => options.focusFirstIconInCurrentScope({ force: true }));
       }));
       return true;
     }
@@ -60,7 +60,7 @@ export function useLaunchpadPageNavigation(options) {
     const step = direction > 0 ? 1 : -1;
     const folderPhase = getFolderPageTurnPhase();
     let didTurn = false;
-    let didDeferSelection = false;
+    let didDeferFocus = false;
 
     if (folderPhase === "open") {
       const next = getNextFolderPageIndex(step);
@@ -73,7 +73,7 @@ export function useLaunchpadPageNavigation(options) {
     } else if (folderPhase === "closing") {
       const next = getNextDesktopPageIndex(step);
       if (next !== null) {
-        didDeferSelection = commitDesktopPageIndex(next, turnOptions);
+        didDeferFocus = commitDesktopPageIndex(next, turnOptions);
         didTurn = true;
       }
     } else if (options.isSearchMode.value) {
@@ -85,13 +85,13 @@ export function useLaunchpadPageNavigation(options) {
     } else {
       const next = getNextDesktopPageIndex(step);
       if (next !== null) {
-        didDeferSelection = commitDesktopPageIndex(next, turnOptions);
+        didDeferFocus = commitDesktopPageIndex(next, turnOptions);
         didTurn = true;
       }
     }
 
-    if (didTurn && turnOptions.selectFirst && !didDeferSelection) {
-      nextTick(() => options.selectFirstIconInCurrentScope({ force: true }));
+    if (didTurn && turnOptions.focusFirst && !didDeferFocus) {
+      nextTick(() => options.focusFirstIconInCurrentScope({ force: true }));
     }
     return didTurn;
   }

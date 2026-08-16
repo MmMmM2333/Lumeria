@@ -30,8 +30,8 @@
           v-for="index in activePages.length"
           :key="`${isSearchMode ? 'search-dot' : 'page-dot'}-${index}`"
           type="button"
-          :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active')"
-          :aria-label="t('launchpad.page', { page: index })"
+          :class="cx('page-dot', index - 1 === activePageIndex && 'page-dot-active', getSelectedPageCount(index - 1) > 0 && 'page-dot-has-selection')"
+          :aria-label="getPageAriaLabel(index - 1)"
           @pointerdown.stop
           @click="$emit('page-index', index - 1)"
         />
@@ -60,6 +60,7 @@ const props = defineProps({
   isSearchMode: { type: Boolean, default: false },
   renderKey: { type: String, default: "" },
   searchQuery: { type: String, default: "" },
+  selectedPageCounts: { type: Array, default: () => [] },
 });
 const { t } = useLocalization();
 
@@ -95,6 +96,17 @@ watch(
 
 function bindRef(target, node) {
   if (target && typeof target === "object" && "value" in target) target.value = node;
+}
+
+function getSelectedPageCount(pageIndex) {
+  return Math.max(0, Number(props.selectedPageCounts?.[pageIndex]) || 0);
+}
+
+function getPageAriaLabel(pageIndex) {
+  const page = pageIndex + 1;
+  const count = getSelectedPageCount(pageIndex);
+  if (!count) return t("launchpad.page", { page });
+  return t("launchpad.batch.pageWithSelection", { count, page });
 }
 
 function handleShellContextMenu(event) {

@@ -289,24 +289,6 @@ export function createLaunchpadLayoutHelpers(options) {
     return apps;
   }
 
-  function hasItemsOtherThan(items, itemId) {
-    return (items || []).some((item) => item && item.id !== itemId);
-  }
-
-  function canCreatePageFromItemsAfterDrag(items, draggedItemId) {
-    return hasItemsOtherThan(items, draggedItemId);
-  }
-
-  function canCreateDesktopPageAfterDrag(sourcePages, targetPageIndex, draggedItemId) {
-    return canCreatePageFromItemsAfterDrag(sourcePages[targetPageIndex] || [], draggedItemId);
-  }
-
-  function canCreateFolderPageAfterDrag(folder, targetPageIndex, draggedItemId, size) {
-    if (!folder) return false;
-    const childPages = getFolderChildPages(folder, size);
-    return canCreatePageFromItemsAfterDrag(childPages[targetPageIndex] || [], draggedItemId);
-  }
-
   function assertNoDuplicateItemIds(sourcePages) {
     const seen = new Set();
     const duplicates = new Set();
@@ -384,16 +366,6 @@ export function createLaunchpadLayoutHelpers(options) {
     return compactPages(next);
   }
 
-  function previewTopLevelItemWithoutOverflow(sourcePages, item, targetPageIndex, insertIndex, size) {
-    const pageSize = Math.max(1, size || 1);
-    const next = removeEverywhere(sourcePages, item.id);
-    ensurePage(next, targetPageIndex);
-
-    const safeIndex = clamp(insertIndex, 0, Math.min(pageSize, next[targetPageIndex].length));
-    next[targetPageIndex].splice(safeIndex, 0, cloneItem(item));
-    return compactPages(next);
-  }
-
   function insertAppIntoFolder(sourcePages, folderId, app, targetPageIndex, insertIndex, size) {
     const folderSize = Math.max(1, Number(size) || getFolderPageSize());
     const next = removeEverywhere(sourcePages, app.id, { preserveFolderIds: [folderId] });
@@ -419,45 +391,6 @@ export function createLaunchpadLayoutHelpers(options) {
 
     next[folder.pageIndex][folder.index] = withFolderPages(folder.item, childPages);
     return compactPages(next, { preserveFolderIds: [folderId], folderPageSize: folderSize });
-  }
-
-  function previewAppIntoFolderWithoutOverflow(sourcePages, folderId, app, targetPageIndex, insertIndex, size) {
-    const folderSize = Math.max(1, Number(size) || getFolderPageSize());
-    const next = removeEverywhere(sourcePages, app.id, { preserveFolderIds: [folderId] });
-    const folder = findFolder(next, folderId);
-    if (!folder || app.type !== "app") return next;
-
-    const childPages = getFolderChildPages(folder.item, folderSize);
-    const requestedPage = Number.isFinite(Number(targetPageIndex)) ? Math.floor(Number(targetPageIndex)) : childPages.length - 1;
-    const safePageIndex = Math.max(0, requestedPage);
-    while (childPages.length <= safePageIndex) childPages.push([]);
-
-    const requestedIndex = Number.isFinite(Number(insertIndex)) ? Math.floor(Number(insertIndex)) : childPages[safePageIndex].length;
-    const safeIndex = clamp(requestedIndex, 0, Math.min(folderSize, childPages[safePageIndex].length));
-    childPages[safePageIndex].splice(safeIndex, 0, { ...app });
-
-    next[folder.pageIndex][folder.index] = withFolderPages(folder.item, childPages);
-    return compactPages(next, { preserveFolderIds: [folderId], folderPageSize: folderSize });
-  }
-
-  function wouldTopLevelInsertOverflow(sourcePages, item, targetPageIndex, size) {
-    if (!item) return false;
-    const pageSize = Math.max(1, Number(size) || 1);
-    const requestedPage = Number.isFinite(Number(targetPageIndex)) ? Math.max(0, Math.floor(Number(targetPageIndex))) : 0;
-    const next = removeEverywhere(sourcePages, item.id);
-    ensurePage(next, requestedPage);
-    return next[requestedPage].length >= pageSize;
-  }
-
-  function wouldFolderInsertOverflow(sourcePages, folderId, app, targetPageIndex, size) {
-    if (!folderId || !app || app.type !== "app") return false;
-    const folderSize = Math.max(1, Number(size) || getFolderPageSize());
-    const requestedPage = Number.isFinite(Number(targetPageIndex)) ? Math.max(0, Math.floor(Number(targetPageIndex))) : 0;
-    const next = removeEverywhere(sourcePages, app.id, { preserveFolderIds: [folderId] });
-    const folder = findFolder(next, folderId);
-    if (!folder) return false;
-    const childPages = getFolderChildPages(folder.item, folderSize);
-    return (childPages[requestedPage] || []).length >= folderSize;
   }
 
   function replaceFolderWithItem(sourcePages, folderId, item) {
@@ -501,20 +434,12 @@ export function createLaunchpadLayoutHelpers(options) {
     findInFolder,
     countItemOccurrences,
     collectAppsFromPages,
-    hasItemsOtherThan,
-    canCreatePageFromItemsAfterDrag,
-    canCreateDesktopPageAfterDrag,
-    canCreateFolderPageAfterDrag,
     assertNoDuplicateItemIds,
     shouldPreserveEmptyFolder,
     removeEverywhere,
     dissolveFolder,
     insertTopLevelItem,
-    previewTopLevelItemWithoutOverflow,
     insertAppIntoFolder,
-    previewAppIntoFolderWithoutOverflow,
-    wouldTopLevelInsertOverflow,
-    wouldFolderInsertOverflow,
     replaceFolderWithItem,
     repackFoldersForPageSize,
   };

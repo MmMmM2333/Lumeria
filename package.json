@@ -10,6 +10,7 @@
     "icons:export": "node scripts/exportBrandIcons.mjs",
     "test": "node src/domain/runLaunchpadLayoutTests.js",
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.mjs --project=chromium --workers=1",
+    "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.mjs --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",
     "build": "vite build",
     "tauri:dev": "tauri dev",

@@ -16,7 +16,7 @@
         "add": "添加",
         "delete": "删除",
         "selectAll": "全选",
-        "clearSelection": "清空选择",
+        "clearSelection": "清除选择",
         "selectImage": "选择图片",
         "restoreDefault": "恢复默认",
         "decrease": "减少",
@@ -1030,13 +1030,53 @@
       "page": "切换到第 {page} 页",
       "folderName": "文件夹名称",
       "newFolder": "新文件夹",
-      "contextMenu": {
-        "label": "{name} 菜单",
-        "surfaceLabel": "启动台菜单",
-        "remove": "从启动台移除",
-        "exclude": "移除并从扫描中排除",
-        "dissolve": "解散文件夹"
-      }
+        "contextMenu": {
+          "label": "{name} 菜单",
+          "surfaceLabel": "启动台菜单",
+          "folderSurfaceLabel": "文件夹菜单",
+          "batchManage": "批量管理",
+          "remove": "从启动台移除",
+          "exclude": "移除并从扫描中排除",
+          "dissolve": "解散文件夹"
+        },
+        "batch": {
+          "toolbarLabel": "批量管理",
+          "selectedCount": "已选择 {count} 个",
+          "hiddenCount": "另有 {count} 个不在当前视图",
+          "pageWithSelection": "第 {page} 页，已选择 {count} 个应用",
+          "selectScope": "全选当前页",
+          "createFolder": "创建文件夹",
+          "cancelDrag": "拖到这里取消",
+          "cancelDragHint": "松开鼠标前也可按 Esc",
+          "releaseToCancel": "松开以取消本次拖拽",
+          "remove": "移除",
+          "removeOptions": "移除选项",
+          "done": "完成",
+          "removeTitle": "从启动台移除所选应用？",
+          "removeMessage": "将从启动台移除所选的 {count} 个应用。不会卸载应用或删除文件，此操作暂时无法撤销。",
+          "removeConfirm": "移除",
+          "excludeTitle": "移除并从扫描中排除所选应用？",
+          "excludeMessage": "将移除所选的 {count} 个应用，并在后续扫描中跳过。可在设置的“已排除的应用”中恢复扫描。",
+          "excludeConfirm": "移除并排除",
+            "createRejectedTitle": "无法创建文件夹",
+            "createInvalidSelection": "当前选择无法创建文件夹。",
+            "moveRejectedTitle": "无法移动所选应用",
+            "reasons": {
+              "desktop-capacity": "目标页面没有足够空间。",
+              "desktop-page-missing": "无法在已被搬空的末页之后创建新页面。",
+              "duplicate-layout-id": "布局中存在重复应用，请先修复布局。",
+              "folder-missing": "目标文件夹已不存在。",
+              "folder-page-capacity": "目标文件夹页面没有足够空间。",
+              "folder-page-missing": "目标文件夹页面已不存在。",
+              "missing-dragged-id": "部分应用已不存在，请重新选择。",
+              "nested-folder-not-supported": "不能在文件夹内以应用为目标创建嵌套文件夹。",
+              "revision-stale": "布局已经变化，请重试。",
+              "selection-revision-stale": "选择内容已经变化，请重试。",
+              "target-app-missing": "目标应用已不存在。",
+              "target-in-selection": "不能把所选应用放到自身上。",
+              "invalid-target": "此处不能放置所选应用。"
+            }
+        }
     },
     "dialogs": {
       "iconChooser": {

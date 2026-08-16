@@ -1,7 +1,8 @@
 <template>
   <div
     ref="rootRef"
-    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', windowMode === 'windowed' && 'launchpad-root-windowed', isWindowTitlebarVisible && 'launchpad-root-windowed-titlebar', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
+    :data-launchpad-fixture="isMultiSelectFixture ? 'multi-select' : undefined"
+    :class="cx('launchpad-root', 'launchpad-root-pixi-root-stage', 'launchpad-root-single-stage-folder-layer', isFolderLayerActive && 'launchpad-root-folder-layer-active', isBatchSelectionActive && 'launchpad-root-batch-selection', windowMode === 'windowed' && 'launchpad-root-windowed', isWindowTitlebarVisible && 'launchpad-root-windowed-titlebar', isTextlessMode && 'launchpad-root-textless', isStartupMaskMounted && 'launchpad-root-startup-masked', !isDesktopOpen && 'launchpad-root-closed', isHomeInteractionDisabled && 'launchpad-root-interaction-disabled', isAppLaunching && 'launchpad-root-app-launching', shouldUseLiveDesktopCssFallbackEffects && 'launchpad-root-live-desktop-css-fallback-effects')"
     :style="launchpadRootStyle"
     @wheel="handleLaunchpadWheel"
     @pointerdown="handleLaunchpadSurfacePointerDown"
@@ -50,6 +51,7 @@
       :is-search-mode="isSearchMode"
       :render-key="singleStageRenderKey"
       :search-query="searchQuery"
+      :selected-page-counts="batchSelectedPageCounts"
       @context-menu-request="handleChromeContextMenuRequest"
       @search-input="handleSearchInput"
       @search-focus="keyboardFocusArea = 'search'"
@@ -73,9 +75,7 @@
         :drag-hit-debug-options="desktopDragHitDebugOptions"
         :drag-hit-debug-state="dragHitDebugState"
         :drag-meta="dragMeta"
-        :drag-preview-state="dragPreviewState"
-        :drag-release-state="dragReleaseState"
-        :folder-create-release-state="folderCreateReleaseState"
+        :group-drag-state="groupDragState"
         :folder-overlay-state="folderOverlay"
         :folder-page-size="folderPageSize"
         :folder-closing-handoff-id="folderClosingHandoffId"
@@ -87,12 +87,14 @@
         :icon-gesture-presentation="resolveMaybeRef(iconGesturePresentation)"
         :icon-bounds-registry="iconBoundsRegistry"
         :is-edit-mode="isEditMode"
+        :is-batch-selection-active="isBatchSelectionActive"
         :is-desktop-closing="isDesktopClosing"
         :folder-source-ghosted-id="folderSourceGhostedId"
         :folder-source-ghosted-ids="folderSourceGhostedIds"
         :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
         :is-icon-opening="isIconOpening"
-        :selected-icon="selectedIcon"
+        :focused-icon="focusedIcon"
+        :selected-app-ids="batchSelectedIds"
         :is-home-reveal-settling="isHomeRevealSettling"
         :is-search-mode="isSearchMode"
         :is-textless-mode="isTextlessMode"
@@ -105,8 +107,7 @@
         :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
         :single-stage-diagnostics-options="singleStageDiagnosticsOptions"
         @desktop-focus="keyboardFocusArea = 'desktop'"
-        @drag-release-complete="clearDragRelease"
-        @folder-create-release-complete="completeFolderCreateRelease"
+        @group-release-complete="completeGroupRelease"
         @internal-activity="handleFolderPixiInternalActivity"
         @pointerdown-icon="handleIconPointerDown"
         @context-menu-request="handleContextMenuRequest"
@@ -118,6 +119,24 @@
       />
     </LaunchpadChromeFrame>
 
+    <LaunchpadSelectionToolbar
+      v-if="isBatchSelectionActive"
+      ref="selectionToolbarRef"
+      :can-create-folder="batchSelectedCount >= 2"
+      :can-exclude-from-scan="canExcludeBatchSelectionFromScan"
+      :cancel-active="isBatchDragCancelActive"
+      :cancel-armed="isBatchDragCancelArmed"
+      :disabled="isBatchSelectionFrozen"
+      :hidden-count="batchHiddenSelectedCount"
+      :resolved-settings-theme="selectionToolbarTheme"
+      :selected-count="batchSelectedCount"
+      @clear-selection="clearBatchSelectionItems"
+      @close="clearBatchSelection"
+      @create-folder="createFolderFromBatchSelection"
+      @exclude="requestBatchSelectionExclude"
+      @remove="requestBatchSelectionRemove"
+      @select-scope="selectCurrentBatchScope"
+    />
     <SettingsPanel :model="settingsPanelModel" />
     <LaunchpadDialogs :state="dialogs" />
     <LaunchpadOverlays
@@ -148,6 +167,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadChromeFrame from "./components/LaunchpadChromeFrame.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
+import LaunchpadSelectionToolbar from "./components/LaunchpadSelectionToolbar.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
@@ -195,9 +215,11 @@ import "./styles/settings.css";
 const appVersion = appPackage.version;
 const localizationText = useLocalization();
 const localizationRuntime = useLocalizationRuntime();
+const selectionToolbarRef = ref(null);
 const controller = useLaunchpadController({
   activateLocale: localizationRuntime.activate,
   appVersion,
+  getBatchCancelZoneRect: () => selectionToolbarRef.value?.getBoundingClientRect?.() || null,
   localizationText,
   openIconContextMenu,
 });
@@ -210,11 +232,29 @@ const {
   folderFlow,
   folderOverlay,
   overlays,
+  selection,
   search: searchDomain,
   settingsPanel,
   settingsPanelModel,
   shell,
 } = controller;
+const {
+  batchHiddenSelectedCount,
+  batchSelectedPageCounts,
+  canExcludeFromScan: canExcludeBatchSelectionFromScan,
+  clear: clearBatchSelection,
+  clearItems: clearBatchSelectionItems,
+  createFolder: createFolderFromBatchSelection,
+  enter: enterBatchSelection,
+  isActive: isBatchSelectionActive,
+  isFrozen: isBatchSelectionFrozen,
+  requestExclude: requestBatchSelectionExclude,
+  requestRemove: requestBatchSelectionRemove,
+  selectedCount: batchSelectedCount,
+  selectedIds: batchSelectedIds,
+  selectCurrentScope: selectCurrentBatchScope,
+} = selection;
+const selectionToolbarTheme = settingsPanelModel.shell.resolvedSettingsTheme;
 const {
   rootRef,
   cx,
@@ -222,6 +262,7 @@ const {
   isDesktopOpen,
   isDesktopClosing,
   isHomeInteractionDisabled,
+  isMultiSelectFixture,
   isAppLaunching,
   isNativeLayoutReady,
   isEditMode,
@@ -289,7 +330,6 @@ const {
   activePageIndex,
   activePages,
   handleIconPointerDown,
-  clearDragRelease,
   commitActivePageIndex,
   desktopMainRef,
   desktopProjectionEpoch,
@@ -300,10 +340,8 @@ const {
   dragFolderTargetId,
   dragHitDebugState,
   dragMeta,
-  dragPreviewState,
-  dragReleaseState,
-  folderCreateReleaseState,
-  completeFolderCreateRelease,
+  groupDragState,
+  completeGroupRelease,
   handleDesktopSurfacePointerDown,
   gridCols,
   gridRows,
@@ -319,10 +357,12 @@ const {
   pageGridMeasureStyle,
   pageTrackScrub,
   schedulePageGridMetrics,
-  selectedIcon,
+  focusedIcon,
   getVisibleDesktopPage,
   folderPageSize,
 } = desktopSurface;
+const isBatchDragCancelActive = computed(() => groupDragState.value?.canCancel === true);
+const isBatchDragCancelArmed = computed(() => groupDragState.value?.cancelArmed === true);
 const {
   folderOpenPreviewFrameGhostedIds,
   isFolderLayerActive,
@@ -337,6 +377,7 @@ const {
 const {
   commitOpenFolder,
   confirmDissolveFolder,
+  folderPanelRef,
   requestFolderRename,
 } = folderOverlay;
 
@@ -926,7 +967,9 @@ function isLaunchpadDialogOpen() {
 function isContextMenuInteractionBlocked() {
   return isLaunchpadContextMenuInteractionBlocked({
     dragMeta: resolveMaybeRef(dragMeta),
+    isBatchSelectionActive: isBatchSelectionActive.value,
     isDialogOpen: isLaunchpadDialogOpen(),
+    isEditMode: isEditMode.value,
     isHomeInteractionDisabled: isHomeInteractionDisabled.value,
     isSettingsPanelOpen: shouldRenderSettingsPanel.value,
   });
@@ -951,6 +994,11 @@ function openSurfaceContextMenu(event) {
   }) || false;
 }
 
+function openFolderSurfaceContextMenu(event, folderId) {
+  if (isContextMenuInteractionBlocked() || !folderId) return false;
+  return launchpadOverlaysRef.value?.openFolderSurfaceContextMenu(event, folderId) || false;
+}
+
 function handleChromeContextMenuRequest(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
@@ -965,6 +1013,9 @@ function handleContextMenuRequest(event) {
     clientX: event?.clientX,
     clientY: event?.clientY,
     folderId,
+    folderPanelRect: openFolderId.value
+      ? folderPanelRef.value?.getBoundingClientRect?.() || null
+      : null,
     getIconAtPoint: (x, y, options) => iconBoundsRegistry.getAtPoint(
       ICON_BOUNDS_KIND.LAUNCH,
       x,
@@ -979,13 +1030,21 @@ function handleContextMenuRequest(event) {
   if (target?.kind === "icon") {
     return openIconContextMenu(event, target.item, target.source);
   }
+  if (target?.kind === "folder-surface") {
+    return openFolderSurfaceContextMenu(event, target.folderId);
+  }
   if (target?.kind === "surface") return openSurfaceContextMenu(event);
   launchpadOverlaysRef.value?.closeContextMenu();
   return false;
 }
 
 function handleContextMenuAction({ action, item, source, kind } = {}) {
+  if (kind === "folder-surface") {
+    if (action === "batch-manage") enterBatchSelection();
+    return;
+  }
   if (kind === "surface") {
+    if (action === "batch-manage") enterBatchSelection();
     if (action === "compact-pages") confirmForceFillAllPages();
     if (action === "scan-apps") void rescanManagedApps();
     if (action === "open-settings") openSettingsPanel();

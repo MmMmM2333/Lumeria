@@ -23,7 +23,7 @@ export function runFolderOverlayIconPlanTests() {
     slot,
   });
 
-  assert(plan.key === "folder-1:2:app-1", "folder icon plan should include folder, page, and item id in its key");
+  assert(plan.key === "folder-1:app-1", "folder icon plan should use folder and item identity independently of page position");
   assert(plan.x === 1080 && plan.y === 80, "folder icon plan should position items inside the paged grid");
   assert(plan.source.type === "folder" && plan.source.folderId === "folder-1", "folder icon plan should build folder source metadata");
   assert(plan.source.index === 3 && plan.source.slotIndex === 3 && plan.source.pageIndex === 2, "folder icon plan should preserve index metadata");
@@ -71,7 +71,7 @@ export function runFolderOverlayIconPlanTests() {
     openingGhostItemIds: new Set(["app-1"]),
     pageIndex: 2,
     showMissingLaunchTargetBadge: true,
-    selectedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
+    focusedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
     slot,
     source: plan.source,
     stageHeight: 900,
@@ -83,7 +83,7 @@ export function runFolderOverlayIconPlanTests() {
   assert(nodeState.hasCustomIcon && nodeState.removable, "node state should derive app icon metadata");
   assert(nodeState.jiggleSeed === 203, "node state should preserve the page/index jiggle seed");
   assert(nodeState.launchTargetStatus === "missing", "node state should expose launch target status on interactive pages");
-  assert(nodeState.opening && nodeState.selected, "node state should preserve opening and selected lookups");
+  assert(nodeState.opening && nodeState.focused, "node state should preserve opening and focus lookups");
   assert(nodeState.stageWidth === 1440 && nodeState.stageHeight === 900, "node state should preserve stage dimensions");
 
   const inactiveState = makeFolderIconNodeState({
@@ -94,7 +94,7 @@ export function runFolderOverlayIconPlanTests() {
     item: { id: "app-1", type: "app" },
     launchTargetStatusById: { "app-1": "missing" },
     pageIndex: 2,
-    selectedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
+    focusedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
     slot,
     source: plan.source,
   });
