@@ -1,6 +1,7 @@
 import {
   getSingleStageFolderTitleOpenOpacity,
   getSingleStageFolderTitleOpacity,
+  isSingleStageFolderTitleFrameCurrent,
   makeSingleStageFolderNameInputStyle,
 } from "./singleStageFolderDomControls.js";
 
@@ -10,7 +11,9 @@ export function runSingleStageFolderDomControlsTests() {
   };
   const nearlyEqual = (actual, expected) => Math.abs(actual - expected) < 0.000001;
 
-  const frame = { height: 180, left: 320, progress: 1, top: 260, width: 520 };
+  const frame = { folderId: "folder-a", height: 180, left: 320, progress: 1, top: 260, width: 520 };
+  assert(isSingleStageFolderTitleFrameCurrent(frame, "folder-a"), "title frame should be accepted for its owning folder");
+  assert(!isSingleStageFolderTitleFrameCurrent(frame, "folder-b"), "title frame from a previous folder should be rejected");
   const hiddenInput = makeSingleStageFolderNameInputStyle({ controlsVisible: false, frame });
   assert(hiddenInput.opacity === 0 && hiddenInput.pointerEvents === "none", "hidden controls should disable the name input");
 

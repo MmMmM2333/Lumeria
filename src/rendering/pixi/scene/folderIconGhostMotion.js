@@ -126,11 +126,14 @@ export function makeClosingGhostMotion(target, options = {}) {
   const sourceRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
   const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
-  const sourceScale = target.sourceScale ?? 1;
+  const sourcePose = target.sourcePose || null;
+  const sourceScale = sourcePose?.scaleX ?? target.sourceScale ?? 1;
+  const sourceScaleX = sourcePose?.scaleX ?? sourceScale;
+  const sourceScaleY = sourcePose?.scaleY ?? sourceScale;
   const sourceAlpha = target.sourceAlpha ?? 1;
   const scale = Math.max(0.14, targetRect.width / Math.max(1, target.iconSize));
-  const fromX = sourceRect.left + sourceRect.width / 2;
-  const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale;
+  const fromX = sourcePose?.x ?? (sourceRect.left + sourceRect.width / 2);
+  const fromY = sourcePose?.y ?? (sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale);
   const toX = targetRect.left + targetRect.width / 2;
   const toY = targetRect.top + targetRect.height / 2 + labelOffset * scale;
   const delay = 0;
@@ -143,6 +146,8 @@ export function makeClosingGhostMotion(target, options = {}) {
     sourceAlpha,
     sourceRect,
     sourceScale,
+    sourceScaleX,
+    sourceScaleY,
     targetRect,
     toX,
     toY,

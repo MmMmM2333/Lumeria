@@ -31,6 +31,7 @@ export function shouldClearFolderClosingHandoffRetainId(options = {}) {
 
 export function resolveFolderSourceGhostedIds(options = {}) {
   const {
+    folderOpenIconGhostSession = null,
     folderOpenPreviewFrameGhostedIds = [],
     folderPixiInternalActivity = false,
     folderPixiInternalActivityFolderId = null,
@@ -46,10 +47,14 @@ export function resolveFolderSourceGhostedIds(options = {}) {
     if (folderId) ids.add(folderId);
   };
   const currentFolderId = renderedFolderId || openFolderId || null;
+  const isStagedOpeningSession = folderOpenIconGhostSession?.folderId === currentFolderId &&
+    folderOpenIconGhostSession?.status === "staged";
 
   if (folderPixiInternalActivity) add(folderPixiInternalActivityFolderId);
   if (openFolderId || isFolderAppLaunchClosing || isFolderZoomFadeClosing || isFolderClosing) {
-    add(currentFolderId);
+    if (!isStagedOpeningSession || isFolderAppLaunchClosing || isFolderZoomFadeClosing || isFolderClosing) {
+      add(currentFolderId);
+    }
   }
   if (currentFolderId && isFolderOpeningPreviewFrameGhosted(currentFolderId)) add(currentFolderId);
   for (const folderId of folderOpenPreviewFrameGhostedIds || []) add(folderId);

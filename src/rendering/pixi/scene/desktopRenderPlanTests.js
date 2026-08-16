@@ -195,6 +195,39 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
+    const folder = { id: "folder-staged-opening", type: "folder" };
+    const plan = buildDesktopRenderPlan(makeBaseState({
+      activePages: [[folder]],
+      singleStageFolderState: {
+        folderOpenIconGhostSession: {
+          folderId: folder.id,
+          status: "staged",
+        },
+        renderedFolder: folder,
+      },
+    }), {
+      effectiveFolderSourceGhostedIds: new Set(),
+      folderHandoffEntries: new Map([[folder.id, {
+        cleanupFrame: { cancelled: false },
+        folderId: folder.id,
+        visualReleased: true,
+      }]]),
+      folderLayer: {
+        folderHandoff: makeHandoffCoordinator(false, null),
+        getDesktopSourceGhostedIds: () => new Set(),
+        hasVisibleFolderSubstitute: () => false,
+      },
+    });
+
+    const [entry] = plan.entries;
+    assert(
+      entry.folderPresentation.handoff.retainsSourceVisibility === true,
+      "staged opening sessions should retain the desktop source until Pixi accepts the opening visual",
+    );
+    assert(entry.nodeState.ghosted === false, "staged opening sessions should keep the desktop folder visible");
+  }
+
+  {
     const folder = { id: "folder-close-tail", type: "folder" };
     const plan = buildDesktopRenderPlan(makeBaseState({
       activePages: [[folder]],

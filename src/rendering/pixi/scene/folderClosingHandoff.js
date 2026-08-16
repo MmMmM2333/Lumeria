@@ -30,7 +30,7 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
     layer.pageDotsLayer.eventMode = "none";
     layer.pageDotsLayer.hitArea = null;
   }
-  layer.notifyTitleFrame?.(null);
+  layer.notifyTitleFrame?.(null, { folderId: layer.folderHandoff?.folderId || layer.currentFolderId || null });
   return null;
 }
 

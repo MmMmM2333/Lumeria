@@ -238,6 +238,25 @@ export function runFolderOpeningGhostControllerTests() {
 
   {
     const completed = [];
+    const layer = makeLayer();
+    const controller = new FolderOpeningGhostController(layer, {
+      ghostFactory: makeGhost,
+      scheduler: makeTimerHost(),
+    });
+    const state = {
+      ...makeState(completed),
+      acceptFolderOpenIconGhostSession: () => false,
+      folderOpenIconGhosts: [{ key: "stale-open", requestId: 21 }],
+      renderedFolder: { id: "folder-2" },
+    };
+
+    assert(controller.start(state, [makeTarget()]) === false, "stale staged opening sessions should be rejected before visual ownership changes");
+    assert(layer.ghosts.length === 0, "rejected opening sessions should not mount ghost visuals");
+    assert(!layer.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-2")), "rejected opening sessions should not hide the desktop source");
+  }
+
+  {
+    const completed = [];
     const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderOpeningGhostController(layer, {

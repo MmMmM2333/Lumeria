@@ -747,6 +747,8 @@ export class FolderOverlayLayer extends Container {
     this.nextDetachedClosingVisualToken = 1;
     this.nextClosingGhostToken = 1;
     this.titleFrameKey = null;
+    this.titleFrameFolderId = null;
+    this.titleFrameSessionToken = null;
     this.pageDotsLayerRevealKey = null;
     this.panelTitleOpening = false;
     this.panelTitleStartScaleX = 1;
@@ -897,6 +899,7 @@ export class FolderOverlayLayer extends Container {
     const keepDesktopCloseDetachedHandoff = !isPrewarm && this.hasActiveDesktopCloseDetachedHandoff(state);
     this.visible = Boolean(state.renderedFolder) || keepClosingHandoff || keepDesktopCloseDetachedHandoff;
     if (!state.renderedFolder) {
+      const clearedFolderId = this.currentFolderId;
       this.clearRegisteredIconBounds();
       if (keepDesktopCloseDetachedHandoff) {
         return { done: true, result: this.applyDesktopCloseDetachedOverlayState() };
@@ -928,7 +931,7 @@ export class FolderOverlayLayer extends Container {
       this.clearFolderIconNodes(FOLDER_OVERLAY_CLEAR_REASON);
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
-      this.notifyTitleFrame(null);
+      this.notifyTitleFrame(null, { folderId: clearedFolderId });
       return { done: true, result: null };
     }
     if (keepDesktopCloseDetachedHandoff) {
@@ -1451,6 +1454,7 @@ export class FolderOverlayLayer extends Container {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       const closeOptions = {
         handoffRect: folderClientRect || closeIconRect,
+        openingCancelRequest: state.folderOpeningCancelRequest || null,
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
       };
@@ -1480,8 +1484,8 @@ export class FolderOverlayLayer extends Container {
     this.pageTrack.visible = !isClosing &&
       !this.folderHandoff.hasActiveCloseVisuals();
     if (!this.frameGhostState) {
-      if (!isClosing) this.notifyPanelTitleFrame(geometry.panel);
-      else this.notifyTitleFrame(geometry.panel);
+      if (!isClosing) this.notifyPanelTitleFrame(geometry.panel, { folderId });
+      else this.notifyTitleFrame(geometry.panel, { folderId });
     }
     this.refreshRegisteredIconBounds();
   }
@@ -2327,29 +2331,41 @@ export class FolderOverlayLayer extends Container {
     if (wasOpeningFrame) this.openingGhosts?.clearFrameTarget?.();
   }
 
-  notifyTitleFrame(rect) {
+  notifyTitleFrame(rect, metadata = {}) {
     if (!rect) {
+      const folderId = metadata.folderId || null;
+      const sessionToken = metadata.sessionToken || null;
+      if (folderId && this.titleFrameFolderId && folderId !== this.titleFrameFolderId) return;
+      if (sessionToken && this.titleFrameSessionToken && sessionToken !== this.titleFrameSessionToken) return;
       if (this.titleFrameKey === null) return;
       this.titleFrameKey = null;
+      this.titleFrameFolderId = null;
+      this.titleFrameSessionToken = null;
       this.onTitleFrameChange(null);
       return;
     }
     const frame = {
+      folderId: metadata.folderId ?? this.currentFolderId ?? null,
       height: rect.height,
       left: rect.left,
       progress: rect.progress ?? 1,
+      sessionToken: metadata.sessionToken ?? null,
       top: rect.top,
       width: rect.width,
     };
     const key = [
+      frame.folderId || "",
       Math.round(frame.left * 100),
       Math.round(frame.top * 100),
       Math.round(frame.width * 100),
       Math.round(frame.height * 100),
       Math.round(frame.progress * 1000),
+      frame.sessionToken || "",
     ].join(":");
     if (key === this.titleFrameKey) return;
     this.titleFrameKey = key;
+    this.titleFrameFolderId = frame.folderId;
+    this.titleFrameSessionToken = frame.sessionToken;
     this.onTitleFrameChange(frame);
   }
 
@@ -2371,12 +2387,12 @@ export class FolderOverlayLayer extends Container {
     });
   }
 
-  notifyPanelTitleFrame(panelRect) {
+  notifyPanelTitleFrame(panelRect, metadata = {}) {
     if (!panelRect) {
-      this.notifyTitleFrame(null);
+      this.notifyTitleFrame(null, metadata);
       return;
     }
-    this.notifyTitleFrame(this.getPanelVisualRect(panelRect));
+    this.notifyTitleFrame(this.getPanelVisualRect(panelRect), metadata);
   }
 
   cancelOpeningPanelReadyCheck() {
@@ -2396,7 +2412,7 @@ export class FolderOverlayLayer extends Container {
     return true;
   }
 
-  scheduleOpeningPanelReadyCheck(sessionToken, panelRect) {
+  scheduleOpeningPanelReadyCheck(sessionToken, panelRect, folderId = this.currentFolderId) {
     this.cancelOpeningPanelReadyCheck();
     const queueCheck = () => {
       const frame = { cancelled: false };
@@ -2407,7 +2423,7 @@ export class FolderOverlayLayer extends Container {
       if (frame.cancelled || this.openingPanelReadyFrame !== frame) return;
       this.openingPanelReadyFrame = null;
       if (!this.folderHandoff.isCurrentOpen(sessionToken)) return;
-      this.notifyPanelTitleFrame(panelRect);
+      this.notifyPanelTitleFrame(panelRect, { folderId, sessionToken });
       this.markRegisteredBoundsDirty();
       if (this.getPanelTitleProgress() >= FOLDER_PANEL_READY_PROGRESS) {
         this.markOpeningPanelReady(sessionToken);
@@ -2735,7 +2751,7 @@ export class FolderOverlayLayer extends Container {
       this.panelTitleOpening = !isClosing;
       this.panelTitleStartScaleX = this.panel.scale.x;
       this.panelTitleStartScaleY = this.panel.scale.y;
-      if (!isClosing) this.notifyPanelTitleFrame(panelRect);
+      if (!isClosing) this.notifyPanelTitleFrame(panelRect, { folderId });
     }
 
     if (isOpenFolderZoomFadeClosing) {
@@ -2752,7 +2768,7 @@ export class FolderOverlayLayer extends Container {
       this.panel.position.set(targetX, targetY);
       this.panel.scale.set(1);
       this.panel.alpha = 1;
-      this.notifyPanelTitleFrame(panelRect);
+      this.notifyPanelTitleFrame(panelRect, { folderId });
       markBoundsDirty();
       return;
     }
@@ -2819,7 +2835,11 @@ export class FolderOverlayLayer extends Container {
       options
     );
     const updateOpeningPanelFrame = () => {
-      this.notifyPanelTitleFrame(openingGeometrySnapshot?.panelRect || panelRect);
+      if (sessionToken && !this.folderHandoff.isCurrentOpen(sessionToken)) return;
+      this.notifyPanelTitleFrame(openingGeometrySnapshot?.panelRect || panelRect, {
+        folderId,
+        sessionToken,
+      });
       markBoundsDirty();
       if (!sessionToken) return;
       if (this.getPanelTitleProgress() < FOLDER_PANEL_READY_PROGRESS) return;
@@ -2836,7 +2856,7 @@ export class FolderOverlayLayer extends Container {
           panelProps: "x,y,alpha",
           scaleProps: "x,y",
         });
-        if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect);
+        if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect, folderId);
       }
       this.panelAlphaTarget = 1;
       const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
@@ -2900,7 +2920,7 @@ export class FolderOverlayLayer extends Container {
         x: targetX,
         y: targetY,
       }, { onFrame: updateOpeningPanelFrame, spring: motionSprings.folderPanelOpen });
-      if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect);
+      if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect, folderId);
     }
     updateOpeningPanelFrame();
     return {

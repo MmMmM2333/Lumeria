@@ -42,7 +42,12 @@ export function drawFrameGhost(layer, rect, options = {}) {
     .fill({ color: Math.round(drawRect.fillColor ?? 0xf7f8ff), alpha: drawRect.fillAlpha })
     .stroke({ color: Math.round(drawRect.strokeColor ?? 0xffffff), alpha: drawRect.strokeAlpha, width: drawRect.strokeWidth ?? 1 });
   if (options.updateClosingMask) drawClosingFrameMask(layer, drawRect);
-  if (options.notifyTitleFrame !== false) layer.notifyTitleFrame(drawRect);
+  if (options.notifyTitleFrame !== false) {
+    layer.notifyTitleFrame(drawRect, {
+      folderId: options.folderId,
+      sessionToken: options.sessionToken,
+    });
+  }
 }
 
 function cancelFrameGhostMotion(layer) {

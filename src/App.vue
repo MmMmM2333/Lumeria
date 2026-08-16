@@ -364,6 +364,7 @@ const {
 const isBatchDragCancelActive = computed(() => groupDragState.value?.canCancel === true);
 const isBatchDragCancelArmed = computed(() => groupDragState.value?.cancelArmed === true);
 const {
+  folderOpenIconGhostSession,
   folderOpenPreviewFrameGhostedIds,
   isFolderLayerActive,
   isFolderOpeningPreviewFrameGhosted,
@@ -913,12 +914,18 @@ const folderSourceGhostedId = computed(() => {
   const folderId = renderedFolder.value?.id || openFolderId.value || folderPixiInternalActivityFolderId.value;
   if (!folderId) return null;
   if (folderPixiInternalActivity.value && folderPixiInternalActivityFolderId.value === folderId) return folderId;
-  if (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) return folderId;
+  const isStagedOpeningSession = folderOpenIconGhostSession.value?.folderId === folderId &&
+    folderOpenIconGhostSession.value?.status === "staged";
+  if (
+    (openFolderId.value || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value) &&
+    (!isStagedOpeningSession || isFolderAppLaunchClosing.value || isFolderZoomFadeClosing.value || isFolderClosing.value)
+  ) return folderId;
   return isFolderOpeningPreviewFrameGhosted(folderId) ? folderId : null;
 });
 
 const folderSourceGhostedIds = computed(() => {
   return resolveFolderSourceGhostedIds({
+    folderOpenIconGhostSession: folderOpenIconGhostSession.value,
     folderOpenPreviewFrameGhostedIds: folderOpenPreviewFrameGhostedIds.value,
     folderPixiInternalActivity: folderPixiInternalActivity.value,
     folderPixiInternalActivityFolderId: folderPixiInternalActivityFolderId.value,

@@ -83,6 +83,10 @@ export function useLaunchpadKeyboard(options) {
     }
     if (hasFolderInteractionLayer() && !options.isFolderAppLaunchClosing.value) {
       if (options.isFolderClosing.value || options.isFolderZoomFadeClosing?.value) return;
+      if (options.cancelFolderOpening?.()) {
+        options.clearFocusedIcon();
+        return;
+      }
       options.commitOpenFolder(null);
       options.clearFocusedIcon();
       return;

@@ -222,6 +222,13 @@ export function runLaunchpadFolderFlowTests() {
     assert(open.calls.resetFolderViewportMetrics === 1, "opening a different folder should reset stale folder viewport metrics");
     assert(open.calls.clearFolderPageTurnRequest === 1, "opening a different folder should clear stale folder page turn requests");
 
+    const cancelledOpen = createFolderFlow();
+    cancelledOpen.flow.commitOpenFolder("folder-1");
+    cancelledOpen.flow.folderOpenProgress.value = 0.42;
+    assert(cancelledOpen.flow.cancelFolderOpening() === true, "cancelFolderOpening should handle an in-progress folder opening");
+    assert(cancelledOpen.flow.openFolderId.value === null, "cancelling an opening should enter the close path");
+    assert(cancelledOpen.flow.folderOpeningCancelRequest.value?.folderId === "folder-1", "opening cancellation should publish the folder identity for the visual handoff");
+
     open.folderPageIndex.value = 2;
     open.flow.commitOpenFolder("folder-1");
     assert(open.folderPageIndex.value === 2, "reopening the same folder should preserve folder page index");

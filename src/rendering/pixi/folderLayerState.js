@@ -15,6 +15,7 @@ export function createFolderLayerState(groups, overrides = {}) {
   const folderOpenIconGhosts = folder.openIconGhosts || [];
 
   return {
+    acceptFolderOpenIconGhostSession: callbacks.acceptFolderOpenIconGhostSession,
     completeFolderCloseIconGhost: callbacks.completeFolderCloseIconGhost,
     completeFolderOpenFrameGhost: callbacks.completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost: callbacks.completeFolderOpenIconGhost,
@@ -23,9 +24,11 @@ export function createFolderLayerState(groups, overrides = {}) {
     desktopPageTrackOffset: folder.desktopPageTrackOffset || null,
     folderGridStyle: folder.gridStyle,
     folderOpeningOriginBounds: folder.openingOriginBounds,
+    folderOpeningCancelRequest: folder.openingCancelRequest || null,
     folderOpenProgress: folder.openProgress ?? (folder.renderedFolder ? 1 : 0),
     folderOpenProgressTarget: folder.openProgressTarget ?? (folder.renderedFolder ? 1 : 0),
     folderOpenIconGhosts,
+    folderOpenIconGhostSession: folder.openIconGhostSession || null,
     folderPageIndex: folder.pageIndex,
     folderPageIndexCommit: folder.pageIndexCommit,
     folderPageTurnToken: folder.pageTurnToken ?? null,

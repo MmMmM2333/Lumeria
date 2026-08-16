@@ -111,6 +111,10 @@ export function isFolderOpeningSourceGhosted(state = {}, folderId = null) {
   if (state.isFolderOpeningPreviewFrameGhosted?.(folderId) === true) return true;
   const folderState = state.singleStageFolderState;
   if (folderState?.renderedFolder?.id !== folderId) return false;
+  if (
+    folderState.folderOpenIconGhostSession?.folderId === folderId &&
+    folderState.folderOpenIconGhostSession?.status === "staged"
+  ) return false;
   return !folderState.isFolderClosing &&
     !folderState.isFolderAppLaunchClosing &&
     !folderState.isFolderZoomFadeClosing &&

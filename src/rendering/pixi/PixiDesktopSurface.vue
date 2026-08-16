@@ -85,6 +85,7 @@ import {
 import { getSingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
 import {
   getSingleStageFolderTitleOpenOpacity,
+  isSingleStageFolderTitleFrameCurrent,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
 import { useLocalization } from "../../i18n/localization.js";
@@ -240,7 +241,10 @@ const isSingleStageDragPreviewActive = computed(() => Boolean(
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
-  const frame = singleStageFolderTitleFrame.value || singleStageFolderPanelGeometry.value?.panel;
+  const folderId = props.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  const frame = isSingleStageFolderTitleFrameCurrent(singleStageFolderTitleFrame.value, folderId)
+    ? singleStageFolderTitleFrame.value
+    : null;
   return makeSingleStageFolderNameInputStyle({
     closingStartOpacity: singleStageFolderClosingTitleStartOpacity.value,
     controlsVisible: shouldRenderSingleStageFolderDomControls.value,
@@ -282,6 +286,14 @@ function restoreSingleStageEmptyFolderName(event) {
   if (input) input.value = fallback;
   state.renameFolder(folder.id, fallback);
 }
+
+watch(
+  () => props.folderOverlayState?.renderedFolder?.value?.id ?? null,
+  () => {
+    singleStageFolderTitleFrame.value = null;
+  },
+  { flush: "sync" }
+);
 
 watch(
   [
@@ -463,6 +475,7 @@ function createSingleStageFolderState(
     : source.folderPages?.value;
   return createFolderLayerState({
     callbacks: {
+      acceptFolderOpenIconGhostSession: source.acceptFolderOpenIconGhostSession,
       completeFolderCloseIconGhost: source.completeFolderCloseIconGhost,
       completeFolderOpenFrameGhost: source.completeFolderOpenFrameGhost,
       completeFolderOpenIconGhost: source.completeFolderOpenIconGhost,
@@ -483,9 +496,11 @@ function createSingleStageFolderState(
       isZoomFadeClosing: source.isFolderZoomFadeClosing?.value,
       zoomFadeCloseReason: source.folderZoomFadeCloseReason?.value,
       openingOriginBounds: source.folderOpeningOriginBounds?.value,
+      openingCancelRequest: source.folderOpeningCancelRequest?.value,
       openProgress: source.folderOpenProgress?.value,
       openProgressTarget: source.folderOpenProgressTarget?.value,
       openIconGhosts: source.folderOpenIconGhosts?.value,
+      openIconGhostSession: source.folderOpenIconGhostSession?.value,
       pageIndex: source.folderPageIndex?.value,
       pageIndexCommit: source.commitFolderPageIndex,
       pageTurnToken: source.folderPageTurnRequest?.value?.token ?? null,
@@ -920,7 +935,10 @@ function handleSingleStageFolderGeometryChange(geometry) {
 }
 
 function handleSingleStageFolderTitleFrameChange(frame) {
-  singleStageFolderTitleFrame.value = frame || null;
+  const folderId = props.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  singleStageFolderTitleFrame.value = isSingleStageFolderTitleFrameCurrent(frame, folderId)
+    ? frame
+    : null;
 }
 
 function disposeDiagnosticHub(hub) {
@@ -1134,7 +1152,7 @@ watch(
   (isClosing, wasClosing) => {
     if (isClosing && !wasClosing) {
       singleStageFolderClosingTitleStartOpacity.value = getSingleStageFolderTitleOpenOpacity(
-        singleStageFolderTitleFrame.value || singleStageFolderPanelGeometry.value?.panel
+        singleStageFolderTitleFrame.value
       );
       return;
     }

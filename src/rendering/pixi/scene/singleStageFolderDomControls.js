@@ -2,6 +2,11 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 export const SINGLE_STAGE_FOLDER_NAME_INPUT_WIDTH = 360;
 
+export function isSingleStageFolderTitleFrameCurrent(frame, folderId) {
+  if (!frame || !folderId) return false;
+  return frame.folderId === folderId;
+}
+
 function clamp01(value) {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }

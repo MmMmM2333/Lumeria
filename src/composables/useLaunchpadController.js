@@ -428,6 +428,7 @@ export function useLaunchpadController(options = {}) {
   } = useIconFocus({ getCurrentIconScope: () => getCurrentIconScope() });
 
   const {
+    acceptFolderOpenIconGhostSession,
     captureFolderCloseIconGhosts,
     captureFolderPreviewIconGhosts,
     clearFolderCloseIconGhosts,
@@ -437,6 +438,7 @@ export function useLaunchpadController(options = {}) {
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
+    folderOpenIconGhostSession,
     folderOpenPreviewFrameGhostedIds,
     isFolderCloseIconAnimationActive,
     isFolderOpenFrameGhostPending,
@@ -456,6 +458,7 @@ export function useLaunchpadController(options = {}) {
     clearFolderCloseTimer,
     clearFolderCloseHandoffFrame,
     clearHomeRevealSettleTimer,
+    cancelFolderOpening: cancelFolderOpeningFlow,
     commitOpenFolder: commitOpenFolderNow,
     desktopProjectionEpoch,
     finishFolderCloseAfterHandoffFrame,
@@ -465,6 +468,7 @@ export function useLaunchpadController(options = {}) {
     folderOpenProgress,
     folderOpenProgressTarget,
     folderOpenWarmupRequest,
+    folderOpeningCancelRequest,
     folderOpeningOriginBounds,
     folderPages,
     folderZoomFadeCloseReason,
@@ -1594,6 +1598,7 @@ export function useLaunchpadController(options = {}) {
       });
       return output?.handled === true;
     },
+    cancelFolderOpening: () => cancelFolderOpeningFlow({ commit: commitOpenFolder }),
     closeTopmostModal: closeTopmostModalFromKeyboard,
     clearBatchSelection,
     cancelAltEditMode,
@@ -1934,6 +1939,7 @@ export function useLaunchpadController(options = {}) {
   const folderFlow = {
     finishFolderZoomFadeClose,
     folderOpenPreviewFrameGhostedIds,
+    folderOpenIconGhostSession,
     isFolderAppLaunchClosing,
     isFolderClosing,
     isFolderLayerActive,
@@ -2125,6 +2131,7 @@ export function useLaunchpadController(options = {}) {
   };
 
   const folderOverlay = {
+    acceptFolderOpenIconGhostSession,
     activePageIndex,
     activePages,
     handleIconPointerDown,
@@ -2139,9 +2146,11 @@ export function useLaunchpadController(options = {}) {
     folderCloseIconGhosts,
     folderGridStyle,
     folderOpeningOriginBounds,
+    folderOpeningCancelRequest,
     folderOpenProgress,
     folderOpenProgressTarget,
     folderOpenIconGhosts,
+    folderOpenIconGhostSession,
     folderOpenPreviewFrameGhostedIds,
     folderOpenWarmupRequest,
     openFolderId,

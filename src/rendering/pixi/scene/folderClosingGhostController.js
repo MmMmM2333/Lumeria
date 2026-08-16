@@ -70,10 +70,10 @@ function animateClosingGhost(ghost, ghostMotion, target, onComplete, options = {
       .handoff()
       .interrupt("retarget")
       .to({ ...motionOptions, x: ghostMotion.toX, y: ghostMotion.toY }),
-    motion(ghost.scale)
-      .spring(scaleSpring)
-      .handoff()
-      .interrupt("retarget")
+      motion(ghost.scale)
+        .spring(scaleSpring)
+        .handoff()
+        .interrupt("retarget")
       .to({ ...motionOptions, x: ghostMotion.scale, y: ghostMotion.scale }),
   ], {
     scheduler: options.scheduler,
@@ -174,6 +174,38 @@ function releaseOpeningGhostsForClosing(transitionPort, handoffCoordinator, stat
   return released;
 }
 
+function preserveReleasedGhostPhysicalPose(ghost, sourceRect, stageRect) {
+  if (!ghost || !sourceRect || typeof ghost.getIconBounds !== "function") return null;
+  const previousScaleX = Math.max(0.0001, Number(ghost.scale?.x) || 1);
+  const previousScaleY = Math.max(0.0001, Number(ghost.scale?.y) || 1);
+  const currentRect = ghost.getIconBounds(stageRect);
+  if (!currentRect || !Number.isFinite(currentRect.width) || !Number.isFinite(currentRect.height)) return null;
+  const intrinsicWidth = currentRect.width / previousScaleX;
+  const intrinsicHeight = currentRect.height / previousScaleY;
+  if (!(intrinsicWidth > 0) || !(intrinsicHeight > 0)) return null;
+  const nextScaleX = sourceRect.width / intrinsicWidth;
+  const nextScaleY = sourceRect.height / intrinsicHeight;
+  if (!(nextScaleX > 0) || !(nextScaleY > 0)) return null;
+  ghost.scale.set(nextScaleX, nextScaleY);
+  const adjustedRect = ghost.getIconBounds(stageRect);
+  if (adjustedRect && ghost.position?.set) {
+    const sourceCenterX = sourceRect.left + sourceRect.width / 2;
+    const sourceCenterY = sourceRect.top + sourceRect.height / 2;
+    const adjustedCenterX = adjustedRect.left + adjustedRect.width / 2;
+    const adjustedCenterY = adjustedRect.top + adjustedRect.height / 2;
+    ghost.position.set(
+      (Number(ghost.position.x) || 0) + sourceCenterX - adjustedCenterX,
+      (Number(ghost.position.y) || 0) + sourceCenterY - adjustedCenterY
+    );
+  }
+  return {
+    scaleX: nextScaleX,
+    scaleY: nextScaleY,
+    x: Number(ghost.position?.x) || 0,
+    y: Number(ghost.position?.y) || 0,
+  };
+}
+
 function clearOpeningGhostsForClosing(transitionPort) {
   transitionPort.clearOpeningGhosts({
     cancelSession: true,
@@ -226,6 +258,7 @@ export class FolderClosingGhostController {
   start(state, targets, folderRect, panelRect, options = {}) {
     const {
       handoffRect = null,
+      openingCancelRequest = null,
       handoffTarget = null,
       previewSwapTargets = [],
     } = options;
@@ -321,6 +354,7 @@ export class FolderClosingGhostController {
     this.activeFrameState = {
       closeToken,
       folderId,
+      openingCancelRequest: openingCancelRequest?.folderId === folderId ? openingCancelRequest : null,
       makeOptions: makeFrameOptions,
       previewSwapStarted: false,
       previewSwapTargets,
@@ -343,7 +377,11 @@ export class FolderClosingGhostController {
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
       ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
-      const ghostMotion = makeClosingGhostMotion(target, {
+      const sourcePose = released
+        ? preserveReleasedGhostPhysicalPose(ghost, released.sourceRect, state.stageRect)
+        : null;
+      const motionTarget = sourcePose ? { ...target, sourcePose } : target;
+      const ghostMotion = makeClosingGhostMotion(motionTarget, {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
         closeDuration: motionPresets.folderClose.duration,
         isTextlessMode: state.isTextlessMode,
@@ -352,7 +390,7 @@ export class FolderClosingGhostController {
         stageWidth: state.width,
       });
       ghost.position.set(ghostMotion.fromX, ghostMotion.fromY);
-      ghost.scale.set(ghostMotion.sourceScale);
+      ghost.scale.set(ghostMotion.sourceScaleX, ghostMotion.sourceScaleY);
       ghost.alpha = ghostMotion.sourceAlpha;
       this.handoffCoordinator.setDetachedClosingGhostMotion(ghost, {
         alpha: target.isThumbnailChild ? 1 : 0,
@@ -383,7 +421,7 @@ export class FolderClosingGhostController {
       this.transitionPort.addClosingGhost(ghost);
       this.transitionPort.hideIconNodesForTransition(target.item.id, owner);
 
-      this.startGhostMotion(state, target, ghost, closeToken, { animateAlpha: true });
+      this.startGhostMotion(state, motionTarget, ghost, closeToken, { animateAlpha: true });
     }
     this.transitionPort.notifyClosingHandoffPrepare(folderId);
   }

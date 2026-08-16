@@ -52,6 +52,7 @@ function publishFolderIconGhosts(folderId, capturedGhosts, requestId, kind) {
 
 export function useFolderOpenIconGhosts(options = {}) {
   const folderOpenIconGhosts = shallowRef([]);
+  const folderOpenIconGhostSession = shallowRef(null);
   const folderOpenIconGhostedKeys = shallowRef(new Set());
   const folderOpenPreviewFrameGhostedIds = shallowRef(new Set());
   const folderCloseIconGhosts = shallowRef([]);
@@ -68,6 +69,7 @@ export function useFolderOpenIconGhosts(options = {}) {
     folderOpenIconGhostRequestId += 1;
     completedFolderOpenIconGhostKeys.clear();
     folderOpenIconGhosts.value = [];
+    folderOpenIconGhostSession.value = null;
     folderOpenIconGhostedKeys.value = new Set();
     folderOpenPreviewFrameGhostedIds.value = new Set();
     isFolderOpenFrameGhostPending.value = false;
@@ -77,6 +79,9 @@ export function useFolderOpenIconGhosts(options = {}) {
     completedFolderOpenIconGhostKeys.clear();
     folderOpenIconGhosts.value = [];
     folderOpenIconGhostedKeys.value = new Set();
+    if (folderOpenIconGhostSession.value?.frameCompleted === true) {
+      folderOpenIconGhostSession.value = null;
+    }
   }
 
   function clearFolderCloseIconGhosts() {
@@ -98,9 +103,18 @@ export function useFolderOpenIconGhosts(options = {}) {
 
   function completeFolderOpenFrameGhost(folderId, requestId) {
     if (requestId !== folderOpenIconGhostRequestId) return false;
+    const session = folderOpenIconGhostSession.value;
+    if (!session || session.status !== "accepted" || session.folderId !== folderId) return false;
+    if (session.requestId !== requestId) return false;
     if (folderId && !folderOpenPreviewFrameGhostedIds.value.has(folderId)) return false;
+    folderOpenIconGhostSession.value = {
+      ...session,
+      frameCompleted: true,
+      status: "frame-complete",
+    };
     folderOpenPreviewFrameGhostedIds.value = new Set();
     isFolderOpenFrameGhostPending.value = false;
+    if (folderOpenIconGhosts.value.length === 0) folderOpenIconGhostSession.value = null;
     return true;
   }
 
@@ -127,10 +141,32 @@ export function useFolderOpenIconGhosts(options = {}) {
     const requestId = (folderOpenIconGhostRequestId += 1);
     completedFolderOpenIconGhostKeys.clear();
     const ghosts = publishFolderIconGhosts(folderId, capturedGhosts, requestId, "open");
+    folderOpenIconGhostSession.value = ghosts.length
+      ? {
+        folderId: folderId || null,
+        frameCompleted: false,
+        requestId,
+        status: "staged",
+        token: null,
+      }
+      : null;
     folderOpenIconGhosts.value = ghosts;
     folderOpenIconGhostedKeys.value = new Set(ghosts.map((ghost) => makeFolderOpenIconGhostedKey(folderId, ghost.item.id)));
-    folderOpenPreviewFrameGhostedIds.value = ghosts.length ? new Set([folderId]) : new Set();
+    folderOpenPreviewFrameGhostedIds.value = new Set();
     isFolderOpenFrameGhostPending.value = ghosts.length > 0;
+  }
+
+  function acceptFolderOpenIconGhostSession(folderId, requestId, token = null) {
+    const session = folderOpenIconGhostSession.value;
+    if (!session || session.status !== "staged") return false;
+    if (session.folderId !== (folderId || null) || session.requestId !== requestId) return false;
+    folderOpenIconGhostSession.value = {
+      ...session,
+      status: "accepted",
+      token: token ?? null,
+    };
+    if (folderId) folderOpenPreviewFrameGhostedIds.value = new Set([folderId]);
+    return true;
   }
 
   function playFolderCloseIconGhosts(folderId, capturedGhosts) {
@@ -156,6 +192,7 @@ export function useFolderOpenIconGhosts(options = {}) {
   return {
     captureFolderCloseIconGhosts,
     captureFolderPreviewIconGhosts,
+    acceptFolderOpenIconGhostSession,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
     completeFolderOpenFrameGhost,
@@ -163,6 +200,7 @@ export function useFolderOpenIconGhosts(options = {}) {
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
     folderOpenIconGhosts,
+    folderOpenIconGhostSession,
     folderOpenPreviewFrameGhostedIds,
     isFolderCloseIconAnimationActive,
     isFolderClosingIconGhosted,

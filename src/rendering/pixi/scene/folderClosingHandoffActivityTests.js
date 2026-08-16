@@ -96,4 +96,24 @@ export function runFolderClosingHandoffActivityTests() {
   });
   assert(activityGhosts.has("folder-detached"), "active Pixi activity should own its desktop source ghosting");
   assert(!activityGhosts.has("folder-current"), "rendered folders should not be ghosted without an active open or closing phase");
+
+  const stagedOpeningGhosts = resolveFolderSourceGhostedIds({
+    folderOpenIconGhostSession: {
+      folderId: "folder-staged",
+      status: "staged",
+    },
+    openFolderId: "folder-staged",
+    renderedFolderId: "folder-staged",
+  });
+  assert(!stagedOpeningGhosts.has("folder-staged"), "staged opening sessions should keep the desktop source visible until Pixi accepts the visual session");
+
+  const acceptedOpeningGhosts = resolveFolderSourceGhostedIds({
+    folderOpenIconGhostSession: {
+      folderId: "folder-accepted",
+      status: "accepted",
+    },
+    openFolderId: "folder-accepted",
+    renderedFolderId: "folder-accepted",
+  });
+  assert(acceptedOpeningGhosts.has("folder-accepted"), "accepted opening sessions should ghost the desktop source");
 }

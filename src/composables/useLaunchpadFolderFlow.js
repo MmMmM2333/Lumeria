@@ -38,6 +38,7 @@ export function useLaunchpadFolderFlow(options) {
   const isFolderZoomFadeClosingFromFolderClose = ref(false);
   const folderZoomFadeCloseReason = ref(null);
   const folderOpeningOriginBounds = shallowRef(null);
+  const folderOpeningCancelRequest = shallowRef(null);
   const folderOpenWarmupRequest = shallowRef(null);
   const isHomeRevealSettling = ref(false);
   const desktopProjectionEpoch = ref(0);
@@ -47,6 +48,7 @@ export function useLaunchpadFolderFlow(options) {
   let folderCloseHandoffFrame = null;
   let folderZoomFadeCloseTimer = null;
   let folderOpenWarmupRequestId = 0;
+  let folderOpeningCancelRequestId = 0;
   let hasPreparedFirstFolderOpen = false;
   let folderOpenProgressControl = null;
   let normalCloseNeedsHandoff = false;
@@ -185,6 +187,7 @@ export function useLaunchpadFolderFlow(options) {
     options.resetFolderViewportMetrics?.();
     clearFolderCloseTimer();
     resetNormalCloseCompletion();
+    folderOpeningCancelRequest.value = null;
   }
 
   function scheduleFolderCloseFinishFrame() {
@@ -231,6 +234,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    folderOpeningCancelRequest.value = null;
     setFolderOpenProgressImmediate(0, "folder-app-launch-finish");
     options.clearFolderPageTurnRequest?.("folder-app-launch-finish");
     options.commitFolderPageIndex(0);
@@ -251,6 +255,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    folderOpeningCancelRequest.value = null;
     isFolderAppLaunchClosing.value = true;
     options.clearFolderPageTurnRequest?.("folder-app-launch-close");
     options.clearFolderPageTurn();
@@ -277,6 +282,7 @@ export function useLaunchpadFolderFlow(options) {
       isFolderZoomFadeClosingFromFolderClose.value = false;
       folderZoomFadeCloseReason.value = null;
       folderOpeningOriginBounds.value = commitOptions?.originBounds || null;
+      folderOpeningCancelRequest.value = null;
       folderClosingSnapshot.value = null;
       if (!isSameFolder) {
         options.clearFolderPageTurnRequest?.("folder-open");
@@ -305,6 +311,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    folderOpeningCancelRequest.value = commitOptions?.openingCancelRequest || null;
     startHomeRevealSettleWindow();
     options.clearFolderPageTurnRequest?.("folder-close-start");
     options.clearFolderPageTurn();
@@ -318,6 +325,24 @@ export function useLaunchpadFolderFlow(options) {
       normalCloseHandoffReady = true;
       maybeFinishNormalFolderClose();
     }, commitOptions?.waitForCloseGhosts ? FOLDER_CLOSE_GHOST_FALLBACK_DURATION : FOLDER_CLOSE_DURATION);
+  }
+
+  function cancelFolderOpening(cancelOptions = {}) {
+    const folderId = openFolderId.value;
+    const progress = Number(folderOpenProgress.value);
+    if (!folderId || folderOpenProgressTarget.value !== 1 || progress >= 0.999) return false;
+    const request = {
+      folderId,
+      id: ++folderOpeningCancelRequestId,
+      progress,
+    };
+    const commit = typeof cancelOptions.commit === "function" ? cancelOptions.commit : commitOpenFolder;
+    commit(null, {
+      ...(cancelOptions.commitOptions || {}),
+      openingCancelRequest: request,
+      waitForCloseGhosts: true,
+    });
+    return true;
   }
 
   function requestFolderOpenWarmup(folder, originBounds = null) {
@@ -349,6 +374,7 @@ export function useLaunchpadFolderFlow(options) {
     isFolderZoomFadeClosingFromFolderClose.value = false;
     folderZoomFadeCloseReason.value = null;
     folderOpeningOriginBounds.value = null;
+    folderOpeningCancelRequest.value = null;
     options.clearFolderPageTurnRequest?.("folder-zoom-fade-finish");
     options.commitFolderPageIndex(0);
     options.folderPageRefs.length = 0;
@@ -383,6 +409,7 @@ export function useLaunchpadFolderFlow(options) {
     clearFolderCloseHandoffFrame,
     clearFolderZoomFadeCloseTimer,
     clearHomeRevealSettleTimer,
+    cancelFolderOpening,
     commitOpenFolder,
     desktopProjectionEpoch,
     finishFolderClose,
@@ -393,6 +420,7 @@ export function useLaunchpadFolderFlow(options) {
     folderOpenProgress,
     folderOpenProgressTarget,
     folderOpenWarmupRequest,
+    folderOpeningCancelRequest,
     folderOpeningOriginBounds,
     folderPages,
     folderZoomFadeCloseReason,

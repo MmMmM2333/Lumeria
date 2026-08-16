@@ -138,6 +138,22 @@ export async function runFolderOverlayLayerTests() {
     iconBoundsRegistry.clearBounds();
   }
 
+  {
+    const titleFrames = [];
+    const layer = new FolderOverlayLayer({
+      iconBoundsRegistry: createIconBoundsRegistry(),
+      onTitleFrameChange: (frame) => titleFrames.push(frame),
+    });
+    const rect = { height: 120, left: 10, top: 20, width: 240 };
+    layer.currentFolderId = "folder-a";
+    layer.notifyTitleFrame(rect, { folderId: "folder-a" });
+    layer.currentFolderId = "folder-b";
+    layer.notifyTitleFrame(rect, { folderId: "folder-b" });
+    layer.notifyTitleFrame(null, { folderId: "folder-a" });
+    assert(titleFrames.length === 2 && titleFrames[1]?.folderId === "folder-b", "a stale folder title clear must not remove the current folder title frame");
+    layer.destroy({ children: true });
+  }
+
   const dotsFrame = getFolderPageDotsFrame({
     grid: { height: 240, left: 220, top: 270, width: 720 },
     panel: { height: 360, left: 180, top: 200, width: 800 },

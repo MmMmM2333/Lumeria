@@ -621,6 +621,18 @@ export function runFolderClosingGhostControllerTests() {
     reusedGhost.item = { id: "app-1" };
     reusedGhost.labelText.alpha = 0.4;
     reusedGhost.position.set(60, 71);
+    reusedGhost.scale.set(0.5);
+    reusedGhost.getIconBounds = function getIconBounds() {
+      const intrinsicSize = this.state ? 96 : 100;
+      const width = intrinsicSize * this.scale.x;
+      const height = intrinsicSize * this.scale.y;
+      return {
+        height,
+        left: this.position.x - width / 2,
+        top: this.position.y - height / 2,
+        width,
+      };
+    };
     layer.openingGhostLayer.children = [reusedGhost];
 
     let factoryCalls = 0;
@@ -642,6 +654,8 @@ export function runFolderClosingGhostControllerTests() {
     assert(layer.closingGhosts[0] === reusedGhost, "closing should move the released ghost into the closing layer");
     assert(reusedGhost.alpha === 0.7, "closing should preserve the released ghost alpha as the motion source");
     assert(reusedGhost.labelText.alpha === 0.4, "closing should preserve the released label alpha before fade out");
+    assert(Math.abs(reusedGhost.scale.x - (50 / 96)) < 0.0001, "closing should compensate the reused ghost scale after its visual spec changes");
+    assert(Math.abs(reusedGhost.getIconBounds().width - 50) < 0.0001, "closing should keep the reused ghost physical width continuous at the handoff frame");
     assert(layer.frameGhostState.left === 20 && layer.frameGhostState.width === 240, "closing frame should start from the current frame presentation");
     assert(layer.frameGhostOptions.frameGhostPhase === "closing", "closing frame should mark its frame ghost phase");
     assert(layer.frameGhostOptions.folderId === "folder-1", "closing frame should carry the owning folder id");

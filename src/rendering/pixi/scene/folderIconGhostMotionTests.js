@@ -88,6 +88,18 @@ export function runFolderIconGhostMotionTests() {
   assert(nearlyEqual(closing.toX, 22) && nearlyEqual(closing.toY, 35.5), "closing motion should target the stage layout thumbnail child center");
   assert(nearlyEqual(closing.alphaDelay, 0.1), "closing alpha delay should follow the close duration and hold ratio");
 
+  const capturedPoseClosing = makeClosingGhostMotion({
+    ...closingTarget,
+    sourcePose: { scaleX: 0.42, scaleY: 0.38, x: 72, y: 88 },
+  }, {
+    alphaHold: 0.25,
+    closeDuration: 0.4,
+    isTextlessMode: false,
+    stageRect,
+  });
+  assert(capturedPoseClosing.fromX === 72 && capturedPoseClosing.fromY === 88, "closing motion should start from the captured handoff pose");
+  assert(nearlyEqual(capturedPoseClosing.sourceScaleX, 0.42) && nearlyEqual(capturedPoseClosing.sourceScaleY, 0.38), "closing motion should preserve captured physical scale on both axes");
+
   const completed = makeCompletedClosingPreviewMotion(closingTarget, { isTextlessMode: false, stageRect });
   assert(nearlyEqual(completed.scale, 0.25), "completed preview motion should scale to the thumbnail child size");
   assert(nearlyEqual(completed.x, closing.toX) && nearlyEqual(completed.y, closing.toY), "completed preview motion should match the closing target");

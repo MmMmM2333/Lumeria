@@ -24,6 +24,7 @@ function makeKeyEvent(key, overrides = {}) {
 function createKeyboard(overrides = {}) {
   const searchQuery = ref(overrides.searchQuery || "");
   const calls = {
+    cancelFolderOpening: 0,
     cancelActiveDrag: 0,
     clearBatchSelection: 0,
     closeDesktop: 0,
@@ -37,6 +38,10 @@ function createKeyboard(overrides = {}) {
     cancelActiveDrag: () => {
       calls.cancelActiveDrag += 1;
       return overrides.cancelDrag !== false;
+    },
+    cancelFolderOpening: () => {
+      calls.cancelFolderOpening += 1;
+      return Boolean(overrides.folderOpening);
     },
     clearBatchSelection: () => { calls.clearBatchSelection += 1; },
     clearSearch: () => {},
@@ -131,6 +136,12 @@ export function runLaunchpadKeyboardTests() {
   const modalEscape = makeKeyEvent("Escape");
   modal.keyboard.handleGlobalKeydown(modalEscape);
   assert(modal.calls.closeTopmostModal === 1 && modal.calls.closeDesktop === 0, "Escape should close the topmost modal before the desktop");
+
+  const opening = createKeyboard({ hasFolder: true, folderOpening: true });
+  const openingEscape = makeKeyEvent("Escape");
+  opening.keyboard.handleGlobalKeydown(openingEscape);
+  assert(opening.calls.cancelFolderOpening === 1, "Escape during folder opening should cancel the opening session explicitly");
+  assert(openingEscape.preventDefaultCalled === 1, "opening cancellation should consume Escape");
 
   const paging = createKeyboard();
   const pageEvent = makeKeyEvent("ArrowRight", { ctrlKey: true });

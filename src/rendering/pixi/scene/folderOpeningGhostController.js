@@ -373,6 +373,13 @@ export class FolderOpeningGhostController {
 
   start(state, targets, options = {}) {
     const sessionToken = options.sessionToken || this.handoffCoordinator.activeOpenToken || null;
+    const folderId = state.renderedFolder?.id || this.transitionPort.getCurrentFolderId() || null;
+    const requestId = getOpeningFrameGhostRequestId(state);
+    const hasStagedGhosts = (state.folderOpenIconGhosts || []).length > 0;
+    if (hasStagedGhosts && typeof state.acceptFolderOpenIconGhostSession === "function") {
+      const accepted = state.acceptFolderOpenIconGhostSession(folderId, requestId, sessionToken);
+      if (!accepted) return false;
+    }
     this.clear({
       cancelSession: false,
       completeControllerKeys: false,
@@ -393,7 +400,7 @@ export class FolderOpeningGhostController {
     }
 
     const owner = {
-      folderId: state.renderedFolder?.id || this.transitionPort.getCurrentFolderId() || null,
+      folderId,
       kind: "opening",
       token: sessionToken,
     };
