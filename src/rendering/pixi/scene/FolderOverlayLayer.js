@@ -925,6 +925,7 @@ export class FolderOverlayLayer extends Container {
       this.stableFolderSlotContext = null;
       this.stableFolderCloseTarget = null;
       this.resetClosingDesktopPageTrackMirror();
+      this.clearFolderIconNodes(FOLDER_OVERLAY_CLEAR_REASON);
       if (state.folderPanelRef) state.folderPanelRef.value = null;
       if (state.folderViewportRef) state.folderViewportRef.value = null;
       this.notifyTitleFrame(null);
@@ -1793,6 +1794,18 @@ export class FolderOverlayLayer extends Container {
     this.folderIconLayoutTargets?.clear?.();
     this.iconBoundsRefreshers?.clear();
     this.openingGhostBoundsRefreshers?.clear();
+  }
+
+  clearFolderIconNodes(reason = FOLDER_OVERLAY_CLEAR_REASON) {
+    for (const node of this.iconNodes.values()) {
+      if (!node || node.destroyed) continue;
+      killAllMotion(node, { reason });
+      destroyDisplayObjectAfterFrame(node, { children: true });
+    }
+    this.iconNodes.clear();
+    this.folderIconLayoutTargets.clear();
+    this.iconBoundsRefreshers.clear();
+    this.openingGhostBoundsRefreshers.clear();
   }
 
   refreshRegisteredIconBounds() {

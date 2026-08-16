@@ -480,6 +480,40 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-close-resize-reopen";
+    const smallState = makeFolderResizeState({
+      folderId,
+      height: 600,
+      width: 900,
+    });
+    layer.update(smallState);
+    motionRuntime.step(1);
+    const itemId = smallState.folderPages[0][0].id;
+    const oldNode = layer.iconNodes.get(`${folderId}:${itemId}`);
+    assert(oldNode, "close-resize setup should create a folder icon node");
+
+    layer.update({ ...smallState, renderedFolder: null });
+    assert(layer.iconNodes.size === 0, "closing the folder should discard stale icon nodes before a later reopen");
+    assert(!layer.pageTrack.children.includes(oldNode), "closing the folder should detach stale icon nodes from the page track");
+
+    const largeState = makeFolderResizeState({
+      folderId,
+      height: 900,
+      width: 1400,
+    });
+    layer.update(largeState);
+    const reopenedNode = layer.iconNodes.get(`${folderId}:${itemId}`);
+    assert(reopenedNode && reopenedNode !== oldNode, "reopening after resize should create a fresh icon node instead of reusing the old coordinate state");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const folderId = "folder-large-icon-frame";
     const page = makeFolderResizeItems("large-icon", 14);
     page[0] = { id: "adobe-after-effects", name: "Adobe After Effects", type: "app" };
