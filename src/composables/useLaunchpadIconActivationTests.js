@@ -22,7 +22,6 @@ const folder = {
   type: "folder",
   name: "Folder",
   childPages: [[folderApp]],
-  children: [folderApp],
 };
 
 function findInFolder(sourcePages, folderId, itemId) {

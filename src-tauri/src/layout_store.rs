@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
@@ -24,19 +24,7 @@ pub(crate) struct SavedManualApp {
     pub(crate) launch_args: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct LayoutRecovery {
-    reason: String,
-    backup_path: String,
-}
-
-pub(crate) struct LoadLayoutResult {
-    pub(crate) layout: Option<Value>,
-    pub(crate) recovery: Option<LayoutRecovery>,
-}
-
-pub(crate) fn load_layout(app: &AppHandle) -> Result<LoadLayoutResult, String> {
+pub(crate) fn load_layout(app: &AppHandle) -> Result<Option<Value>, String> {
     let path = layout_path(app)?;
     load_layout_from_path(&path)
 }
@@ -102,37 +90,18 @@ pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<Sav
     find_manual_app_in_layout_value(layout, app_id, 0)
 }
 
-fn load_layout_from_path(path: &Path) -> Result<LoadLayoutResult, String> {
+fn load_layout_from_path(path: &Path) -> Result<Option<Value>, String> {
     if !path.exists() {
-        return Ok(LoadLayoutResult {
-            layout: None,
-            recovery: None,
-        });
+        return Ok(None);
     }
 
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
-    let layout: Value = match serde_json::from_str(&contents) {
-        Ok(layout) => layout,
-        Err(error) => {
-            return recover_invalid_layout_file(
-                path,
-                format!("Failed to parse layout {}: {error}", path.display()),
-            )
-        }
-    };
-
-    if let Err(error) = validate_layout_value(&layout) {
-        return recover_invalid_layout_file(
-            path,
-            format!("Invalid layout {}: {error}", path.display()),
-        );
-    }
-
-    Ok(LoadLayoutResult {
-        layout: Some(layout),
-        recovery: None,
-    })
+    let layout: Value = serde_json::from_str(&contents)
+        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
+    validate_layout_value(&layout)
+        .map_err(|error| format!("Invalid layout {}: {error}", path.display()))?;
+    Ok(Some(layout))
 }
 
 fn save_layout_to_path(path: &Path, layout: &Value) -> Result<(), String> {
@@ -149,43 +118,6 @@ fn save_layout_to_path(path: &Path, layout: &Value) -> Result<(), String> {
     let contents = serde_json::to_string_pretty(&layout)
         .map_err(|error| format!("Failed to serialize layout: {error}"))?;
     write_file_atomic(path, &contents)
-}
-
-fn recover_invalid_layout_file(path: &Path, reason: String) -> Result<LoadLayoutResult, String> {
-    let backup_path = backup_invalid_layout_file(path)?;
-    log::warn!(
-        target: "layout_store",
-        "{reason}; moved invalid layout to {}",
-        backup_path.display()
-    );
-    Ok(LoadLayoutResult {
-        layout: None,
-        recovery: Some(LayoutRecovery {
-            reason,
-            backup_path: backup_path.to_string_lossy().to_string(),
-        }),
-    })
-}
-
-fn backup_invalid_layout_file(path: &Path) -> Result<PathBuf, String> {
-    let backup_path = invalid_layout_backup_path(path);
-    fs::rename(path, &backup_path).map_err(|error| {
-        format!(
-            "Failed to back up invalid layout {} to {}: {error}",
-            path.display(),
-            backup_path.display()
-        )
-    })?;
-    Ok(backup_path)
-}
-
-fn invalid_layout_backup_path(path: &Path) -> PathBuf {
-    let timestamp = timestamp_nanos();
-    let file_name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("layout.json");
-    path.with_file_name(format!("{file_name}.corrupt.{timestamp}"))
 }
 
 fn validate_layout_value(layout: &Value) -> Result<(), String> {
@@ -279,9 +211,12 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             .get("scanRoots")
             .ok_or_else(|| "layout settings.scanRoots must be an array".to_string())?,
     )?;
-    if let Some(value) = object.get("scanKeywordAllowlist") {
-        validate_string_array(value, "layout settings.scanKeywordAllowlist")?;
-    }
+    validate_string_array(
+        object
+            .get("scanKeywordAllowlist")
+            .ok_or_else(|| "layout settings.scanKeywordAllowlist must be an array".to_string())?,
+        "layout settings.scanKeywordAllowlist",
+    )?;
     validate_string_array(
         object
             .get("scanKeywordBlacklist")
@@ -626,13 +561,10 @@ fn validate_layout_folder_item(
         }
     }
 
-    if let Some(children) = object.get("children") {
-        let children = children
-            .as_array()
-            .ok_or_else(|| format!("layout item {label}.children must be an array"))?;
-        for (child_index, child) in children.iter().enumerate() {
-            validate_layout_folder_child(child, &format!("{label}.children[{child_index}]"))?;
-        }
+    if object.contains_key("children") {
+        return Err(format!(
+            "layout item {label}.children is no longer supported; use childPages"
+        ));
     }
 
     Ok(())
@@ -956,19 +888,6 @@ mod tests {
         item
     }
 
-    fn corrupt_backups(dir: &Path) -> Vec<PathBuf> {
-        fs::read_dir(dir)
-            .expect("read test directory")
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|value| value.to_str())
-                    .is_some_and(|name| name.starts_with("layout.json.corrupt."))
-            })
-            .collect()
-    }
-
     #[test]
     fn write_file_atomic_replaces_existing_contents() {
         let dir = test_dir("atomic-write");
@@ -1051,7 +970,7 @@ mod tests {
     }
 
     #[test]
-    fn load_layout_from_path_rejects_unreleased_v1_without_migration() {
+    fn load_layout_from_path_rejects_unreleased_v1() {
         let dir = test_dir("v1-no-migration");
         let path = dir.join("layout.json");
         let mut old = valid_layout();
@@ -1062,12 +981,13 @@ mod tests {
         )
         .expect("write v1 layout");
 
-        let result = load_layout_from_path(&path).expect("v1 layout should recover explicitly");
+        let error = load_layout_from_path(&path).expect_err("v1 layout should be rejected");
 
-        assert!(result.layout.is_none());
-        assert!(result.recovery.is_some());
-        assert!(!path.exists());
-        assert_eq!(corrupt_backups(&dir).len(), 1);
+        assert!(error.contains("version must be 2"));
+        assert!(
+            path.exists(),
+            "invalid layout should remain for explicit user reset"
+        );
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 
@@ -1143,6 +1063,24 @@ mod tests {
     }
 
     #[test]
+    fn save_layout_to_path_rejects_missing_scan_keyword_allowlist() {
+        let dir = test_dir("missing-scan-keyword-allowlist");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["settings"]
+            .as_object_mut()
+            .expect("settings object")
+            .remove("scanKeywordAllowlist");
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("scanKeywordAllowlist should be required by the canonical contract");
+
+        assert!(error.contains("scanKeywordAllowlist"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
     fn save_layout_to_path_rejects_invalid_scan_keyword_allowlist() {
         let dir = test_dir("invalid-scan-keyword-allowlist");
         let path = dir.join("layout.json");
@@ -1154,23 +1092,6 @@ mod tests {
 
         assert!(error.contains("scanKeywordAllowlist"));
         assert!(!path.exists(), "invalid layout should not be written");
-        fs::remove_dir_all(dir).expect("remove test directory");
-    }
-
-    #[test]
-    fn save_layout_to_path_accepts_legacy_layout_without_scan_keyword_allowlist() {
-        let dir = test_dir("legacy-layout-without-scan-keyword-allowlist");
-        let path = dir.join("layout.json");
-        let mut legacy = valid_layout();
-        legacy["settings"]
-            .as_object_mut()
-            .expect("settings object")
-            .remove("scanKeywordAllowlist");
-
-        save_layout_to_path(&path, &legacy)
-            .expect("legacy layout without scanKeywordAllowlist should remain valid");
-
-        assert!(path.exists());
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 
@@ -1390,11 +1311,39 @@ mod tests {
         let dir = test_dir("invalid-folder-contract");
         let path = dir.join("layout.json");
         let mut invalid = valid_layout();
-        invalid["pages"][0][1].as_object_mut().expect("folder object").remove("childPages");
+        invalid["pages"][0][1]
+            .as_object_mut()
+            .expect("folder object")
+            .remove("childPages");
 
         let error = save_layout_to_path(&path, &invalid).expect_err("childPages should fail");
 
         assert!(error.contains("childPages"));
+        assert!(!path.exists(), "invalid layout should not be written");
+        fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn save_layout_to_path_rejects_legacy_flat_folder_children() {
+        let dir = test_dir("legacy-flat-folder-children");
+        let path = dir.join("layout.json");
+        let mut invalid = valid_layout();
+        invalid["pages"][0][1]["children"] = json!([
+            {
+                "id": "app-c",
+                "type": "manualApp",
+                "name": "App C",
+                "launchTarget": {
+                    "kind": "url",
+                    "path": "https://example.com/c"
+                }
+            }
+        ]);
+
+        let error = save_layout_to_path(&path, &invalid)
+            .expect_err("legacy flat folder children should fail");
+
+        assert!(error.contains("children is no longer supported"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }
@@ -1475,7 +1424,6 @@ mod tests {
 
         let loaded = load_layout_from_path(&path)
             .expect("load valid layout")
-            .layout
             .expect("layout should exist");
 
         assert_eq!(loaded["version"], 2);
@@ -1484,27 +1432,27 @@ mod tests {
     }
 
     #[test]
-    fn load_layout_from_path_backs_up_malformed_json() {
+    fn load_layout_from_path_rejects_malformed_json_without_mutating_file() {
         let dir = test_dir("malformed-load");
         let path = dir.join("layout.json");
         fs::write(&path, "{not-json").expect("write malformed layout");
 
-        let result = load_layout_from_path(&path).expect("malformed layout should recover");
-        let backups = corrupt_backups(&dir);
+        let error = load_layout_from_path(&path).expect_err("malformed layout should fail");
 
-        assert!(result.layout.is_none());
-        assert!(result.recovery.is_some());
-        assert!(!path.exists(), "malformed layout should be moved away");
-        assert_eq!(backups.len(), 1, "malformed layout should be backed up");
+        assert!(error.contains("Failed to parse layout"));
+        assert!(
+            path.exists(),
+            "malformed layout should remain for explicit user reset"
+        );
         assert_eq!(
-            fs::read_to_string(&backups[0]).expect("read backup"),
+            fs::read_to_string(&path).expect("read malformed layout"),
             "{not-json"
         );
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 
     #[test]
-    fn load_layout_from_path_backs_up_invalid_schema() {
+    fn load_layout_from_path_rejects_invalid_schema_without_mutating_file() {
         let dir = test_dir("invalid-load");
         let path = dir.join("layout.json");
         fs::write(
@@ -1526,13 +1474,13 @@ mod tests {
         )
         .expect("write invalid layout");
 
-        let result = load_layout_from_path(&path).expect("invalid layout should recover");
-        let backups = corrupt_backups(&dir);
+        let error = load_layout_from_path(&path).expect_err("invalid layout should fail");
 
-        assert!(result.layout.is_none());
-        assert!(result.recovery.is_some());
-        assert!(!path.exists(), "invalid layout should be moved away");
-        assert_eq!(backups.len(), 1, "invalid layout should be backed up");
+        assert!(error.contains("Invalid layout"));
+        assert!(
+            path.exists(),
+            "invalid layout should remain for explicit user reset"
+        );
         fs::remove_dir_all(dir).expect("remove test directory");
     }
 }

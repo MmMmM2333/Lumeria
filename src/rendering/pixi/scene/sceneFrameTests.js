@@ -1,8 +1,8 @@
+import { assertDesktopSceneFrame, makeDesktopSceneFrame } from "../../sceneFrame.js";
 import {
-  makeDesktopSceneFrame,
-  makeSceneEvent,
-  readDesktopSceneFrameValue,
-} from "../../sceneFrame.js";
+  assertSceneEvent,
+  makeIconPointerdownEvent,
+} from "../../sceneEvents.js";
 
 export function runSceneFrameTests() {
   const assert = (condition, message) => {
@@ -21,9 +21,21 @@ export function runSceneFrameTests() {
   assert(frame.visual.desktopVisualAlpha === 0.7, "scene frame should group visual state");
   assert(frame.interaction.focusedIcon.id === "app-1", "scene frame should group interaction state");
   assert(frame.runtime.iconBoundsRegistry.name === "registry", "scene frame should group runtime services");
-  assert(readDesktopSceneFrameValue(frame, "desktopVisualAlpha") === 0.7, "frame value lookup should resolve grouped values");
-  assert(readDesktopSceneFrameValue(frame, "missing") === undefined, "frame value lookup should not invent missing values");
+  assertDesktopSceneFrame(frame);
 
-  const event = makeSceneEvent("icon-pointerdown", { id: "app-1", button: 0 });
-  assert(event.type === "icon-pointerdown" && event.id === "app-1" && event.button === 0, "scene events should carry semantic payloads");
+  const event = makeIconPointerdownEvent(
+    { type: "pointerdown" },
+    { id: "app-1" },
+    "desktop"
+  );
+  assertSceneEvent(event);
+  assert(event.type === "icon-pointerdown" && event.item.id === "app-1" && event.source === "desktop", "scene events should carry semantic payloads");
+
+  let rejectedUnknownEvent = false;
+  try {
+    assertSceneEvent({ type: "unknown-event" });
+  } catch {
+    rejectedUnknownEvent = true;
+  }
+  assert(rejectedUnknownEvent, "unknown scene events should fail explicitly");
 }

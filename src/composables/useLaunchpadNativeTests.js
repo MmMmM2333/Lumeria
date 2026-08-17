@@ -57,7 +57,6 @@ function canonicalizeLayoutSnapshot(value) {
   const snapshot = structuredClone(value);
   const visit = (item) => {
     if (!item || typeof item !== "object") return;
-    delete item.children;
     for (const page of item.childPages || []) {
       for (const child of page || []) visit(child);
     }
@@ -82,6 +81,36 @@ function makeScanStats(overrides = {}) {
     appsFound: 0,
     limitReached: false,
     ...overrides,
+  };
+}
+
+// Native load mocks below intentionally focus on one setting at a time. Keep
+// those fixtures on the current document contract without adding a production
+// migration path; the real Rust loader already supplies/validates these fields.
+const TEST_LAYOUT_SETTINGS_DEFAULTS = {
+  gridRows: 4,
+  gridCols: 6,
+  folderRows: 3,
+  folderCols: 4,
+  iconSize: 72,
+  textless: false,
+  hiddenAppIds: [],
+  scanRoots: [],
+  scanKeywordAllowlist: [],
+  scanKeywordBlacklist: [],
+  scanAppBlacklist: [],
+  showMissingLaunchTargetBadge: true,
+  mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
+};
+
+function completeLayoutFixture(layout) {
+  if (!layout) return layout;
+  return {
+    ...layout,
+    settings: {
+      ...TEST_LAYOUT_SETTINGS_DEFAULTS,
+      ...(layout.settings || {}),
+    },
   };
 }
 
@@ -158,7 +187,6 @@ function makeOptions(overrides = {}) {
     commitFolderPageIndex: (value) => calls.commitFolderPageIndex.push(value),
     commitPageIndex: (value) => calls.commitPageIndex.push(value),
     commitSearchPageIndex: (value) => calls.commitSearchPageIndex.push(value),
-    handleLayoutRecovered: () => {},
     showLayoutLoadFailed: () => {},
     showLayoutLoadRecovered: () => {},
     showLayoutSaveFailed: () => {},
@@ -227,7 +255,6 @@ function makeOptions(overrides = {}) {
     closeDesktop: (...args) => options.closeDesktop(...args),
     closeSettingsPanel: (...args) => options.closeSettingsPanel(...args),
     focusDesktopSurface: (...args) => options.focusDesktopSurface?.(...args),
-    handleLayoutRecovered: (...args) => options.handleLayoutRecovered(...args),
     hasRenderedFolder: () => Boolean(options.renderedFolder.value),
     isDesktopOpen: () => options.isDesktopOpen.value,
     isSettingsPanelOpen: () => options.isSettingsPanelOpen.value,
@@ -295,7 +322,10 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       if (command === "scan_apps" && !bridgeOverrides.passScanAppsCommand) {
         return { apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats() };
       }
-      return invoke(command, args);
+      const result = invoke(command, args);
+      return command === "load_layout"
+        ? Promise.resolve(result).then(completeLayoutFixture)
+        : result;
     },
     listen: bridgeOverrides.listen || (async () => () => {}),
   });
@@ -2258,14 +2288,14 @@ export async function runLaunchpadNativeTests() {
     const native = createNative(options);
 
     const registerPromise = native.registerNativeEventListeners();
-    assert(pendingNativeListeners.length === 6, "native event listener registration should request all listeners");
+    assert(pendingNativeListeners.length === 5, "native event listener registration should request all listeners");
     native.clearNativeEventListeners();
     for (const pending of pendingNativeListeners) {
       pending.resolve(() => staleUnlistenEvents.push(pending.eventName));
     }
     await registerPromise;
 
-    assert(staleUnlistenEvents.length === 6, "late native listener registrations should be immediately unlistened after cleanup");
+    assert(staleUnlistenEvents.length === 5, "late native listener registrations should be immediately unlistened after cleanup");
   }, {
     listen: (eventName) => new Promise((resolve) => {
       pendingNativeListeners.push({ eventName, resolve });

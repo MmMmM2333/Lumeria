@@ -22,7 +22,6 @@ const folder = {
   type: "folder",
   name: "Folder",
   childPages: [[appB]],
-  children: [appB],
 };
 
 function createPageCommands(overrides = {}) {
@@ -182,7 +181,6 @@ export function runLaunchpadPageCommandsTests() {
     type: "folder",
     name: "Work",
     childPages: [[appB, appD]],
-    children: [appB, appD],
   };
   const dissolve = createPageCommands({
     openFolderId: "folder-dissolve",

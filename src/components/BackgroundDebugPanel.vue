@@ -327,9 +327,6 @@
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutLoadRecovered">
               {{ t("debug.notice.actions.loadRecovered") }}
             </button>
-            <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugLayoutRecovered">
-              {{ t("debug.notice.actions.layoutRecovered") }}
-            </button>
             <button type="button" class="background-debug-button" :disabled="!canDebugNotice" @click="showDebugNoticeStack">
               {{ t("debug.notice.actions.stackSample") }}
             </button>
@@ -819,7 +816,6 @@ const canDebugNotice = computed(() => Boolean(
     && props.dialogState?.showLayoutSaveRecovered
     && props.dialogState?.showLayoutLoadFailed
     && props.dialogState?.showLayoutLoadRecovered
-    && props.dialogState?.handleLayoutRecovered
 ));
 const canDebugStatusDialog = computed(() => Boolean(props.dialogState?.openWarningDialog));
 const debugTabCount = computed(() => 3
@@ -877,10 +873,6 @@ const noticeDebugRows = computed(() => [
   {
     label: t("debug.notice.transient"),
     value: props.dialogState?.transientNotice?.value?.title || t("debug.common.none"),
-  },
-  {
-    label: t("debug.notice.recovery"),
-    value: props.dialogState?.layoutRecoveryNotice?.value?.title || t("debug.common.none"),
   },
 ]);
 const statusDialogDebugSamples = computed(() => [
@@ -2502,22 +2494,12 @@ function showDebugLayoutLoadRecovered() {
   props.dialogState?.showLayoutLoadRecovered?.();
 }
 
-function showDebugLayoutRecovered() {
-  props.dialogState?.handleLayoutRecovered?.({
-    payload: {
-      backupPath: "C:/Users/233/AppData/Roaming/com.lumeria.app/layout.corrupt.backup.json",
-    },
-  });
-}
-
 function showDebugNoticeStack() {
-  showDebugLayoutRecovered();
   showDebugLayoutSaveFailed();
 }
 
 function clearDebugNotices() {
   props.dialogState?.closeWarningDialog?.();
-  props.dialogState?.closeLayoutRecoveryNotice?.();
   props.dialogState?.closeTransientNotice?.();
 }
 

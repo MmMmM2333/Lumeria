@@ -285,7 +285,6 @@ export function useLaunchpadNative(options) {
   let unlistenOpenDesktopEvent = null;
   let unlistenSettingsEvent = null;
   let unlistenToggleDesktopEvent = null;
-  let unlistenLayoutRecoveredEvent = null;
   let unlistenQuitRequestedEvent = null;
   let quitRequestInProgress = false;
 
@@ -299,7 +298,6 @@ export function useLaunchpadNative(options) {
       "closeDesktop",
       "closeSettingsPanel",
       "focusDesktopSurface",
-      "handleLayoutRecovered",
       "hasRenderedFolder",
       "isDesktopOpen",
       "isSettingsPanelOpen",
@@ -825,13 +823,6 @@ export function useLaunchpadNative(options) {
         .catch((error) => {
           console.error("Failed to listen for native settings event", error);
         }),
-      platform.listen("lumeria-layout-recovered", handlers.handleLayoutRecovered)
-        .then(keepUnlisten((unlisten) => {
-          unlistenLayoutRecoveredEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for layout recovery event", error);
-        }),
       platform.listen("lumeria-quit-requested", quitFromNativeRequest)
         .then(keepUnlisten((unlisten) => {
           unlistenQuitRequestedEvent = unlisten;
@@ -855,8 +846,6 @@ export function useLaunchpadNative(options) {
     unlistenCloseDesktopEvent = null;
     unlistenSettingsEvent?.();
     unlistenSettingsEvent = null;
-    unlistenLayoutRecoveredEvent?.();
-    unlistenLayoutRecoveredEvent = null;
     unlistenQuitRequestedEvent?.();
     unlistenQuitRequestedEvent = null;
   }

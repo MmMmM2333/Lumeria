@@ -2,25 +2,40 @@
  * Renderer-neutral input frame. Values are owned by the application; the
  * renderer only reads them and emits semantic SceneEvents.
  *
+ * The groups are deliberately explicit. A renderer consumer must access a
+ * value through its owning group instead of relying on a flat-key lookup.
+ *
  * @typedef {Object} DesktopSceneFrame
- * @property {Object} viewport
- * @property {Object} visual
- * @property {Object} interaction
- * @property {Object} folder
- * @property {Object} runtime
- * @property {Object} diagnostics
+ * @property {DesktopSceneFrameViewport} viewport
+ * @property {DesktopSceneFrameVisual} visual
+ * @property {DesktopSceneFrameInteraction} interaction
+ * @property {DesktopSceneFrameFolder} folder
+ * @property {DesktopSceneFrameRuntime} runtime
+ * @property {DesktopSceneFrameDiagnostics} diagnostics
  */
 
-/** @typedef {{type: string} & Record<string, unknown>} SceneEvent */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameViewport */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameVisual */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameInteraction */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameFolder */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameRuntime */
+/** @typedef {Record<string, unknown>} DesktopSceneFrameDiagnostics */
 
-const FRAME_GROUPS = ["viewport", "visual", "interaction", "folder", "runtime", "diagnostics"];
+const FRAME_GROUPS = Object.freeze([
+  "viewport",
+  "visual",
+  "interaction",
+  "folder",
+  "runtime",
+  "diagnostics",
+]);
 
 /**
  * @param {Record<string, unknown>} input
  * @returns {DesktopSceneFrame}
  */
 export function makeDesktopSceneFrame(input = {}) {
-  return {
+  const frame = {
     viewport: {
       activePageIndex: input.activePageIndex,
       activePages: input.activePages,
@@ -79,27 +94,26 @@ export function makeDesktopSceneFrame(input = {}) {
       singleStageDiagnosticsOptions: input.singleStageDiagnosticsOptions,
     },
   };
+  assertDesktopSceneFrame(frame);
+  return frame;
 }
 
 /**
- * @param {DesktopSceneFrame | null | undefined} frame
- * @param {string} key
- * @returns {unknown}
+ * Validate the structural boundary shared by the application and renderer.
+ * This intentionally checks only the frame shape; individual runtime values
+ * remain owned by their domain/platform adapters.
+ *
+ * @param {unknown} frame
+ * @returns {void}
  */
-export function readDesktopSceneFrameValue(frame, key) {
+export function assertDesktopSceneFrame(frame) {
+  if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+    throw new TypeError("DesktopSceneFrame must be an object");
+  }
   for (const group of FRAME_GROUPS) {
-    if (frame?.[group] && Object.prototype.hasOwnProperty.call(frame[group], key)) {
-      return frame[group][key];
+    const value = frame[group];
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError(`DesktopSceneFrame.${group} must be an object`);
     }
   }
-  return undefined;
-}
-
-/**
- * @param {string} type
- * @param {Record<string, unknown>} payload
- * @returns {SceneEvent & Record<string, unknown>}
- */
-export function makeSceneEvent(type, payload = {}) {
-  return { type, ...payload };
 }

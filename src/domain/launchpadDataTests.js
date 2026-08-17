@@ -326,7 +326,6 @@ export function runLaunchpadDataTests() {
           id: "legacy-folder",
           type: "folder",
           name: "Legacy",
-          childPages: [[{ id: "b", type: "catalogApp" }]],
           children: [{ id: "c", type: "catalogApp" }],
         },
       ]],
@@ -335,5 +334,5 @@ export function runLaunchpadDataTests() {
     []
   );
   assert(issueResult.issues.some((issue) => issue.kind === "missing-catalog-item"), "missing catalog items should be reported instead of silently disappearing");
-  assert(issueResult.issues.some((issue) => issue.kind === "folder-child-representation-mismatch"), "mismatched legacy folder representations should be reported");
+  assert(issueResult.issues.some((issue) => issue.kind === "unsupported-folder-children"), "legacy flat folder children should be rejected");
 }

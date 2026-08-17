@@ -47,30 +47,13 @@
   </div>
 
   <div
-    v-if="state.layoutRecoveryNotice.value || state.transientNotice.value"
+    v-if="state.transientNotice.value"
     class="launchpad-notice-stack"
     @click.stop
     @contextmenu.stop
     @pointerdown.stop
     @wheel.stop
   >
-    <section
-      v-if="state.layoutRecoveryNotice.value"
-      :class="['launchpad-notice-card', `launchpad-notice-card-${normalizeDialogIntent(state.layoutRecoveryNotice.value.intent || 'warning')}`]"
-      role="status"
-      aria-live="polite"
-    >
-      <component :is="getNoticeIcon(state.layoutRecoveryNotice.value.intent || 'warning')" class="launchpad-notice-icon" aria-hidden="true" />
-      <span class="launchpad-notice-copy">
-        <strong>{{ state.layoutRecoveryNotice.value.title }}</strong>
-        <span>{{ state.layoutRecoveryNotice.value.message }}</span>
-        <small v-if="state.layoutRecoveryNotice.value.backupPath">{{ state.layoutRecoveryNotice.value.backupPath }}</small>
-      </span>
-      <SettingsFluentButton appearance="subtle" icon-only class="launchpad-notice-dismiss-button" type="button" :aria-label="t('dialogs.notices.dismissRecovery')" @click="state.closeLayoutRecoveryNotice">
-        <DismissIcon class="launchpad-notice-dismiss-icon" />
-      </SettingsFluentButton>
-    </section>
-
     <section
       v-if="state.transientNotice.value"
       :class="['launchpad-notice-card', `launchpad-notice-card-${normalizeDialogIntent(state.transientNotice.value.intent || 'info')}`]"

@@ -1,8 +1,10 @@
 import {
   applyAppLocalePreference,
   getAppLocaleState,
+  loadLayout,
   normalizeScanAppsResult,
   openDeveloperConsole,
+  saveLayout,
   setLaunchpadApiBridgeForTests,
 } from "./launchpadApi.js";
 
@@ -103,9 +105,37 @@ export async function runLaunchpadApiTests() {
   );
   assert(normalizedResult.stats === validStats, "complete scan stats should pass through unchanged");
 
+  const validLayout = {
+    version: 2,
+    pages: [[{
+      id: "api-manual",
+      type: "manualApp",
+      name: "API Manual",
+      launchTarget: { kind: "shortcut", path: "C:/Apps/API Manual.lnk" },
+    }]],
+    settings: {
+      gridRows: 4,
+      gridCols: 6,
+      folderRows: 3,
+      folderCols: 4,
+      iconSize: 72,
+      textless: false,
+      hiddenAppIds: [],
+      scanRoots: [],
+      scanKeywordAllowlist: [],
+      scanKeywordBlacklist: [],
+      scanAppBlacklist: [],
+      showMissingLaunchTargetBadge: true,
+      mainWindowShortcut: "control+alt+KeyL",
+    },
+  };
+  let loadedLayout = validLayout;
+
   setLaunchpadApiBridgeForTests({
     invoke: async (command, args) => {
       invocations.push({ args, command });
+      if (command === "load_layout") return loadedLayout;
+      if (command === "save_layout") return null;
       if (command === "get_app_locale_state") return nativeLocaleState;
       if (command === "apply_app_locale_preference") {
         return { ...nativeLocaleState, preference: args.preference, resolvedLocale: args.preference };
@@ -125,6 +155,28 @@ export async function runLaunchpadApiTests() {
       invocations[2].command === "apply_app_locale_preference" && invocations[2].args.preference === "zh-CN",
       "locale apply should pass the preference through the dedicated native command"
     );
+    assert(await loadLayout() === validLayout, "layout load should return the validated canonical document");
+    await saveLayout(validLayout);
+    assert(invocations[3].command === "load_layout", "layout load should use the native layout command");
+    assert(invocations[4].command === "save_layout", "layout save should use the native layout command");
+
+    loadedLayout = structuredClone(validLayout);
+    loadedLayout.pages[0][0].children = [];
+    let invalidLoadError = null;
+    try {
+      await loadLayout();
+    } catch (error) {
+      invalidLoadError = error;
+    }
+    assert(invalidLoadError instanceof TypeError, "layout load should reject legacy persisted fields");
+
+    let invalidSaveError = null;
+    try {
+      await saveLayout(loadedLayout);
+    } catch (error) {
+      invalidSaveError = error;
+    }
+    assert(invalidSaveError instanceof TypeError, "layout save should reject legacy persisted fields before IPC");
   } finally {
     setLaunchpadApiBridgeForTests(null);
   }

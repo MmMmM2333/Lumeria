@@ -899,7 +899,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("x"), app("y")], [app("e"), app("f")]],
-      children: [app("x"), app("y"), app("e"), app("f")],
       id: "folder-source",
       name: "folder-source",
       type: "folder",
@@ -958,7 +957,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("border-edge-a")], [app("border-edge-b")]],
-      children: [app("border-edge-a"), app("border-edge-b")],
       id: "folder-border-edge",
       name: "folder-border-edge",
       type: "folder",
@@ -1009,7 +1007,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("offset-a")], [app("offset-b")]],
-      children: [app("offset-a"), app("offset-b")],
       id: "folder-offset-edge",
       name: "folder-offset-edge",
       type: "folder",
@@ -1051,7 +1048,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("pre-dwell-a"), app("pre-dwell-b")], [app("pre-dwell-c")]],
-      children: [app("pre-dwell-a"), app("pre-dwell-b"), app("pre-dwell-c")],
       id: "folder-pre-dwell-release",
       name: "folder-pre-dwell-release",
       type: "folder",
@@ -1090,7 +1086,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("x")], [app("e"), app("f")]],
-      children: [app("x"), app("e"), app("f")],
       id: "folder-cancel",
       name: "folder-cancel",
       type: "folder",
@@ -1124,7 +1119,6 @@ export async function runLaunchpadDragTests() {
   await withMockPointerEnvironment(async ({ timers }) => {
     const sourceFolder = {
       childPages: [[app("e")], [app("f"), app("g")]],
-      children: [app("e"), app("f"), app("g")],
       id: "folder-rebase",
       name: "folder-rebase",
       type: "folder",

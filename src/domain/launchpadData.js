@@ -1,4 +1,4 @@
-import { chunkIntoPages, clamp } from "./launchpadLayout.js";
+import { clamp } from "./launchpadLayout.js";
 import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
   normalizeMainWindowShortcut,
@@ -401,23 +401,23 @@ export function createLaunchpadDataHelpers(options) {
   }
 
   function restoreFolder(folder, catalog, usedAppIds, issues, path) {
-    const hasChildPages = Array.isArray(folder?.childPages);
-    const hasLegacyChildren = Array.isArray(folder?.children);
-    const sourcePages = hasChildPages
-      ? folder.childPages
-      : hasLegacyChildren
-        ? chunkIntoPages(folder.children, getFolderPageSize())
-        : [];
-    if (!hasChildPages && hasLegacyChildren) {
-      addReconcileIssue(issues, { id: String(folder?.id || ""), kind: "legacy-folder-children", path });
+    if (Object.prototype.hasOwnProperty.call(folder || {}, "children")) {
+      addReconcileIssue(issues, {
+        id: String(folder?.id || ""),
+        kind: "unsupported-folder-children",
+        path,
+      });
+      return null;
     }
-    if (hasChildPages && hasLegacyChildren) {
-      const pageIds = sourcePages.flat().filter(Boolean).map((item) => String(item?.id || ""));
-      const childIds = folder.children.filter(Boolean).map((item) => String(item?.id || ""));
-      if (JSON.stringify(pageIds) !== JSON.stringify(childIds)) {
-        addReconcileIssue(issues, { id: String(folder?.id || ""), kind: "folder-child-representation-mismatch", path });
-      }
+    if (!Array.isArray(folder?.childPages)) {
+      addReconcileIssue(issues, {
+        id: String(folder?.id || ""),
+        kind: "invalid-folder-child-pages",
+        path,
+      });
+      return null;
     }
+    const sourcePages = folder.childPages;
     const childPages = sourcePages
       .map((page, pageIndex) =>
         (page || [])
@@ -499,9 +499,13 @@ export function createLaunchpadDataHelpers(options) {
 
   function makeLayoutItem(item) {
     if (item.type === "folder") {
-      const sourcePages = Array.isArray(item.childPages)
-        ? item.childPages
-        : getFolderChildPages(item, getFolderPageSize());
+      if (Object.prototype.hasOwnProperty.call(item, "children")) {
+        throw new TypeError(`Folder ${String(item.id || "")} contains unsupported children; use childPages`);
+      }
+      if (!Array.isArray(item.childPages)) {
+        throw new TypeError(`Folder ${String(item.id || "")} must contain childPages`);
+      }
+      const sourcePages = item.childPages;
       const childPages = sourcePages.map((page) => (page || []).filter(Boolean).map(makeLayoutItem));
       return {
         id: item.id,

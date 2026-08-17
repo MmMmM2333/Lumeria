@@ -45,13 +45,13 @@ export function runLaunchpadHelperTests(context) {
   const folderInsert = insertAppIntoFolder([[a, folder]], "folder", c, 0, 0, 2);
   assert(getFolderChildPages(findFolder(folderInsert, "folder")?.item, 2)[0][0].id === "c", "insertAppIntoFolder should insert app at requested page index");
   assert(countItemOccurrences(folderInsert, "c") === 1, "insertAppIntoFolder should not duplicate app");
-  const searchApps = collectAppsFromPages([[a, { ...folder, childPages: [[b]], children: [b] }]]);
+  const searchApps = collectAppsFromPages([[a, { ...folder, childPages: [[b]] }]]);
   assert(searchApps.length === 2 && searchApps.every((item) => item.type === "app"), "search collection should flatten apps and exclude folders");
   const folderSlots = insertAppIntoFolder([[{ ...folder, childPages: [[b, null, c]] }]], "folder", a, 0, 1, 4);
   assert(getFolderChildPages(findFolder(folderSlots, "folder")?.item, 4)[0].map((item) => item.id).join("") === "bac", "insertAppIntoFolder should compact a folder page before sorting");
-  const fullFolder = { id: "full-folder", type: "folder", name: "Full", childPages: [[a, b]], children: [a, b] };
+  const fullFolder = { id: "full-folder", type: "folder", name: "Full", childPages: [[a, b]] };
   assert(getVisibleFolderPage(getFolderChildPages(fullFolder, 2)[0]).length === 2, "folder page visibility should honor the configured page size");
-  const folderLaterPage = insertAppIntoFolder([[{ ...folder, childPages: [[b], []], children: [b] }]], "folder", c, 1, 3, 2);
+  const folderLaterPage = insertAppIntoFolder([[{ ...folder, childPages: [[b], []] }]], "folder", c, 1, 3, 2);
   const laterPages = getFolderChildPages(findFolder(folderLaterPage, "folder")?.item, 2);
   assert(laterPages.length === 2 && laterPages[0].length === 1 && laterPages[1][0].id === "c", "folder pages should allow trailing empty space before later pages like desktop pages");
   assert(getFolderPreviewSlots({ ...folder, childPages: [[a, b, c]] }, 12).length === 9, "folder preview should always render 3x3 slots");
@@ -60,7 +60,7 @@ export function runLaunchpadHelperTests(context) {
 
   const dissolved = dissolveFolder([[
     a,
-    { id: "folder-dissolve", type: "folder", name: "Dissolve", childPages: [[b], [c]], children: [b, c] },
+    { id: "folder-dissolve", type: "folder", name: "Dissolve", childPages: [[b], [c]] },
     d,
   ], [e]], "folder-dissolve", 3);
   assert(dissolved.map((page) => page.map((item) => item.id).join("")).join("|") === "abc|de", "dissolving a folder should replace it with children and cascade overflow in row-major order");

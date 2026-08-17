@@ -765,7 +765,7 @@ function makeEntryDebugSignature(entry) {
   const state = { ...(entry.nodeState || {}) };
   delete state.item;
   const item = entry.item || entry.nodeState?.item || null;
-  const childSource = Array.isArray(item?.childPages) ? item.childPages[0] || [] : item?.children || [];
+  const childSource = Array.isArray(item?.childPages) ? item.childPages[0] || [] : [];
   return JSON.stringify(stableDebugValue({
     item: {
       ...summarizeItem(item),

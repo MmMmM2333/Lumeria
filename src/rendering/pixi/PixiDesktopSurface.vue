@@ -3,8 +3,8 @@
     ref="mainRef"
     class="desktop-main pixi-desktop-main pixi-desktop-main-root-stage"
     tabindex="-1"
-    :style="props.pageGridMeasureStyle"
-    @focus="emit('desktop-focus')"
+    :style="viewportFrame.pageGridMeasureStyle"
+    @focus="emitDesktopFocus"
   >
     <Teleport to="body">
       <div
@@ -15,8 +15,8 @@
         ]"
         :style="rootStageHostStyle"
         @contextmenu="requestContextMenuAtPointer"
-        @pointerdown="emit('surface-pointerdown', $event)"
-        @wheel="emit('wheel', $event)"
+        @pointerdown="emitSurfacePointerdown($event)"
+        @wheel="emitWheel($event)"
       />
       <div
         v-if="shouldRenderSingleStageFolderDomControls"
@@ -28,7 +28,7 @@
           ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
           name="pixiSingleStageFolderName"
-          :value="props.folderOverlayState.renderedFolder.value.name"
+          :value="folderFrame.folderOverlayState.renderedFolder.value.name"
           :disabled="isSingleStageFolderInputDisabled"
           :style="singleStageFolderNameInputStyle"
           maxlength="32"
@@ -76,7 +76,20 @@ import {
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
 import { createResizeSettleScheduler } from "./resizeSettleScheduler.js";
-import { makeSceneEvent, readDesktopSceneFrameValue } from "./scene/sceneFrame.js";
+import { assertDesktopSceneFrame } from "../sceneFrame.js";
+import {
+  assertSceneEvent,
+  makeChooseAppIconEvent,
+  makeContextMenuRequestEvent,
+  makeDesktopFocusEvent,
+  makeGroupReleaseCompleteEvent,
+  makeIconPointerdownEvent,
+  makeInternalActivityEvent,
+  makeRemoveAppEvent,
+  makeResetAppIconEvent,
+  makeSurfacePointerdownEvent,
+  makeWheelEvent,
+} from "../sceneEvents.js";
 import {
   getFolderHandoffDebugOptions,
   rectDelta as getDebugRectDelta,
@@ -96,15 +109,19 @@ const VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS = 1500;
 const RESIZE_SETTLE_FRAMES = 3;
 const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
-const rawProps = defineProps({
+const props = defineProps({
   sceneFrame: { type: Object, required: true },
 });
-const props = new Proxy(rawProps, {
-  get(target, key) {
-    if (key === "sceneFrame") return target.sceneFrame;
-    return readDesktopSceneFrameValue(target.sceneFrame, key);
-  },
+const sceneFrame = computed(() => {
+  assertDesktopSceneFrame(props.sceneFrame);
+  return props.sceneFrame;
 });
+const viewportFrame = computed(() => sceneFrame.value.viewport);
+const visualFrame = computed(() => sceneFrame.value.visual);
+const interactionFrame = computed(() => sceneFrame.value.interaction);
+const folderFrame = computed(() => sceneFrame.value.folder);
+const runtimeFrame = computed(() => sceneFrame.value.runtime);
+const diagnosticsFrame = computed(() => sceneFrame.value.diagnostics);
 const localization = useLocalization();
 const { t } = localization;
 const pixiRenderCopy = computed(() => ({
@@ -113,24 +130,22 @@ const pixiRenderCopy = computed(() => ({
 }));
 
 const emitSceneEvent = defineEmits(["scene-event"]);
-function emit(name, ...args) {
-  const event = {
-    "choose-app-icon": makeSceneEvent("choose-app-icon", { itemId: args[0] }),
-    "context-menu-request": makeSceneEvent("context-menu-request", { event: args[0] }),
-    "desktop-focus": makeSceneEvent("desktop-focus"),
-    "group-release-complete": makeSceneEvent("group-release-complete", { payload: args[0] }),
-    "internal-activity": makeSceneEvent("internal-activity", { active: args[0], folderId: args[1] || null }),
-    "pointerdown-icon": makeSceneEvent("icon-pointerdown", { event: args[0], item: args[1], source: args[2] }),
-    "remove-app": makeSceneEvent("remove-app", { itemId: args[0] }),
-    "reset-app-icon": makeSceneEvent("reset-app-icon", { itemId: args[0] }),
-    "surface-pointerdown": makeSceneEvent("surface-pointerdown", { event: args[0] }),
-    "wheel": makeSceneEvent("wheel", { event: args[0] }),
-  }[name];
-  if (event) emitSceneEvent("scene-event", event);
+function publishSceneEvent(event) {
+  emitSceneEvent("scene-event", assertSceneEvent(event));
 }
+function emitChooseAppIcon(itemId) { publishSceneEvent(makeChooseAppIconEvent(itemId)); }
+function emitContextMenuRequest(event) { publishSceneEvent(makeContextMenuRequestEvent(event)); }
+function emitDesktopFocus() { publishSceneEvent(makeDesktopFocusEvent()); }
+function emitGroupReleaseComplete(payload) { publishSceneEvent(makeGroupReleaseCompleteEvent(payload)); }
+function emitIconPointerdown(event, item, source) { publishSceneEvent(makeIconPointerdownEvent(event, item, source)); }
+function emitInternalActivity(active, folderId) { publishSceneEvent(makeInternalActivityEvent(active, folderId)); }
+function emitRemoveApp(itemId) { publishSceneEvent(makeRemoveAppEvent(itemId)); }
+function emitResetAppIcon(itemId) { publishSceneEvent(makeResetAppIconEvent(itemId)); }
+function emitSurfacePointerdown(event) { publishSceneEvent(makeSurfacePointerdownEvent(event)); }
+function emitWheel(event) { publishSceneEvent(makeWheelEvent(event)); }
 
 function getResolvedSingleStageDiagnosticsOptions() {
-  const options = props.singleStageDiagnosticsOptions;
+  const options = diagnosticsFrame.value.singleStageDiagnosticsOptions;
   if (options && typeof options === "object") {
     if ("value" in options) return getSingleStageDiagnosticsOptions(options.value);
   }
@@ -175,22 +190,22 @@ const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
 const isSingleStageFolderGhostTransitionActive = computed(() => Boolean(
-  props.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
-  props.folderOverlayState?.isFolderCloseIconAnimationActive?.value
+  folderFrame.value.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
+  folderFrame.value.folderOverlayState?.isFolderCloseIconAnimationActive?.value
 ));
 
 const isSingleStageFolderZoomFadeClosing = computed(() => Boolean(
-  props.folderOverlayState?.isFolderZoomFadeClosing?.value
+  folderFrame.value.folderOverlayState?.isFolderZoomFadeClosing?.value
 ));
 
 const isSingleStageFolderClosing = computed(() => Boolean(
-  props.folderOverlayState?.isFolderClosing?.value ||
-  props.folderOverlayState?.isFolderAppLaunchClosing?.value ||
+  folderFrame.value.folderOverlayState?.isFolderClosing?.value ||
+  folderFrame.value.folderOverlayState?.isFolderAppLaunchClosing?.value ||
   isSingleStageFolderZoomFadeClosing.value
 ));
 
 const shouldRenderSingleStageFolderDomControls = computed(() => Boolean(
-  props.folderOverlayState?.renderedFolder?.value
+  folderFrame.value.folderOverlayState?.renderedFolder?.value
 ));
 
 const isSingleStageFolderInputDisabled = computed(() => Boolean(
@@ -200,15 +215,15 @@ const isSingleStageFolderInputDisabled = computed(() => Boolean(
 
 const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
   isSingleStageFolderClosing.value ||
-  props.folderOverlayState?.isFolderOpenFrameGhostPending?.value
+  folderFrame.value.folderOverlayState?.isFolderOpenFrameGhostPending?.value
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
-  props.groupDragState?.key
+  interactionFrame.value.groupDragState?.key
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
-  const folderId = props.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  const folderId = folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   const frame = isSingleStageFolderTitleFrameCurrent(singleStageFolderTitleFrame.value, folderId)
     ? singleStageFolderTitleFrame.value
     : null;
@@ -222,7 +237,7 @@ const singleStageFolderNameInputStyle = computed(() => {
 });
 
 function shouldShowSingleStageFolderPageDots() {
-  const state = props.folderOverlayState;
+  const state = folderFrame.value.folderOverlayState;
   return Boolean(
     shouldRenderSingleStageFolderDomControls.value &&
     state?.renderedFolder?.value &&
@@ -232,7 +247,7 @@ function shouldShowSingleStageFolderPageDots() {
 }
 
 function handleSingleStageFolderNameInput(event) {
-  const state = props.folderOverlayState;
+  const state = folderFrame.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
   const nextName = String(event?.target?.value || "").slice(0, 32);
@@ -241,7 +256,7 @@ function handleSingleStageFolderNameInput(event) {
 }
 
 function restoreSingleStageEmptyFolderName(event) {
-  const state = props.folderOverlayState;
+  const state = folderFrame.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
   const input = event?.target;
@@ -255,7 +270,7 @@ function restoreSingleStageEmptyFolderName(event) {
 }
 
 watch(
-  () => props.folderOverlayState?.renderedFolder?.value?.id ?? null,
+  () => folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
   () => {
     singleStageFolderTitleFrame.value = null;
   },
@@ -264,27 +279,27 @@ watch(
 
 watch(
   [
-    () => props.folderOverlayState?.folderRenameRequest?.value?.token ?? null,
-    () => props.folderOverlayState?.openFolderId?.value ?? null,
-    () => props.folderOverlayState?.renderedFolder?.value?.id ?? null,
+    () => folderFrame.value.folderOverlayState?.folderRenameRequest?.value?.token ?? null,
+    () => folderFrame.value.folderOverlayState?.openFolderId?.value ?? null,
+    () => folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
     () => isSingleStageFolderInputDisabled.value,
   ],
   async ([token, openFolderId, renderedFolderId, inputDisabled]) => {
-    const request = props.folderOverlayState?.folderRenameRequest?.value;
+    const request = folderFrame.value.folderOverlayState?.folderRenameRequest?.value;
     if (!token || !request) return;
     if (request.folderId !== openFolderId) {
-      props.folderOverlayState?.completeFolderRenameRequest?.(token);
+      folderFrame.value.folderOverlayState?.completeFolderRenameRequest?.(token);
       return;
     }
     if (inputDisabled || request.folderId !== renderedFolderId) return;
     // Reuse the existing title editor after the opening handoff releases it.
     await nextTick();
-    if (props.folderOverlayState?.folderRenameRequest?.value?.token !== token) return;
+    if (folderFrame.value.folderOverlayState?.folderRenameRequest?.value?.token !== token) return;
     const input = folderNameInputRef.value;
     if (!input || input.disabled) return;
     input.focus({ preventScroll: true });
     input.select();
-    props.folderOverlayState?.completeFolderRenameRequest?.(token);
+    folderFrame.value.folderOverlayState?.completeFolderRenameRequest?.(token);
   }
 );
 
@@ -388,7 +403,7 @@ function getElementRect(nodeRef) {
 }
 
 function makeRootStageHostStyle(rootRect = null) {
-  const resolvedRootRect = rootRect || getElementRect(props.domRefs?.rootRef) || {
+  const resolvedRootRect = rootRect || getElementRect(runtimeFrame.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
     top: 0,
@@ -407,7 +422,7 @@ function readMainPadding() {
 }
 
 function resolveFolderClosingHandoffId(metrics) {
-  const result = folderClosingHandoffRetainer.resolve(metrics, props.folderClosingHandoffId, {
+  const result = folderClosingHandoffRetainer.resolve(metrics, folderFrame.value.folderClosingHandoffId, {
     now: nowMs(),
     timelineDebug: hasFolderHandoffTimelineDebug(),
   });
@@ -420,7 +435,7 @@ function createSingleStageFolderState(
   diagnosticsOptions = {},
   renderGeometry = makeDesktopRenderGeometry(metrics)
 ) {
-  const source = props.folderOverlayState;
+  const source = folderFrame.value.folderOverlayState;
   if (!source) return null;
   const sourceFolder = source.renderedFolder?.value;
   const isFolderClosing = Boolean(
@@ -456,7 +471,7 @@ function createSingleStageFolderState(
     },
     folder: {
       closeIconGhosts: source.folderCloseIconGhosts?.value,
-      desktopClosing: props.isDesktopClosing,
+      desktopClosing: interactionFrame.value.isDesktopClosing,
       gridStyle: source.folderGridStyle?.value,
       isAppLaunchClosing: source.isFolderAppLaunchClosing?.value,
       isClosing: isFolderClosing,
@@ -473,7 +488,7 @@ function createSingleStageFolderState(
       pageTurnToken: source.folderPageTurnRequest?.value?.token ?? null,
       pageTrackScrub: resolveMaybeRef(source.folderPageTrackScrub) || null,
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
-      pageSize: source.folderPageSize?.value || props.folderPageSize,
+      pageSize: source.folderPageSize?.value || viewportFrame.value.folderPageSize,
       pages: folderPages,
       panelRef: source.folderPanelRef,
       panelStyle: source.folderPanelStyle?.value,
@@ -483,13 +498,13 @@ function createSingleStageFolderState(
     },
     stage: { rect: renderGeometry.stageRect },
     ui: {
-      iconGesturePresentation: props.iconGesturePresentation,
+      iconGesturePresentation: interactionFrame.value.iconGesturePresentation,
       isEditMode: source.isEditMode?.value,
-      isBatchSelectionActive: props.isBatchSelectionActive,
+      isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
       isTextlessMode: source.isTextlessMode?.value,
       launchTargetStatusById: source.launchTargetStatusById?.value,
-      focusedIcon: props.focusedIcon,
-      selectedAppIds: props.selectedAppIds,
+      focusedIcon: interactionFrame.value.focusedIcon,
+      selectedAppIds: interactionFrame.value.selectedAppIds,
       showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
     },
   }, {
@@ -501,7 +516,7 @@ function createSingleStageFolderState(
 }
 
 function makeDesktopRenderGeometryFromDom(metrics) {
-  const rootRect = getElementRect(props.domRefs?.rootRef) || {
+  const rootRect = getElementRect(runtimeFrame.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
     top: 0,
@@ -513,7 +528,7 @@ function makeDesktopRenderGeometryFromDom(metrics) {
     mainPaddingTop: mainPadding.top,
     mainRect: getElementRect(mainRef),
     rootRect,
-    shellRect: getElementRect(props.domRefs?.shellRef),
+    shellRect: getElementRect(runtimeFrame.value.domRefs?.shellRef),
   });
   return {
     metrics,
@@ -557,12 +572,12 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
     ...flattenFolderHandoffSnapshot(snapshot),
     folderId: decision.folderId,
     handoffSettledFrameCount: folderClosingHandoffRetainer.settledFrameCount,
-    isHomeRevealSettling: props.isHomeRevealSettling,
+    isHomeRevealSettling: interactionFrame.value.isHomeRevealSettling,
     layoutRect: roundDebugRect(metrics.layoutRect),
     now: roundDebugNumber(nowMs()),
     phase: decision.phase,
     postReleaseFramesRemaining: folderClosingHandoffRetainer.postReleaseFrames,
-    propsFolderClosingHandoffId: props.folderClosingHandoffId,
+    propsFolderClosingHandoffId: folderFrame.value.folderClosingHandoffId,
     reason: decision.reason,
     rect: roundDebugRect(metrics.rect),
     rectDelta: getDebugRectDelta(metrics.rect, metrics.layoutRect),
@@ -605,21 +620,21 @@ function renderPixi(options = {}) {
     // Nested controller refs can update before Vue flushes the matching props.
     // Capture drag ownership once so real icons and the preview cannot disagree
     // about the same release during this Pixi frame.
-    const dragSnapshot = createDragRenderSnapshot(props);
+    const dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
     layer.update({
-      activePageIndex: props.activePageIndex,
-      activePages: props.activePages,
-      desktopVisualTransform: props.desktopVisualTransform,
-      desktopVisualAlpha: props.desktopVisualAlpha,
-      launchpadVisualAlpha: props.launchpadVisualAlpha,
-      launchpadVisualTransform: props.launchpadVisualTransform,
+      activePageIndex: viewportFrame.value.activePageIndex,
+      activePages: viewportFrame.value.activePages,
+      desktopVisualTransform: visualFrame.value.desktopVisualTransform,
+      desktopVisualAlpha: visualFrame.value.desktopVisualAlpha,
+      launchpadVisualAlpha: visualFrame.value.launchpadVisualAlpha,
+      launchpadVisualTransform: visualFrame.value.launchpadVisualTransform,
       desktopFrame: renderGeometry.desktopFrame,
-      desktopGridDebugOptions: props.desktopGridDebugOptions,
-      desktopTrackMotionKey: props.desktopTrackMotionKey,
-      dragFolderHoverState: props.dragFolderHoverState,
-      dragFolderTargetId: props.dragFolderTargetId,
-      dragHitDebugOptions: props.dragHitDebugOptions,
-      dragHitDebugState: props.dragHitDebugState,
+      desktopGridDebugOptions: diagnosticsFrame.value.desktopGridDebugOptions,
+      desktopTrackMotionKey: viewportFrame.value.desktopTrackMotionKey,
+      dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
+      dragFolderTargetId: interactionFrame.value.dragFolderTargetId,
+      dragHitDebugOptions: diagnosticsFrame.value.dragHitDebugOptions,
+      dragHitDebugState: diagnosticsFrame.value.dragHitDebugState,
       ...dragSnapshot,
       deviceResolution: app.renderer?.resolution || 1,
       folderClosingHandoffId,
@@ -630,31 +645,31 @@ function renderPixi(options = {}) {
         singleStageDiagnosticsOptions,
         renderGeometry
       ),
-      folderPageSize: props.folderPageSize,
-      getDesktopPageRenderMode: props.getDesktopPageRenderMode,
-      getVisibleDesktopPage: props.getVisibleDesktopPage,
-      gridCols: props.gridCols,
-      gridRows: props.gridRows,
+      folderPageSize: viewportFrame.value.folderPageSize,
+      getDesktopPageRenderMode: runtimeFrame.value.getDesktopPageRenderMode,
+      getVisibleDesktopPage: runtimeFrame.value.getVisibleDesktopPage,
+      gridCols: viewportFrame.value.gridCols,
+      gridRows: viewportFrame.value.gridRows,
       height: renderGeometry.height,
-      iconSize: props.iconSize,
-      iconGesturePresentation: props.iconGesturePresentation,
-      isEditMode: props.isEditMode,
-      isBatchSelectionActive: props.isBatchSelectionActive,
-      folderSourceGhostedId: props.folderSourceGhostedId,
-      folderSourceGhostedIds: props.folderSourceGhostedIds,
-      isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
-      isHomeRevealSettling: props.isHomeRevealSettling,
-      isIconOpening: props.isIconOpening,
-      isSearchMode: props.isSearchMode,
-      isTextlessMode: props.isTextlessMode,
-      launchTargetStatusById: props.launchTargetStatusById,
-      pageTrackScrub: props.pageTrackScrub,
-      focusedIcon: props.focusedIcon,
-      selectedAppIds: props.selectedAppIds,
-      setPageRef: props.setPageRef,
-      shouldSnapTrack: props.desktopTrackMotionKey.includes("snap"),
+      iconSize: viewportFrame.value.iconSize,
+      iconGesturePresentation: interactionFrame.value.iconGesturePresentation,
+      isEditMode: interactionFrame.value.isEditMode,
+      isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
+      folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
+      folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
+      isFolderOpeningPreviewFrameGhosted: folderFrame.value.isFolderOpeningPreviewFrameGhosted,
+      isHomeRevealSettling: interactionFrame.value.isHomeRevealSettling,
+      isIconOpening: runtimeFrame.value.isIconOpening,
+      isSearchMode: interactionFrame.value.isSearchMode,
+      isTextlessMode: interactionFrame.value.isTextlessMode,
+      launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
+      pageTrackScrub: viewportFrame.value.pageTrackScrub,
+      focusedIcon: interactionFrame.value.focusedIcon,
+      selectedAppIds: interactionFrame.value.selectedAppIds,
+      setPageRef: runtimeFrame.value.setPageRef,
+      shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
       snapDesktopLayout: options.snapDesktopLayout === true,
-      showMissingLaunchTargetBadge: props.showMissingLaunchTargetBadge,
+      showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
       stageRect: renderGeometry.stageRect,
       width: renderGeometry.width,
     });
@@ -670,11 +685,11 @@ function renderPixi(options = {}) {
 function applyImmediateFolderSourceGhosting() {
   if (!app || !layer || !hostRef.value) return false;
   layer.applyFolderSourceGhosting?.({
-    folderSourceGhostedId: props.folderSourceGhostedId,
-    folderSourceGhostedIds: props.folderSourceGhostedIds,
-    isFolderOpeningPreviewFrameGhosted: props.isFolderOpeningPreviewFrameGhosted,
+    folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
+    folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
+    isFolderOpeningPreviewFrameGhosted: folderFrame.value.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
-  layer.applyImmediateGroupTransferOwnership?.(props.groupDragState);
+  layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
   app.render?.();
   return true;
 }
@@ -713,7 +728,7 @@ function getRenderScheduler() {
       let probeToken = null;
       if (import.meta.env.DEV && didRender) {
         probeToken = renderProbe?.beforeRender?.({
-          dragMeta: props.dragMeta,
+          dragMeta: interactionFrame.value.dragMeta,
           reasons,
           renderer: app?.renderer,
           updateLayer,
@@ -811,7 +826,7 @@ function requestRender(reason = "desktop-update", options = {}) {
 
 function shouldRunHandoffRenderLoop() {
   return Boolean(folderClosingHandoffRetainer.shouldRun({
-    propFolderClosingHandoffId: props.folderClosingHandoffId,
+    propFolderClosingHandoffId: folderFrame.value.folderClosingHandoffId,
     timelineDebug: hasFolderHandoffTimelineDebug(),
   }) && app && layer && hostRef.value && !destroyed);
 }
@@ -828,12 +843,12 @@ function getFirstFolderPageItems(folder) {
 }
 
 function collectFolderTexturePrewarmItems() {
-  const page = props.activePages?.[props.activePageIndex] || [];
-  const visibleItems = props.getVisibleDesktopPage?.(page) || [];
+  const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
+  const visibleItems = runtimeFrame.value.getVisibleDesktopPage?.(page) || [];
   const items = [];
   for (const item of visibleItems) {
     if (item?.type !== "folder") continue;
-    const firstPageItems = getFirstFolderPageItems(item).slice(0, props.folderPageSize);
+    const firstPageItems = getFirstFolderPageItems(item).slice(0, viewportFrame.value.folderPageSize);
     for (const child of firstPageItems) {
       if (!child) continue;
       items.push(child);
@@ -844,8 +859,8 @@ function collectFolderTexturePrewarmItems() {
 }
 
 function collectVisibleIconTextureItems() {
-  const page = props.activePages?.[props.activePageIndex] || [];
-  const visibleItems = props.getVisibleDesktopPage?.(page) || [];
+  const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
+  const visibleItems = runtimeFrame.value.getVisibleDesktopPage?.(page) || [];
   const items = [];
   for (const item of visibleItems) {
     if (!item) continue;
@@ -853,7 +868,7 @@ function collectVisibleIconTextureItems() {
       items.push(item);
       continue;
     }
-    items.push(...getFolderPreviewSlots(item, props.folderPageSize).filter(Boolean));
+    items.push(...getFolderPreviewSlots(item, viewportFrame.value.folderPageSize).filter(Boolean));
   }
   return items;
 }
@@ -877,22 +892,22 @@ function scheduleFolderTexturePrewarm() {
 function handleIconAction(action, event, item, source) {
   if (action === "pointerdown") {
     if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
-    emit("pointerdown-icon", event, item, source);
+    emitIconPointerdown(event, item, source);
   }
-  if (action === "remove") emit("remove-app", item.id);
-  if (action === "choose-icon") emit("choose-app-icon", item.id);
-  if (action === "reset-icon") emit("reset-app-icon", item.id);
+  if (action === "remove") emitRemoveApp(item.id);
+  if (action === "choose-icon") emitChooseAppIcon(item.id);
+  if (action === "reset-icon") emitResetAppIcon(item.id);
   requestRender(makeIconActionRenderReason(action));
 }
 
 function requestContextMenuAtPointer(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  emit("context-menu-request", event);
+  emitContextMenuRequest(event);
 }
 
 function handleFolderInternalActivity(active, folderId = null) {
-  emit("internal-activity", Boolean(active), folderId);
+  emitInternalActivity(Boolean(active), folderId);
   requestRender(makeFolderInternalActivityRenderReason(active));
 }
 
@@ -901,7 +916,7 @@ function handleSingleStageFolderGeometryChange(geometry) {
 }
 
 function handleSingleStageFolderTitleFrameChange(frame) {
-  const folderId = props.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  const folderId = folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   singleStageFolderTitleFrame.value = isSingleStageFolderTitleFrameCurrent(frame, folderId)
     ? frame
     : null;
@@ -969,14 +984,14 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  props.iconBoundsRegistry.clearBounds("desktop");
-  props.iconBoundsRegistry.clearBounds("search");
+  runtimeFrame.value.iconBoundsRegistry.clearBounds("desktop");
+  runtimeFrame.value.iconBoundsRegistry.clearBounds("search");
   if (deep) clearIconTextureCache();
 }
 
 onMounted(async () => {
   destroyed = false;
-  if (props.domRefs?.desktopMainRef) props.domRefs.desktopMainRef.value = mainRef.value;
+  if (runtimeFrame.value.domRefs?.desktopMainRef) runtimeFrame.value.domRefs.desktopMainRef.value = mainRef.value;
   const nextApp = await createPixiApp(hostRef.value, {
     autoStart: false,
     className: "pixi-launchpad-canvas",
@@ -992,25 +1007,25 @@ onMounted(async () => {
   layer = new DesktopLayer({
     renderCopy: pixiRenderCopy.value,
     onClosingFolderPointerDown: (folderId) => {
-      props.folderOverlayState?.commitOpenFolder?.(folderId);
+      folderFrame.value.folderOverlayState?.commitOpenFolder?.(folderId);
       requestRender("folder-closing-pointerdown");
     },
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
     onFolderRenderRequest: (reason) => requestRender(reason || "folder-overlay-render-request"),
     onFolderOutsidePointerDown: () => {
-      props.folderOverlayState?.handleFolderOverlayPointerDown?.();
+      folderFrame.value.folderOverlayState?.handleFolderOverlayPointerDown?.();
       requestRender("folder-outside-pointerdown");
     },
     onFolderPanelPointerDown: (event) => {
-      props.folderOverlayState?.handleFolderPanelPointerDown?.(event);
+      folderFrame.value.folderOverlayState?.handleFolderPanelPointerDown?.(event);
       requestRender("folder-panel-pointerdown");
     },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
-    iconBoundsRegistry: props.iconBoundsRegistry,
+    iconBoundsRegistry: runtimeFrame.value.iconBoundsRegistry,
     onIconAction: handleIconAction,
     onGroupReleaseComplete: (payload) => {
-      emit("group-release-complete", payload);
+      emitGroupReleaseComplete(payload);
     },
   });
   app.stage.addChild(layer);
@@ -1085,11 +1100,11 @@ onMounted(async () => {
       }),
       createSceneDiagnosticAdapter(),
     ];
-    if (props.liveDesktopDiagnosticsPort) {
+    if (diagnosticsFrame.value.liveDesktopDiagnosticsPort) {
       const liveDesktopController = createLiveDesktopDiagnosticsController({
-        applyRuntime: (request) => props.liveDesktopDiagnosticsPort.applyRuntime(request),
-        getRuntimeStatus: () => props.liveDesktopDiagnosticsPort.getRuntimeStatus(),
-        refreshRuntime: () => props.liveDesktopDiagnosticsPort.refreshRuntime(),
+        applyRuntime: (request) => diagnosticsFrame.value.liveDesktopDiagnosticsPort.applyRuntime(request),
+        getRuntimeStatus: () => diagnosticsFrame.value.liveDesktopDiagnosticsPort.getRuntimeStatus(),
+        refreshRuntime: () => diagnosticsFrame.value.liveDesktopDiagnosticsPort.refreshRuntime(),
         settingsStore: createBrowserLiveDesktopDebugSettingsStore(),
       });
       diagnosticAdapters.push(createLiveDesktopDiagnosticAdapter({
@@ -1127,19 +1142,19 @@ watch(
 );
 
 watch(
-  () => props.desktopProjectionEpoch,
+  () => viewportFrame.value.desktopProjectionEpoch,
   () => requestRender("desktop-projection", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
 watch(
-  () => props.pageGridMeasureStyle,
+  () => viewportFrame.value.pageGridMeasureStyle,
   () => requestRender("page-grid-measure", { invalidateGeometry: true }),
   { flush: "post" }
 );
 
 watch(
-  () => [props.folderSourceGhostedId, props.folderSourceGhostedIds],
+  () => [folderFrame.value.folderSourceGhostedId, folderFrame.value.folderSourceGhostedIds],
   () => {
     // Source ghosting is the handoff boundary; do not wait for the next desktop frame.
     applyImmediateFolderSourceGhosting();
@@ -1149,9 +1164,9 @@ watch(
 
 watch(
   () => [
-    props.groupDragState?.phase,
-    props.groupDragState?.presentationPlan,
-    props.groupDragState?.runtimePlan?.key,
+    interactionFrame.value.groupDragState?.phase,
+    interactionFrame.value.groupDragState?.presentationPlan,
+    interactionFrame.value.groupDragState?.runtimePlan?.key,
   ],
   () => {
     // Transfer ownership is acquired synchronously before the next desktop
@@ -1162,44 +1177,45 @@ watch(
 );
 
 watchEffect(() => {
-  void props.activePageIndex;
-  void props.activePages;
-  void props.desktopVisualTransform;
-  void props.desktopVisualAlpha;
-  void props.launchpadVisualAlpha;
-  void props.launchpadVisualTransform;
-  void props.desktopGridDebugOptions;
-  void props.desktopProjectionEpoch;
-  void props.desktopTrackMotionKey;
-  void props.dragFolderHoverState;
-  void props.dragFolderTargetId;
-  void props.dragHitDebugOptions;
-  void props.dragHitDebugState;
-  void props.dragMeta;
-  void props.groupDragState;
-  void props.folderClosingHandoffId;
-  readFolderOverlayStateRenderDependencies(props.folderOverlayState);
-  void props.gridCols;
-  void props.gridRows;
-  void props.iconSize;
-  void props.iconGesturePresentation;
-  void props.isEditMode;
-  void props.isBatchSelectionActive;
-  void props.isDesktopClosing;
-  void props.folderSourceGhostedId;
-  void props.folderSourceGhostedIds;
-  void props.isHomeRevealSettling;
-  void props.isSearchMode;
-  void props.isTextlessMode;
-  void props.launchTargetStatusById;
-  void props.pageGridMeasureStyle;
-  void props.pageTrackScrub;
-  void props.folderPageSize;
+  void viewportFrame.value.activePageIndex;
+  void viewportFrame.value.activePages;
+  void visualFrame.value.desktopVisualTransform;
+  void visualFrame.value.desktopVisualAlpha;
+  void visualFrame.value.launchpadVisualAlpha;
+  void visualFrame.value.launchpadVisualTransform;
+  void diagnosticsFrame.value.desktopGridDebugOptions;
+  void viewportFrame.value.desktopProjectionEpoch;
+  void viewportFrame.value.desktopTrackMotionKey;
+  void interactionFrame.value.dragFolderHoverState;
+  void interactionFrame.value.dragFolderTargetId;
+  void diagnosticsFrame.value.dragHitDebugOptions;
+  void diagnosticsFrame.value.dragHitDebugState;
+  void interactionFrame.value.dragMeta;
+  void interactionFrame.value.groupDragState;
+  void folderFrame.value.folderClosingHandoffId;
+  readFolderOverlayStateRenderDependencies(folderFrame.value.folderOverlayState);
+  void viewportFrame.value.gridCols;
+  void viewportFrame.value.gridRows;
+  void viewportFrame.value.iconSize;
+  void interactionFrame.value.iconGesturePresentation;
+  void interactionFrame.value.isEditMode;
+  void interactionFrame.value.isBatchSelectionActive;
+  void interactionFrame.value.isDesktopClosing;
+  void folderFrame.value.folderSourceGhostedId;
+  void folderFrame.value.folderSourceGhostedIds;
+  void folderFrame.value.isFolderOpeningPreviewFrameGhosted;
+  void interactionFrame.value.isHomeRevealSettling;
+  void interactionFrame.value.isSearchMode;
+  void interactionFrame.value.isTextlessMode;
+  void diagnosticsFrame.value.launchTargetStatusById;
+  void viewportFrame.value.pageGridMeasureStyle;
+  void viewportFrame.value.pageTrackScrub;
+  void viewportFrame.value.folderPageSize;
   // Keyboard selection is a Pixi frame input; reading the descriptor here
   // makes each replacement invalidate the scene instead of hiding in a closure.
-  void props.focusedIcon;
-  void props.selectedAppIds;
-  void props.singleStageDiagnosticsOptions;
+  void interactionFrame.value.focusedIcon;
+  void interactionFrame.value.selectedAppIds;
+  void diagnosticsFrame.value.singleStageDiagnosticsOptions;
   void pixiRenderCopy.value;
   requestRender("watch-effect");
   scheduleFolderTexturePrewarm();

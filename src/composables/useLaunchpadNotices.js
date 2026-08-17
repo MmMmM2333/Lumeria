@@ -12,7 +12,6 @@ export function useLaunchpadNotices(options) {
   if (typeof t !== "function") throw new TypeError("useLaunchpadNotices requires localization text");
   const warningDialog = shallowRef(null);
   const isWarningDialogOpen = ref(false);
-  const layoutRecoveryNotice = shallowRef(null);
   const transientNotice = shallowRef(null);
   let warningDialogCloseTimer = null;
   let transientNoticeTimer = null;
@@ -61,20 +60,6 @@ export function useLaunchpadNotices(options) {
     const action = warningDialog.value?.onConfirm;
     closeWarningDialog();
     action?.();
-  }
-
-  function handleLayoutRecovered(event) {
-    const payload = event?.payload || {};
-    layoutRecoveryNotice.value = {
-      title: t("notices.layoutRecovered.title"),
-      message: t("notices.layoutRecovered.message"),
-      backupPath: payload.backupPath || payload.backup_path || "",
-      intent: "warning",
-    };
-  }
-
-  function closeLayoutRecoveryNotice() {
-    layoutRecoveryNotice.value = null;
   }
 
   function closeTransientNotice() {
@@ -149,13 +134,10 @@ export function useLaunchpadNotices(options) {
   return {
     clearTransientNoticeTimer,
     clearWarningDialogTimer,
-    closeLayoutRecoveryNotice,
     closeTransientNotice,
     closeWarningDialog,
     confirmWarningDialog,
-    handleLayoutRecovered,
     isWarningDialogOpen,
-    layoutRecoveryNotice,
     openLaunchErrorDialog,
     openWarningDialog,
     showLayoutLoadFailed,

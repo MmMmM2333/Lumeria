@@ -17,7 +17,6 @@ function canonicalizeLayoutSnapshot(value) {
   const snapshot = structuredClone(value);
   const visit = (item) => {
     if (!item || typeof item !== "object") return;
-    delete item.children;
     for (const page of item.childPages || []) {
       for (const child of page || []) visit(child);
     }

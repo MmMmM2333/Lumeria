@@ -333,13 +333,7 @@ async fn check_launch_targets(
 
 #[tauri::command]
 fn load_layout(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let result = load_saved_layout(&app)?;
-    if let Some(recovery) = result.recovery {
-        if let Err(error) = app.emit("lumeria-layout-recovered", recovery) {
-            log::warn!(target: "layout_store", "Failed to emit layout recovery event: {error}");
-        }
-    }
-    Ok(result.layout)
+    load_saved_layout(&app)
 }
 
 #[tauri::command]
@@ -493,9 +487,7 @@ fn launch_app_inner(
         return launch_selected_app(app.into());
     }
 
-    let saved_layout = load_saved_layout(app_handle)
-        .map(|result| result.layout)
-        .map_err(LaunchFailure::layout_read_failed)?;
+    let saved_layout = load_saved_layout(app_handle).map_err(LaunchFailure::layout_read_failed)?;
     if let Some(manual_app) = saved_layout
         .as_ref()
         .and_then(|layout| find_layout_manual_app(layout, &app_id))
@@ -1065,8 +1057,7 @@ fn setup_global_shortcuts(app: &mut tauri::App) {
 }
 
 fn load_initial_main_window_shortcut(app: &AppHandle) -> Result<Option<String>, String> {
-    let result = load_saved_layout(app)?;
-    let Some(layout) = result.layout else {
+    let Some(layout) = load_saved_layout(app)? else {
         return Ok(Some(DEFAULT_MAIN_WINDOW_SHORTCUT.to_string()));
     };
     let shortcut = layout

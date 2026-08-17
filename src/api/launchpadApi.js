@@ -1,5 +1,6 @@
 import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
+import { assertLayoutDocument } from "../domain/layoutDocument.js";
 
 let bridgeOverride = null;
 
@@ -112,10 +113,13 @@ export function normalizeScanAppsResult(result) {
 export async function loadLayout() {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return invoke("load_layout");
+  const layout = await invoke("load_layout");
+  if (layout === null) return null;
+  return assertLayoutDocument(layout);
 }
 
 export async function saveLayout(layout) {
+  assertLayoutDocument(layout);
   const invoke = getTauriInvoke();
   if (!invoke) return null;
   return invoke("save_layout", { layout });

@@ -11,7 +11,6 @@ function folder(id, childIds) {
   const children = childIds.map(app);
   return {
     childPages: [children.slice(0, 6), children.slice(6)],
-    children,
     id,
     name: id,
     type: "folder",

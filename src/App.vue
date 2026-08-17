@@ -119,6 +119,7 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
+import { assertSceneEvent } from "./rendering/sceneEvents.js";
 import { makeDesktopSceneFrame } from "./rendering/sceneFrame.js";
 import {
   getSingleStageDiagnosticsOptions,
@@ -933,6 +934,7 @@ const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
 }));
 
 function handlePixiSceneEvent(event = {}) {
+  assertSceneEvent(event);
   switch (event.type) {
     case "desktop-focus":
       keyboardFocusArea.value = "desktop";
@@ -965,7 +967,7 @@ function handlePixiSceneEvent(event = {}) {
       handleLaunchpadWheel(event.event);
       return;
     default:
-      return;
+      throw new TypeError(`Unhandled SceneEvent type: ${String(event.type)}`);
   }
 }
 

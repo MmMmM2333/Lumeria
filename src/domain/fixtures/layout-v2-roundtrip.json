@@ -43,29 +43,6 @@
               }
             }
           ]
-        ],
-        "children": [
-          {
-            "id": "tool-shortcut",
-            "type": "manualApp",
-            "name": "Tool Shortcut",
-            "emoji": "T",
-            "iconPath": "C:/Tools/tool.png",
-            "launchTarget": {
-              "kind": "shortcut",
-              "path": "C:/Tools/Tool.lnk"
-            }
-          },
-          {
-            "id": "windows-settings",
-            "type": "manualApp",
-            "name": "Windows Settings",
-            "emoji": "W",
-            "launchTarget": {
-              "kind": "appUserModelId",
-              "appUserModelId": "windows.settings.test!App"
-            }
-          }
         ]
       }
     ],
