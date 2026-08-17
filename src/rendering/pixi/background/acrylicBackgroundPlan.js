@@ -38,5 +38,5 @@ export {
   resolveAutoGaussianRadiusPx,
   resolveBlurOffsetScale,
   resolveCoverLayout,
-  shouldUsePixiBackgroundEffect,
 } from "../../../domain/backgroundEffectPlan.js";
+export { shouldUsePixiBackgroundEffect } from "../../backgroundCapability.js";

@@ -41,7 +41,7 @@ export async function runFolderPrewarmTests() {
   const appB = { id: "app-b" };
   const folder = { childPages: [[appA, appB]], id: "folder-1", type: "folder" };
   assert(getFirstFolderPageItems(folder).length === 2, "childPages should provide the first folder page");
-  assert(getFirstFolderPageItems({ children: [appA] })[0] === appA, "children should be used as fallback");
+  assert(getFirstFolderPageItems({ children: [appA] }).length === 0, "legacy children should not be used by runtime prewarm");
   assert(makeFolderPrewarmKey(folder, 1) === "folder-1:app-a", "prewarm key should include visible first-page items");
 
   {

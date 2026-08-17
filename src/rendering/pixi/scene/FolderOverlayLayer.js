@@ -24,7 +24,7 @@ import {
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
+import { detachDisplayObject, destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   FolderHandoffCoordinator,
   makeFolderPanelTargetKey,
@@ -75,7 +75,6 @@ import {
   updatePageTrackMotion,
 } from "./pageTrackMotion.js";
 import { isLayoutTargetChanged } from "./desktopRenderPlan.js";
-import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 const PAGE_DOT_BLEND_DURATION = 0.08;
 const PAGE_DOT_BLEND_EASE = "power2.out";
@@ -116,6 +115,30 @@ function readProgress01(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   return clamp01(number);
+}
+
+function cloneFramePresentation(frame) {
+  if (!frame) return null;
+  return {
+    fillAlpha: frame.fillAlpha,
+    fillColor: frame.fillColor,
+    height: frame.height,
+    left: frame.left,
+    progress: frame.progress,
+    radius: frame.radius,
+    strokeAlpha: frame.strokeAlpha,
+    strokeColor: frame.strokeColor,
+    strokeWidth: frame.strokeWidth,
+    top: frame.top,
+    width: frame.width,
+  };
+}
+
+function cloneMirroredFramePresentation(layer) {
+  const frame = cloneFramePresentation(layer?.frameGhostState);
+  const offsetX = Number(layer?.closingDesktopPageTrackMirrorX);
+  if (frame && Number.isFinite(offsetX) && offsetX !== 0) frame.left += offsetX;
+  return frame;
 }
 
 function lerpNumber(from, to, progress) {
@@ -698,12 +721,10 @@ export class FolderOverlayLayer extends Container {
     this.renderCopy = { newFolderName: String(options.renderCopy?.newFolderName || "") };
     if (!options.iconBoundsRegistry) throw new Error("FolderOverlayLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
-    this.transitionPort = ensureLayerTransitionPort(this);
     this.folderHandoff = new FolderHandoffCoordinator(this);
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
       handoffCoordinator: this.folderHandoff,
-      transitionPort: this.transitionPort,
     });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
@@ -712,13 +733,11 @@ export class FolderOverlayLayer extends Container {
       spriteFactory: () => new Sprite(),
       textFactory: (size) => new Text({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
       handoffCoordinator: this.folderHandoff,
-      transitionPort: this.transitionPort,
     });
     this.closingGhosts = new FolderClosingGhostController(this, {
       ghostFactory: () => new IconNode(),
       previewSwap: this.closingPreviewSwap,
       handoffCoordinator: this.folderHandoff,
-      transitionPort: this.transitionPort,
     });
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
@@ -1921,6 +1940,10 @@ export class FolderOverlayLayer extends Container {
     });
   }
 
+  removeOpeningGhost(ghost) {
+    return detachDisplayObject(ghost, this.openingGhostLayer) ? ghost : null;
+  }
+
   clearPageDots() {
     this.pageDotsLayer.removeChildren().forEach((child) => child.destroy?.());
     this.pageDotsLayer.visible = false;
@@ -1955,6 +1978,55 @@ export class FolderOverlayLayer extends Container {
     const acquired = this.visualOwnership.acquire(key, owner);
     if (acquired && owner?.token != null) this.getOwnedVisualTokens().add(owner.token);
     return acquired;
+  }
+
+  acquireDesktopSourceOwnership(owner) {
+    const key = makeDesktopSourceVisualKey(owner?.folderId);
+    if (!key) return false;
+    return this.acquireVisualOwnership(key, owner);
+  }
+
+  getCurrentFolderId() {
+    return this.currentFolderId || null;
+  }
+
+  clearCurrentFolder() {
+    this.currentFolderId = null;
+  }
+
+  getClosingFrameStartRect(panelRect, folderId) {
+    if (this.frameGhostFolderId !== folderId) return panelRect;
+    return cloneFramePresentation(this.frameGhostState) || panelRect;
+  }
+
+  getClosingPresentationFrameRect() {
+    return cloneMirroredFramePresentation(this);
+  }
+
+  getTransitionDebugSnapshot() {
+    return {
+      closingGhostCount: this.closingGhostLayer?.children?.length ?? null,
+      framePresentation: cloneMirroredFramePresentation(this),
+      panelVisible: this.panel?.visible ?? null,
+      pageTrackVisible: this.pageTrack?.visible ?? null,
+    };
+  }
+
+  ensureClosingPreviewSwapLayer(containerFactory) {
+    if (this.closingPreviewSwapLayer && !this.closingPreviewSwapLayer.destroyed) {
+      return this.closingPreviewSwapLayer;
+    }
+    this.closingPreviewSwapLayer = containerFactory();
+    const closingIndex = this.children.indexOf(this.closingGhostLayer);
+    if (closingIndex >= 0) this.addChildAt(this.closingPreviewSwapLayer, closingIndex + 1);
+    else this.addChild(this.closingPreviewSwapLayer);
+    return this.closingPreviewSwapLayer;
+  }
+
+  removeClosingPreviewSwapChildren() {
+    const swapLayer = this.closingPreviewSwapLayer;
+    if (!swapLayer || swapLayer.destroyed) return [];
+    return swapLayer.removeChildren?.() || [];
   }
 
   releaseVisualOwnership(key, token) {
@@ -2061,7 +2133,6 @@ export class FolderOverlayLayer extends Container {
 
   detachClosingPresentationForOpen(nextFolderId, options = {}) {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
-    const transitionPort = ensureLayerTransitionPort(this);
     const waitForDesktopClose = options.waitForDesktopClose === true;
     const closingFolderId = this.folderHandoff.folderId || options.folderId || null;
     if (waitForDesktopClose && this.hasDesktopCloseDetachedVisual(closingFolderId)) return false;
@@ -2080,14 +2151,14 @@ export class FolderOverlayLayer extends Container {
       : null;
     const frameTarget = shouldKeepDetachedVisual ? this.folderHandoff.getDetachedFrameTarget() : null;
     const closingGhosts = shouldKeepDetachedVisual
-      ? transitionPort.removeClosingGhosts()
+      ? this.closingGhostLayer.removeChildren()
       : [];
     const detachedGhostMotions = new Map(closingGhosts.map((ghost) => [
       ghost,
       this.folderHandoff.getDetachedClosingGhostMotion(ghost),
     ]));
     const previewSwapGhosts = shouldKeepDetachedVisual
-      ? transitionPort.removeClosingPreviewSwapChildren()
+      ? this.removeClosingPreviewSwapChildren()
       : [];
     if (closingMirrorOffsetX && previewSwapGhosts.length) {
       for (const ghost of previewSwapGhosts) {
@@ -2448,6 +2519,7 @@ export class FolderOverlayLayer extends Container {
 
   startFrameGhost(fromRect, toRect, options = {}) {
     startFrameGhostState(this, fromRect, toRect, options);
+    return true;
   }
 
   retargetFrameGhost(toRect, options = {}) {

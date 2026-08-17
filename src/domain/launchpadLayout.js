@@ -1,4 +1,4 @@
-import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "../composables/launchpadConstants.js";
+import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "./launchpadGridDefaults.js";
 
 export function cx() {
   return Array.prototype.slice.call(arguments).filter(Boolean).join(" ");
@@ -56,7 +56,7 @@ function compactPreviewFolderPages(folderPages) {
 function getPreviewFolderChildPages(folder, size) {
   const pageSize = Math.max(1, Number(size) || 9);
   if (Array.isArray(folder?.childPages)) return compactPreviewFolderPages(folder.childPages);
-  return chunkIntoPages(trimPreviewFolderSlots(folder?.children || []), pageSize);
+  return chunkIntoPages([], pageSize);
 }
 
 export function getFolderPreviewSlots(folderOrChildren, pageSize) {
@@ -105,9 +105,7 @@ export function createLaunchpadLayoutHelpers(options) {
     if (Array.isArray(folder?.childPages)) {
       return compactFolderPages(folder.childPages);
     }
-
-    const items = trimFolderSlots(folder?.children || []);
-    return chunkIntoPages(items, pageSize);
+    return chunkIntoPages([], pageSize);
   }
 
   function padFolderPages(folderPages, minPageCount) {
@@ -122,7 +120,6 @@ export function createLaunchpadLayoutHelpers(options) {
     return {
       ...folder,
       childPages,
-      children: flattenFolderPages(childPages),
     };
   }
 
@@ -180,7 +177,7 @@ export function createLaunchpadLayoutHelpers(options) {
     if (type === "folder") {
       const childPages = Array.isArray(source.childPages)
         ? source.childPages
-        : chunkIntoPages(source.children || [], getFolderPageSize());
+        : [[]];
       return withFolderPages(item, childPages);
     }
     return item;

@@ -8,7 +8,6 @@ function folder(id, pages) {
   const childPages = pages.map((page) => page.map((id) => app(id)));
   return {
     childPages,
-    children: childPages.flat(),
     id,
     name: id,
     type: "folder",
@@ -53,10 +52,7 @@ function assertValidLayout(assert, pages, pageSize, folderPageSize, message) {
       item.childPages.every((page) => page.length <= folderPageSize),
       `${message}: folder page capacity must hold`
     );
-    assert(
-      ids(item.children) === ids(item.childPages.flat()),
-      `${message}: flat folder children must mirror child pages`
-    );
+    assert(!("children" in item), `${message}: folder output must not persist duplicate flat children`);
   }
 }
 

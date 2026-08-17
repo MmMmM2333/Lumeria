@@ -3,13 +3,11 @@ import {
   BACKGROUND_BLUR_STRENGTH_MIN,
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
-  backgroundEffectUsesPixi,
-  backgroundSourceUsesImage,
   clampBackgroundBlurStrength,
   clampBackgroundImageOpacity,
   normalizeBackgroundEffect,
 } from "./backgroundSettings.js";
-import { normalizeAcrylicCompositeParams } from "../rendering/pixi/background/acrylicParams.js";
+import { normalizeAcrylicCompositeParams } from "./backgroundAcrylicParams.js";
 
 export const ACRYLIC_RENDER_MAX_WIDTH = 960;
 export const ACRYLIC_RENDER_MAX_HEIGHT = 540;
@@ -271,12 +269,4 @@ export function createBackgroundEffectPlan(config = {}) {
       enabled: effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL,
     },
   };
-}
-
-export function shouldUsePixiBackgroundEffect(config) {
-  return Boolean(
-    backgroundEffectUsesPixi(config?.effect)
-    && backgroundSourceUsesImage(config?.source)
-    && config?.imageUrl
-  );
 }

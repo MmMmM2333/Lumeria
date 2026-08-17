@@ -115,6 +115,10 @@ function makeLayer() {
     pageTrack: { visible: true },
     panelMaterial: { alpha: 0, visible: false },
     visualOwnership,
+    acquireDesktopSourceOwnership(owner = {}) {
+      const key = makeDesktopSourceVisualKey(owner.folderId || this.currentFolderId);
+      return key ? this.acquireVisualOwnership(key, owner) : false;
+    },
     acquireVisualOwnership(key, owner) {
       return this.visualOwnership.acquire(key, owner);
     },
@@ -127,15 +131,25 @@ function makeLayer() {
         node?.item?.id
       );
     },
+    getCurrentFolderId() {
+      return this.currentFolderId || null;
+    },
+    isOpeningGeometryTransitionActive() {
+      return false;
+    },
     startFrameGhost(fromRect, toRect, options) {
       frameGhostCalls.push({ fromRect, options, toRect });
       this.panelMaterial.visible = options.exclusivePanelMaterialHandoff === true ? false : true;
       this.panelMaterial.alpha = options.exclusivePanelMaterialHandoff === true ? 0 : options.panelMaterialFromAlpha ?? 0;
       this.frameGhost.visible = true;
       this.frameGhost.alpha = options.frameGhostFromAlpha ?? 1;
+      return true;
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
+    },
+    refreshRegisteredIconBounds() {
+      calls.push("refresh-bounds");
     },
     retargetFrameGhost(toRect, options) {
       frameRetargetCalls.push({ options, toRect });
@@ -144,6 +158,10 @@ function makeLayer() {
     registerOpeningGhostBounds(_state, target) {
       this.lastOpeningBoundsTarget = target;
       return target;
+    },
+    removeOpeningGhost(ghost) {
+      this.openingGhostLayer.removeChild(ghost);
+      return ghost;
     },
     hideIconNodesForTransition(itemId, owner = {}) {
       for (const node of this.iconNodes.values()) {

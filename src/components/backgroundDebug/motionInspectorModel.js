@@ -8,7 +8,7 @@ import {
   makeTrackKey,
   readNumber,
   resolveRecordLabel,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 const DEFAULT_EVENT_LIMIT = 6;
 const DEFAULT_WARNING_LIMIT = 6;

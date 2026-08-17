@@ -61,7 +61,6 @@ import {
   WINDOW_EFFECT_APPEARANCE_DARK,
   WINDOW_EFFECT_MATERIAL_ACRYLIC,
   WINDOW_EFFECT_MATERIAL_NONE,
-  backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundAcrylicBlurStrength,
@@ -88,6 +87,7 @@ import {
   normalizeWindowMode,
   resolveWindowEffectMaterialForSupport,
 } from "./useLaunchpadSettingsConfig.js";
+import { backgroundEffectUsesPixi } from "../rendering/backgroundPort.js";
 import { clamp } from "../domain/launchpadLayout.js";
 
 const DEFAULT_SETTINGS_THEME_PREFERENCE = APPEARANCE_DARK;

@@ -23,9 +23,7 @@ function getFolderPages(folder, folderPageSize) {
     ));
     return pages.length ? pages : [[]];
   }
-  const children = (folder?.children || [])
-    .filter(Boolean)
-    .map((item) => cloneItem(item, folderPageSize));
+  const children = [];
   const pages = [];
   for (let index = 0; index < children.length; index += folderPageSize) {
     pages.push(children.slice(index, index + folderPageSize));
@@ -42,7 +40,6 @@ function withFolderPages(folder, pages, options = {}) {
   return {
     ...folder,
     childPages,
-    children: childPages.flatMap((page) => page.map((item) => cloneItem(item, options.folderPageSize || 1))),
   };
 }
 

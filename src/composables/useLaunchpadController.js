@@ -52,7 +52,7 @@ import { useSettingsPanelModel } from "./useSettingsPanelModel.js";
 import {
   createIconBoundsRegistry,
   ICON_BOUNDS_KIND,
-} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
+} from "../rendering/desktopScenePort.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 
@@ -522,8 +522,7 @@ export function useLaunchpadController(options = {}) {
       .flatMap((page) => page || [])
       .find((item) => item?.type === "folder" && item.id === folderId);
     if (!projectedFolder) return folderPages.value;
-    if (Array.isArray(projectedFolder.childPages)) return projectedFolder.childPages;
-    return [Array.isArray(projectedFolder.children) ? projectedFolder.children : []];
+    return Array.isArray(projectedFolder.childPages) ? projectedFolder.childPages : [[]];
   });
   setFolderPageTurnContextResolver(() => {
     const isClosingPhase = Boolean(

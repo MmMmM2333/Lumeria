@@ -1,5 +1,4 @@
-import { progressDriver, spring, tween } from "../rendering/pixi/animation/motionRuntime.js";
-import { motionSequence, motionTo } from "../rendering/pixi/animation/motionTween.js";
+import { motionSequence, motionTo, progressDriver, spring, tween } from "../rendering/motionPort.js";
 import { normalizeMotionLabParams } from "./motionLabParams.js";
 
 export const MOTION_LAB_SCENARIO_IDS = Object.freeze([

@@ -1,6 +1,5 @@
 import { computed, ref, shallowRef } from "vue";
-import { motionSprings } from "../rendering/pixi/animation/motionPresets.js";
-import { killMotionOf, motion } from "../rendering/pixi/animation/motionTween.js";
+import { killMotionOf, motion, motionSprings } from "../rendering/desktopScenePort.js";
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,

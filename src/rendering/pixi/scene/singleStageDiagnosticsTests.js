@@ -29,7 +29,7 @@ export function runSingleStageDiagnosticsTests() {
 
   const folder = {
     id: "folder-1",
-    children: Array.from({ length: 10 }, (_, index) => ({ id: `app-${index}` })),
+    childPages: [Array.from({ length: 10 }, (_, index) => ({ id: `app-${index}` }))],
   };
   const state = {
     folderPageSize: 10,

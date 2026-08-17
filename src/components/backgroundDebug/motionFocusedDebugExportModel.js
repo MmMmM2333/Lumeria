@@ -14,7 +14,7 @@ import {
   makeTrackKey,
   normalizeQuery,
   readNumber,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 export const MOTION_FOCUSED_DEBUG_SCHEMA = "pixi-motion-focused-debug/v1";
 

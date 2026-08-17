@@ -614,7 +614,6 @@ fn validate_layout_folder_item(
     let pages = child_pages
         .as_array()
         .ok_or_else(|| format!("layout item {label}.childPages must be an array"))?;
-    let mut flattened_children = Vec::new();
     for (page_index, page) in pages.iter().enumerate() {
         let children = page.as_array().ok_or_else(|| {
             format!("layout item {label}.childPages[{page_index}] must be an array")
@@ -624,27 +623,15 @@ fn validate_layout_folder_item(
                 child,
                 &format!("{label}.childPages[{page_index}][{child_index}]"),
             )?;
-            flattened_children.push(child.clone());
         }
     }
 
-    let children = object
-        .get("children")
-        .ok_or_else(|| format!("layout item {label}.children is required"))?;
-    let children = children
-        .as_array()
-        .ok_or_else(|| format!("layout item {label}.children must be an array"))?;
-    if children.len() != flattened_children.len() {
-        return Err(format!(
-            "layout item {label}.children must match flattened childPages"
-        ));
-    }
-    for (child_index, child) in children.iter().enumerate() {
-        validate_layout_folder_child(child, &format!("{label}.children[{child_index}]"))?;
-        if child != &flattened_children[child_index] {
-            return Err(format!(
-                "layout item {label}.children must match flattened childPages"
-            ));
+    if let Some(children) = object.get("children") {
+        let children = children
+            .as_array()
+            .ok_or_else(|| format!("layout item {label}.children must be an array"))?;
+        for (child_index, child) in children.iter().enumerate() {
+            validate_layout_folder_child(child, &format!("{label}.children[{child_index}]"))?;
         }
     }
 
@@ -895,17 +882,6 @@ mod tests {
                                 }
                             ]
                         ],
-                        "children": [
-                            {
-                                "id": "app-b",
-                                "type": "manualApp",
-                                "name": "App B",
-                                "launchTarget": {
-                                    "kind": "url",
-                                    "path": "https://example.com"
-                                }
-                            }
-                        ]
                     }
                 ]
             ],
@@ -974,7 +950,6 @@ mod tests {
                 "type": "folder",
                 "name": format!("Folder {level}"),
                 "childPages": [[item.clone()]],
-                "children": [item]
             });
         }
 
@@ -1411,15 +1386,15 @@ mod tests {
     }
 
     #[test]
-    fn save_layout_to_path_requires_folder_child_contract() {
+    fn save_layout_to_path_requires_folder_child_pages() {
         let dir = test_dir("invalid-folder-contract");
         let path = dir.join("layout.json");
         let mut invalid = valid_layout();
-        invalid["pages"][0][1]["children"] = json!([]);
+        invalid["pages"][0][1].as_object_mut().expect("folder object").remove("childPages");
 
-        let error = save_layout_to_path(&path, &invalid).expect_err("children should fail");
+        let error = save_layout_to_path(&path, &invalid).expect_err("childPages should fail");
 
-        assert!(error.contains("children"));
+        assert!(error.contains("childPages"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
     }
@@ -1430,7 +1405,6 @@ mod tests {
         let path = dir.join("layout.json");
         let mut invalid = valid_layout();
         invalid["pages"][0][1]["childPages"][0][0]["id"] = json!("app-a");
-        invalid["pages"][0][1]["children"][0]["id"] = json!("app-a");
 
         let error = save_layout_to_path(&path, &invalid).expect_err("duplicate ids should fail");
 
@@ -1467,7 +1441,6 @@ mod tests {
         let mut invalid = valid_layout();
         let nested = nested_folder_item(2);
         invalid["pages"][0][1]["childPages"][0][0] = nested.clone();
-        invalid["pages"][0][1]["children"][0] = nested;
 
         let error = save_layout_to_path(&path, &invalid).expect_err("nested folder should fail");
 

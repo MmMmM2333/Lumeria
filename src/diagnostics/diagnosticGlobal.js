@@ -2,7 +2,7 @@ import {
   deleteLaunchpadDebugValue,
   readLaunchpadDebugValue,
   setLaunchpadDebugValue,
-} from "../rendering/pixi/debugNamespace.js";
+} from "../rendering/diagnosticPort.js";
 
 export const DIAGNOSTIC_GLOBAL_KEY = "diagnostics";
 export const DIAGNOSTIC_API_SCHEMA = "lumeria-diagnostic-api/v1";

@@ -2137,7 +2137,7 @@ export async function runDesktopLayerTests() {
     makeLayer.iconBoundsRegistry = iconBoundsRegistry;
     const folder = makeNode("folder");
     folder.item = {
-      children: [{ id: "child-1" }],
+      childPages: [[{ id: "child-1" }]],
       id: "folder-1",
       type: "folder",
     };

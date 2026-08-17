@@ -4,7 +4,7 @@ import {
 } from "./launchpadConstants.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
-import { getKawaseDebugEffectPlanParams } from "../rendering/pixi/background/kawaseDebugParams.js";
+import { getKawaseDebugEffectPlanParams } from "../rendering/backgroundPort.js";
 import {
   backgroundAssetPort,
   layoutStorePort,

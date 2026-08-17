@@ -17,8 +17,8 @@ import { getDomRefElement } from "./usePageGridMetrics.js";
 import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
-} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
-import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
+} from "../rendering/desktopScenePort.js";
+import { stageLayoutRecordToClientRect } from "../rendering/desktopScenePort.js";
 import {
   captureGroupTransferSourceEntries,
   indexGroupTransferSources,
@@ -29,13 +29,15 @@ import {
   GROUP_TRANSFER_PHASE,
   isInteractiveGroupTransferPhase,
 } from "../domain/groupTransferSession.js";
-import { prefersReducedMotion } from "../rendering/pixi/animation/motionPreferences.js";
-import { appendGroupTrailPoint } from "../rendering/pixi/scene/groupDragPresentation.js";
+import {
+  appendGroupTrailPoint,
+  prefersReducedMotion,
+} from "../rendering/desktopScenePort.js";
 import {
   makeGroupTransferRuntimeEntries,
   makeGroupTransferRuntimeReleasePlan,
-} from "../rendering/pixi/scene/groupTransferRuntimeAdapter.js";
-import { makeIconVisualSpec } from "../rendering/pixi/scene/iconVisualSpec.js";
+} from "../rendering/desktopScenePort.js";
+import { makeIconVisualSpec } from "../rendering/desktopScenePort.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
@@ -188,8 +190,7 @@ function updateLayoutProjection(group, intent, plan) {
 }
 
 function getFolderChildrenPages(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages;
-  return [Array.isArray(folder?.children) ? folder.children : []];
+  return Array.isArray(folder?.childPages) ? folder.childPages : [[]];
 }
 
 function makeGroupSourceMembers(pages, draggedIds) {

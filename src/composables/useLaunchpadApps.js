@@ -15,6 +15,7 @@ import {
   normalizeScanRoots,
 } from "../domain/launchpadData.js";
 import { applyCachedIconAssetUrlsToApp } from "../domain/iconSource.js";
+import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import { catalogPort } from "../platform/launchpadPorts.js";
 import { ICON_SIZE_MAX } from "./launchpadConstants.js";
 
@@ -60,7 +61,7 @@ export function useLaunchpadApps(options) {
   const scanResultSelectedIds = ref([]);
   const newScanKeyword = ref("");
   const hiddenAppIds = ref([]);
-  const scanRoots = ref(createDefaultScanRoots(t));
+  const scanRoots = ref(createDefaultScanRoots({ roots: DEFAULT_SCAN_ROOTS, translate: t }));
   const scanKeywordBlacklist = ref([...DEFAULT_SCAN_KEYWORD_BLACKLIST]);
   const scanKeywordAllowlist = ref([]);
   const scanAppBlacklist = ref([]);
@@ -213,7 +214,6 @@ export function useLaunchpadApps(options) {
       for (const page of item.childPages || []) {
         for (const child of page || []) updateItem(child);
       }
-      item.children = (item.childPages || []).flat().filter(Boolean).map(options.cloneItem);
     }
 
     for (const page of next) {
@@ -311,7 +311,7 @@ export function useLaunchpadApps(options) {
   }
 
   function resetScanRootsToDefaults() {
-    scanRoots.value = createDefaultScanRoots(t);
+    scanRoots.value = createDefaultScanRoots({ roots: DEFAULT_SCAN_ROOTS, translate: t });
   }
 
   function confirmResetScanRoots() {
@@ -785,7 +785,6 @@ export function useLaunchpadApps(options) {
       for (const page of item.childPages || []) {
         for (const child of page || []) updateItem(child);
       }
-      item.children = (item.childPages || []).flat().filter(Boolean).map(options.cloneItem);
     }
 
     for (const page of next) {
@@ -1123,7 +1122,7 @@ export function useLaunchpadApps(options) {
       : [];
     scanRoots.value = Array.isArray(fragment.scanRoots)
       ? normalizeScanRoots(fragment.scanRoots)
-      : createDefaultScanRoots(t);
+      : createDefaultScanRoots({ roots: DEFAULT_SCAN_ROOTS, translate: t });
     scanKeywordBlacklist.value = Array.isArray(fragment.scanKeywordBlacklist)
       ? normalizeScanKeywordBlacklist(fragment.scanKeywordBlacklist)
       : [...DEFAULT_SCAN_KEYWORD_BLACKLIST];

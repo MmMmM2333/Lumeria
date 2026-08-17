@@ -160,7 +160,10 @@ function startFrameGeometryMotion(layer, frame, toRect, options = {}, fadeContro
       },
       release() {
         cancelFadeControls("release");
-        frameMotionControlBase.cancel();
+        // Retargeting must release the old callbacks without cancelling the
+        // underlying spring. The motion runtime can then retarget the active
+        // lane and carry its current velocity into the new target.
+        frameMotionControlBase.release();
       },
     };
     layer.frameGhostMotionControl = frameMotionControl;

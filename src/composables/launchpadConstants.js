@@ -1,10 +1,12 @@
-export const DEFAULT_ROWS = 5;
-export const DEFAULT_COLS = 7;
-export const DEFAULT_FOLDER_ROWS = 5;
-export const DEFAULT_FOLDER_COLS = 7;
-export const DEFAULT_ICON_SIZE = 64;
-export const ICON_SIZE_MIN = 32;
-export const ICON_SIZE_MAX = 128;
+export {
+  DEFAULT_COLS,
+  DEFAULT_FOLDER_COLS,
+  DEFAULT_FOLDER_ROWS,
+  DEFAULT_ICON_SIZE,
+  DEFAULT_ROWS,
+  ICON_SIZE_MAX,
+  ICON_SIZE_MIN,
+} from "../domain/launchpadGridDefaults.js";
 export const ICON_SIZE_STEP = 8;
 export const FOLDER_DRAG_SORT_GATE_DURATION = 430;
 export const DRAG_INTENT_IDLE_DELAY = 140;

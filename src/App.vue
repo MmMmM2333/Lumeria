@@ -61,61 +61,8 @@
     >
       <PixiDesktopSurface
         :key="singleStageRenderKey"
-        :active-page-index="activePageIndex"
-        :active-pages="activePages"
-        :desktop-visual-transform="desktopVisualTransform"
-        :desktop-visual-alpha="desktopVisualAlpha"
-        :launchpad-visual-transform="launchpadVisualTransform"
-        :launchpad-visual-alpha="launchpadVisualAlpha"
-        :desktop-projection-epoch="desktopProjectionEpoch"
-        :desktop-track-motion-key="desktopTrackMotionKey"
-        :dom-refs="desktopDomRefs"
-        :drag-folder-hover-state="dragFolderHoverState"
-        :drag-folder-target-id="dragFolderTargetId"
-        :drag-hit-debug-options="desktopDragHitDebugOptions"
-        :drag-hit-debug-state="dragHitDebugState"
-        :drag-meta="dragMeta"
-        :group-drag-state="groupDragState"
-        :folder-overlay-state="folderOverlay"
-        :folder-page-size="folderPageSize"
-        :folder-closing-handoff-id="folderClosingHandoffId"
-        :get-desktop-page-render-mode="getDesktopPageRenderMode"
-        :get-visible-desktop-page="getVisibleDesktopPage"
-        :grid-cols="gridCols"
-        :grid-rows="gridRows"
-        :icon-size="iconSize"
-        :icon-gesture-presentation="resolveMaybeRef(iconGesturePresentation)"
-        :icon-bounds-registry="iconBoundsRegistry"
-        :is-edit-mode="isEditMode"
-        :is-batch-selection-active="isBatchSelectionActive"
-        :is-desktop-closing="isDesktopClosing"
-        :folder-source-ghosted-id="folderSourceGhostedId"
-        :folder-source-ghosted-ids="folderSourceGhostedIds"
-        :is-folder-opening-preview-frame-ghosted="isFolderOpeningPreviewFrameGhosted"
-        :is-icon-opening="isIconOpening"
-        :focused-icon="focusedIcon"
-        :selected-app-ids="batchSelectedIds"
-        :is-home-reveal-settling="isHomeRevealSettling"
-        :is-search-mode="isSearchMode"
-        :is-textless-mode="isTextlessMode"
-        :launch-target-status-by-id="launchTargetStatusById"
-        :live-desktop-diagnostics-port="liveDesktopDiagnosticsPort"
-        :page-grid-measure-style="pageGridMeasureStyle"
-        :page-track-scrub="resolveMaybeRef(pageTrackScrub)"
-        :desktop-grid-debug-options="desktopGridDebugOptions"
-        :set-page-ref="setPageRef"
-        :show-missing-launch-target-badge="showMissingLaunchTargetBadge"
-        :single-stage-diagnostics-options="singleStageDiagnosticsOptions"
-        @desktop-focus="keyboardFocusArea = 'desktop'"
-        @group-release-complete="completeGroupRelease"
-        @internal-activity="handleFolderPixiInternalActivity"
-        @pointerdown-icon="handleIconPointerDown"
-        @context-menu-request="handleContextMenuRequest"
-        @remove-app="removeManagedAppFromLaunchpad"
-        @choose-app-icon="openExistingAppIconChooser"
-        @reset-app-icon="resetAppCustomIcon"
-        @surface-pointerdown="handleLaunchpadSurfacePointerDown"
-        @wheel="handleLaunchpadWheel"
+        :scene-frame="desktopSceneFrame"
+        @scene-event="handlePixiSceneEvent"
       />
     </LaunchpadChromeFrame>
 
@@ -172,16 +119,15 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
+import { makeDesktopSceneFrame } from "./rendering/sceneFrame.js";
 import {
   getSingleStageDiagnosticsOptions,
   getSingleStageRenderKey,
-} from "./rendering/pixi/scene/singleStagePlan.js";
-import {
   resolveFolderClosingHandoffId,
   resolveFolderPixiActivityUpdate,
   resolveFolderSourceGhostedIds,
   shouldClearFolderClosingHandoffRetainId,
-} from "./rendering/pixi/scene/folderClosingHandoffActivity.js";
+} from "./rendering/desktopScenePort.js";
 import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
 import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
 import { useLaunchpadController } from "./composables/useLaunchpadController.js";
@@ -193,7 +139,7 @@ import {
   isLaunchpadContextMenuInteractionBlocked,
   resolveLaunchpadContextMenuTarget,
 } from "./domain/input/launchpadPointerTarget.js";
-import { ICON_BOUNDS_KIND } from "./rendering/pixi/geometry/iconBoundsRegistry.js";
+import { ICON_BOUNDS_KIND } from "./rendering/desktopScenePort.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
   LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT,
@@ -937,6 +883,91 @@ const folderSourceGhostedIds = computed(() => {
     renderedFolderId: renderedFolder.value?.id || null,
   });
 });
+
+const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
+  activePageIndex: resolveMaybeRef(activePageIndex),
+  activePages: resolveMaybeRef(activePages),
+  desktopGridDebugOptions: resolveMaybeRef(desktopGridDebugOptions),
+  desktopProjectionEpoch: resolveMaybeRef(desktopProjectionEpoch),
+  desktopTrackMotionKey: resolveMaybeRef(desktopTrackMotionKey),
+  desktopVisualAlpha: resolveMaybeRef(desktopVisualAlpha),
+  desktopVisualTransform: resolveMaybeRef(desktopVisualTransform),
+  domRefs: desktopDomRefs,
+  dragFolderHoverState: resolveMaybeRef(dragFolderHoverState),
+  dragFolderTargetId: resolveMaybeRef(dragFolderTargetId),
+  dragHitDebugOptions: resolveMaybeRef(desktopDragHitDebugOptions),
+  dragHitDebugState: resolveMaybeRef(dragHitDebugState),
+  dragMeta: resolveMaybeRef(dragMeta),
+  focusedIcon: resolveMaybeRef(focusedIcon),
+  folderClosingHandoffId: resolveMaybeRef(folderClosingHandoffId),
+  folderOverlayState: folderOverlay,
+  folderPageSize: resolveMaybeRef(folderPageSize),
+  folderSourceGhostedId: resolveMaybeRef(folderSourceGhostedId),
+  folderSourceGhostedIds: resolveMaybeRef(folderSourceGhostedIds),
+  getDesktopPageRenderMode,
+  getVisibleDesktopPage,
+  gridCols: resolveMaybeRef(gridCols),
+  gridRows: resolveMaybeRef(gridRows),
+  groupDragState: resolveMaybeRef(groupDragState),
+  iconBoundsRegistry,
+  iconGesturePresentation: resolveMaybeRef(iconGesturePresentation),
+  iconSize: resolveMaybeRef(iconSize),
+  isBatchSelectionActive: resolveMaybeRef(isBatchSelectionActive),
+  isDesktopClosing: resolveMaybeRef(isDesktopClosing),
+  isEditMode: resolveMaybeRef(isEditMode),
+  isFolderOpeningPreviewFrameGhosted,
+  isHomeRevealSettling: resolveMaybeRef(isHomeRevealSettling),
+  isIconOpening,
+  isSearchMode: resolveMaybeRef(isSearchMode),
+  isTextlessMode: resolveMaybeRef(isTextlessMode),
+  launchTargetStatusById: resolveMaybeRef(launchTargetStatusById),
+  launchpadVisualAlpha: resolveMaybeRef(launchpadVisualAlpha),
+  launchpadVisualTransform: resolveMaybeRef(launchpadVisualTransform),
+  liveDesktopDiagnosticsPort,
+  pageGridMeasureStyle: resolveMaybeRef(pageGridMeasureStyle),
+  pageTrackScrub: resolveMaybeRef(pageTrackScrub),
+  selectedAppIds: resolveMaybeRef(batchSelectedIds),
+  setPageRef,
+  showMissingLaunchTargetBadge: resolveMaybeRef(showMissingLaunchTargetBadge),
+  singleStageDiagnosticsOptions: resolveMaybeRef(singleStageDiagnosticsOptions),
+}));
+
+function handlePixiSceneEvent(event = {}) {
+  switch (event.type) {
+    case "desktop-focus":
+      keyboardFocusArea.value = "desktop";
+      return;
+    case "group-release-complete":
+      completeGroupRelease(event.payload);
+      return;
+    case "internal-activity":
+      handleFolderPixiInternalActivity(event.active, event.folderId);
+      return;
+    case "icon-pointerdown":
+      handleIconPointerDown(event.event, event.item, event.source);
+      return;
+    case "context-menu-request":
+      handleContextMenuRequest(event.event);
+      return;
+    case "remove-app":
+      removeManagedAppFromLaunchpad(event.itemId);
+      return;
+    case "choose-app-icon":
+      openExistingAppIconChooser(event.itemId);
+      return;
+    case "reset-app-icon":
+      resetAppCustomIcon(event.itemId);
+      return;
+    case "surface-pointerdown":
+      handleLaunchpadSurfacePointerDown(event.event);
+      return;
+    case "wheel":
+      handleLaunchpadWheel(event.event);
+      return;
+    default:
+      return;
+  }
+}
 
 function handleFolderPixiInternalActivity(active, folderId = null) {
   const next = resolveFolderPixiActivityUpdate({

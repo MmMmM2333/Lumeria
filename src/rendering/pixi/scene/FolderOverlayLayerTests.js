@@ -84,7 +84,6 @@ export async function runFolderOverlayLayerTests() {
     });
   }
   const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
-  const { createLayerTransitionPort } = await import("./layerTransitionPort.js");
   const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
@@ -181,19 +180,20 @@ export async function runFolderOverlayLayerTests() {
   assert(activeDot.alpha === 0.96 && activeDot.scale === 1.02, "active Pixi page dots should keep the active visual while hovered");
 
   {
-    const layer = {
-      closingDesktopPageTrackMirrorX: 42,
-      closingGhostLayer: { children: [] },
-      frameGhostState: { height: 80, left: 120, top: 60, width: 90 },
-      pageTrack: { visible: false },
-      panel: { visible: false },
-    };
-    const port = createLayerTransitionPort(layer);
-    const frame = port.getClosingPresentationFrameRect();
-    const debug = port.getDebugSnapshot();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    layer.closingDesktopPageTrackMirrorX = 42;
+    layer.frameGhostState = { height: 80, left: 120, top: 60, width: 90 };
+    layer.pageTrack.visible = false;
+    layer.panel.visible = false;
+    const frame = layer.getClosingPresentationFrameRect();
+    const debug = layer.getTransitionDebugSnapshot();
     assert(frame.left === 162, "closing presentation frame rect should include desktop mirror offset");
     assert(layer.frameGhostState.left === 120, "closing presentation frame rect should not mutate the stored frame state");
     assert(debug.framePresentation.left === 162, "closing debug frame presentation should include desktop mirror offset");
+    assert(debug.panelVisible === false && debug.pageTrackVisible === false, "transition debug snapshot should expose current layer visibility");
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
   }
 
   const visualRect = makePanelVisualRect(
@@ -230,6 +230,7 @@ export async function runFolderOverlayLayerTests() {
   {
     const layer = {
       frameGhostState: { height: 420, left: 20, top: 30, width: 620 },
+      getClosingPresentationFrameRect() { return this.frameGhostState; },
       hitArea: null,
       pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
       stageRect: { left: 100, top: 200, width: 800, height: 600 },
@@ -247,6 +248,7 @@ export async function runFolderOverlayLayerTests() {
   {
     const layer = {
       frameGhostState: { height: 60, left: 20, top: 30, width: 60 },
+      getClosingPresentationFrameRect() { return this.frameGhostState; },
       hitArea: null,
       pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
       stageRect: { left: 100, top: 200, width: 800, height: 600 },

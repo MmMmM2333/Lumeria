@@ -11,7 +11,7 @@ import {
   normalizeQuery,
   readNumber,
   resolveRecordLabel,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 export const MOTION_TRACK_CHART_DISPLAY_RAW = "raw";
 export const MOTION_TRACK_CHART_DISPLAY_NORMALIZED = "normalized";

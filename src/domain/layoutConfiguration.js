@@ -2,7 +2,7 @@ import {
   DEFAULT_ICON_SIZE,
   ICON_SIZE_MAX,
   ICON_SIZE_MIN,
-} from "../composables/launchpadConstants.js";
+} from "./launchpadGridDefaults.js";
 import { clamp } from "./launchpadLayout.js";
 
 export const FOLDER_ICON_SIZE_MODE_CUSTOM = "custom";

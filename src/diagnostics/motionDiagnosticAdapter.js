@@ -1,10 +1,10 @@
 import { unsupportedDiagnosticOperation, DiagnosticError } from "./diagnosticError.js";
-import { createMotionDebugAIReport } from "../rendering/pixi/animation/motionDebugReport.js";
+import { createMotionDebugAIReport } from "../rendering/motionPort.js";
 import {
   createMotionReplayCaptureController,
   createMotionReplayTraceFromRuntime,
-} from "../rendering/pixi/animation/motionReplayTrace.js";
-import { motionRuntime } from "../rendering/pixi/animation/motionRuntime.js";
+} from "../rendering/motionPort.js";
+import { motionRuntime } from "../rendering/motionPort.js";
 import { motionDiagnosticSession } from "./motionDiagnosticSession.js";
 import {
   MOTION_REPLAY_DOCUMENT_VIEWS,

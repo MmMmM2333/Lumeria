@@ -55,11 +55,6 @@ export function normalizeBackgroundEffect(value) {
   return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
 }
 
-export function backgroundEffectUsesPixi(effect) {
-  const normalizedEffect = normalizeBackgroundEffect(effect);
-  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL;
-}
-
 export function backgroundSourceUsesImage(source) {
   const normalizedSource = normalizeBackgroundSource(source);
   return normalizedSource === BACKGROUND_SOURCE_CUSTOM_IMAGE || normalizedSource === BACKGROUND_SOURCE_WINDOWS_WALLPAPER;

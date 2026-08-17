@@ -5,7 +5,7 @@ import {
   normalizeQuery,
   readNumber,
   resolveRecordLabel,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 export const MOTION_RECORD_WINDOW_CUSTOM = "custom";
 export const MOTION_RECORD_WINDOW_PRESETS = [

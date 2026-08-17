@@ -2,7 +2,7 @@ import { Texture } from "pixi.js";
 import {
   getPixiIconTextureSource,
   isTauriAssetIconSource,
-} from "../../../domain/iconSource.js";
+} from "./iconTextureSourceAdapter.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import {
   hashDebugSample,
@@ -16,6 +16,7 @@ const pendingTextureLoads = new Map();
 const textureLoadListeners = new Map();
 const textureLoadSettlementSubscribers = new Set();
 const recentTextureErrors = [];
+const recentTextureObserverErrors = [];
 let textureCacheGeneration = 0;
 const TEXTURE_ERROR_LIMIT = 16;
 
@@ -42,13 +43,34 @@ function recordTextureError(source, error) {
   return entry;
 }
 
+function recordTextureObserverError(source, error) {
+  const entry = {
+    error: makeTextureErrorDebugMessage(source, error),
+    source: makeDebugSourceSnapshot(source),
+    time: Date.now(),
+  };
+  recentTextureObserverErrors.push(entry);
+  if (recentTextureObserverErrors.length > TEXTURE_ERROR_LIMIT) {
+    recentTextureObserverErrors.splice(0, recentTextureObserverErrors.length - TEXTURE_ERROR_LIMIT);
+  }
+  return entry;
+}
+
 function notifyTextureLoadSettled(source) {
   const listeners = textureLoadListeners.get(source);
   textureLoadListeners.delete(source);
+  const notifySafely = (callback, args) => {
+    try {
+      callback(...args);
+    } catch (error) {
+      const diagnostic = recordTextureObserverError(source, error);
+      console.error("Icon texture settlement observer failed", diagnostic);
+    }
+  };
   if (listeners) {
-    for (const listener of listeners.values()) listener();
+    for (const listener of listeners.values()) notifySafely(listener, []);
   }
-  for (const subscriber of textureLoadSettlementSubscribers) subscriber(source);
+  for (const subscriber of textureLoadSettlementSubscribers) notifySafely(subscriber, [source]);
 }
 
 function addTextureLoadListener(source, listener, listenerKey = listener) {
@@ -174,6 +196,7 @@ export function clearIconTextureCache() {
   pendingTextureLoads.clear();
   textureLoadListeners.clear();
   recentTextureErrors.length = 0;
+  recentTextureObserverErrors.length = 0;
 }
 
 export function getIconTextureCacheDebugSnapshot() {
@@ -191,6 +214,10 @@ export function getIconTextureCacheDebugSnapshot() {
     generation: textureCacheGeneration,
     pending: Array.from(pendingTextureLoads.keys(), makeDebugSourceSnapshot),
     recentErrors: recentTextureErrors.map((entry) => ({
+      ...entry,
+      source: { ...entry.source },
+    })),
+    observerErrors: recentTextureObserverErrors.map((entry) => ({
       ...entry,
       source: { ...entry.source },
     })),

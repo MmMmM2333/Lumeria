@@ -74,7 +74,7 @@ function countSelectedFolderChildren(folder, selectedIds) {
 function getFolderPreviewChildren(folder) {
   return Array.isArray(folder?.childPages)
     ? folder.childPages.flatMap((page) => page || [])
-    : folder?.children || [];
+    : [];
 }
 
 export function normalizeDesktopHandoffState(state = {}) {
@@ -269,11 +269,9 @@ function stableDataUrlSignature(value) {
 
 function makeItemRenderSignature(item, depth = 0) {
   if (!item || typeof item !== "object") return null;
-  const childSource = Array.isArray(item.children)
-    ? item.children
-    : Array.isArray(item.childPages)
-      ? item.childPages.flat()
-      : [];
+  const childSource = Array.isArray(item.childPages)
+    ? item.childPages.flat()
+    : [];
   const children = depth >= 2
     ? null
     : childSource

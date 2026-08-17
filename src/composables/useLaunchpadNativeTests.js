@@ -52,6 +52,21 @@ import {
 const layoutV2RoundTripFixture = JSON.parse(
   readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
 );
+
+function canonicalizeLayoutSnapshot(value) {
+  const snapshot = structuredClone(value);
+  const visit = (item) => {
+    if (!item || typeof item !== "object") return;
+    delete item.children;
+    for (const page of item.childPages || []) {
+      for (const child of page || []) visit(child);
+    }
+  };
+  for (const page of snapshot.pages || []) {
+    for (const item of page || []) visit(item);
+  }
+  return snapshot;
+}
 const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
 function makeScanStats(overrides = {}) {
@@ -377,7 +392,7 @@ export async function runLaunchpadNativeTests() {
     await Promise.all(timers.splice(0).map((timer) => timer()));
 
     assert(roundTripSaves.length === 1, "a loaded layout should be persisted once when explicitly scheduled");
-    const expectedRoundTrip = structuredClone(layoutV2RoundTripFixture);
+    const expectedRoundTrip = canonicalizeLayoutSnapshot(layoutV2RoundTripFixture);
     expectedRoundTrip.settings.scanRoots[0].lastScannedAt = roundTripSaves[0].settings.scanRoots[0].lastScannedAt;
     assert(
       expectedRoundTrip.settings.scanRoots[0].lastScannedAt !== layoutV2RoundTripFixture.settings.scanRoots[0].lastScannedAt,

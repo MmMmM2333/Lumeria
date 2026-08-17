@@ -536,4 +536,56 @@ export async function runFolderFrameGhostTests() {
     layer.frameGhostMotionControl?.cancel?.();
     motionRuntime.reset();
   }
+
+  {
+    const { retargetFrameGhost, startFrameGhost } = await import("./folderFrameGhost.js");
+    const { motionRuntime } = await import("../animation/motionRuntime.js");
+    const makeGraphics = () => ({
+      alpha: 0,
+      visible: false,
+      clear() {
+        return this;
+      },
+      fill() {
+        return this;
+      },
+      roundRect() {
+        return this;
+      },
+      stroke() {
+        return this;
+      },
+    });
+    const layer = {
+      closingGhostLayer: {},
+      closingPreviewSwapLayer: {},
+      frameGhost: makeGraphics(),
+      panelMaterial: { alpha: 0, visible: false },
+      notifyTitleFrame() {},
+    };
+
+    motionRuntime.reset();
+    const springConfig = { damping: 2, mass: 1, stiffness: 120 };
+    startFrameGhost(layer, { height: 80, left: 0, top: 0, width: 80 }, { height: 100, left: 160, top: 0, width: 100 }, {
+      folderId: "folder-1",
+      frameGhostPhase: "closing",
+      preserveOnComplete: true,
+      springConfig,
+    });
+    motionRuntime.step(0.1);
+    const beforeRetarget = motionRuntime.debugSnapshot({ includeChannels: true }).animations
+      .find((animation) => animation.prop === "left");
+    assert(beforeRetarget && Math.abs(beforeRetarget.velocity) > 0.01, "retarget fixture should have a moving frame before interruption");
+
+    retargetFrameGhost(layer, { height: 90, left: 20, top: 0, width: 90 }, {
+      folderId: "folder-1",
+      frameGhostPhase: "closing",
+      preserveOnComplete: true,
+      springConfig,
+    });
+    const afterRetarget = motionRuntime.debugSnapshot({ includeChannels: true }).animations
+      .find((animation) => animation.prop === "left");
+    assert(afterRetarget && Math.abs(afterRetarget.velocity) > 0.01, "retarget should preserve the active spring velocity instead of restarting from rest");
+    motionRuntime.reset();
+  }
 }

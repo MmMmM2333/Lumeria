@@ -7,8 +7,7 @@ function centerOfRect(rect, fallback) {
 }
 
 function getFolderPages(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages;
-  return [Array.isArray(folder?.children) ? folder.children : []];
+  return Array.isArray(folder?.childPages) ? folder.childPages : [[]];
 }
 
 export function indexGroupTransferSources(pages) {

@@ -3,7 +3,6 @@ import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_DIMMED,
-  backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundBaseOpacity,
@@ -22,6 +21,7 @@ import {
   panelSpring,
 } from "./launchpadMotion.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
+import { backgroundEffectUsesPixi } from "../rendering/backgroundPort.js";
 
 export function useLaunchpadViewState(options) {
   const isDesktopFullyClosed = computed(() => Boolean(!options.isDesktopOpen.value && !options.isDesktopClosing.value));

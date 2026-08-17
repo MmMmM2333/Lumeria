@@ -11,44 +11,16 @@ import {
 import { normalizeLaunchpadIconVariant } from "./launchpadIconVariant.js";
 import { normalizeLocalePreference } from "../i18n/locale.js";
 
-export const DEFAULT_SCAN_ROOTS = [
-  {
-    id: "root-windows-app-catalog",
-    type: "windowsAppCatalog",
-    labelKey: "settings.apps.sources.default.windowsCatalog",
-    path: "shell:AppsFolder",
-    enabled: true,
-    removable: false,
-    maxEntries: 5000,
-  },
-  {
-    id: "root-start-menu-user",
-    type: "startMenuUser",
-    labelKey: "settings.apps.sources.default.userStartMenu",
-    path: "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
-    enabled: true,
-    removable: true,
-    maxDepth: 8,
-    maxEntries: 10000,
-  },
-  {
-    id: "root-start-menu-system",
-    type: "startMenuSystem",
-    labelKey: "settings.apps.sources.default.systemStartMenu",
-    path: "%ProgramData%/Microsoft/Windows/Start Menu/Programs",
-    enabled: true,
-    removable: true,
-    maxDepth: 8,
-    maxEntries: 10000,
-  },
-];
 export const DEFAULT_SCAN_KEYWORD_BLACKLIST = ["卸载", "uninstall"];
 
-export function createDefaultScanRoots(translate) {
+export function createDefaultScanRoots({ roots, translate } = {}) {
+  if (!Array.isArray(roots)) {
+    throw new TypeError("createDefaultScanRoots requires platform scan roots");
+  }
   if (typeof translate !== "function") {
     throw new TypeError("createDefaultScanRoots requires a translation function");
   }
-  return DEFAULT_SCAN_ROOTS.map(({ labelKey, ...root }) => {
+  return roots.map(({ labelKey, ...root }) => {
     const label = String(translate(labelKey) || "").trim();
     if (!label) throw new TypeError(`Default scan root label is empty: ${labelKey}`);
     return { ...root, label };
@@ -390,35 +362,80 @@ export function createLaunchpadDataHelpers(options) {
     return app;
   }
 
-  function restoreSavedItem(item, catalog, usedAppIds) {
+  function addReconcileIssue(issues, issue) {
+    issues.push({
+      ...issue,
+      path: String(issue.path || "savedDocument"),
+    });
+  }
+
+  function restoreSavedItem(item, catalog, usedAppIds, issues, path) {
     if (item?.type === "catalogApp") {
       const app = catalog.get(String(item.id || ""));
-      if (!app || usedAppIds.has(app.id)) return null;
+      if (!app) {
+        addReconcileIssue(issues, { id: String(item.id || ""), kind: "missing-catalog-item", path });
+        return null;
+      }
+      if (usedAppIds.has(app.id)) {
+        addReconcileIssue(issues, { id: app.id, kind: "duplicate-item", path });
+        return null;
+      }
       usedAppIds.add(app.id);
       return makeCatalogRuntimeApp(app, item);
     }
     if (item?.type === "manualApp") {
       const app = normalizeSavedManualApp(item);
-      if (!app || usedAppIds.has(app.id)) return null;
+      if (!app) {
+        addReconcileIssue(issues, { id: String(item?.id || ""), kind: "invalid-manual-item", path });
+        return null;
+      }
+      if (usedAppIds.has(app.id)) {
+        addReconcileIssue(issues, { id: app.id, kind: "duplicate-item", path });
+        return null;
+      }
       usedAppIds.add(app.id);
       return app;
     }
+    addReconcileIssue(issues, { id: String(item?.id || ""), kind: "unsupported-saved-item", path });
     return null;
   }
 
-  function restoreFolder(folder, catalog, usedAppIds) {
-    const sourcePages = Array.isArray(folder?.childPages)
+  function restoreFolder(folder, catalog, usedAppIds, issues, path) {
+    const hasChildPages = Array.isArray(folder?.childPages);
+    const hasLegacyChildren = Array.isArray(folder?.children);
+    const sourcePages = hasChildPages
       ? folder.childPages
-      : chunkIntoPages(folder?.children || [], getFolderPageSize());
+      : hasLegacyChildren
+        ? chunkIntoPages(folder.children, getFolderPageSize())
+        : [];
+    if (!hasChildPages && hasLegacyChildren) {
+      addReconcileIssue(issues, { id: String(folder?.id || ""), kind: "legacy-folder-children", path });
+    }
+    if (hasChildPages && hasLegacyChildren) {
+      const pageIds = sourcePages.flat().filter(Boolean).map((item) => String(item?.id || ""));
+      const childIds = folder.children.filter(Boolean).map((item) => String(item?.id || ""));
+      if (JSON.stringify(pageIds) !== JSON.stringify(childIds)) {
+        addReconcileIssue(issues, { id: String(folder?.id || ""), kind: "folder-child-representation-mismatch", path });
+      }
+    }
     const childPages = sourcePages
-      .map((page) =>
+      .map((page, pageIndex) =>
         (page || [])
-          .map((child) => restoreSavedItem(child, catalog, usedAppIds))
+          .map((child, childIndex) => restoreSavedItem(
+            child,
+            catalog,
+            usedAppIds,
+            issues,
+            `${path}.childPages[${pageIndex}][${childIndex}]`
+          ))
           .filter(Boolean)
       )
       .filter((page) => page.length > 0);
 
-    if (!childPages.length) return null;
+    if (!childPages.length) {
+      addReconcileIssue(issues, { id: String(folder?.id || ""), kind: "empty-folder-after-reconcile", path });
+      return null;
+    }
     const fallbackName = String(getNewFolderName() || "").trim();
     if (!fallbackName) throw new TypeError("getNewFolderName returned an empty name");
     return withFolderPages(
@@ -455,12 +472,14 @@ export function createLaunchpadDataHelpers(options) {
   function reconcileDocument(apps, savedDocument, hiddenAppIds) {
     const catalog = new Map(apps.map((app) => [app.id, app]));
     const usedAppIds = new Set();
+    const issues = [];
     const sourcePages = Array.isArray(savedDocument?.pages) ? savedDocument.pages : [];
-    const mergedPages = sourcePages.map((page) =>
+    const mergedPages = sourcePages.map((page, pageIndex) =>
       (page || [])
-        .map((item) => {
-          if (item?.type === "folder") return restoreFolder(item, catalog, usedAppIds);
-          return restoreSavedItem(item, catalog, usedAppIds);
+        .map((item, itemIndex) => {
+          const path = `pages[${pageIndex}][${itemIndex}]`;
+          if (item?.type === "folder") return restoreFolder(item, catalog, usedAppIds, issues, path);
+          return restoreSavedItem(item, catalog, usedAppIds, issues, path);
         })
         .filter(Boolean)
     );
@@ -468,7 +487,10 @@ export function createLaunchpadDataHelpers(options) {
     const newApps = apps
       .filter((app) => !usedAppIds.has(app.id) && !hidden.has(app.id))
       .map((app) => makeCatalogRuntimeApp(app));
-    return fitPagesToGrid(appendAppsToPages(mergedPages, newApps));
+    return {
+      issues,
+      pages: fitPagesToGrid(appendAppsToPages(mergedPages, newApps)),
+    };
   }
 
   function makeLayoutPages(sourcePages) {
@@ -486,7 +508,6 @@ export function createLaunchpadDataHelpers(options) {
         type: "folder",
         name: item.name,
         childPages,
-        children: childPages.flat(),
       };
     }
 

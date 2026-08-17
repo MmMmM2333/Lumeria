@@ -1,10 +1,10 @@
 import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
   formatMainWindowShortcut,
-  mainWindowShortcutFromKeyboardEvent,
   normalizeMainWindowShortcut,
   NO_MAIN_WINDOW_SHORTCUT,
 } from "./mainWindowShortcut.js";
+import { mainWindowShortcutFromKeyboardEvent } from "../platform/mainWindowShortcutInput.js";
 
 export function runMainWindowShortcutTests() {
   const assert = (condition, message) => {

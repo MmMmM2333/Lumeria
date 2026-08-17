@@ -27,7 +27,7 @@ export function runLaunchpadHelperTests(context) {
   const c = { id: "c", type: "app", name: "C", emoji: "C" };
   const d = { id: "d", type: "app", name: "D", emoji: "D" };
   const e = { id: "e", type: "app", name: "E", emoji: "E" };
-  const folder = { id: "folder", type: "folder", name: "Folder", children: [b] };
+  const folder = { id: "folder", type: "folder", name: "Folder", childPages: [[b]] };
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad Vue helper test failed] ${message}`);
   };
@@ -47,7 +47,7 @@ export function runLaunchpadHelperTests(context) {
   assert(countItemOccurrences(folderInsert, "c") === 1, "insertAppIntoFolder should not duplicate app");
   const searchApps = collectAppsFromPages([[a, { ...folder, childPages: [[b]], children: [b] }]]);
   assert(searchApps.length === 2 && searchApps.every((item) => item.type === "app"), "search collection should flatten apps and exclude folders");
-  const folderSlots = insertAppIntoFolder([[{ ...folder, children: [b, null, c] }]], "folder", a, 0, 1, 4);
+  const folderSlots = insertAppIntoFolder([[{ ...folder, childPages: [[b, null, c]] }]], "folder", a, 0, 1, 4);
   assert(getFolderChildPages(findFolder(folderSlots, "folder")?.item, 4)[0].map((item) => item.id).join("") === "bac", "insertAppIntoFolder should compact a folder page before sorting");
   const fullFolder = { id: "full-folder", type: "folder", name: "Full", childPages: [[a, b]], children: [a, b] };
   assert(getVisibleFolderPage(getFolderChildPages(fullFolder, 2)[0]).length === 2, "folder page visibility should honor the configured page size");

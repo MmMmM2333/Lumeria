@@ -139,11 +139,21 @@ function makeLayer() {
     panel: { visible: true },
     pageTrack: { visible: false },
     visible: true,
+    acquireDesktopSourceOwnership(owner = {}) {
+      const key = makeDesktopSourceVisualKey(owner.folderId || this.currentFolderId);
+      return key ? this.acquireVisualOwnership?.(key, owner) ?? true : false;
+    },
+    clearCurrentFolder() {
+      this.currentFolderId = null;
+    },
     clearFrameGhost() {
       calls.push("clear-frame");
     },
     onClosingHandoffVisualRelease(folderId) {
       calls.push(`release-visual:${folderId}`);
+    },
+    onClosingHandoffPrepare(folderId) {
+      calls.push(`prepare:${folderId}`);
     },
     onInternalActivityChange(active) {
       activityChanges.push(active);
@@ -156,6 +166,21 @@ function makeLayer() {
     },
     createClosingGhostToken(folderId = null) {
       return `closing:${folderId || ""}:test`;
+    },
+    getClosingFrameStartRect(panelRect, folderId) {
+      if (this.frameGhostFolderId !== folderId) return panelRect;
+      return this.frameGhostState ? { ...this.frameGhostState } : panelRect;
+    },
+    getCurrentFolderId() {
+      return this.currentFolderId || null;
+    },
+    getTransitionDebugSnapshot() {
+      return {
+        closingGhostCount: closingGhosts.length,
+        framePresentation: this.frameGhostState || null,
+        panelVisible: this.panel.visible,
+        pageTrackVisible: this.pageTrack.visible,
+      };
     },
     hideIconNodesForTransition(itemId) {
       for (const node of this.iconNodes.values()) {

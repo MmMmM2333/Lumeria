@@ -3,9 +3,7 @@ export const FOLDER_THUMB_PREVIEW_VISIBLE_ROWS = 3;
 
 export function getFolderPreviewMotionItems(folder, pageSize) {
   const safePageSize = Math.max(1, Number(pageSize) || 9);
-  const firstPage = Array.isArray(folder?.childPages)
-    ? folder.childPages[0] || []
-    : folder?.children || [];
+  const firstPage = Array.isArray(folder?.childPages) ? folder.childPages[0] || [] : [];
   return firstPage.filter(Boolean).slice(0, safePageSize);
 }
 

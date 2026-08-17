@@ -1,6 +1,5 @@
 export function getFirstFolderPageItems(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages[0] || [];
-  return Array.isArray(folder?.children) ? folder.children : [];
+  return Array.isArray(folder?.childPages) ? folder.childPages[0] || [] : [];
 }
 
 export function makeFolderPrewarmKey(folder, pageSize) {

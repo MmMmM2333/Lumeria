@@ -15,8 +15,7 @@ function normalizeIds(ids) {
 }
 
 function getFolderChildren(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages.flatMap((page) => page || []);
-  return Array.isArray(folder?.children) ? folder.children : [];
+  return Array.isArray(folder?.childPages) ? folder.childPages.flatMap((page) => page || []) : [];
 }
 
 export function collectLaunchpadAppIds(pages) {

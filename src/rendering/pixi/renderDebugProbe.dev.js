@@ -1,4 +1,4 @@
-import { getPixiIconTextureSource } from "../../domain/iconSource.js";
+import { getPixiIconTextureSource } from "./assets/iconTextureSourceAdapter.js";
 import {
   hashDebugSample as hashSample,
   makeDebugSourceSnapshot,

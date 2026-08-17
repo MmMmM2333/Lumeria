@@ -4,7 +4,6 @@ import { cx } from "../domain/launchpadLayout.js";
 import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
   formatMainWindowShortcut,
-  mainWindowShortcutFromKeyboardEvent,
 } from "../domain/mainWindowShortcut.js";
 import {
   APPEARANCE_DARK as SETTINGS_THEME_DARK,
@@ -19,7 +18,8 @@ import {
   LAUNCHPAD_ICON_PASTEL_LIGHT,
 } from "../domain/launchpadIconVariant.js";
 import { developerToolsPort, nativeLifecyclePort } from "../platform/launchpadPorts.js";
-import { rgbArrayToHex } from "../rendering/pixi/background/acrylicParams.js";
+import { mainWindowShortcutFromKeyboardEvent } from "../platform/mainWindowShortcutInput.js";
+import { rgbArrayToHex } from "../domain/backgroundAcrylicParams.js";
 import { useBackgroundImagePixelSize } from "./useBackgroundImagePixelSize.js";
 import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./launchpadConstants.js";
 import {

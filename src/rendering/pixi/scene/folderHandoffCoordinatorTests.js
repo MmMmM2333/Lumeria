@@ -81,6 +81,27 @@ function makeClosingLayer() {
       if (acquired && owner?.token != null) this.ownedVisualTokens.add(owner.token);
       return acquired;
     },
+    acquireDesktopSourceOwnership(owner = {}) {
+      const key = makeDesktopSourceVisualKey(owner.folderId || this.currentFolderId);
+      return key ? this.acquireVisualOwnership(key, owner) : false;
+    },
+    getCurrentFolderId() {
+      return this.currentFolderId || null;
+    },
+    getClosingFrameStartRect(panelRect) {
+      return panelRect;
+    },
+    getTransitionDebugSnapshot() {
+      return {
+        closingGhostCount: closingGhosts.length,
+        framePresentation: this.frameGhostState || null,
+        panelVisible: this.panel.visible,
+        pageTrackVisible: this.pageTrack.visible,
+      };
+    },
+    clearCurrentFolder() {
+      this.currentFolderId = null;
+    },
     clearFrameGhost() {
       this.calls.push("clear-frame");
     },
@@ -98,6 +119,8 @@ function makeClosingLayer() {
     hidePageTrackForTransition() {
       this.pageTrack.visible = false;
     },
+    onClosingHandoffPrepare() {},
+    onClosingHandoffVisualRelease() {},
     releaseTransitionOwnership(token) {
       this.ownerKindAtOpeningClear = this.visualOwnership.getOwner(sourceKey)?.kind || null;
       return this.visualOwnership.releaseByToken(token);

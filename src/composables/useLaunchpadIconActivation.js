@@ -2,8 +2,8 @@ import { clamp } from "../domain/launchpadLayout.js";
 import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
-} from "../rendering/pixi/geometry/iconBoundsRegistry.js";
-import { stageLayoutRecordToClientRect } from "../rendering/pixi/geometry/stageCoordinates.js";
+} from "../rendering/desktopScenePort.js";
+import { stageLayoutRecordToClientRect } from "../rendering/desktopScenePort.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;

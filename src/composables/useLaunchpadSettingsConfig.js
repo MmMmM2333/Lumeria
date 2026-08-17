@@ -1,7 +1,7 @@
 import {
   ACRYLIC_COMPOSITE_PRESETS,
   normalizeAcrylicCompositeParams,
-} from "../rendering/pixi/background/acrylicParams.js";
+} from "../domain/backgroundAcrylicParams.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -51,7 +51,6 @@ export {
   DEFAULT_BACKGROUND_DARKEN_STRENGTH,
   DEFAULT_BACKGROUND_IMAGE_OPACITY,
   DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY,
-  backgroundEffectUsesPixi,
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundAcrylicBlurStrength,

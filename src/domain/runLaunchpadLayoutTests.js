@@ -62,6 +62,7 @@ import { runIconContextMenuGeometryTests } from "../components/iconContextMenuGe
 import { runMotionLabModelTests } from "../motionLab/motionLabModelTests.js";
 import { runBackgroundImageLayoutTests } from "./backgroundImageLayoutTests.js";
 import { runLaunchpadDataTests } from "./launchpadDataTests.js";
+import { runDomainDependencyTests } from "./domainDependencyTests.js";
 import { runLaunchpadSearchDomainTests } from "./launchpadSearchTests.js";
 import { runLaunchpadGestureEngineTests } from "./input/launchpadGestureEngineTests.js";
 import { runLaunchpadPointerTargetTests } from "./input/launchpadPointerTargetTests.js";
@@ -152,6 +153,8 @@ import { runFolderReleaseControllerTests } from "../rendering/pixi/scene/folderR
 import { runIconSceneHelpersTests } from "../rendering/pixi/scene/iconSceneHelpersTests.js";
 import { runPageTrackMotionTests } from "../rendering/pixi/scene/pageTrackMotionTests.js";
 import { runSingleStageDiagnosticsTests } from "../rendering/pixi/scene/singleStageDiagnosticsTests.js";
+import { runSceneFrameTests } from "../rendering/pixi/scene/sceneFrameTests.js";
+import { runRenderingBoundaryTests } from "../rendering/renderingBoundaryTests.js";
 import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
 import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
 import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
@@ -198,6 +201,7 @@ runLaunchpadHelperTests({
 await runWindowChromeApiTests();
 runLaunchpadDocumentCoordinatorTests();
 runLaunchpadDataTests();
+runDomainDependencyTests();
 runLaunchpadSearchDomainTests();
 runLaunchpadGestureEngineTests();
 runLaunchpadPointerTargetTests();
@@ -351,6 +355,8 @@ runFolderReleaseControllerTests();
 runIconSceneHelpersTests();
 runPageTrackMotionTests();
 runSingleStageDiagnosticsTests();
+runSceneFrameTests();
+runRenderingBoundaryTests();
 await runIconTextureCacheTests();
 
 console.info("Launchpad layout helper tests passed");

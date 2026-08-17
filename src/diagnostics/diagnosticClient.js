@@ -1,4 +1,4 @@
-import { readLaunchpadDebugValue } from "../rendering/pixi/debugNamespace.js";
+import { readLaunchpadDebugValue } from "../rendering/diagnosticPort.js";
 import { DiagnosticError } from "./diagnosticError.js";
 import {
   DIAGNOSTIC_ARTIFACT_DELIVERY_SCHEMA,

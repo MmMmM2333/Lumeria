@@ -1143,7 +1143,7 @@ export class DesktopLayer extends Container {
       const isDirectlyOwned = ownership.itemIds.has(node.item?.id) ||
         ownership.folderShellIds.has(node.item?.id);
       const suppressedFolderPreviewChildIds = node.item?.type === "folder"
-        ? (node.item.childPages || [node.item.children || []])
+        ? (node.item.childPages || [])
           .flatMap((page) => page || [])
           .filter((child) => ownership.itemIds.has(child?.id))
           .map((child) => child.id)
@@ -1602,7 +1602,7 @@ export class DesktopLayer extends Container {
     const targetRect = liveTargetRect || registeredThumbRect || stableTargetRect;
     const childRows = [];
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
-      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
+      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] : null;
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(stageRect, slotIndex);
       const targetChildRect = targetRect ? makeFolderThumbPreviewRect(targetRect, slotIndex) : null;
@@ -1838,7 +1838,7 @@ export class DesktopLayer extends Container {
       target: roundRect(targetThumbRect, 2),
     });
     for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
-      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] : null;
+      const child = node.item ? node.item.childPages?.[0]?.[slotIndex] : null;
       if (!child?.id) continue;
       const actualRect = node.getFolderPreviewChildBounds(registration.stageRect, slotIndex);
       const stableChildTargetRect = projectStageLayoutRecordToClient(
@@ -1893,7 +1893,7 @@ export class DesktopLayer extends Container {
 
   registerFolderChildren(folder, node, stageRect, target = null) {
     for (let index = 0; index < 9; index += 1) {
-      const child = node.item ? node.item.childPages?.[0]?.[index] || node.item.children?.[index] : null;
+      const child = node.item ? node.item.childPages?.[0]?.[index] : null;
       if (!child?.id) continue;
       const childTargets = resolveFolderPreviewChildBoundsTargets({ node, slotIndex: index, stageRect, target });
       const keyInput = { childId: child.id, folderId: folder.id, slotIndex: index };

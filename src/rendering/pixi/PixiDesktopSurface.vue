@@ -3,8 +3,8 @@
     ref="mainRef"
     class="desktop-main pixi-desktop-main pixi-desktop-main-root-stage"
     tabindex="-1"
-    :style="pageGridMeasureStyle"
-    @focus="$emit('desktop-focus')"
+    :style="props.pageGridMeasureStyle"
+    @focus="emit('desktop-focus')"
   >
     <Teleport to="body">
       <div
@@ -15,8 +15,8 @@
         ]"
         :style="rootStageHostStyle"
         @contextmenu="requestContextMenuAtPointer"
-        @pointerdown="$emit('surface-pointerdown', $event)"
-        @wheel="$emit('wheel', $event)"
+        @pointerdown="emit('surface-pointerdown', $event)"
+        @wheel="emit('wheel', $event)"
       />
       <div
         v-if="shouldRenderSingleStageFolderDomControls"
@@ -28,7 +28,7 @@
           ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
           name="pixiSingleStageFolderName"
-          :value="folderOverlayState.renderedFolder.value.name"
+          :value="props.folderOverlayState.renderedFolder.value.name"
           :disabled="isSingleStageFolderInputDisabled"
           :style="singleStageFolderNameInputStyle"
           maxlength="32"
@@ -76,6 +76,7 @@ import {
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
 import { createResizeSettleScheduler } from "./resizeSettleScheduler.js";
+import { makeSceneEvent, readDesktopSceneFrameValue } from "./scene/sceneFrame.js";
 import {
   getFolderHandoffDebugOptions,
   rectDelta as getDebugRectDelta,
@@ -95,52 +96,14 @@ const VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS = 1500;
 const RESIZE_SETTLE_FRAMES = 3;
 const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
-const props = defineProps({
-  activePageIndex: { type: Number, required: true },
-  activePages: { type: Array, required: true },
-  desktopVisualAlpha: { type: Number, default: 1 },
-  desktopVisualTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
-  launchpadVisualAlpha: { type: Number, default: 1 },
-  launchpadVisualTransform: { type: Object, default: () => ({ scale: 1, y: 0 }) },
-  desktopGridDebugOptions: { type: Object, default: null },
-  desktopProjectionEpoch: { type: Number, default: 0 },
-  desktopTrackMotionKey: { type: String, required: true },
-  domRefs: { type: Object, required: true },
-  dragFolderHoverState: { type: Object, default: null },
-  dragFolderTargetId: { type: String, default: null },
-  dragHitDebugOptions: { type: Object, default: null },
-  dragHitDebugState: { type: Object, default: null },
-  dragMeta: { type: Object, default: null },
-  groupDragState: { type: Object, default: null },
-  folderClosingHandoffId: { type: String, default: null },
-  folderOverlayState: { type: Object, default: null },
-  folderPageSize: { type: Number, required: true },
-  getDesktopPageRenderMode: { type: Function, required: true },
-  getVisibleDesktopPage: { type: Function, required: true },
-  gridCols: { type: Number, required: true },
-  gridRows: { type: Number, required: true },
-  iconSize: { type: Number, required: true },
-  iconGesturePresentation: { type: Object, default: null },
-  iconBoundsRegistry: { type: Object, required: true },
-  isBatchSelectionActive: { type: Boolean, default: false },
-  isEditMode: { type: Boolean, default: false },
-  isDesktopClosing: { type: Boolean, default: false },
-  folderSourceGhostedId: { type: String, default: null },
-  folderSourceGhostedIds: { type: [Array, Set], default: () => [] },
-  isFolderOpeningPreviewFrameGhosted: { type: Function, default: () => false },
-  isHomeRevealSettling: { type: Boolean, default: false },
-  isIconOpening: { type: Function, required: true },
-  focusedIcon: { type: Object, default: null },
-  selectedAppIds: { type: [Array, Set], default: () => [] },
-  isSearchMode: { type: Boolean, default: false },
-  isTextlessMode: { type: Boolean, default: false },
-  launchTargetStatusById: { type: Object, default: () => ({}) },
-  liveDesktopDiagnosticsPort: { type: Object, default: null },
-  pageGridMeasureStyle: { type: Object, required: true },
-  pageTrackScrub: { type: Object, default: null },
-  setPageRef: { type: Function, required: true },
-  showMissingLaunchTargetBadge: { type: Boolean, default: true },
-  singleStageDiagnosticsOptions: { type: [Boolean, Object], default: null },
+const rawProps = defineProps({
+  sceneFrame: { type: Object, required: true },
+});
+const props = new Proxy(rawProps, {
+  get(target, key) {
+    if (key === "sceneFrame") return target.sceneFrame;
+    return readDesktopSceneFrameValue(target.sceneFrame, key);
+  },
 });
 const localization = useLocalization();
 const { t } = localization;
@@ -149,18 +112,22 @@ const pixiRenderCopy = computed(() => ({
   searchEmpty: t("launchpad.search.empty"),
 }));
 
-const emit = defineEmits([
-  "choose-app-icon",
-  "context-menu-request",
-  "desktop-focus",
-  "group-release-complete",
-  "internal-activity",
-  "pointerdown-icon",
-  "remove-app",
-  "reset-app-icon",
-  "surface-pointerdown",
-  "wheel",
-]);
+const emitSceneEvent = defineEmits(["scene-event"]);
+function emit(name, ...args) {
+  const event = {
+    "choose-app-icon": makeSceneEvent("choose-app-icon", { itemId: args[0] }),
+    "context-menu-request": makeSceneEvent("context-menu-request", { event: args[0] }),
+    "desktop-focus": makeSceneEvent("desktop-focus"),
+    "group-release-complete": makeSceneEvent("group-release-complete", { payload: args[0] }),
+    "internal-activity": makeSceneEvent("internal-activity", { active: args[0], folderId: args[1] || null }),
+    "pointerdown-icon": makeSceneEvent("icon-pointerdown", { event: args[0], item: args[1], source: args[2] }),
+    "remove-app": makeSceneEvent("remove-app", { itemId: args[0] }),
+    "reset-app-icon": makeSceneEvent("reset-app-icon", { itemId: args[0] }),
+    "surface-pointerdown": makeSceneEvent("surface-pointerdown", { event: args[0] }),
+    "wheel": makeSceneEvent("wheel", { event: args[0] }),
+  }[name];
+  if (event) emitSceneEvent("scene-event", event);
+}
 
 function getResolvedSingleStageDiagnosticsOptions() {
   const options = props.singleStageDiagnosticsOptions;
@@ -470,7 +437,7 @@ function createSingleStageFolderState(
     ? (
       Array.isArray(projectedFolder.childPages)
         ? projectedFolder.childPages
-        : [projectedFolder.children || []]
+        : []
     )
     : source.folderPages?.value;
   return createFolderLayerState({
@@ -857,8 +824,7 @@ function clearFolderTexturePrewarmTimer() {
 }
 
 function getFirstFolderPageItems(folder) {
-  if (Array.isArray(folder?.childPages)) return folder.childPages[0] || [];
-  return folder?.children || [];
+  return Array.isArray(folder?.childPages) ? folder.childPages[0] || [] : [];
 }
 
 function collectFolderTexturePrewarmItems() {

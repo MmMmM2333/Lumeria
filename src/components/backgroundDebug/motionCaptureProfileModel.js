@@ -1,7 +1,7 @@
 import {
   makeTrackKey as makeMotionTrackKey,
   readNumber,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 export const MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL = "default-visual";
 export const MOTION_CAPTURE_PROFILE_TRANSFORM_FOCUS = "transform-focus";

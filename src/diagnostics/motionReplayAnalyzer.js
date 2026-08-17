@@ -9,7 +9,7 @@ import {
   normalizeQuery,
   readNumber,
   resolveRecordLabel,
-} from "../rendering/pixi/animation/motionTraceShared.js";
+} from "../rendering/motionPort.js";
 import {
   DEFAULT_DIAGNOSTIC_LOCALE,
   translateDiagnosticMessage,

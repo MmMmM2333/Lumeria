@@ -1,9 +1,11 @@
 import {
   applyCachedIconAssetUrlsToApp,
   getIconSource,
+} from "./iconSource.js";
+import {
   getPixiIconTextureSource,
   isPixiTextureSafeIconSource,
-} from "./iconSource.js";
+} from "../rendering/pixi/assets/iconTextureSourceAdapter.js";
 
 export function runIconSourceTests() {
   const assert = (condition, message) => {

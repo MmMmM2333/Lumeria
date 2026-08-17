@@ -13,6 +13,21 @@ const layoutV2RoundTripFixture = JSON.parse(
 );
 const localizationText = createLocalization({ issue: null, match: "exact", preference: "zh-CN", resolvedLocale: "zh-CN" }).text;
 
+function canonicalizeLayoutSnapshot(value) {
+  const snapshot = structuredClone(value);
+  const visit = (item) => {
+    if (!item || typeof item !== "object") return;
+    delete item.children;
+    for (const page of item.childPages || []) {
+      for (const child of page || []) visit(child);
+    }
+  };
+  for (const page of snapshot.pages || []) {
+    for (const item of page || []) visit(item);
+  }
+  return snapshot;
+}
+
 function createHarness() {
   const layout = useLaunchpadLayout({
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
@@ -74,7 +89,7 @@ export function runLaunchpadDocumentCoordinatorTests() {
     assert(pagesOutcome.kind === "pagesRestored", "page restore should return an explicit outcome");
     deepStrictEqual(
       JSON.parse(JSON.stringify(document.capture())),
-      layoutV2RoundTripFixture,
+      canonicalizeLayoutSnapshot(layoutV2RoundTripFixture),
       "the coordinator should preserve the complete version-2 document across restore/capture"
     );
     assert(document.signature() === JSON.stringify(document.capture()), "signature should describe the current captured document without storing a second copy");

@@ -5,7 +5,6 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
-import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 function makeClosingPreviewSwapKey(folderId, pageIndex) {
   return `closing-preview-swap:${folderId || "folder"}:${pageIndex}`;
@@ -51,7 +50,6 @@ export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
-    this.transitionPort = options.transitionPort || ensureLayerTransitionPort(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;
@@ -70,14 +68,14 @@ export class FolderClosingPreviewSwapController {
 
   ensureLayer() {
     this.handoffCoordinator.ensureClosePreviewSwaps();
-    return this.transitionPort.ensureClosingPreviewSwapLayer(this.containerFactory);
+    return this.layer.ensureClosingPreviewSwapLayer(this.containerFactory);
   }
 
   clear() {
     this.cancelMotionControls();
     this.activeSwap = null;
     this.handoffCoordinator.clearClosePreviewSwaps();
-    const ghosts = this.transitionPort.removeClosingPreviewSwapChildren();
+    const ghosts = this.layer.removeClosingPreviewSwapChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);

@@ -168,6 +168,29 @@ export async function runIconTextureCacheTests() {
     clearIconTextureCache();
     assert(cachedTexture.destroyed, "clearing the local icon cache should destroy cached textures");
 
+    clearIconTextureCache();
+    images.length = 0;
+    const observerItem = { id: "app-observer", iconDataUrl: "data:image/png;base64,observer" };
+    const laterSettlements = [];
+    const unsubscribeThrowingObserver = subscribeIconTextureLoadSettlements(() => {
+      throw new Error("observer boom");
+    });
+    const unsubscribeLaterObserver = subscribeIconTextureLoadSettlements((source) => laterSettlements.push(source));
+    try {
+      getCachedIconTexture(observerItem);
+      assert(images.length === 1, "observer isolation fixture should create one image request");
+      images[0].onload();
+      await flushTextureLoad();
+      const observerSnapshot = getIconTextureCacheDebugSnapshot();
+      assert(laterSettlements.length === 1, "a throwing texture observer should not prevent later observers");
+      assert(observerSnapshot.cached.length === 1 && observerSnapshot.failed.length === 0, "observer failures should not turn a successful texture load into an IO failure");
+      assert(observerSnapshot.recentErrors.length === 0, "observer failures should use the observer diagnostic channel instead of texture IO errors");
+      assert(observerSnapshot.observerErrors.length === 1, "observer failures should remain visible in the dedicated diagnostics channel");
+    } finally {
+      unsubscribeThrowingObserver();
+      unsubscribeLaterObserver();
+    }
+
     images.length = 0;
     textureFromCalls.length = 0;
     const staleItem = { id: "app-4", iconDataUrl: "data:image/png;base64,fourth" };

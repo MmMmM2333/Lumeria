@@ -66,7 +66,7 @@ function makeFolderOriginBounds(node, iconRect) {
   const stageRect = node.stageRect || { left: 0, top: 0 };
   const previewChildRects = [];
   for (let slotIndex = 0; slotIndex < 9; slotIndex += 1) {
-    const child = node.item.childPages?.[0]?.[slotIndex] || node.item.children?.[slotIndex] || null;
+    const child = node.item.childPages?.[0]?.[slotIndex] || null;
     if (!child?.id) continue;
     const rect = node.getFolderPreviewChildBounds(stageRect, slotIndex);
     if (rect) previewChildRects.push({ childId: child.id, rect, slotIndex });

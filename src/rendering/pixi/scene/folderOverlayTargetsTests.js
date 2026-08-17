@@ -5,6 +5,7 @@ import {
   hasUsableFolderGhostTarget,
   makeClosingGhostTarget,
   makeClosingPreviewSwapTargets,
+  makeFolderCenterCollapseRect,
   makeFolderThumbPreviewRect,
   makeOpeningGhostTarget,
   makePreviewChildKey,
@@ -236,6 +237,44 @@ export function runFolderOverlayTargetsTests() {
   assert(
     nearlyEqual(fallbackClosingTarget.targetStageLayoutRect.left + fallbackClosingTarget.targetStageLayoutRect.width / 2, 23),
     "non-preview closing targets should collapse to the stage layout thumbnail center"
+  );
+
+  const staleStableTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    folderId: "folder-2",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 1,
+    item: { id: "app-b" },
+    previewSlotById,
+    stableFolderCloseTarget: { ...stableTarget, folderId: "folder-1" },
+  });
+  const expectedStalePreviewTarget = makeFolderThumbPreviewRect(folderThumbRect, 1);
+  assert(
+    staleStableTarget.targetClientRect?.left === expectedStalePreviewTarget.left && !staleStableTarget.targetStageLayoutRect,
+    "a stale stable folder target should fall back to the current thumbnail rect"
+  );
+
+  const staleStableCenterTarget = makeClosingGhostTarget({
+    cellHeight: 80,
+    cellWidth: 100,
+    closeThumbRect: folderThumbRect,
+    cols: 5,
+    folderId: "folder-2",
+    iconBounds: { height: 56, left: 150, top: 160, width: 56 },
+    iconSize: 56,
+    index: 6,
+    item: { id: "app-z" },
+    previewSlotById,
+    stableFolderCloseTarget: { ...stableTarget, folderId: "folder-1" },
+  });
+  const expectedStaleCenterTarget = makeFolderCenterCollapseRect(folderThumbRect);
+  assert(
+    staleStableCenterTarget.targetClientRect?.left === expectedStaleCenterTarget.left && !staleStableCenterTarget.targetStageLayoutRect,
+    "a stale stable folder target should fall back to the current center collapse rect"
   );
 
   const swapTargets = makeClosingPreviewSwapTargets({

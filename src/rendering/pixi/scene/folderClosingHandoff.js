@@ -2,7 +2,6 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
-import { ensureLayerTransitionPort } from "./layerTransitionPort.js";
 
 function isUsableRect(rect) {
   return Boolean(rect) && rect.width > 0 && rect.height > 0;
@@ -21,10 +20,9 @@ export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = global
 }
 
 export function applyClosingHandoffOnlyOverlayState(layer) {
-  const transitionPort = ensureLayerTransitionPort(layer);
-  transitionPort.setHitArea(null);
-  transitionPort.setPanelVisible(false);
-  transitionPort.setPageTrackVisible(false);
+  layer.hitArea = null;
+  layer.panel.visible = false;
+  layer.pageTrack.visible = false;
   if (layer.pageDotsLayer) {
     layer.pageDotsLayer.visible = false;
     layer.pageDotsLayer.eventMode = "none";
@@ -43,7 +41,7 @@ export function getClosingPresentationStageHitRects(layer) {
     .map((rect) => clientRectToStageVisualRect(rect, layer?.stageRect))
     .filter(isUsableRect);
   if (targetRects.length) return targetRects;
-  const frameRect = ensureLayerTransitionPort(layer).getClosingPresentationFrameRect();
+  const frameRect = layer.getClosingPresentationFrameRect();
   if (isUsableRect(frameRect)) return [frameRect];
   return [];
 }
@@ -72,7 +70,7 @@ export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = global
 
 export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {
   layer.clearClosingGhostRevealTimer();
-  ensureLayerTransitionPort(layer).setPageTrackVisible(false);
+  layer.pageTrack.visible = false;
   scheduleClosingHandoffCleanup(layer, cleanup, scheduler);
   layer.flushCompletedClosingControllerGhosts(state);
 }

@@ -1,5 +1,4 @@
 import {
-  DEFAULT_SCAN_ROOTS,
   canExcludeAppFromScan,
   createDefaultScanRoots,
   createLaunchpadDataHelpers,
@@ -12,6 +11,7 @@ import {
   normalizeScanKeywordBlacklist,
   normalizeScanRoots,
 } from "./launchpadData.js";
+import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import { createLaunchpadLayoutHelpers, makePageSize } from "./launchpadLayout.js";
 
 export function runLaunchpadDataTests() {
@@ -76,11 +76,14 @@ export function runLaunchpadDataTests() {
   const windowsAppRoot = DEFAULT_SCAN_ROOTS.find((root) => root.type === "windowsAppCatalog");
   assert(windowsAppRoot?.path === "shell:AppsFolder", "default scan roots should include the Windows app catalog");
   assert(windowsAppRoot?.removable === false, "the system-managed Windows app catalog should not be removable");
-  const localizedRoots = createDefaultScanRoots((key) => ({
-    "settings.apps.sources.default.systemStartMenu": "System Start Menu",
-    "settings.apps.sources.default.userStartMenu": "User Start Menu",
-    "settings.apps.sources.default.windowsCatalog": "Windows Apps",
-  })[key]);
+  const localizedRoots = createDefaultScanRoots({
+    roots: DEFAULT_SCAN_ROOTS,
+    translate: (key) => ({
+      "settings.apps.sources.default.systemStartMenu": "System Start Menu",
+      "settings.apps.sources.default.userStartMenu": "User Start Menu",
+      "settings.apps.sources.default.windowsCatalog": "Windows Apps",
+    })[key],
+  });
   assert(localizedRoots.map((root) => root.label).join(",") === "Windows Apps,User Start Menu,System Start Menu", "default scan-root labels should be created through the active locale");
   const normalizedRoot = normalizeScanRoots([{ id: "root", label: "Root", path: "C:/Apps" }])[0];
   assert(!("lastScannedAt" in normalizedRoot), "scan roots should omit absent optional fields");
@@ -97,7 +100,7 @@ export function runLaunchpadDataTests() {
   assert(!canExcludeAppFromScan({ id: "manual-tool", origin: "manual" }), "manual apps should not expose scan exclusion");
   assert(makeScanAppExclusionEntry({ id: "manual-web", origin: "manual" }) === null, "scan exclusion entries should require catalog ownership");
 
-  const reconciledV2 = dataHelpers.reconcileDocument(
+  const reconciledV2Result = dataHelpers.reconcileDocument(
     [
       {
         id: "catalog-steam",
@@ -143,6 +146,8 @@ export function runLaunchpadDataTests() {
     },
     ["catalog-hidden"]
   );
+  const reconciledV2 = reconciledV2Result.pages;
+  assert(reconciledV2Result.issues.length === 0, "a clean reconciliation should not emit issues");
   assert(reconciledV2[0][0].origin === "catalog", "catalog references should become catalog-owned runtime apps");
   assert(reconciledV2[0][0].name === "My Steam", "catalog references should apply explicit presentation overrides");
   assert(reconciledV2[0][0].launchTarget.path === "C:/Current/Steam.lnk", "saved catalog references must not override current launch data");
@@ -179,14 +184,15 @@ export function runLaunchpadDataTests() {
     settings: {},
   };
 
-  const merged = dataHelpers.reconcileDocument(catalogApps, savedLayout, ["hidden"]);
+  const mergedResult = dataHelpers.reconcileDocument(catalogApps, savedLayout, ["hidden"]);
+  const merged = mergedResult.pages;
   assert(merged.length === 2, "new non-hidden catalog apps should overflow to a second page when the first page is full");
   assert(merged[0][0].name === "Renamed A", "saved app names should override catalog names");
   assert(merged[0][0].iconDataUrl === "data:a", "saved catalog icon data should not override native catalog icons");
   assert(merged[0][0].customIconPath === "C:/Icons/custom-a.png", "saved custom icon paths should be preserved");
   assert(merged[0][1].type === "folder", "saved folders should be preserved");
-  assert(merged[0][1].children.map((item) => item.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
-  assert(!("launchArgs" in merged[0][1].children[1]), "non-executable custom apps should not preserve launch args");
+  assert(merged[0][1].childPages.flat().map((item) => item.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
+  assert(!("launchArgs" in merged[0][1].childPages.flat()[1]), "non-executable custom apps should not preserve launch args");
   assert(merged[1].map((item) => item.id).join(",") === "c", "new visible catalog apps should append after saved pages");
   assert(!merged.flat().some((item) => item.id === "hidden"), "hidden catalog apps should not be appended");
 
@@ -306,6 +312,28 @@ export function runLaunchpadDataTests() {
   assert(!("iconPath" in snapshot.pages[0][0]), "catalog references should omit scanned icon paths");
   assert(!("launchTarget" in snapshot.pages[0][0]), "catalog references should omit scanned launch targets");
   assert(snapshot.pages[0][0].overrides.customIconPath === "C:/Icons/custom-a.png", "catalog references should preserve explicit presentation overrides");
-  assert(snapshot.pages[0][1].children.length === 2, "folder snapshots should include flat children for compatibility");
-  assert(!("launchArgs" in snapshot.pages[0][1].children[1]), "layout snapshots should omit non-executable launch args");
+  assert(snapshot.pages[0][1].childPages.flat().length === 2, "folder snapshots should persist canonical child pages");
+  assert(!("children" in snapshot.pages[0][1]), "layout snapshots should not persist a duplicate flat children representation");
+  assert(!("launchArgs" in snapshot.pages[0][1].childPages.flat()[1]), "layout snapshots should omit non-executable launch args");
+
+  const issueResult = dataHelpers.reconcileDocument(
+    catalogApps,
+    {
+      version: 2,
+      pages: [[
+        { id: "missing", type: "catalogApp" },
+        {
+          id: "legacy-folder",
+          type: "folder",
+          name: "Legacy",
+          childPages: [[{ id: "b", type: "catalogApp" }]],
+          children: [{ id: "c", type: "catalogApp" }],
+        },
+      ]],
+      settings: {},
+    },
+    []
+  );
+  assert(issueResult.issues.some((issue) => issue.kind === "missing-catalog-item"), "missing catalog items should be reported instead of silently disappearing");
+  assert(issueResult.issues.some((issue) => issue.kind === "folder-child-representation-mismatch"), "mismatched legacy folder representations should be reported");
 }

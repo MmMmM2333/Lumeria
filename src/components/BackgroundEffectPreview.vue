@@ -48,15 +48,19 @@ import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
-  backgroundEffectUsesPixi,
   clampBackgroundBaseOpacity,
   normalizeBackgroundBaseColor,
 } from "../composables/useLaunchpadSettingsConfig.js";
 import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
 } from "../domain/backgroundImageLayout.js";
-import { BackgroundEffectPreviewRenderer } from "../rendering/pixi/background/backgroundEffectPreviewRenderer.js";
-import { isKawaseDebugEnabled, useKawaseDebugOverrideEnabled, useKawaseDebugParams } from "../rendering/pixi/background/kawaseDebugParams.js";
+import {
+  BackgroundEffectPreviewRenderer,
+  backgroundEffectUsesPixi,
+  isKawaseDebugEnabled,
+  useKawaseDebugOverrideEnabled,
+  useKawaseDebugParams,
+} from "../rendering/backgroundPort.js";
 import { useLocalization } from "../i18n/localization.js";
 
 const DEFAULT_RENDER_WIDTH = 960;

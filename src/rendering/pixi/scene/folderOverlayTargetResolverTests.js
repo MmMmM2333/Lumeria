@@ -25,7 +25,7 @@ export function runFolderOverlayTargetResolverTests() {
 
   const folder = {
     id: "folder-1",
-    children: [{ id: "app-a" }, { id: "app-b" }, { id: "app-c" }],
+    childPages: [[{ id: "app-a" }, { id: "app-b" }, { id: "app-c" }]],
   };
   const liveIconRect = { height: 90, left: 100, top: 120, width: 90 };
   const liveThumbRect = { height: 72, left: 109, top: 129, width: 72 };

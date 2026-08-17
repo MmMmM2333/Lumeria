@@ -176,6 +176,7 @@ function makeRaceHarness() {
     frameGhost: { alpha: 0, visible: false },
     iconNodes: new Map([["app-1", iconNode]]),
     openingGhostLayer: openingLayer,
+    openingGhostBoundsRefreshers: new Map(),
     pageTrack: { visible: true },
     panel: { visible: true },
     panelMaterial: { alpha: 1, visible: true },
@@ -184,13 +185,31 @@ function makeRaceHarness() {
     acquireVisualOwnership(key, owner) {
       return visualOwnership.acquire(key, owner);
     },
+    acquireDesktopSourceOwnership(owner = {}) {
+      const key = makeDesktopSourceVisualKey(owner.folderId || this.currentFolderId);
+      return key ? this.acquireVisualOwnership(key, owner) : false;
+    },
     clearFrameGhost() {
       calls.push("clear-frame");
+    },
+    clearCurrentFolder() {
+      this.currentFolderId = null;
     },
     createClosingGhostToken(folderId = null) {
       const token = `close:${folderId || "folder"}:${closeTokenCounter}`;
       closeTokenCounter += 1;
       return token;
+    },
+    getClosingFrameStartRect(panelRect) {
+      return panelRect;
+    },
+    getTransitionDebugSnapshot() {
+      return {
+        closingGhostCount: this.closingGhostLayer.children.length,
+        framePresentation: this.frameGhostState || null,
+        panelVisible: this.panel.visible,
+        pageTrackVisible: this.pageTrack.visible,
+      };
     },
     enableClosingFrameMask() {
       calls.push("enable-mask");
@@ -207,6 +226,21 @@ function makeRaceHarness() {
       const key = makeFolderPageTrackVisualKey(owner.folderId || this.currentFolderId);
       if (key) this.acquireVisualOwnership(key, owner);
       this.pageTrack.visible = false;
+    },
+    getCurrentFolderId() {
+      return this.currentFolderId || null;
+    },
+    isOpeningGeometryTransitionActive() {
+      return false;
+    },
+    registerOpeningGhostBounds() {
+      calls.push("register-opening-bounds");
+    },
+    revealIconNodes() {
+      for (const node of this.iconNodes.values()) {
+        node.visible = true;
+        node.alpha = 1;
+      }
     },
     onClosingHandoffReady(folderId) {
       calls.push(`ready:${folderId}`);
@@ -227,6 +261,10 @@ function makeRaceHarness() {
     },
     refreshRegisteredIconBounds() {
       calls.push("refresh-bounds");
+    },
+    removeOpeningGhost(ghost) {
+      openingLayer.removeChild(ghost);
+      return ghost;
     },
     releaseTransitionOwnership(token, options = {}) {
       if (token == null) return;
@@ -254,6 +292,11 @@ function makeRaceHarness() {
       this.frameGhostOptions = options;
       this.frameGhostTarget = toRect;
       this.frameGhost.visible = true;
+    },
+    retargetFrameGhost(toRect, options = {}) {
+      this.frameGhostTarget = toRect;
+      this.frameGhostOptions = options;
+      return true;
     },
     get iconNode() {
       return iconNode;

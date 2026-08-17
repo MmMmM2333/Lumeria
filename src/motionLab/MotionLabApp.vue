@@ -229,11 +229,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics, Text } from "pixi.js";
 import { useLocalization } from "../i18n/localization.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
-import { createPixiApp } from "../rendering/pixi/createPixiApp.js";
+import { createPixiApp } from "../rendering/desktopScenePort.js";
 import {
   createMotionRuntime,
   installMotionRuntimeDebugAdapterFactory,
-} from "../rendering/pixi/animation/motionRuntime.js";
+} from "../rendering/motionPort.js";
 import { createDiagnosticArtifactStore } from "../diagnostics/diagnosticArtifactStore.js";
 import { installDiagnosticHubGlobal } from "../diagnostics/diagnosticGlobal.js";
 import { createDiagnosticHub } from "../diagnostics/diagnosticHub.js";
@@ -781,7 +781,7 @@ function applyParamPreset(id) {
 async function captureReplayTrace() {
   if (!runtime) return;
   updateScenarioAssertions("capture-replay-trace");
-  const { createMotionReplayTrace } = await import("../rendering/pixi/animation/motionReplayTrace.js");
+const { createMotionReplayTrace } = await import("../rendering/motionPort.js");
   if (destroyed || !runtime) return null;
   const trace = createMotionReplayTrace(motionReport.value, {
     durationMs: 30000,
@@ -1055,7 +1055,7 @@ function clearCopyTimers() {
 
 onMounted(async () => {
   destroyed = false;
-  const { createMotionRuntimeDebugAdapter } = await import("../rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js");
+const { createMotionRuntimeDebugAdapter } = await import("../rendering/motionPort.js");
   if (destroyed) return;
   installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
   const mountedRuntime = createMotionRuntime();

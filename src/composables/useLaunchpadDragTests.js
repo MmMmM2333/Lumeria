@@ -22,7 +22,6 @@ function folder(id, childIds) {
   const children = childIds.map(app);
   return {
     childPages: [children],
-    children,
     id,
     name: id,
     type: "folder",
@@ -108,9 +107,7 @@ function findFolder(pages, id) {
 }
 
 function getFolderChildPages(item) {
-  return Array.isArray(item?.childPages)
-    ? item.childPages
-    : [Array.isArray(item?.children) ? item.children : []];
+  return Array.isArray(item?.childPages) ? item.childPages : [[]];
 }
 
 function makePointerEvent(pointerId, target, overrides = {}) {
@@ -1221,7 +1218,7 @@ export async function runLaunchpadDragTests() {
       "folder creation should commit against authoritative pages, not the presentation projection"
     );
     assert(
-      harness.pages.value[0][2]?.children?.map((item) => item.id).join(",") === "d,c",
+      harness.pages.value[0][2]?.childPages?.flat()?.map((item) => item.id).join(",") === "d,c",
       "the target app should remain before the dragged app in the created folder"
     );
     await nextTick();
@@ -1282,7 +1279,7 @@ export async function runLaunchpadDragTests() {
     );
     assert(harness.pages.value[0][0]?.id === "folder-created", "the accepted app pair should become the planned folder");
     assert(
-      harness.pages.value[0][0]?.children?.map((item) => item.id).join(",") === "b,a",
+      harness.pages.value[0][0]?.childPages?.flat()?.map((item) => item.id).join(",") === "b,a",
       "the stable target app should remain the first child even after the hover plan is published"
     );
     await nextTick();
@@ -1963,7 +1960,7 @@ export async function runLaunchpadDragTests() {
     };
     harness.drag.startDrag(
       makePointerEvent(171, sourceElement, { clientX: 248, clientY: 380 }),
-      sourceFolder.children[0],
+      sourceFolder.childPages[0][0],
       { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" }
     );
     harness.drag.updateDragPointer(makePointerEvent(171, sourceElement, {
@@ -2027,7 +2024,7 @@ export async function runLaunchpadDragTests() {
     };
     harness.drag.startDrag(
       makePointerEvent(172, sourceElement, { clientX: 248, clientY: 380 }),
-      sourceFolder.children[2],
+      sourceFolder.childPages[0][2],
       { folderId: sourceFolder.id, index: 2, pageIndex: 0, type: "folder" }
     );
     harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
@@ -2084,7 +2081,7 @@ export async function runLaunchpadDragTests() {
     };
     harness.drag.startDrag(
       makePointerEvent(22, sourceElement, { clientX: 248, clientY: 208 }),
-      sourceFolder.children[0],
+      sourceFolder.childPages[0][0],
       { folderId: sourceFolder.id, index: 0, pageIndex: 0, type: "folder" },
       {
         draggedIds: ["x", "y"],
@@ -2125,7 +2122,7 @@ export async function runLaunchpadDragTests() {
       "every dragged folder child should become a top-level desktop item"
     );
     assert(
-      committedFolder?.children?.map((item) => item.id).join(",") === "z",
+      committedFolder?.childPages?.flat()?.map((item) => item.id).join(",") === "z",
       "the source folder should retain only children outside the dragged selection"
     );
     settleRelease(harness.drag);

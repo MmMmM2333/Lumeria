@@ -86,14 +86,15 @@ export function createLaunchpadDocumentCoordinator(options) {
     }
 
     const hiddenAppIds = apps.capture().hiddenAppIds;
-    const mergedPages = layout.reconcileDocument(
+    const reconciliation = layout.reconcileDocument(
       nativeCatalog,
       savedDocument,
       hiddenAppIds
     );
-    const runtimePages = applyCachedIconAssetUrlsToPages(mergedPages, options.toAssetUrl);
+    const runtimePages = applyCachedIconAssetUrlsToPages(reconciliation.pages, options.toAssetUrl);
     layout.restorePages(runtimePages);
     return {
+      issues: reconciliation.issues,
       kind: "pagesRestored",
       pageCount: runtimePages.length,
     };
@@ -104,14 +105,15 @@ export function createLaunchpadDocumentCoordinator(options) {
       throw new TypeError("createFromCatalog requires a native catalog array");
     }
     const hiddenAppIds = apps.capture().hiddenAppIds;
-    const mergedPages = layout.reconcileDocument(
+    const reconciliation = layout.reconcileDocument(
       nativeCatalog,
       { version: 2, pages: [], settings: {} },
       hiddenAppIds
     );
-    const runtimePages = applyCachedIconAssetUrlsToPages(mergedPages, options.toAssetUrl);
+    const runtimePages = applyCachedIconAssetUrlsToPages(reconciliation.pages, options.toAssetUrl);
     layout.restorePages(runtimePages);
     return {
+      issues: reconciliation.issues,
       kind: "createdFromCatalog",
       pageCount: runtimePages.length,
     };

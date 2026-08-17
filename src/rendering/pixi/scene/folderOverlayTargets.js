@@ -219,16 +219,20 @@ export function makeClosingGhostTarget(options = {}) {
   } = options;
   const previewSlotIndex = previewSlotById?.get(item?.id);
   const isThumbnailChild = previewSlotIndex != null;
-  const stablePreviewChildStageLayoutRect = isThumbnailChild && stableFolderCloseTarget?.folderId === folderId
+  const hasStableFolderTarget = stableFolderCloseTarget?.folderId === folderId;
+  const stablePreviewChildStageLayoutRect = isThumbnailChild && hasStableFolderTarget
     ? stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
     : null;
-  const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+  const stableThumbStageLayoutRect = hasStableFolderTarget
     ? stableFolderCloseTarget.thumbRect
     : null;
+  const fallbackThumbRect = stableThumbStageLayoutRect || closeThumbRect;
   const rawTargetRect = isThumbnailChild
-    ? stablePreviewChildStageLayoutRect || makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex)
-    : makeFolderCenterCollapseRect(stableThumbStageLayoutRect);
-  const isClientTarget = stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL;
+    ? stablePreviewChildStageLayoutRect || makeFolderThumbPreviewRect(fallbackThumbRect, previewSlotIndex)
+    : makeFolderCenterCollapseRect(fallbackThumbRect);
+  const isClientTarget = hasStableFolderTarget
+    ? stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL
+    : Boolean(closeThumbRect);
   return {
     cellHeight,
     cellWidth,
@@ -251,16 +255,21 @@ export function makeClosingPreviewSwapTargets(options = {}) {
   if (!folderId || !folderRect) return [];
   return (previewSlots || []).slice(0, 9).map((item, previewSlotIndex) => {
     if (!item?.id) return null;
-    const stablePreviewChildStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+    const hasStableFolderTarget = stableFolderCloseTarget?.folderId === folderId;
+    const stablePreviewChildStageLayoutRect = hasStableFolderTarget
       ? stableFolderCloseTarget.previewChildRects?.get(makePreviewChildKey(item.id, previewSlotIndex))
       : null;
-    const stableThumbStageLayoutRect = stableFolderCloseTarget?.folderId === folderId
+    const stableThumbStageLayoutRect = hasStableFolderTarget
       ? stableFolderCloseTarget.thumbRect
       : null;
+    const fallbackThumbRect = stableThumbStageLayoutRect || folderRect;
     const rawTargetRect = stablePreviewChildStageLayoutRect ||
-      makeFolderThumbPreviewRect(stableThumbStageLayoutRect, previewSlotIndex);
+      makeFolderThumbPreviewRect(fallbackThumbRect, previewSlotIndex);
     if (!rawTargetRect) return null;
-    return stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL
+    const isClientTarget = hasStableFolderTarget
+      ? stableFolderCloseTarget?.coordinateSpace === STAGE_COORDINATE_SPACES.CLIENT_VISUAL
+      : true;
+    return isClientTarget
       ? { item, previewSlotIndex, targetClientRect: rawTargetRect }
       : { item, previewSlotIndex, targetStageLayoutRect: rawTargetRect };
   }).filter(Boolean);

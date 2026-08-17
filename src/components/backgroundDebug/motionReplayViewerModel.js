@@ -1,4 +1,4 @@
-import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/pixi/animation/motionReplayTraceSchema.js";
+import { MOTION_REPLAY_TRACE_SCHEMA } from "../../rendering/motionPort.js";
 import { DiagnosticError } from "../../diagnostics/diagnosticError.js";
 import { createDiagnosticPresentation } from "../../diagnostics/diagnosticPresentation.js";
 import {
@@ -9,7 +9,7 @@ import {
   normalizeQuery,
   readNumber,
   resolveRecordLabel,
-} from "../../rendering/pixi/animation/motionTraceShared.js";
+} from "../../rendering/motionPort.js";
 
 export const MOTION_REPLAY_INTERVAL_SCHEMA = "pixi-motion-replay-interval/v1";
 export const MOTION_REPLAY_IMPORT_MAX_BYTES = 6 * 1024 * 1024;

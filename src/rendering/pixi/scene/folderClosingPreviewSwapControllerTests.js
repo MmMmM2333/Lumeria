@@ -94,6 +94,15 @@ function makeLayer() {
     children,
     closingGhostLayer: makeContainer(),
     closingPreviewSwapLayer: makeContainer(),
+    ensureClosingPreviewSwapLayer(containerFactory) {
+      if (this.closingPreviewSwapLayer && !this.closingPreviewSwapLayer.destroyed) return this.closingPreviewSwapLayer;
+      this.closingPreviewSwapLayer = containerFactory();
+      return this.closingPreviewSwapLayer;
+    },
+    removeClosingPreviewSwapChildren() {
+      if (!this.closingPreviewSwapLayer || this.closingPreviewSwapLayer.destroyed) return [];
+      return this.closingPreviewSwapLayer.removeChildren();
+    },
     addChild(child) {
       child.parent?.removeChild?.(child);
       child.parent = this;
