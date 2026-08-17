@@ -2,6 +2,7 @@ import { Container } from "pixi.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf } from "../animation/motionTween.js";
 import { getFolderThumbMetrics } from "./folderThumbMetrics.js";
+import { getBatchSelectionBadgeLayout } from "./batchSelectionGeometry.js";
 
 function installPixiTextTestDom() {
   if (!("CanvasRenderingContext2D" in globalThis)) {
@@ -85,6 +86,53 @@ export async function runIconNodeTests() {
     motionRuntime.reset();
     node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
 
+    node.setState({
+      ...interactionNodeState,
+      batchSelected: true,
+      interactionPhase: null,
+    });
+    const selectedAppFrame = node.getBatchSelectionFrameRect();
+    const selectedAppBadgeLayout = getBatchSelectionBadgeLayout({
+      frameRect: selectedAppFrame,
+      iconSize: node.iconSize,
+      isCheck: true,
+      label: "✓",
+    });
+    assert(node.batchSelectionBadge.visible, "selected apps should show a batch selection badge");
+    assert(node.batchSelectionBadgeCheck.visible, "selected apps should render a vector check graphic");
+    assert(!node.batchSelectionBadgeText.visible, "selected apps should not render the check as text");
+    assert(
+      nearlyEqual(node.batchSelectionBadge.position.x, selectedAppBadgeLayout.x) &&
+        nearlyEqual(node.batchSelectionBadge.position.y + node.visualWrap.position.y, selectedAppBadgeLayout.y),
+      "selected app badges should derive their position from the selected frame",
+    );
+
+    const folderChildState = {
+      ...interactionNodeState,
+      batchSelected: true,
+      cellWidth: 100,
+      iconSize: 76,
+      item: { id: "folder-child-selected", name: "Folder Child", type: "app" },
+      source: { index: 0, pageIndex: 0, type: "folder" },
+    };
+    node.setState(folderChildState);
+    assert(
+      node.getBatchSelectionFrameRect().width <= folderChildState.cellWidth - 16 + 0.0001,
+      "folder batch selection frames should keep a visible horizontal gap",
+    );
+
+    node.setState({
+      ...interactionNodeState,
+      batchSelected: false,
+      item: { id: "folder-count", name: "Folder Count", type: "folder" },
+      selectedChildCount: 3,
+    });
+    assert(node.batchSelectionBadge.visible, "folders with selected children should show the count badge");
+    assert(!node.batchSelectionBadgeCheck.visible, "folder count badges should not show the check graphic");
+    assert(node.batchSelectionBadgeText.visible && node.batchSelectionBadgeText.text === "3", "folder count badges should show the selected child count");
+
+    motionRuntime.reset();
+    node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
     let snapshot = motionRuntime.debugSnapshot();
     const pressScaleImpulses = snapshot.animations.filter((animation) => animation.lane === "additive");
     assert(pressScaleImpulses.length === 2, "press should create one additive impulse per scale axis");

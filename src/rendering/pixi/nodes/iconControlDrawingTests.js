@@ -1,4 +1,9 @@
-import { drawEditButton, drawMissingBadge, getMissingBadgeLayout } from "./iconControlDrawing.js";
+import {
+  drawBatchSelectionCheck,
+  drawEditButton,
+  drawMissingBadge,
+  getMissingBadgeLayout,
+} from "./iconControlDrawing.js";
 
 function makePointRecorder() {
   return {
@@ -20,6 +25,14 @@ function makeGraphicsRecorder() {
     },
     circle(...args) {
       this.calls.push(["circle", ...args]);
+      return this;
+    },
+    moveTo(...args) {
+      this.calls.push(["moveTo", ...args]);
+      return this;
+    },
+    lineTo(...args) {
+      this.calls.push(["lineTo", ...args]);
       return this;
     },
     fill(options) {
@@ -66,4 +79,11 @@ export function runIconControlDrawingTests() {
   assert(button.visible && button.position.x === 3 && button.position.y === 4, "visible edit buttons should move into position");
   assert(button.textNode.text === "×" && button.textNode.style.fontSize === 17, "remove edit button should use the larger glyph size");
   assert(button.background.calls.some((call) => call[0] === "circle"), "visible edit buttons should draw a circular background");
+
+  const check = makeGraphicsRecorder();
+  drawBatchSelectionCheck(check, 24);
+  assert(check.calls.some((call) => call[0] === "moveTo"), "batch selection checks should start a vector path");
+  assert(check.calls.filter((call) => call[0] === "lineTo").length === 2, "batch selection checks should use two vector segments");
+  assert(check.calls.some((call) => call[0] === "stroke" && call[1].color === 0xffffff), "batch selection checks should use a white stroke");
+  assert(check.calls.find((call) => call[0] === "stroke")?.[1]?.width < 3, "batch selection checks should keep a lighter stroke than the badge diameter");
 }

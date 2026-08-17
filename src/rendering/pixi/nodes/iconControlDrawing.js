@@ -32,6 +32,19 @@ export function drawMissingBadge(badge, background, textNode, iconSize, status) 
   textNode.position.set(0, layout.textOffsetY);
 }
 
+export function drawBatchSelectionCheck(graphics, size, options = {}) {
+  graphics.clear();
+  const safeSize = Math.max(1, Number(size) || 1);
+  const strokeWidth = Math.max(1.6, safeSize * 0.1);
+  const color = options.color ?? 0xffffff;
+  const alpha = options.alpha ?? 1;
+  graphics
+    .moveTo(-safeSize * 0.19, -safeSize * 0.01)
+    .lineTo(-safeSize * 0.03, safeSize * 0.17)
+    .lineTo(safeSize * 0.24, -safeSize * 0.19)
+    .stroke({ alpha, color, width: strokeWidth, cap: "round", join: "round" });
+}
+
 export function drawEditButton(button, x, y, label, visible) {
   button.visible = Boolean(visible);
   if (!visible) return;

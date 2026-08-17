@@ -11,8 +11,13 @@ import {
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   drawEditButton as drawEditButtonGraphic,
+  drawBatchSelectionCheck,
   drawMissingBadge,
 } from "./iconControlDrawing.js";
+import {
+  getBatchSelectionBadgeLayout,
+  getBatchSelectionFrameRect,
+} from "./batchSelectionGeometry.js";
 import {
   drawAppFolderCreateBackdrop as drawAppFolderCreateBackdropGraphic,
   drawAppFolderCreateFlashOverlay as drawAppFolderCreateFlashOverlayGraphic,
@@ -187,6 +192,7 @@ export class IconNode extends Container {
     this.focusFrame = new Graphics();
     this.batchSelectionBadge = new Container();
     this.batchSelectionBadgeBackground = new Graphics();
+    this.batchSelectionBadgeCheck = new Graphics();
     this.batchSelectionBadgeText = new Text({
       text: "",
       style: {
@@ -274,9 +280,11 @@ export class IconNode extends Container {
     this.missingBadge.visible = false;
     this.batchSelectionBadge.visible = false;
     this.batchSelectionBadge.eventMode = "none";
+    this.batchSelectionBadgeCheck.visible = false;
     this.batchSelectionBadgeText.anchor.set(0.5);
     this.batchSelectionBadge.addChild(
       this.batchSelectionBadgeBackground,
+      this.batchSelectionBadgeCheck,
       this.batchSelectionBadgeText
     );
     this.missingBadgeText.anchor.set(0.5);
@@ -634,17 +642,30 @@ export class IconNode extends Container {
     this.hitArea = this.hitAreaRect;
   }
 
-  getFocusFrameRect() {
-    return getFocusFrameRectForIcon({
+  getFrameGeometryOptions(state = this.state || {}) {
+    return {
       iconSize: this.iconSize,
       labelText: this.labelText,
-      maxWidth: this.state?.cellWidth,
+      maxWidth: state?.cellWidth,
+      cellWidth: state?.cellWidth,
+      area: state?.area,
+      source: state?.source,
       visualOffsetY: this.getVisualOffsetY(),
-    });
+    };
+  }
+
+  getFocusFrameRect(state = this.state || {}) {
+    return getFocusFrameRectForIcon(this.getFrameGeometryOptions(state));
+  }
+
+  getBatchSelectionFrameRect(state = this.state || {}) {
+    return getBatchSelectionFrameRect(this.getFrameGeometryOptions(state));
   }
 
   renderFrame(state) {
-    const rect = this.getFocusFrameRect();
+    const rect = state.batchSelected
+      ? this.getBatchSelectionFrameRect(state)
+      : this.getFocusFrameRect(state);
     const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
     const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     const sig = [
@@ -674,36 +695,63 @@ export class IconNode extends Container {
     const selectedChildCount = Math.max(0, Number(state.selectedChildCount) || 0);
     const isSelectedApp = Boolean(state.batchSelected && this.item?.type === "app");
     const isSelectedFolder = Boolean(this.item?.type === "folder" && selectedChildCount > 0);
+    const isVisible = isSelectedApp || isSelectedFolder;
     const label = isSelectedApp
       ? "✓"
       : selectedChildCount > 99
         ? "99+"
         : String(selectedChildCount);
-    const size = Math.max(18, Math.min(25, this.iconSize * 0.31));
+    const frameRect = isVisible ? this.getBatchSelectionFrameRect(state) : null;
+    const layout = isVisible
+      ? getBatchSelectionBadgeLayout({
+        frameRect,
+        iconSize: this.iconSize,
+        isCheck: isSelectedApp,
+        label,
+      })
+      : null;
+    const visualOffsetY = this.getVisualOffsetY();
     const sig = [
       boolSig(isSelectedApp),
       boolSig(isSelectedFolder),
       label,
-      numberSig(size),
+      numberSig(layout?.x),
+      numberSig(layout?.y),
+      numberSig(layout?.size),
+      numberSig(layout?.strokeWidth),
+      numberSig(frameRect?.width),
+      numberSig(frameRect?.height),
       numberSig(this.iconSize),
-      numberSig(this.getVisualOffsetY()),
+      numberSig(visualOffsetY),
+      numberSig(state.cellWidth),
+      String(state.area || state.source?.type || ""),
     ].join(":");
     if (this.batchSelectionBadgeSig === sig) return;
     this.batchSelectionBadgeSig = sig;
-    this.batchSelectionBadge.visible = isSelectedApp || isSelectedFolder;
-    if (!this.batchSelectionBadge.visible) return;
-    this.batchSelectionBadge.position.set(
-      this.iconSize * 0.39,
-      this.getVisualOffsetY() - this.iconSize * 0.39
-    );
+    this.batchSelectionBadge.visible = isVisible;
+    this.batchSelectionBadgeCheck.visible = isVisible && isSelectedApp;
+    this.batchSelectionBadgeText.visible = isVisible && !isSelectedApp;
+    if (!isVisible || !layout) return;
+
+    // The badge lives under visualWrap so it follows the icon's visual motion.
+    // frameRect is in IconNode coordinates, therefore remove visualWrap's Y
+    // offset before assigning the badge's local position.
+    this.batchSelectionBadge.position.set(layout.x, layout.y - visualOffsetY);
     this.batchSelectionBadgeBackground
       .clear()
-      .circle(0, 0, size / 2)
+      .circle(0, 0, layout.size / 2)
       .fill({ color: 0x1687ff, alpha: 1 })
-      .stroke({ color: 0xffffff, alpha: 0.96, width: Math.max(1.5, size * 0.08) });
-    this.batchSelectionBadgeText.text = label;
-    setTextStyleValue(this.batchSelectionBadgeText, "fontSize", isSelectedFolder && label.length > 2 ? size * 0.35 : size * 0.5);
-    setTextStyleValue(this.batchSelectionBadgeText, "lineHeight", size * 0.55);
+      .stroke({ color: 0xffffff, alpha: 0.96, width: layout.strokeWidth });
+    if (isSelectedApp) {
+      drawBatchSelectionCheck(this.batchSelectionBadgeCheck, layout.size);
+      setTextValue(this.batchSelectionBadgeText, "");
+      return;
+    }
+    this.batchSelectionBadgeCheck.clear();
+    setTextValue(this.batchSelectionBadgeText, label);
+    setTextStyleValue(this.batchSelectionBadgeText, "fontSize", layout.fontSize);
+    setTextStyleValue(this.batchSelectionBadgeText, "lineHeight", layout.fontSize);
+    this.batchSelectionBadgeText.position.set(layout.textOffsetX, layout.textOffsetY);
   }
 
   hideFolderChildren() {

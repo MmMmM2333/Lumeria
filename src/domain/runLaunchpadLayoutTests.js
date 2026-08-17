@@ -109,6 +109,7 @@ import { runRenderDebugProbeTests } from "../rendering/pixi/renderDebugProbeTest
 import { runPixiRenderTriggersTests } from "../rendering/pixi/pixiRenderTriggersTests.js";
 import { runResizeSettleSchedulerTests } from "../rendering/pixi/resizeSettleSchedulerTests.js";
 import { runIconControlDrawingTests } from "../rendering/pixi/nodes/iconControlDrawingTests.js";
+import { runBatchSelectionGeometryTests } from "../rendering/pixi/nodes/batchSelectionGeometryTests.js";
 import { runIconFolderHoverStateTests } from "../rendering/pixi/nodes/iconFolderHoverStateTests.js";
 import { runIconInteractionGeometryTests } from "../rendering/pixi/nodes/iconInteractionGeometryTests.js";
 import { runIconLabelLayoutTests } from "../rendering/pixi/nodes/iconLabelLayoutTests.js";
@@ -313,6 +314,7 @@ await runBackgroundEffectPreviewRendererTests();
 await runBackgroundEffectPipelineTests();
 await runBackgroundTextureLoaderTests();
 runIconControlDrawingTests();
+runBatchSelectionGeometryTests();
 runIconFolderHoverStateTests();
 runIconInteractionGeometryTests();
 runIconLabelLayoutTests();
