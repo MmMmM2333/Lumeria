@@ -160,6 +160,9 @@ import "./styles/launchpad.css";
 import "./styles/settings.css";
 
 const appVersion = appPackage.version;
+const props = defineProps({
+  startupContext: { type: Object, default: () => ({ origin: "manual" }) },
+});
 const localizationText = useLocalization();
 const localizationRuntime = useLocalizationRuntime();
 const selectionToolbarRef = ref(null);
@@ -169,6 +172,7 @@ const controller = useLaunchpadController({
   getBatchCancelZoneRect: () => selectionToolbarRef.value?.getBoundingClientRect?.() || null,
   localizationText,
   openIconContextMenu,
+  startupContext: props.startupContext,
 });
 const {
   appActions,

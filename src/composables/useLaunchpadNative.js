@@ -229,6 +229,7 @@ export function useLaunchpadNative(options) {
   }
   const store = options.store || layoutStorePort;
   const platform = options.platform || nativeLifecyclePort;
+  const showWindowAfterStartup = options.showWindowAfterStartup !== false;
   const backgroundAssets = options.backgroundAssets || backgroundAssetPort;
   const notices = options.notices;
   if (
@@ -775,7 +776,7 @@ export function useLaunchpadNative(options) {
   }
 
   function showNativeWindowAfterStartup() {
-    if (!platform.isAvailable() || hasRequestedStartupNativeWindowShow) return;
+    if (!showWindowAfterStartup || !platform.isAvailable() || hasRequestedStartupNativeWindowShow) return;
     hasRequestedStartupNativeWindowShow = true;
     mainWindowRuntime.show().then((outcome) => {
       if (!outcome.ok) console.error("Failed to show Lumeria window after startup", outcome.error);

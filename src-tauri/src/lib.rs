@@ -12,6 +12,7 @@ mod main_window_supervisor;
 mod models;
 mod native_error;
 mod path_utils;
+mod startup;
 mod tray;
 mod window_effects;
 #[cfg(target_os = "windows")]
@@ -58,6 +59,7 @@ use main_window_supervisor::{
 use models::{AppCatalogItem, AppSourceState};
 use native_error::NativeError;
 use serde::{Deserialize, Serialize};
+use startup::get_launch_context;
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle, Emitter, Manager, State, WindowEvent,
@@ -1226,6 +1228,12 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args([startup::AUTOSTART_ARGUMENT])
+                .app_name("com.lumeria.app")
+                .build(),
+        )
         .plugin(tauri_plugin_log::Builder::new().build())
         .manage(AppState::default())
         .setup(setup_app)
@@ -1308,7 +1316,8 @@ pub fn run() {
             set_launchpad_icon_variant,
             set_main_window_shortcut_capture_active,
             set_main_window_native_frame_enabled,
-            open_developer_console
+            open_developer_console,
+            get_launch_context
         ])
         .run(context)
         .expect("error while running tauri app");

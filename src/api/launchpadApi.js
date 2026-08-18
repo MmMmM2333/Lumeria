@@ -1,5 +1,10 @@
 import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
+import {
+  disable as tauriDisableAutostart,
+  enable as tauriEnableAutostart,
+  isEnabled as tauriIsAutostartEnabled,
+} from "@tauri-apps/plugin-autostart";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
 
 let bridgeOverride = null;
@@ -36,6 +41,11 @@ function getTauriBridge() {
     convertFileSrc: tauriConvertFileSrc,
     invoke: tauriInvoke,
     listen: tauriListen,
+    autostart: {
+      disable: tauriDisableAutostart,
+      enable: tauriEnableAutostart,
+      isEnabled: tauriIsAutostartEnabled,
+    },
   };
 }
 
@@ -51,6 +61,33 @@ export function convertFilePathToAssetUrl(filePath) {
 
 export function isNativeBridgeAvailable() {
   return Boolean(getTauriBridge()?.invoke);
+}
+
+export async function getLaunchContext() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return { origin: "manual" };
+  return invoke("get_launch_context");
+}
+
+export async function getAutostartStatus() {
+  const autostart = getTauriBridge()?.autostart;
+  if (!autostart?.isEnabled) return false;
+  return Boolean(await autostart.isEnabled());
+}
+
+export function isAutostartAvailable() {
+  const autostart = getTauriBridge()?.autostart;
+  return Boolean(autostart?.isEnabled && autostart?.enable && autostart?.disable);
+}
+
+export async function setAutostartEnabled(enabled) {
+  const autostart = getTauriBridge()?.autostart;
+  if (!autostart?.enable || !autostart?.disable || !autostart?.isEnabled) {
+    throw new Error("Autostart is unavailable in the current runtime");
+  }
+  if (Boolean(enabled)) await autostart.enable();
+  else await autostart.disable();
+  return Boolean(await autostart.isEnabled());
 }
 
 export async function listenNativeEvent(eventName, handler) {

@@ -10,7 +10,7 @@ const PATH_LAUNCH_TARGET_KINDS = new Set(["shortcut", "executable", "url"]);
 export function useLaunchpadLaunchFlow(options) {
   const t = options?.localizationText?.t;
   if (typeof t !== "function") throw new TypeError("useLaunchpadLaunchFlow requires localization text");
-  const isDesktopOpen = ref(true);
+  const isDesktopOpen = ref(options.initialDesktopOpen !== false);
   const isDesktopClosing = ref(false);
   const isAppLaunching = ref(false);
   const launchGhost = shallowRef(null);

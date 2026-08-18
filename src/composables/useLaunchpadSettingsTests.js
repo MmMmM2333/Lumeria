@@ -318,4 +318,74 @@ export async function runLaunchpadSettingsTests() {
   assert(iconFailureSettings.presentation.launchpadIconVariant.value === LAUNCHPAD_ICON_LIGHT, "icon failures should commit no icon state");
   assert(iconFailureSettings.presentation.localePreference.value === "system", "icon failures should commit no language state");
   assert(iconFailureSettings.presentation.launchpadIconError.value === iconError.message, "icon failures should stay visible in the edit session");
+
+  let startupStatus = false;
+  const startupCalls = [];
+  const startupPort = {
+    isAvailable: () => true,
+    getStatus: async () => startupStatus,
+    setEnabled: async (enabled) => {
+      startupCalls.push(Boolean(enabled));
+      startupStatus = Boolean(enabled);
+      return startupStatus;
+    },
+  };
+  const startupSettings = useLaunchpadSettings({
+    localizationText,
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    mainWindow: makeMainWindowRuntime(),
+    startupPort,
+  });
+  startupSettings.beginEdit();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(startupSettings.presentation.canConfigureLaunchAtLogin.value, "desktop startup should expose the sign-in startup capability");
+  startupSettings.actions.setDraftLaunchAtLogin(true);
+  const startupOutcome = await startupSettings.applyEdit();
+  assert(startupOutcome.ok, "sign-in startup should apply through the startup port");
+  assert(startupCalls.join(",") === "true", "sign-in startup should cross the native seam once");
+  assert(startupSettings.presentation.launchAtLogin.value, "successful sign-in startup should update committed state");
+  assert(!Object.prototype.hasOwnProperty.call(startupSettings.persistence.capture(), "launchAtLogin"), "sign-in startup must stay outside layout persistence");
+
+  const startupFailureCalls = [];
+  const startupFailureSettings = useLaunchpadSettings({
+    activateLocale: () => {},
+    layout: useLaunchpadLayout({
+      getNewFolderName: () => localizationText.t("launchpad.newFolder"),
+      seedEnabled: false,
+    }),
+    localizationText,
+    launchpadIconPort: makeLaunchpadIconPort(),
+    liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
+    localeRuntime: {
+      applyPreference: async (preference) => ({
+        ok: true,
+        state: { preference, resolvedLocale: preference === "system" ? "zh-CN" : preference },
+      }),
+    },
+    mainWindow: makeMainWindowRuntime(),
+    startupPort: {
+      isAvailable: () => true,
+      getStatus: async () => false,
+      setEnabled: async (enabled) => {
+        startupFailureCalls.push(Boolean(enabled));
+        if (enabled) throw new Error("startup denied");
+        return false;
+      },
+    },
+  });
+  startupFailureSettings.beginEdit();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  startupFailureSettings.actions.setDraftLocalePreference("en-US");
+  startupFailureSettings.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+  startupFailureSettings.actions.setDraftLaunchpadIconVariant(LAUNCHPAD_ICON_DARK);
+  startupFailureSettings.actions.setDraftLaunchAtLogin(true);
+  const startupFailureOutcome = await startupFailureSettings.applyEdit();
+  assert(!startupFailureOutcome.ok, "sign-in startup failures should remain explicit");
+  assert(startupFailureCalls.join(",") === "true,false", "sign-in startup failure should attempt a native rollback");
+  assert(!startupFailureSettings.presentation.launchAtLogin.value, "sign-in startup failure should commit no startup state");
+  assert(startupFailureSettings.presentation.launchAtLoginError.value.includes("startup denied"), "sign-in startup failures should remain visible");
 }

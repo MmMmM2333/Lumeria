@@ -7,10 +7,13 @@ import {
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
   getAppLocaleState,
+  getAutostartStatus,
+  getLaunchContext,
   getLiveDesktopBackgroundSupport,
   getLiveDesktopRuntimeStatus,
   getMainWindowEffectsSupport,
   hideMainWindow,
+  isAutostartAvailable,
   isNativeBridgeAvailable,
   launchApp,
   listenNativeEvent,
@@ -30,6 +33,7 @@ import {
   setMainWindowNativeFrameEnabled,
   setMainWindowShortcut,
   setMainWindowShortcutCaptureActive,
+  setAutostartEnabled,
   showMainWindow,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
@@ -111,4 +115,11 @@ export const nativeLifecyclePort = Object.freeze({
   launchApp,
   listen: listenNativeEvent,
   showLaunchError: showLaunchErrorMessage,
+});
+
+export const startupPort = Object.freeze({
+  getLaunchContext,
+  getStatus: getAutostartStatus,
+  isAvailable: isAutostartAvailable,
+  setEnabled: setAutostartEnabled,
 });

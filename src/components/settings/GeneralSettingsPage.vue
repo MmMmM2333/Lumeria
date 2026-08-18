@@ -2,16 +2,24 @@
   <div class="settings-tab-panel" role="tabpanel" :aria-label="t('settings.general.title')">
     <section class="settings-section settings-section-plain" :aria-label="t('settings.general.title')">
       <div class="settings-list">
-        <div class="settings-list-row settings-row-disabled">
+        <div :class="model.cx(
+          'settings-list-row',
+          (!model.canConfigureLaunchAtLogin.value || model.isRefreshingLaunchAtLogin.value) && 'settings-row-disabled',
+        )">
           <span class="settings-list-icon" aria-hidden="true">
             <PowerIcon />
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">{{ t("settings.general.startup.title") }}</span>
-            <span class="settings-list-description">{{ t("settings.general.startup.description") }}</span>
+            <span class="settings-list-description" aria-live="polite">{{ model.launchAtLoginHint.value }}</span>
           </span>
           <span class="settings-list-control">
-            <fluent-switch :disabled.prop="true" :aria-label="t('settings.general.startup.title')" />
+            <fluent-switch
+              :checked.prop="model.draftLaunchAtLogin.value"
+              :disabled.prop="model.isApplyingSettingsConfig.value || model.isRefreshingLaunchAtLogin.value || !model.canConfigureLaunchAtLogin.value"
+              :aria-label="t('settings.general.startup.title')"
+              @change="model.actions.setLaunchAtLogin($event.target.checked)"
+            />
           </span>
         </div>
 
