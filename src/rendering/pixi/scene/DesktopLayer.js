@@ -1075,10 +1075,12 @@ export class DesktopLayer extends Container {
         }
       }
       const previousGhostedByOwnership = node.__folderSourceGhostedByOwnership === true;
-      if (previousGhostedByOwnership === Boolean(nextGhosted)) continue;
+      const nextGhostedByOwnership = Boolean(nextGhosted);
+      const ownershipGhostMissingFromNode = nextGhostedByOwnership && !node.state.ghosted;
+      if (previousGhostedByOwnership === nextGhostedByOwnership && !ownershipGhostMissingFromNode) continue;
       const baseGhosted = Boolean(node.state.ghosted) && !previousGhostedByOwnership;
-      node.__folderSourceGhostedByOwnership = Boolean(nextGhosted);
-      node.setState({ ...node.state, ghosted: baseGhosted || Boolean(nextGhosted) });
+      node.__folderSourceGhostedByOwnership = nextGhostedByOwnership;
+      node.setState({ ...node.state, ghosted: baseGhosted || nextGhostedByOwnership });
     }
   }
 
