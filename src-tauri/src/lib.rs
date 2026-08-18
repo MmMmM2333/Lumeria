@@ -1,3 +1,4 @@
+mod autostart;
 mod catalog;
 mod dwm;
 mod encoding;
@@ -31,6 +32,7 @@ use std::{
     time::Duration,
 };
 
+use autostart::{get_autostart_status, set_autostart_enabled};
 use catalog::{
     icon_cache_dir, icon_file_data_url, scan_apps_from_roots, stable_app_id, ScanAppsResult,
     ScanFilters, ScanRoot,
@@ -59,7 +61,7 @@ use main_window_supervisor::{
 use models::{AppCatalogItem, AppSourceState};
 use native_error::NativeError;
 use serde::{Deserialize, Serialize};
-use startup::get_launch_context;
+use startup::{get_launch_context, LaunchContext};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
     AppHandle, Emitter, Manager, State, WindowEvent,
@@ -509,8 +511,11 @@ fn hide_main_window(app: AppHandle) {
 }
 
 #[tauri::command]
-fn show_main_window(app: AppHandle) {
-    open_main_window(&app);
+fn complete_renderer_startup(
+    app: AppHandle,
+    launch_context: State<'_, LaunchContext>,
+) -> Result<(), String> {
+    main_window_supervisor::complete_renderer_startup(&app, launch_context.origin)
 }
 
 #[tauri::command]
@@ -1204,6 +1209,10 @@ fn request_app_termination(app: &AppHandle, restart: bool) {
 
 pub fn run() {
     let context = tauri::generate_context!();
+    let launch_context = startup::current_launch_context();
+    if let Err(error) = startup::prepare_single_instance_foreground_handoff(launch_context) {
+        eprintln!("Failed to prepare Lumeria single-instance foreground handoff: {error}");
+    }
 
     #[cfg(all(target_os = "windows", debug_assertions))]
     let context = {
@@ -1228,13 +1237,15 @@ pub fn run() {
     };
 
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .args([startup::AUTOSTART_ARGUMENT])
-                .app_name("com.lumeria.app")
-                .build(),
-        )
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if startup::second_instance_action(args)
+                == startup::SecondInstanceAction::ActivateExisting
+            {
+                open_main_window(app);
+            }
+        }))
         .plugin(tauri_plugin_log::Builder::new().build())
+        .manage(launch_context)
         .manage(AppState::default())
         .setup(setup_app)
         .on_menu_event(|app, event| {
@@ -1298,7 +1309,7 @@ pub fn run() {
             check_launch_targets,
             launch_app,
             hide_main_window,
-            show_main_window,
+            complete_renderer_startup,
             reveal_main_window,
             confirm_quit_after_save,
             show_launch_error_message,
@@ -1317,7 +1328,9 @@ pub fn run() {
             set_main_window_shortcut_capture_active,
             set_main_window_native_frame_enabled,
             open_developer_console,
-            get_launch_context
+            get_launch_context,
+            get_autostart_status,
+            set_autostart_enabled
         ])
         .run(context)
         .expect("error while running tauri app");

@@ -321,7 +321,7 @@ export async function runLaunchpadSettingsTests() {
 
   let startupStatus = false;
   const startupCalls = [];
-  const startupPort = {
+  const autostartPort = {
     isAvailable: () => true,
     getStatus: async () => startupStatus,
     setEnabled: async (enabled) => {
@@ -338,7 +338,7 @@ export async function runLaunchpadSettingsTests() {
     }),
     liveDesktopSupport: { value: { supportsLiveDesktopBackground: false } },
     mainWindow: makeMainWindowRuntime(),
-    startupPort,
+    autostartPort,
   });
   startupSettings.beginEdit();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -367,7 +367,7 @@ export async function runLaunchpadSettingsTests() {
       }),
     },
     mainWindow: makeMainWindowRuntime(),
-    startupPort: {
+    autostartPort: {
       isAvailable: () => true,
       getStatus: async () => false,
       setEnabled: async (enabled) => {

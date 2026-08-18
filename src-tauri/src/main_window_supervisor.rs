@@ -22,6 +22,7 @@ use crate::{
     i18n,
     launcher::launch_path,
     native_error::NativeError,
+    startup::LaunchOrigin,
     window_effects::{
         set_window_effects_enabled, set_window_effects_enabled_with_config,
         update_main_window_effect_settings,
@@ -141,7 +142,7 @@ impl From<MainWindowRect> for windows::Win32::Foundation::RECT {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MainWindowMonitorTarget {
     monitor_rect: MainWindowRect,
     work_rect: MainWindowRect,
@@ -168,11 +169,33 @@ enum PendingOpen {
     AwaitingReady { open_sequence: u64 },
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct MainWindowOpenRequest {
+    monitor_target: Option<MainWindowMonitorTarget>,
+    open_settings_after_show: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct MainWindowSupervisorState {
     webview_health: WebviewHealth,
     pending_open: PendingOpen,
+    renderer_events_ready: bool,
+    queued_activation: Option<MainWindowOpenRequest>,
     recovery_prompt_active: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ActivationRequestTransition {
+    Dispatch(MainWindowOpenRequest),
+    Queued,
+    Reject,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartupCompletionTransition {
+    Ignore,
+    RemainHidden,
+    Dispatch(MainWindowOpenRequest),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,8 +214,49 @@ impl MainWindowSupervisorState {
     const DEFAULT: Self = Self {
         webview_health: WebviewHealth::Healthy,
         pending_open: PendingOpen::Idle,
+        renderer_events_ready: false,
+        queued_activation: None,
         recovery_prompt_active: false,
     };
+
+    fn request_activation(
+        &mut self,
+        request: MainWindowOpenRequest,
+    ) -> ActivationRequestTransition {
+        if self.webview_health != WebviewHealth::Healthy {
+            return ActivationRequestTransition::Reject;
+        }
+        if self.renderer_events_ready {
+            return ActivationRequestTransition::Dispatch(request);
+        }
+        self.queued_activation = Some(match self.queued_activation {
+            Some(queued) => MainWindowOpenRequest {
+                monitor_target: request.monitor_target.or(queued.monitor_target),
+                open_settings_after_show: queued.open_settings_after_show
+                    || request.open_settings_after_show,
+            },
+            None => request,
+        });
+        ActivationRequestTransition::Queued
+    }
+
+    fn complete_renderer_startup(
+        &mut self,
+        launch_origin: LaunchOrigin,
+    ) -> StartupCompletionTransition {
+        if self.renderer_events_ready || self.webview_health != WebviewHealth::Healthy {
+            return StartupCompletionTransition::Ignore;
+        }
+        self.renderer_events_ready = true;
+        if let Some(request) = self.queued_activation.take() {
+            return StartupCompletionTransition::Dispatch(request);
+        }
+        if launch_origin == LaunchOrigin::LoginStartup {
+            StartupCompletionTransition::RemainHidden
+        } else {
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        }
+    }
 
     fn begin_open(&mut self, open_sequence: u64) -> bool {
         if self.webview_health != WebviewHealth::Healthy {
@@ -235,6 +299,7 @@ impl MainWindowSupervisorState {
         }
         self.webview_health = WebviewHealth::Failed;
         self.pending_open = PendingOpen::Idle;
+        self.queued_activation = None;
         FailureTransition::HideAndRecover
     }
 
@@ -265,6 +330,7 @@ impl MainWindowSupervisorState {
     fn mark_terminating(&mut self) {
         self.webview_health = WebviewHealth::Terminating;
         self.pending_open = PendingOpen::Idle;
+        self.queued_activation = None;
     }
 }
 
@@ -832,7 +898,7 @@ fn next_main_window_open_sequence() -> u64 {
     MAIN_WINDOW_OPEN_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-fn show_main_window_for_sequence(
+fn prepare_main_window_surface_for_sequence(
     app: &AppHandle,
     open_sequence: u64,
     force_cloak: bool,
@@ -1010,7 +1076,7 @@ fn complete_main_window_show(
     activation_after_show: MainWindowActivationPayload,
     open_settings_after_show: bool,
 ) {
-    if let Err(error) = show_main_window_for_sequence(app, open_sequence, force_cloak) {
+    if let Err(error) = prepare_main_window_surface_for_sequence(app, open_sequence, force_cloak) {
         abort_main_window_open(
             app,
             open_sequence,
@@ -2502,6 +2568,61 @@ fn request_main_window_open(
     );
 }
 
+fn dispatch_main_window_activation(app: &AppHandle, request: MainWindowOpenRequest) -> bool {
+    let Some(open_sequence) = begin_supervised_open(app) else {
+        return false;
+    };
+    request_main_window_open(
+        app,
+        open_sequence,
+        request.monitor_target,
+        request.open_settings_after_show,
+    );
+    true
+}
+
+fn request_main_window_activation(app: &AppHandle, request: MainWindowOpenRequest) -> bool {
+    let transition = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
+        Ok(mut state) => state.request_activation(request),
+        Err(_) => {
+            log::error!(
+                target: "main-window",
+                "Failed to lock main window supervisor state before queuing activation"
+            );
+            return false;
+        }
+    };
+    match transition {
+        ActivationRequestTransition::Dispatch(request) => {
+            dispatch_main_window_activation(app, request)
+        }
+        ActivationRequestTransition::Queued => true,
+        ActivationRequestTransition::Reject => {
+            show_webview_recovery_prompt(app);
+            false
+        }
+    }
+}
+
+pub(crate) fn complete_renderer_startup(
+    app: &AppHandle,
+    launch_origin: LaunchOrigin,
+) -> Result<(), String> {
+    let transition = MAIN_WINDOW_SUPERVISOR_STATE
+        .lock()
+        .map_err(|_| {
+            "Failed to lock main window supervisor state while completing renderer startup"
+                .to_string()
+        })?
+        .complete_renderer_startup(launch_origin);
+    if let StartupCompletionTransition::Dispatch(request) = transition {
+        if !dispatch_main_window_activation(app, request) {
+            return Err("Failed to dispatch the renderer startup activation".to_string());
+        }
+    }
+    Ok(())
+}
+
 fn begin_supervised_open(app: &AppHandle) -> Option<u64> {
     let open_sequence = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
         Ok(mut state) if state.webview_health == WebviewHealth::Healthy => {
@@ -2636,11 +2757,13 @@ fn hide_main_window_surface(app: &AppHandle, keep_cloaked: bool) {
 }
 
 fn open_main_window_inner(app: &AppHandle, open_settings_after_show: bool) -> bool {
-    let Some(open_sequence) = begin_supervised_open(app) else {
-        return false;
-    };
-    request_main_window_open(app, open_sequence, None, open_settings_after_show);
-    true
+    request_main_window_activation(
+        app,
+        MainWindowOpenRequest {
+            monitor_target: None,
+            open_settings_after_show,
+        },
+    )
 }
 
 pub(crate) fn open_main_window(app: &AppHandle) {
@@ -2723,10 +2846,13 @@ pub(crate) fn trigger_main_window_shortcut(app: &AppHandle) {
         return;
     }
 
-    let Some(open_sequence) = begin_supervised_open(app) else {
-        return;
-    };
-    request_main_window_open(app, open_sequence, monitor_target, false);
+    request_main_window_activation(
+        app,
+        MainWindowOpenRequest {
+            monitor_target,
+            open_settings_after_show: false,
+        },
+    );
 }
 
 pub(crate) fn open_settings(app: &AppHandle) {
@@ -2736,7 +2862,83 @@ pub(crate) fn open_settings(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::startup::LaunchOrigin;
     use std::cell::Cell;
+
+    #[test]
+    fn login_startup_completion_keeps_the_window_hidden() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::LoginStartup),
+            StartupCompletionTransition::RemainHidden
+        );
+    }
+
+    #[test]
+    fn manual_startup_completion_requests_the_initial_window_once() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Ignore
+        );
+    }
+
+    #[test]
+    fn activation_before_renderer_startup_is_replayed_after_the_handshake() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        let request = MainWindowOpenRequest::default();
+
+        assert_eq!(
+            supervisor.request_activation(request),
+            ActivationRequestTransition::Queued
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::LoginStartup),
+            StartupCompletionTransition::Dispatch(request)
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::LoginStartup),
+            StartupCompletionTransition::Ignore
+        );
+    }
+
+    #[test]
+    fn queued_activations_preserve_settings_and_the_latest_monitor_target() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        let target = MainWindowMonitorTarget {
+            monitor_rect: MainWindowRect::new(0, 0, 1920, 1080),
+            work_rect: MainWindowRect::new(0, 0, 1920, 1040),
+            display_changed: true,
+        };
+
+        assert_eq!(
+            supervisor.request_activation(MainWindowOpenRequest {
+                monitor_target: None,
+                open_settings_after_show: true,
+            }),
+            ActivationRequestTransition::Queued
+        );
+        assert_eq!(
+            supervisor.request_activation(MainWindowOpenRequest {
+                monitor_target: Some(target),
+                open_settings_after_show: false,
+            }),
+            ActivationRequestTransition::Queued
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::LoginStartup),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest {
+                monitor_target: Some(target),
+                open_settings_after_show: true,
+            })
+        );
+    }
 
     #[test]
     fn renderer_ready_timeout_hides_pending_open_instead_of_revealing_it() {

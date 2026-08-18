@@ -308,9 +308,6 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
       if (command === "reveal_main_window" && !bridgeOverrides.passRevealMainWindowCommand) {
         return null;
       }
-      if (command === "show_main_window" && !bridgeOverrides.passShowMainWindowCommand) {
-        return null;
-      }
       if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
         return {
           platform: "windows",
@@ -1547,10 +1544,33 @@ export async function runLaunchpadNativeTests() {
     },
   });
 
-  const startupShowCommands = [];
+  const listenerRegistrationError = new Error("desktop activation listener denied");
   await withMockTauri(async (command) => {
-    if (command === "show_main_window") {
-      startupShowCommands.push(command);
+    throw new Error(`Unexpected invoke: ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = createNative(options);
+    let registrationFailure = null;
+    await withSuppressedConsoleError(async () => {
+      try {
+        await native.registerNativeEventListeners();
+      } catch (error) {
+        registrationFailure = error;
+      }
+    });
+
+    assert(registrationFailure === listenerRegistrationError, "required native listener failures should reject renderer startup");
+  }, {
+    listen: async (eventName) => {
+      if (eventName === "lumeria-open-desktop") throw listenerRegistrationError;
+      return () => {};
+    },
+  });
+
+  const startupCompletionCommands = [];
+  await withMockTauri(async (command) => {
+    if (command === "complete_renderer_startup") {
+      startupCompletionCommands.push(command);
       return null;
     }
     throw new Error(`Unexpected invoke: ${command}`);
@@ -1558,13 +1578,9 @@ export async function runLaunchpadNativeTests() {
     const { options } = makeOptions();
     const native = createNative(options);
 
-    native.showNativeWindowAfterStartup();
-    native.showNativeWindowAfterStartup();
-    await flushMicrotasks(3);
+    await native.completeRendererStartup();
 
-    assert(startupShowCommands.join(",") === "show_main_window", "startup should request the initially hidden native window once");
-  }, {
-    passShowMainWindowCommand: true,
+    assert(startupCompletionCommands.join(",") === "complete_renderer_startup", "renderer startup should complete through the dedicated native command");
   });
 
   const openSurfaceCommands = [];

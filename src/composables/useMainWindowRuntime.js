@@ -109,10 +109,6 @@ export function useMainWindowRuntime(options = {}) {
     return invoke(port.setShortcutCaptureActive, [Boolean(active)]);
   }
 
-  function show() {
-    return invoke(port.show);
-  }
-
   function reveal(openSequence) {
     return invoke(port.reveal, [openSequence]);
   }
@@ -131,7 +127,6 @@ export function useMainWindowRuntime(options = {}) {
     setFrameEnabled,
     setMode,
     setShortcutCaptureActive,
-    show,
     support,
   };
 }

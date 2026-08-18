@@ -9,6 +9,7 @@ import {
   backgroundAssetPort,
   layoutStorePort,
   nativeLifecyclePort,
+  nativeStartupPort,
 } from "../platform/launchpadPorts.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -229,7 +230,7 @@ export function useLaunchpadNative(options) {
   }
   const store = options.store || layoutStorePort;
   const platform = options.platform || nativeLifecyclePort;
-  const showWindowAfterStartup = options.showWindowAfterStartup !== false;
+  const startup = options.startup || nativeStartupPort;
   const backgroundAssets = options.backgroundAssets || backgroundAssetPort;
   const notices = options.notices;
   if (
@@ -247,6 +248,9 @@ export function useLaunchpadNative(options) {
     || typeof platform?.showLaunchError !== "function"
   ) {
     throw new TypeError("useLaunchpadNative requires a native lifecycle port");
+  }
+  if (typeof startup?.isAvailable !== "function" || typeof startup?.complete !== "function") {
+    throw new TypeError("useLaunchpadNative requires a native startup port");
   }
   if (typeof backgroundAssets?.getDesktopWallpaper !== "function" || typeof backgroundAssets?.toAssetUrl !== "function") {
     throw new TypeError("useLaunchpadNative requires a background asset port");
@@ -267,7 +271,6 @@ export function useLaunchpadNative(options) {
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
   let nativeWallpaperRefreshTimer = null;
-  let hasRequestedStartupNativeWindowShow = false;
   let nativeWindowOpenSequence = null;
   let nativeWindowHideSequence = 0;
   let isNativeWindowClosingInteractionBlocked = false;
@@ -775,12 +778,9 @@ export function useLaunchpadNative(options) {
     return nativeWindowRevealUpdate;
   }
 
-  function showNativeWindowAfterStartup() {
-    if (!showWindowAfterStartup || !platform.isAvailable() || hasRequestedStartupNativeWindowShow) return;
-    hasRequestedStartupNativeWindowShow = true;
-    mainWindowRuntime.show().then((outcome) => {
-      if (!outcome.ok) console.error("Failed to show Lumeria window after startup", outcome.error);
-    });
+  function completeRendererStartup() {
+    if (!startup.isAvailable()) return Promise.resolve(null);
+    return startup.complete();
   }
 
   function registerNativeEventListeners() {
@@ -795,43 +795,49 @@ export function useLaunchpadNative(options) {
       }
       setter(unlisten);
     };
+    const listenRequired = (eventName, handler, setter, failureMessage) => (
+      platform.listen(eventName, handler)
+        .then(keepUnlisten(setter))
+        .catch((error) => {
+          console.error(failureMessage, error);
+          throw error;
+        })
+    );
     return Promise.all([
-      platform.listen("lumeria-open-desktop", openDesktopFromNativeShortcut)
-        .then(keepUnlisten((unlisten) => {
-          unlistenOpenDesktopEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for native desktop open event", error);
-        }),
-      platform.listen("lumeria-toggle-desktop", toggleDesktopFromNativeShortcut)
-        .then(keepUnlisten((unlisten) => {
-          unlistenToggleDesktopEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for native desktop toggle event", error);
-        }),
-      platform.listen("lumeria-close-desktop", closeDesktopFromNativeWindow)
-        .then(keepUnlisten((unlisten) => {
-          unlistenCloseDesktopEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for native desktop close event", error);
-        }),
-      platform.listen("lumeria-open-settings", handlers.openSettingsPanel)
-        .then(keepUnlisten((unlisten) => {
-          unlistenSettingsEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for native settings event", error);
-        }),
-      platform.listen("lumeria-quit-requested", quitFromNativeRequest)
-        .then(keepUnlisten((unlisten) => {
-          unlistenQuitRequestedEvent = unlisten;
-        }))
-        .catch((error) => {
-          console.error("Failed to listen for native quit event", error);
-        }),
-    ]);
+      listenRequired(
+        "lumeria-open-desktop",
+        openDesktopFromNativeShortcut,
+        (unlisten) => { unlistenOpenDesktopEvent = unlisten; },
+        "Failed to listen for native desktop open event",
+      ),
+      listenRequired(
+        "lumeria-toggle-desktop",
+        toggleDesktopFromNativeShortcut,
+        (unlisten) => { unlistenToggleDesktopEvent = unlisten; },
+        "Failed to listen for native desktop toggle event",
+      ),
+      listenRequired(
+        "lumeria-close-desktop",
+        closeDesktopFromNativeWindow,
+        (unlisten) => { unlistenCloseDesktopEvent = unlisten; },
+        "Failed to listen for native desktop close event",
+      ),
+      listenRequired(
+        "lumeria-open-settings",
+        handlers.openSettingsPanel,
+        (unlisten) => { unlistenSettingsEvent = unlisten; },
+        "Failed to listen for native settings event",
+      ),
+      listenRequired(
+        "lumeria-quit-requested",
+        quitFromNativeRequest,
+        (unlisten) => { unlistenQuitRequestedEvent = unlisten; },
+        "Failed to listen for native quit event",
+      ),
+    ]).catch((error) => {
+      clearNativeEventListeners();
+      throw error;
+    });
   }
 
   function clearNativeEventListeners() {
@@ -1014,6 +1020,7 @@ export function useLaunchpadNative(options) {
 
   return {
     clearNativeEventListeners,
+    completeRendererStartup,
     clearNativeSaveTimer,
     configureNativeLiveDesktopBackground,
     flushNativeLayoutSave,
@@ -1036,7 +1043,6 @@ export function useLaunchpadNative(options) {
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
     setNativeWindowFrameEnabled,
-    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,

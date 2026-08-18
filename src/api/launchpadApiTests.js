@@ -1,5 +1,6 @@
 import {
   applyAppLocalePreference,
+  completeRendererStartup,
   getAutostartStatus,
   getAppLocaleState,
   getLaunchContext,
@@ -145,11 +146,12 @@ export async function runLaunchpadApiTests() {
         return { ...nativeLocaleState, preference: args.preference, resolvedLocale: args.preference };
       }
       if (command === "get_launch_context") return { origin: "loginStartup" };
-    },
-    autostart: {
-      isEnabled: async () => autostartStatus,
-      enable: async () => { autostartStatus = true; },
-      disable: async () => { autostartStatus = false; },
+      if (command === "complete_renderer_startup") return null;
+      if (command === "get_autostart_status") return autostartStatus;
+      if (command === "set_autostart_enabled") {
+        autostartStatus = Boolean(args.enabled);
+        return autostartStatus;
+      }
     },
   });
 
@@ -188,6 +190,8 @@ export async function runLaunchpadApiTests() {
     }
     assert(invalidSaveError instanceof TypeError, "layout save should reject legacy persisted fields before IPC");
     assert((await getLaunchContext()).origin === "loginStartup", "launch context should cross the native bridge");
+    await completeRendererStartup();
+    assert(invocations.some(({ command }) => command === "complete_renderer_startup"), "renderer startup completion should cross the native bridge");
     assert(!(await getAutostartStatus()), "autostart status should start disabled");
     assert(await setAutostartEnabled(true), "autostart enable should report the applied status");
     assert(await getAutostartStatus(), "autostart status should reflect the enabled state");

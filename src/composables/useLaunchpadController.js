@@ -191,7 +191,7 @@ export function useLaunchpadController(options = {}) {
     liveDesktopSupport: liveDesktopBackgroundSupport,
     localizationText,
     mainWindow: mainWindowRuntime,
-    startupPort: options.startupPort,
+    autostartPort: options.autostartPort,
   });
   function getCurrentIconScope() {
     return resolveCurrentIconScope({
@@ -1387,6 +1387,7 @@ export function useLaunchpadController(options = {}) {
   } = settings.actions;
   const {
     clearNativeEventListeners,
+    completeRendererStartup,
     clearNativeSaveTimer,
     flushNativeLayoutSave,
     getLaunchTargetStatus,
@@ -1408,7 +1409,6 @@ export function useLaunchpadController(options = {}) {
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
     setNativeWindowFrameEnabled,
-    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
@@ -1429,7 +1429,6 @@ export function useLaunchpadController(options = {}) {
     },
     platform: nativePlatform,
     settings: settings.nativeIntegration,
-    showWindowAfterStartup: initialDesktopOpen,
     systemAppearance,
   });
   registerEventHandlers({
@@ -1757,6 +1756,7 @@ export function useLaunchpadController(options = {}) {
     clearTransientNoticeTimer,
     clearLayoutProjectionRelease,
     clearNativeEventListeners,
+    completeRendererStartup,
     clearNativeSaveTimer,
     flushNativeLayoutSave,
     clearPageJumpRenderRange,
@@ -1809,7 +1809,6 @@ export function useLaunchpadController(options = {}) {
     searchRef,
     setNativeWindowEffectsEnabled,
     settingsThemePreference,
-    showNativeWindowAfterStartup,
     showCustomTitlebar,
     showMissingLaunchTargetBadge,
     syncLiveDesktopBackgroundRuntime,

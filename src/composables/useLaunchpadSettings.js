@@ -19,9 +19,9 @@ import {
 } from "../domain/layoutConfiguration.js";
 import {
   backgroundAssetPort,
+  autostartPort as defaultAutostartPort,
   launchpadIconPort as defaultLaunchpadIconPort,
   localeRuntimePort as defaultLocaleRuntimePort,
-  startupPort as defaultStartupPort,
 } from "../platform/launchpadPorts.js";
 import {
   DEFAULT_LOCALE_PREFERENCE,
@@ -108,7 +108,7 @@ export function useLaunchpadSettings(options = {}) {
   const backgroundAssets = options.backgroundAssetPort || backgroundAssetPort;
   const launchpadIcons = options.launchpadIconPort || defaultLaunchpadIconPort;
   const localeRuntime = options.localeRuntime || defaultLocaleRuntimePort;
-  const startup = options.startupPort || defaultStartupPort;
+  const autostart = options.autostartPort || defaultAutostartPort;
   const activateLocale = typeof options.activateLocale === "function" ? options.activateLocale : () => {};
   const t = options.localizationText?.t;
   if (typeof layout?.captureConfiguration !== "function" || typeof layout?.applyConfiguration !== "function") {
@@ -127,11 +127,11 @@ export function useLaunchpadSettings(options = {}) {
     throw new TypeError("useLaunchpadSettings requires launchpadIconPort");
   }
   if (
-    typeof startup?.isAvailable !== "function"
-    || typeof startup?.getStatus !== "function"
-    || typeof startup?.setEnabled !== "function"
+    typeof autostart?.isAvailable !== "function"
+    || typeof autostart?.getStatus !== "function"
+    || typeof autostart?.setEnabled !== "function"
   ) {
-    throw new TypeError("useLaunchpadSettings requires startupPort");
+    throw new TypeError("useLaunchpadSettings requires autostartPort");
   }
   if (typeof t !== "function") {
     throw new TypeError("useLaunchpadSettings requires localization text");
@@ -164,7 +164,7 @@ export function useLaunchpadSettings(options = {}) {
   const settingsThemePreferenceState = ref(DEFAULT_SETTINGS_THEME_PREFERENCE);
   const launchpadIconVariantState = ref(DEFAULT_LAUNCHPAD_ICON_VARIANT);
   const launchAtLoginState = ref(false);
-  const canConfigureLaunchAtLoginState = ref(Boolean(startup.isAvailable()));
+  const canConfigureLaunchAtLoginState = ref(Boolean(autostart.isAvailable()));
   const isRefreshingLaunchAtLoginState = ref(false);
   let launchAtLoginStatusRequestId = 0;
 
@@ -263,7 +263,7 @@ export function useLaunchpadSettings(options = {}) {
 
   async function refreshLaunchAtLoginStatus() {
     const requestId = ++launchAtLoginStatusRequestId;
-    const available = Boolean(startup.isAvailable());
+    const available = Boolean(autostart.isAvailable());
     canConfigureLaunchAtLoginState.value = available;
     if (!available) {
       isRefreshingLaunchAtLoginState.value = false;
@@ -273,7 +273,7 @@ export function useLaunchpadSettings(options = {}) {
     isRefreshingLaunchAtLoginState.value = true;
     launchAtLoginErrorState.value = "";
     try {
-      const status = Boolean(await startup.getStatus());
+      const status = Boolean(await autostart.getStatus());
       if (requestId !== launchAtLoginStatusRequestId) return { ok: true, stale: true };
       launchAtLoginState.value = status;
       draftLaunchAtLogin.value = status;
@@ -708,12 +708,12 @@ export function useLaunchpadSettings(options = {}) {
       let startupAttempted = false;
       if (nextLaunchAtLogin !== currentLaunchAtLogin) {
         let startupError = null;
-        if (!startup.isAvailable()) {
+        if (!autostart.isAvailable()) {
           startupError = new Error(t("settings.general.startup.unavailable"));
         } else {
           startupAttempted = true;
           try {
-            const appliedStatus = Boolean(await startup.setEnabled(nextLaunchAtLogin));
+            const appliedStatus = Boolean(await autostart.setEnabled(nextLaunchAtLogin));
             if (appliedStatus !== nextLaunchAtLogin) {
               throw new Error(`Autostart runtime returned an unexpected status: ${String(appliedStatus)}`);
             }
@@ -726,7 +726,7 @@ export function useLaunchpadSettings(options = {}) {
           const rollbackErrors = [];
           if (startupAttempted) {
             try {
-              await startup.setEnabled(currentLaunchAtLogin);
+              await autostart.setEnabled(currentLaunchAtLogin);
             } catch (error) {
               rollbackErrors.push(error);
             }

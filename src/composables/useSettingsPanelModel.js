@@ -475,14 +475,6 @@ function createSettingsPanelModel(options) {
     )),
     isOpeningDeveloperConsole,
     isRecordingMainWindowShortcut: isRecordingShortcut,
-    launchAtLoginHint: computed(() => (
-      state.launchAtLoginError.value
-      || (state.isRefreshingLaunchAtLogin.value
-        ? t("settings.general.startup.loading")
-        : (state.canConfigureLaunchAtLogin.value
-          ? t("settings.general.startup.description")
-          : t("settings.general.startup.unavailableHint")))
-    )),
     launchpadIconOptions,
     mainWindowShortcutHint: computed(() => {
       if (state.mainWindowShortcutError.value) return state.mainWindowShortcutError.value;

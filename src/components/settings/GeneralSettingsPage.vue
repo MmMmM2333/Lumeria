@@ -11,7 +11,15 @@
           </span>
           <span class="settings-list-copy">
             <span class="settings-list-title">{{ t("settings.general.startup.title") }}</span>
-            <span class="settings-list-description" aria-live="polite">{{ model.launchAtLoginHint.value }}</span>
+            <span v-if="model.launchAtLoginError.value" class="settings-list-description" aria-live="polite">
+              {{ model.launchAtLoginError.value }}
+            </span>
+            <span v-else-if="model.isRefreshingLaunchAtLogin.value" class="settings-visually-hidden" aria-live="polite">
+              {{ t("settings.general.startup.loading") }}
+            </span>
+            <span v-else-if="!model.canConfigureLaunchAtLogin.value" class="settings-visually-hidden" aria-live="polite">
+              {{ t("settings.general.startup.unavailableHint") }}
+            </span>
           </span>
           <span class="settings-list-control">
             <fluent-switch

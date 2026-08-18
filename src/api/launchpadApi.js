@@ -1,10 +1,5 @@
 import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import {
-  disable as tauriDisableAutostart,
-  enable as tauriEnableAutostart,
-  isEnabled as tauriIsAutostartEnabled,
-} from "@tauri-apps/plugin-autostart";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
 
 let bridgeOverride = null;
@@ -41,11 +36,6 @@ function getTauriBridge() {
     convertFileSrc: tauriConvertFileSrc,
     invoke: tauriInvoke,
     listen: tauriListen,
-    autostart: {
-      disable: tauriDisableAutostart,
-      enable: tauriEnableAutostart,
-      isEnabled: tauriIsAutostartEnabled,
-    },
   };
 }
 
@@ -69,25 +59,26 @@ export async function getLaunchContext() {
   return invoke("get_launch_context");
 }
 
+export async function completeRendererStartup() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("complete_renderer_startup");
+}
+
 export async function getAutostartStatus() {
-  const autostart = getTauriBridge()?.autostart;
-  if (!autostart?.isEnabled) return false;
-  return Boolean(await autostart.isEnabled());
+  const invoke = getTauriInvoke();
+  if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
+  return Boolean(await invoke("get_autostart_status"));
 }
 
 export function isAutostartAvailable() {
-  const autostart = getTauriBridge()?.autostart;
-  return Boolean(autostart?.isEnabled && autostart?.enable && autostart?.disable);
+  return isNativeBridgeAvailable();
 }
 
 export async function setAutostartEnabled(enabled) {
-  const autostart = getTauriBridge()?.autostart;
-  if (!autostart?.enable || !autostart?.disable || !autostart?.isEnabled) {
-    throw new Error("Autostart is unavailable in the current runtime");
-  }
-  if (Boolean(enabled)) await autostart.enable();
-  else await autostart.disable();
-  return Boolean(await autostart.isEnabled());
+  const invoke = getTauriInvoke();
+  if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
+  return Boolean(await invoke("set_autostart_enabled", { enabled: Boolean(enabled) }));
 }
 
 export async function listenNativeEvent(eventName, handler) {
@@ -253,13 +244,6 @@ export async function hideMainWindow() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("hide_main_window");
-  return true;
-}
-
-export async function showMainWindow() {
-  const invoke = getTauriInvoke();
-  if (!invoke) return false;
-  await invoke("show_main_window");
   return true;
 }
 

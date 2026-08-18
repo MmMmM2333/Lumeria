@@ -1163,8 +1163,7 @@
       "general": {
         "title": "通用",
         "startup": {
-          "title": "开机自启",
-          "description": "登录 Windows 后自动打开 Lumeria",
+          "title": "开机自启动",
           "loading": "正在检查登录启动状态…",
           "unavailableHint": "仅桌面版 Lumeria 支持此功能",
           "unavailable": "当前运行环境不支持登录启动",
