@@ -512,6 +512,7 @@ export class DesktopLayer extends Container {
     this.lastFolderHandoffDebugSnapshot = null;
     this.lastDesktopRenderPlan = null;
     this.lastPointerOnlyPlanSnapshot = null;
+    this.folderPresentationGeometryCache = { geometryById: null, version: null };
     this.iconNodes = new Map();
     this.retiredIconNodes = new WeakSet();
     this.pageTrackMotion = createPageTrackMotionState();
@@ -568,6 +569,13 @@ export class DesktopLayer extends Container {
   }
 
   makeFolderPresentationGeometrySnapshot() {
+    const cache = this.folderPresentationGeometryCache || { geometryById: null, version: null };
+    const version = this.iconBoundsRegistry.getVersion?.();
+    if (
+      version != null &&
+      cache.version === version &&
+      cache.geometryById
+    ) return cache.geometryById;
     const geometryById = new Map();
     for (const node of this.iconNodes?.values?.() || []) {
       const folderId = node?.item?.type === "folder" ? node.item.id : null;
@@ -578,6 +586,9 @@ export class DesktopLayer extends Container {
         renderedRect: this.iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId),
         stableRect: projectStageLayoutRecordToClient(stableRecord),
       });
+    }
+    if (version != null) {
+      this.folderPresentationGeometryCache = { geometryById, version };
     }
     return geometryById;
   }

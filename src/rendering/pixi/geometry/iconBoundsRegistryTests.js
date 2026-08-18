@@ -35,6 +35,7 @@ export function runIconBoundsRegistryTests() {
     if (!condition) throw new Error(`[Pixi icon bounds registry test failed] ${message}`);
   };
   const registry = createIconBoundsRegistry();
+  const initialVersion = registry.getVersion();
 
   assert(makeIconBoundsKey(K.LAUNCH, { area: "desktop", id: "desktop-app", pageIndex: 2 }) === "desktop::2:desktop-app", "launch key should include area, page, and id");
   assert(makeIconBoundsKey(K.LAUNCH, { area: "folder", folderId: "folder-1", id: "folder-app", pageIndex: 1 }) === "folder:folder-1:1:folder-app", "folder launch key should include folder id");
@@ -50,6 +51,24 @@ export function runIconBoundsRegistryTests() {
     rect(10),
     { area: "desktop", id: "desktop-app", pageIndex: 0 }
   );
+  assert(registry.getVersion() > initialVersion, "registering bounds should advance the registry version");
+  const firstVersion = registry.getVersion();
+  registry.registerBounds(
+    K.LAUNCH,
+    V.RENDERED,
+    { area: "desktop", id: "desktop-app", pageIndex: 0 },
+    rect(10),
+    { area: "desktop", id: "desktop-app", index: 99, pageIndex: 0 }
+  );
+  assert(registry.getVersion() === firstVersion, "re-registering identical geometry should keep the registry version stable");
+  registry.registerBounds(
+    K.LAUNCH,
+    V.RENDERED,
+    { area: "desktop", id: "desktop-app", pageIndex: 0 },
+    rect(11),
+    { area: "desktop", id: "desktop-app", pageIndex: 0 }
+  );
+  assert(registry.getVersion() > firstVersion, "changing registered geometry should advance the registry version");
   registry.registerBounds(
     K.LAUNCH,
     V.RENDERED,

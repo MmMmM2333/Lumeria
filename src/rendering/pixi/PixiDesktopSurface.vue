@@ -28,7 +28,7 @@
           ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
           name="pixiSingleStageFolderName"
-          :value="folderFrame.folderOverlayState.renderedFolder.value.name"
+          :value="sceneRuntime.folderOverlayState.renderedFolder.value.name"
           :disabled="isSingleStageFolderInputDisabled"
           :style="singleStageFolderNameInputStyle"
           maxlength="32"
@@ -59,7 +59,7 @@ import {
   preloadIconTexturesAsync,
   subscribeIconTextureLoadSettlements,
 } from "./assets/iconTextureCache.js";
-import { createPixiRenderScheduler } from "./pixiRenderScheduler.js";
+import { createPixiRenderCoordinator } from "./pixiRenderCoordinator.js";
 import {
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
@@ -77,6 +77,7 @@ import {
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
 import { createResizeSettleScheduler } from "./resizeSettleScheduler.js";
 import { assertDesktopSceneFrame } from "../sceneFrame.js";
+import { assertDesktopSceneRuntime } from "../sceneRuntime.js";
 import {
   assertSceneEvent,
   makeChooseAppIconEvent,
@@ -111,16 +112,20 @@ const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
 const props = defineProps({
   sceneFrame: { type: Object, required: true },
+  sceneRuntime: { type: Object, required: true },
 });
 const sceneFrame = computed(() => {
   assertDesktopSceneFrame(props.sceneFrame);
   return props.sceneFrame;
 });
+const sceneRuntime = computed(() => {
+  assertDesktopSceneRuntime(props.sceneRuntime);
+  return props.sceneRuntime;
+});
 const viewportFrame = computed(() => sceneFrame.value.viewport);
 const visualFrame = computed(() => sceneFrame.value.visual);
 const interactionFrame = computed(() => sceneFrame.value.interaction);
 const folderFrame = computed(() => sceneFrame.value.folder);
-const runtimeFrame = computed(() => sceneFrame.value.runtime);
 const diagnosticsFrame = computed(() => sceneFrame.value.diagnostics);
 const localization = useLocalization();
 const { t } = localization;
@@ -170,7 +175,7 @@ let resizeObserver = null;
 let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let folderTexturePrewarmGeneration = 0;
-let renderScheduler = null;
+let renderCoordinator = null;
 let renderProbe = null;
 let diagnosticHub = null;
 let diagnosticGlobalInstallation = null;
@@ -183,29 +188,28 @@ let desktopMotionRuntimeSuspended = false;
 let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
 let desktopMotionFrameNeedsRender = false;
-let desktopLayerUpdatePending = false;
 let desktopResizeLayoutSnapPending = false;
 let resizeSettleScheduler = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
 const isSingleStageFolderGhostTransitionActive = computed(() => Boolean(
-  folderFrame.value.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
-  folderFrame.value.folderOverlayState?.isFolderCloseIconAnimationActive?.value
+  sceneRuntime.value.folderOverlayState?.isFolderOpenIconAnimationActive?.value ||
+  sceneRuntime.value.folderOverlayState?.isFolderCloseIconAnimationActive?.value
 ));
 
 const isSingleStageFolderZoomFadeClosing = computed(() => Boolean(
-  folderFrame.value.folderOverlayState?.isFolderZoomFadeClosing?.value
+  sceneRuntime.value.folderOverlayState?.isFolderZoomFadeClosing?.value
 ));
 
 const isSingleStageFolderClosing = computed(() => Boolean(
-  folderFrame.value.folderOverlayState?.isFolderClosing?.value ||
-  folderFrame.value.folderOverlayState?.isFolderAppLaunchClosing?.value ||
+  sceneRuntime.value.folderOverlayState?.isFolderClosing?.value ||
+  sceneRuntime.value.folderOverlayState?.isFolderAppLaunchClosing?.value ||
   isSingleStageFolderZoomFadeClosing.value
 ));
 
 const shouldRenderSingleStageFolderDomControls = computed(() => Boolean(
-  folderFrame.value.folderOverlayState?.renderedFolder?.value
+  sceneRuntime.value.folderOverlayState?.renderedFolder?.value
 ));
 
 const isSingleStageFolderInputDisabled = computed(() => Boolean(
@@ -215,7 +219,7 @@ const isSingleStageFolderInputDisabled = computed(() => Boolean(
 
 const isSingleStageFolderPageDotsBlocked = computed(() => Boolean(
   isSingleStageFolderClosing.value ||
-  folderFrame.value.folderOverlayState?.isFolderOpenFrameGhostPending?.value
+  sceneRuntime.value.folderOverlayState?.isFolderOpenFrameGhostPending?.value
 ));
 
 const isSingleStageDragPreviewActive = computed(() => Boolean(
@@ -223,7 +227,7 @@ const isSingleStageDragPreviewActive = computed(() => Boolean(
 ));
 
 const singleStageFolderNameInputStyle = computed(() => {
-  const folderId = folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  const folderId = sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   const frame = isSingleStageFolderTitleFrameCurrent(singleStageFolderTitleFrame.value, folderId)
     ? singleStageFolderTitleFrame.value
     : null;
@@ -237,7 +241,7 @@ const singleStageFolderNameInputStyle = computed(() => {
 });
 
 function shouldShowSingleStageFolderPageDots() {
-  const state = folderFrame.value.folderOverlayState;
+  const state = sceneRuntime.value.folderOverlayState;
   return Boolean(
     shouldRenderSingleStageFolderDomControls.value &&
     state?.renderedFolder?.value &&
@@ -247,7 +251,7 @@ function shouldShowSingleStageFolderPageDots() {
 }
 
 function handleSingleStageFolderNameInput(event) {
-  const state = folderFrame.value.folderOverlayState;
+  const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
   const nextName = String(event?.target?.value || "").slice(0, 32);
@@ -256,7 +260,7 @@ function handleSingleStageFolderNameInput(event) {
 }
 
 function restoreSingleStageEmptyFolderName(event) {
-  const state = folderFrame.value.folderOverlayState;
+  const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
   const input = event?.target;
@@ -270,7 +274,7 @@ function restoreSingleStageEmptyFolderName(event) {
 }
 
 watch(
-  () => folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
+  () => sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
   () => {
     singleStageFolderTitleFrame.value = null;
   },
@@ -279,27 +283,27 @@ watch(
 
 watch(
   [
-    () => folderFrame.value.folderOverlayState?.folderRenameRequest?.value?.token ?? null,
-    () => folderFrame.value.folderOverlayState?.openFolderId?.value ?? null,
-    () => folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
+    () => sceneRuntime.value.folderOverlayState?.folderRenameRequest?.value?.token ?? null,
+    () => sceneRuntime.value.folderOverlayState?.openFolderId?.value ?? null,
+    () => sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null,
     () => isSingleStageFolderInputDisabled.value,
   ],
   async ([token, openFolderId, renderedFolderId, inputDisabled]) => {
-    const request = folderFrame.value.folderOverlayState?.folderRenameRequest?.value;
+    const request = sceneRuntime.value.folderOverlayState?.folderRenameRequest?.value;
     if (!token || !request) return;
     if (request.folderId !== openFolderId) {
-      folderFrame.value.folderOverlayState?.completeFolderRenameRequest?.(token);
+      sceneRuntime.value.folderOverlayState?.completeFolderRenameRequest?.(token);
       return;
     }
     if (inputDisabled || request.folderId !== renderedFolderId) return;
     // Reuse the existing title editor after the opening handoff releases it.
     await nextTick();
-    if (folderFrame.value.folderOverlayState?.folderRenameRequest?.value?.token !== token) return;
+    if (sceneRuntime.value.folderOverlayState?.folderRenameRequest?.value?.token !== token) return;
     const input = folderNameInputRef.value;
     if (!input || input.disabled) return;
     input.focus({ preventScroll: true });
     input.select();
-    folderFrame.value.folderOverlayState?.completeFolderRenameRequest?.(token);
+    sceneRuntime.value.folderOverlayState?.completeFolderRenameRequest?.(token);
   }
 );
 
@@ -327,9 +331,8 @@ function getResizeSettleScheduler() {
     onFrame: (reason) => {
       invalidateDesktopDomGeometry();
       refreshDesktopDomGeometry();
-      desktopLayerUpdatePending = true;
       desktopResizeLayoutSnapPending = true;
-      getRenderScheduler().markRenderPending(reason);
+      requestRender(reason);
     },
   });
   return resizeSettleScheduler;
@@ -403,7 +406,7 @@ function getElementRect(nodeRef) {
 }
 
 function makeRootStageHostStyle(rootRect = null) {
-  const resolvedRootRect = rootRect || getElementRect(runtimeFrame.value.domRefs?.rootRef) || {
+  const resolvedRootRect = rootRect || getElementRect(sceneRuntime.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
     top: 0,
@@ -435,7 +438,7 @@ function createSingleStageFolderState(
   diagnosticsOptions = {},
   renderGeometry = makeDesktopRenderGeometry(metrics)
 ) {
-  const source = folderFrame.value.folderOverlayState;
+  const source = sceneRuntime.value.folderOverlayState;
   if (!source) return null;
   const sourceFolder = source.renderedFolder?.value;
   const isFolderClosing = Boolean(
@@ -516,7 +519,7 @@ function createSingleStageFolderState(
 }
 
 function makeDesktopRenderGeometryFromDom(metrics) {
-  const rootRect = getElementRect(runtimeFrame.value.domRefs?.rootRef) || {
+  const rootRect = getElementRect(sceneRuntime.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
     top: 0,
@@ -528,7 +531,7 @@ function makeDesktopRenderGeometryFromDom(metrics) {
     mainPaddingTop: mainPadding.top,
     mainRect: getElementRect(mainRef),
     rootRect,
-    shellRect: getElementRect(runtimeFrame.value.domRefs?.shellRef),
+    shellRect: getElementRect(sceneRuntime.value.domRefs?.shellRef),
   });
   return {
     metrics,
@@ -646,8 +649,8 @@ function renderPixi(options = {}) {
         renderGeometry
       ),
       folderPageSize: viewportFrame.value.folderPageSize,
-      getDesktopPageRenderMode: runtimeFrame.value.getDesktopPageRenderMode,
-      getVisibleDesktopPage: runtimeFrame.value.getVisibleDesktopPage,
+      getDesktopPageRenderMode: sceneRuntime.value.getDesktopPageRenderMode,
+      getVisibleDesktopPage: sceneRuntime.value.getVisibleDesktopPage,
       gridCols: viewportFrame.value.gridCols,
       gridRows: viewportFrame.value.gridRows,
       height: renderGeometry.height,
@@ -657,16 +660,16 @@ function renderPixi(options = {}) {
       isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
       folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
       folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
-      isFolderOpeningPreviewFrameGhosted: folderFrame.value.isFolderOpeningPreviewFrameGhosted,
+      isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
       isHomeRevealSettling: interactionFrame.value.isHomeRevealSettling,
-      isIconOpening: runtimeFrame.value.isIconOpening,
+      isIconOpening: sceneRuntime.value.isIconOpening,
       isSearchMode: interactionFrame.value.isSearchMode,
       isTextlessMode: interactionFrame.value.isTextlessMode,
       launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
       pageTrackScrub: viewportFrame.value.pageTrackScrub,
       focusedIcon: interactionFrame.value.focusedIcon,
       selectedAppIds: interactionFrame.value.selectedAppIds,
-      setPageRef: runtimeFrame.value.setPageRef,
+      setPageRef: sceneRuntime.value.setPageRef,
       shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
       snapDesktopLayout: options.snapDesktopLayout === true,
       showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
@@ -687,48 +690,47 @@ function applyImmediateFolderSourceGhosting() {
   layer.applyFolderSourceGhosting?.({
     folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
     folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
-    isFolderOpeningPreviewFrameGhosted: folderFrame.value.isFolderOpeningPreviewFrameGhosted,
+    isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
   layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
-  app.render?.();
+  getRenderCoordinator().commitImmediate("folder-source-ownership");
   return true;
 }
 
 function cancelScheduledRenderPixi() {
-  renderScheduler?.cancel();
+  renderCoordinator?.cancel();
   resizeSettleScheduler?.reset?.();
   if (desktopFrameHandle != null) {
     window.cancelAnimationFrame?.(desktopFrameHandle);
     desktopFrameHandle = null;
   }
   desktopFrameLastTime = 0;
-  desktopLayerUpdatePending = false;
   desktopResizeLayoutSnapPending = false;
 }
 
-function getRenderScheduler() {
-  if (renderScheduler) return renderScheduler;
+function getRenderCoordinator() {
+  if (renderCoordinator) return renderCoordinator;
   const requestFrame = typeof window.requestAnimationFrame === "function"
     ? (callback) => window.requestAnimationFrame(callback)
     : null;
   const cancelFrame = typeof window.cancelAnimationFrame === "function"
     ? (frame) => window.cancelAnimationFrame(frame)
     : null;
-  renderScheduler = createPixiRenderScheduler({
+  renderCoordinator = createPixiRenderCoordinator({
     cancelAnimationFrame: cancelFrame,
     canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
-    render: (reasons) => {
-      const updateLayer = desktopLayerUpdatePending;
-      desktopLayerUpdatePending = false;
+    renderImmediate: () => app?.render?.(),
+    render: ({ reasons, invalidation }) => {
+      const updateLayer = invalidation.requiresLayerUpdate;
       const snapDesktopLayout = desktopResizeLayoutSnapPending;
       const previousPlan = layer?.lastDesktopRenderPlan || null;
       const didRender = renderPixi({ snapDesktopLayout, updateLayer });
       if (didRender && updateLayer) desktopResizeLayoutSnapPending = false;
-      if (!didRender && updateLayer) desktopLayerUpdatePending = true;
       let probeToken = null;
       if (import.meta.env.DEV && didRender) {
         probeToken = renderProbe?.beforeRender?.({
           dragMeta: interactionFrame.value.dragMeta,
+          invalidation,
           reasons,
           renderer: app?.renderer,
           updateLayer,
@@ -749,7 +751,7 @@ function getRenderScheduler() {
     },
     requestAnimationFrame: requestFrame,
   });
-  return renderScheduler;
+  return renderCoordinator;
 }
 
 function shouldRunDesktopFrameLoop() {
@@ -759,7 +761,7 @@ function shouldRunDesktopFrameLoop() {
     layer &&
     hostRef.value &&
     (
-      getRenderScheduler().hasPendingRender() ||
+      getRenderCoordinator().hasPendingRender() ||
       resizeSettleScheduler?.hasPending?.() ||
       motionRuntime.hasActiveWork?.() ||
       shouldRunHandoffRenderLoop()
@@ -781,16 +783,15 @@ function runDesktopFrame(time) {
   desktopFrameLastTime = frameTime;
 
   motionRuntime.step(deltaSeconds);
-  const scheduler = getRenderScheduler();
+  const coordinator = getRenderCoordinator();
   resizeSettleScheduler?.consumeFrame?.();
   if (desktopMotionFrameNeedsRender) {
-    scheduler.markRenderPending("motion-frame");
+    coordinator.markRenderPending("motion-frame");
     desktopMotionFrameNeedsRender = false;
   }
-  scheduler.runPendingRender();
+  coordinator.runPendingRender();
   if (shouldRunHandoffRenderLoop()) {
-    desktopLayerUpdatePending = true;
-    scheduler.markRenderPending("folder-handoff-loop");
+    coordinator.markRenderPending("folder-handoff-loop");
   }
 
   if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
@@ -818,8 +819,7 @@ function requestRender(reason = "desktop-update", options = {}) {
       reason,
     });
   }
-  desktopLayerUpdatePending = true;
-  const didMark = getRenderScheduler().markRenderPending(reason);
+  const didMark = getRenderCoordinator().markRenderPending(reason, options);
   scheduleDesktopFrame();
   return didMark;
 }
@@ -844,7 +844,7 @@ function getFirstFolderPageItems(folder) {
 
 function collectFolderTexturePrewarmItems() {
   const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
-  const visibleItems = runtimeFrame.value.getVisibleDesktopPage?.(page) || [];
+  const visibleItems = sceneRuntime.value.getVisibleDesktopPage?.(page) || [];
   const items = [];
   for (const item of visibleItems) {
     if (item?.type !== "folder") continue;
@@ -860,7 +860,7 @@ function collectFolderTexturePrewarmItems() {
 
 function collectVisibleIconTextureItems() {
   const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
-  const visibleItems = runtimeFrame.value.getVisibleDesktopPage?.(page) || [];
+  const visibleItems = sceneRuntime.value.getVisibleDesktopPage?.(page) || [];
   const items = [];
   for (const item of visibleItems) {
     if (!item) continue;
@@ -916,7 +916,7 @@ function handleSingleStageFolderGeometryChange(geometry) {
 }
 
 function handleSingleStageFolderTitleFrameChange(frame) {
-  const folderId = folderFrame.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
+  const folderId = sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   singleStageFolderTitleFrame.value = isSingleStageFolderTitleFrameCurrent(frame, folderId)
     ? frame
     : null;
@@ -958,8 +958,8 @@ function destroyPixi(options = {}) {
   desktopResizeLayoutSnapPending = false;
   resizeSettleScheduler?.reset?.();
   cancelScheduledRenderPixi();
-  renderScheduler?.destroy();
-  renderScheduler = null;
+  renderCoordinator?.destroy();
+  renderCoordinator = null;
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   folderClosingHandoffRetainer.reset();
@@ -984,14 +984,14 @@ function destroyPixi(options = {}) {
   if (deep) currentApp?.destroy(true);
   else currentApp?.stop?.();
   hostRef.value?.replaceChildren?.();
-  runtimeFrame.value.iconBoundsRegistry.clearBounds("desktop");
-  runtimeFrame.value.iconBoundsRegistry.clearBounds("search");
+  sceneRuntime.value.iconBoundsRegistry.clearBounds("desktop");
+  sceneRuntime.value.iconBoundsRegistry.clearBounds("search");
   if (deep) clearIconTextureCache();
 }
 
 onMounted(async () => {
   destroyed = false;
-  if (runtimeFrame.value.domRefs?.desktopMainRef) runtimeFrame.value.domRefs.desktopMainRef.value = mainRef.value;
+  if (sceneRuntime.value.domRefs?.desktopMainRef) sceneRuntime.value.domRefs.desktopMainRef.value = mainRef.value;
   const nextApp = await createPixiApp(hostRef.value, {
     autoStart: false,
     className: "pixi-launchpad-canvas",
@@ -1007,22 +1007,22 @@ onMounted(async () => {
   layer = new DesktopLayer({
     renderCopy: pixiRenderCopy.value,
     onClosingFolderPointerDown: (folderId) => {
-      folderFrame.value.folderOverlayState?.commitOpenFolder?.(folderId);
+      sceneRuntime.value.folderOverlayState?.commitOpenFolder?.(folderId);
       requestRender("folder-closing-pointerdown");
     },
     onFolderGeometryChange: handleSingleStageFolderGeometryChange,
     onFolderInternalActivityChange: handleFolderInternalActivity,
     onFolderRenderRequest: (reason) => requestRender(reason || "folder-overlay-render-request"),
     onFolderOutsidePointerDown: () => {
-      folderFrame.value.folderOverlayState?.handleFolderOverlayPointerDown?.();
+      sceneRuntime.value.folderOverlayState?.handleFolderOverlayPointerDown?.();
       requestRender("folder-outside-pointerdown");
     },
     onFolderPanelPointerDown: (event) => {
-      folderFrame.value.folderOverlayState?.handleFolderPanelPointerDown?.(event);
+      sceneRuntime.value.folderOverlayState?.handleFolderPanelPointerDown?.(event);
       requestRender("folder-panel-pointerdown");
     },
     onFolderTitleFrameChange: handleSingleStageFolderTitleFrameChange,
-    iconBoundsRegistry: runtimeFrame.value.iconBoundsRegistry,
+    iconBoundsRegistry: sceneRuntime.value.iconBoundsRegistry,
     onIconAction: handleIconAction,
     onGroupReleaseComplete: (payload) => {
       emitGroupReleaseComplete(payload);
@@ -1044,9 +1044,9 @@ onMounted(async () => {
       Number(writesLastFrame) > 0
     );
     if (reason && reason !== "frame") {
-      getRenderScheduler().markRenderPending(`motion-${reason}`);
+      getRenderCoordinator().markRenderPending(`motion-${reason}`);
     }
-    if (motionRuntime.hasActiveWork?.() || getRenderScheduler().hasPendingRender()) scheduleDesktopFrame();
+    if (motionRuntime.hasActiveWork?.() || getRenderCoordinator().hasPendingRender()) scheduleDesktopFrame();
   });
   if (import.meta.env.DEV) {
     const [
@@ -1100,11 +1100,11 @@ onMounted(async () => {
       }),
       createSceneDiagnosticAdapter(),
     ];
-    if (diagnosticsFrame.value.liveDesktopDiagnosticsPort) {
+    if (sceneRuntime.value.liveDesktopDiagnosticsPort) {
       const liveDesktopController = createLiveDesktopDiagnosticsController({
-        applyRuntime: (request) => diagnosticsFrame.value.liveDesktopDiagnosticsPort.applyRuntime(request),
-        getRuntimeStatus: () => diagnosticsFrame.value.liveDesktopDiagnosticsPort.getRuntimeStatus(),
-        refreshRuntime: () => diagnosticsFrame.value.liveDesktopDiagnosticsPort.refreshRuntime(),
+        applyRuntime: (request) => sceneRuntime.value.liveDesktopDiagnosticsPort.applyRuntime(request),
+        getRuntimeStatus: () => sceneRuntime.value.liveDesktopDiagnosticsPort.getRuntimeStatus(),
+        refreshRuntime: () => sceneRuntime.value.liveDesktopDiagnosticsPort.refreshRuntime(),
         settingsStore: createBrowserLiveDesktopDebugSettingsStore(),
       });
       diagnosticAdapters.push(createLiveDesktopDiagnosticAdapter({
@@ -1179,46 +1179,61 @@ watch(
 watchEffect(() => {
   void viewportFrame.value.activePageIndex;
   void viewportFrame.value.activePages;
+  void viewportFrame.value.desktopTrackMotionKey;
+  void viewportFrame.value.gridCols;
+  void viewportFrame.value.gridRows;
+  void viewportFrame.value.iconSize;
+  void viewportFrame.value.folderPageSize;
+  void viewportFrame.value.pageTrackScrub;
+  void folderFrame.value.folderClosingHandoffId;
+  void folderFrame.value.folderSourceGhostedId;
+  void folderFrame.value.folderSourceGhostedIds;
+  void interactionFrame.value.isDesktopClosing;
+  void interactionFrame.value.isHomeRevealSettling;
   void visualFrame.value.desktopVisualTransform;
   void visualFrame.value.desktopVisualAlpha;
   void visualFrame.value.launchpadVisualAlpha;
   void visualFrame.value.launchpadVisualTransform;
-  void diagnosticsFrame.value.desktopGridDebugOptions;
-  void viewportFrame.value.desktopProjectionEpoch;
-  void viewportFrame.value.desktopTrackMotionKey;
+  void pixiRenderCopy.value;
+  requestRender("structure-watch");
+  scheduleFolderTexturePrewarm();
+});
+
+watchEffect(() => {
   void interactionFrame.value.dragFolderHoverState;
   void interactionFrame.value.dragFolderTargetId;
-  void diagnosticsFrame.value.dragHitDebugOptions;
-  void diagnosticsFrame.value.dragHitDebugState;
   void interactionFrame.value.dragMeta;
   void interactionFrame.value.groupDragState;
-  void folderFrame.value.folderClosingHandoffId;
-  readFolderOverlayStateRenderDependencies(folderFrame.value.folderOverlayState);
-  void viewportFrame.value.gridCols;
-  void viewportFrame.value.gridRows;
-  void viewportFrame.value.iconSize;
   void interactionFrame.value.iconGesturePresentation;
   void interactionFrame.value.isEditMode;
   void interactionFrame.value.isBatchSelectionActive;
-  void interactionFrame.value.isDesktopClosing;
-  void folderFrame.value.folderSourceGhostedId;
-  void folderFrame.value.folderSourceGhostedIds;
-  void folderFrame.value.isFolderOpeningPreviewFrameGhosted;
-  void interactionFrame.value.isHomeRevealSettling;
   void interactionFrame.value.isSearchMode;
   void interactionFrame.value.isTextlessMode;
-  void diagnosticsFrame.value.launchTargetStatusById;
-  void viewportFrame.value.pageGridMeasureStyle;
-  void viewportFrame.value.pageTrackScrub;
-  void viewportFrame.value.folderPageSize;
   // Keyboard selection is a Pixi frame input; reading the descriptor here
   // makes each replacement invalidate the scene instead of hiding in a closure.
   void interactionFrame.value.focusedIcon;
   void interactionFrame.value.selectedAppIds;
+  requestRender("interaction-watch");
+});
+
+watchEffect(() => {
+  readFolderOverlayStateRenderDependencies(sceneRuntime.value.folderOverlayState);
+  void sceneRuntime.value.isFolderOpeningPreviewFrameGhosted;
+  requestRender("folder-watch");
+});
+
+watchEffect(() => {
+  void diagnosticsFrame.value.desktopGridDebugOptions;
+  void diagnosticsFrame.value.dragHitDebugOptions;
+  void diagnosticsFrame.value.dragHitDebugState;
+  void diagnosticsFrame.value.launchTargetStatusById;
   void diagnosticsFrame.value.singleStageDiagnosticsOptions;
-  void pixiRenderCopy.value;
-  requestRender("watch-effect");
-  scheduleFolderTexturePrewarm();
+  requestRender("diagnostic-watch");
+});
+
+watchEffect(() => {
+  void viewportFrame.value.pageGridMeasureStyle;
+  requestRender("geometry-watch", { invalidateGeometry: true });
 });
 
 onBeforeUnmount(destroyPixi);

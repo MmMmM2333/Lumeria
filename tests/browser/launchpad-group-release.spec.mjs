@@ -186,7 +186,7 @@ async function createSmallFolder(page) {
   });
   await page.waitForFunction(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return state.activePages.flat().some((item) => item.type === "folder" && item.children?.length === 2);
+    return state.activePages.flat().some((item) => item.type === "folder" && item.childPages.flat().length === 2);
   });
   await page.waitForFunction(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
@@ -197,7 +197,7 @@ async function createSmallFolder(page) {
     return {
       batch: state.isBatchSelectionActive,
       folderId: state.activePages.flat()
-        .find((item) => item.type === "folder" && item.children?.length === 2)?.id || null,
+        .find((item) => item.type === "folder" && item.childPages.flat().length === 2)?.id || null,
       openFolderId: state.openFolderId,
       selectedIds: [...state.batchSelectedIds],
     };
@@ -397,7 +397,7 @@ test("closed-folder releases use preview slots for the first nine and center abs
   expect(plans[7].entries[0].mode).toBe("folder-center-absorb");
   await expect.poll(async () => page.evaluate(({ folderId }) => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return state.activePages.flat().find((item) => item.id === folderId)?.children?.length || 0;
+    return state.activePages.flat().find((item) => item.id === folderId)?.childPages?.flat().length || 0;
   }, { folderId })).toBe(10);
 });
 
@@ -481,7 +481,7 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   const setup = await page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const folder = state.activePages.flat().find((item) => item.id === "folder-creative-lab");
-    const childIds = folder?.children?.slice(0, 2).map((item) => item.id) || [];
+    const childIds = folder?.childPages?.flat().slice(0, 2).map((item) => item.id) || [];
     if (childIds.length !== 2) throw new Error("Creative Lab needs two fixture children");
     state.commitOpenFolder(folder.id);
     return { childIds, folderId: folder.id };
@@ -585,7 +585,7 @@ test("a selected group can leave an open folder and commit onto the desktop", as
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const folder = state.activePages.flat().find((item) => item.id === folderId);
     return {
-      folderChildren: folder?.children?.map((item) => item.id) || [],
+      folderChildren: folder?.childPages?.flat().map((item) => item.id) || [],
       openFolderId: state.openFolderId,
       topLevelIds: state.activePages.flat().map((item) => item.id),
     };
@@ -740,7 +740,7 @@ test("a child dragged directly out of a one-row folder onto its source folder ca
   const setup = await page.evaluate((sourceFolderId) => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const folder = state.activePages.flat().find((item) => item.id === sourceFolderId);
-    const childId = folder?.childPages?.[0]?.[0]?.id || folder?.children?.[0]?.id;
+    const childId = folder?.childPages?.[0]?.[0]?.id;
     if (!folder || !childId) throw new Error("One-row source folder needs a child");
     state.commitOpenFolder(folder.id);
     state.folderOverlay.commitFolderPageIndex(0, { allowCreate: false });
@@ -928,7 +928,7 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
       return null;
     };
     const layer = findDesktopLayer(document.querySelector("#app").__vue_app__._instance.subTree);
-    const node = layer?.singleStageFolderLayer?.iconNodes?.get(`${folderId}:1:${secondId}`);
+    const node = layer?.singleStageFolderLayer?.iconNodes?.get(`${folderId}:${secondId}`);
     if (!item || !node) throw new Error("Second-page Pixi icon node is unavailable");
     layer.singleStageFolderLayer.handleIconAction(
       "pointerdown",
@@ -1017,8 +1017,8 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     const folderLayer = layer?.singleStageFolderLayer;
     if (!folderLayer) throw new Error("Pixi folder layer is unavailable");
     const entries = [
-      { id: firstId, key: `${folderId}:0:${firstId}` },
-      { id: secondId, key: `${folderId}:1:${secondId}` },
+      { id: firstId, key: `${folderId}:${firstId}` },
+      { id: secondId, key: `${folderId}:${secondId}` },
     ];
     return new Promise((resolve, reject) => {
       let frames = 0;
@@ -1111,16 +1111,16 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     return !state.groupDragState && state.activePages[0]?.some((item) =>
       item.type === "folder" &&
-      item.children?.some((child) => child.id === "app-4-calendar") &&
-      item.children?.some((child) => child.id === "app-5-maps")
+      item.childPages.flat().some((child) => child.id === "app-4-calendar") &&
+      item.childPages.flat().some((child) => child.id === "app-5-maps")
     );
   }, null, { timeout: 5_000 });
   const setup = await page.evaluate(() => {
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const folderIndex = state.activePages[0].findIndex((item) =>
       item.type === "folder" &&
-      item.children?.some((child) => child.id === "app-4-calendar") &&
-      item.children?.some((child) => child.id === "app-5-maps")
+      item.childPages.flat().some((child) => child.id === "app-4-calendar") &&
+      item.childPages.flat().some((child) => child.id === "app-5-maps")
     );
     const folder = state.activePages[0][folderIndex];
     return { folderId: folder?.id || null, folderIndex };
@@ -1739,8 +1739,8 @@ test("a first-cell app target wins over the overlapping desktop page-turn zone",
     const state = document.querySelector("#app").__vue_app__._instance.setupState;
     const folder = state.activePages.flat().find((item) => (
       item.type === "folder" &&
-      item.children?.some((child) => child.id === sourceId) &&
-      item.children?.some((child) => child.id === targetId)
+      item.childPages.flat().some((child) => child.id === sourceId) &&
+      item.childPages.flat().some((child) => child.id === targetId)
     ));
     return { activePageIndex: state.activePageIndex, folderCreated: Boolean(folder) };
   }, ids)).toEqual({ activePageIndex: 1, folderCreated: true });
@@ -2294,7 +2294,7 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
         const folder = state.activePages.flat().find((item) => item.id === folderId);
         return {
           batch: state.isBatchSelectionActive,
-          childCount: folder?.children?.length || 0,
+          childCount: folder?.childPages?.flat().length || 0,
           followerTarget: { x: followerTarget.x, y: followerTarget.y },
           openFolderId: state.openFolderId,
           ownershipViolations,
@@ -2399,7 +2399,7 @@ test("full current-page selection keeps complete ownership with a bounded folder
           resolve({
             ...accepted,
             batch: state.isBatchSelectionActive,
-            childCount: folder?.children?.length || 0,
+            childCount: folder?.childPages?.flat().length || 0,
             durationMs: performance.now() - startedAt,
             openFolderId: state.openFolderId,
             selectedIds: [...state.batchSelectedIds],

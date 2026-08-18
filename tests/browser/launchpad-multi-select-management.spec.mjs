@@ -231,16 +231,16 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
     const folder = state.activePages
       .flat()
       .find((item) => item.type === "folder" &&
-        item.children?.some((child) => child.id === "app-2-photos"));
+        item.childPages.flat().some((child) => child.id === "app-2-photos"));
     const allIds = state.activePages.flatMap((items) => items.flatMap((item) => [
       item.id,
-      ...(item.children || []).map((child) => child.id),
+      ...(item.type === "folder" ? item.childPages.flat() : []).map((child) => child.id),
     ]));
     return {
       batch: state.isBatchSelectionActive,
       beforeRelease,
       duplicateIds: [...new Set(allIds.filter((id, index) => allIds.indexOf(id) !== index))],
-      folderChildren: folder?.children?.map((child) => child.id) || [],
+      folderChildren: folder?.childPages?.flat().map((child) => child.id) || [],
       groupEnded: state.groupDragState == null,
       openFolderId: state.openFolderId,
       selectedIds: [...state.batchSelectedIds],

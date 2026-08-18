@@ -157,6 +157,9 @@ import { runPageTrackMotionTests } from "../rendering/pixi/scene/pageTrackMotion
 import { runSingleStageDiagnosticsTests } from "../rendering/pixi/scene/singleStageDiagnosticsTests.js";
 import { runSceneFrameTests } from "../rendering/pixi/scene/sceneFrameTests.js";
 import { runRenderingBoundaryTests } from "../rendering/renderingBoundaryTests.js";
+import { runSceneRuntimeTests } from "../rendering/sceneRuntimeTests.js";
+import { runRenderInvalidationTests } from "../rendering/pixi/renderInvalidationTests.js";
+import { runPixiRenderCoordinatorTests } from "../rendering/pixi/pixiRenderCoordinatorTests.js";
 import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
 import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
 import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
@@ -361,6 +364,9 @@ runPageTrackMotionTests();
 runSingleStageDiagnosticsTests();
 runSceneFrameTests();
 runRenderingBoundaryTests();
+runSceneRuntimeTests();
+runRenderInvalidationTests();
+runPixiRenderCoordinatorTests();
 await runIconTextureCacheTests();
 
 console.info("Launchpad layout helper tests passed");
