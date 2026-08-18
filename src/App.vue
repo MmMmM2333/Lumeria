@@ -62,6 +62,7 @@
       <PixiDesktopSurface
         :key="singleStageRenderKey"
         :scene-frame="desktopSceneFrame"
+        :scene-runtime="desktopSceneRuntime"
         @scene-event="handlePixiSceneEvent"
       />
     </LaunchpadChromeFrame>
@@ -121,6 +122,7 @@ import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
 import { assertSceneEvent } from "./rendering/sceneEvents.js";
 import { makeDesktopSceneFrame } from "./rendering/sceneFrame.js";
+import { makeDesktopSceneRuntimeAdapter } from "./rendering/sceneRuntime.js";
 import {
   getSingleStageDiagnosticsOptions,
   getSingleStageRenderKey,
@@ -893,7 +895,6 @@ const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
   desktopTrackMotionKey: resolveMaybeRef(desktopTrackMotionKey),
   desktopVisualAlpha: resolveMaybeRef(desktopVisualAlpha),
   desktopVisualTransform: resolveMaybeRef(desktopVisualTransform),
-  domRefs: desktopDomRefs,
   dragFolderHoverState: resolveMaybeRef(dragFolderHoverState),
   dragFolderTargetId: resolveMaybeRef(dragFolderTargetId),
   dragHitDebugOptions: resolveMaybeRef(desktopDragHitDebugOptions),
@@ -901,37 +902,41 @@ const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
   dragMeta: resolveMaybeRef(dragMeta),
   focusedIcon: resolveMaybeRef(focusedIcon),
   folderClosingHandoffId: resolveMaybeRef(folderClosingHandoffId),
-  folderOverlayState: folderOverlay,
   folderPageSize: resolveMaybeRef(folderPageSize),
   folderSourceGhostedId: resolveMaybeRef(folderSourceGhostedId),
   folderSourceGhostedIds: resolveMaybeRef(folderSourceGhostedIds),
-  getDesktopPageRenderMode,
-  getVisibleDesktopPage,
   gridCols: resolveMaybeRef(gridCols),
   gridRows: resolveMaybeRef(gridRows),
   groupDragState: resolveMaybeRef(groupDragState),
-  iconBoundsRegistry,
   iconGesturePresentation: resolveMaybeRef(iconGesturePresentation),
   iconSize: resolveMaybeRef(iconSize),
   isBatchSelectionActive: resolveMaybeRef(isBatchSelectionActive),
   isDesktopClosing: resolveMaybeRef(isDesktopClosing),
   isEditMode: resolveMaybeRef(isEditMode),
-  isFolderOpeningPreviewFrameGhosted,
   isHomeRevealSettling: resolveMaybeRef(isHomeRevealSettling),
-  isIconOpening,
   isSearchMode: resolveMaybeRef(isSearchMode),
   isTextlessMode: resolveMaybeRef(isTextlessMode),
   launchTargetStatusById: resolveMaybeRef(launchTargetStatusById),
   launchpadVisualAlpha: resolveMaybeRef(launchpadVisualAlpha),
   launchpadVisualTransform: resolveMaybeRef(launchpadVisualTransform),
-  liveDesktopDiagnosticsPort,
   pageGridMeasureStyle: resolveMaybeRef(pageGridMeasureStyle),
   pageTrackScrub: resolveMaybeRef(pageTrackScrub),
   selectedAppIds: resolveMaybeRef(batchSelectedIds),
-  setPageRef,
   showMissingLaunchTargetBadge: resolveMaybeRef(showMissingLaunchTargetBadge),
   singleStageDiagnosticsOptions: resolveMaybeRef(singleStageDiagnosticsOptions),
 }));
+
+const desktopSceneRuntime = makeDesktopSceneRuntimeAdapter({
+  domRefs: desktopDomRefs,
+  folderOverlayState: folderOverlay,
+  getDesktopPageRenderMode,
+  getVisibleDesktopPage,
+  iconBoundsRegistry,
+  isFolderOpeningPreviewFrameGhosted,
+  isIconOpening,
+  liveDesktopDiagnosticsPort,
+  setPageRef,
+});
 
 function handlePixiSceneEvent(event = {}) {
   assertSceneEvent(event);

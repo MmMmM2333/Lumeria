@@ -1106,6 +1106,12 @@ export function createPixiRenderProbe(options = {}) {
     }
     lastDrag = nextDrag;
     const token = {
+      invalidation: input.invalidation
+        ? {
+          lanes: Array.from(input.invalidation.lanes || []),
+          requiresLayerUpdate: input.invalidation.requiresLayerUpdate === true,
+        }
+        : null,
       phase,
       reasons: Array.from(input.reasons || []),
       sessionId: activeSession?.id || null,
@@ -1122,6 +1128,7 @@ export function createPixiRenderProbe(options = {}) {
     const batchBindings = token?.batchBindingCapture?.finish?.() || null;
     if (!config.enabled || !token) return null;
     record("render-end", {
+      invalidation: token.invalidation,
       phase: token.phase,
       reasons: token.reasons,
       sessionId: token.sessionId,

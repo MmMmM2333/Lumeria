@@ -90,6 +90,34 @@ function makeStageLayoutRecord(rect, meta = {}) {
   return { ...safeRect, meta: cloneMeta(meta) };
 }
 
+function sameRect(left, right) {
+  return Boolean(left && right) &&
+    left.left === right.left &&
+    left.top === right.top &&
+    left.width === right.width &&
+    left.height === right.height;
+}
+
+function sameStageProjectionMeta(left, right) {
+  const leftStageRect = left?.stageRect;
+  const rightStageRect = right?.stageRect;
+  return left?.stageWidth === right?.stageWidth &&
+    left?.stageHeight === right?.stageHeight &&
+    leftStageRect?.left === rightStageRect?.left &&
+    leftStageRect?.top === rightStageRect?.top &&
+    leftStageRect?.width === rightStageRect?.width &&
+    leftStageRect?.height === rightStageRect?.height;
+}
+
+function hasGeometryChanged(previous, next, variant) {
+  if (!previous) return true;
+  if (!sameRect(previous, next)) return true;
+  if (variant === ICON_BOUNDS_VARIANT.STABLE_STAGE_LAYOUT) {
+    return !sameStageProjectionMeta(previous.meta, next.meta);
+  }
+  return false;
+}
+
 function cloneBoundsRecord(record) {
   const safeRect = cloneRect(record);
   if (!safeRect) return null;
@@ -168,6 +196,7 @@ function rectContainsPoint(rect, x, y) {
 export function createIconBoundsRegistry() {
   const stores = createStores();
   const missingWarnings = new Set();
+  let version = 0;
 
   function getStore(kind, variant) {
     return stores.get(storeKey(kind, variant)) || null;
@@ -194,7 +223,9 @@ export function createIconBoundsRegistry() {
       ? makeStageLayoutRecord(rect, meta)
       : makeBoundsRecord(rect, meta);
     if (!record) return;
+    const previous = store.get(key);
     store.set(key, record);
+    if (hasGeometryChanged(previous, record, variant)) version += 1;
     if (
       kind === ICON_BOUNDS_KIND.LAUNCH &&
       variant === ICON_BOUNDS_VARIANT.RENDERED &&
@@ -299,10 +330,12 @@ export function createIconBoundsRegistry() {
     if (shouldClearAll) {
       for (const store of stores.values()) store.clear();
       missingWarnings.clear();
+      version += 1;
       return;
     }
     if (criteria.kind || criteria.variant) {
       clearSpecificKind(criteria);
+      version += 1;
       return;
     }
     for (const variant of ALL_VARIANTS) {
@@ -312,6 +345,7 @@ export function createIconBoundsRegistry() {
       }
     }
     clearTopLevelDesktopRecords(criteria, shouldClearAll);
+    version += 1;
   }
 
   return {
@@ -319,6 +353,7 @@ export function createIconBoundsRegistry() {
     getAtPoint,
     getBounds,
     getRecord,
+    getVersion: () => version,
     makeKey: makeIconBoundsKey,
     registerBounds,
   };

@@ -10,7 +10,6 @@
  * @property {DesktopSceneFrameVisual} visual
  * @property {DesktopSceneFrameInteraction} interaction
  * @property {DesktopSceneFrameFolder} folder
- * @property {DesktopSceneFrameRuntime} runtime
  * @property {DesktopSceneFrameDiagnostics} diagnostics
  */
 
@@ -18,7 +17,6 @@
 /** @typedef {Record<string, unknown>} DesktopSceneFrameVisual */
 /** @typedef {Record<string, unknown>} DesktopSceneFrameInteraction */
 /** @typedef {Record<string, unknown>} DesktopSceneFrameFolder */
-/** @typedef {Record<string, unknown>} DesktopSceneFrameRuntime */
 /** @typedef {Record<string, unknown>} DesktopSceneFrameDiagnostics */
 
 const FRAME_GROUPS = Object.freeze([
@@ -26,7 +24,6 @@ const FRAME_GROUPS = Object.freeze([
   "visual",
   "interaction",
   "folder",
-  "runtime",
   "diagnostics",
 ]);
 
@@ -36,7 +33,7 @@ const FRAME_GROUPS = Object.freeze([
  */
 export function makeDesktopSceneFrame(input = {}) {
   const frame = {
-    viewport: {
+    viewport: Object.freeze({
       activePageIndex: input.activePageIndex,
       activePages: input.activePages,
       desktopProjectionEpoch: input.desktopProjectionEpoch,
@@ -47,14 +44,14 @@ export function makeDesktopSceneFrame(input = {}) {
       iconSize: input.iconSize,
       pageGridMeasureStyle: input.pageGridMeasureStyle,
       pageTrackScrub: input.pageTrackScrub,
-    },
-    visual: {
+    }),
+    visual: Object.freeze({
       desktopVisualAlpha: input.desktopVisualAlpha,
       desktopVisualTransform: input.desktopVisualTransform,
       launchpadVisualAlpha: input.launchpadVisualAlpha,
       launchpadVisualTransform: input.launchpadVisualTransform,
-    },
-    interaction: {
+    }),
+    interaction: Object.freeze({
       dragFolderHoverState: input.dragFolderHoverState,
       dragFolderTargetId: input.dragFolderTargetId,
       dragMeta: input.dragMeta,
@@ -68,32 +65,22 @@ export function makeDesktopSceneFrame(input = {}) {
       isSearchMode: input.isSearchMode,
       isTextlessMode: input.isTextlessMode,
       selectedAppIds: input.selectedAppIds,
-    },
-    folder: {
+    }),
+    folder: Object.freeze({
       folderClosingHandoffId: input.folderClosingHandoffId,
-      folderOverlayState: input.folderOverlayState,
       folderSourceGhostedId: input.folderSourceGhostedId,
       folderSourceGhostedIds: input.folderSourceGhostedIds,
-      isFolderOpeningPreviewFrameGhosted: input.isFolderOpeningPreviewFrameGhosted,
-    },
-    runtime: {
-      domRefs: input.domRefs,
-      getDesktopPageRenderMode: input.getDesktopPageRenderMode,
-      getVisibleDesktopPage: input.getVisibleDesktopPage,
-      iconBoundsRegistry: input.iconBoundsRegistry,
-      isIconOpening: input.isIconOpening,
-      setPageRef: input.setPageRef,
-    },
-    diagnostics: {
+    }),
+    diagnostics: Object.freeze({
       desktopGridDebugOptions: input.desktopGridDebugOptions,
       dragHitDebugOptions: input.dragHitDebugOptions,
       dragHitDebugState: input.dragHitDebugState,
       launchTargetStatusById: input.launchTargetStatusById,
-      liveDesktopDiagnosticsPort: input.liveDesktopDiagnosticsPort,
       showMissingLaunchTargetBadge: input.showMissingLaunchTargetBadge,
       singleStageDiagnosticsOptions: input.singleStageDiagnosticsOptions,
-    },
+    }),
   };
+  Object.freeze(frame);
   assertDesktopSceneFrame(frame);
   return frame;
 }
