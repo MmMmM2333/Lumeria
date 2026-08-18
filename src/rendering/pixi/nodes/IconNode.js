@@ -1,5 +1,6 @@
-import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
+import { Container, Graphics, Rectangle, Sprite } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motionAdd, motionSequence, motion } from "../animation/motionTween.js";
@@ -46,7 +47,7 @@ import {
 } from "./iconInteractionGeometry.js";
 
 function makeLabelText(fontSize = 13) {
-  return new Text({
+  return createPixiText({
     text: "",
     style: {
       align: "center",
@@ -64,7 +65,7 @@ function makeLabelText(fontSize = 13) {
 function makeEditButton() {
   const button = new Container();
   button.background = new Graphics();
-  button.textNode = new Text({
+  button.textNode = createPixiText({
     text: "",
     style: { fill: 0xffffff, fontSize: 13, fontWeight: "700" },
   });
@@ -193,7 +194,7 @@ export class IconNode extends Container {
     this.batchSelectionBadge = new Container();
     this.batchSelectionBadgeBackground = new Graphics();
     this.batchSelectionBadgeCheck = new Graphics();
-    this.batchSelectionBadgeText = new Text({
+    this.batchSelectionBadgeText = createPixiText({
       text: "",
       style: {
         align: "center",
@@ -208,7 +209,7 @@ export class IconNode extends Container {
     this.visualWrap = new Container();
     this.folderSlotReleaseVisual = new Container();
     this.folderSlotReleaseSprite = new Sprite();
-    this.folderSlotReleaseEmoji = new Text({
+    this.folderSlotReleaseEmoji = createPixiText({
       text: "",
       style: { align: "center", fill: 0xffffff, fontSize: 16, lineHeight: 0 },
     });
@@ -220,7 +221,7 @@ export class IconNode extends Container {
     this.folderCreateBackdrop = new Graphics();
     this.folderCreateFlashOverlay = new Graphics();
     this.iconSprite = new Sprite();
-    this.emojiText = new Text({
+    this.emojiText = createPixiText({
       text: "",
       style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
     });
@@ -228,7 +229,7 @@ export class IconNode extends Container {
     this.labelTransitionText = makeLabelText();
     this.missingBadge = new Container();
     this.missingBadgeBackground = new Graphics();
-    this.missingBadgeText = new Text({
+    this.missingBadgeText = createPixiText({
       text: "!",
       style: {
         align: "center",
@@ -875,7 +876,7 @@ export class IconNode extends Container {
     while (this.folderChildNodes.length < Math.max(9, plan.items.length)) {
       const childContainer = new Container();
       const childSprite = new Sprite();
-      const childEmoji = new Text({
+      const childEmoji = createPixiText({
         text: "",
         style: { align: "center", fill: 0xffffff, fontSize: 14, lineHeight: 0 },
       });

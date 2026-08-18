@@ -1,6 +1,7 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
+import { createPixiText } from "../pixiText.js";
 import {
   clientPointToStageVisualPoint,
   clientRectToStageVisualRect,
@@ -28,7 +29,7 @@ function cloneRect(rect) {
 }
 
 function makeLabelText() {
-  return new Text({
+  return createPixiText({
     text: "",
     style: {
       fill: 0x07111f,

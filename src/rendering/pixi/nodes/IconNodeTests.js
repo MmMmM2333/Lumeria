@@ -55,6 +55,7 @@ export async function runIconNodeTests() {
   }
   installPixiTextTestDom();
   const { IconNode } = await import("./IconNode.js");
+  const { syncPixiTextResolution } = await import("../pixiText.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[IconNode test failed] ${message}`);
   };
@@ -62,6 +63,12 @@ export async function runIconNodeTests() {
 
   const node = new IconNode();
   try {
+    assert(node.labelText.resolution === 2, "icon labels should use the 2x text raster baseline");
+    assert(node.labelTransitionText.resolution === 2, "label transition copies should use the same text raster baseline");
+    assert(node.folderSlotReleaseEmoji.resolution === 2, "folder release text should use the shared text raster baseline");
+    const updatedTextCount = syncPixiTextResolution(node, 2.5);
+    assert(updatedTextCount > 0 && node.labelText.resolution === 2.5, "existing text nodes should follow a higher DPR when it changes");
+    syncPixiTextResolution(node, 2);
     const interactionNodeState = {
       cellHeight: 80,
       cellWidth: 80,

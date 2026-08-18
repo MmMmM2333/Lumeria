@@ -1,5 +1,6 @@
-import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
+import { Container, Graphics, Rectangle, Sprite } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
@@ -695,7 +696,7 @@ export class FolderOverlayLayer extends Container {
     this.closingPreviewSwapLayer = new Container();
     this.detachedClosingVisualLayer = options.detachedClosingVisualLayer || new Container();
     this.ownsDetachedClosingVisualLayer = !options.detachedClosingVisualLayer;
-    this.folderTitle = new Text({
+    this.folderTitle = createPixiText({
       text: "",
       style: { fill: 0xffffff, fontSize: 18, fontWeight: "620", fontFamily: "Inter, Segoe UI, sans-serif" },
     });
@@ -731,7 +732,7 @@ export class FolderOverlayLayer extends Container {
       getIconTexture: (item, render, ghost) => getCachedIconTexture(item, render, ghost),
       graphicsFactory: () => new Graphics(),
       spriteFactory: () => new Sprite(),
-      textFactory: (size) => new Text({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
+      textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
       handoffCoordinator: this.folderHandoff,
     });
     this.closingGhosts = new FolderClosingGhostController(this, {

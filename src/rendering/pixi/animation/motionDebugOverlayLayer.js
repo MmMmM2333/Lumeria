@@ -1,5 +1,6 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createPixiText } from "../pixiText.js";
 import { buildMotionOverlayItems } from "./motionDebugOverlay.js";
 import {
   readNumber,
@@ -11,7 +12,7 @@ const LABEL_HEIGHT = 16;
 const OVERLAY_TARGET_COLOR = 0xffffff;
 
 function makeLabelText() {
-  return new Text({
+  return createPixiText({
     text: "",
     style: {
       fill: 0x0d1117,

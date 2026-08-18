@@ -1,5 +1,6 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createPixiText } from "../pixiText.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 import { roundRect } from "./folderHandoffDebug.js";
 import { getSingleStageDiagnosticsOptions, makeSingleStageDiagnosticsPlan } from "./singleStagePlan.js";
@@ -44,7 +45,7 @@ export class SingleStageDiagnosticsLayer extends Container {
     super();
     this.panelGraphics = new Graphics();
     this.targetGraphics = new Graphics();
-    this.label = new Text({
+    this.label = createPixiText({
       text: "",
       style: {
         fill: 0xffffff,

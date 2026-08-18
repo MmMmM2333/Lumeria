@@ -226,10 +226,10 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { useLocalization } from "../i18n/localization.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
-import { createPixiApp } from "../rendering/desktopScenePort.js";
+import { createPixiApp, createPixiText } from "../rendering/desktopScenePort.js";
 import {
   createMotionRuntime,
   installMotionRuntimeDebugAdapterFactory,
@@ -443,7 +443,7 @@ function makeEmptyReport() {
 }
 
 function makeText(text, size = 13) {
-  return new Text({
+  return createPixiText({
     style: {
       fill: 0xffffff,
       fontFamily: "Inter, Segoe UI, sans-serif",

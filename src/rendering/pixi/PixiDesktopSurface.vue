@@ -48,6 +48,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect
 import { WINDOW_CHROME_STATE_CHANGE_EVENT } from "../../api/windowChromeApi.js";
 import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
+import { getTextRenderResolution } from "./geometry/stageCoordinates.js";
+import { syncPixiTextResolution } from "./pixiText.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
@@ -181,6 +183,7 @@ let diagnosticHub = null;
 let diagnosticGlobalInstallation = null;
 let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
+let pixiTextResolution = null;
 let motionDebugOverlay = null;
 let unsubscribeIconTextureLoadSettlements = null;
 let unsubscribeMotionRuntimeRenderSignal = null;
@@ -322,6 +325,14 @@ function syncPixiResizeTarget(metrics = null) {
     shouldResize = true;
   }
   if (shouldResize) app.resize?.();
+}
+
+function syncPixiTextResolutionIfNeeded() {
+  if (!app?.stage) return 0;
+  const resolution = getTextRenderResolution();
+  if (pixiTextResolution === resolution) return 0;
+  pixiTextResolution = resolution;
+  return syncPixiTextResolution(app.stage, resolution);
 }
 
 function getResizeSettleScheduler() {
@@ -612,6 +623,7 @@ function updateMotionDebugOverlay() {
 
 function renderPixi(options = {}) {
   if (!app || !layer || !hostRef.value) return false;
+  syncPixiTextResolutionIfNeeded();
   const shouldUpdateLayer = options.updateLayer !== false;
   const domGeometry = getDesktopDomGeometry();
   if (!domGeometry) return false;
@@ -962,6 +974,7 @@ function destroyPixi(options = {}) {
   renderCoordinator = null;
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
+  pixiTextResolution = null;
   folderClosingHandoffRetainer.reset();
   if (import.meta.env.DEV) {
     diagnosticGlobalInstallation?.uninstall?.();

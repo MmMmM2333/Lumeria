@@ -1,4 +1,5 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
+import { createPixiText } from "../pixiText.js";
 import {
   GROUP_TRANSFER_OUTCOME,
   GROUP_TRANSFER_PHASE,
@@ -376,7 +377,7 @@ export class GroupDragLayer extends Container {
     this.badge.eventMode = "none";
     this.badge.zIndex = 1000;
     this.badgeBackground = new Graphics();
-    this.badgeText = new Text({
+    this.badgeText = createPixiText({
       text: "",
       style: {
         fill: 0xffffff,
@@ -811,7 +812,7 @@ export class GroupDragLayer extends Container {
       badge.eventMode = "none";
       badge.zIndex = 2000;
       const background = new Graphics();
-      const text = new Text({
+      const text = createPixiText({
         text: "",
         style: {
           fill: 0xffffff,

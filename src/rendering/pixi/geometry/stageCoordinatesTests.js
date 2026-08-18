@@ -2,6 +2,8 @@ import {
   clientPointToStageVisualPoint,
   clientRectToStageVisualRect,
   getEffectiveDevicePixelRatio,
+  getTextRenderResolution,
+  MIN_TEXT_RENDER_RESOLUTION,
   makeStageVirtualElement,
   snapRectToDevicePixels,
   STAGE_COORDINATE_SPACES,
@@ -80,6 +82,11 @@ export function runStageCoordinatesTests() {
   assert(snappedRect.left === 10.5 && snappedRect.top === 20.5, "rect snapping should align positions to the device pixel grid");
   assert(snappedRect.width === 40 && snappedRect.height === 50, "rect snapping should preserve size");
   assert(getEffectiveDevicePixelRatio(3) === 2, "effective DPR should match the renderer resolution cap");
+  assert(MIN_TEXT_RENDER_RESOLUTION === 2, "Pixi text should keep a two-pixel minimum quality baseline");
+  assert(getTextRenderResolution(1) === 2, "text resolution should raise low-DPR displays to the 2x baseline");
+  assert(getTextRenderResolution(2) === 2, "text resolution should preserve the 2x baseline");
+  assert(getTextRenderResolution(2.5) === 2.5, "text resolution should follow DPR above 2x");
+  assert(getTextRenderResolution(Number.NaN) === 2, "invalid DPR should fall back to the 2x text baseline");
   const cappedSnap = snapRectToDevicePixels({ left: 10.26, top: 20.74, width: 40, height: 50 }, 3);
   assert(cappedSnap.left === 10.5 && cappedSnap.top === 20.5, "rect snapping should use the capped renderer resolution");
 

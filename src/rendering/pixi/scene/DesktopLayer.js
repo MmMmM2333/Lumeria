@@ -1,5 +1,6 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
+import { createPixiText } from "../pixiText.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getDesktopGridMetrics } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
@@ -519,7 +520,7 @@ export class DesktopLayer extends Container {
     this.boundsRegistration = null;
     this.boundsFlushQueued = false;
     this.boundsDirty = false;
-    this.emptyText = new Text({
+    this.emptyText = createPixiText({
       text: this.renderCopy.searchEmpty,
       style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
     });

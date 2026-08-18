@@ -1,6 +1,7 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 export const MAX_RENDER_RESOLUTION = 2;
+export const MIN_TEXT_RENDER_RESOLUTION = 2;
 export const STAGE_COORDINATE_SPACES = Object.freeze({
   CLIENT_VISUAL: "client-visual",
   STAGE_LAYOUT: "stage-layout",
@@ -14,6 +15,17 @@ function safeNumber(value, fallback = 0) {
 
 export function getEffectiveDevicePixelRatio(devicePixelRatio = globalThis.devicePixelRatio || 1) {
   return Math.min(MAX_RENDER_RESOLUTION, Math.max(1, safeNumber(devicePixelRatio, 1)));
+}
+
+/**
+ * Pixi Text is rasterized into a texture before it is drawn. Keep labels at
+ * least two device pixels per logical pixel, while allowing displays above
+ * 2x to use their native DPR. This is intentionally separate from the
+ * renderer cap: increasing text quality must not force the whole canvas to
+ * render at a higher resolution.
+ */
+export function getTextRenderResolution(devicePixelRatio = globalThis.devicePixelRatio || 1) {
+  return Math.max(MIN_TEXT_RENDER_RESOLUTION, Math.max(1, safeNumber(devicePixelRatio, 1)));
 }
 
 export function getStageScale(stageRect, stageWidth, stageHeight) {

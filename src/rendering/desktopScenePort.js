@@ -14,3 +14,4 @@ export * from "./pixi/scene/iconVisualSpec.js";
 export * from "./pixi/scene/folderClosingHandoffActivity.js";
 export * from "./pixi/scene/singleStagePlan.js";
 export * from "./pixi/createPixiApp.js";
+export * from "./pixi/pixiText.js";
