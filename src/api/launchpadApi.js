@@ -53,6 +53,34 @@ export function isNativeBridgeAvailable() {
   return Boolean(getTauriBridge()?.invoke);
 }
 
+export async function getLaunchContext() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return { origin: "manual" };
+  return invoke("get_launch_context");
+}
+
+export async function completeRendererStartup() {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("complete_renderer_startup");
+}
+
+export async function getAutostartStatus() {
+  const invoke = getTauriInvoke();
+  if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
+  return Boolean(await invoke("get_autostart_status"));
+}
+
+export function isAutostartAvailable() {
+  return isNativeBridgeAvailable();
+}
+
+export async function setAutostartEnabled(enabled) {
+  const invoke = getTauriInvoke();
+  if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
+  return Boolean(await invoke("set_autostart_enabled", { enabled: Boolean(enabled) }));
+}
+
 export async function listenNativeEvent(eventName, handler) {
   const listen = getTauriBridge()?.listen;
   if (!listen) return null;
@@ -216,13 +244,6 @@ export async function hideMainWindow() {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("hide_main_window");
-  return true;
-}
-
-export async function showMainWindow() {
-  const invoke = getTauriInvoke();
-  if (!invoke) return false;
-  await invoke("show_main_window");
   return true;
 }
 

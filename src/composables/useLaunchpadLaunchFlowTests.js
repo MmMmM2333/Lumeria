@@ -109,6 +109,7 @@ function createLaunchFlow(overrides = {}) {
     isFolderAppLaunchClosing: ref(Boolean(overrides.isFolderAppLaunchClosing)),
     isFolderZoomFadeClosing: ref(Boolean(overrides.isFolderZoomFadeClosing)),
     isSearchMode: () => Boolean(overrides.isSearchMode),
+    initialDesktopOpen: overrides.initialDesktopOpen,
     keyboardFocusArea,
     localizationText,
     launchNativeAppIfAvailable: (app) => {
@@ -175,6 +176,8 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
     assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
     assert(close.calls.setNativeWindowFrameEnabled.join(",") === "false", "closing the desktop should disable the native window frame");
+    const loginStartup = createLaunchFlow({ initialDesktopOpen: false });
+    assert(!loginStartup.flow.isDesktopOpen.value, "login startup should keep the desktop closed until activation");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
     assert(!close.flow.isDesktopClosing.value, "desktop close timer should end the closing state");
     assert(close.calls.clearSearch.length === 1, "desktop close should clear search after the close animation");

@@ -1,10 +1,14 @@
 import {
   applyAppLocalePreference,
+  completeRendererStartup,
+  getAutostartStatus,
   getAppLocaleState,
+  getLaunchContext,
   loadLayout,
   normalizeScanAppsResult,
   openDeveloperConsole,
   saveLayout,
+  setAutostartEnabled,
   setLaunchpadApiBridgeForTests,
 } from "./launchpadApi.js";
 
@@ -130,6 +134,7 @@ export async function runLaunchpadApiTests() {
     },
   };
   let loadedLayout = validLayout;
+  let autostartStatus = false;
 
   setLaunchpadApiBridgeForTests({
     invoke: async (command, args) => {
@@ -139,6 +144,13 @@ export async function runLaunchpadApiTests() {
       if (command === "get_app_locale_state") return nativeLocaleState;
       if (command === "apply_app_locale_preference") {
         return { ...nativeLocaleState, preference: args.preference, resolvedLocale: args.preference };
+      }
+      if (command === "get_launch_context") return { origin: "loginStartup" };
+      if (command === "complete_renderer_startup") return null;
+      if (command === "get_autostart_status") return autostartStatus;
+      if (command === "set_autostart_enabled") {
+        autostartStatus = Boolean(args.enabled);
+        return autostartStatus;
       }
     },
   });
@@ -177,6 +189,13 @@ export async function runLaunchpadApiTests() {
       invalidSaveError = error;
     }
     assert(invalidSaveError instanceof TypeError, "layout save should reject legacy persisted fields before IPC");
+    assert((await getLaunchContext()).origin === "loginStartup", "launch context should cross the native bridge");
+    await completeRendererStartup();
+    assert(invocations.some(({ command }) => command === "complete_renderer_startup"), "renderer startup completion should cross the native bridge");
+    assert(!(await getAutostartStatus()), "autostart status should start disabled");
+    assert(await setAutostartEnabled(true), "autostart enable should report the applied status");
+    assert(await getAutostartStatus(), "autostart status should reflect the enabled state");
+    assert(!(await setAutostartEnabled(false)), "autostart disable should report the applied status");
   } finally {
     setLaunchpadApiBridgeForTests(null);
   }

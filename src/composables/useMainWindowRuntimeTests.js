@@ -37,7 +37,6 @@ function makePort(overrides = {}) {
     setFrameEnabled: async (enabled) => calls.push(["frame", enabled]),
     setMode: async (mode, options) => calls.push(["mode", mode, options]),
     setShortcutCaptureActive: async (active) => calls.push(["capture", active]),
-    show: async () => calls.push(["show"]),
     ...overrides.port,
   };
   return { calls, port };
@@ -84,11 +83,10 @@ export async function runMainWindowRuntimeTests() {
   const shortcutOutcome = await runtime.registerShortcut("control+alt+KeyL");
   assert(shortcutOutcome.ok && shortcutOutcome.shortcut === "control+alt+KeyL", "shortcut registration should return the normalized registered shortcut");
   await runtime.setShortcutCaptureActive(1);
-  await runtime.show();
   await runtime.reveal(17);
   await runtime.hide();
   assert(calls.some(([name, value]) => name === "capture" && value === true), "shortcut capture should normalize boolean state");
-  assert(calls.slice(-3).map(([name]) => name).join(",") === "show,reveal,hide", "window visibility commands should preserve caller order");
+  assert(calls.slice(-2).map(([name]) => name).join(",") === "reveal,hide", "window visibility commands should preserve caller order");
 
   const shortcutError = new Error("occupied");
   const failed = useMainWindowRuntime({ port: makePort({ shortcutError }).port, systemAppearance });

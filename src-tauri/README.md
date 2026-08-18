@@ -13,7 +13,11 @@ Implemented commands:
 - `check_launch_targets`: checks whether local launch paths still exist and whether AppUserModelIds remain registered for the current Windows user.
 - `launch_app`: launches by app id/name after the frontend persists launch-critical changes for that app. The backend resolves the launch target from the native catalog, saved layout, or saved-root rescan, and does not accept renderer-supplied launch targets or arguments. Launch arguments are used only for saved `.exe` targets; packaged apps are activated through `IApplicationActivationManager`. Native launch failures are shown with a Windows message box that includes a reason and suggested action.
 - `hide_main_window`: hides the main Lumeria window after close animations.
-- `show_main_window`: opens the initially hidden main window through the cloaked show flow.
+- `get_launch_context`: returns the immutable manual/login-startup origin parsed from the first process arguments.
+- `complete_renderer_startup`: marks required native listeners ready, then replays a queued activation, opens a manual cold start, or keeps a login startup hidden.
+- Manual second instances delegate the Windows foreground permission before the single-instance handoff so an existing hidden window can be focused; login-startup instances do not request that permission.
+- `get_autostart_status`: verifies the current executable's quoted Windows Run command and StartupApproved state.
+- `set_autostart_enabled`: writes or removes the verified Windows Run command for the executable's actual installation path.
 - `reveal_main_window`: uncloaks the main window after the renderer reports that the opening frame has painted.
 - `get_main_window_effects_support`: reports Windows build support for Acrylic, Mica, and Mica Alt.
 - `set_main_window_effects_enabled`: toggles and updates Acrylic/Mica/Mica Alt window effects during open/close transitions.

@@ -16,7 +16,10 @@ commands.
 - `check_launch_targets(targets: LaunchTargetCheckRequest[]) -> LaunchTargetCheckResult[]`
 - `launch_app(request: LaunchAppRequest) -> void`
 - `hide_main_window() -> void`
-- `show_main_window() -> void`; opens the hidden main window through the same cloaked show path used by tray and shortcut activation. The renderer calls this once after native event listeners are registered so cold startup does not expose an uncomposited white WebView frame.
+- `get_launch_context() -> LaunchContext`; returns the immutable launch origin parsed once from the first process arguments.
+- `complete_renderer_startup() -> void`; the renderer calls this only after all required native event listeners are registered. Native code then replays one queued activation, opens a manual cold start, or keeps a login startup hidden.
+- `get_autostart_status() -> boolean`; reports enabled only when the Windows Run command matches the current executable and Windows has not disabled its StartupApproved entry.
+- `set_autostart_enabled(enabled: boolean) -> boolean`; writes or removes the current executable's quoted Windows Run command and returns the verified applied state.
 - `reveal_main_window(openSequence: number) -> void`; confirms that the renderer has painted the matching opening frame. Native code reveals only that pending sequence; stale, missing, failed, or timed-out opens remain hidden.
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
 - `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
@@ -25,6 +28,22 @@ commands.
 - `set_main_window_native_frame_enabled(enabled: boolean) -> void`; close animations disable the native window frame (shadow, border, corners, and non-client rendering) and the next open restores it.
 
 Windowed mode uses a frontend-rendered title bar for dragging, resizing, and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
+
+## Startup Lifecycle
+
+```ts
+type LaunchContext = {
+  origin: "manual" | "loginStartup";
+};
+```
+
+The first process owns one immutable `LaunchContext`. The renderer may use it to initialize its closed/open scene state, but native code alone decides when the HWND is shown. A manual cold start opens after `complete_renderer_startup`; a login startup remains resident in the system tray without opening a window.
+
+All native open entry points cross the main-window supervisor. Before renderer startup is complete, ordinary opens coalesce, the latest monitor target wins, and an open-settings request remains sticky. Completing renderer startup consumes the queued request at most once. Native code must not treat a successful event emit as proof that the renderer received it.
+
+Lumeria is single-instance. A second manual launch routes an open request to the existing process; the launching process delegates its Windows foreground permission before the plugin forwards the request, so the existing window can be focused even when it was hidden. A second launch carrying `--lumeria-autostart` exits without making the existing process visible. The single-instance plugin is registered before every other Tauri plugin so no second process reaches tray or global-shortcut setup.
+
+Autostart configuration is Windows-owned state and is never written to `LaunchpadLayout`. Enabling it reads the running executable through `current_exe`, preserves its native path, and writes `"<actual executable>" --lumeria-autostart`; no installation directory is assumed. Registry and verification failures are explicit command errors rather than a disabled-state fallback.
 
 ## Native Events
 
@@ -37,7 +56,7 @@ type MainWindowActivationPayload = {
 };
 ```
 
-- `lumeria-open-desktop` asks the renderer to open or refocus the launchpad. For an `Alt+Space` activation on Windows, the backend resolves the monitor under the cursor, relocates the existing main window, and completes its cloaked show preparation before emitting this event. `displayChanged` is `true` only when that cross-monitor relocation succeeds; the renderer then refreshes monitor-dependent background layout and restarts an active Live Desktop capture. If the desktop was closed, the renderer first paints the closed state through the target monitor's resize-settle frames, uncloaks the window, and starts the open animation on the following visible frame. Tray, settings, and startup opens keep the window on its current monitor and emit `displayChanged: false`.
+- `lumeria-open-desktop` asks the renderer to open or refocus the launchpad. It is emitted only after `complete_renderer_startup`. For an `Alt+Space` activation on Windows, the backend resolves the monitor under the cursor, relocates the existing main window, and completes its cloaked show preparation before emitting this event. `displayChanged` is `true` only when that cross-monitor relocation succeeds; the renderer then refreshes monitor-dependent background layout and restarts an active Live Desktop capture. If the desktop was closed, the renderer first paints the closed state through the target monitor's resize-settle frames, uncloaks the window, and starts the open animation on the following visible frame. Tray, settings, second-instance, and manual startup opens otherwise keep the window on its current monitor and emit `displayChanged: false`.
 - `lumeria-toggle-desktop` asks the renderer to run its close path. The backend emits it only when the main window is visible, not minimized, foreground, and already on the cursor monitor. Its `displayChanged` value is always `false`.
 
 `openSequence` identifies the latest native open cycle. The renderer passes it back to `reveal_main_window` after its opening frame has painted, and the backend ignores stale reveal requests. The event payload is always the object above; numeric legacy payloads are not part of the contract.

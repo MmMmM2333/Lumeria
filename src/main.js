@@ -4,7 +4,8 @@ import { DEFAULT_LOCALE } from "./i18n/locale.js";
 import { translateMessage } from "./i18n/catalogs.js";
 import { createLocalization } from "./i18n/localization.js";
 import { shouldMountMotionLab } from "./motionLab/motionLabGate.js";
-import { localeRuntimePort } from "./platform/launchpadPorts.js";
+import { normalizeLaunchContext } from "./domain/launchContext.js";
+import { localeRuntimePort, nativeStartupPort } from "./platform/launchpadPorts.js";
 
 const search = typeof window === "undefined" ? "" : window.location.search;
 const loadApp = import.meta.env.DEV && shouldMountMotionLab(search, true)
@@ -12,7 +13,7 @@ const loadApp = import.meta.env.DEV && shouldMountMotionLab(search, true)
   : () => import("./App.vue");
 
 function renderBootstrapFailure(error) {
-  console.error("[i18n-bootstrap-failed]", error);
+  console.error("[app-bootstrap-failed]", error);
   const root = typeof document === "undefined" ? null : document.querySelector("#app");
   if (!root) return;
   const title = document.createElement("h1");
@@ -27,7 +28,10 @@ async function mountApp() {
   if (!localeOutcome.ok) throw localeOutcome.error;
   const localization = createLocalization(localeOutcome.state);
   const appModule = await loadApp();
-  const app = createApp(appModule.default);
+  const startupContext = normalizeLaunchContext(
+    nativeStartupPort.isAvailable() ? await nativeStartupPort.getLaunchContext() : null,
+  );
+  const app = createApp(appModule.default, { startupContext });
   app.use(localization.plugin);
   app.mount("#app");
 }

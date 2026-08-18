@@ -36,6 +36,7 @@ import { useLaunchpadInputGestures } from "./useLaunchpadInputGestures.js";
 import { useLaunchpadSelectionSession } from "./useLaunchpadSelectionSession.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
+import { isLoginStartupContext, normalizeLaunchContext } from "../domain/launchContext.js";
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
@@ -145,6 +146,8 @@ export function useLaunchpadController(options = {}) {
   if (!localizationText || typeof localizationText.t !== "function" || typeof activateLocale !== "function") {
     throw new TypeError("useLaunchpadController requires localizationText");
   }
+  const startupContext = normalizeLaunchContext(options.startupContext);
+  const initialDesktopOpen = !isLoginStartupContext(startupContext);
   const iconBoundsRegistry = createIconBoundsRegistry();
   const systemAppearance = useSystemAppearance();
   const liveDesktopRuntime = useLiveDesktopRuntime();
@@ -188,6 +191,7 @@ export function useLaunchpadController(options = {}) {
     liveDesktopSupport: liveDesktopBackgroundSupport,
     localizationText,
     mainWindow: mainWindowRuntime,
+    autostartPort: options.autostartPort,
   });
   function getCurrentIconScope() {
     return resolveCurrentIconScope({
@@ -230,8 +234,12 @@ export function useLaunchpadController(options = {}) {
     isChoosingBackgroundImage,
     isApplyingSettingsConfig,
     isTextlessMode,
+    canConfigureLaunchAtLogin,
+    isRefreshingLaunchAtLogin,
     canCustomizeLaunchpadIcon,
     launchpadIconError,
+    launchAtLogin,
+    launchAtLoginError,
     launchpadIconVariant,
     localePreference,
     localePreferenceError,
@@ -268,6 +276,7 @@ export function useLaunchpadController(options = {}) {
     fullscreenOverscanEnabled: draftFullscreenOverscanEnabled,
     iconSize: draftIconSize,
     isTextlessMode: draftIsTextlessMode,
+    launchAtLogin: draftLaunchAtLogin,
     localePreference: draftLocalePreference,
     launchpadIconVariant: draftLaunchpadIconVariant,
     mainWindowShortcut: draftMainWindowShortcut,
@@ -737,6 +746,7 @@ export function useLaunchpadController(options = {}) {
     isSearchMode: () => isSearchMode.value,
     keyboardFocusArea,
     localizationText,
+    initialDesktopOpen,
     getLaunchTargetStatus: (app) => getLaunchTargetStatus(app),
     launchNativeAppIfAvailable: (app) => launchNativeAppIfAvailable(app),
     normalizeLaunchSource,
@@ -1364,6 +1374,7 @@ export function useLaunchpadController(options = {}) {
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
     setDraftLocalePreference,
+    setDraftLaunchAtLogin,
     setDraftLaunchpadIconVariant,
     setDraftMainWindowShortcut,
     setDraftSettingsThemePreference,
@@ -1376,6 +1387,7 @@ export function useLaunchpadController(options = {}) {
   } = settings.actions;
   const {
     clearNativeEventListeners,
+    completeRendererStartup,
     clearNativeSaveTimer,
     flushNativeLayoutSave,
     getLaunchTargetStatus,
@@ -1397,7 +1409,6 @@ export function useLaunchpadController(options = {}) {
     setNativeWindowMode,
     setNativeWindowEffectsEnabled,
     setNativeWindowFrameEnabled,
-    showNativeWindowAfterStartup,
     showNativeLaunchError,
     startNativeLiveDesktopBackground,
     stopNativeLiveDesktopBackground,
@@ -1745,6 +1756,7 @@ export function useLaunchpadController(options = {}) {
     clearTransientNoticeTimer,
     clearLayoutProjectionRelease,
     clearNativeEventListeners,
+    completeRendererStartup,
     clearNativeSaveTimer,
     flushNativeLayoutSave,
     clearPageJumpRenderRange,
@@ -1797,7 +1809,6 @@ export function useLaunchpadController(options = {}) {
     searchRef,
     setNativeWindowEffectsEnabled,
     settingsThemePreference,
-    showNativeWindowAfterStartup,
     showCustomTitlebar,
     showMissingLaunchTargetBadge,
     syncLiveDesktopBackgroundRuntime,
@@ -1958,6 +1969,7 @@ export function useLaunchpadController(options = {}) {
     canScanManagedApps,
     canExcludeManagedAppFromScan,
     canExcludeSelectedManagedAppsFromScan,
+    canConfigureLaunchAtLogin,
     canUseDraftBackgroundEffect,
     canUseLiveDesktopBackground,
     canUseLiveDesktopBackgroundEffect,
@@ -2006,6 +2018,7 @@ export function useLaunchpadController(options = {}) {
     draftFullscreenOverscanEnabled,
     draftIconSize,
     draftIsTextlessMode,
+    draftLaunchAtLogin,
     draftLaunchpadIconVariant,
     draftLocalePreference,
     draftMainWindowShortcut,
@@ -2025,6 +2038,7 @@ export function useLaunchpadController(options = {}) {
     isApplyingSettingsConfig,
     isBrowsingScanRoot,
     isChoosingBackgroundImage,
+    isRefreshingLaunchAtLogin,
     isScanningApps,
     isSettingsPanelOpen,
     isTextlessMode,
@@ -2032,6 +2046,8 @@ export function useLaunchpadController(options = {}) {
     localePreferenceError,
     launchpadIconError,
     launchpadIconVariant,
+    launchAtLogin,
+    launchAtLoginError,
     fullscreenOverscanEnabled,
     liveDesktopBackgroundSupport,
     liveDesktopRuntimeStatus,
@@ -2070,6 +2086,7 @@ export function useLaunchpadController(options = {}) {
     setDraftFolderIconSizeMode,
     setDraftFullscreenOverscanEnabled,
     setDraftLocalePreference,
+    setDraftLaunchAtLogin,
     setDraftLaunchpadIconVariant,
     setDraftMainWindowShortcut,
     setDraftSettingsThemePreference,

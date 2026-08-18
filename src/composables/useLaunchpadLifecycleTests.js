@@ -37,6 +37,10 @@ function createLifecycleOptions() {
       backgroundEffect: ref("dimmed"),
       cancelInputGesture: makeCall("cancelInputGesture"),
       cancelPreviewRaf: makeCall("cancelPreviewRaf"),
+      completeRendererStartup: () => {
+        calls.push("completeRendererStartup");
+        return Promise.resolve();
+      },
       clearAltEditTimer: makeCall("clearAltEditTimer"),
       clearAppLaunchTimer: makeCall("clearAppLaunchTimer"),
       clearDesktopCloseTimer: makeCall("clearDesktopCloseTimer"),
@@ -97,7 +101,6 @@ function createLifecycleOptions() {
       schedulePageGridMetrics: makeCall("schedulePageGridMetrics"),
       setNativeWindowEffectsEnabled: makeCall("setNativeWindowEffectsEnabled"),
       settingsThemePreference: ref("dark"),
-      showNativeWindowAfterStartup: makeCall("showNativeWindowAfterStartup"),
       showMissingLaunchTargetBadge: ref(true),
       showCustomTitlebar: ref(true),
       syncLiveDesktopBackgroundRuntime: makeCall("syncLiveDesktopBackgroundRuntime"),
@@ -214,11 +217,32 @@ export async function runLaunchpadLifecycleTests() {
     );
   });
 
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert(
-    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,showNativeWindowAfterStartup,loadNativeLaunchpadData",
-    "mounted effects should show the hidden native window before loading native data"
+    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,completeRendererStartup,loadNativeLaunchpadData",
+    `mounted effects should complete renderer startup after native listeners and before loading native data; received ${mountedCalls.join(",")}`
   );
+
+  const registrationError = new Error("native listener registration failed");
+  const { calls: failedRegistrationCalls, options: failedRegistrationOptions } = createLifecycleOptions();
+  failedRegistrationOptions.registerNativeEventListeners = () => {
+    failedRegistrationCalls.push("registerNativeEventListeners");
+    return Promise.reject(registrationError);
+  };
+  const startupErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => startupErrors.push(args);
+  try {
+    withMockWindow(() => {
+      runLaunchpadMountedEffects(failedRegistrationOptions, ObserverCtor);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert(!failedRegistrationCalls.includes("completeRendererStartup"), "failed native listeners must not report renderer startup readiness");
+  assert(failedRegistrationCalls.includes("loadNativeLaunchpadData"), "native data loading should remain independent from renderer startup failure");
+  assert(startupErrors.some((args) => args.includes(registrationError)), "native renderer startup failures should remain explicit");
 
   let resolveNativeRegistration;
   const { calls: unmountedLoadCalls, options: unmountedLoadOptions } = createLifecycleOptions();

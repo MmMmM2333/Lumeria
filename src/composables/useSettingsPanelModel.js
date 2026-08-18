@@ -96,11 +96,15 @@ const SETTINGS_SUBPAGE_SPECS = Object.freeze({
 });
 
 const GENERAL_CAPABILITIES = [
+  "canConfigureLaunchAtLogin",
   "canCustomizeLaunchpadIcon",
   "draftLaunchpadIconVariant",
+  "draftLaunchAtLogin",
   "draftLocalePreference",
   "draftMainWindowShortcut",
   "isApplyingSettingsConfig",
+  "isRefreshingLaunchAtLogin",
+  "launchAtLoginError",
   "localePreferenceError",
   "launchpadIconError",
 ];
@@ -487,6 +491,7 @@ function createSettingsPanelModel(options) {
       clearShortcut,
       openDeveloperConsole,
       resetShortcut,
+      setLaunchAtLogin: state.setDraftLaunchAtLogin,
       setLaunchpadIconVariant: state.setDraftLaunchpadIconVariant,
       setLocalePreference: state.setDraftLocalePreference,
       startShortcutRecording,

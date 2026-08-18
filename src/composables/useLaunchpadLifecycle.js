@@ -101,6 +101,7 @@ export function createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor 
 
 export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalThis.ResizeObserver, lifecycle = null) {
   const {
+    completeRendererStartup,
     handleAltKeyUp,
     handleGlobalKeydown,
     handleWindowBlur,
@@ -108,7 +109,6 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
     registerNativeEventListeners,
     scheduleFolderViewportMetrics,
     schedulePageGridMetrics,
-    showNativeWindowAfterStartup,
     updateFolderViewportHeight,
     updatePageGridMetrics,
   } = options;
@@ -121,9 +121,13 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
   schedulePageGridMetrics();
   scheduleFolderViewportMetrics();
   if (lifecycle) lifecycle.active = true;
-  registerNativeEventListeners().finally(() => {
+  registerNativeEventListeners().then(() => {
+    if (lifecycle && !lifecycle.active) return null;
+    return completeRendererStartup?.();
+  }).catch((error) => {
+    console.error("Failed to complete native renderer startup", error);
+  }).finally(() => {
     if (lifecycle && !lifecycle.active) return;
-    showNativeWindowAfterStartup?.();
     loadNativeLaunchpadData();
   });
 

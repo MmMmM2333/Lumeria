@@ -19,6 +19,7 @@ import {
 } from "../domain/layoutConfiguration.js";
 import {
   backgroundAssetPort,
+  autostartPort as defaultAutostartPort,
   launchpadIconPort as defaultLaunchpadIconPort,
   localeRuntimePort as defaultLocaleRuntimePort,
 } from "../platform/launchpadPorts.js";
@@ -107,6 +108,7 @@ export function useLaunchpadSettings(options = {}) {
   const backgroundAssets = options.backgroundAssetPort || backgroundAssetPort;
   const launchpadIcons = options.launchpadIconPort || defaultLaunchpadIconPort;
   const localeRuntime = options.localeRuntime || defaultLocaleRuntimePort;
+  const autostart = options.autostartPort || defaultAutostartPort;
   const activateLocale = typeof options.activateLocale === "function" ? options.activateLocale : () => {};
   const t = options.localizationText?.t;
   if (typeof layout?.captureConfiguration !== "function" || typeof layout?.applyConfiguration !== "function") {
@@ -123,6 +125,13 @@ export function useLaunchpadSettings(options = {}) {
   }
   if (typeof launchpadIcons?.isAvailable !== "function" || typeof launchpadIcons?.applyVariant !== "function") {
     throw new TypeError("useLaunchpadSettings requires launchpadIconPort");
+  }
+  if (
+    typeof autostart?.isAvailable !== "function"
+    || typeof autostart?.getStatus !== "function"
+    || typeof autostart?.setEnabled !== "function"
+  ) {
+    throw new TypeError("useLaunchpadSettings requires autostartPort");
   }
   if (typeof t !== "function") {
     throw new TypeError("useLaunchpadSettings requires localization text");
@@ -154,6 +163,10 @@ export function useLaunchpadSettings(options = {}) {
   const localePreferenceState = ref(DEFAULT_LOCALE_PREFERENCE);
   const settingsThemePreferenceState = ref(DEFAULT_SETTINGS_THEME_PREFERENCE);
   const launchpadIconVariantState = ref(DEFAULT_LAUNCHPAD_ICON_VARIANT);
+  const launchAtLoginState = ref(false);
+  const canConfigureLaunchAtLoginState = ref(Boolean(autostart.isAvailable()));
+  const isRefreshingLaunchAtLoginState = ref(false);
+  let launchAtLoginStatusRequestId = 0;
 
   const draftRows = ref(DEFAULT_ROWS);
   const draftCols = ref(DEFAULT_COLS);
@@ -188,9 +201,11 @@ export function useLaunchpadSettings(options = {}) {
   const draftLocalePreference = ref(DEFAULT_LOCALE_PREFERENCE);
   const draftSettingsThemePreference = ref(DEFAULT_SETTINGS_THEME_PREFERENCE);
   const draftLaunchpadIconVariant = ref(DEFAULT_LAUNCHPAD_ICON_VARIANT);
+  const draftLaunchAtLogin = ref(false);
   const mainWindowShortcutErrorState = ref("");
   const localePreferenceErrorState = ref("");
   const launchpadIconErrorState = ref("");
+  const launchAtLoginErrorState = ref("");
   const canCustomizeLaunchpadIconState = ref(Boolean(launchpadIcons.isAvailable()));
   const isApplyingSettingsConfigState = ref(false);
   const isChoosingBackgroundImageState = ref(false);
@@ -243,19 +258,49 @@ export function useLaunchpadSettings(options = {}) {
     draftLocalePreference.value = localePreferenceState.value;
     draftSettingsThemePreference.value = settingsThemePreferenceState.value;
     draftLaunchpadIconVariant.value = launchpadIconVariantState.value;
+    draftLaunchAtLogin.value = launchAtLoginState.value;
+  }
+
+  async function refreshLaunchAtLoginStatus() {
+    const requestId = ++launchAtLoginStatusRequestId;
+    const available = Boolean(autostart.isAvailable());
+    canConfigureLaunchAtLoginState.value = available;
+    if (!available) {
+      isRefreshingLaunchAtLoginState.value = false;
+      launchAtLoginErrorState.value = "";
+      return { ok: true, available: false, status: false };
+    }
+    isRefreshingLaunchAtLoginState.value = true;
+    launchAtLoginErrorState.value = "";
+    try {
+      const status = Boolean(await autostart.getStatus());
+      if (requestId !== launchAtLoginStatusRequestId) return { ok: true, stale: true };
+      launchAtLoginState.value = status;
+      draftLaunchAtLogin.value = status;
+      return { ok: true, available: true, status };
+    } catch (error) {
+      if (requestId !== launchAtLoginStatusRequestId) return { ok: true, stale: true };
+      launchAtLoginErrorState.value = error?.message || t("settings.general.startup.unavailable");
+      return explicitFailure(error);
+    } finally {
+      if (requestId === launchAtLoginStatusRequestId) isRefreshingLaunchAtLoginState.value = false;
+    }
   }
 
   function beginEdit() {
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
+    launchAtLoginErrorState.value = "";
     syncDraftsFromCommitted();
+    void refreshLaunchAtLoginStatus();
   }
 
   function cancelEdit() {
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
+    launchAtLoginErrorState.value = "";
     syncDraftsFromCommitted();
   }
 
@@ -500,11 +545,16 @@ export function useLaunchpadSettings(options = {}) {
     launchpadIconErrorState.value = "";
   }
 
+  function setDraftLaunchAtLogin(value) {
+    draftLaunchAtLogin.value = Boolean(value);
+    launchAtLoginErrorState.value = "";
+  }
+
   function setMainWindowShortcutError(value) {
     mainWindowShortcutErrorState.value = String(value || "");
   }
 
-  function commitDraft(nextShortcut, nextLocalePreference, nextLaunchpadIconVariant, runtimeOptions) {
+  function commitDraft(nextShortcut, nextLocalePreference, nextLaunchpadIconVariant, nextLaunchAtLogin, runtimeOptions) {
     let appliedLayout = layout.captureConfiguration();
     if (!options.isDragActive?.()) {
       appliedLayout = layout.applyConfiguration({
@@ -562,6 +612,7 @@ export function useLaunchpadSettings(options = {}) {
     localePreferenceState.value = nextLocalePreference;
     settingsThemePreferenceState.value = normalizeAppearancePreference(draftSettingsThemePreference.value);
     launchpadIconVariantState.value = nextLaunchpadIconVariant;
+    launchAtLoginState.value = Boolean(nextLaunchAtLogin);
     syncDraftsFromCommitted();
     return appliedLayout;
   }
@@ -573,9 +624,12 @@ export function useLaunchpadSettings(options = {}) {
     const nextLocalePreference = normalizeLocalePreference(draftLocalePreference.value);
     const currentLaunchpadIconVariant = normalizeLaunchpadIconVariant(launchpadIconVariantState.value);
     const nextLaunchpadIconVariant = normalizeLaunchpadIconVariant(draftLaunchpadIconVariant.value);
+    const currentLaunchAtLogin = Boolean(launchAtLoginState.value);
+    const nextLaunchAtLogin = Boolean(draftLaunchAtLogin.value);
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
+    launchAtLoginErrorState.value = "";
     isApplyingSettingsConfigState.value = true;
     try {
       let appliedLocaleState = null;
@@ -612,6 +666,7 @@ export function useLaunchpadSettings(options = {}) {
         shortcutApplied = true;
       }
 
+      let launchpadIconApplied = false;
       if (nextLaunchpadIconVariant !== currentLaunchpadIconVariant) {
         let iconError = null;
         if (!launchpadIcons.isAvailable()) {
@@ -647,12 +702,71 @@ export function useLaunchpadSettings(options = {}) {
           launchpadIconErrorState.value = iconError?.message || t("settings.general.launchpadIcon.applyFailed");
           return explicitFailure(iconError, rollbackErrors.length ? { rollbackErrors } : {});
         }
+        launchpadIconApplied = true;
+      }
+
+      let startupAttempted = false;
+      if (nextLaunchAtLogin !== currentLaunchAtLogin) {
+        let startupError = null;
+        if (!autostart.isAvailable()) {
+          startupError = new Error(t("settings.general.startup.unavailable"));
+        } else {
+          startupAttempted = true;
+          try {
+            const appliedStatus = Boolean(await autostart.setEnabled(nextLaunchAtLogin));
+            if (appliedStatus !== nextLaunchAtLogin) {
+              throw new Error(`Autostart runtime returned an unexpected status: ${String(appliedStatus)}`);
+            }
+          } catch (error) {
+            startupError = error;
+          }
+        }
+
+        if (startupError) {
+          const rollbackErrors = [];
+          if (startupAttempted) {
+            try {
+              await autostart.setEnabled(currentLaunchAtLogin);
+            } catch (error) {
+              rollbackErrors.push(error);
+            }
+          }
+          if (launchpadIconApplied) {
+            try {
+              const restoredVariant = await launchpadIcons.applyVariant(currentLaunchpadIconVariant);
+              if (restoredVariant !== currentLaunchpadIconVariant) {
+                throw new Error(`Native icon runtime returned an unexpected rollback variant: ${String(restoredVariant)}`);
+              }
+            } catch (error) {
+              rollbackErrors.push(error);
+              launchpadIconErrorState.value = error?.message || t("settings.general.launchpadIcon.applyFailed");
+            }
+          }
+          if (shortcutApplied) {
+            const shortcutRollback = await mainWindow.registerShortcut(currentShortcut);
+            if (!shortcutRollback.ok) {
+              rollbackErrors.push(shortcutRollback.error);
+              mainWindowShortcutErrorState.value = shortcutRollback.error?.message || t("settings.general.shortcut.unavailable");
+            }
+          }
+          if (appliedLocaleState) {
+            const localeRollback = await localeRuntime.applyPreference(currentLocalePreference);
+            if (!localeRollback?.ok) {
+              const rollbackError = localeRollback?.error || new Error("Unable to restore previous language");
+              rollbackErrors.push(rollbackError);
+              localePreferenceErrorState.value = rollbackError.message;
+            }
+          }
+          launchAtLoginErrorState.value = startupError?.message || t("settings.general.startup.applyFailed");
+          return explicitFailure(startupError, rollbackErrors.length ? { rollbackErrors } : {});
+        }
       }
 
       const appliedLayout = commitDraft(
         nextShortcut,
         nextLocalePreference,
         nextLaunchpadIconVariant,
+        nextLaunchAtLogin,
         runtimeOptions,
       );
       if (appliedLocaleState) activateLocale(appliedLocaleState);
@@ -716,6 +830,7 @@ export function useLaunchpadSettings(options = {}) {
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
+    launchAtLoginErrorState.value = "";
     syncDraftsFromCommitted();
   }
 
@@ -828,14 +943,18 @@ export function useLaunchpadSettings(options = {}) {
     backgroundLiveDesktopOpacity: readonly(backgroundLiveDesktopOpacityState),
     backgroundSource: readonly(backgroundSourceState),
     canCustomizeLaunchpadIcon: readonly(canCustomizeLaunchpadIconState),
+    canConfigureLaunchAtLogin: readonly(canConfigureLaunchAtLoginState),
     fullscreenOverscanEnabled: readonly(fullscreenOverscanEnabledState),
     isApplyingSettingsConfig: readonly(isApplyingSettingsConfigState),
     isChoosingBackgroundImage: readonly(isChoosingBackgroundImageState),
+    isRefreshingLaunchAtLogin: readonly(isRefreshingLaunchAtLoginState),
     isTextlessMode: readonly(isTextlessModeState),
     localePreference: readonly(localePreferenceState),
     localePreferenceError: readonly(localePreferenceErrorState),
     launchpadIconError: readonly(launchpadIconErrorState),
     launchpadIconVariant: readonly(launchpadIconVariantState),
+    launchAtLogin: readonly(launchAtLoginState),
+    launchAtLoginError: readonly(launchAtLoginErrorState),
     mainWindowShortcut: readonly(mainWindowShortcutState),
     mainWindowShortcutError: readonly(mainWindowShortcutErrorState),
     settingsThemePreference: readonly(settingsThemePreferenceState),
@@ -879,6 +998,7 @@ export function useLaunchpadSettings(options = {}) {
     localePreference: draftLocalePreference,
     settingsThemePreference: draftSettingsThemePreference,
     launchpadIconVariant: draftLaunchpadIconVariant,
+    launchAtLogin: draftLaunchAtLogin,
   });
 
   const actions = Object.freeze({
@@ -916,6 +1036,7 @@ export function useLaunchpadSettings(options = {}) {
     setDraftFullscreenOverscanEnabled,
     setDraftLocalePreference,
     setDraftLaunchpadIconVariant,
+    setDraftLaunchAtLogin,
     setDraftSettingsThemePreference,
     setDraftMainWindowShortcut,
     setMainWindowShortcutError,
@@ -931,6 +1052,7 @@ export function useLaunchpadSettings(options = {}) {
     getBackgroundSource: () => backgroundSourceState.value,
     reconcileWindowEffectsSupport,
     refreshDesktopWallpaper,
+    refreshLaunchAtLoginStatus,
     registerCurrentShortcut,
   });
 

@@ -1164,7 +1164,10 @@
         "title": "General",
         "startup": {
           "title": "Start at sign-in",
-          "description": "Open Lumeria automatically after signing in to Windows"
+          "loading": "Checking sign-in startup status…",
+          "unavailableHint": "Available only in the Lumeria desktop app",
+          "unavailable": "Sign-in startup is unavailable in this environment",
+          "applyFailed": "Could not update sign-in startup. Try again."
         },
         "shortcut": {
           "title": "Shortcut",

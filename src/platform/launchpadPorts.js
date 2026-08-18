@@ -2,15 +2,19 @@ import {
   applyAppLocalePreference,
   cacheCustomIcon,
   checkLaunchTargets,
+  completeRendererStartup,
   confirmQuitAfterSave,
   configureLiveDesktopBackground,
   convertFilePathToAssetUrl,
   getDesktopWallpaperBackground,
   getAppLocaleState,
+  getAutostartStatus,
+  getLaunchContext,
   getLiveDesktopBackgroundSupport,
   getLiveDesktopRuntimeStatus,
   getMainWindowEffectsSupport,
   hideMainWindow,
+  isAutostartAvailable,
   isNativeBridgeAvailable,
   launchApp,
   listenNativeEvent,
@@ -30,7 +34,7 @@ import {
   setMainWindowNativeFrameEnabled,
   setMainWindowShortcut,
   setMainWindowShortcutCaptureActive,
-  showMainWindow,
+  setAutostartEnabled,
   showLaunchErrorMessage,
   startLiveDesktopBackground,
   stopLiveDesktopBackground,
@@ -67,7 +71,6 @@ export const mainWindowPort = Object.freeze({
   setFrameEnabled: setMainWindowNativeFrameEnabled,
   setMode: setMainWindowMode,
   setShortcutCaptureActive: setMainWindowShortcutCaptureActive,
-  show: showMainWindow,
 });
 
 export const developerToolsPort = Object.freeze({
@@ -111,4 +114,16 @@ export const nativeLifecyclePort = Object.freeze({
   launchApp,
   listen: listenNativeEvent,
   showLaunchError: showLaunchErrorMessage,
+});
+
+export const nativeStartupPort = Object.freeze({
+  complete: completeRendererStartup,
+  getLaunchContext,
+  isAvailable: isNativeBridgeAvailable,
+});
+
+export const autostartPort = Object.freeze({
+  getStatus: getAutostartStatus,
+  isAvailable: isAutostartAvailable,
+  setEnabled: setAutostartEnabled,
 });
