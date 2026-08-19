@@ -18,7 +18,7 @@ import {
   ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { FolderVisualSession as FolderHandoffCoordinator } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,

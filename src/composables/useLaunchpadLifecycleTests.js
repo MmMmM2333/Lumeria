@@ -83,7 +83,10 @@ function createLifecycleOptions() {
       isTextlessMode: ref(false),
       launchpadIconVariant: ref("light"),
       launchTargetStatusById: ref({}),
-      loadNativeLaunchpadData: makeCall("loadNativeLaunchpadData"),
+      loadNativeLaunchpadData: () => {
+        calls.push("loadNativeLaunchpadData");
+        return Promise.resolve(true);
+      },
       observeFolderViewport: makeCall("observeFolderViewport"),
       pages: ref([]),
       registerNativeEventListeners: () => {
@@ -212,15 +215,15 @@ export async function runLaunchpadLifecycleTests() {
     assert(mountedObserver, "mounted effects should return the layout resize observer");
     assert(events.join(",") === "add:keydown:,add:keyup:,add:blur:,add:resize:,add:resize:", "mounted effects should add global listeners in order");
     assert(
-      calls.slice(0, 3).join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners",
-      "mounted effects should schedule metrics before native data load"
+      calls.slice(0, 4).join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,loadNativeLaunchpadData",
+      "mounted effects should begin listener registration and native scene restore after scheduling metrics"
     );
   });
 
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert(
-    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,completeRendererStartup,loadNativeLaunchpadData",
-    `mounted effects should complete renderer startup after native listeners and before loading native data; received ${mountedCalls.join(",")}`
+    mountedCalls.join(",") === "schedulePageGridMetrics,scheduleFolderViewportMetrics,registerNativeEventListeners,loadNativeLaunchpadData,completeRendererStartup",
+    `mounted effects should report renderer startup only after listeners and native scene data are ready; received ${mountedCalls.join(",")}`
   );
 
   const registrationError = new Error("native listener registration failed");
@@ -259,7 +262,27 @@ export async function runLaunchpadLifecycleTests() {
   });
   resolveNativeRegistration();
   await Promise.resolve();
-  assert(!unmountedLoadCalls.includes("loadNativeLaunchpadData"), "native layout load should not run after unmount");
+  assert(unmountedLoadCalls.includes("loadNativeLaunchpadData"), "native scene restore should begin independently while listener registration is pending");
+  assert(!unmountedLoadCalls.includes("completeRendererStartup"), "an unmounted renderer must not report scene readiness after pending startup work settles");
+
+  const sceneLoadError = new Error("native scene restore failed");
+  const { calls: failedLoadCalls, options: failedLoadOptions } = createLifecycleOptions();
+  failedLoadOptions.loadNativeLaunchpadData = () => {
+    failedLoadCalls.push("loadNativeLaunchpadData");
+    return Promise.reject(sceneLoadError);
+  };
+  const failedLoadErrors = [];
+  console.error = (...args) => failedLoadErrors.push(args);
+  try {
+    withMockWindow(() => {
+      runLaunchpadMountedEffects(failedLoadOptions, ObserverCtor);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.error = originalConsoleError;
+  }
+  assert(!failedLoadCalls.includes("completeRendererStartup"), "failed scene restore must not release the native startup gate");
+  assert(failedLoadErrors.some((args) => args.includes(sceneLoadError)), "scene readiness failures should remain explicit");
 
   withMockWindow((events) => {
     const { calls, options: unmountOptions } = createLifecycleOptions();

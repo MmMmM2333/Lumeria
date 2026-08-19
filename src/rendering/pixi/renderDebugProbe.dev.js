@@ -788,14 +788,14 @@ export function makeDesktopPlanDebugDelta(previousPlan, nextPlan) {
     if (previous && makeEntryDebugSignature(previous) === makeEntryDebugSignature(entry)) unchangedKeys.push(entry.key);
     else changedKeys.push(entry.key);
   }
-  const applied = previousPlan?.signature !== nextPlan?.signature;
+  const applied = previousPlan?.revision !== nextPlan?.revision;
   return {
     applied,
     changedEntryCount: changedKeys.length,
     changedKeys: changedKeys.slice(0, MAX_PLAN_KEYS),
     entryCount: nextPlan?.entries?.length || 0,
-    nextSignature: nextPlan?.signature ? { fingerprint: hashSample(nextPlan.signature), length: nextPlan.signature.length } : null,
-    previousSignature: previousPlan?.signature ? { fingerprint: hashSample(previousPlan.signature), length: previousPlan.signature.length } : null,
+    nextRevision: nextPlan?.revision ?? null,
+    previousRevision: previousPlan?.revision ?? null,
     setStateCount: applied ? nextPlan?.entries?.length || 0 : 0,
     unchangedEntryCount: unchangedKeys.length,
     unchangedKeys: unchangedKeys.slice(0, MAX_PLAN_KEYS),
@@ -881,10 +881,7 @@ export function capturePixiRenderSnapshot(options = {}) {
     pixels,
     plan: layer?.lastDesktopRenderPlan ? {
       entryCount: layer.lastDesktopRenderPlan.entries?.length || 0,
-      signature: {
-        fingerprint: hashSample(layer.lastDesktopRenderPlan.signature),
-        length: layer.lastDesktopRenderPlan.signature?.length || 0,
-      },
+      revision: layer.lastDesktopRenderPlan.revision ?? null,
     } : null,
     reasons: Array.from(options.reasons || []),
     renderer: makeRendererSnapshot(app),
@@ -1109,13 +1106,19 @@ export function createPixiRenderProbe(options = {}) {
       invalidation: input.invalidation
         ? {
           lanes: Array.from(input.invalidation.lanes || []),
-          requiresLayerUpdate: input.invalidation.requiresLayerUpdate === true,
+          capabilities: {
+            diagnostics: input.invalidation.requiresDiagnosticsUpdate === true,
+            handoff: input.invalidation.requiresHandoffUpdate === true,
+            interaction: input.invalidation.requiresInteractionUpdate === true,
+            structure: input.invalidation.requiresStructureUpdate === true,
+            visual: input.invalidation.requiresVisualUpdate === true,
+          },
         }
         : null,
       phase,
       reasons: Array.from(input.reasons || []),
       sessionId: activeSession?.id || null,
-      updateLayer: input.updateLayer !== false,
+      hasLayerCapability: input.hasLayerCapability !== false,
     };
     record("render-begin", token);
     return {
@@ -1132,7 +1135,7 @@ export function createPixiRenderProbe(options = {}) {
       phase: token.phase,
       reasons: token.reasons,
       sessionId: token.sessionId,
-      updateLayer: token.updateLayer,
+      hasLayerCapability: token.hasLayerCapability,
     });
     let captureEntry = null;
     if (token.phase) {
@@ -1164,6 +1167,15 @@ export function createPixiRenderProbe(options = {}) {
 
   function recordDesktopPlan(previousPlan, nextPlan) {
     return record("desktop-plan", makeDesktopPlanDebugDelta(previousPlan, nextPlan));
+  }
+
+  function recordFrameWork(detail = {}) {
+    return record("frame-work", {
+      counts: clonePlain(detail.counts || {}),
+      invalidation: clonePlain(detail.invalidation || null),
+      reasons: Array.from(detail.reasons || []),
+      timings: clonePlain(detail.timings || {}),
+    });
   }
 
   function clear() {
@@ -1269,5 +1281,6 @@ export function createPixiRenderProbe(options = {}) {
     notePointerDown,
     record,
     recordDesktopPlan,
+    recordFrameWork,
   };
 }

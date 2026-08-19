@@ -1,9 +1,31 @@
 import { assertLayoutDocument } from "./layoutDocument.js";
+import { readFileSync } from "node:fs";
+
+const canonicalDocument = JSON.parse(
+  readFileSync(new URL("./fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
+);
+const contractCases = JSON.parse(
+  readFileSync(new URL("./fixtures/layout-v2-contract-cases.json", import.meta.url), "utf8")
+);
+
+function cloneDocument() {
+  return structuredClone(canonicalDocument);
+}
+
+function applyContractCase(document, contractCase) {
+  if (!Array.isArray(contractCase.path)) return document;
+  const parent = contractCase.path
+    .slice(0, -1)
+    .reduce((value, segment) => value[segment], document);
+  const key = contractCase.path.at(-1);
+  if (contractCase.remove) delete parent[key];
+  else parent[key] = structuredClone(contractCase.value);
+  return document;
+}
 
 function makeDocument() {
-  return {
-    version: 2,
-    pages: [[
+  const document = cloneDocument();
+  document.pages = [[
       { id: "catalog-app", type: "catalogApp", overrides: { name: "Renamed" } },
       {
         id: "folder",
@@ -17,23 +39,8 @@ function makeDocument() {
           launchArgs: "--profile test",
         }]],
       },
-    ]],
-    settings: {
-      gridRows: 4,
-      gridCols: 6,
-      folderRows: 3,
-      folderCols: 4,
-      iconSize: 72,
-      textless: false,
-      hiddenAppIds: [],
-      scanRoots: [],
-      scanKeywordAllowlist: [],
-      scanKeywordBlacklist: [],
-      scanAppBlacklist: [],
-      showMissingLaunchTargetBadge: true,
-      mainWindowShortcut: "control+alt+KeyL",
-    },
-  };
+    ]];
+  return document;
 }
 
 export function runLayoutDocumentTests() {
@@ -49,8 +56,17 @@ export function runLayoutDocumentTests() {
     }
   };
 
-  const document = makeDocument();
-  assert(assertLayoutDocument(document) === document, "the contract should preserve the validated document reference");
+  const canonical = cloneDocument();
+  assert(assertLayoutDocument(canonical) === canonical, "the contract should preserve the validated document reference");
+
+  contractCases.forEach((contractCase) => {
+    const candidate = applyContractCase(cloneDocument(), contractCase);
+    const accepted = !rejectsWith(() => assertLayoutDocument(candidate), "");
+    assert(
+      accepted === contractCase.valid,
+      `shared contract case '${contractCase.name}' should be ${contractCase.valid ? "accepted" : "rejected"}`
+    );
+  });
 
   const invalidLegacy = makeDocument();
   invalidLegacy.pages[0][1].children = [];

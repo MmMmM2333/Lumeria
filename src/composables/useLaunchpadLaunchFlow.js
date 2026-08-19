@@ -151,6 +151,7 @@ export function useLaunchpadLaunchFlow(options) {
   function closeDesktop(closeOptions) {
     if (options.isDragActive()) return;
     options.cancelInputGesture();
+    options.beginNativeWindowClose?.();
     options.setNativeWindowEffectsEnabled(false);
     options.setNativeWindowFrameEnabled?.(false);
     const shouldClearSearchAfterClose = Boolean(closeOptions?.clearSearch && options.isSearchMode());

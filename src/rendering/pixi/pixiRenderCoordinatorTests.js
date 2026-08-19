@@ -7,7 +7,6 @@ export function runPixiRenderCoordinatorTests() {
   };
 
   const callbacks = [];
-  const immediateCallbacks = [];
   let nextFrame = 0;
   const queued = new Map();
   const coordinator = createPixiRenderCoordinator({
@@ -19,8 +18,8 @@ export function runPixiRenderCoordinatorTests() {
     },
     cancelAnimationFrame: (id) => queued.delete(id),
     render: (payload) => callbacks.push(payload),
-    renderImmediate: (payload) => immediateCallbacks.push(payload),
   });
+  assert(!("commitImmediate" in coordinator), "the coordinator should expose no second immediate GPU commit path");
 
   assert(coordinator.requestRender("motion-frame"), "first request should schedule a frame");
   coordinator.markRenderPending("desktop-projection", { invalidateGeometry: true });
@@ -32,15 +31,14 @@ export function runPixiRenderCoordinatorTests() {
   assert(callbacks.length === 1, "scheduled frame should commit once");
   assert(callbacks[0].invalidation.lanes.includes(RENDER_INVALIDATION_LANES.MOTION), "commit should include motion lane");
   assert(callbacks[0].invalidation.lanes.includes(RENDER_INVALIDATION_LANES.GEOMETRY), "commit should include geometry lane");
-  assert(callbacks[0].invalidation.requiresLayerUpdate, "geometry lane should request layer update");
+  assert(callbacks[0].invalidation.requiresStructureUpdate, "geometry lane should request a structural capability");
   assert(!coordinator.snapshotInvalidation().lanes.length, "commit should consume invalidation ledger");
 
   coordinator.markRenderPending("motion-frame");
-  assert(coordinator.commitImmediate("ownership-handoff"), "immediate commits should be accepted while renderable");
-  assert(immediateCallbacks[0].reason === "ownership-handoff", "immediate commit should preserve its reason");
+  coordinator.markRenderPending("interaction-ownership");
   coordinator.runPendingRender();
-  assert(callbacks.length === 2, "manual flush should commit pending work");
-  assert(!callbacks[1].invalidation.requiresLayerUpdate, "motion-only commit should skip layer update");
+  assert(callbacks.length === 2, "manual flush should commit coalesced pending work once");
+  assert(callbacks[1].invalidation.requiresInteractionUpdate, "ownership changes should use the interaction patch lane");
 
   coordinator.destroy();
   assert(!coordinator.requestRender("after-destroy"), "destroyed coordinator should reject requests");

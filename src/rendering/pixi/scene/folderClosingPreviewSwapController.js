@@ -2,7 +2,7 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
@@ -49,7 +49,7 @@ function previewSwapSpring(target, vars, options = {}) {
 export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
-    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderVisualSession(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;

@@ -71,4 +71,22 @@ export function runFolderVisualCommitQueueTests() {
     scheduled[0]();
     assert(queue.pending.length === 0, "cleared transactions should not reappear after a scheduled frame");
   }
+
+  {
+    const scheduled = [];
+    const committed = [];
+    const queue = new FolderVisualCommitQueue({
+      scheduleFrame: (callback) => scheduled.push(callback),
+    });
+
+    queue.enqueue(() => committed.push("old"));
+    queue.clear();
+    queue.enqueue(() => committed.push("new"));
+
+    assert(scheduled.length === 2, "a new queue epoch should schedule its own frame callback");
+    scheduled[0]();
+    assert(committed.length === 0, "an old epoch callback must not flush the new epoch");
+    scheduled[1]();
+    assert(committed.join(",") === "new", "only the current epoch callback should commit current transactions");
+  }
 }

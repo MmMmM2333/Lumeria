@@ -454,11 +454,13 @@ export class DesktopLayer extends Container {
     };
     this.folderDropFrameSuppressedIds = new Set();
     this.lastFolderSourceGhostingState = null;
-    this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => this.commitFolderSourceGhosting());
+    this.unsubscribeVisualOwnership = this.visualOwnership.subscribe(() => {
+      this.onFolderRenderRequest("visual-ownership-committed");
+    });
     this.singleStageFolderLayer = new FolderOverlayLayer({
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
       iconBoundsRegistry: this.iconBoundsRegistry,
-      onDesktopSourceGhostingChange: () => this.commitFolderSourceGhosting(),
+      onDesktopSourceGhostingChange: () => this.onFolderRenderRequest("desktop-source-ownership-committed"),
       onClosingFolderPointerDown: (folderId, event) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
       onClosingHandoffReady: (folderId) => this.startClosingFolderHandoffNow(folderId, { revealLabel: false }),
@@ -513,6 +515,7 @@ export class DesktopLayer extends Container {
     this.lastFolderHandoffDebugSnapshot = null;
     this.lastDesktopRenderPlan = null;
     this.lastPointerOnlyPlanSnapshot = null;
+    this.desktopPlanRevision = 0;
     this.folderPresentationGeometryCache = { geometryById: null, version: null };
     this.iconNodes = new Map();
     this.retiredIconNodes = new WeakSet();
@@ -642,6 +645,50 @@ export class DesktopLayer extends Container {
   }
 
   update(state) {
+    return this.updateScene(state, { allowPlanReuse: true });
+  }
+
+  updateStructure(state) {
+    return this.updateScene(state, { allowPlanReuse: false });
+  }
+
+  updateInteraction(state) {
+    state = normalizeDesktopHandoffState(state);
+    const ownership = this.groupDragLayer?.syncVisualOwnership?.(state.groupDragState) || {
+      folderShellIds: new Set(),
+      itemIds: new Set(),
+    };
+    const normalizedState = {
+      ...state,
+      groupTransferOwnedFolderShellIds: normalizeFolderIdSet(
+        state.groupTransferOwnedFolderShellIds,
+        ownership.folderShellIds
+      ),
+      groupTransferOwnedItemIds: normalizeFolderIdSet(
+        state.groupTransferOwnedItemIds,
+        ownership.itemIds
+      ),
+    };
+    const plan = this.lastDesktopRenderPlan;
+    if (!plan) {
+      throw new Error("DesktopLayer.updateInteraction requires an initialized structural render plan");
+    }
+    this.stageRect = normalizedState.stageRect;
+    this.widthValue = normalizedState.width;
+    this.heightValue = normalizedState.height;
+    this.updateFolderDropTargetLayers(plan, normalizedState);
+    this.applyFolderSourceGhosting(normalizedState);
+    this.updateGroupDragLayer(normalizedState);
+    return { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
+  }
+
+  updateScene(state, options = {}) {
+    if (options.boundsTransaction !== false && typeof this.iconBoundsRegistry.transaction === "function") {
+      return this.iconBoundsRegistry.transaction(() => this.updateScene(state, {
+        ...options,
+        boundsTransaction: false,
+      }));
+    }
     state = normalizeDesktopHandoffState(state);
     const groupTransferOwnership = this.groupDragLayer?.syncVisualOwnership?.(state.groupDragState) || {
       folderShellIds: new Set(),
@@ -670,22 +717,27 @@ export class DesktopLayer extends Container {
       this.folderDropFrameSuppressedIds,
       folderHandoffEntries
     );
-    const canReusePlan = canReusePointerOnlyPlan(
+    const canReusePlan = options.allowPlanReuse === true && canReusePointerOnlyPlan(
       this.lastPointerOnlyPlanSnapshot,
       pointerOnlyPlanSnapshot
     );
+    const nextPlanRevision = Math.max(0, Number(this.desktopPlanRevision) || 0) + 1;
     const plan = canReusePlan
       ? {
         ...this.lastDesktopRenderPlan,
         state,
       }
-      : buildDesktopRenderPlan(state, {
-        effectiveFolderSourceGhostedIds,
-        folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
-        folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
-        folderHandoffEntries,
-        folderLayer: this.singleStageFolderLayer,
-      });
+      : {
+        ...buildDesktopRenderPlan(state, {
+          effectiveFolderSourceGhostedIds,
+          folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
+          folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
+          folderHandoffEntries,
+          folderLayer: this.singleStageFolderLayer,
+        }),
+        revision: nextPlanRevision,
+      };
+    if (!canReusePlan) this.desktopPlanRevision = nextPlanRevision;
     this.lastPointerOnlyPlanSnapshot = pointerOnlyPlanSnapshot;
     state = plan.state;
     this.stageRect = state.stageRect;
@@ -698,7 +750,7 @@ export class DesktopLayer extends Container {
     this.applyFolderOverlayAlpha(state);
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
     const previousPlan = this.lastDesktopRenderPlan;
-    const shouldApplyDesktopPlan = previousPlan?.signature !== plan.signature;
+    const shouldApplyDesktopPlan = !canReusePlan;
     const pageTrackScopeChanged = Boolean(
       previousPlan?.pageTrack && previousPlan.pageTrack.scope !== plan.pageTrack.scope
     );
@@ -827,6 +879,28 @@ export class DesktopLayer extends Container {
     this.updateFolderDropTargetLayers(plan, state);
     this.applyFolderSourceGhosting(state);
     this.updateGroupDragLayer(state);
+    this.updateDiagnostics(state);
+    const handoffReconciled = this.reconcileFolderHandoffs(state);
+    return {
+      fullPlanBuilds: shouldApplyDesktopPlan ? 1 : 0,
+      handoffReconciliations: handoffReconciled ? 1 : 0,
+      reconciledNodes: shouldApplyDesktopPlan ? plan.entries.length : 0,
+    };
+  }
+
+  updateVisual(state) {
+    this.stageRect = state.stageRect;
+    this.widthValue = state.width;
+    this.heightValue = state.height;
+    this.describeMotionTargets(state);
+    this.applyDesktopVisualTransform(state);
+    this.applyDesktopVisualAlpha(state);
+    this.applyFolderOverlayTransform(state);
+    this.applyFolderOverlayAlpha(state);
+    return { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
+  }
+
+  updateDiagnostics(state) {
     this.singleStageDiagnosticsLayer.update(state.singleStageFolderState, {
       enabled: state.singleStageDiagnosticsEnabled,
       iconBoundsRegistry: this.iconBoundsRegistry,
@@ -835,11 +909,25 @@ export class DesktopLayer extends Container {
       enabled: state.dragHitDebugOptions?.enabled === true,
       stageRect: state.stageRect,
     });
+    return { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
+  }
+
+  tickFolderHandoff(state) {
+    const handoffReconciled = this.reconcileFolderHandoffs(state);
+    return {
+      fullPlanBuilds: 0,
+      handoffReconciliations: handoffReconciled ? 1 : 0,
+      reconciledNodes: 0,
+    };
+  }
+
+  reconcileFolderHandoffs(state) {
     let handoffReconciled = false;
     for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
       if (this.reconcileFolderHandoffEntry(state, entry)) handoffReconciled = true;
     }
     if (handoffReconciled) this.onFolderRenderRequest("folder-handoff-reconciled");
+    return handoffReconciled;
   }
 
   reconcileFolderHandoffEntry(state, entry) {

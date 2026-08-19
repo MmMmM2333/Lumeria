@@ -657,7 +657,7 @@ import {
   useAcrylicDebugOverrideEnabled,
   updateAcrylicDebugParams,
   useAcrylicDebugParams,
-} from "../rendering/backgroundPort.js";
+} from "../rendering/backgroundDebugPort.js";
 import {
   KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX,
   KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN,
@@ -676,7 +676,7 @@ import {
   updateKawaseDebugParams,
   useKawaseDebugOverrideEnabled,
   useKawaseDebugParams,
-} from "../rendering/backgroundPort.js";
+} from "../rendering/backgroundDebugPort.js";
 import {
   BLUR_KERNEL_AUTO,
   BLUR_KERNEL_DUAL_KAWASE,

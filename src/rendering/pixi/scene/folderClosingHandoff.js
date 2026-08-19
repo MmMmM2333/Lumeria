@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
-import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
 
 function isUsableRect(rect) {
@@ -16,7 +16,7 @@ function isPointInRect(x, y, rect) {
 }
 
 export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = globalThis.cancelAnimationFrame) {
-  ensureFolderHandoffCoordinator(layer).cancelHandoffCleanup(cancelAnimationFrame);
+  ensureFolderVisualSession(layer).cancelHandoffCleanup(cancelAnimationFrame);
 }
 
 export function applyClosingHandoffOnlyOverlayState(layer) {
@@ -65,7 +65,7 @@ export function applyClosingPresentationOverlayState(layer) {
 }
 
 export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = globalThis) {
-  ensureFolderHandoffCoordinator(layer).scheduleHandoffCleanup(cleanup, scheduler);
+  ensureFolderVisualSession(layer).scheduleHandoffCleanup(cleanup, scheduler);
 }
 
 export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {

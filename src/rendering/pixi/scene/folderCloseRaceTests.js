@@ -1,7 +1,7 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { FolderVisualSession as FolderHandoffCoordinator } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,

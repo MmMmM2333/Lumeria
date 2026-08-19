@@ -144,7 +144,7 @@ import { runFolderClosingHandoffRetainerTests } from "../rendering/pixi/scene/fo
 import { runFolderClosingPreviewSwapControllerTests } from "../rendering/pixi/scene/folderClosingPreviewSwapControllerTests.js";
 import { runFolderOpeningGhostControllerTests } from "../rendering/pixi/scene/folderOpeningGhostControllerTests.js";
 import { runFolderOpeningGeometrySnapshotTests } from "../rendering/pixi/scene/folderOpeningGeometrySnapshotTests.js";
-import { runFolderHandoffCoordinatorTests } from "../rendering/pixi/scene/folderHandoffCoordinatorTests.js";
+import { runFolderVisualSessionTests } from "../rendering/pixi/scene/folderVisualSessionTests.js";
 import { runFolderVisualCommitQueueTests } from "../rendering/pixi/scene/folderVisualCommitQueueTests.js";
 import { runVisualOwnershipRegistryTests } from "../rendering/pixi/scene/visualOwnershipRegistryTests.js";
 import { runFolderOverlayLayerTests } from "../rendering/pixi/scene/FolderOverlayLayerTests.js";
@@ -346,7 +346,7 @@ runFolderOverlayIconPlanTests();
 runFolderOverlayRenderPlanTests();
 runDisplayObjectLifecycleTests();
 runFolderCloseRaceTests();
-await runFolderHandoffCoordinatorTests();
+await runFolderVisualSessionTests();
 runFolderClosingGhostControllerTests();
 runFolderClosingHandoffActivityTests();
 runFolderClosingHandoffRetainerTests();

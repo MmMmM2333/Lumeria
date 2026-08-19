@@ -621,22 +621,15 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function renderPixi(options = {}) {
-  if (!app || !layer || !hostRef.value) return false;
-  syncPixiTextResolutionIfNeeded();
-  const shouldUpdateLayer = options.updateLayer !== false;
-  const domGeometry = getDesktopDomGeometry();
-  if (!domGeometry) return false;
-  const { metrics, renderGeometry } = domGeometry;
-  const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-  if (shouldUpdateLayer) {
-    layer.setRenderCopy(pixiRenderCopy.value);
-    const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
-    // Nested controller refs can update before Vue flushes the matching props.
-    // Capture drag ownership once so real icons and the preview cannot disagree
-    // about the same release during this Pixi frame.
-    const dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
-    layer.update({
+function makeDesktopLayerState(metrics, renderGeometry, folderClosingHandoffId) {
+  const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
+  // Nested controller refs can update before Vue flushes the matching props.
+  // Capture drag ownership once so real icons and the preview cannot disagree
+  // about the same release during this Pixi frame.
+  const dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
+  return {
+    dragSnapshot,
+    state: {
       activePageIndex: viewportFrame.value.activePageIndex,
       activePages: viewportFrame.value.activePages,
       desktopVisualTransform: visualFrame.value.desktopVisualTransform,
@@ -683,18 +676,57 @@ function renderPixi(options = {}) {
       selectedAppIds: interactionFrame.value.selectedAppIds,
       setPageRef: sceneRuntime.value.setPageRef,
       shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
-      snapDesktopLayout: options.snapDesktopLayout === true,
+      snapDesktopLayout: false,
       showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
       stageRect: renderGeometry.stageRect,
       width: renderGeometry.width,
-    });
+    },
+  };
+}
+
+function mergeFrameWork(target, next) {
+  if (!next) return target;
+  target.fullPlanBuilds += Number(next.fullPlanBuilds) || 0;
+  target.handoffReconciliations += Number(next.handoffReconciliations) || 0;
+  target.reconciledNodes += Number(next.reconciledNodes) || 0;
+  return target;
+}
+
+function renderPixi(options = {}) {
+  if (!app || !layer || !hostRef.value) {
+    return { didRender: false, hasLayerCapability: false, work: null };
+  }
+  syncPixiTextResolutionIfNeeded();
+  const invalidation = options.invalidation || { requiresStructureUpdate: true };
+  const work = { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
+  const hasLayerCapability = invalidation.requiresStructureUpdate ||
+    invalidation.requiresInteractionUpdate ||
+    invalidation.requiresVisualUpdate ||
+    invalidation.requiresDiagnosticsUpdate ||
+    invalidation.requiresHandoffUpdate;
+  if (hasLayerCapability) {
+    const domGeometry = getDesktopDomGeometry();
+    if (!domGeometry) return { didRender: false, hasLayerCapability, work };
+    const { metrics, renderGeometry } = domGeometry;
+    const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
+    const frame = makeDesktopLayerState(metrics, renderGeometry, folderClosingHandoffId);
+    frame.state.snapDesktopLayout = options.snapDesktopLayout === true;
+    layer.setRenderCopy(pixiRenderCopy.value);
+    if (invalidation.requiresStructureUpdate) {
+      mergeFrameWork(work, layer.updateStructure(frame.state));
+    } else {
+      if (invalidation.requiresInteractionUpdate) mergeFrameWork(work, layer.updateInteraction(frame.state));
+      if (invalidation.requiresVisualUpdate) mergeFrameWork(work, layer.updateVisual(frame.state));
+      if (invalidation.requiresDiagnosticsUpdate) mergeFrameWork(work, layer.updateDiagnostics(frame.state));
+      if (invalidation.requiresHandoffUpdate) mergeFrameWork(work, layer.tickFolderHandoff(frame.state));
+    }
     preloadIconTextures([
-      ...(dragSnapshot.groupDragState?.entries || []).map((entry) => entry.item).filter(Boolean),
+      ...(frame.dragSnapshot.groupDragState?.entries || []).map((entry) => entry.item).filter(Boolean),
     ]);
     logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
   updateMotionDebugOverlay();
-  return true;
+  return { didRender: true, hasLayerCapability, work };
 }
 
 function applyImmediateFolderSourceGhosting() {
@@ -705,7 +737,7 @@ function applyImmediateFolderSourceGhosting() {
     isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
   layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
-  getRenderCoordinator().commitImmediate("folder-source-ownership");
+  requestRender("interaction-ownership");
   return true;
 }
 
@@ -731,34 +763,48 @@ function getRenderCoordinator() {
   renderCoordinator = createPixiRenderCoordinator({
     cancelAnimationFrame: cancelFrame,
     canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
-    renderImmediate: () => app?.render?.(),
     render: ({ reasons, invalidation }) => {
-      const updateLayer = invalidation.requiresLayerUpdate;
+      const frameStartedAt = nowMs();
       const snapDesktopLayout = desktopResizeLayoutSnapPending;
       const previousPlan = layer?.lastDesktopRenderPlan || null;
-      const didRender = renderPixi({ snapDesktopLayout, updateLayer });
-      if (didRender && updateLayer) desktopResizeLayoutSnapPending = false;
+      const layerStartedAt = nowMs();
+      const result = renderPixi({ invalidation, snapDesktopLayout });
+      const layerMs = nowMs() - layerStartedAt;
+      if (result.didRender && invalidation.requiresStructureUpdate) desktopResizeLayoutSnapPending = false;
       let probeToken = null;
-      if (import.meta.env.DEV && didRender) {
+      if (import.meta.env.DEV && result.didRender) {
         probeToken = renderProbe?.beforeRender?.({
           dragMeta: interactionFrame.value.dragMeta,
           invalidation,
           reasons,
           renderer: app?.renderer,
-          updateLayer,
+          hasLayerCapability: result.hasLayerCapability,
         });
-        if (updateLayer) {
+        if (result.work?.fullPlanBuilds) {
           renderProbe?.recordDesktopPlan?.(previousPlan, layer?.lastDesktopRenderPlan || null);
         }
       }
-      if (import.meta.env.DEV && didRender) {
-        try {
-          app?.render?.();
-        } finally {
-          renderProbe?.afterRender?.(probeToken);
-        }
-      } else {
+      const gpuStartedAt = nowMs();
+      try {
         app?.render?.();
+      } finally {
+        const gpuMs = nowMs() - gpuStartedAt;
+        if (import.meta.env.DEV && result.didRender) {
+          renderProbe?.afterRender?.(probeToken);
+          renderProbe?.recordFrameWork?.({
+            counts: {
+              ...result.work,
+              gpuRenders: 1,
+            },
+            invalidation,
+            reasons,
+            timings: {
+              gpuMs,
+              layerMs,
+              totalMs: nowMs() - frameStartedAt,
+            },
+          });
+        }
       }
     },
     requestAnimationFrame: requestFrame,
@@ -801,10 +847,10 @@ function runDesktopFrame(time) {
     coordinator.markRenderPending("motion-frame");
     desktopMotionFrameNeedsRender = false;
   }
-  coordinator.runPendingRender();
   if (shouldRunHandoffRenderLoop()) {
     coordinator.markRenderPending("folder-handoff-loop");
   }
+  coordinator.runPendingRender();
 
   if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
     scheduleDesktopFrame();
@@ -1199,33 +1245,36 @@ watchEffect(() => {
   void viewportFrame.value.folderPageSize;
   void viewportFrame.value.pageTrackScrub;
   void folderFrame.value.folderClosingHandoffId;
-  void folderFrame.value.folderSourceGhostedId;
-  void folderFrame.value.folderSourceGhostedIds;
   void interactionFrame.value.isDesktopClosing;
   void interactionFrame.value.isHomeRevealSettling;
-  void visualFrame.value.desktopVisualTransform;
-  void visualFrame.value.desktopVisualAlpha;
-  void visualFrame.value.launchpadVisualAlpha;
-  void visualFrame.value.launchpadVisualTransform;
+  void interactionFrame.value.dragFolderHoverState;
+  void interactionFrame.value.dragFolderTargetId;
+  void interactionFrame.value.dragMeta;
+  void interactionFrame.value.iconGesturePresentation;
+  void interactionFrame.value.isEditMode;
+  void interactionFrame.value.isBatchSelectionActive;
+  void interactionFrame.value.isSearchMode;
+  void interactionFrame.value.isTextlessMode;
+  void interactionFrame.value.focusedIcon;
+  void interactionFrame.value.selectedAppIds;
+  void diagnosticsFrame.value.desktopGridDebugOptions;
+  void diagnosticsFrame.value.launchTargetStatusById;
+  void diagnosticsFrame.value.showMissingLaunchTargetBadge;
   void pixiRenderCopy.value;
   requestRender("structure-watch");
   scheduleFolderTexturePrewarm();
 });
 
 watchEffect(() => {
-  void interactionFrame.value.dragFolderHoverState;
-  void interactionFrame.value.dragFolderTargetId;
-  void interactionFrame.value.dragMeta;
+  void visualFrame.value.desktopVisualTransform;
+  void visualFrame.value.desktopVisualAlpha;
+  void visualFrame.value.launchpadVisualAlpha;
+  void visualFrame.value.launchpadVisualTransform;
+  requestRender("visual-watch");
+});
+
+watchEffect(() => {
   void interactionFrame.value.groupDragState;
-  void interactionFrame.value.iconGesturePresentation;
-  void interactionFrame.value.isEditMode;
-  void interactionFrame.value.isBatchSelectionActive;
-  void interactionFrame.value.isSearchMode;
-  void interactionFrame.value.isTextlessMode;
-  // Keyboard selection is a Pixi frame input; reading the descriptor here
-  // makes each replacement invalidate the scene instead of hiding in a closure.
-  void interactionFrame.value.focusedIcon;
-  void interactionFrame.value.selectedAppIds;
   requestRender("interaction-watch");
 });
 
@@ -1236,10 +1285,8 @@ watchEffect(() => {
 });
 
 watchEffect(() => {
-  void diagnosticsFrame.value.desktopGridDebugOptions;
   void diagnosticsFrame.value.dragHitDebugOptions;
   void diagnosticsFrame.value.dragHitDebugState;
-  void diagnosticsFrame.value.launchTargetStatusById;
   void diagnosticsFrame.value.singleStageDiagnosticsOptions;
   requestRender("diagnostic-watch");
 });

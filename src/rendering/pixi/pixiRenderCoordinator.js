@@ -10,7 +10,6 @@ export function createPixiRenderCoordinator({
   cancelAnimationFrame = globalThis.cancelAnimationFrame,
   canRender = () => true,
   render,
-  renderImmediate = null,
   requestAnimationFrame = globalThis.requestAnimationFrame,
 } = {}) {
   if (typeof render !== "function") {
@@ -53,15 +52,8 @@ export function createPixiRenderCoordinator({
     scheduler.destroy();
   }
 
-  function commitImmediate(reason = "immediate") {
-    if (!canRender() || typeof renderImmediate !== "function") return false;
-    renderImmediate({ reason: String(reason || "immediate") });
-    return true;
-  }
-
   return Object.freeze({
     cancel,
-    commitImmediate,
     destroy,
     hasPendingRender: scheduler.hasPendingRender,
     isScheduled: scheduler.isScheduled,

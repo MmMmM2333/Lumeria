@@ -1,5 +1,9 @@
-/** Public background-effect capability boundary. */
-export * from "./backgroundCapability.js";
-export * from "./pixi/background/acrylicDebugParams.js";
-export * from "./pixi/background/backgroundEffectPreviewRenderer.js";
-export * from "./pixi/background/kawaseDebugParams.js";
+/** Application-facing background rendering capabilities. */
+export {
+  backgroundEffectUsesPixi,
+  shouldUsePixiBackgroundEffect,
+} from "./backgroundCapability.js";
+export {
+  BackgroundEffectPreviewRenderer,
+  resolveBackgroundEffectPreviewSizes,
+} from "./pixi/background/backgroundEffectPreviewRenderer.js";

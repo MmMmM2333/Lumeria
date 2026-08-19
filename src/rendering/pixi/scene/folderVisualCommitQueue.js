@@ -16,8 +16,11 @@ function isCommitted(result) {
 export class FolderVisualCommitQueue {
   constructor(options = {}) {
     this.pending = [];
+    this.epoch = 0;
     this.flushQueued = false;
     this.flushing = false;
+    this.nextFlushTicket = 1;
+    this.scheduledFlushTicket = null;
     this.scheduleFrame = options.scheduleFrame || ((callback) => motionRuntime.afterFrame(callback));
   }
 
@@ -35,11 +38,20 @@ export class FolderVisualCommitQueue {
 
   scheduleFlush() {
     if (this.flushQueued) return;
+    const epoch = this.epoch;
+    const ticket = this.nextFlushTicket;
+    this.nextFlushTicket += 1;
     this.flushQueued = true;
-    this.scheduleFrame(() => this.flush());
+    this.scheduledFlushTicket = ticket;
+    this.scheduleFrame(() => this.flush({ epoch, ticket }));
   }
 
-  flush() {
+  flush(scheduleGuard = null) {
+    if (scheduleGuard && (
+      scheduleGuard.epoch !== this.epoch ||
+      scheduleGuard.ticket !== this.scheduledFlushTicket
+    )) return 0;
+    this.scheduledFlushTicket = null;
     if (this.flushing || !this.pending.length) {
       this.flushQueued = false;
       return 0;
@@ -70,8 +82,10 @@ export class FolderVisualCommitQueue {
 
   clear() {
     const count = this.pending.length;
+    this.epoch += 1;
     this.pending.length = 0;
     this.flushQueued = false;
+    this.scheduledFlushTicket = null;
     return count;
   }
 }

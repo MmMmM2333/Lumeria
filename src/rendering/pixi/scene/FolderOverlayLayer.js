@@ -27,9 +27,9 @@ import {
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
 import { detachDisplayObject, destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
-  FolderHandoffCoordinator,
+  FolderVisualSession,
   makeFolderPanelTargetKey,
-} from "./folderHandoffCoordinator.js";
+} from "./folderVisualSession.js";
 import {
   getFolderOpeningPreviewChildRect,
   makeFolderOpeningGeometryLayoutKey,
@@ -722,7 +722,13 @@ export class FolderOverlayLayer extends Container {
     this.renderCopy = { newFolderName: String(options.renderCopy?.newFolderName || "") };
     if (!options.iconBoundsRegistry) throw new Error("FolderOverlayLayer requires iconBoundsRegistry");
     this.iconBoundsRegistry = options.iconBoundsRegistry;
-    this.folderHandoff = new FolderHandoffCoordinator(this);
+    this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
+    this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
+    this.ownedVisualTokens = new Set();
+    this.folderHandoff = new FolderVisualSession(this, {
+      visualCommitQueue: this.visualCommitQueue,
+      visualOwnership: this.visualOwnership,
+    });
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
       handoffCoordinator: this.folderHandoff,
@@ -740,9 +746,6 @@ export class FolderOverlayLayer extends Container {
       previewSwap: this.closingPreviewSwap,
       handoffCoordinator: this.folderHandoff,
     });
-    this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
-    this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
-    this.ownedVisualTokens = new Set();
     this.openingPanelReadyFrame = null;
     this.panelAlphaTarget = null;
     this.panelOpenTargetKey = null;
@@ -1972,6 +1975,10 @@ export class FolderOverlayLayer extends Container {
 
   getVisualCommitQueue() {
     if (!this.visualCommitQueue) this.visualCommitQueue = new FolderVisualCommitQueue();
+    this.folderHandoff.attachVisualResources({
+      visualCommitQueue: this.visualCommitQueue,
+      visualOwnership: this.visualOwnership || null,
+    });
     return this.visualCommitQueue;
   }
 
@@ -2091,7 +2098,8 @@ export class FolderOverlayLayer extends Container {
   clearDetachedClosingVisual(visual, options = {}) {
     if (!visual || visual.clearing) return false;
     visual.clearing = true;
-    return this.getVisualCommitQueue().enqueue({
+    this.getVisualCommitQueue();
+    return this.folderHandoff.enqueueVisualCommit({
       isStale: () => !this.detachedClosingVisuals.includes(visual),
       mutateOwnership: () => {
         const index = this.detachedClosingVisuals.indexOf(visual);

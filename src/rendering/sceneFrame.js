@@ -13,19 +13,72 @@
  * @property {DesktopSceneFrameDiagnostics} diagnostics
  */
 
-/** @typedef {Record<string, unknown>} DesktopSceneFrameViewport */
-/** @typedef {Record<string, unknown>} DesktopSceneFrameVisual */
-/** @typedef {Record<string, unknown>} DesktopSceneFrameInteraction */
-/** @typedef {Record<string, unknown>} DesktopSceneFrameFolder */
-/** @typedef {Record<string, unknown>} DesktopSceneFrameDiagnostics */
+const FRAME_FIELDS = Object.freeze({
+  viewport: Object.freeze([
+    "activePageIndex",
+    "activePages",
+    "desktopProjectionEpoch",
+    "desktopTrackMotionKey",
+    "folderPageSize",
+    "gridCols",
+    "gridRows",
+    "iconSize",
+    "pageGridMeasureStyle",
+    "pageTrackScrub",
+  ]),
+  visual: Object.freeze([
+    "desktopVisualAlpha",
+    "desktopVisualTransform",
+    "launchpadVisualAlpha",
+    "launchpadVisualTransform",
+  ]),
+  interaction: Object.freeze([
+    "dragFolderHoverState",
+    "dragFolderTargetId",
+    "dragMeta",
+    "focusedIcon",
+    "groupDragState",
+    "iconGesturePresentation",
+    "isBatchSelectionActive",
+    "isDesktopClosing",
+    "isEditMode",
+    "isHomeRevealSettling",
+    "isSearchMode",
+    "isTextlessMode",
+    "selectedAppIds",
+  ]),
+  folder: Object.freeze([
+    "folderClosingHandoffId",
+    "folderSourceGhostedId",
+    "folderSourceGhostedIds",
+  ]),
+  diagnostics: Object.freeze([
+    "desktopGridDebugOptions",
+    "dragHitDebugOptions",
+    "dragHitDebugState",
+    "launchTargetStatusById",
+    "showMissingLaunchTargetBadge",
+    "singleStageDiagnosticsOptions",
+  ]),
+});
 
-const FRAME_GROUPS = Object.freeze([
-  "viewport",
-  "visual",
-  "interaction",
-  "folder",
-  "diagnostics",
-]);
+const FRAME_GROUPS = Object.freeze(Object.keys(FRAME_FIELDS));
+
+function snapshotCollection(value) {
+  if (Array.isArray(value)) return Object.freeze(value.map((entry) => (
+    Array.isArray(entry) ? Object.freeze([...entry]) : entry
+  )));
+  if (value instanceof Map) return new Map(value);
+  if (value instanceof Set) return new Set(value);
+  if (value && typeof value === "object") return Object.freeze({ ...value });
+  return value;
+}
+
+function makeFrameGroup(input, fields) {
+  return Object.freeze(Object.fromEntries(
+    fields.map((field) => [field, snapshotCollection(input[field])])
+  ));
+}
 
 /**
  * @param {Record<string, unknown>} input
@@ -33,52 +86,11 @@ const FRAME_GROUPS = Object.freeze([
  */
 export function makeDesktopSceneFrame(input = {}) {
   const frame = {
-    viewport: Object.freeze({
-      activePageIndex: input.activePageIndex,
-      activePages: input.activePages,
-      desktopProjectionEpoch: input.desktopProjectionEpoch,
-      desktopTrackMotionKey: input.desktopTrackMotionKey,
-      folderPageSize: input.folderPageSize,
-      gridCols: input.gridCols,
-      gridRows: input.gridRows,
-      iconSize: input.iconSize,
-      pageGridMeasureStyle: input.pageGridMeasureStyle,
-      pageTrackScrub: input.pageTrackScrub,
-    }),
-    visual: Object.freeze({
-      desktopVisualAlpha: input.desktopVisualAlpha,
-      desktopVisualTransform: input.desktopVisualTransform,
-      launchpadVisualAlpha: input.launchpadVisualAlpha,
-      launchpadVisualTransform: input.launchpadVisualTransform,
-    }),
-    interaction: Object.freeze({
-      dragFolderHoverState: input.dragFolderHoverState,
-      dragFolderTargetId: input.dragFolderTargetId,
-      dragMeta: input.dragMeta,
-      focusedIcon: input.focusedIcon,
-      groupDragState: input.groupDragState,
-      iconGesturePresentation: input.iconGesturePresentation,
-      isBatchSelectionActive: input.isBatchSelectionActive,
-      isDesktopClosing: input.isDesktopClosing,
-      isEditMode: input.isEditMode,
-      isHomeRevealSettling: input.isHomeRevealSettling,
-      isSearchMode: input.isSearchMode,
-      isTextlessMode: input.isTextlessMode,
-      selectedAppIds: input.selectedAppIds,
-    }),
-    folder: Object.freeze({
-      folderClosingHandoffId: input.folderClosingHandoffId,
-      folderSourceGhostedId: input.folderSourceGhostedId,
-      folderSourceGhostedIds: input.folderSourceGhostedIds,
-    }),
-    diagnostics: Object.freeze({
-      desktopGridDebugOptions: input.desktopGridDebugOptions,
-      dragHitDebugOptions: input.dragHitDebugOptions,
-      dragHitDebugState: input.dragHitDebugState,
-      launchTargetStatusById: input.launchTargetStatusById,
-      showMissingLaunchTargetBadge: input.showMissingLaunchTargetBadge,
-      singleStageDiagnosticsOptions: input.singleStageDiagnosticsOptions,
-    }),
+    viewport: makeFrameGroup(input, FRAME_FIELDS.viewport),
+    visual: makeFrameGroup(input, FRAME_FIELDS.visual),
+    interaction: makeFrameGroup(input, FRAME_FIELDS.interaction),
+    folder: makeFrameGroup(input, FRAME_FIELDS.folder),
+    diagnostics: makeFrameGroup(input, FRAME_FIELDS.diagnostics),
   };
   Object.freeze(frame);
   assertDesktopSceneFrame(frame);
@@ -97,10 +109,23 @@ export function assertDesktopSceneFrame(frame) {
   if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
     throw new TypeError("DesktopSceneFrame must be an object");
   }
+  const rootKeys = Object.keys(frame);
+  if (rootKeys.length !== FRAME_GROUPS.length || rootKeys.some((key) => !FRAME_GROUPS.includes(key))) {
+    throw new TypeError("DesktopSceneFrame contains unsupported groups");
+  }
+  if (!Object.isFrozen(frame)) throw new TypeError("DesktopSceneFrame must be immutable");
   for (const group of FRAME_GROUPS) {
     const value = frame[group];
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new TypeError(`DesktopSceneFrame.${group} must be an object`);
+    }
+    const expectedFields = FRAME_FIELDS[group];
+    const keys = Object.keys(value);
+    if (keys.length !== expectedFields.length || keys.some((key) => !expectedFields.includes(key))) {
+      throw new TypeError(`DesktopSceneFrame.${group} contains unsupported fields`);
+    }
+    if (!Object.isFrozen(value)) {
+      throw new TypeError(`DesktopSceneFrame.${group} must be immutable`);
     }
   }
 }

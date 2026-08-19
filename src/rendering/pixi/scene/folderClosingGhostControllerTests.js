@@ -14,6 +14,7 @@ function makeTimerHost() {
   let nextId = 1;
   let nextFrameId = 1;
   const timers = new Map();
+  const recordedTimers = new Map();
   const frames = new Map();
   return {
     cancelAnimationFrame(id) {
@@ -44,10 +45,14 @@ function makeTimerHost() {
         callback();
       }
     },
+    runRecordedTimer(id) {
+      recordedTimers.get(id)?.();
+    },
     setTimeout(callback) {
       const id = nextId;
       nextId += 1;
       timers.set(id, callback);
+      recordedTimers.set(id, callback);
       return id;
     },
     get frameCount() {
@@ -55,6 +60,9 @@ function makeTimerHost() {
     },
     get timerCount() {
       return timers.size;
+    },
+    get recordedTimerIds() {
+      return Array.from(recordedTimers.keys());
     },
   };
 }
@@ -1070,6 +1078,10 @@ export function runFolderClosingGhostControllerTests() {
     });
 
     const nextRecord = controller.activeGhostsByItemId.get("app-1");
+    const [staleTimerId, currentTimerId] = timerHost.recordedTimerIds;
+    assert(staleTimerId != null && currentTimerId != null, "close retarget should bind a new fallback timer to the target generation");
+    timerHost.runRecordedTimer(staleTimerId);
+    assert(controller.handoffCoordinator.hasCloseGhost("app-1"), "a stale closing target timer must not clear the retargeted visual session");
     const detachedMotion = controller.handoffCoordinator.getDetachedClosingGhostMotion(ghost);
     const previewSwapRetarget = layer.calls.find((call) => call?.type === "retarget-preview-swap");
     assert(retargeted === 1, "same-session close update should retarget the existing ghost");

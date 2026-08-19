@@ -306,14 +306,14 @@ export function runDesktopRenderPlanTests() {
   }
 
   {
-    const folder = { id: "folder-signature", type: "folder" };
+    const folder = { id: "folder-plan", type: "folder" };
     let nodeTouched = false;
     const node = {};
     Object.defineProperty(node, "expensivePixiGraph", {
       enumerable: true,
       get() {
         nodeTouched = true;
-        throw new Error("desktop render plan signature touched the Pixi node graph");
+        throw new Error("desktop render planning touched the Pixi node graph");
       },
     });
 
@@ -342,8 +342,8 @@ export function runDesktopRenderPlanTests() {
       },
     });
 
-    assert(plan.signature && typeof plan.signature === "string", "plan should still produce a stable signature");
-    assert(nodeTouched === false, "plan signature should summarize handoff presentation without traversing Pixi nodes");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "signature"), "render plans should not build a deep JSON signature");
+    assert(nodeTouched === false, "render planning should retain handoff nodes without traversing their Pixi graph");
   }
 
   {

@@ -87,21 +87,7 @@ function makeScanStats(overrides = {}) {
 // Native load mocks below intentionally focus on one setting at a time. Keep
 // those fixtures on the current document contract without adding a production
 // migration path; the real Rust loader already supplies/validates these fields.
-const TEST_LAYOUT_SETTINGS_DEFAULTS = {
-  gridRows: 4,
-  gridCols: 6,
-  folderRows: 3,
-  folderCols: 4,
-  iconSize: 72,
-  textless: false,
-  hiddenAppIds: [],
-  scanRoots: [],
-  scanKeywordAllowlist: [],
-  scanKeywordBlacklist: [],
-  scanAppBlacklist: [],
-  showMissingLaunchTargetBadge: true,
-  mainWindowShortcut: DEFAULT_MAIN_WINDOW_SHORTCUT,
-};
+const TEST_LAYOUT_SETTINGS_DEFAULTS = structuredClone(layoutV2RoundTripFixture.settings);
 
 function completeLayoutFixture(layout) {
   if (!layout) return layout;
@@ -294,7 +280,7 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         return null;
       }
       if (command === "set_main_window_mode" && !bridgeOverrides.passWindowModeCommand) {
-        return null;
+        return args.mode;
       }
       if (command === "set_main_window_shortcut" && !bridgeOverrides.passMainWindowShortcutCommand) {
         return args.shortcut;
@@ -306,7 +292,13 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         return null;
       }
       if (command === "reveal_main_window" && !bridgeOverrides.passRevealMainWindowCommand) {
-        return null;
+        return true;
+      }
+      if (command === "begin_main_window_close" && !bridgeOverrides.passBeginMainWindowCloseCommand) {
+        return { accepted: true, generation: args.openSequence + 1 };
+      }
+      if (command === "hide_main_window" && !bridgeOverrides.passHideMainWindowCommand) {
+        return true;
       }
       if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
         return {
@@ -729,7 +721,7 @@ export async function runLaunchpadNativeTests() {
           showCustomTitlebar: false,
           mainWindowShortcut: "control+alt+KeyL",
           launchpadIconVariant: LAUNCHPAD_ICON_PASTEL_DARK,
-          backgroundBaseColor: "#ABC",
+          backgroundBaseColor: "#aabbcc",
           backgroundBaseOpacity: 73,
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
           backgroundEffect: BACKGROUND_EFFECT_DIMMED,
@@ -738,11 +730,17 @@ export async function runLaunchpadNativeTests() {
           backgroundImageLayout: BACKGROUND_IMAGE_LAYOUT_CENTER,
           backgroundBlurStrength: 82,
           backgroundAcrylicBlurStrength: 83,
-          backgroundDarkenColor: "#456",
+          backgroundDarkenColor: "#445566",
           backgroundDarkenStrength: 63,
           backgroundAcrylicAppearance: BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
-          backgroundAcrylicDarkParams: { brightness: 0.7, tintColor: "#222222" },
-          backgroundAcrylicLightParams: { brightness: 1.2, tintColor: "#dddddd" },
+          backgroundAcrylicDarkParams: {
+            ...layoutV2RoundTripFixture.settings.backgroundAcrylicDarkParams,
+            brightness: 0.7,
+          },
+          backgroundAcrylicLightParams: {
+            ...layoutV2RoundTripFixture.settings.backgroundAcrylicLightParams,
+            brightness: 1.2,
+          },
           backgroundImagePath: "C:/Images/wallpaper.webp",
         },
       };
@@ -1457,6 +1455,10 @@ export async function runLaunchpadNativeTests() {
       assert(args.enabled === false, "close animation should disable the native window frame immediately");
       return null;
     }
+    if (command === "begin_main_window_close") {
+      assert(args.openSequence === 7, "close animation should invalidate the active open generation");
+      return { accepted: true, generation: 8 };
+    }
     if (command === "stop_live_desktop_background") {
       return {
         phase: "stopped",
@@ -1466,7 +1468,10 @@ export async function runLaunchpadNativeTests() {
         detail: "stopped",
       };
     }
-    if (command === "hide_main_window") return null;
+    if (command === "hide_main_window") {
+      assert(args.generation === 8, "close animation should hide only the accepted close generation");
+      return true;
+    }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async (timers) => {
     const { options } = makeOptions();
@@ -1476,23 +1481,26 @@ export async function runLaunchpadNativeTests() {
     await native.startNativeLiveDesktopBackground();
     closeAnimationCommands.length = 0;
     options.isDesktopOpen.value = false;
+    options.mainWindowRuntime.acceptOpen(7);
 
     native.hideNativeWindowAfterCloseAnimation();
     assert(timers.length === 1, "close animation should schedule one native hide timer");
-    await flushMicrotasks(5);
-    assert(closeAnimationCommands.join(",") === "set_main_window_native_frame_enabled,set_live_desktop_background_visible", "close animation should remove the native frame before hiding the live desktop visual");
+    await flushMicrotasks(12);
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled", `close animation should invalidate reveal, hide the live desktop visual, and remove the native frame before the delayed hide; received ${closeAnimationCommands.join(",")}`);
     assert(timers.length === 2, "close animation should also schedule the live desktop idle stop");
     await timers.shift()();
 
-    assert(closeAnimationCommands.join(",") === "set_main_window_native_frame_enabled,set_live_desktop_background_visible,hide_main_window", "close animation should hide the native window before the live desktop idle stop expires");
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled,hide_main_window", "close animation should hide the accepted generation before the live desktop idle stop expires");
     assert(timers.length === 1, "close animation should leave one pending live desktop idle stop timer");
     assert(options.liveDesktopRuntime.status.value.phase === "running", "close animation should keep live desktop running during the keep-alive window");
     await timers.shift()();
     await flushMicrotasks(2);
 
-    assert(closeAnimationCommands.join(",") === "set_main_window_native_frame_enabled,set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
     assert(options.liveDesktopRuntime.status.value.phase === "stopped", "idle stop should apply stopped live desktop status after hiding");
   }, {
+    passBeginMainWindowCloseCommand: true,
+    passHideMainWindowCommand: true,
     passLiveDesktopBackgroundSupport: true,
     passWindowFrameCommand: true,
   });
@@ -1500,9 +1508,12 @@ export async function runLaunchpadNativeTests() {
   const cancelledHideCommands = [];
   const cancelledHideEventHandlers = new Map();
   await withMockTauri(async (command) => {
+    if (command === "begin_main_window_close") {
+      return { accepted: true, generation: 8 };
+    }
     if (command === "hide_main_window") {
       cancelledHideCommands.push(command);
-      return null;
+      return true;
     }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async (timers, eventListeners) => {
@@ -1510,6 +1521,7 @@ export async function runLaunchpadNativeTests() {
     const native = createNative(options);
 
     await native.registerNativeEventListeners();
+    options.mainWindowRuntime.acceptOpen(7);
     native.hideNativeWindowAfterCloseAnimation();
     assert(timers.length === 1, "close animation should schedule a native hide timer");
     const staleHideTimer = timers[0];
@@ -1528,7 +1540,7 @@ export async function runLaunchpadNativeTests() {
     assert(wheelEvent.propagationStopped, "closing interaction blocker should stop wheel propagation");
 
     await cancelledHideEventHandlers.get("lumeria-open-desktop")({
-      payload: { displayChanged: false, openSequence: 3 },
+      payload: { displayChanged: false, openSequence: 9 },
     });
     await flushMicrotasks(8);
     assert(timers.length === 0, "native open events should cancel pending native hide timers");
@@ -1538,6 +1550,8 @@ export async function runLaunchpadNativeTests() {
     await flushMicrotasks(3);
     assert(cancelledHideCommands.length === 0, "cancelled native hide timers should not hide the reopened window");
   }, {
+    passBeginMainWindowCloseCommand: true,
+    passHideMainWindowCommand: true,
     listen: async (eventName, handler) => {
       cancelledHideEventHandlers.set(eventName, handler);
       return () => cancelledHideEventHandlers.delete(eventName);
@@ -1597,7 +1611,7 @@ export async function runLaunchpadNativeTests() {
     }
     if (command === "reveal_main_window") {
       openRevealSequences.push(args.openSequence);
-      return null;
+      return true;
     }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {
@@ -1641,7 +1655,7 @@ export async function runLaunchpadNativeTests() {
   await withMockTauri(async (command) => {
     if (command === "reveal_main_window") {
       crossDisplayOpenTimeline.push("reveal");
-      return null;
+      return true;
     }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async () => {

@@ -50,8 +50,8 @@ use icons::cache_app_icon_choices;
 use launcher::{launch_app_user_model_id, launch_path, LaunchPathError, LaunchPathErrorKind};
 use launchpad_icon::LaunchpadIconVariant;
 use layout_store::{
-    find_layout_manual_app, load_layout as load_saved_layout, read_launchpad_icon_variant,
-    read_locale_preference, save_layout as save_saved_layout, SavedManualApp,
+    find_layout_manual_app, load_layout as load_saved_layout, load_startup_layout_preferences,
+    save_layout as save_saved_layout, SavedManualApp,
 };
 use main_window_supervisor::{
     apply_main_window_mode, disable_main_window_transitions, open_main_window, open_settings,
@@ -112,28 +112,42 @@ fn launchpad_icon_variant_lock(
         .map_err(|_| "Launchpad icon state lock is poisoned".to_string())
 }
 
-fn initial_locale_state(app: &AppHandle) -> i18n::LocaleState {
-    let mut load_issue = None;
-    let preference = match read_locale_preference(app) {
-        Ok(Some(preference)) => preference,
-        Ok(None) => i18n::DEFAULT_LOCALE_PREFERENCE.to_string(),
+fn initial_presentation_state(app: &AppHandle) -> (i18n::LocaleState, LaunchpadIconVariant) {
+    let (preference, launchpad_icon_variant, mut load_issue) = match load_startup_layout_preferences(
+        app,
+    ) {
+        Ok(Some(preferences)) => (
+            preferences.locale_preference,
+            preferences.launchpad_icon_variant,
+            None,
+        ),
+        Ok(None) => (
+            i18n::DEFAULT_LOCALE_PREFERENCE.to_string(),
+            LaunchpadIconVariant::default(),
+            None,
+        ),
         Err(error) => {
-            log::warn!(target: "i18n", "Failed to read saved locale preference: {error}");
-            load_issue = Some(i18n::LocaleIssue {
-                code: "preferenceLoadFailed".to_string(),
-                value: "layout".to_string(),
-            });
-            i18n::DEFAULT_LOCALE_PREFERENCE.to_string()
+            log::error!(target: "layout_store", "Failed to load validated startup layout preferences: {error}");
+            (
+                i18n::DEFAULT_LOCALE_PREFERENCE.to_string(),
+                LaunchpadIconVariant::default(),
+                Some(i18n::LocaleIssue {
+                    code: "preferenceLoadFailed".to_string(),
+                    value: "layout".to_string(),
+                }),
+            )
         }
     };
     let system_languages = match i18n::system_ui_languages() {
         Ok(languages) => languages,
         Err(error) => {
             log::warn!(target: "i18n", "Failed to resolve system UI languages: {error}");
-            load_issue = Some(i18n::LocaleIssue {
-                code: "systemLocaleUnavailable".to_string(),
-                value: "windows".to_string(),
-            });
+            if load_issue.is_none() {
+                load_issue = Some(i18n::LocaleIssue {
+                    code: "systemLocaleUnavailable".to_string(),
+                    value: "windows".to_string(),
+                });
+            }
             Vec::new()
         }
     };
@@ -141,18 +155,7 @@ fn initial_locale_state(app: &AppHandle) -> i18n::LocaleState {
     if load_issue.is_some() {
         locale_state.issue = load_issue;
     }
-    locale_state
-}
-
-fn initial_launchpad_icon_variant(app: &AppHandle) -> LaunchpadIconVariant {
-    match read_launchpad_icon_variant(app) {
-        Ok(Some(variant)) => variant,
-        Ok(None) => LaunchpadIconVariant::default(),
-        Err(error) => {
-            log::warn!(target: "launchpad_icon", "Failed to read saved launchpad icon: {error}");
-            LaunchpadIconVariant::default()
-        }
-    }
+    (locale_state, launchpad_icon_variant)
 }
 
 #[tauri::command]
@@ -506,8 +509,15 @@ fn launch_app_inner(
 }
 
 #[tauri::command]
-fn hide_main_window(app: AppHandle) {
-    main_window_supervisor::hide_main_window(&app);
+fn begin_main_window_close(
+    open_sequence: u64,
+) -> Result<main_window_supervisor::MainWindowCloseTransition, String> {
+    main_window_supervisor::begin_main_window_close(open_sequence)
+}
+
+#[tauri::command]
+fn hide_main_window(app: AppHandle, generation: u64) -> Result<bool, String> {
+    main_window_supervisor::hide_main_window(&app, generation)
 }
 
 #[tauri::command]
@@ -519,7 +529,7 @@ fn complete_renderer_startup(
 }
 
 #[tauri::command]
-fn reveal_main_window(app: AppHandle, open_sequence: u64) -> Result<(), String> {
+fn reveal_main_window(app: AppHandle, open_sequence: u64) -> Result<bool, String> {
     reveal_supervised_main_window(&app, open_sequence)
 }
 
@@ -1008,8 +1018,7 @@ fn check_launch_target_status(
 }
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let initial_locale = initial_locale_state(app.handle());
-    let initial_launchpad_icon = initial_launchpad_icon_variant(app.handle());
+    let (initial_locale, initial_launchpad_icon) = initial_presentation_state(app.handle());
     {
         let state = app.state::<AppState>();
         *locale_state_lock(&state).map_err(std::io::Error::other)? = initial_locale.clone();
@@ -1308,6 +1317,7 @@ pub fn run() {
             cache_custom_icon,
             check_launch_targets,
             launch_app,
+            begin_main_window_close,
             hide_main_window,
             complete_renderer_startup,
             reveal_main_window,

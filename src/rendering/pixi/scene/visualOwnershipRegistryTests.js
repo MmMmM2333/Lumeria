@@ -65,7 +65,10 @@ export function runVisualOwnershipRegistryTests() {
   }
 
   {
-    const registry = new VisualOwnershipRegistry();
+    const scheduled = [];
+    const registry = new VisualOwnershipRegistry({
+      scheduleFrame: (callback) => scheduled.push(callback),
+    });
     const key = makeDesktopSourceVisualKey("folder-a");
     const changes = [];
     const unsubscribe = registry.subscribe((change, snapshot) => {
@@ -75,7 +78,11 @@ export function runVisualOwnershipRegistryTests() {
     registry.acquire(key, { folderId: "folder-a", kind: "detached", token: "a" });
     registry.acquire(key, { folderId: "folder-a", kind: "detached", token: "a" });
     registry.release(key, "stale");
+    assert(changes.length === 0, "ownership subscribers must not re-enter the active mutation frame");
+    assert(scheduled.length === 1, "ownership notifications should coalesce onto one frame commit");
+    scheduled.shift()();
     registry.release(key, "a");
+    scheduled.shift()();
     unsubscribe();
     registry.acquire(key, { folderId: "folder-a", kind: "opening", token: "b" });
 

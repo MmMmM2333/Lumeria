@@ -1,15 +1,20 @@
+import { readFileSync } from "node:fs";
 import {
   applyAppLocalePreference,
+  beginMainWindowClose,
   completeRendererStartup,
   getAutostartStatus,
   getAppLocaleState,
   getLaunchContext,
+  hideMainWindow,
   loadLayout,
   normalizeScanAppsResult,
   openDeveloperConsole,
+  revealMainWindow,
   saveLayout,
   setAutostartEnabled,
   setLaunchpadApiBridgeForTests,
+  setMainWindowMode,
 } from "./launchpadApi.js";
 
 export async function runLaunchpadApiTests() {
@@ -109,30 +114,15 @@ export async function runLaunchpadApiTests() {
   );
   assert(normalizedResult.stats === validStats, "complete scan stats should pass through unchanged");
 
-  const validLayout = {
-    version: 2,
-    pages: [[{
+  const validLayout = JSON.parse(
+    readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
+  );
+  validLayout.pages = [[{
       id: "api-manual",
       type: "manualApp",
       name: "API Manual",
       launchTarget: { kind: "shortcut", path: "C:/Apps/API Manual.lnk" },
-    }]],
-    settings: {
-      gridRows: 4,
-      gridCols: 6,
-      folderRows: 3,
-      folderCols: 4,
-      iconSize: 72,
-      textless: false,
-      hiddenAppIds: [],
-      scanRoots: [],
-      scanKeywordAllowlist: [],
-      scanKeywordBlacklist: [],
-      scanAppBlacklist: [],
-      showMissingLaunchTargetBadge: true,
-      mainWindowShortcut: "control+alt+KeyL",
-    },
-  };
+    }]];
   let loadedLayout = validLayout;
   let autostartStatus = false;
 
@@ -147,6 +137,12 @@ export async function runLaunchpadApiTests() {
       }
       if (command === "get_launch_context") return { origin: "loginStartup" };
       if (command === "complete_renderer_startup") return null;
+      if (command === "begin_main_window_close") {
+        return { accepted: true, generation: args.openSequence + 1 };
+      }
+      if (command === "hide_main_window") return args.generation === 18;
+      if (command === "reveal_main_window") return args.openSequence === 17;
+      if (command === "set_main_window_mode") return args.mode;
       if (command === "get_autostart_status") return autostartStatus;
       if (command === "set_autostart_enabled") {
         autostartStatus = Boolean(args.enabled);
@@ -192,6 +188,15 @@ export async function runLaunchpadApiTests() {
     assert((await getLaunchContext()).origin === "loginStartup", "launch context should cross the native bridge");
     await completeRendererStartup();
     assert(invocations.some(({ command }) => command === "complete_renderer_startup"), "renderer startup completion should cross the native bridge");
+    const close = await beginMainWindowClose(17);
+    assert(close.accepted && close.generation === 18, "begin-close should return the native transition generation");
+    assert(await hideMainWindow(close.generation), "hide should return the native generation check result");
+    assert(await revealMainWindow(17), "reveal should return whether the native generation was committed");
+    assert(await setMainWindowMode("windowed", { fullscreenOverscanEnabled: false }) === "windowed", "window mode should return the applied native mode");
+    assert(
+      invocations.some(({ command, args }) => command === "hide_main_window" && args.generation === 18),
+      "hide should carry the accepted close generation across the bridge"
+    );
     assert(!(await getAutostartStatus()), "autostart status should start disabled");
     assert(await setAutostartEnabled(true), "autostart enable should report the applied status");
     assert(await getAutostartStatus(), "autostart status should reflect the enabled state");

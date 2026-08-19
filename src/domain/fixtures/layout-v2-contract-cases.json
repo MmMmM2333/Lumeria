@@ -1,0 +1,216 @@
+[
+  {
+    "name": "canonical layout",
+    "valid": true
+  },
+  {
+    "name": "unknown root field",
+    "valid": false,
+    "path": ["unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown settings field",
+    "valid": false,
+    "path": ["settings", "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown manual app field",
+    "valid": false,
+    "path": ["pages", 0, 0, "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown folder field",
+    "valid": false,
+    "path": ["pages", 0, 1, "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown launch target field",
+    "valid": false,
+    "path": ["pages", 0, 0, "launchTarget", "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown scan root field",
+    "valid": false,
+    "path": ["settings", "scanRoots", 0, "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown scan blacklist field",
+    "valid": false,
+    "path": ["settings", "scanAppBlacklist", 0, "unexpected"],
+    "value": true
+  },
+  {
+    "name": "unknown acrylic parameter field",
+    "valid": false,
+    "path": ["settings", "backgroundAcrylicDarkParams", "unexpected"],
+    "value": true
+  },
+  {
+    "name": "missing required background setting",
+    "valid": false,
+    "path": ["settings", "backgroundBaseColor"],
+    "remove": true
+  },
+  {
+    "name": "grid rows below supported range",
+    "valid": false,
+    "path": ["settings", "gridRows"],
+    "value": 1
+  },
+  {
+    "name": "grid columns above supported range",
+    "valid": false,
+    "path": ["settings", "gridCols"],
+    "value": 11
+  },
+  {
+    "name": "folder rows above supported range",
+    "valid": false,
+    "path": ["settings", "folderRows"],
+    "value": 7
+  },
+  {
+    "name": "folder columns below supported range",
+    "valid": false,
+    "path": ["settings", "folderCols"],
+    "value": 1
+  },
+  {
+    "name": "icon size outside supported range",
+    "valid": false,
+    "path": ["settings", "iconSize"],
+    "value": 129
+  },
+  {
+    "name": "folder icon size outside supported range",
+    "valid": false,
+    "path": ["settings", "folderIconSize"],
+    "value": 31
+  },
+  {
+    "name": "invalid background color",
+    "valid": false,
+    "path": ["settings", "backgroundBaseColor"],
+    "value": "blue"
+  },
+  {
+    "name": "background opacity outside supported range",
+    "valid": false,
+    "path": ["settings", "backgroundBaseOpacity"],
+    "value": 101
+  },
+  {
+    "name": "invalid background source",
+    "valid": false,
+    "path": ["settings", "backgroundSource"],
+    "value": "video"
+  },
+  {
+    "name": "invalid background effect",
+    "valid": false,
+    "path": ["settings", "backgroundEffect"],
+    "value": "glass"
+  },
+  {
+    "name": "invalid background image layout",
+    "valid": false,
+    "path": ["settings", "backgroundImageLayout"],
+    "value": "contain"
+  },
+  {
+    "name": "background blur below supported range",
+    "valid": false,
+    "path": ["settings", "backgroundBlurStrength"],
+    "value": 0
+  },
+  {
+    "name": "invalid acrylic tint tuple",
+    "valid": false,
+    "path": ["settings", "backgroundAcrylicDarkParams", "tintColor"],
+    "value": [0.1, 0.2]
+  },
+  {
+    "name": "acrylic tint component outside supported range",
+    "valid": false,
+    "path": ["settings", "backgroundAcrylicLightParams", "tintColor", 1],
+    "value": 1.1
+  },
+  {
+    "name": "acrylic brightness outside supported range",
+    "valid": false,
+    "path": ["settings", "backgroundAcrylicDarkParams", "brightness"],
+    "value": 1.41
+  },
+  {
+    "name": "empty custom image path",
+    "valid": false,
+    "path": ["settings", "backgroundImagePath"],
+    "value": "   "
+  },
+  {
+    "name": "legacy window effect material",
+    "valid": false,
+    "path": ["settings", "windowEffectMaterial"],
+    "value": "mica-alt"
+  },
+  {
+    "name": "invalid window mode",
+    "valid": false,
+    "path": ["settings", "windowMode"],
+    "value": "borderless"
+  },
+  {
+    "name": "invalid settings theme",
+    "valid": false,
+    "path": ["settings", "settingsThemePreference"],
+    "value": "sepia"
+  },
+  {
+    "name": "invalid launchpad icon variant",
+    "valid": false,
+    "path": ["settings", "launchpadIconVariant"],
+    "value": "system"
+  },
+  {
+    "name": "blank persisted item id",
+    "valid": false,
+    "path": ["pages", 0, 0, "id"],
+    "value": "   "
+  },
+  {
+    "name": "blank optional manual field",
+    "valid": false,
+    "path": ["pages", 0, 0, "emoji"],
+    "value": "   "
+  },
+  {
+    "name": "blank hidden app id",
+    "valid": false,
+    "path": ["settings", "hiddenAppIds", 0],
+    "value": "   "
+  },
+  {
+    "name": "locale preference longer than 64 utf8 bytes",
+    "valid": false,
+    "path": ["settings", "localePreference"],
+    "value": "界界界界界界界界界界界界界界界界界界界界界界"
+  },
+  {
+    "name": "null custom image path",
+    "valid": true,
+    "path": ["settings", "backgroundImagePath"],
+    "value": null
+  },
+  {
+    "name": "future locale preference within byte limit",
+    "valid": true,
+    "path": ["settings", "localePreference"],
+    "value": "fr-FR"
+  }
+]
