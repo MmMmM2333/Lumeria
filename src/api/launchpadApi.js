@@ -240,18 +240,35 @@ export async function showLaunchErrorMessage(error) {
   return true;
 }
 
-export async function hideMainWindow() {
+function requireMainWindowGeneration(value, name) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
+  return value;
+}
+
+export async function beginMainWindowClose(openSequence) {
+  const invoke = getTauriInvoke();
+  if (!invoke) return null;
+  return invoke("begin_main_window_close", {
+    openSequence: requireMainWindowGeneration(openSequence, "openSequence"),
+  });
+}
+
+export async function hideMainWindow(generation) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("hide_main_window");
-  return true;
+  return invoke("hide_main_window", {
+    generation: requireMainWindowGeneration(generation, "generation"),
+  });
 }
 
 export async function revealMainWindow(openSequence) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("reveal_main_window", { openSequence });
-  return true;
+  return invoke("reveal_main_window", {
+    openSequence: requireMainWindowGeneration(openSequence, "openSequence"),
+  });
 }
 
 export async function getMainWindowEffectsSupport() {
@@ -311,11 +328,10 @@ export async function setMainWindowEffectsEnabled(enabled, openSequence = null, 
 export async function setMainWindowMode(mode, options = {}) {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("set_main_window_mode", {
+  return invoke("set_main_window_mode", {
     mode,
     fullscreenOverscanEnabled: options?.fullscreenOverscanEnabled !== false,
   });
-  return true;
 }
 
 export async function setMainWindowShortcut(shortcut) {

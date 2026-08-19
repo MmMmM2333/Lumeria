@@ -846,16 +846,29 @@ export async function runDesktopLayerTests() {
       pointer: { x: 180, y: 160 },
       totalCount: 1,
     };
-    const baseState = {
-      ...makeDesktopQuiescenceState(item),
-      dragMeta,
-      groupDragState,
-      groupTransferOwnedItemIds: new Set([item.id]),
-    };
+      const baseState = {
+        ...makeDesktopQuiescenceState(item),
+        dragMeta,
+        groupDragState,
+        groupTransferOwnedItemIds: new Set([item.id]),
+      };
 
-    layer.update(baseState);
+      let interactionBeforeStructureError = null;
+      try {
+        layer.updateInteraction(baseState);
+      } catch (error) {
+        interactionBeforeStructureError = error;
+      }
+      assert(
+        interactionBeforeStructureError?.message
+          === "DesktopLayer.updateInteraction requires an initialized structural render plan",
+        "interaction invalidation before the initial structural frame should fail instead of hiding a full plan build"
+      );
+
+      const structureWork = layer.updateStructure(baseState);
     const firstPlan = layer.lastDesktopRenderPlan;
-    layer.update({
+    assert(structureWork.fullPlanBuilds === 1, "structural invalidation should build exactly one desktop plan");
+    const pointerWork = layer.updateInteraction({
       ...baseState,
       groupDragState: {
         ...groupDragState,
@@ -864,12 +877,17 @@ export async function runDesktopLayerTests() {
       },
     });
     const stablePointerPlan = layer.lastDesktopRenderPlan;
+    assert(pointerWork.fullPlanBuilds === 0, "pointer-only interaction should not rebuild the desktop plan");
+    assert(
+      stablePointerPlan.revision === firstPlan.revision,
+      `pointer-only interaction should retain the structural plan revision (${firstPlan.revision} -> ${stablePointerPlan.revision})`
+    );
     assert(
       stablePointerPlan.entries === firstPlan.entries,
       "pointer-only group drag updates should reuse the structural desktop plan"
     );
 
-    layer.update({
+    const targetWork = layer.updateStructure({
       ...baseState,
       dragFolderTargetId: "folder-target",
       groupDragState: {
@@ -882,6 +900,8 @@ export async function runDesktopLayerTests() {
       layer.lastDesktopRenderPlan.entries !== stablePointerPlan.entries,
       "a changed folder target should invalidate the pointer-only desktop plan cache"
     );
+    assert(targetWork.fullPlanBuilds === 1, "a changed drag target should rebuild one structural plan");
+    assert(layer.lastDesktopRenderPlan.revision > stablePointerPlan.revision, "rebuilt interaction plans should advance the plan revision");
     assert(node.state.dragging === true, "pointer-only plan test should keep the dragged icon state active");
     motionRuntime.reset();
   }

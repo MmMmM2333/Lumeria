@@ -9,7 +9,7 @@ import {
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
-import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
@@ -193,7 +193,7 @@ export class FolderOpeningGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.ghostFactory = options.ghostFactory;
-    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderVisualSession(layer);
     this.scheduler = options.scheduler || globalThis;
     this.openingTargetKeysByItemId = new Map();
     this.openingFrameTargetKey = null;
@@ -211,12 +211,14 @@ export class FolderOpeningGhostController {
   scheduleRevealFallback(targets) {
     this.clearRevealTimer();
     const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
+    const targetGeneration = this.handoffCoordinator.advanceOpeningTargetGeneration(sessionToken);
+    if (!targetGeneration) return;
     const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
     const fallbackSeconds = Math.max(motionPresets.folderOpenGhost.duration, GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round((maxDelay + fallbackSeconds) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
     this.handoffCoordinator.setOpeningRevealTimer(this.scheduler.setTimeout?.(() => {
+      if (!this.handoffCoordinator.isCurrentOpeningTarget(targetGeneration)) return;
       this.handoffCoordinator.clearOpeningRevealTimerRef();
-      if (sessionToken && !this.handoffCoordinator.isCurrentOpeningVisualSession(sessionToken)) return;
       if (this.handoffCoordinator.hasActiveOpeningVisuals() &&
         this.layer.isOpeningGeometryTransitionActive?.() === true) {
         this.scheduleRevealFallback(targets);
@@ -515,7 +517,10 @@ export class FolderOpeningGhostController {
       hasUsableFolderGhostTarget(target) &&
       this.handoffCoordinator.hasOpeningGhost(target.item?.id)
     );
-    if (!usableTargets.length) return retargeted;
+    if (!usableTargets.length) {
+      if (retargeted > 0) this.scheduleRevealFallback([]);
+      return retargeted;
+    }
 
     const ghosts = this.layer.openingGhostLayer.children || [];
     for (const target of usableTargets) {
@@ -569,6 +574,7 @@ export class FolderOpeningGhostController {
       }
       retargeted += 1;
     }
+    if (retargeted > 0) this.scheduleRevealFallback(usableTargets);
     this.finishTransition();
     return retargeted;
   }

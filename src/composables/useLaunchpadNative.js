@@ -4,7 +4,7 @@ import {
 } from "./launchpadConstants.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
-import { getKawaseDebugEffectPlanParams } from "../rendering/backgroundPort.js";
+import { getKawaseDebugEffectPlanParams } from "../rendering/backgroundDebugPort.js";
 import {
   backgroundAssetPort,
   layoutStorePort,
@@ -210,7 +210,14 @@ export function useLaunchpadNative(options) {
     throw new TypeError("useLaunchpadNative requires liveDesktopRuntime");
   }
   const mainWindowRuntime = options.mainWindowRuntime;
-  if (!mainWindowRuntime?.support || typeof mainWindowRuntime.refreshSupport !== "function") {
+  if (
+    !mainWindowRuntime?.support
+    || typeof mainWindowRuntime.acceptOpen !== "function"
+    || typeof mainWindowRuntime.beginClose !== "function"
+    || typeof mainWindowRuntime.hide !== "function"
+    || typeof mainWindowRuntime.refreshSupport !== "function"
+    || typeof mainWindowRuntime.reveal !== "function"
+  ) {
     throw new TypeError("useLaunchpadNative requires mainWindowRuntime");
   }
   const settings = options.settings;
@@ -267,9 +274,9 @@ export function useLaunchpadNative(options) {
   let nativeLayoutReady = false;
   const isNativeLayoutReady = ref(!shouldUseNativeCatalog());
   const mainWindowDisplayRevision = ref(0);
-  let nativeWindowRevealUpdate = Promise.resolve();
   let nativeSaveTimer = null;
   let nativeWindowHideTimer = null;
+  let pendingNativeWindowCloseTransition = null;
   let nativeWallpaperRefreshTimer = null;
   let nativeWindowOpenSequence = null;
   let nativeWindowHideSequence = 0;
@@ -331,9 +338,19 @@ export function useLaunchpadNative(options) {
 
   function clearNativeWindowHideTimer() {
     nativeWindowHideSequence += 1;
+    pendingNativeWindowCloseTransition = null;
     setNativeWindowClosingInteractionBlocked(false);
     if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
     nativeWindowHideTimer = null;
+  }
+
+  function beginNativeWindowClose() {
+    if (pendingNativeWindowCloseTransition) return pendingNativeWindowCloseTransition;
+    setNativeWindowClosingInteractionBlocked(true);
+    pendingNativeWindowCloseTransition = Promise.resolve(mainWindowRuntime.beginClose(
+      mainWindowRuntime.transition.value?.generation ?? nativeWindowOpenSequence
+    ));
+    return pendingNativeWindowCloseTransition;
   }
 
   function suppressNativeWindowClosingInteraction(event) {
@@ -533,7 +550,7 @@ export function useLaunchpadNative(options) {
   }
 
   async function loadNativeLaunchpadData() {
-    if (!shouldUseNativeCatalog()) return;
+    if (!shouldUseNativeCatalog()) return true;
     isNativeLayoutReady.value = false;
 
     try {
@@ -546,7 +563,7 @@ export function useLaunchpadNative(options) {
         requireEventHandlers().reclampLayoutPageIndices();
         await finishNativeLayoutLoad();
         scheduleNativeLayoutSave();
-        return;
+        return true;
       }
 
       document.restoreConfiguration(savedLayout);
@@ -559,6 +576,7 @@ export function useLaunchpadNative(options) {
       requireEventHandlers().reclampLayoutPageIndices();
       await finishNativeLayoutLoad();
       if (refreshedWallpaperBackground) scheduleNativeLayoutSave();
+      return true;
     } catch (error) {
       nativeLayoutReady = false;
       isNativeLayoutReady.value = false;
@@ -570,6 +588,7 @@ export function useLaunchpadNative(options) {
         onRetry: retryNativeLayoutLoad,
       });
       console.error("Failed to load native Lumeria data", error);
+      return false;
     }
   }
 
@@ -751,7 +770,7 @@ export function useLaunchpadNative(options) {
     return Promise.resolve();
   }
 
-  function revealNativeWindowAfterPaint(
+  async function revealNativeWindowAfterPaint(
     openSequence = nativeWindowOpenSequence,
     paintFrameCount = 2
   ) {
@@ -760,22 +779,19 @@ export function useLaunchpadNative(options) {
       return Promise.resolve(false);
     }
     const framesToWait = Math.max(0, Math.ceil(Number(paintFrameCount) || 0));
-    nativeWindowRevealUpdate = nativeWindowRevealUpdate
-      .then(async () => {
-        await nextTick();
-        for (let frame = 0; frame < framesToWait; frame += 1) {
-          await waitForNativeWindowRevealFrame();
-        }
-        if (nativeWindowOpenSequence !== revealSequence) return false;
-        const outcome = await mainWindowRuntime.reveal(revealSequence);
-        if (!outcome.ok) throw outcome.error;
-        return true;
-      })
-      .catch((error) => {
-        console.error("Failed to reveal Lumeria window", error);
-        return false;
-      });
-    return nativeWindowRevealUpdate;
+    try {
+      await nextTick();
+      for (let frame = 0; frame < framesToWait; frame += 1) {
+        await waitForNativeWindowRevealFrame();
+      }
+      if (nativeWindowOpenSequence !== revealSequence) return false;
+      const outcome = await mainWindowRuntime.reveal(revealSequence);
+      if (!outcome.ok) throw outcome.error;
+      return !outcome.stale && outcome.value === true;
+    } catch (error) {
+      console.error("Failed to reveal Lumeria window", error);
+      return false;
+    }
   }
 
   function completeRendererStartup() {
@@ -869,7 +885,7 @@ export function useLaunchpadNative(options) {
       return null;
     }
     const nextSequence = payload.openSequence;
-    if (!Number.isSafeInteger(nextSequence) || nextSequence < 0) {
+    if (!Number.isSafeInteger(nextSequence) || nextSequence <= 0) {
       console.error("Invalid native main window activation sequence", payload.openSequence);
       return null;
     }
@@ -898,6 +914,7 @@ export function useLaunchpadNative(options) {
     const handlers = requireEventHandlers();
     const activation = readNativeWindowActivation(event);
     if (!activation) return;
+    if (!mainWindowRuntime.acceptOpen(activation.openSequence)) return;
     if (activation.displayChanged) {
       mainWindowDisplayRevision.value += 1;
     }
@@ -927,15 +944,16 @@ export function useLaunchpadNative(options) {
 
   function hideNativeWindowAfterCloseAnimation() {
     clearNativeWallpaperRefreshTimer();
-    clearNativeWindowHideTimer();
+    if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
+    nativeWindowHideTimer = null;
     const hideSequence = ++nativeWindowHideSequence;
-    setNativeWindowClosingInteractionBlocked(true);
+    const closeTransition = beginNativeWindowClose();
     setNativeWindowFrameEnabled(false);
     syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
       if (hideSequence !== nativeWindowHideSequence) return;
       nativeWindowHideTimer = null;
-      await hideNativeWindow(hideSequence);
+      await hideNativeWindow(hideSequence, closeTransition);
     }, DESKTOP_CLOSE_DURATION);
   }
 
@@ -945,31 +963,46 @@ export function useLaunchpadNative(options) {
     handlers.closeSettingsPanel({ mode: "desktop" });
   }
 
-  async function hideNativeWindow(expectedHideSequence = null) {
+  async function hideNativeWindow(expectedHideSequence = null, pendingCloseTransition = null) {
     if (!platform.isAvailable()) {
       setNativeWindowClosingInteractionBlocked(false);
       return;
     }
-    if (expectedHideSequence !== null) {
-      if (expectedHideSequence !== nativeWindowHideSequence) {
-        setNativeWindowClosingInteractionBlocked(false);
-        return;
-      }
-      nativeWindowHideTimer = null;
-    } else {
-      clearNativeWindowHideTimer();
+    const hideSequence = expectedHideSequence === null
+      ? ++nativeWindowHideSequence
+      : expectedHideSequence;
+    if (hideSequence !== nativeWindowHideSequence) {
+      setNativeWindowClosingInteractionBlocked(false);
+      return;
     }
+    if (nativeWindowHideTimer) window.clearTimeout(nativeWindowHideTimer);
+    nativeWindowHideTimer = null;
+    const closeTransition = pendingCloseTransition || beginNativeWindowClose();
     try {
-      if (expectedHideSequence !== null && expectedHideSequence !== nativeWindowHideSequence) {
+      if (hideSequence !== nativeWindowHideSequence) {
         setNativeWindowClosingInteractionBlocked(false);
         return;
       }
-      const outcome = await mainWindowRuntime.hide();
+      const closeOutcome = await closeTransition;
+      if (!closeOutcome.ok) throw closeOutcome.error;
+      if (!closeOutcome.accepted || closeOutcome.stale) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
+      if (hideSequence !== nativeWindowHideSequence) {
+        setNativeWindowClosingInteractionBlocked(false);
+        return;
+      }
+      const outcome = await mainWindowRuntime.hide(closeOutcome.generation);
       if (!outcome.ok) throw outcome.error;
       setNativeWindowClosingInteractionBlocked(false);
     } catch (error) {
       console.error("Failed to hide Lumeria window", error);
       setNativeWindowClosingInteractionBlocked(false);
+    } finally {
+      if (pendingNativeWindowCloseTransition === closeTransition) {
+        pendingNativeWindowCloseTransition = null;
+      }
     }
   }
 
@@ -1019,6 +1052,7 @@ export function useLaunchpadNative(options) {
   }
 
   return {
+    beginNativeWindowClose,
     clearNativeEventListeners,
     completeRendererStartup,
     clearNativeSaveTimer,

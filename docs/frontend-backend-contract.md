@@ -15,19 +15,21 @@ commands.
 - `cache_custom_icon(dataUrl: string) -> CachedCustomIconResult`
 - `check_launch_targets(targets: LaunchTargetCheckRequest[]) -> LaunchTargetCheckResult[]`
 - `launch_app(request: LaunchAppRequest) -> void`
-- `hide_main_window() -> void`
+- `begin_main_window_close(openSequence: number) -> MainWindowCloseTransition`; immediately invalidates the matching reveal generation and returns the generation that owns the delayed hide.
+- `hide_main_window(generation: number) -> boolean`; hides only while `generation` is still the accepted close generation. A newer open makes the command a `false` no-op.
 - `get_launch_context() -> LaunchContext`; returns the immutable launch origin parsed once from the first process arguments.
-- `complete_renderer_startup() -> void`; the renderer calls this only after all required native event listeners are registered. Native code then replays one queued activation, opens a manual cold start, or keeps a login startup hidden.
+- `complete_renderer_startup() -> void`; the renderer calls this only after all required native event listeners are registered and the validated layout/catalog scene has finished restoring. Native code then replays one queued activation, opens a manual cold start, or keeps a login startup hidden.
 - `get_autostart_status() -> boolean`; reports enabled only when the Windows Run command matches the current executable and Windows has not disabled its StartupApproved entry.
 - `set_autostart_enabled(enabled: boolean) -> boolean`; writes or removes the current executable's quoted Windows Run command and returns the verified applied state.
-- `reveal_main_window(openSequence: number) -> void`; confirms that the renderer has painted the matching opening frame. Native code reveals only that pending sequence; stale, missing, failed, or timed-out opens remain hidden.
+- `reveal_main_window(openSequence: number) -> boolean`; confirms that the renderer has painted the matching opening frame. `true` means that exact sequence was revealed; stale, missing, failed, or timed-out opens return `false` and remain hidden.
 - `set_main_window_effects_enabled(enabled: boolean, openSequence?: number | null) -> void`
-- `set_main_window_mode(mode: "fullscreen" | "windowed") -> "fullscreen" | "windowed"`; the native window remains frameless in both modes.
+- `set_main_window_mode(mode: "fullscreen" | "windowed", fullscreenOverscanEnabled: boolean) -> "fullscreen" | "windowed"`; returns the applied native mode. The native window remains frameless in both modes.
 - `set_main_window_shortcut(shortcut: string | null) -> string | null`; registers the global shortcut used to show or hide Lumeria, or unregisters it when `null`. Registration failure means the shortcut is occupied or invalid and the previous shortcut remains active.
 - `set_main_window_shortcut_capture_active(active: boolean) -> void`; suppresses the registered main-window shortcut action while the renderer is recording a replacement shortcut.
 - `set_main_window_native_frame_enabled(enabled: boolean) -> void`; close animations disable the native window frame (shadow, border, corners, and non-client rendering) and the next open restores it.
 
 Windowed mode uses a frontend-rendered title bar for dragging, resizing, and window controls. It requires Tauri `core:window:allow-start-dragging`, `core:window:allow-start-resize-dragging`, `core:window:allow-minimize`, and `core:window:allow-toggle-maximize` permissions.
+Returning from borderless fullscreen first aligns the WebView with the restored window client bounds and then reenables WebView automatic resize. Fullscreen owns explicit WebView bounds; windowed mode owns automatic client-bound synchronization.
 
 ## Startup Lifecycle
 
@@ -35,9 +37,14 @@ Windowed mode uses a frontend-rendered title bar for dragging, resizing, and win
 type LaunchContext = {
   origin: "manual" | "loginStartup";
 };
+
+type MainWindowCloseTransition = {
+  accepted: boolean;
+  generation: number;
+};
 ```
 
-The first process owns one immutable `LaunchContext`. The renderer may use it to initialize its closed/open scene state, but native code alone decides when the HWND is shown. A manual cold start opens after `complete_renderer_startup`; a login startup remains resident in the system tray without opening a window.
+The first process owns one immutable `LaunchContext`. The renderer may use it to initialize its closed/open scene state, but native code alone decides when the HWND is shown. A manual cold start opens after listeners and restored scene data jointly reach the startup gate and call `complete_renderer_startup`; a login startup remains resident in the system tray without opening a window. A failed scene restore leaves the gate closed and exposes the existing retry/error UI instead of briefly opening a default scene.
 
 All native open entry points cross the main-window supervisor. Before renderer startup is complete, ordinary opens coalesce, the latest monitor target wins, and an open-settings request remains sticky. Completing renderer startup consumes the queued request at most once. Native code must not treat a successful event emit as proof that the renderer received it.
 
@@ -60,6 +67,8 @@ type MainWindowActivationPayload = {
 - `lumeria-toggle-desktop` asks the renderer to run its close path. The backend emits it only when the main window is visible, not minimized, foreground, and already on the cursor monitor. Its `displayChanged` value is always `false`.
 
 `openSequence` identifies the latest native open cycle. The renderer passes it back to `reveal_main_window` after its opening frame has painted, and the backend ignores stale reveal requests. The event payload is always the object above; numeric legacy payloads are not part of the contract.
+
+The renderer owns one `MainWindowTransition` queue for mode, frame, effects, reveal, begin-close, and hide requests. Calling begin-close changes the frontend epoch synchronously, so a reveal still waiting for paint becomes stale before it can cross the adapter. Native code serializes irreversible surface mutations under the same generation protocol: begin-close advances `openSequence` to a close generation, hide accepts only that generation, and beginning a newer open revokes it. Requested state may update immediately in the renderer, but applied state advances only after the native command succeeds.
 
 An opening native window remains DWM-cloaked, non-topmost, and unfocused until the renderer confirms the matching `openSequence`. If confirmation times out or WebView2 fails, native code invalidates that sequence and hides the HWND; there is no forced-reveal fallback.
 
@@ -151,24 +160,58 @@ type ScanAppBlacklistItem = {
 type LaunchpadLayout = {
   version: 2;
   pages: LaunchpadPage[];
-  settings: {
-    gridRows: number;
-    gridCols: number;
-    folderRows: number;
-    folderCols: number;
-    iconSize: number;
-    folderIconSizeMode: "global" | "custom";
-    folderIconSize: number;
-    textless: boolean;
-    hiddenAppIds: string[];
-    scanRoots: ScanRoot[];
-    scanKeywordAllowlist?: string[];
-    scanKeywordBlacklist: string[];
-    scanAppBlacklist: ScanAppBlacklistItem[];
-    showMissingLaunchTargetBadge: boolean;
-    windowMode: "fullscreen" | "windowed";
-    mainWindowShortcut: string | null;
-  };
+  settings: LaunchpadSettings;
+};
+
+type AcrylicParameters = {
+  brightness: number;
+  contrast: number;
+  noise: number;
+  saturation: number;
+  seed: number;
+  tintColor: [number, number, number];
+  tintStrength: number;
+};
+
+type LaunchpadSettings = {
+  gridRows: number;
+  gridCols: number;
+  folderRows: number;
+  folderCols: number;
+  iconSize: number;
+  folderIconSizeMode: "global" | "custom";
+  folderIconSize: number;
+  textless: boolean;
+  hiddenAppIds: string[];
+  scanRoots: ScanRoot[];
+  scanKeywordAllowlist: string[];
+  scanKeywordBlacklist: string[];
+  scanAppBlacklist: ScanAppBlacklistItem[];
+  showMissingLaunchTargetBadge: boolean;
+  backgroundBaseColor: string;
+  backgroundBaseOpacity: number;
+  backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
+  backgroundEffect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  backgroundImageOpacity: number;
+  backgroundLiveDesktopOpacity: number;
+  backgroundImageLayout: "fill" | "fit" | "stretch" | "tile" | "center";
+  backgroundBlurStrength: number;
+  backgroundAcrylicBlurStrength: number;
+  backgroundDarkenStrength: number;
+  backgroundDarkenColor: string;
+  backgroundAcrylicAppearance: "system" | "dark" | "light";
+  backgroundAcrylicDarkParams: AcrylicParameters;
+  backgroundAcrylicLightParams: AcrylicParameters;
+  backgroundImagePath: string | null;
+  windowEffectMaterial: "none" | "acrylic" | "mica" | "micaAlt";
+  windowEffectAppearance: "system" | "dark" | "light";
+  windowMode: "fullscreen" | "windowed";
+  fullscreenOverscanEnabled: boolean;
+  showCustomTitlebar: boolean;
+  mainWindowShortcut: string | null;
+  localePreference: string;
+  settingsThemePreference: "system" | "dark" | "light";
+  launchpadIconVariant: "light" | "dark" | "pastelLight" | "pastelDark";
 };
 
 type PickedLaunchFile = {
@@ -216,7 +259,6 @@ type LaunchpadItem =
       type: "folder";
       name: string;
       childPages: Array<Array<CatalogAppReference | ManualApp>>;
-      children: Array<CatalogAppReference | ManualApp>;
     };
 
 type CatalogAppReference = {
@@ -241,10 +283,15 @@ type ManualApp = {
 };
 ```
 
-Layout item ids must be unique across top-level items and folder
-`childPages`. Folder `children` is a flattened compatibility mirror of
-`childPages`; the backend validates that it matches `childPages` rather than
-treating it as a second set of items. Folder children cannot be folders.
+`LaunchpadLayout` is a closed-world contract. Every field shown as required is
+required, and unknown fields are rejected at the root and at every nested
+object. The JavaScript and Rust validators run the same mutation corpus so an
+accepted document has the same meaning on both sides. Validation does not add
+defaults, repair values, drop fields, or migrate older shapes.
+
+Layout item ids must be unique across top-level items and folder `childPages`.
+`childPages` is the only persisted folder-content authority; the former
+flattened `children` mirror is rejected. Folder children cannot be folders.
 
 Catalog items in layout v2 are references, not snapshots. Their name, default
 icon, launch target, arguments, identity, and provenance always come from the
@@ -253,6 +300,55 @@ Manual items own and persist their launch configuration. Changing a catalog
 item's target or arguments converts that item to a manual item and hides the
 original catalog id. Layout v1 is intentionally rejected; this unreleased
 project has no v1 migration path.
+
+## Renderer Runtime Contracts
+
+The Vue/controller side and the Pixi adapter exchange only two runtime
+contracts:
+
+- `SceneFrame` is an exact, frozen root made by `makeDesktopSceneFrame`. It has
+  the groups `viewport`, `content`, `interaction`, `folder`, `overlay`, and
+  `diagnostics`; unknown or missing group fields are rejected. Collection
+  structure is snapshotted before it crosses the boundary, so later controller
+  mutations cannot change the frame being rendered.
+- `SceneEvent` is an exact discriminated union made by `makeSceneEvent`. Pointer
+  and wheel data are immutable scalar snapshots. Raw DOM/Pixi events and mutable
+  application items are not exposed. The optional `control` object contains
+  only the explicit event-control capabilities needed by the controller.
+
+Renderer ports use explicit named exports. `desktopScenePort.js` exposes only
+application-facing scene capabilities; Motion Lab host creation and background
+debug tuning use their own renderer-owned adapters. Wildcard port exports are a
+boundary-test failure.
+
+### Pixi frame invalidation
+
+Pixi frame work is selected by an exact invalidation lane rather than a generic
+"update the layer" flag:
+
+- `structure` and `geometry` may build and reconcile one complete desktop plan;
+- `interaction` patches the existing ownership, drop-target, and drag-preview
+  nodes without building a plan;
+- `visual` applies only root transforms and alpha;
+- `handoff` advances only the folder handoff reconciliation;
+- `diagnostics` updates only diagnostic display objects;
+- `motion` and `asset` require only the final GPU commit.
+
+Every invalidation mark advances a monotonic revision, with the latest revision
+also recorded per lane. A consumed frame may combine capabilities, but a
+structural capability subsumes the other layer patches because the complete
+reconciliation applies their current state. The desktop driver owns the only
+RAF commit: synchronous ownership changes patch the scene graph immediately and
+enqueue that same frame, but cannot call `app.render()` through a second path.
+Consequently one RAF performs at most one GPU render.
+
+Desktop plans carry an explicit revision assigned when the plan is built. They
+do not compute a recursive JSON signature. Icon-bound updates run as registry
+transactions; clearing and rebuilding an identical final geometry does not
+advance the bounds revision. In development, the existing render probe records
+one `frame-work` event containing lanes/revisions, layer and GPU durations, full
+plan build count, reconciled-node count, handoff reconciliation count, and GPU
+render count.
 
 Loading an existing v2 document is a two-phase operation: restore its scan
 configuration first, refresh the current native catalog with that configuration,

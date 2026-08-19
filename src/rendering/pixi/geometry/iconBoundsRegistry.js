@@ -197,6 +197,50 @@ export function createIconBoundsRegistry() {
   const stores = createStores();
   const missingWarnings = new Set();
   let version = 0;
+  let transactionDepth = 0;
+  let transactionSnapshot = null;
+
+  function cloneStores() {
+    return new Map(Array.from(stores, ([key, store]) => [key, new Map(store)]));
+  }
+
+  function storesHaveGeometryChanged(previousStores) {
+    if (!previousStores) return false;
+    for (const kind of ALL_KINDS) {
+      for (const variant of ALL_VARIANTS) {
+        const key = storeKey(kind, variant);
+        const previous = previousStores.get(key) || new Map();
+        const current = stores.get(key) || new Map();
+        if (previous.size !== current.size) return true;
+        for (const [recordKey, record] of current) {
+          const previousRecord = previous.get(recordKey);
+          if (hasGeometryChanged(previousRecord, record, variant)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function markGeometryChanged() {
+    if (transactionDepth === 0) version += 1;
+  }
+
+  function transaction(callback) {
+    if (typeof callback !== "function") {
+      throw new TypeError("icon bounds transactions require a callback");
+    }
+    if (transactionDepth === 0) transactionSnapshot = cloneStores();
+    transactionDepth += 1;
+    try {
+      return callback();
+    } finally {
+      transactionDepth -= 1;
+      if (transactionDepth === 0) {
+        if (storesHaveGeometryChanged(transactionSnapshot)) version += 1;
+        transactionSnapshot = null;
+      }
+    }
+  }
 
   function getStore(kind, variant) {
     return stores.get(storeKey(kind, variant)) || null;
@@ -225,15 +269,21 @@ export function createIconBoundsRegistry() {
     if (!record) return;
     const previous = store.get(key);
     store.set(key, record);
-    if (hasGeometryChanged(previous, record, variant)) version += 1;
+    let changed = hasGeometryChanged(previous, record, variant);
     if (
       kind === ICON_BOUNDS_KIND.LAUNCH &&
       variant === ICON_BOUNDS_VARIANT.RENDERED &&
       keyInput?.area === "desktop"
     ) {
       const topLevelKey = makeIconBoundsKey(ICON_BOUNDS_KIND.TOP_LEVEL, keyInput.id);
-      if (topLevelKey) getStore(ICON_BOUNDS_KIND.TOP_LEVEL, ICON_BOUNDS_VARIANT.RENDERED)?.set(topLevelKey, record);
+      if (topLevelKey) {
+        const topLevelStore = getStore(ICON_BOUNDS_KIND.TOP_LEVEL, ICON_BOUNDS_VARIANT.RENDERED);
+        const previousTopLevel = topLevelStore?.get(topLevelKey);
+        topLevelStore?.set(topLevelKey, record);
+        changed = changed || hasGeometryChanged(previousTopLevel, record, ICON_BOUNDS_VARIANT.RENDERED);
+      }
     }
+    if (changed) markGeometryChanged();
   }
 
   function getRecord(kind, variant, keyInput, options = {}) {
@@ -325,27 +375,26 @@ export function createIconBoundsRegistry() {
   }
 
   function clearBounds(scope = null, folderId = null) {
-    const criteria = normalizeClearScope(scope, folderId);
-    const shouldClearAll = !criteria.area && criteria.folderId == null && !criteria.kind && !criteria.variant;
-    if (shouldClearAll) {
-      for (const store of stores.values()) store.clear();
-      missingWarnings.clear();
-      version += 1;
-      return;
-    }
-    if (criteria.kind || criteria.variant) {
-      clearSpecificKind(criteria);
-      version += 1;
-      return;
-    }
-    for (const variant of ALL_VARIANTS) {
-      const store = getStore(ICON_BOUNDS_KIND.LAUNCH, variant);
-      for (const [key, value] of store || []) {
-        if (shouldClearLaunchRecord(key, value, criteria)) store.delete(key);
+    return transaction(() => {
+      const criteria = normalizeClearScope(scope, folderId);
+      const shouldClearAll = !criteria.area && criteria.folderId == null && !criteria.kind && !criteria.variant;
+      if (shouldClearAll) {
+        for (const store of stores.values()) store.clear();
+        missingWarnings.clear();
+        return;
       }
-    }
-    clearTopLevelDesktopRecords(criteria, shouldClearAll);
-    version += 1;
+      if (criteria.kind || criteria.variant) {
+        clearSpecificKind(criteria);
+        return;
+      }
+      for (const variant of ALL_VARIANTS) {
+        const store = getStore(ICON_BOUNDS_KIND.LAUNCH, variant);
+        for (const [key, value] of store || []) {
+          if (shouldClearLaunchRecord(key, value, criteria)) store.delete(key);
+        }
+      }
+      clearTopLevelDesktopRecords(criteria, shouldClearAll);
+    });
   }
 
   return {
@@ -356,6 +405,7 @@ export function createIconBoundsRegistry() {
     getVersion: () => version,
     makeKey: makeIconBoundsKey,
     registerBounds,
+    transaction,
   };
 }
 

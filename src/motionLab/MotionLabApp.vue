@@ -229,7 +229,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics } from "pixi.js";
 import { useLocalization } from "../i18n/localization.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
-import { createPixiApp, createPixiText } from "../rendering/desktopScenePort.js";
+import { createPixiApp, createPixiText } from "../rendering/motionLabRendererAdapter.js";
 import {
   createMotionRuntime,
   installMotionRuntimeDebugAdapterFactory,

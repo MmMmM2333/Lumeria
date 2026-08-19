@@ -17,7 +17,7 @@ import {
   cancelClosingHandoffCleanup,
   scheduleClosingHandoffCleanup,
 } from "./folderClosingHandoff.js";
-import { ensureFolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   getFolderHandoffDebugOptions,
@@ -217,7 +217,7 @@ function clearOpeningGhostsForClosing(layer) {
 export class FolderClosingGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
-    this.handoffCoordinator = options.handoffCoordinator || ensureFolderHandoffCoordinator(layer);
+    this.handoffCoordinator = options.handoffCoordinator || ensureFolderVisualSession(layer);
     this.scheduler = options.scheduler || globalThis;
     this.ghostFactory = options.ghostFactory;
     this.previewSwap = options.previewSwap || { clear: () => {}, start: () => {} };
@@ -232,12 +232,15 @@ export class FolderClosingGhostController {
 
   scheduleRevealFallback(targets) {
     this.clearRevealTimer();
+    const targetGeneration = this.handoffCoordinator.advanceCloseTargetGeneration();
+    if (!targetGeneration) return;
     const maxDelay = getMaxFolderGhostGridDelay(targets, CLOSING_GHOST_MAX_DELAY);
     const fallbackSeconds = Math.max(motionPresets.folderClose.duration, CLOSING_GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round(
       (maxDelay + fallbackSeconds + CLOSING_PREVIEW_FALLBACK_DURATION) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS
     );
     this.handoffCoordinator.setRevealTimer(this.scheduler.setTimeout?.(() => {
+      if (!this.handoffCoordinator.isCurrentCloseTarget(targetGeneration)) return;
       this.handoffCoordinator.clearRevealTimerRef();
       if (this.handoffCoordinator.hasActiveCloseVisuals()) this.clear();
     }, timeoutMs) || null);
@@ -489,6 +492,8 @@ export class FolderClosingGhostController {
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
     const thumb = folderRect ? getFolderThumbMetrics(folderRect.width) : null;
     const frameTargetKey = makeClosingFrameTargetKey(closeFrameToRect, thumb);
+    let retargeted = 0;
+    let targetChanged = false;
     if (this.activeFrameState?.closeToken === closeToken &&
       this.activeFrameState.folderId === folderId &&
       closeFrameToRect) {
@@ -499,11 +504,13 @@ export class FolderClosingGhostController {
       if (frameTargetKey && this.activeFrameState.targetKey !== frameTargetKey) {
         const frameOptions = this.activeFrameState.makeOptions?.(state, thumb) || {};
         const retargetedFrame = this.layer.retargetFrameGhost?.(closeFrameToRect, frameOptions);
-        if (retargetedFrame) this.activeFrameState.targetKey = frameTargetKey;
+        if (retargetedFrame) {
+          this.activeFrameState.targetKey = frameTargetKey;
+          targetChanged = true;
+        }
       }
     }
 
-    let retargeted = 0;
     const usableTargets = (targets || []).filter((target) =>
       target?.item?.id &&
       hasUsableFolderGhostTarget(target) &&
@@ -525,7 +532,9 @@ export class FolderClosingGhostController {
       ghost.setState?.(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
       this.startGhostMotion(state, target, ghost, closeToken, { animateAlpha: false });
       retargeted += 1;
+      targetChanged = true;
     }
+    if (targetChanged) this.scheduleRevealFallback(usableTargets);
     return retargeted;
   }
 

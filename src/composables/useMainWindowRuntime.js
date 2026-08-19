@@ -1,5 +1,6 @@
 import { readonly, ref } from "vue";
 import { mainWindowPort } from "../platform/launchpadPorts.js";
+import { MainWindowTransition } from "./mainWindowTransition.js";
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import {
@@ -31,8 +32,7 @@ export function useMainWindowRuntime(options = {}) {
 
   const supportState = ref({ ...DEFAULT_WINDOW_EFFECTS_SUPPORT });
   const support = readonly(supportState);
-  let surfaceUpdate = Promise.resolve();
-  let modeUpdate = Promise.resolve();
+  const transitionState = ref(null);
 
   function isAvailable() {
     return Boolean(port.isAvailable());
@@ -48,17 +48,11 @@ export function useMainWindowRuntime(options = {}) {
     }
   }
 
-  function enqueueSurface(method, args) {
-    const operation = surfaceUpdate.then(() => invoke(method, args));
-    surfaceUpdate = operation.then(() => undefined);
-    return operation;
-  }
-
-  function enqueueMode(method, args) {
-    const operation = modeUpdate.then(() => invoke(method, args));
-    modeUpdate = operation.then(() => undefined);
-    return operation;
-  }
+  const transition = new MainWindowTransition({
+    invoke,
+    port,
+    publish: (snapshot) => { transitionState.value = snapshot; },
+  });
 
   async function refreshSupport() {
     if (!isAvailable()) {
@@ -84,17 +78,29 @@ export function useMainWindowRuntime(options = {}) {
       normalizeWindowEffectAppearance(request.appearance),
       systemAppearance.value,
     );
-    return enqueueSurface(port.setEffectsEnabled, [enabled, openSequence, { material, appearance }]);
+    return transition.apply(
+      "effects",
+      Object.freeze({ appearance, enabled, material, openSequence }),
+      port.setEffectsEnabled,
+      [enabled, openSequence, { material, appearance }],
+    );
   }
 
   function setFrameEnabled(enabled) {
-    return enqueueSurface(port.setFrameEnabled, [Boolean(enabled)]);
+    const requested = Boolean(enabled);
+    return transition.apply("frame", requested, port.setFrameEnabled, [requested]);
   }
 
   function setMode(request = {}) {
     const mode = normalizeWindowMode(request.mode);
     const fullscreenOverscanEnabled = normalizeFullscreenOverscanEnabled(request.fullscreenOverscanEnabled);
-    return enqueueMode(port.setMode, [mode, { fullscreenOverscanEnabled }]);
+    return transition.apply(
+      "mode",
+      mode,
+      port.setMode,
+      [mode, { fullscreenOverscanEnabled }],
+      (applied) => normalizeWindowMode(applied),
+    );
   }
 
   async function registerShortcut(shortcut) {
@@ -109,15 +115,25 @@ export function useMainWindowRuntime(options = {}) {
     return invoke(port.setShortcutCaptureActive, [Boolean(active)]);
   }
 
-  function reveal(openSequence) {
-    return invoke(port.reveal, [openSequence]);
+  function acceptOpen(openSequence) {
+    return transition.acceptOpen(openSequence);
   }
 
-  function hide() {
-    return invoke(port.hide);
+  function beginClose(openSequence) {
+    return transition.beginClose(openSequence);
+  }
+
+  function reveal(openSequence) {
+    return transition.reveal(openSequence);
+  }
+
+  function hide(generation) {
+    return transition.hide(generation);
   }
 
   return {
+    acceptOpen,
+    beginClose,
     hide,
     isAvailable,
     refreshSupport,
@@ -128,5 +144,6 @@ export function useMainWindowRuntime(options = {}) {
     setMode,
     setShortcutCaptureActive,
     support,
+    transition: readonly(transitionState),
   };
 }

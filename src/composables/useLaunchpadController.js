@@ -726,6 +726,7 @@ export function useLaunchpadController(options = {}) {
     openApp,
     openDesktop,
   } = useLaunchpadLaunchFlow({
+    beginNativeWindowClose: () => beginNativeWindowClose(),
     cancelInputGesture: () => cancelInputGesture(),
     clearFocusedIcon,
     clearOpeningIcon,
@@ -1386,6 +1387,7 @@ export function useLaunchpadController(options = {}) {
     useDraftDesktopWallpaper,
   } = settings.actions;
   const {
+    beginNativeWindowClose,
     clearNativeEventListeners,
     completeRendererStartup,
     clearNativeSaveTimer,

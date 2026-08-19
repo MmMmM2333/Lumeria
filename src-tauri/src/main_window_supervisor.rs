@@ -156,6 +156,13 @@ struct MainWindowActivationPayload {
     display_changed: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MainWindowCloseTransition {
+    accepted: bool,
+    generation: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WebviewHealth {
     Healthy,
@@ -179,6 +186,7 @@ struct MainWindowOpenRequest {
 struct MainWindowSupervisorState {
     webview_health: WebviewHealth,
     pending_open: PendingOpen,
+    pending_close_generation: Option<u64>,
     renderer_events_ready: bool,
     queued_activation: Option<MainWindowOpenRequest>,
     recovery_prompt_active: bool,
@@ -214,6 +222,7 @@ impl MainWindowSupervisorState {
     const DEFAULT: Self = Self {
         webview_health: WebviewHealth::Healthy,
         pending_open: PendingOpen::Idle,
+        pending_close_generation: None,
         renderer_events_ready: false,
         queued_activation: None,
         recovery_prompt_active: false,
@@ -231,7 +240,7 @@ impl MainWindowSupervisorState {
         }
         self.queued_activation = Some(match self.queued_activation {
             Some(queued) => MainWindowOpenRequest {
-                monitor_target: request.monitor_target.or(queued.monitor_target),
+                monitor_target: request.monitor_target,
                 open_settings_after_show: queued.open_settings_after_show
                     || request.open_settings_after_show,
             },
@@ -263,7 +272,30 @@ impl MainWindowSupervisorState {
             return false;
         }
         self.pending_open = PendingOpen::AwaitingReady { open_sequence };
+        self.pending_close_generation = None;
         true
+    }
+
+    fn begin_close(&mut self, open_sequence: u64, generation: u64) -> bool {
+        if self.webview_health != WebviewHealth::Healthy {
+            return false;
+        }
+        if self.pending_open == (PendingOpen::AwaitingReady { open_sequence }) {
+            self.pending_open = PendingOpen::Idle;
+        }
+        self.pending_close_generation = Some(generation);
+        true
+    }
+
+    fn can_hide(&self, generation: u64) -> bool {
+        self.webview_health == WebviewHealth::Healthy
+            && self.pending_close_generation == Some(generation)
+    }
+
+    fn complete_hide(&mut self, generation: u64) {
+        if self.pending_close_generation == Some(generation) {
+            self.pending_close_generation = None;
+        }
     }
 
     fn confirm_renderer_ready(&mut self, open_sequence: u64) -> bool {
@@ -299,20 +331,15 @@ impl MainWindowSupervisorState {
         }
         self.webview_health = WebviewHealth::Failed;
         self.pending_open = PendingOpen::Idle;
+        self.pending_close_generation = None;
         self.queued_activation = None;
         FailureTransition::HideAndRecover
     }
 
-    fn cancel_pending_open(&mut self) -> Option<u64> {
-        let PendingOpen::AwaitingReady { open_sequence } = self.pending_open else {
-            return None;
-        };
-        self.pending_open = PendingOpen::Idle;
-        Some(open_sequence)
-    }
-
     fn can_hold_topmost(&self) -> bool {
-        self.webview_health == WebviewHealth::Healthy && self.pending_open == PendingOpen::Idle
+        self.webview_health == WebviewHealth::Healthy
+            && self.pending_open == PendingOpen::Idle
+            && self.pending_close_generation.is_none()
     }
 
     fn begin_recovery_prompt(&mut self) -> bool {
@@ -330,12 +357,14 @@ impl MainWindowSupervisorState {
     fn mark_terminating(&mut self) {
         self.webview_health = WebviewHealth::Terminating;
         self.pending_open = PendingOpen::Idle;
+        self.pending_close_generation = None;
         self.queued_activation = None;
     }
 }
 
 static MAIN_WINDOW_SUPERVISOR_STATE: Mutex<MainWindowSupervisorState> =
     Mutex::new(MainWindowSupervisorState::DEFAULT);
+static MAIN_WINDOW_TRANSITION_LOCK: Mutex<()> = Mutex::new(());
 
 fn main_window_can_hold_topmost() -> bool {
     match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
@@ -1076,7 +1105,13 @@ fn complete_main_window_show(
     activation_after_show: MainWindowActivationPayload,
     open_settings_after_show: bool,
 ) {
-    if let Err(error) = prepare_main_window_surface_for_sequence(app, open_sequence, force_cloak) {
+    let surface_result = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
+        Ok(_transition) => {
+            prepare_main_window_surface_for_sequence(app, open_sequence, force_cloak)
+        }
+        Err(_) => Err("Failed to lock the main-window transition before show".to_string()),
+    };
+    if let Err(error) = surface_result {
         abort_main_window_open(
             app,
             open_sequence,
@@ -1124,7 +1159,10 @@ fn reveal_main_window_surface(app: &AppHandle, open_sequence: u64) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn reveal_main_window(app: &AppHandle, open_sequence: u64) -> Result<(), String> {
+pub(crate) fn reveal_main_window(app: &AppHandle, open_sequence: u64) -> Result<bool, String> {
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK
+        .lock()
+        .map_err(|_| "Failed to lock the main-window transition before reveal".to_string())?;
     let confirmed = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
         Ok(mut state) => state.confirm_renderer_ready(open_sequence),
         Err(_) => {
@@ -1135,7 +1173,7 @@ pub(crate) fn reveal_main_window(app: &AppHandle, open_sequence: u64) -> Result<
         }
     };
     if !confirmed {
-        return Ok(());
+        return Ok(false);
     }
     if let Err(error) = reveal_main_window_surface(app, open_sequence) {
         if invalidate_main_window_open_sequence(open_sequence) {
@@ -1147,7 +1185,7 @@ pub(crate) fn reveal_main_window(app: &AppHandle, open_sequence: u64) -> Result<
         );
         return Err(error);
     }
-    Ok(())
+    Ok(true)
 }
 
 fn main_window_deferred_show_delay(app: &AppHandle) -> u64 {
@@ -1177,25 +1215,61 @@ pub(crate) fn set_main_window_mode(
 ) -> Result<String, String> {
     let next = MainWindowMode::from_str(mode)
         .ok_or_else(|| format!("Unsupported main window mode: {mode}"))?;
-    MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED.store(fullscreen_overscan_enabled, Ordering::Relaxed);
-    let previous = current_main_window_mode()?;
-    if let Some(window) = app.get_webview_window("main") {
-        if previous == MainWindowMode::Windowed && next == MainWindowMode::Fullscreen {
-            save_main_windowed_placement(&window)?;
-        }
-        update_main_window_mode(next)?;
-        apply_main_window_mode_to_window(&window, next)?;
-        if previous == MainWindowMode::Fullscreen && next == MainWindowMode::Windowed {
-            restore_main_windowed_placement(&window)?;
-        }
-        apply_main_window_native_surface_policy(&window)?;
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK.lock().map_err(|_| {
+        "Failed to lock the main-window transition before changing mode".to_string()
+    })?;
+    let previous_overscan = MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED
+        .swap(fullscreen_overscan_enabled, Ordering::Relaxed);
+    let window = app.get_webview_window("main");
+    let mut previous_mode = None;
+    let apply_result = apply_reentrant_state_transition(
+        &MAIN_WINDOW_MODE,
+        next,
+        || "Failed to lock main window mode".to_string(),
+        |previous| {
+            previous_mode = Some(previous);
+            let Some(window) = window.as_ref() else {
+                return Ok(());
+            };
+            if previous == MainWindowMode::Windowed && next == MainWindowMode::Fullscreen {
+                save_main_windowed_placement(window)?;
+            }
+            apply_main_window_mode_to_window(window, next)?;
+            if previous == MainWindowMode::Fullscreen && next == MainWindowMode::Windowed {
+                restore_main_windowed_placement(window)?;
+                restore_main_window_windowed_webview_resize(window)?;
+            }
+            let surface_state = current_main_window_surface_state()?;
+            apply_main_window_native_surface_state(window, next, surface_state)
+        },
+    );
+    if let Err(error) = apply_result {
+        MAIN_WINDOW_FULLSCREEN_OVERSCAN_ENABLED.store(previous_overscan, Ordering::Relaxed);
+        let rollback_result = match (window.as_ref(), previous_mode) {
+            (Some(window), Some(previous)) => (|| {
+                apply_main_window_mode_to_window(window, previous)?;
+                if previous == MainWindowMode::Windowed {
+                    restore_main_windowed_placement(window)?;
+                    restore_main_window_windowed_webview_resize(window)?;
+                }
+                let surface_state = current_main_window_surface_state()?;
+                apply_main_window_native_surface_state(window, previous, surface_state)
+            })(),
+            _ => Ok(()),
+        };
+        return match rollback_result {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{error}; additionally failed to restore the previous main-window mode: {rollback_error}"
+            )),
+        };
+    }
+    if let Some(window) = window {
         if should_use_native_window_effects(next) {
             let open_sequence = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
             let disable_sequence = MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.load(Ordering::Relaxed);
             schedule_window_effect_reapply(window, open_sequence, disable_sequence);
         }
-    } else {
-        update_main_window_mode(next)?;
     }
     Ok(next.as_str().to_string())
 }
@@ -1204,9 +1278,37 @@ pub(crate) fn set_main_window_native_frame_enabled(
     app: &AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
-    update_main_window_native_frame_state(enabled)?;
-    if let Some(window) = app.get_webview_window("main") {
-        apply_main_window_native_surface_policy(&window)?;
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK.lock().map_err(|_| {
+        "Failed to lock the main-window transition before changing frame state".to_string()
+    })?;
+    let state = current_main_window_surface_state()?;
+    let requested = MainWindowSurfaceState {
+        revision: state.revision.wrapping_add(1),
+        native_frame_enabled: enabled,
+        effects_enabled: state.effects_enabled,
+    };
+    let window = app.get_webview_window("main");
+    let mode = current_main_window_mode()?;
+    let apply_result = apply_reentrant_state_transition(
+        &MAIN_WINDOW_SURFACE_STATE,
+        requested,
+        || "Failed to lock main window surface state".to_string(),
+        |_| match window.as_ref() {
+            Some(window) => apply_main_window_native_surface_state(window, mode, requested),
+            None => Ok(()),
+        },
+    );
+    if let Err(error) = apply_result {
+        let rollback_result = match window.as_ref() {
+            Some(window) => apply_main_window_native_surface_state(window, mode, state),
+            None => Ok(()),
+        };
+        return match rollback_result {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{error}; additionally failed to restore the previous main-window frame state: {rollback_error}"
+            )),
+        };
     }
     Ok(())
 }
@@ -1511,12 +1613,32 @@ fn current_main_window_mode() -> Result<MainWindowMode, String> {
         .map_err(|_| "Failed to lock main window mode".to_string())
 }
 
-fn update_main_window_mode(next: MainWindowMode) -> Result<(), String> {
-    let mut current = MAIN_WINDOW_MODE
-        .lock()
-        .map_err(|_| "Failed to lock main window mode".to_string())?;
-    *current = next;
-    Ok(())
+fn apply_reentrant_state_transition<State, Apply>(
+    state: &Mutex<State>,
+    requested: State,
+    lock_error: impl Fn() -> String,
+    apply: Apply,
+) -> Result<State, String>
+where
+    State: Copy,
+    Apply: FnOnce(State) -> Result<(), String>,
+{
+    let previous = {
+        let mut current = state.lock().map_err(|_| lock_error())?;
+        let previous = *current;
+        *current = requested;
+        previous
+    };
+
+    if let Err(error) = apply(previous) {
+        let mut current = state
+            .lock()
+            .map_err(|_| format!("{error}; additionally failed to restore state after apply"))?;
+        *current = previous;
+        return Err(error);
+    }
+
+    Ok(previous)
 }
 
 fn center_main_window_rect_in_work_area(
@@ -2139,6 +2261,30 @@ fn set_main_window_fullscreen_webview_bounds(
         })
 }
 
+fn restore_main_window_windowed_webview_resize(window: &WebviewWindow) -> Result<(), String> {
+    let client_size = window.inner_size().map_err(|source| NativeError::Tauri {
+        context: "WebviewWindow::inner_size while restoring windowed WebView bounds",
+        source,
+    })?;
+    let webview: &tauri::Webview = window.as_ref();
+    webview
+        .set_bounds(tauri::Rect {
+            position: tauri::Position::Physical(tauri::PhysicalPosition::new(0, 0)),
+            size: tauri::Size::Physical(client_size),
+        })
+        .map_err(|source| NativeError::Tauri {
+            context: "Webview::set_bounds while restoring windowed mode",
+            source,
+        })?;
+    webview
+        .set_auto_resize(true)
+        .map_err(|source| NativeError::Tauri {
+            context: "Webview::set_auto_resize(true) for windowed mode",
+            source,
+        })?;
+    Ok(())
+}
+
 #[cfg(not(target_os = "windows"))]
 fn apply_main_window_borderless_fullscreen_bounds(_window: &WebviewWindow) -> Result<(), String> {
     Ok(())
@@ -2174,24 +2320,6 @@ fn current_main_window_surface_state() -> Result<MainWindowSurfaceState, String>
         .lock()
         .map(|state| *state)
         .map_err(|_| "Failed to lock main window surface state".to_string())
-}
-
-fn update_main_window_native_frame_state(enabled: bool) -> Result<MainWindowSurfaceState, String> {
-    let mut state = MAIN_WINDOW_SURFACE_STATE
-        .lock()
-        .map_err(|_| "Failed to lock main window surface state".to_string())?;
-    state.native_frame_enabled = enabled;
-    state.revision = state.revision.wrapping_add(1);
-    Ok(*state)
-}
-
-fn update_main_window_effects_state(enabled: bool) -> Result<MainWindowSurfaceState, String> {
-    let mut state = MAIN_WINDOW_SURFACE_STATE
-        .lock()
-        .map_err(|_| "Failed to lock main window surface state".to_string())?;
-    state.effects_enabled = enabled;
-    state.revision = state.revision.wrapping_add(1);
-    Ok(*state)
 }
 
 fn apply_main_window_surface_state_until_stable<State>(
@@ -2378,6 +2506,9 @@ pub(crate) fn set_main_window_effects_enabled(
     material: Option<&str>,
     appearance: Option<&str>,
 ) -> Result<(), String> {
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK.lock().map_err(|_| {
+        "Failed to lock the main-window transition before changing effects".to_string()
+    })?;
     if !enabled {
         if open_sequence
             .is_some_and(|sequence| sequence != MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed))
@@ -2388,27 +2519,46 @@ pub(crate) fn set_main_window_effects_enabled(
     }
 
     let (settings, settings_changed) = update_main_window_effect_settings(material, appearance)?;
-    let requested_state = update_main_window_effects_state(enabled)?;
-    if let Some(window) = app.get_webview_window("main") {
-        let mode = current_main_window_mode()?;
-        set_window_effects_enabled_with_config(
-            &window,
-            should_enable_main_window_effects(mode, requested_state),
-            settings,
-            settings_changed,
-        )?;
-        apply_main_window_win32_surface_policy(
-            &window,
-            mode,
-            should_enable_main_window_native_frame(mode, requested_state.native_frame_enabled),
-        )?;
-        if (
-            current_main_window_surface_state()?,
-            current_main_window_mode()?,
-        ) != (requested_state, mode)
-        {
-            apply_main_window_native_surface_policy(&window)?;
-        }
+    let state = current_main_window_surface_state()?;
+    let requested_state = MainWindowSurfaceState {
+        revision: state.revision.wrapping_add(1),
+        native_frame_enabled: state.native_frame_enabled,
+        effects_enabled: enabled,
+    };
+    let window = app.get_webview_window("main");
+    let mode = current_main_window_mode()?;
+    let apply_result = apply_reentrant_state_transition(
+        &MAIN_WINDOW_SURFACE_STATE,
+        requested_state,
+        || "Failed to lock main window surface state".to_string(),
+        |_| {
+            let Some(window) = window.as_ref() else {
+                return Ok(());
+            };
+            set_window_effects_enabled_with_config(
+                window,
+                should_enable_main_window_effects(mode, requested_state),
+                settings,
+                settings_changed,
+            )?;
+            apply_main_window_win32_surface_policy(
+                window,
+                mode,
+                should_enable_main_window_native_frame(mode, requested_state.native_frame_enabled),
+            )
+        },
+    );
+    if let Err(error) = apply_result {
+        let rollback_result = match window.as_ref() {
+            Some(window) => apply_main_window_native_surface_state(window, mode, state),
+            None => Ok(()),
+        };
+        return match rollback_result {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(format!(
+                "{error}; additionally failed to restore the previous main-window effects state: {rollback_error}"
+            )),
+        };
     }
     Ok(())
 }
@@ -2624,6 +2774,13 @@ pub(crate) fn complete_renderer_startup(
 }
 
 fn begin_supervised_open(app: &AppHandle) -> Option<u64> {
+    let _transition = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
+        Ok(transition) => transition,
+        Err(_) => {
+            log::error!(target: "main-window", "Failed to lock the main-window transition before activation");
+            return None;
+        }
+    };
     let open_sequence = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
         Ok(mut state) if state.webview_health == WebviewHealth::Healthy => {
             let open_sequence = next_main_window_open_sequence();
@@ -2647,6 +2804,13 @@ fn begin_supervised_open(app: &AppHandle) -> Option<u64> {
 }
 
 fn abort_main_window_open(app: &AppHandle, open_sequence: u64, reason: &str) {
+    let _transition = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
+        Ok(transition) => transition,
+        Err(_) => {
+            log::error!(target: "main-window", "Failed to lock the main-window transition while aborting open sequence {open_sequence}");
+            return;
+        }
+    };
     let should_abort = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
         Ok(mut state) => state.cancel_open(open_sequence),
         Err(_) => {
@@ -2671,6 +2835,13 @@ fn schedule_renderer_ready_timeout(app: &AppHandle, open_sequence: u64) {
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(MAIN_WINDOW_RENDERER_READY_TIMEOUT_MS));
+        let _transition = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
+            Ok(transition) => transition,
+            Err(_) => {
+                log::error!(target: "main-window", "Failed to lock the main-window transition after renderer-ready timeout");
+                return;
+            }
+        };
         let transition = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
             Ok(mut state) => state.renderer_ready_timeout(open_sequence),
             Err(_) => {
@@ -2770,19 +2941,52 @@ pub(crate) fn open_main_window(app: &AppHandle) {
     let _ = open_main_window_inner(app, false);
 }
 
-pub(crate) fn hide_main_window(app: &AppHandle) {
-    match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
-        Ok(mut state) => {
-            state.cancel_pending_open();
-            invalidate_current_main_window_open_sequence();
-            hide_main_window_surface(app, false);
-        }
-        Err(_) => {
-            log::error!(target: "main-window", "Failed to lock main window supervisor state before hide");
-            invalidate_current_main_window_open_sequence();
-            hide_main_window_surface(app, false);
-        }
+pub(crate) fn begin_main_window_close(
+    open_sequence: u64,
+) -> Result<MainWindowCloseTransition, String> {
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK
+        .lock()
+        .map_err(|_| "Failed to lock the main-window transition before close".to_string())?;
+    let current = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
+    if current != open_sequence {
+        return Ok(MainWindowCloseTransition {
+            accepted: false,
+            generation: current,
+        });
     }
+    let generation = current.wrapping_add(1);
+    let mut supervisor = MAIN_WINDOW_SUPERVISOR_STATE
+        .lock()
+        .map_err(|_| "Failed to lock main window supervisor state before close".to_string())?;
+    if !supervisor.begin_close(open_sequence, generation) {
+        return Ok(MainWindowCloseTransition {
+            accepted: false,
+            generation: current,
+        });
+    }
+    MAIN_WINDOW_OPEN_SEQUENCE.store(generation, Ordering::Relaxed);
+    Ok(MainWindowCloseTransition {
+        accepted: true,
+        generation,
+    })
+}
+
+pub(crate) fn hide_main_window(app: &AppHandle, generation: u64) -> Result<bool, String> {
+    let _transition = MAIN_WINDOW_TRANSITION_LOCK
+        .lock()
+        .map_err(|_| "Failed to lock the main-window transition before hide".to_string())?;
+    if MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed) != generation {
+        return Ok(false);
+    }
+    let mut supervisor = MAIN_WINDOW_SUPERVISOR_STATE
+        .lock()
+        .map_err(|_| "Failed to lock main window supervisor state before hide".to_string())?;
+    if !supervisor.can_hide(generation) {
+        return Ok(false);
+    }
+    hide_main_window_surface(app, false);
+    supervisor.complete_hide(generation);
+    Ok(true)
 }
 
 pub(crate) fn webview_is_healthy() -> bool {
@@ -2937,6 +3141,92 @@ mod tests {
                 monitor_target: Some(target),
                 open_settings_after_show: true,
             })
+        );
+    }
+
+    #[test]
+    fn queued_activation_can_explicitly_keep_the_current_monitor() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        let target = MainWindowMonitorTarget {
+            monitor_rect: MainWindowRect::new(0, 0, 1920, 1080),
+            work_rect: MainWindowRect::new(0, 0, 1920, 1040),
+            display_changed: true,
+        };
+
+        assert_eq!(
+            supervisor.request_activation(MainWindowOpenRequest {
+                monitor_target: Some(target),
+                open_settings_after_show: false,
+            }),
+            ActivationRequestTransition::Queued
+        );
+        assert_eq!(
+            supervisor.request_activation(MainWindowOpenRequest {
+                monitor_target: None,
+                open_settings_after_show: true,
+            }),
+            ActivationRequestTransition::Queued
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::LoginStartup),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest {
+                monitor_target: None,
+                open_settings_after_show: true,
+            })
+        );
+    }
+
+    #[test]
+    fn close_generation_invalidates_pending_reveal_and_only_it_can_hide() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        assert!(supervisor.begin_open(17));
+        assert!(supervisor.begin_close(17, 18));
+
+        assert_eq!(supervisor.pending_open, PendingOpen::Idle);
+        assert!(!supervisor.confirm_renderer_ready(17));
+        assert!(!supervisor.can_hide(17));
+        assert!(supervisor.can_hide(18));
+        supervisor.complete_hide(18);
+        assert!(!supervisor.can_hide(18));
+    }
+
+    #[test]
+    fn newer_open_revokes_an_older_close_generation() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        assert!(supervisor.begin_open(17));
+        assert!(supervisor.confirm_renderer_ready(17));
+        assert!(supervisor.begin_close(17, 18));
+        assert!(supervisor.can_hide(18));
+
+        assert!(supervisor.begin_open(19));
+        assert!(!supervisor.can_hide(18));
+        assert_eq!(
+            supervisor.pending_open,
+            PendingOpen::AwaitingReady { open_sequence: 19 }
+        );
+    }
+
+    #[test]
+    fn reentrant_state_transition_releases_mutex_before_native_apply() {
+        let state = Mutex::new(MainWindowMode::Fullscreen);
+
+        apply_reentrant_state_transition(
+            &state,
+            MainWindowMode::Windowed,
+            || "Failed to lock test main-window mode".to_string(),
+            |_| {
+                let observed = state
+                    .try_lock()
+                    .expect("native callbacks must be able to read state during apply");
+                assert_eq!(*observed, MainWindowMode::Windowed);
+                Ok(())
+            },
+        )
+        .expect("reentrant state transition should succeed");
+
+        assert_eq!(
+            *state.lock().expect("test mode should remain readable"),
+            MainWindowMode::Windowed
         );
     }
 

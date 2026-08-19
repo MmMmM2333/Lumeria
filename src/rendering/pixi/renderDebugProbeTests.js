@@ -159,7 +159,7 @@ function makeFolderHarness(options = {}) {
     iconNodes: new Map([[`page:0:${folder.id}`, folderNode]]),
     lastDesktopRenderPlan: {
       entries: [{ key: `page:0:${folder.id}`, nodeState: { dragging: false }, item: folder }],
-      signature: "plan-signature",
+      revision: 3,
     },
     stageRect: { height: 400, left: 0, top: 0, width: 533 },
   };
@@ -528,12 +528,18 @@ export function runRenderDebugProbeTests() {
     const startTransition = probe.beforeRender({
       dragMeta: { item: { id: "app-a", name: "App A", type: "app" }, source: { type: "page" } },
       reasons: ["watch-effect", "motion-frame"],
-      updateLayer: true,
+      hasLayerCapability: true,
     });
     probe.recordDesktopPlan(
-      { entries: [{ key: "app-a", nodeState: { dragging: false } }], signature: "before" },
-      { entries: [{ key: "app-a", nodeState: { dragging: true } }], signature: "after" }
+      { entries: [{ key: "app-a", nodeState: { dragging: false } }], revision: 1 },
+      { entries: [{ key: "app-a", nodeState: { dragging: true } }], revision: 2 }
     );
+    probe.recordFrameWork({
+      counts: { fullPlanBuilds: 1, gpuRenders: 1, reconciledNodes: 1 },
+      invalidation: { lanes: ["interaction"], revision: 2 },
+      reasons: ["interaction-watch"],
+      timings: { gpuMs: 0.25, layerMs: 0.5, totalMs: 0.75 },
+    });
     probe.afterRender(startTransition);
 
     const active = probe.commands.snapshot().activeSession;
@@ -541,8 +547,11 @@ export function runRenderDebugProbeTests() {
     assert(active?.frozenReason === "invariant:test-anomaly", "the first invariant violation should freeze the evidence window");
     assert(active?.captures[0]?.phase === "pointerdown", "the pre-drag pointer snapshot should be retained in the session");
     assert(active?.captures.some((entry) => entry.phase === "drag-start"), "the first rendered drag frame should be captured");
+    const frameWork = probe.commands.snapshot().recentEvents.find((event) => event.type === "frame-work");
+    assert(frameWork?.detail?.counts?.gpuRenders === 1, "frame work probes should expose the GPU commit count");
+    assert(frameWork?.detail?.invalidation?.revision === 2, "frame work probes should retain the invalidation revision");
 
-    const endTransition = probe.beforeRender({ dragMeta: null, reasons: ["watch-effect"], updateLayer: true });
+    const endTransition = probe.beforeRender({ dragMeta: null, reasons: ["watch-effect"], hasLayerCapability: true });
     probe.afterRender(endTransition);
     const report = probe.commands.snapshot();
     assert(report.activeSession === null, "drag-end should close the active trace session");

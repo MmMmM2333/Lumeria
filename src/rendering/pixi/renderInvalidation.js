@@ -1,22 +1,18 @@
 export const RENDER_INVALIDATION_LANES = Object.freeze({
   STRUCTURE: "structure",
   GEOMETRY: "geometry",
+  VISUAL: "visual",
   MOTION: "motion",
   INTERACTION: "interaction",
+  HANDOFF: "handoff",
   ASSET: "asset",
   DIAGNOSTICS: "diagnostics",
 });
 
-const LAYER_UPDATE_LANES = new Set([
-  RENDER_INVALIDATION_LANES.STRUCTURE,
-  RENDER_INVALIDATION_LANES.GEOMETRY,
-  RENDER_INVALIDATION_LANES.INTERACTION,
-  RENDER_INVALIDATION_LANES.ASSET,
-  RENDER_INVALIDATION_LANES.DIAGNOSTICS,
-]);
-
 const MOTION_REASON_RE = /^(?:motion(?:-|$)|animation(?:-|$))/;
-const INTERACTION_REASON_RE = /^(?:interaction(?:-|$)|icon-(?:pointerdown|remove|choose-icon|reset-icon)|folder-(?:internal-|outside-pointerdown|panel-pointerdown|closing-pointerdown)|group-|drag-)/;
+const INTERACTION_REASON_RE = /^(?:interaction(?:-|$)|visual-ownership(?:-|$)|desktop-source-ownership(?:-|$)|icon-(?:pointerdown|remove|choose-icon|reset-icon)|folder-(?:internal-|outside-pointerdown|panel-pointerdown|closing-pointerdown)|group-|drag-)/;
+const VISUAL_REASON_RE = /^(?:visual-watch$|desktop-visual(?:-|$)|launchpad-visual(?:-|$))/;
+const HANDOFF_REASON_RE = /^(?:folder-handoff-loop|handoff(?:-|$))/;
 const ASSET_REASON_RE = /^(?:icon-texture-ready|asset(?:-|$)|texture(?:-|$))/;
 const DIAGNOSTIC_REASON_RE = /^(?:diagnostic(?:-|$)|debug(?:-|$)|render-probe(?:-|$))/;
 const GEOMETRY_REASON_RE = /^(?:resize|window-state-resize|desktop-projection|page-grid-measure|geometry(?:-|$)|folder-geometry(?:-|$))/;
@@ -29,6 +25,8 @@ export function classifyRenderInvalidation(reason, options = {}) {
   if (options.invalidateGeometry === true) return RENDER_INVALIDATION_LANES.GEOMETRY;
   const normalized = normalizeReason(reason);
   if (MOTION_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.MOTION;
+  if (VISUAL_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.VISUAL;
+  if (HANDOFF_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.HANDOFF;
   if (INTERACTION_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.INTERACTION;
   if (ASSET_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.ASSET;
   if (DIAGNOSTIC_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.DIAGNOSTICS;
@@ -40,12 +38,20 @@ function createEmptySnapshot() {
   return {
     lanes: [],
     reasons: Object.create(null),
-    requiresLayerUpdate: false,
+    revision: 0,
+    revisions: Object.create(null),
+    requiresDiagnosticsUpdate: false,
+    requiresHandoffUpdate: false,
+    requiresInteractionUpdate: false,
+    requiresStructureUpdate: false,
+    requiresVisualUpdate: false,
   };
 }
 
 export function createRenderInvalidationLedger() {
   const reasonsByLane = new Map();
+  const revisionsByLane = new Map();
+  let revision = 0;
 
   function mark(reason = "desktop-update", options = {}) {
     const normalized = normalizeReason(reason);
@@ -57,7 +63,9 @@ export function createRenderInvalidationLedger() {
       reasonsByLane.set(lane, reasons);
     }
     reasons.add(normalized);
-    return { lane, reason: normalized, wasEmpty };
+    revision += 1;
+    revisionsByLane.set(lane, revision);
+    return { lane, reason: normalized, revision, wasEmpty };
   }
 
   function hasPending() {
@@ -69,8 +77,16 @@ export function createRenderInvalidationLedger() {
     for (const [lane, reasons] of reasonsByLane) {
       result.lanes.push(lane);
       result.reasons[lane] = [...reasons];
+      result.revisions[lane] = revisionsByLane.get(lane) || 0;
     }
-    result.requiresLayerUpdate = result.lanes.some((lane) => LAYER_UPDATE_LANES.has(lane));
+    result.revision = revision;
+    result.requiresStructureUpdate = result.lanes.some((lane) => (
+      lane === RENDER_INVALIDATION_LANES.STRUCTURE || lane === RENDER_INVALIDATION_LANES.GEOMETRY
+    ));
+    result.requiresInteractionUpdate = result.lanes.includes(RENDER_INVALIDATION_LANES.INTERACTION);
+    result.requiresVisualUpdate = result.lanes.includes(RENDER_INVALIDATION_LANES.VISUAL);
+    result.requiresHandoffUpdate = result.lanes.includes(RENDER_INVALIDATION_LANES.HANDOFF);
+    result.requiresDiagnosticsUpdate = result.lanes.includes(RENDER_INVALIDATION_LANES.DIAGNOSTICS);
     return result;
   }
 
@@ -82,6 +98,7 @@ export function createRenderInvalidationLedger() {
 
   function clear() {
     reasonsByLane.clear();
+    revisionsByLane.clear();
   }
 
   return Object.freeze({

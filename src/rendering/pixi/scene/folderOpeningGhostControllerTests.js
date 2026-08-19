@@ -1,5 +1,5 @@
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderHandoffCoordinator } from "./folderHandoffCoordinator.js";
+import { FolderVisualSession as FolderHandoffCoordinator } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -14,6 +14,7 @@ import {
 function makeTimerHost() {
   let nextId = 1;
   const timers = new Map();
+  const recordedTimers = new Map();
   return {
     clearTimeout(id) {
       timers.delete(id);
@@ -26,11 +27,18 @@ function makeTimerHost() {
         callback();
       }
     },
+    runRecorded(id) {
+      recordedTimers.get(id)?.();
+    },
     setTimeout(callback) {
       const id = nextId;
       nextId += 1;
       timers.set(id, callback);
+      recordedTimers.set(id, callback);
       return id;
+    },
+    get recordedIds() {
+      return Array.from(recordedTimers.keys());
     },
     get size() {
       return timers.size;
@@ -256,10 +264,11 @@ export function runFolderOpeningGhostControllerTests() {
 
   {
     const completed = [];
+    const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
-      scheduler: makeTimerHost(),
+      scheduler: timerHost,
     });
     const state = {
       ...makeState(completed),
@@ -518,10 +527,11 @@ export function runFolderOpeningGhostControllerTests() {
 
   {
     const completed = [];
+    const timerHost = makeTimerHost();
     const layer = makeLayer();
     const controller = new FolderOpeningGhostController(layer, {
       ghostFactory: makeGhost,
-      scheduler: makeTimerHost(),
+      scheduler: timerHost,
     });
     const openingTarget = makeTarget();
     controller.start(makeState(completed), [openingTarget]);
@@ -542,6 +552,10 @@ export function runFolderOpeningGhostControllerTests() {
     assert(initialXAnimation?.to === 132, "opening ghost should target the page slot captured at start");
     assert(initialXAnimation?.driver?.config?.stiffness === 340, "initial opening ghost motion should keep the existing handoff spring");
     assert(controller.retarget(makeState(completed), [turnedPageTarget]) === 1, "folder page turn should retarget the active opening ghost");
+    const [staleTimerId, currentTimerId] = timerHost.recordedIds;
+    assert(staleTimerId != null && currentTimerId != null, "retarget should bind a new fallback timer to the target generation");
+    timerHost.runRecorded(staleTimerId);
+    assert(layer.folderHandoff.hasOpeningGhost("app-1"), "a stale opening target timer must not clear the retargeted visual session");
     assert(layer.ghosts.length === 1, "retarget should reuse the existing opening ghost visual");
     assert(ghost.state.iconSize === 32, "retarget should refresh the opening ghost visual metrics when row growth changes icon size");
     assert(ghost.scale.x > scaleBeforeMetricRetarget, "retarget should compensate scale so an icon-size change does not snap the visible ghost size");

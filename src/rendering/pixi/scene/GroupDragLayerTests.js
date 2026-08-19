@@ -187,7 +187,13 @@ export async function runGroupDragLayerTests() {
     prewarmLayer.destroy({ children: true });
   }
 
-  const ownershipRegistry = new VisualOwnershipRegistry();
+  const ownershipNotificationFrames = [];
+  const flushOwnershipNotifications = () => {
+    while (ownershipNotificationFrames.length) ownershipNotificationFrames.shift()();
+  };
+  const ownershipRegistry = new VisualOwnershipRegistry({
+    scheduleFrame: (callback) => ownershipNotificationFrames.push(callback),
+  });
   const ownershipEvents = [];
   let ownershipSettled = 0;
   let ownershipAborted = 0;
@@ -262,6 +268,7 @@ export async function runGroupDragLayerTests() {
       motionRuntime.step(1 / 60);
       ownershipLayer.onRender?.();
     }
+    flushOwnershipNotifications();
     const itemReleaseEvent = ownershipEvents.find((event) => (
       event.change?.type === "release" && event.change?.key === makeItemVisualKey(ownershipEntry.item.id)
     ));
@@ -410,6 +417,7 @@ export async function runGroupDragLayerTests() {
     );
 
     ownershipLayer.clear();
+    flushOwnershipNotifications();
     ownershipEvents.length = 0;
     const abortGroup = {
       ...ownershipGroup,
@@ -438,6 +446,7 @@ export async function runGroupDragLayerTests() {
       node: abortNodeA,
       runtimePlan: abortGroup.runtimePlan,
     }, true);
+    flushOwnershipNotifications();
     const abortReleaseEvent = ownershipEvents.find((event) => event.change?.type === "releaseByToken");
     assert(
       ownershipAborted === 1 &&

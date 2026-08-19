@@ -58,6 +58,7 @@ function makeInitialState() {
     previewSwapMotionControls: null,
     revealTimer: null,
     settlementStarted: false,
+    targetGeneration: 0,
     token: null,
     visualGhostKeys: new Set(),
     visualPendingKeys: new Set(),
@@ -73,6 +74,7 @@ function makeOpeningVisualState() {
     revealTimer: null,
     sessionToken: null,
     state: null,
+    targetGeneration: 0,
   };
 }
 
@@ -84,21 +86,50 @@ function normalizeToken(token) {
   return token == null ? null : token;
 }
 
-// Open and close intentionally keep independent state/token lines. Open tokens
-// live on activeOpenSession and guard reveal; close tokens live on state.token
-// and guard closing handoff/settlement.
-export class FolderHandoffCoordinator {
+function cancelControls(controls) {
+  for (const control of controls || []) control?.cancel?.();
+}
+
+/**
+ * The sole authority for one folder visual lifecycle.
+ *
+ * Opening/closing generations, target generations, visual reservations,
+ * settlement, timers, motion-control ownership, detached handoff state, and
+ * frame commits are coordinated here. Opening/closing controllers are motion
+ * adapters: they execute targets and report completion through this session.
+ * Consumers receive copied snapshots and never mutate session collections.
+ *
+ * Open and close intentionally keep independent token lines. Open tokens guard
+ * reveal; close tokens guard closing handoff and settlement.
+ */
+export class FolderVisualSession {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.eventSink = options.eventSink || motionRuntime;
+    this.visualCommitQueue = options.visualCommitQueue || layer?.visualCommitQueue || null;
+    this.visualOwnership = options.visualOwnership || layer?.visualOwnership || null;
     this.activeOpenSession = null;
+    this.nextCloseTargetGeneration = 1;
     this.nextOpenToken = 1;
+    this.nextOpeningTargetGeneration = 1;
     this.initialize();
   }
 
   initialize() {
     if (!this.state) this.state = makeInitialState();
     if (!this.opening) this.opening = makeOpeningVisualState();
+  }
+
+  attachVisualResources({ visualCommitQueue = null, visualOwnership = null } = {}) {
+    if (visualCommitQueue) this.visualCommitQueue = visualCommitQueue;
+    if (visualOwnership) this.visualOwnership = visualOwnership;
+  }
+
+  enqueueVisualCommit(transaction, options = {}) {
+    if (!this.visualCommitQueue) {
+      throw new Error("FolderVisualSession requires a visual commit queue");
+    }
+    return this.visualCommitQueue.enqueue(transaction, options);
   }
 
   recordCoordinationEvent(action, details = {}) {
@@ -117,13 +148,20 @@ export class FolderHandoffCoordinator {
       ...makeOpeningVisualState(),
       sessionToken: sessionToken || null,
       state: state || null,
+      targetGeneration: this.nextOpeningTargetGeneration,
     };
+    this.nextOpeningTargetGeneration += 1;
     return this.opening;
   }
 
   clearOpeningVisuals(options = {}) {
     const previous = this.opening || makeOpeningVisualState();
-    this.opening = makeOpeningVisualState();
+    cancelControls(previous.motionControls);
+    this.opening = {
+      ...makeOpeningVisualState(),
+      targetGeneration: this.nextOpeningTargetGeneration,
+    };
+    this.nextOpeningTargetGeneration += 1;
     if (options.keepSessionToken) this.opening.sessionToken = previous.sessionToken || null;
     return previous;
   }
@@ -197,8 +235,9 @@ export class FolderHandoffCoordinator {
 
   clearOpeningRevealTimer(cancelTimer = null) {
     const timer = this.opening?.revealTimer || null;
-    if (!timer) return null;
-    if (typeof cancelTimer === "function") cancelTimer(timer);
+    this.opening.targetGeneration = this.nextOpeningTargetGeneration;
+    this.nextOpeningTargetGeneration += 1;
+    if (timer && typeof cancelTimer === "function") cancelTimer(timer);
     this.opening.revealTimer = null;
     return timer;
   }
@@ -209,6 +248,25 @@ export class FolderHandoffCoordinator {
 
   getOpeningRevealTimer() {
     return this.opening?.revealTimer || null;
+  }
+
+  advanceOpeningTargetGeneration(sessionToken = this.getOpeningSessionToken()) {
+    if (normalizeToken(sessionToken) !== normalizeToken(this.getOpeningSessionToken())) return null;
+    const target = Object.freeze({
+      sessionToken: normalizeToken(sessionToken),
+      targetGeneration: this.nextOpeningTargetGeneration,
+    });
+    this.nextOpeningTargetGeneration += 1;
+    this.opening.targetGeneration = target.targetGeneration;
+    return target;
+  }
+
+  isCurrentOpeningTarget(target) {
+    return Boolean(
+      target &&
+      normalizeToken(target.sessionToken) === normalizeToken(this.getOpeningSessionToken()) &&
+      target.targetGeneration === this.opening?.targetGeneration
+    );
   }
 
   addOpeningMotionControl(itemId, control) {
@@ -404,8 +462,10 @@ export class FolderHandoffCoordinator {
       handoffCleanupFrame: previousCleanupFrame,
       handoffCleanupToken: previousCleanupToken,
       phase: "closing",
+      targetGeneration: this.nextCloseTargetGeneration,
       token: normalizeToken(closeToken),
     };
+    this.nextCloseTargetGeneration += 1;
     this.registerFramePending();
     if (handoffGeometry) this.setCloseHandoffGeometry(handoffGeometry);
     if (wasHandoffActive) this.layer?.onInternalActivityChange?.(false, null);
@@ -431,6 +491,8 @@ export class FolderHandoffCoordinator {
 
   clearCloseVisualState() {
     const state = this.state;
+    cancelControls(state.motionControls);
+    cancelControls(state.previewSwapMotionControls);
     state.completedControllerGhostKeys = [];
     state.completedPreviewGhosts = [];
     state.detachedFrameTarget = null;
@@ -444,6 +506,9 @@ export class FolderHandoffCoordinator {
     state.phase = state.folderId ? "closing" : "idle";
     state.previewSwapKeys.clear();
     state.previewSwapMotionControls = null;
+    state.revealTimer = null;
+    state.targetGeneration = this.nextCloseTargetGeneration;
+    this.nextCloseTargetGeneration += 1;
     state.visualGhostKeys.clear();
     this.resetSettlement();
     this.setCloseHandoffActive(false);
@@ -475,12 +540,15 @@ export class FolderHandoffCoordinator {
         motionControlCount: this.opening?.motionControls?.size || 0,
         revealTimerActive: Boolean(this.opening?.revealTimer),
         sessionToken: this.opening?.sessionToken || null,
+        targetGeneration: this.opening?.targetGeneration || 0,
       },
       pendingControllerGhostKeys: new Set(state.pendingControllerGhostKeys),
+      ownershipRevision: this.visualOwnership?.getRevision?.() ?? null,
       phase: state.phase,
       previewSwapKeys: new Set(state.previewSwapKeys),
       previewSwapMotionControlCount: state.previewSwapMotionControls?.size || 0,
       revealTimerActive: Boolean(state.revealTimer),
+      targetGeneration: state.targetGeneration,
       token: state.token,
       visualGhostKeys: new Set(state.visualGhostKeys),
       visualPendingKeys: new Set(state.visualPendingKeys),
@@ -649,14 +717,34 @@ export class FolderHandoffCoordinator {
 
   clearRevealTimer(cancelTimer = null) {
     const timer = this.state.revealTimer;
-    if (!timer) return null;
-    if (typeof cancelTimer === "function") cancelTimer(timer);
+    this.state.targetGeneration = this.nextCloseTargetGeneration;
+    this.nextCloseTargetGeneration += 1;
+    if (timer && typeof cancelTimer === "function") cancelTimer(timer);
     this.state.revealTimer = null;
     return timer;
   }
 
   clearRevealTimerRef() {
     this.state.revealTimer = null;
+  }
+
+  advanceCloseTargetGeneration(token = this.state.token) {
+    if (!this.isCurrentCloseToken(token)) return null;
+    const target = Object.freeze({
+      targetGeneration: this.nextCloseTargetGeneration,
+      token: normalizeToken(token),
+    });
+    this.nextCloseTargetGeneration += 1;
+    this.state.targetGeneration = target.targetGeneration;
+    return target;
+  }
+
+  isCurrentCloseTarget(target) {
+    return Boolean(
+      target &&
+      this.isCurrentCloseToken(target.token) &&
+      target.targetGeneration === this.state.targetGeneration
+    );
   }
 
   setCloseHandoffGeometry({ detachedTarget = null, rect = null, target = null } = {}) {
@@ -781,7 +869,16 @@ export class FolderHandoffCoordinator {
   }
 
   clearClosePreviewSwaps() {
+    const keys = Array.from(this.state.previewSwapKeys);
+    cancelControls(this.state.previewSwapMotionControls);
+    this.state.previewSwapMotionControls = null;
     this.state.previewSwapKeys.clear();
+    for (const key of keys) {
+      const pendingKey = makePreviewSwapPendingKey(key);
+      this.state.visualPendingKeys.delete(pendingKey);
+      this.state.overlayPendingKeys.delete(pendingKey);
+    }
+    return this.collectSettlementEvents();
   }
 
   getPreviewSwapKeys() {
@@ -938,11 +1035,15 @@ export class FolderHandoffCoordinator {
   }
 }
 
-export function ensureFolderHandoffCoordinator(layer) {
-  if (!layer.folderHandoff) layer.folderHandoff = new FolderHandoffCoordinator(layer);
+export function ensureFolderVisualSession(layer) {
+  if (!layer.folderHandoff) layer.folderHandoff = new FolderVisualSession(layer);
   else {
     layer.folderHandoff.layer = layer;
     if (!layer.folderHandoff.eventSink) layer.folderHandoff.eventSink = motionRuntime;
+    layer.folderHandoff.attachVisualResources?.({
+      visualCommitQueue: layer?.visualCommitQueue || null,
+      visualOwnership: layer?.visualOwnership || null,
+    });
     layer.folderHandoff.initialize?.();
   }
   return layer.folderHandoff;

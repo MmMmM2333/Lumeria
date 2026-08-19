@@ -9,7 +9,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
-use crate::i18n::validate_locale_preference;
 use crate::launchpad_icon::LaunchpadIconVariant;
 use crate::models::LaunchTarget;
 
@@ -24,6 +23,12 @@ pub(crate) struct SavedManualApp {
     pub(crate) launch_args: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StartupLayoutPreferences {
+    pub(crate) locale_preference: String,
+    pub(crate) launchpad_icon_variant: LaunchpadIconVariant,
+}
+
 pub(crate) fn load_layout(app: &AppHandle) -> Result<Option<Value>, String> {
     let path = layout_path(app)?;
     load_layout_from_path(&path)
@@ -34,56 +39,37 @@ pub(crate) fn save_layout(app: &AppHandle, layout: &Value) -> Result<(), String>
     save_layout_to_path(&path, layout)
 }
 
-pub(crate) fn read_locale_preference(app: &AppHandle) -> Result<Option<String>, String> {
-    let path = layout_path(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let contents = fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
-    let layout: Value = serde_json::from_str(&contents)
-        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
-    let settings = layout
-        .as_object()
-        .and_then(|object| object.get("settings"))
-        .and_then(Value::as_object)
-        .ok_or_else(|| "layout settings must be an object".to_string())?;
-    let Some(preference) = settings.get("localePreference") else {
-        return Ok(None);
-    };
-    let preference = preference
-        .as_str()
-        .ok_or_else(|| "layout settings.localePreference must be a non-empty string".to_string())?;
-    validate_locale_preference(preference).map(Some)
+pub(crate) fn load_startup_layout_preferences(
+    app: &AppHandle,
+) -> Result<Option<StartupLayoutPreferences>, String> {
+    load_layout(app)?
+        .as_ref()
+        .map(startup_layout_preferences_from_value)
+        .transpose()
 }
 
-pub(crate) fn read_launchpad_icon_variant(
-    app: &AppHandle,
-) -> Result<Option<LaunchpadIconVariant>, String> {
-    let path = layout_path(app)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let contents = fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read layout {}: {error}", path.display()))?;
-    let layout: Value = serde_json::from_str(&contents)
-        .map_err(|error| format!("Failed to parse layout {}: {error}", path.display()))?;
+fn startup_layout_preferences_from_value(
+    layout: &Value,
+) -> Result<StartupLayoutPreferences, String> {
+    validate_layout_value(layout)?;
     let settings = layout
-        .as_object()
-        .and_then(|object| object.get("settings"))
+        .get("settings")
         .and_then(Value::as_object)
-        .ok_or_else(|| "layout settings must be an object".to_string())?;
-    let Some(value) = settings.get("launchpadIconVariant") else {
-        return Ok(None);
-    };
-    value
-        .as_str()
+        .expect("validated layout settings");
+    let locale_preference = settings
+        .get("localePreference")
+        .and_then(Value::as_str)
+        .expect("validated locale preference")
+        .to_string();
+    let launchpad_icon_variant = settings
+        .get("launchpadIconVariant")
+        .and_then(Value::as_str)
         .and_then(LaunchpadIconVariant::parse)
-        .map(Some)
-        .ok_or_else(|| {
-            "layout settings.launchpadIconVariant must be light, dark, pastelLight, or pastelDark"
-                .to_string()
-        })
+        .expect("validated launchpad icon variant");
+    Ok(StartupLayoutPreferences {
+        locale_preference,
+        launchpad_icon_variant,
+    })
 }
 
 pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<SavedManualApp> {
@@ -124,6 +110,12 @@ fn validate_layout_value(layout: &Value) -> Result<(), String> {
     let object = layout
         .as_object()
         .ok_or_else(|| "layout must be an object".to_string())?;
+    require_exact_fields(
+        object,
+        &["version", "pages", "settings"],
+        &["version", "pages", "settings"],
+        "layout",
+    )?;
 
     if object.get("version").and_then(Value::as_u64) != Some(2) {
         return Err("layout version must be 2".to_string());
@@ -156,55 +148,65 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     let object = settings
         .as_object()
         .ok_or_else(|| "layout settings must be an object".to_string())?;
-
-    for key in [
+    const FIELDS: &[&str] = &[
         "gridRows",
         "gridCols",
         "folderRows",
         "folderCols",
         "iconSize",
-    ] {
-        let value = object
-            .get(key)
-            .and_then(Value::as_u64)
-            .ok_or_else(|| format!("layout settings.{key} must be a positive integer"))?;
-        if value == 0 {
-            return Err(format!("layout settings.{key} must be a positive integer"));
-        }
-    }
+        "folderIconSizeMode",
+        "folderIconSize",
+        "textless",
+        "hiddenAppIds",
+        "scanRoots",
+        "scanKeywordBlacklist",
+        "scanKeywordAllowlist",
+        "scanAppBlacklist",
+        "showMissingLaunchTargetBadge",
+        "backgroundBaseColor",
+        "backgroundBaseOpacity",
+        "backgroundSource",
+        "backgroundEffect",
+        "backgroundImageOpacity",
+        "backgroundLiveDesktopOpacity",
+        "backgroundImageLayout",
+        "backgroundBlurStrength",
+        "backgroundAcrylicBlurStrength",
+        "backgroundDarkenStrength",
+        "backgroundDarkenColor",
+        "backgroundAcrylicAppearance",
+        "backgroundAcrylicDarkParams",
+        "backgroundAcrylicLightParams",
+        "backgroundImagePath",
+        "windowEffectMaterial",
+        "windowEffectAppearance",
+        "windowMode",
+        "fullscreenOverscanEnabled",
+        "showCustomTitlebar",
+        "mainWindowShortcut",
+        "localePreference",
+        "settingsThemePreference",
+        "launchpadIconVariant",
+    ];
+    require_exact_fields(object, FIELDS, FIELDS, "layout settings")?;
 
-    if let Some(value) = object.get("folderIconSize") {
-        let size = value.as_u64().ok_or_else(|| {
-            "layout settings.folderIconSize must be a positive integer".to_string()
-        })?;
-        if size == 0 {
-            return Err("layout settings.folderIconSize must be a positive integer".to_string());
-        }
-    }
-
-    if let Some(value) = object.get("folderIconSizeMode") {
-        match value.as_str() {
-            Some("global" | "custom") => {}
-            _ => {
-                return Err(
-                    "layout settings.folderIconSizeMode must be global or custom".to_string(),
-                );
-            }
-        }
-    }
-
-    object
-        .get("textless")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| "layout settings.textless must be a boolean".to_string())?;
-
-    let hidden_app_ids = object
-        .get("hiddenAppIds")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "layout settings.hiddenAppIds must be an array".to_string())?;
-    if hidden_app_ids.iter().any(|value| !value.is_string()) {
-        return Err("layout settings.hiddenAppIds must contain strings".to_string());
-    }
+    require_integer_in_range(object, "gridRows", 2, 8, "layout settings")?;
+    require_integer_in_range(object, "gridCols", 3, 10, "layout settings")?;
+    require_integer_in_range(object, "folderRows", 2, 6, "layout settings")?;
+    require_integer_in_range(object, "folderCols", 2, 8, "layout settings")?;
+    require_integer_in_range(object, "iconSize", 32, 128, "layout settings")?;
+    require_enum_field(
+        object,
+        "folderIconSizeMode",
+        &["global", "custom"],
+        "layout settings",
+    )?;
+    require_integer_in_range(object, "folderIconSize", 32, 128, "layout settings")?;
+    require_bool_field(object, "textless", "layout settings")?;
+    validate_string_array(
+        object.get("hiddenAppIds").expect("required settings field"),
+        "layout settings.hiddenAppIds",
+    )?;
 
     validate_scan_roots(
         object
@@ -228,69 +230,105 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             .get("scanAppBlacklist")
             .ok_or_else(|| "layout settings.scanAppBlacklist must be an array".to_string())?,
     )?;
-    object
-        .get("showMissingLaunchTargetBadge")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| {
-            "layout settings.showMissingLaunchTargetBadge must be a boolean".to_string()
-        })?;
-    if object
-        .get("showCustomTitlebar")
-        .is_some_and(|value| !value.is_boolean())
-    {
-        return Err("layout settings.showCustomTitlebar must be a boolean".to_string());
+    require_bool_field(object, "showMissingLaunchTargetBadge", "layout settings")?;
+
+    require_color_field(object, "backgroundBaseColor", "layout settings")?;
+    require_integer_in_range(object, "backgroundBaseOpacity", 0, 100, "layout settings")?;
+    require_enum_field(
+        object,
+        "backgroundSource",
+        &[
+            "systemMaterial",
+            "customImage",
+            "windowsWallpaper",
+            "windowsLiveDesktop",
+        ],
+        "layout settings",
+    )?;
+    require_enum_field(
+        object,
+        "backgroundEffect",
+        &["none", "dimmed", "blur", "acrylicWebgl"],
+        "layout settings",
+    )?;
+    require_integer_in_range(object, "backgroundImageOpacity", 0, 100, "layout settings")?;
+    require_integer_in_range(
+        object,
+        "backgroundLiveDesktopOpacity",
+        0,
+        100,
+        "layout settings",
+    )?;
+    require_enum_field(
+        object,
+        "backgroundImageLayout",
+        &["fill", "fit", "stretch", "tile", "center"],
+        "layout settings",
+    )?;
+    require_integer_in_range(object, "backgroundBlurStrength", 1, 100, "layout settings")?;
+    require_integer_in_range(
+        object,
+        "backgroundAcrylicBlurStrength",
+        1,
+        100,
+        "layout settings",
+    )?;
+    require_integer_in_range(
+        object,
+        "backgroundDarkenStrength",
+        0,
+        100,
+        "layout settings",
+    )?;
+    require_color_field(object, "backgroundDarkenColor", "layout settings")?;
+    require_enum_field(
+        object,
+        "backgroundAcrylicAppearance",
+        &["system", "dark", "light"],
+        "layout settings",
+    )?;
+    validate_acrylic_parameters(
+        object
+            .get("backgroundAcrylicDarkParams")
+            .expect("required settings field"),
+        "layout settings.backgroundAcrylicDarkParams",
+    )?;
+    validate_acrylic_parameters(
+        object
+            .get("backgroundAcrylicLightParams")
+            .expect("required settings field"),
+        "layout settings.backgroundAcrylicLightParams",
+    )?;
+    let background_image_path = object
+        .get("backgroundImagePath")
+        .expect("required settings field");
+    if !background_image_path.is_null() {
+        require_non_empty_string_value(
+            background_image_path,
+            "layout settings.backgroundImagePath",
+        )?;
     }
-    if object
-        .get("fullscreenOverscanEnabled")
-        .is_some_and(|value| !value.is_boolean())
-    {
-        return Err("layout settings.fullscreenOverscanEnabled must be a boolean".to_string());
-    }
-    if let Some(value) = object.get("windowEffectMaterial") {
-        match value.as_str() {
-            Some("none" | "acrylic" | "mica" | "micaAlt" | "mica-alt") => {}
-            _ => {
-                return Err(
-                    "layout settings.windowEffectMaterial must be none, acrylic, mica, or micaAlt"
-                        .to_string(),
-                );
-            }
-        }
-    }
-    if let Some(value) = object.get("windowEffectAppearance") {
-        match value.as_str() {
-            Some("system" | "dark" | "light") => {}
-            _ => {
-                return Err(
-                    "layout settings.windowEffectAppearance must be system, dark, or light"
-                        .to_string(),
-                );
-            }
-        }
-    }
-    if let Some(value) = object.get("settingsThemePreference") {
-        match value.as_str() {
-            Some("system" | "dark" | "light") => {}
-            _ => {
-                return Err(
-                    "layout settings.settingsThemePreference must be system, dark, or light"
-                        .to_string(),
-                );
-            }
-        }
-    }
-    if let Some(value) = object.get("launchpadIconVariant") {
-        if value
-            .as_str()
-            .and_then(LaunchpadIconVariant::parse)
-            .is_none()
-        {
-            return Err(
-                "layout settings.launchpadIconVariant must be light, dark, pastelLight, or pastelDark"
-                    .to_string(),
-            );
-        }
-    }
+
+    require_enum_field(
+        object,
+        "windowEffectMaterial",
+        &["none", "acrylic", "mica", "micaAlt"],
+        "layout settings",
+    )?;
+    require_enum_field(
+        object,
+        "windowEffectAppearance",
+        &["system", "dark", "light"],
+        "layout settings",
+    )?;
+    require_enum_field(
+        object,
+        "windowMode",
+        &["fullscreen", "windowed"],
+        "layout settings",
+    )?;
+    require_bool_field(object, "fullscreenOverscanEnabled", "layout settings")?;
+    require_bool_field(object, "showCustomTitlebar", "layout settings")?;
     let main_window_shortcut = object
         .get("mainWindowShortcut")
         .ok_or_else(|| "layout settings.mainWindowShortcut is required".to_string())?;
@@ -305,18 +343,29 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         }
     }
 
-    if let Some(value) = object.get("localePreference") {
-        let preference = value.as_str().ok_or_else(|| {
-            "layout settings.localePreference must be a non-empty string".to_string()
-        })?;
-        let trimmed = preference.trim();
-        if trimmed.is_empty() || trimmed.len() > 64 {
-            return Err(
-                "layout settings.localePreference must be a non-empty string up to 64 bytes"
-                    .to_string(),
-            );
-        }
+    let preference = object
+        .get("localePreference")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "layout settings.localePreference must be a non-empty string".to_string())?;
+    if preference.trim().is_empty() || preference.len() > 64 {
+        return Err(
+            "layout settings.localePreference must be a non-empty string up to 64 bytes"
+                .to_string(),
+        );
     }
+
+    require_enum_field(
+        object,
+        "settingsThemePreference",
+        &["system", "dark", "light"],
+        "layout settings",
+    )?;
+    require_enum_field(
+        object,
+        "launchpadIconVariant",
+        &["light", "dark", "pastelLight", "pastelDark"],
+        "layout settings",
+    )?;
 
     Ok(())
 }
@@ -330,6 +379,22 @@ fn validate_scan_roots(value: &Value) -> Result<(), String> {
         let object = root
             .as_object()
             .ok_or_else(|| format!("{label} must be an object"))?;
+        require_exact_fields(
+            object,
+            &[
+                "id",
+                "type",
+                "label",
+                "path",
+                "enabled",
+                "removable",
+                "lastScannedAt",
+                "maxDepth",
+                "maxEntries",
+            ],
+            &["id", "type", "label", "path", "enabled", "removable"],
+            &label,
+        )?;
         require_non_empty_string_field(object, "id", &label)?;
         let root_type = require_non_empty_string_field(object, "type", &label)?;
         if !matches!(
@@ -360,6 +425,12 @@ fn validate_scan_app_blacklist(value: &Value) -> Result<(), String> {
         let object = item
             .as_object()
             .ok_or_else(|| format!("{label} must be an object"))?;
+        require_exact_fields(
+            object,
+            &["catalogId", "name", "blockedAt"],
+            &["catalogId"],
+            &label,
+        )?;
         require_non_empty_string_field(object, "catalogId", &label)?;
         validate_optional_object_string_field(object, "name", &label)?;
         validate_optional_object_string_field(object, "blockedAt", &label)?;
@@ -371,8 +442,8 @@ fn validate_string_array(value: &Value, label: &str) -> Result<(), String> {
     let items = value
         .as_array()
         .ok_or_else(|| format!("{label} must be an array"))?;
-    if items.iter().any(|value| !value.is_string()) {
-        return Err(format!("{label} must contain strings"));
+    for (index, value) in items.iter().enumerate() {
+        require_non_empty_string_value(value, &format!("{label}[{index}]"))?;
     }
     Ok(())
 }
@@ -443,6 +514,12 @@ fn validate_layout_catalog_app_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
+    require_exact_fields(
+        object,
+        &["id", "type", "overrides"],
+        &["id", "type"],
+        &format!("layout item {label}"),
+    )?;
     for forbidden in [
         "name",
         "emoji",
@@ -470,6 +547,12 @@ fn validate_layout_catalog_app_item(
     let overrides = overrides
         .as_object()
         .ok_or_else(|| format!("layout item {label}.overrides must be an object"))?;
+    require_exact_fields(
+        overrides,
+        &["name", "emoji", "customIconPath"],
+        &[],
+        &format!("layout item {label}.overrides"),
+    )?;
     for key in overrides.keys() {
         if !matches!(key.as_str(), "name" | "emoji" | "customIconPath") {
             return Err(format!(
@@ -487,6 +570,21 @@ fn validate_layout_manual_app_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
+    require_exact_fields(
+        object,
+        &[
+            "id",
+            "type",
+            "name",
+            "emoji",
+            "iconPath",
+            "customIconPath",
+            "launchTarget",
+            "launchArgs",
+        ],
+        &["id", "type", "name", "launchTarget"],
+        &format!("layout item {label}"),
+    )?;
     if object.contains_key("iconDataUrl") {
         return Err(format!(
             "layout item {label}.iconDataUrl must not be persisted"
@@ -519,6 +617,12 @@ fn validate_launch_target(launch_target: &Value, label: &str) -> Result<String, 
     let object = launch_target
         .as_object()
         .ok_or_else(|| format!("layout item {label} must be an object"))?;
+    require_exact_fields(
+        object,
+        &["kind", "path", "appUserModelId"],
+        &["kind"],
+        &format!("layout item {label}"),
+    )?;
     let kind = require_non_empty_string_field(object, "kind", label)?;
     match kind.as_str() {
         "shortcut" | "executable" | "url" => {
@@ -542,6 +646,17 @@ fn validate_layout_folder_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
+    if object.contains_key("children") {
+        return Err(format!(
+            "layout item {label}.children is no longer supported; use childPages"
+        ));
+    }
+    require_exact_fields(
+        object,
+        &["id", "type", "name", "childPages"],
+        &["id", "type", "name", "childPages"],
+        &format!("layout item {label}"),
+    )?;
     require_string_field(object, "name", label)?;
     let child_pages = object
         .get("childPages")
@@ -559,12 +674,6 @@ fn validate_layout_folder_item(
                 &format!("{label}.childPages[{page_index}][{child_index}]"),
             )?;
         }
-    }
-
-    if object.contains_key("children") {
-        return Err(format!(
-            "layout item {label}.children is no longer supported; use childPages"
-        ));
     }
 
     Ok(())
@@ -591,7 +700,7 @@ fn require_string_field(
     label: &str,
 ) -> Result<(), String> {
     match object.get(key).and_then(Value::as_str) {
-        Some(value) if !value.is_empty() => Ok(()),
+        Some(value) if !value.trim().is_empty() => Ok(()),
         _ => Err(format!(
             "layout item {label}.{key} must be a non-empty string"
         )),
@@ -604,7 +713,7 @@ fn require_non_empty_string_field(
     label: &str,
 ) -> Result<String, String> {
     match object.get(key).and_then(Value::as_str) {
-        Some(value) if !value.is_empty() => Ok(value.to_string()),
+        Some(value) if !value.trim().is_empty() => Ok(value.to_string()),
         _ => Err(format!("{label}.{key} must be a non-empty string")),
     }
 }
@@ -626,8 +735,8 @@ fn validate_optional_object_string_field(
     key: &str,
     label: &str,
 ) -> Result<(), String> {
-    if object.get(key).is_some_and(|value| !value.is_string()) {
-        return Err(format!("{label}.{key} must be a string"));
+    if let Some(value) = object.get(key) {
+        require_non_empty_string_value(value, &format!("{label}.{key}"))?;
     }
     Ok(())
 }
@@ -653,10 +762,149 @@ fn validate_optional_string_field(
     key: &str,
     label: &str,
 ) -> Result<(), String> {
-    if object.get(key).is_some_and(|value| !value.is_string()) {
-        return Err(format!("layout item {label}.{key} must be a string"));
+    if let Some(value) = object.get(key) {
+        require_non_empty_string_value(value, &format!("layout item {label}.{key}"))?;
     }
     Ok(())
+}
+
+fn require_exact_fields(
+    object: &serde_json::Map<String, Value>,
+    allowed: &[&str],
+    required: &[&str],
+    label: &str,
+) -> Result<(), String> {
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(format!("{label}.{key} is not supported"));
+        }
+    }
+    for key in required {
+        if !object.contains_key(*key) {
+            return Err(format!("{label}.{key} is required"));
+        }
+    }
+    Ok(())
+}
+
+fn require_non_empty_string_value(value: &Value, label: &str) -> Result<(), String> {
+    match value.as_str() {
+        Some(value) if !value.trim().is_empty() => Ok(()),
+        _ => Err(format!("{label} must be a non-empty string")),
+    }
+}
+
+fn require_integer_in_range(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    minimum: u64,
+    maximum: u64,
+    label: &str,
+) -> Result<(), String> {
+    let value = object
+        .get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("{label}.{key} must be an integer from {minimum} to {maximum}"))?;
+    if value < minimum || value > maximum {
+        return Err(format!(
+            "{label}.{key} must be an integer from {minimum} to {maximum}"
+        ));
+    }
+    Ok(())
+}
+
+fn require_number_in_range(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    minimum: f64,
+    maximum: f64,
+    label: &str,
+) -> Result<(), String> {
+    let value = object
+        .get(key)
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| format!("{label}.{key} must be a number from {minimum} to {maximum}"))?;
+    if value < minimum || value > maximum {
+        return Err(format!(
+            "{label}.{key} must be a number from {minimum} to {maximum}"
+        ));
+    }
+    Ok(())
+}
+
+fn require_enum_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    allowed: &[&str],
+    label: &str,
+) -> Result<(), String> {
+    let value = object
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{label}.{key} must be {}", allowed.join(", ")))?;
+    if !allowed.contains(&value) {
+        return Err(format!("{label}.{key} must be {}", allowed.join(", ")));
+    }
+    Ok(())
+}
+
+fn require_color_field(
+    object: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<(), String> {
+    let Some(value) = object.get(key).and_then(Value::as_str) else {
+        return Err(format!("{label}.{key} must be a lowercase #rrggbb color"));
+    };
+    let bytes = value.as_bytes();
+    if bytes.len() != 7
+        || bytes[0] != b'#'
+        || bytes[1..]
+            .iter()
+            .any(|byte| !byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte))
+    {
+        return Err(format!("{label}.{key} must be a lowercase #rrggbb color"));
+    }
+    Ok(())
+}
+
+fn validate_acrylic_parameters(value: &Value, label: &str) -> Result<(), String> {
+    const FIELDS: &[&str] = &[
+        "brightness",
+        "contrast",
+        "noise",
+        "saturation",
+        "seed",
+        "tintColor",
+        "tintStrength",
+    ];
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{label} must be an object"))?;
+    require_exact_fields(object, FIELDS, FIELDS, label)?;
+    require_number_in_range(object, "brightness", 0.4, 1.4, label)?;
+    require_number_in_range(object, "contrast", 0.6, 1.4, label)?;
+    require_number_in_range(object, "noise", 0.0, 0.08, label)?;
+    require_number_in_range(object, "saturation", 0.4, 1.8, label)?;
+    require_integer_in_range(object, "seed", 0, 1000, label)?;
+    let tint_color = object
+        .get("tintColor")
+        .and_then(Value::as_array)
+        .filter(|values| values.len() == 3)
+        .ok_or_else(|| format!("{label}.tintColor must contain exactly three numbers"))?;
+    for (index, component) in tint_color.iter().enumerate() {
+        let component = component
+            .as_f64()
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| format!("{label}.tintColor[{index}] must be a number from 0 to 1"))?;
+        if !(0.0..=1.0).contains(&component) {
+            return Err(format!(
+                "{label}.tintColor[{index}] must be a number from 0 to 1"
+            ));
+        }
+    }
+    require_number_in_range(object, "tintStrength", 0.0, 0.8, label)
 }
 
 fn write_file_atomic(path: &Path, contents: &str) -> Result<(), String> {
@@ -776,6 +1024,19 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct LayoutContractCase {
+        name: String,
+        valid: bool,
+        #[serde(default)]
+        path: Vec<Value>,
+        #[serde(default)]
+        value: Value,
+        #[serde(default)]
+        remove: bool,
+    }
+
     fn test_dir(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("lumeria-{name}-{}", timestamp_nanos()));
         fs::create_dir_all(&path).expect("create test directory");
@@ -783,86 +1044,92 @@ mod tests {
     }
 
     fn valid_layout() -> Value {
-        json!({
-            "version": 2,
-            "pages": [
-                [
-                    {
-                        "id": "app-a",
-                        "type": "manualApp",
-                        "name": "App A",
-                        "emoji": "A",
-                        "launchTarget": {
-                            "kind": "shortcut",
-                            "path": "C:/Apps/App A.lnk"
-                        }
-                    },
-                    {
-                        "id": "folder-a",
-                        "type": "folder",
-                        "name": "Folder A",
-                        "childPages": [
-                            [
-                                {
-                                    "id": "app-b",
-                                    "type": "manualApp",
-                                    "name": "App B",
-                                    "launchTarget": {
-                                        "kind": "url",
-                                        "path": "https://example.com"
-                                    }
-                                }
-                            ]
-                        ],
-                    }
-                ]
-            ],
-            "settings": {
-                "gridRows": 4,
-                "gridCols": 6,
-                "folderRows": 3,
-                "folderCols": 4,
-                "iconSize": 64,
-                "folderIconSizeMode": "custom",
-                "folderIconSize": 88,
-                "textless": false,
-                "hiddenAppIds": ["hidden-app"],
-                "scanRoots": [
-                    {
-                        "id": "root-start-menu-user",
-                        "type": "startMenuUser",
-                        "label": "用户开始菜单",
-                        "path": "%APPDATA%/Microsoft/Windows/Start Menu/Programs",
-                        "enabled": true,
-                        "removable": true
-                    },
-                    {
-                        "id": "root-windows-app-catalog",
-                        "type": "windowsAppCatalog",
-                        "label": "Windows 应用（商店与系统）",
-                        "path": "shell:AppsFolder",
-                        "enabled": true,
-                        "removable": false,
-                        "maxEntries": 5000
-                    }
-                ],
-                "scanKeywordAllowlist": ["catalog-allowed"],
-                "scanKeywordBlacklist": ["卸载", "uninstall"],
-                "scanAppBlacklist": [
-                    {
-                        "catalogId": "catalog-blocked",
-                        "name": "Blocked",
-                        "blockedAt": "2026-05-31T00:00:00.000Z"
-                    }
-                ],
-                "showMissingLaunchTargetBadge": true,
-                "windowEffectMaterial": "none",
-                "windowEffectAppearance": "system",
-                "settingsThemePreference": "system",
-                "launchpadIconVariant": "pastelDark",
-                "mainWindowShortcut": "control+alt+KeyL"
+        serde_json::from_str(include_str!(
+            "../../src/domain/fixtures/layout-v2-roundtrip.json"
+        ))
+        .expect("parse canonical layout fixture")
+    }
+
+    fn apply_contract_case(layout: &mut Value, contract_case: &LayoutContractCase) {
+        if contract_case.path.is_empty() {
+            return;
+        }
+        let (last, parents) = contract_case.path.split_last().expect("non-empty path");
+        let mut cursor = layout;
+        for segment in parents {
+            cursor = match segment {
+                Value::String(key) => cursor
+                    .as_object_mut()
+                    .and_then(|object| object.get_mut(key))
+                    .expect("contract case object path"),
+                Value::Number(index) => cursor
+                    .as_array_mut()
+                    .and_then(|array| {
+                        index
+                            .as_u64()
+                            .and_then(|index| array.get_mut(index as usize))
+                    })
+                    .expect("contract case array path"),
+                _ => panic!("contract case path segments must be strings or integers"),
+            };
+        }
+        match last {
+            Value::String(key) => {
+                let object = cursor.as_object_mut().expect("contract case object parent");
+                if contract_case.remove {
+                    object.remove(key);
+                } else {
+                    object.insert(key.clone(), contract_case.value.clone());
+                }
             }
-        })
+            Value::Number(index) => {
+                let index = index.as_u64().expect("contract case integer index") as usize;
+                let array = cursor.as_array_mut().expect("contract case array parent");
+                if contract_case.remove {
+                    array.remove(index);
+                } else {
+                    array[index] = contract_case.value.clone();
+                }
+            }
+            _ => panic!("contract case final segment must be a string or integer"),
+        }
+    }
+
+    #[test]
+    fn layout_contract_matches_shared_parity_corpus() {
+        let cases: Vec<LayoutContractCase> = serde_json::from_str(include_str!(
+            "../../src/domain/fixtures/layout-v2-contract-cases.json"
+        ))
+        .expect("parse shared layout contract cases");
+        for contract_case in cases {
+            let mut layout = valid_layout();
+            apply_contract_case(&mut layout, &contract_case);
+            assert_eq!(
+                validate_layout_value(&layout).is_ok(),
+                contract_case.valid,
+                "shared layout contract case '{}'",
+                contract_case.name
+            );
+        }
+    }
+
+    #[test]
+    fn startup_preferences_are_derived_only_from_a_validated_layout() {
+        let layout = valid_layout();
+        let preferences = startup_layout_preferences_from_value(&layout)
+            .expect("canonical layout should provide startup preferences");
+        assert_eq!(preferences.locale_preference, "en-US");
+        assert_eq!(
+            preferences.launchpad_icon_variant,
+            LaunchpadIconVariant::PastelDark
+        );
+
+        let mut invalid = layout;
+        invalid["settings"]["unexpected"] = json!(true);
+        assert!(
+            startup_layout_preferences_from_value(&invalid).is_err(),
+            "partial startup reads must not bypass the canonical validator"
+        );
     }
 
     fn nested_folder_item(depth: usize) -> Value {
@@ -995,19 +1262,8 @@ mod tests {
     fn save_layout_to_path_rejects_invalid_layout_schema() {
         let dir = test_dir("invalid-save");
         let path = dir.join("layout.json");
-        let invalid = json!({
-            "version": 2,
-            "pages": [],
-            "settings": {
-                "gridRows": 4,
-                "gridCols": 6,
-                "folderRows": 3,
-                "folderCols": 4,
-                "iconSize": 64,
-                "textless": false,
-                "hiddenAppIds": [42]
-            }
-        });
+        let mut invalid = valid_layout();
+        invalid["settings"]["hiddenAppIds"] = json!([42]);
 
         let error = save_layout_to_path(&path, &invalid).expect_err("invalid layout should fail");
 
@@ -1282,7 +1538,7 @@ mod tests {
         let dir = test_dir("invalid-shortcut-launch-args");
         let path = dir.join("layout.json");
         let mut invalid = valid_layout();
-        invalid["pages"][0][0]["launchArgs"] = json!("--profile dev");
+        invalid["pages"][0][1]["childPages"][0][0]["launchArgs"] = json!("--profile dev");
 
         let error = save_layout_to_path(&path, &invalid).expect_err("launchArgs should fail");
 
@@ -1353,7 +1609,7 @@ mod tests {
         let dir = test_dir("invalid-duplicate-ids");
         let path = dir.join("layout.json");
         let mut invalid = valid_layout();
-        invalid["pages"][0][1]["childPages"][0][0]["id"] = json!("app-a");
+        invalid["pages"][0][1]["childPages"][0][0]["id"] = json!("custom-editor");
 
         let error = save_layout_to_path(&path, &invalid).expect_err("duplicate ids should fail");
 
@@ -1366,10 +1622,10 @@ mod tests {
     fn find_layout_manual_app_deserializes_matching_app_and_reports_corrupt_match() {
         let layout = valid_layout();
 
-        let app =
-            find_layout_manual_app(&layout, "app-a").expect("saved manual app should deserialize");
+        let app = find_layout_manual_app(&layout, "custom-editor")
+            .expect("saved manual app should deserialize");
 
-        assert_eq!(app.name, "App A");
+        assert_eq!(app.name, "Editor");
 
         let mut corrupt = valid_layout();
         corrupt["pages"][0][0]
@@ -1378,7 +1634,7 @@ mod tests {
             .remove("name");
 
         assert!(
-            find_layout_manual_app(&corrupt, "app-a").is_none(),
+            find_layout_manual_app(&corrupt, "custom-editor").is_none(),
             "corrupt matching app should not be treated as missing silently"
         );
     }

@@ -29,6 +29,14 @@ export function runRenderInvalidationTests() {
     classifyRenderInvalidation("diagnostic-watch") === RENDER_INVALIDATION_LANES.DIAGNOSTICS,
     "diagnostic watchers should use the diagnostics lane"
   );
+  assert(
+    classifyRenderInvalidation("visual-watch") === RENDER_INVALIDATION_LANES.VISUAL,
+    "visual-only changes should use the visual lane"
+  );
+  assert(
+    classifyRenderInvalidation("folder-handoff-loop") === RENDER_INVALIDATION_LANES.HANDOFF,
+    "handoff continuation frames should use the handoff lane"
+  );
 
   const ledger = createRenderInvalidationLedger();
   ledger.mark("motion-frame");
@@ -42,10 +50,28 @@ export function runRenderInvalidationTests() {
   assert(snapshot.lanes.includes(RENDER_INVALIDATION_LANES.GEOMETRY), "snapshot should include geometry lane");
   assert(snapshot.reasons.motion.length === 1, "duplicate motion reasons should be deduplicated");
   assert(snapshot.reasons.geometry.length === 1, "duplicate geometry reasons should be deduplicated");
-  assert(snapshot.requiresLayerUpdate, "geometry invalidation should require a layer update");
+  assert(snapshot.requiresStructureUpdate, "geometry invalidation should rebuild the structural plan");
+  assert(snapshot.revision === 4, "every invalidation mark should advance the monotonic frame revision");
+  assert(snapshot.revisions.geometry === 4, "lane revisions should expose the latest mark for that lane");
   assert(!ledger.hasPending(), "consume should clear pending invalidations");
 
   ledger.mark("motion-frame");
   const motionOnly = ledger.consume();
-  assert(!motionOnly.requiresLayerUpdate, "motion-only frames should not rebuild the layer plan");
+  assert(!motionOnly.requiresStructureUpdate, "motion-only frames should not rebuild the structural plan");
+
+  ledger.mark("icon-texture-ready");
+  const assetOnly = ledger.consume();
+  assert(!assetOnly.requiresStructureUpdate, "texture settlement should only require a GPU commit");
+
+  ledger.mark("diagnostic-watch");
+  const diagnosticsOnly = ledger.consume();
+  assert(diagnosticsOnly.requiresDiagnosticsUpdate, "diagnostic changes should update only diagnostic layers");
+  assert(!diagnosticsOnly.requiresStructureUpdate, "diagnostic changes should not rebuild the desktop plan");
+
+  ledger.mark("visual-watch");
+  ledger.mark("folder-handoff-loop");
+  const targeted = ledger.consume();
+  assert(targeted.requiresVisualUpdate, "visual changes should request a visual patch");
+  assert(targeted.requiresHandoffUpdate, "handoff frames should request a handoff tick");
+  assert(!targeted.requiresStructureUpdate, "targeted lanes should not rebuild the desktop plan");
 }

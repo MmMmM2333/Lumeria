@@ -1,10 +1,7 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { createMotionReplayTraceFromRuntime } from "../animation/motionReplayTrace.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
-import {
-  FolderHandoffCoordinator,
-  makeFolderPanelTargetKey,
-} from "./folderHandoffCoordinator.js";
+import { FolderVisualSession, makeFolderPanelTargetKey } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -140,7 +137,7 @@ function makeClosingLayer() {
     kind: "opening",
     token: "open-token",
   });
-  layer.folderHandoff = new FolderHandoffCoordinator(layer);
+  layer.folderHandoff = new FolderVisualSession(layer);
   layer.folderHandoff.beginOpeningVisuals({ sessionToken: "open-token" });
   layer.folderHandoff.registerOpeningGhost("app-1");
   return { layer, sourceKey };
@@ -168,9 +165,9 @@ function makeTarget() {
   };
 }
 
-export async function runFolderHandoffCoordinatorTests() {
+export async function runFolderVisualSessionTests() {
   const assert = (condition, message) => {
-    if (!condition) throw new Error(`[Folder transition machine test failed] ${message}`);
+    if (!condition) throw new Error(`[FolderVisualSession test failed] ${message}`);
   };
 
   {
@@ -179,7 +176,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const machine = new FolderHandoffCoordinator();
+    const machine = new FolderVisualSession();
     const first = machine.beginOpen("folder-1", "target-a");
     const second = machine.beginOpen("folder-1", "target-a");
 
@@ -189,7 +186,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const machine = new FolderHandoffCoordinator();
+    const machine = new FolderVisualSession();
     const first = machine.beginOpen("folder-1", "target-a");
     machine.markPanelReady(first.session.token);
     const second = machine.beginOpen("folder-1", "target-b");
@@ -199,7 +196,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const machine = new FolderHandoffCoordinator();
+    const machine = new FolderVisualSession();
     const session = machine.beginOpen("folder-1", "target-a").session;
     const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
 
@@ -215,7 +212,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const machine = new FolderHandoffCoordinator();
+    const machine = new FolderVisualSession();
     const first = machine.beginOpen("folder-1", "target-a").session;
     const snapshot = { folderId: "folder-1", layoutKey: "layout-a" };
     machine.setOpenGeometrySnapshot(first.token, snapshot);
@@ -226,7 +223,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const machine = new FolderHandoffCoordinator();
+    const machine = new FolderVisualSession();
     const first = machine.beginOpen("folder-1", "target-a").session;
     const second = machine.beginOpen("folder-2", "target-b", { forceNew: true }).session;
 
@@ -242,7 +239,7 @@ export async function runFolderHandoffCoordinatorTests() {
 
   {
     const completed = [];
-    const coordinator = new FolderHandoffCoordinator();
+    const coordinator = new FolderVisualSession();
     const session = coordinator.beginOpen("folder-1", "target-a").session;
     coordinator.beginOpeningVisuals({
       sessionToken: session.token,
@@ -261,7 +258,7 @@ export async function runFolderHandoffCoordinatorTests() {
 
   {
     const layer = {};
-    const session = new FolderHandoffCoordinator(layer);
+    const session = new FolderVisualSession(layer);
     session.beginCloseTransition("folder-a", { closeToken: "close-token" });
     session.setCloseHandoffGeometry({
       detachedTarget: { height: 20, left: 1, top: 2, width: 20 },
@@ -284,7 +281,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const session = new FolderHandoffCoordinator({});
+    const session = new FolderVisualSession({});
     session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
     const staleEvents = session.completeCloseFrame("close-old");
@@ -297,7 +294,7 @@ export async function runFolderHandoffCoordinatorTests() {
   }
 
   {
-    const session = new FolderHandoffCoordinator({});
+    const session = new FolderVisualSession({});
     session.beginCloseTransition("folder-a", { closeToken: "close-a" });
 
     const handoffEvents = session.completeCloseFrameVisual("close-a");
@@ -326,7 +323,7 @@ export async function runFolderHandoffCoordinatorTests() {
         onClosingHandoffReady() {},
         onInternalActivityChange() {},
       };
-      const coordinator = new FolderHandoffCoordinator(layer);
+      const coordinator = new FolderVisualSession(layer);
       coordinator.beginCloseTransition("folder-observable", { closeToken: "close-observe" });
       coordinator.setCloseHandoffGeometry({
         detachedTarget: { height: 64, left: 10, top: 20, width: 64 },
@@ -397,7 +394,7 @@ export async function runFolderHandoffCoordinatorTests() {
     const calls = [];
     layer.onClosingHandoffReady = () => {};
     layer.onInternalActivityChange = () => {};
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    layer.folderHandoff = new FolderVisualSession(layer);
     layer.folderHandoff.beginCloseTransition("folder-a");
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };

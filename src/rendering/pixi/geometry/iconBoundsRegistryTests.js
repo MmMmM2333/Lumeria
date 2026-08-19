@@ -69,6 +69,31 @@ export function runIconBoundsRegistryTests() {
     { area: "desktop", id: "desktop-app", pageIndex: 0 }
   );
   assert(registry.getVersion() > firstVersion, "changing registered geometry should advance the registry version");
+  const changedVersion = registry.getVersion();
+  registry.clearBounds("missing-area");
+  assert(registry.getVersion() === changedVersion, "clearing an empty scope should not advance the geometry version");
+  registry.transaction(() => {
+    registry.clearBounds("desktop");
+    registry.registerBounds(
+      K.LAUNCH,
+      V.RENDERED,
+      { area: "desktop", id: "desktop-app", pageIndex: 0 },
+      rect(11),
+      { area: "desktop", id: "desktop-app", pageIndex: 0 }
+    );
+  });
+  assert(registry.getVersion() === changedVersion, "clear-and-rebuild with identical final geometry should keep one stable version");
+  registry.transaction(() => {
+    registry.clearBounds("desktop");
+    registry.registerBounds(
+      K.LAUNCH,
+      V.RENDERED,
+      { area: "desktop", id: "desktop-app", pageIndex: 0 },
+      rect(12),
+      { area: "desktop", id: "desktop-app", pageIndex: 0 }
+    );
+  });
+  assert(registry.getVersion() === changedVersion + 1, "a transactional rebuild should advance once when final geometry changes");
   registry.registerBounds(
     K.LAUNCH,
     V.RENDERED,

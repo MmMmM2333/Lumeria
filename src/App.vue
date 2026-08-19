@@ -120,7 +120,11 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
 import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
 import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
-import { assertSceneEvent } from "./rendering/sceneEvents.js";
+import {
+  assertSceneEvent,
+  makeControlledPointerInput,
+  makeControlledWheelInput,
+} from "./rendering/sceneEvents.js";
 import { makeDesktopSceneFrame } from "./rendering/sceneFrame.js";
 import { makeDesktopSceneRuntimeAdapter } from "./rendering/sceneRuntime.js";
 import {
@@ -955,10 +959,14 @@ function handlePixiSceneEvent(event = {}) {
       handleFolderPixiInternalActivity(event.active, event.folderId);
       return;
     case "icon-pointerdown":
-      handleIconPointerDown(event.event, event.item, event.source);
+      handleIconPointerDown(
+        makeControlledPointerInput(event.pointer, event.control),
+        event.item,
+        event.source
+      );
       return;
     case "context-menu-request":
-      handleContextMenuRequest(event.event);
+      handleContextMenuRequest(event.pointer);
       return;
     case "remove-app":
       removeManagedAppFromLaunchpad(event.itemId);
@@ -970,10 +978,10 @@ function handlePixiSceneEvent(event = {}) {
       resetAppCustomIcon(event.itemId);
       return;
     case "surface-pointerdown":
-      handleLaunchpadSurfacePointerDown(event.event);
+      handleLaunchpadSurfacePointerDown(makeControlledPointerInput(event.pointer, event.control));
       return;
     case "wheel":
-      handleLaunchpadWheel(event.event);
+      handleLaunchpadWheel(makeControlledWheelInput(event.wheel, event.control));
       return;
     default:
       throw new TypeError(`Unhandled SceneEvent type: ${String(event.type)}`);

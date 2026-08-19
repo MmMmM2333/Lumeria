@@ -121,14 +121,22 @@ export function runLaunchpadMountedEffects(options, ResizeObserverCtor = globalT
   schedulePageGridMetrics();
   scheduleFolderViewportMetrics();
   if (lifecycle) lifecycle.active = true;
-  registerNativeEventListeners().then(() => {
+  const startStartupTask = (task) => {
+    try {
+      return Promise.resolve(task());
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+  const listenerReady = startStartupTask(registerNativeEventListeners);
+  const sceneReady = startStartupTask(loadNativeLaunchpadData).then((ready) => {
+    if (ready !== true) throw new Error("Native scene restore did not reach the ready state");
+  });
+  Promise.all([listenerReady, sceneReady]).then(() => {
     if (lifecycle && !lifecycle.active) return null;
     return completeRendererStartup?.();
   }).catch((error) => {
     console.error("Failed to complete native renderer startup", error);
-  }).finally(() => {
-    if (lifecycle && !lifecycle.active) return;
-    loadNativeLaunchpadData();
   });
 
   return createLaunchpadLayoutResizeObserver(options, ResizeObserverCtor);

@@ -57,10 +57,12 @@ import {
 import {
   BackgroundEffectPreviewRenderer,
   backgroundEffectUsesPixi,
+} from "../rendering/backgroundPort.js";
+import {
   isKawaseDebugEnabled,
   useKawaseDebugOverrideEnabled,
   useKawaseDebugParams,
-} from "../rendering/backgroundPort.js";
+} from "../rendering/backgroundDebugPort.js";
 import { useLocalization } from "../i18n/localization.js";
 
 const DEFAULT_RENDER_WIDTH = 960;

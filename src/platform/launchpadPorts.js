@@ -1,5 +1,6 @@
 import {
   applyAppLocalePreference,
+  beginMainWindowClose,
   cacheCustomIcon,
   checkLaunchTargets,
   completeRendererStartup,
@@ -62,6 +63,7 @@ export const catalogPort = Object.freeze({
 });
 
 export const mainWindowPort = Object.freeze({
+  beginClose: beginMainWindowClose,
   getEffectsSupport: getMainWindowEffectsSupport,
   hide: hideMainWindow,
   isAvailable: isNativeBridgeAvailable,

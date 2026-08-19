@@ -27,7 +27,9 @@ export function runSceneFrameTests() {
     setPageRef: () => {},
   });
 
-  assert(frame.viewport.activePages === activePages, "scene frame should preserve viewport references");
+  assert(frame.viewport.activePages !== activePages, "scene frame should snapshot mutable page collections");
+  activePages.push([]);
+  assert(frame.viewport.activePages.length === 1, "later collection mutations should not alter a scene frame");
   assert(Object.isFrozen(frame) && Object.isFrozen(frame.viewport), "scene frame containers should be immutable snapshots");
   assert(frame.visual.desktopVisualAlpha === 0.7, "scene frame should group visual state");
   assert(frame.interaction.focusedIcon.id === "app-1", "scene frame should group interaction state");
@@ -36,13 +38,29 @@ export function runSceneFrameTests() {
   assert(!Object.prototype.hasOwnProperty.call(frame.folder, "folderOverlayState"), "folder frame should not carry Vue overlay state");
   assertDesktopSceneFrame(frame);
 
+  let rejectedUnknownFrameField = false;
+  try {
+    assertDesktopSceneFrame(Object.freeze({
+      ...frame,
+      viewport: Object.freeze({ ...frame.viewport, unexpected: true }),
+    }));
+  } catch {
+    rejectedUnknownFrameField = true;
+  }
+  assert(rejectedUnknownFrameField, "unknown scene-frame fields should fail explicitly");
+
   const event = makeIconPointerdownEvent(
     { type: "pointerdown" },
     { id: "app-1" },
-    "desktop"
+    { type: "desktop" }
   );
   assertSceneEvent(event);
-  assert(event.type === "icon-pointerdown" && event.item.id === "app-1" && event.source === "desktop", "scene events should carry semantic payloads");
+  assert(
+    event.type === "icon-pointerdown" && event.item.id === "app-1" && event.source.type === "desktop",
+    "scene events should carry semantic snapshots"
+  );
+  assert(Object.isFrozen(event) && Object.isFrozen(event.pointer), "scene events should be immutable");
+  assert(!Object.prototype.hasOwnProperty.call(event, "event"), "scene events should not expose raw renderer events");
 
   let rejectedUnknownEvent = false;
   try {
