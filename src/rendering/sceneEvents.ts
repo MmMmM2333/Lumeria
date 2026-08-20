@@ -58,6 +58,14 @@ const CONTROL_FIELDS = Object.freeze([
   "releasePointerCapture",
 ]);
 
+const GROUP_RELEASE_PAYLOAD_FIELDS = Object.freeze([
+  "actorKey",
+  "entryId",
+  "outcome",
+  "planKey",
+  "reason",
+]);
+
 type UnknownRecord = Record<string, unknown>;
 
 export type SceneRect = Readonly<{
@@ -65,6 +73,13 @@ export type SceneRect = Readonly<{
   width: number;
   x: number;
   y: number;
+}>;
+
+type ControlledClientRect = SceneRect & Readonly<{
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
 }>;
 
 export interface SceneEventDataArray extends ReadonlyArray<SceneEventData> {}
@@ -127,9 +142,17 @@ export type AppLaunchCloseFrameCommittedSceneEvent = Readonly<{
 }>;
 export type ContextMenuRequestSceneEvent = Readonly<{ type: "context-menu-request"; pointer: PointerSnapshot }>;
 export type DesktopFocusSceneEvent = Readonly<{ type: "desktop-focus" }>;
+export type GroupReleaseCompletionPayload = Readonly<{
+  actorKey: string;
+  entryId: string;
+  outcome: "aborted" | "settled";
+  planKey: string;
+  reason: string | null;
+}>;
+
 export type GroupReleaseCompleteSceneEvent = Readonly<{
   type: "group-release-complete";
-  payload: SceneEventData;
+  payload: GroupReleaseCompletionPayload;
 }>;
 export type InternalActivitySceneEvent = Readonly<{
   type: "internal-activity";
@@ -194,7 +217,7 @@ type EventSource = UnknownRecord & {
 };
 
 export type ControlledPointerInput = PointerSnapshot & Readonly<{
-  currentTarget: Readonly<{ getBoundingClientRect: () => SceneRect | null }>;
+  currentTarget: Readonly<{ getBoundingClientRect: () => ControlledClientRect | null }>;
   preventDefault: () => void;
   stopPropagation: () => void;
   target: Readonly<{
@@ -248,6 +271,17 @@ function snapshotRect(value: unknown): SceneRect | null {
     width: readNumber(rect.width),
     x: readNumber(rect.x ?? rect.left),
     y: readNumber(rect.y ?? rect.top),
+  });
+}
+
+function makeControlledClientRect(rect: SceneRect | null): ControlledClientRect | null {
+  if (!rect) return null;
+  return Object.freeze({
+    ...rect,
+    bottom: rect.y + rect.height,
+    left: rect.x,
+    right: rect.x + rect.width,
+    top: rect.y,
   });
 }
 
@@ -382,7 +416,7 @@ export function makeControlledPointerInput(
   return Object.freeze({
     ...pointer,
     currentTarget: Object.freeze({
-      getBoundingClientRect: () => pointer.iconBounds,
+      getBoundingClientRect: () => makeControlledClientRect(pointer.iconBounds),
     }),
     preventDefault: control.preventDefault,
     stopPropagation: control.stopPropagation,
@@ -426,7 +460,24 @@ export function makeDesktopFocusEvent(): DesktopFocusSceneEvent {
 }
 
 export function makeGroupReleaseCompleteEvent(payload: unknown): GroupReleaseCompleteSceneEvent {
-  return makeEvent("group-release-complete", { payload: snapshotData(payload) });
+  const source = requireObject(payload, "group-release-complete.payload");
+  const outcome = source.outcome;
+  if (outcome !== "aborted" && outcome !== "settled") {
+    throw new TypeError("group-release-complete.payload.outcome must be aborted or settled");
+  }
+  const reason = source.reason;
+  if (reason !== null && reason !== undefined && typeof reason !== "string") {
+    throw new TypeError("group-release-complete.payload.reason must be a string or null");
+  }
+  return makeEvent("group-release-complete", {
+    payload: Object.freeze({
+      actorKey: requireNonEmptyString(source.actorKey, "group-release-complete.payload.actorKey"),
+      entryId: requireNonEmptyString(source.entryId, "group-release-complete.payload.entryId"),
+      outcome,
+      planKey: requireNonEmptyString(source.planKey, "group-release-complete.payload.planKey"),
+      reason: reason || null,
+    }),
+  });
 }
 
 export function makeInternalActivityEvent(
@@ -532,8 +583,24 @@ export function assertSceneEvent(event: unknown): SceneEvent {
     case "desktop-focus":
       break;
     case "group-release-complete":
-      if (!Object.prototype.hasOwnProperty.call(sceneEvent, "payload")) {
-        throw new TypeError("group-release-complete.payload is required");
+      {
+        const payload = assertExactFields(
+          sceneEvent.payload,
+          GROUP_RELEASE_PAYLOAD_FIELDS,
+          "group-release-complete.payload"
+        );
+        if (!Object.isFrozen(payload)) {
+          throw new TypeError("group-release-complete.payload must be immutable");
+        }
+        requireNonEmptyString(payload.actorKey, "group-release-complete.payload.actorKey");
+        requireNonEmptyString(payload.entryId, "group-release-complete.payload.entryId");
+        requireNonEmptyString(payload.planKey, "group-release-complete.payload.planKey");
+        if (payload.outcome !== "aborted" && payload.outcome !== "settled") {
+          throw new TypeError("group-release-complete.payload.outcome must be aborted or settled");
+        }
+        if (payload.reason !== null && typeof payload.reason !== "string") {
+          throw new TypeError("group-release-complete.payload.reason must be a string or null");
+        }
       }
       break;
     case "internal-activity":

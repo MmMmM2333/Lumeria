@@ -32,6 +32,7 @@ import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
   readLiveDesktopDebugSettings,
 } from "../diagnostics/liveDesktopDebugSettings.js";
+import { runtimePerformanceMetrics } from "../diagnostics/runtimePerformanceMetrics.js";
 
 const USE_MOCK_DATA_IN_NATIVE = false;
 const WINDOWS_WALLPAPER_REFRESH_INTERVAL_MS = 5000;
@@ -552,30 +553,69 @@ export function useLaunchpadNative(options) {
   async function loadNativeLaunchpadData() {
     if (!shouldUseNativeCatalog()) return true;
     isNativeLayoutReady.value = false;
+    const finishStartupMeasurement = runtimePerformanceMetrics.begin("native.startup.total");
 
     try {
-      await refreshNativeWindowEffectsSupport();
-      await refreshLiveDesktopBackgroundSupport();
-      const savedLayout = await store.load();
+      await runtimePerformanceMetrics.measureAsync(
+        "native.startup.window-effects-support",
+        refreshNativeWindowEffectsSupport
+      );
+      await runtimePerformanceMetrics.measureAsync(
+        "native.startup.live-desktop-support",
+        refreshLiveDesktopBackgroundSupport
+      );
+      const savedLayout = await runtimePerformanceMetrics.measureAsync(
+        "native.startup.layout-load",
+        () => store.load()
+      );
       if (!savedLayout) {
-        const scanResult = await apps.scanInitialCatalog();
-        document.createFromCatalog(scanResult.apps);
+        const scanResult = await runtimePerformanceMetrics.measureAsync(
+          "native.startup.catalog-scan",
+          () => apps.scanInitialCatalog()
+        );
+        runtimePerformanceMetrics.measure(
+          "native.startup.document-create",
+          () => document.createFromCatalog(scanResult.apps)
+        );
         requireEventHandlers().reclampLayoutPageIndices();
-        await finishNativeLayoutLoad();
+        await runtimePerformanceMetrics.measureAsync(
+          "native.startup.finish-layout",
+          finishNativeLayoutLoad
+        );
         scheduleNativeLayoutSave();
+        runtimePerformanceMetrics.markOnce("native.startup.first-ready");
         return true;
       }
 
-      document.restoreConfiguration(savedLayout);
-      const scanResult = await apps.scanInitialCatalog();
+      runtimePerformanceMetrics.measure(
+        "native.startup.configuration-restore",
+        () => document.restoreConfiguration(savedLayout)
+      );
+      const scanResult = await runtimePerformanceMetrics.measureAsync(
+        "native.startup.catalog-scan",
+        () => apps.scanInitialCatalog()
+      );
       assertCatalogRefreshCanRestoreDocument(savedLayout, scanResult, localizationText);
-      document.restorePages(savedLayout, scanResult.apps);
-      const shortcutOutcome = await settings.registerCurrentShortcut();
+      runtimePerformanceMetrics.measure(
+        "native.startup.document-restore",
+        () => document.restorePages(savedLayout, scanResult.apps)
+      );
+      const shortcutOutcome = await runtimePerformanceMetrics.measureAsync(
+        "native.startup.shortcut-register",
+        () => settings.registerCurrentShortcut()
+      );
       if (!shortcutOutcome.ok) console.error("Failed to update Lumeria shortcut", shortcutOutcome.error);
-      const refreshedWallpaperBackground = await refreshWindowsWallpaperBackground();
+      const refreshedWallpaperBackground = await runtimePerformanceMetrics.measureAsync(
+        "native.startup.wallpaper-refresh",
+        refreshWindowsWallpaperBackground
+      );
       requireEventHandlers().reclampLayoutPageIndices();
-      await finishNativeLayoutLoad();
+      await runtimePerformanceMetrics.measureAsync(
+        "native.startup.finish-layout",
+        finishNativeLayoutLoad
+      );
       if (refreshedWallpaperBackground) scheduleNativeLayoutSave();
+      runtimePerformanceMetrics.markOnce("native.startup.first-ready");
       return true;
     } catch (error) {
       nativeLayoutReady = false;
@@ -589,6 +629,8 @@ export function useLaunchpadNative(options) {
       });
       console.error("Failed to load native Lumeria data", error);
       return false;
+    } finally {
+      finishStartupMeasurement();
     }
   }
 

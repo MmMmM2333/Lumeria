@@ -1682,6 +1682,145 @@ test("single-icon return keeps its already visible label opaque through handoff"
   expect(handoff.releasePhase).toBe("returning");
 });
 
+test("long-distance desktop release keeps a stable slot and exactly one visual owner", async ({ page }) => {
+  test.setTimeout(30_000);
+  await waitForFixture(page);
+  const iconId = "app-0-safari";
+  const neighborId = "app-1-mail";
+  const pointerId = 243;
+  const source = await readDesktopIconCenter(page, iconId);
+
+  await dispatchDragPointer(page, "pointerdown", source, pointerId);
+  await page.waitForTimeout(560);
+  await dispatchDragPointer(page, "pointermove", {
+    x: source.x + 24,
+    y: source.y + 12,
+  }, pointerId);
+  await page.waitForTimeout(60);
+
+  const result = await page.evaluate(async ({ iconId, neighborId, pointerId }) => {
+    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const state = root?.setupState;
+    const seen = new Set();
+    const findDesktopLayer = (vnode) => {
+      if (!vnode) return null;
+      const instance = vnode.component;
+      if (instance && !seen.has(instance)) {
+        seen.add(instance);
+        const name = instance.type?.name || instance.type?.__name;
+        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+        const nested = findDesktopLayer(instance.subTree);
+        if (nested) return nested;
+      }
+      if (Array.isArray(vnode.children)) {
+        for (const child of vnode.children) {
+          const nested = findDesktopLayer(child);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    };
+    const layer = findDesktopLayer(root?.subTree);
+    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const readCenter = (id) => {
+      const location = state.activePages
+        .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
+        .find((entry) => entry.item.id === id);
+      const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
+        area: "desktop",
+        id,
+        pageIndex: location.pageIndex,
+      });
+      return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+    };
+    const cols = Math.max(1, Number(state.gridCols) || 1);
+    const first = readCenter(state.activePages[0][0].id);
+    const second = readCenter(state.activePages[0][1].id);
+    const nextRow = readCenter(state.activePages[0][cols].id);
+    const cellWidth = second.x - first.x;
+    const cellHeight = nextRow.y - first.y;
+    const targetIndex = Math.min(state.activePages[0].length - 2, cols * 4 + 2);
+    const targetCol = targetIndex % cols;
+    const targetRow = Math.floor(targetIndex / cols);
+    const target = {
+      x: first.x - cellWidth / 2 + (targetCol + 0.08) * cellWidth,
+      y: first.y + targetRow * cellHeight,
+    };
+    const pointerEvent = (type, buttons) => new PointerEvent(type, {
+      bubbles: true,
+      button: 0,
+      buttons,
+      cancelable: true,
+      clientX: target.x,
+      clientY: target.y,
+      isPrimary: true,
+      pointerId,
+      pointerType: "mouse",
+      view: window,
+    });
+    const isDrawable = (node, includeGhostState = false) => Boolean(
+      node &&
+      !node.destroyed &&
+      node.visible === true &&
+      node.renderable !== false &&
+      Number(node.alpha) > 0.001 &&
+      (includeGhostState || node.state?.ghosted !== true)
+    );
+    const violations = [];
+    let settledFrames = 0;
+    let frames = 0;
+
+    window.dispatchEvent(pointerEvent("pointermove", 1));
+    window.dispatchEvent(pointerEvent("pointerup", 0));
+
+    while (frames < 240 && settledFrames < 12) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      frames += 1;
+      const group = state.groupDragState;
+      const entry = group?.entries?.find((candidate) => candidate.item?.id === iconId);
+      const actor = (entry?.continuityKey
+        ? layer.groupDragLayer.activeNodesByContinuityKey.get(entry.continuityKey)
+        : null) || layer.groupDragLayer.nodes.find((node) => node?.item?.id === iconId) || null;
+      const liveNode = layer.findIconNodeByItemId(iconId);
+      const actorDrawable = isDrawable(actor, true);
+      const liveDrawable = isDrawable(liveNode);
+      if (Number(actorDrawable) + Number(liveDrawable) !== 1) {
+        violations.push({
+          actorDrawable,
+          frame: frames,
+          groupPhase: group?.phase || null,
+          liveDrawable,
+          liveGhosted: liveNode?.state?.ghosted === true,
+        });
+      }
+      settledFrames = group ? 0 : settledFrames + 1;
+    }
+    if (settledFrames < 12) throw new Error("long-distance desktop release did not settle");
+
+    const sourceNode = layer.findIconNodeByItemId(iconId);
+    const neighborNode = layer.findIconNodeByItemId(neighborId);
+    const planEntry = layer.lastDesktopRenderPlan?.entries?.find((entry) => entry.item?.id === iconId);
+    return {
+      finalIndex: state.activePages[0].findIndex((item) => item.id === iconId),
+      finalTargetDelta: Math.hypot(
+        Number(sourceNode?.position?.x) - Number(planEntry?.layoutTarget?.x),
+        Number(sourceNode?.position?.y) - Number(planEntry?.layoutTarget?.y)
+      ),
+      overlapDistance: Math.hypot(
+        Number(sourceNode?.position?.x) - Number(neighborNode?.position?.x),
+        Number(sourceNode?.position?.y) - Number(neighborNode?.position?.y)
+      ),
+      targetIndex,
+      violations,
+    };
+  }, { iconId, neighborId, pointerId });
+
+  expect(result.finalIndex).toBe(result.targetIndex);
+  expect(result.finalTargetDelta).toBeLessThanOrEqual(0.5);
+  expect(result.overlapDistance).toBeGreaterThan(20);
+  expect(result.violations).toEqual([]);
+});
+
 test("a first-cell app target wins over the overlapping desktop page-turn zone", async ({ page }) => {
   test.setTimeout(30_000);
   await waitForFixture(page);

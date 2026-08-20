@@ -9,6 +9,7 @@ export function runSceneRuntimeTests() {
     domRefs: {},
     folderOverlayState: {},
     getDesktopPageRenderMode: () => "desktop",
+    getIconTextureItems: () => [],
     getVisibleDesktopPage: (page) => page,
     iconBoundsRegistry: {},
     isFolderOpeningPreviewFrameGhosted: () => false,
@@ -16,6 +17,7 @@ export function runSceneRuntimeTests() {
     setPageRef: () => {},
   });
   assert(Object.isFrozen(runtime), "runtime adapter should be immutable at the seam");
+  assert(Array.isArray(runtime.getIconTextureItems()), "runtime adapter should expose the canonical icon texture item source");
   assertDesktopSceneRuntime(runtime);
 
   let rejected = false;

@@ -78,6 +78,10 @@ export function usePageRenderRange(options) {
   }
 
   function commitSearchPageIndexNow(next) {
+    if (!options.isSearchMode.value) {
+      options.commitSearchPageIndexState(0, 0);
+      return;
+    }
     const maxIndex = Math.max(0, options.searchPages.value.length - 1);
     options.commitSearchPageIndexState(next, maxIndex);
   }
@@ -145,6 +149,11 @@ export function usePageRenderRange(options) {
   }
 
   function commitSearchPageIndex(next) {
+    if (!options.isSearchMode.value) {
+      clearPageJumpRenderRange();
+      commitSearchPageIndexNow(0);
+      return;
+    }
     commitPageIndexWithRenderRange("search", options.searchPageIndex.value, next, Math.max(0, options.searchPages.value.length - 1), commitSearchPageIndexNow);
   }
 

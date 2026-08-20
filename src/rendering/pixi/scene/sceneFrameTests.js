@@ -3,6 +3,8 @@ import { makeDesktopSceneRuntimeAdapter } from "../../sceneRuntime.js";
 import {
   assertSceneEvent,
   makeAppLaunchCloseFrameCommittedEvent,
+  makeControlledPointerInput,
+  makeGroupReleaseCompleteEvent,
   makeIconPointerdownEvent,
 } from "../../sceneEvents.js";
 
@@ -24,6 +26,7 @@ export function runSceneFrameTests() {
     domRefs: {},
     folderOverlayState: {},
     getDesktopPageRenderMode: () => "desktop",
+    getIconTextureItems: () => [],
     getVisibleDesktopPage: (page) => page,
     iconBoundsRegistry: { name: "registry" },
     isFolderOpeningPreviewFrameGhosted: () => false,
@@ -135,6 +138,43 @@ export function runSceneFrameTests() {
   );
   assert(Object.isFrozen(event) && Object.isFrozen(event.pointer), "scene events should be immutable");
   assert(!Object.prototype.hasOwnProperty.call(event, "event"), "scene events should not expose raw renderer events");
+
+  const boundedEvent = makeIconPointerdownEvent(
+    {
+      currentTarget: {
+        getBoundingClientRect: () => ({ height: 60, left: 30, top: 40, width: 50 }),
+      },
+      type: "pointerdown",
+    },
+    { id: "app-1" },
+    { type: "desktop" }
+  );
+  const controlledInput = makeControlledPointerInput(boundedEvent.pointer, boundedEvent.control);
+  const controlledRect = controlledInput.currentTarget.getBoundingClientRect();
+  assert(
+    controlledRect?.left === 30 &&
+      controlledRect?.top === 40 &&
+      controlledRect?.right === 80 &&
+      controlledRect?.bottom === 100,
+    "controlled pointer inputs should restore complete DOMRect edge semantics"
+  );
+
+  const releaseEvent = makeGroupReleaseCompleteEvent({
+    actorKey: "item:app-1",
+    entryId: "app-1",
+    node: { fn: () => {} },
+    outcome: "settled",
+    planKey: "release-1",
+    reason: null,
+    runtimePlan: { internal: true },
+  });
+  assertSceneEvent(releaseEvent);
+  assert(
+    Object.keys(releaseEvent.payload).join(",") === "actorKey,entryId,outcome,planKey,reason" &&
+      !Object.prototype.hasOwnProperty.call(releaseEvent.payload, "node") &&
+      !Object.prototype.hasOwnProperty.call(releaseEvent.payload, "runtimePlan"),
+    "group release events should expose only the semantic completion contract"
+  );
 
   const appLaunchCommitEvent = makeAppLaunchCloseFrameCommittedEvent(7);
   assertSceneEvent(appLaunchCommitEvent);

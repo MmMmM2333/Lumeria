@@ -1921,6 +1921,7 @@ export function useLaunchpadController(options = {}) {
     commitAppLaunchCloseFrame,
     folderOpenPreviewFrameGhostedIds,
     folderPageSize,
+    getIconTextureItems: () => collectAppsFromPages(pages.value),
     getDesktopPageRenderMode,
     getVisibleDesktopPage,
     gridCols,

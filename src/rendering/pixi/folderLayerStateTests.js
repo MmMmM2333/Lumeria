@@ -39,6 +39,12 @@ export function runFolderLayerStateTests() {
       viewportRef: { value: null },
       visualPageIndex: 3,
     },
+    geometry: {
+      canvasStageRect: { height: 720, left: 0, top: 0, width: 1280 },
+      desktopFrame: { height: 620, left: 0, top: 100, width: 1280 },
+      desktopStageRect: { height: 620, left: 0, top: 100, width: 1280 },
+      singleStageDiagnostics: true,
+    },
     stage: {
       rect: { height: 0, left: 4, top: 5, width: 0 },
     },
@@ -54,7 +60,7 @@ export function runFolderLayerStateTests() {
       focusedIcon: { area: "folder", folderId: "folder-1", id: "app-a", pageIndex: 3 },
       showMissingLaunchTargetBadge: true,
     },
-  }, { prewarm: true, singleStageDiagnostics: true });
+  });
 
   assert(state.width === 1 && state.height === 1, "stage dimensions should have a minimum size");
   assert(state.stageRect.left === 4 && state.stageRect.top === 5, "stage rect should be preserved");
@@ -74,5 +80,26 @@ export function runFolderLayerStateTests() {
   assert(state.completeFolderOpenFrameGhost === callbacks.completeFolderOpenFrameGhost, "frame completion callback should be forwarded");
   assert(state.isFolderAppLaunchClosing, "folder app-launch closing state should be forwarded");
   assert(state.singleStageDiagnostics, "single-stage diagnostics flag should be preserved");
-  assert(state.prewarm, "overrides should be applied last");
+  assert(Object.isFrozen(state), "folder overlay frames should be immutable after construction");
+
+  let rejectedLegacyOverrides = false;
+  try {
+    createFolderLayerState({
+      callbacks: {},
+      drag: {},
+      folder: {},
+      geometry: {
+        canvasStageRect: { height: 1, left: 0, top: 0, width: 1 },
+        desktopFrame: { height: 1, left: 0, top: 0, width: 1 },
+        desktopStageRect: { height: 1, left: 0, top: 0, width: 1 },
+        singleStageDiagnostics: false,
+      },
+      legacyOverrides: {},
+      stage: { rect: { height: 1, left: 0, top: 0, width: 1 } },
+      ui: {},
+    });
+  } catch (error) {
+    rejectedLegacyOverrides = error instanceof TypeError;
+  }
+  assert(rejectedLegacyOverrides, "legacy arbitrary override groups should be rejected");
 }

@@ -7,7 +7,7 @@ function createPageRenderRange(overrides = {}) {
   const folderPageIndex = ref(overrides.folderPageIndex ?? 0);
   const folderPageTurnRequest = ref(null);
   const pages = ref(overrides.pages ?? [[], [], [], [], [], []]);
-  const searchPages = ref(overrides.searchPages ?? [[], [], [], []]);
+  const searchPages = overrides.searchPagesRef ?? ref(overrides.searchPages ?? [[], [], [], []]);
   const folderPages = ref(overrides.folderPages ?? [[], [], []]);
   const isSearchMode = ref(overrides.isSearchMode ?? false);
   const dragMeta = ref(overrides.dragMeta ?? null);
@@ -121,6 +121,22 @@ export async function runPageRenderRangeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Page render range test failed] ${message}`);
   };
+
+  let inactiveSearchPageReads = 0;
+  const inactiveSearchPages = {
+    get value() {
+      inactiveSearchPageReads += 1;
+      return [[], []];
+    },
+  };
+  const inactiveSearch = createPageRenderRange({
+    isSearchMode: false,
+    searchPageIndex: 1,
+    searchPagesRef: inactiveSearchPages,
+  });
+  inactiveSearch.range.reclampPageIndices();
+  assert(inactiveSearchPageReads === 0, "desktop index reclamping must not evaluate inactive search pages");
+  assert(inactiveSearch.searchPageIndex.value === 0, "inactive search pagination should normalize directly to page zero");
 
   await withFakeWindow(async () => {
     const { pageIndex, range } = createPageRenderRange({ pageIndex: 0 });

@@ -14,6 +14,7 @@ const RENDER_DIAGNOSTIC_DESCRIPTOR = Object.freeze({
     { id: "report.read", mutatesState: false, resultSize: "large" },
     { id: "report.export", mutatesState: false, resultSize: "large" },
     { id: "folder-visual.snapshot", mutatesState: false, resultSize: "medium" },
+    { id: "performance.snapshot", mutatesState: false, resultSize: "small" },
   ]),
   titleKey: "diagnostics.tools.render.title",
   version: 1,
@@ -36,6 +37,7 @@ function requireProbe(probe) {
 export function createRenderDiagnosticAdapter(options = {}) {
   const probe = options.probe;
   const getFolderVisualSnapshot = options.getFolderVisualSnapshot || null;
+  const getPerformanceSnapshot = options.getPerformanceSnapshot || null;
   let disposed = false;
   requireProbe(probe);
   const commands = probe.commands;
@@ -106,6 +108,13 @@ export function createRenderDiagnosticAdapter(options = {}) {
           });
         }
         return getFolderVisualSnapshot();
+      case "performance.snapshot":
+        if (typeof getPerformanceSnapshot !== "function") {
+          throw new DiagnosticError("diagnostic-capability-unavailable", "Runtime performance metrics are currently unavailable", {
+            nextActions: ["Confirm the Pixi desktop layer is mounted"],
+          });
+        }
+        return getPerformanceSnapshot();
       default:
         throw unsupportedDiagnosticOperation("render", operation);
     }

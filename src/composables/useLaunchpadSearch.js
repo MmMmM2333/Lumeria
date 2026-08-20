@@ -1,13 +1,28 @@
 import { computed, nextTick, ref } from "vue";
 import { chunkIntoPages } from "../domain/launchpadLayout.js";
 import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
+import { runtimePerformanceMetrics } from "../diagnostics/runtimePerformanceMetrics.js";
 
 export function useLaunchpadSearch(options) {
   const searchQuery = ref("");
   const isSearchMode = computed(() => searchQuery.value.trim().length > 0);
   const allSearchApps = computed(() => options.collectAppsFromPages(options.pages.value));
-  const searchDocuments = computed(() => buildAppSearchDocuments(allSearchApps.value));
-  const searchApps = computed(() => searchAppDocuments(searchDocuments.value, searchQuery.value));
+  const searchDocuments = computed(() => {
+    const documents = runtimePerformanceMetrics.measure(
+      "search.index.build",
+      () => buildAppSearchDocuments(allSearchApps.value)
+    );
+    runtimePerformanceMetrics.markOnce("search.index.first-ready");
+    return documents;
+  });
+  const searchApps = computed(() => {
+    const query = searchQuery.value;
+    if (!query.trim()) return [];
+    return runtimePerformanceMetrics.measure(
+      "search.query",
+      () => searchAppDocuments(searchDocuments.value, query)
+    );
+  });
   const searchPages = computed(() => chunkIntoPages(searchApps.value, options.pageSize.value));
   const activePages = computed(() => (isSearchMode.value ? searchPages.value : options.pages.value));
   const activePageIndex = computed(() => (isSearchMode.value ? options.searchPageIndex.value : options.pageIndex.value));

@@ -39,6 +39,8 @@ export function runLaunchpadSearchDomainTests() {
   const visualStudioCode = { id: "visual-studio-code", type: "app", name: "Visual Studio Code" };
   const visualStudioCodeExtra = { id: "visual-studio-code-extra", type: "app", name: "Visual Studio Code Extra" };
   const visualStudioCodeDocuments = buildAppSearchDocuments([visualStudioCode]);
+  assert(visualStudioCodeDocuments[0]?.fullPinyin === "", "non-Han app names should not derive a redundant full-pinyin field");
+  assert(visualStudioCodeDocuments[0]?.pinyinInitials === "", "non-Han app names should not derive redundant pinyin initials");
   assert(searchAppDocuments(visualStudioCodeDocuments, "vscode")[0]?.id === visualStudioCode.id, "word-prefix composition should find Visual Studio Code with vscode");
   assert(searchAppDocuments(visualStudioCodeDocuments, "vistcode")[0]?.id === visualStudioCode.id, "word-prefix composition should accept longer prefixes from consecutive words");
   assert(searchAppDocuments(visualStudioCodeDocuments, "vs code")[0]?.id === visualStudioCode.id, "word-prefix composition should ignore query separators after multi-word matching is exhausted");

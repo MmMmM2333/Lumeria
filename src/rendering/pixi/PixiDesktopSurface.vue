@@ -46,21 +46,23 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { WINDOW_CHROME_STATE_CHANGE_EVENT } from "../../api/windowChromeApi.js";
-import { getFolderPreviewSlots } from "../../domain/launchpadLayout.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { getTextRenderResolution } from "./geometry/stageCoordinates.js";
 import { syncPixiTextResolution } from "./pixiText.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
+import {
+  applyDesktopLayerFrameUpdates,
+  makeDesktopDiagnosticsFrame,
+  makeDesktopHandoffFrame,
+  makeDesktopInteractionFrame,
+  makeDesktopLayerFrameUpdates,
+  makeDesktopStructureFrame,
+  makeDesktopVisualFrame,
+} from "./scene/desktopLayerFrames.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { createDragRenderSnapshot } from "./dragRenderSnapshot.js";
-import {
-  clearIconTextureCache,
-  getIconTextureCacheDebugSnapshot,
-  preloadIconTextures,
-  preloadIconTexturesAsync,
-  subscribeIconTextureLoadSettlements,
-} from "./assets/iconTextureCache.js";
+import { iconTextureRepository } from "./assets/iconTextureRepository.js";
 import { createPixiRenderCoordinator } from "./pixiRenderCoordinator.js";
 import { createAppLaunchVisualCommitTracker } from "./appLaunchVisualCommit.js";
 import {
@@ -108,9 +110,8 @@ import {
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
 import { useLocalization } from "../../i18n/localization.js";
+import { runtimePerformanceMetrics } from "../../diagnostics/runtimePerformanceMetrics.js";
 
-const FOLDER_TEXTURE_PREWARM_LIMIT = 80;
-const VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS = 1500;
 const RESIZE_SETTLE_FRAMES = 3;
 const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
@@ -180,8 +181,6 @@ let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
-let folderTexturePrewarmTimer = null;
-let folderTexturePrewarmGeneration = 0;
 let renderCoordinator = null;
 let appLaunchVisualCommitTracker = null;
 let renderProbe = null;
@@ -191,13 +190,13 @@ let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let pixiTextResolution = null;
 let motionDebugOverlay = null;
-let unsubscribeIconTextureLoadSettlements = null;
 let unsubscribeMotionRuntimeRenderSignal = null;
 let desktopMotionRuntimeSuspended = false;
 let desktopFrameHandle = null;
 let desktopFrameLastTime = 0;
 let desktopMotionFrameNeedsRender = false;
 let desktopResizeLayoutSnapPending = false;
+let iconTextureSyncGeneration = 0;
 let resizeSettleScheduler = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
@@ -516,6 +515,12 @@ function createSingleStageFolderState(
       viewportRef: source.folderViewportRef,
       visualPageIndex: source.visualFolderPageIndex?.value ?? source.folderPageIndex?.value,
     },
+    geometry: {
+      canvasStageRect: metrics.rect,
+      desktopFrame: renderGeometry.desktopFrame,
+      desktopStageRect: renderGeometry.desktopStageRect,
+      singleStageDiagnostics: diagnosticsOptions.diagnostics === true,
+    },
     stage: { rect: renderGeometry.stageRect },
     ui: {
       iconGesturePresentation: interactionFrame.value.iconGesturePresentation,
@@ -527,11 +532,6 @@ function createSingleStageFolderState(
       selectedAppIds: interactionFrame.value.selectedAppIds,
       showMissingLaunchTargetBadge: source.showMissingLaunchTargetBadge?.value,
     },
-  }, {
-    canvasStageRect: metrics.rect,
-    desktopFrame: renderGeometry.desktopFrame,
-    desktopStageRect: renderGeometry.desktopStageRect,
-    singleStageDiagnostics: diagnosticsOptions.diagnostics === true,
   });
 }
 
@@ -627,75 +627,156 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function makeDesktopLayerState(metrics, renderGeometry, folderClosingHandoffId) {
-  const singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
-  // Nested controller refs can update before Vue flushes the matching props.
-  // Capture drag ownership once so real icons and the preview cannot disagree
-  // about the same release during this Pixi frame.
-  const dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
-  return {
-    dragSnapshot,
-    state: {
-      activePageIndex: viewportFrame.value.activePageIndex,
-      activePages: viewportFrame.value.activePages,
-      desktopVisualTransform: visualFrame.value.desktopVisualTransform,
-      desktopVisualAlpha: visualFrame.value.desktopVisualAlpha,
-      launchpadVisualAlpha: visualFrame.value.launchpadVisualAlpha,
-      launchpadVisualTransform: visualFrame.value.launchpadVisualTransform,
-      desktopFrame: renderGeometry.desktopFrame,
-      desktopGridDebugOptions: diagnosticsFrame.value.desktopGridDebugOptions,
-      desktopTrackMotionKey: viewportFrame.value.desktopTrackMotionKey,
-      dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
-      dragFolderTargetId: interactionFrame.value.dragFolderTargetId,
-      dragHitDebugOptions: diagnosticsFrame.value.dragHitDebugOptions,
-      dragHitDebugState: diagnosticsFrame.value.dragHitDebugState,
-      ...dragSnapshot,
-      deviceResolution: app.renderer?.resolution || 1,
-      folderClosingHandoffId,
-      singleStageDiagnosticsEnabled: singleStageDiagnosticsOptions,
-      singleStageFolderState: createSingleStageFolderState(
+function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
+  let dragSnapshot = null;
+  let folderClosingHandoffId = null;
+  let folderHandoffResolved = false;
+  let singleStageDiagnosticsOptions = null;
+  let singleStageDiagnosticsResolved = false;
+  let singleStageFolderState = null;
+  let singleStageFolderStateResolved = false;
+
+  function getDragSnapshot() {
+    if (!dragSnapshot) {
+      // Nested controller refs can update before Vue flushes the matching props.
+      // Capture drag ownership once so real icons and the preview cannot disagree
+      // about the same release during this Pixi frame.
+      dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
+    }
+    return dragSnapshot;
+  }
+
+  function getFolderClosingHandoffId() {
+    if (!folderHandoffResolved) {
+      folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
+      folderHandoffResolved = true;
+    }
+    return folderClosingHandoffId;
+  }
+
+  function getSingleStageDiagnosticsOptions() {
+    if (!singleStageDiagnosticsResolved) {
+      singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
+      singleStageDiagnosticsResolved = true;
+    }
+    return singleStageDiagnosticsOptions;
+  }
+
+  function getSingleStageFolderState() {
+    if (!singleStageFolderStateResolved) {
+      singleStageFolderState = createSingleStageFolderState(
         metrics,
-        dragSnapshot,
-        singleStageDiagnosticsOptions,
+        getDragSnapshot(),
+        getSingleStageDiagnosticsOptions(),
         renderGeometry
-      ),
-      folderPageSize: viewportFrame.value.folderPageSize,
-      getDesktopPageRenderMode: sceneRuntime.value.getDesktopPageRenderMode,
-      getVisibleDesktopPage: sceneRuntime.value.getVisibleDesktopPage,
-      gridCols: viewportFrame.value.gridCols,
-      gridRows: viewportFrame.value.gridRows,
-      height: renderGeometry.height,
-      iconSize: viewportFrame.value.iconSize,
-      iconGesturePresentation: interactionFrame.value.iconGesturePresentation,
-      isEditMode: interactionFrame.value.isEditMode,
-      isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
-      folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
-      folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
-      isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
-      isHomeRevealSettling: interactionFrame.value.isHomeRevealSettling,
-      isIconOpening: sceneRuntime.value.isIconOpening,
-      isSearchMode: interactionFrame.value.isSearchMode,
-      isTextlessMode: interactionFrame.value.isTextlessMode,
-      launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
-      pageTrackScrub: viewportFrame.value.pageTrackScrub,
-      focusedIcon: interactionFrame.value.focusedIcon,
-      selectedAppIds: interactionFrame.value.selectedAppIds,
-      setPageRef: sceneRuntime.value.setPageRef,
-      shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
-      snapDesktopLayout: false,
-      showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
-      stageRect: renderGeometry.stageRect,
-      width: renderGeometry.width,
+      );
+      singleStageFolderStateResolved = true;
+    }
+    return singleStageFolderState;
+  }
+
+  const commonHandoff = () => ({
+    folderClosingHandoffId: getFolderClosingHandoffId(),
+    folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
+    folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
+    isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
+  });
+
+  return {
+    builders: {
+      diagnostics: () => makeDesktopDiagnosticsFrame({
+        dragHitDebugOptions: diagnosticsFrame.value.dragHitDebugOptions,
+        dragHitDebugState: diagnosticsFrame.value.dragHitDebugState,
+        singleStageDiagnosticsEnabled: getSingleStageDiagnosticsOptions(),
+        singleStageFolderState: getSingleStageFolderState(),
+        stageRect: renderGeometry.stageRect,
+      }),
+      handoff: () => makeDesktopHandoffFrame(commonHandoff()),
+      interaction: () => makeDesktopInteractionFrame({
+        deviceResolution: app.renderer?.resolution || 1,
+        dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
+        ...commonHandoff(),
+        folderPageSize: viewportFrame.value.folderPageSize,
+        gridCols: viewportFrame.value.gridCols,
+        gridRows: viewportFrame.value.gridRows,
+        groupDragState: getDragSnapshot().groupDragState,
+        height: renderGeometry.height,
+        iconSize: viewportFrame.value.iconSize,
+        isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
+        isTextlessMode: interactionFrame.value.isTextlessMode,
+        launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
+        showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
+        singleStageFolderState: getSingleStageFolderState(),
+        stageRect: renderGeometry.stageRect,
+        width: renderGeometry.width,
+      }),
+      structure: () => {
+        const currentDragSnapshot = getDragSnapshot();
+        return makeDesktopStructureFrame({
+          activePageIndex: viewportFrame.value.activePageIndex,
+          activePages: viewportFrame.value.activePages,
+          desktopFrame: renderGeometry.desktopFrame,
+          desktopGridDebugOptions: diagnosticsFrame.value.desktopGridDebugOptions,
+          desktopTrackMotionKey: viewportFrame.value.desktopTrackMotionKey,
+          desktopVisualAlpha: visualFrame.value.desktopVisualAlpha,
+          desktopVisualTransform: visualFrame.value.desktopVisualTransform,
+          deviceResolution: app.renderer?.resolution || 1,
+          dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
+          dragFolderTargetId: interactionFrame.value.dragFolderTargetId,
+          dragHitDebugOptions: diagnosticsFrame.value.dragHitDebugOptions,
+          dragHitDebugState: diagnosticsFrame.value.dragHitDebugState,
+          dragMeta: currentDragSnapshot.dragMeta,
+          focusedIcon: interactionFrame.value.focusedIcon,
+          ...commonHandoff(),
+          folderPageSize: viewportFrame.value.folderPageSize,
+          getDesktopPageRenderMode: sceneRuntime.value.getDesktopPageRenderMode,
+          getVisibleDesktopPage: sceneRuntime.value.getVisibleDesktopPage,
+          gridCols: viewportFrame.value.gridCols,
+          gridRows: viewportFrame.value.gridRows,
+          groupDragState: currentDragSnapshot.groupDragState,
+          height: renderGeometry.height,
+          iconGesturePresentation: interactionFrame.value.iconGesturePresentation,
+          iconSize: viewportFrame.value.iconSize,
+          isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
+          isEditMode: interactionFrame.value.isEditMode,
+          isHomeRevealSettling: interactionFrame.value.isHomeRevealSettling,
+          isIconOpening: sceneRuntime.value.isIconOpening,
+          isSearchMode: interactionFrame.value.isSearchMode,
+          isTextlessMode: interactionFrame.value.isTextlessMode,
+          launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
+          launchpadVisualAlpha: visualFrame.value.launchpadVisualAlpha,
+          launchpadVisualTransform: visualFrame.value.launchpadVisualTransform,
+          pageTrackScrub: viewportFrame.value.pageTrackScrub,
+          selectedAppIds: interactionFrame.value.selectedAppIds,
+          setPageRef: sceneRuntime.value.setPageRef,
+          shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
+          showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
+          singleStageDiagnosticsEnabled: getSingleStageDiagnosticsOptions(),
+          singleStageFolderState: getSingleStageFolderState(),
+          snapDesktopLayout: options.snapDesktopLayout === true,
+          stageRect: renderGeometry.stageRect,
+          width: renderGeometry.width,
+        });
+      },
+      visual: () => makeDesktopVisualFrame({
+        desktopVisualAlpha: visualFrame.value.desktopVisualAlpha,
+        desktopVisualTransform: visualFrame.value.desktopVisualTransform,
+        height: renderGeometry.height,
+        isFolderOverlayActive: Boolean(sceneRuntime.value.folderOverlayState?.renderedFolder?.value),
+        launchpadVisualAlpha: visualFrame.value.launchpadVisualAlpha,
+        launchpadVisualTransform: visualFrame.value.launchpadVisualTransform,
+        snapDesktopLayout: options.snapDesktopLayout === true,
+        stageRect: renderGeometry.stageRect,
+        width: renderGeometry.width,
+      }),
+    },
+    get resolvedFolderClosingHandoffId() {
+      return folderHandoffResolved ? folderClosingHandoffId : null;
+    },
+    get wasFolderHandoffResolved() {
+      return folderHandoffResolved;
     },
   };
-}
-
-function mergeFrameWork(target, next) {
-  if (!next) return target;
-  target.fullPlanBuilds += Number(next.fullPlanBuilds) || 0;
-  target.handoffReconciliations += Number(next.handoffReconciliations) || 0;
-  target.reconciledNodes += Number(next.reconciledNodes) || 0;
-  return target;
 }
 
 function captureAppLaunchVisualSnapshot() {
@@ -737,32 +818,23 @@ function renderPixi(options = {}) {
   }
   syncPixiTextResolutionIfNeeded();
   const invalidation = options.invalidation || { requiresStructureUpdate: true };
-  const work = { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
   const hasLayerCapability = invalidation.requiresStructureUpdate ||
     invalidation.requiresInteractionUpdate ||
     invalidation.requiresVisualUpdate ||
     invalidation.requiresDiagnosticsUpdate ||
     invalidation.requiresHandoffUpdate;
+  let work = null;
   if (hasLayerCapability) {
     const domGeometry = getDesktopDomGeometry();
     if (!domGeometry) return { didRender: false, hasLayerCapability, work };
     const { metrics, renderGeometry } = domGeometry;
-    const folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
-    const frame = makeDesktopLayerState(metrics, renderGeometry, folderClosingHandoffId);
-    frame.state.snapDesktopLayout = options.snapDesktopLayout === true;
+    const frameContext = makeDesktopLayerFrameBuilders(metrics, renderGeometry, options);
+    const updates = makeDesktopLayerFrameUpdates(invalidation, frameContext.builders);
     layer.setRenderCopy(pixiRenderCopy.value);
-    if (invalidation.requiresStructureUpdate) {
-      mergeFrameWork(work, layer.updateStructure(frame.state));
-    } else {
-      if (invalidation.requiresInteractionUpdate) mergeFrameWork(work, layer.updateInteraction(frame.state));
-      if (invalidation.requiresVisualUpdate) mergeFrameWork(work, layer.updateVisual(frame.state));
-      if (invalidation.requiresDiagnosticsUpdate) mergeFrameWork(work, layer.updateDiagnostics(frame.state));
-      if (invalidation.requiresHandoffUpdate) mergeFrameWork(work, layer.tickFolderHandoff(frame.state));
+    work = applyDesktopLayerFrameUpdates(layer, updates);
+    if (frameContext.wasFolderHandoffResolved) {
+      logFolderHandoffTimeline(metrics, frameContext.resolvedFolderClosingHandoffId);
     }
-    preloadIconTextures([
-      ...(frame.dragSnapshot.groupDragState?.entries || []).map((entry) => entry.item).filter(Boolean),
-    ]);
-    logFolderHandoffTimeline(metrics, folderClosingHandoffId);
   }
   updateMotionDebugOverlay();
   return { didRender: true, hasLayerCapability, work };
@@ -770,12 +842,12 @@ function renderPixi(options = {}) {
 
 function applyImmediateFolderSourceGhosting() {
   if (!app || !layer || !hostRef.value) return false;
+  layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
   layer.applyFolderSourceGhosting?.({
     folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
     folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
     isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
   }, { remember: false });
-  layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
   requestRender("interaction-ownership");
   return true;
 }
@@ -834,6 +906,7 @@ function getRenderCoordinator() {
       const gpuStartedAt = nowMs();
       try {
         app?.render?.();
+        runtimePerformanceMetrics.markOnce("scene.first-ready");
         if (result.didRender) {
           appLaunchCommitTracker.afterRender({
             sessionId: appLaunchCloseSessionId,
@@ -842,6 +915,10 @@ function getRenderCoordinator() {
         }
       } finally {
         const gpuMs = nowMs() - gpuStartedAt;
+        const totalMs = nowMs() - frameStartedAt;
+        runtimePerformanceMetrics.record("render.frame.gpu", gpuMs);
+        runtimePerformanceMetrics.record("render.frame.layer", layerMs);
+        runtimePerformanceMetrics.record("render.frame.total", totalMs);
         if (import.meta.env.DEV && result.didRender) {
           renderProbe?.afterRender?.(probeToken);
           renderProbe?.recordFrameWork?.({
@@ -854,7 +931,7 @@ function getRenderCoordinator() {
             timings: {
               gpuMs,
               layerMs,
-              totalMs: nowMs() - frameStartedAt,
+              totalMs,
             },
           });
         }
@@ -942,64 +1019,6 @@ function shouldRunHandoffRenderLoop() {
   }) && app && layer && hostRef.value && !destroyed);
 }
 
-function clearFolderTexturePrewarmTimer() {
-  folderTexturePrewarmGeneration += 1;
-  if (folderTexturePrewarmTimer == null) return;
-  window.clearTimeout(folderTexturePrewarmTimer);
-  folderTexturePrewarmTimer = null;
-}
-
-function getFirstFolderPageItems(folder) {
-  return Array.isArray(folder?.childPages) ? folder.childPages[0] || [] : [];
-}
-
-function collectFolderTexturePrewarmItems() {
-  const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
-  const visibleItems = sceneRuntime.value.getVisibleDesktopPage?.(page) || [];
-  const items = [];
-  for (const item of visibleItems) {
-    if (item?.type !== "folder") continue;
-    const firstPageItems = getFirstFolderPageItems(item).slice(0, viewportFrame.value.folderPageSize);
-    for (const child of firstPageItems) {
-      if (!child) continue;
-      items.push(child);
-      if (items.length >= FOLDER_TEXTURE_PREWARM_LIMIT) return items;
-    }
-  }
-  return items;
-}
-
-function collectVisibleIconTextureItems() {
-  const page = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
-  const visibleItems = sceneRuntime.value.getVisibleDesktopPage?.(page) || [];
-  const items = [];
-  for (const item of visibleItems) {
-    if (!item) continue;
-    if (item.type !== "folder") {
-      items.push(item);
-      continue;
-    }
-    items.push(...getFolderPreviewSlots(item, viewportFrame.value.folderPageSize).filter(Boolean));
-  }
-  return items;
-}
-
-function scheduleFolderTexturePrewarm() {
-  if (!app) return;
-  clearFolderTexturePrewarmTimer();
-  const generation = folderTexturePrewarmGeneration;
-  void preloadIconTexturesAsync(collectVisibleIconTextureItems(), {
-    timeoutMs: VISIBLE_ICON_TEXTURE_PRELOAD_TIMEOUT_MS,
-  }).then(() => {
-    if (destroyed || generation !== folderTexturePrewarmGeneration) return;
-    folderTexturePrewarmTimer = window.setTimeout(() => {
-      folderTexturePrewarmTimer = null;
-      if (destroyed || generation !== folderTexturePrewarmGeneration) return;
-      preloadIconTextures(collectFolderTexturePrewarmItems());
-    }, 0);
-  });
-}
-
 function handleIconAction(action, event, item, source) {
   if (action === "pointerdown") {
     if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
@@ -1033,6 +1052,26 @@ function handleSingleStageFolderTitleFrameChange(frame) {
     : null;
 }
 
+async function synchronizeActiveIconTextures(options = {}) {
+  const generation = ++iconTextureSyncGeneration;
+  try {
+    const snapshot = await runtimePerformanceMetrics.measureAsync(
+      "texture.synchronize",
+      () => iconTextureRepository.synchronize(sceneRuntime.value.getIconTextureItems())
+    );
+    runtimePerformanceMetrics.markOnce("texture.first-ready");
+    if (
+      options.renderOnComplete !== false &&
+      generation === iconTextureSyncGeneration &&
+      !destroyed
+    ) requestRender("asset-icon-textures-synchronized");
+    return snapshot;
+  } catch (error) {
+    console.error("Failed to synchronize active icon textures", error);
+    throw error;
+  }
+}
+
 function disposeDiagnosticHub(hub) {
   if (!hub || typeof hub.dispose !== "function") return;
   void Promise.resolve(hub.dispose()).then((result) => {
@@ -1047,6 +1086,7 @@ function disposeDiagnosticHub(hub) {
 function destroyPixi(options = {}) {
   const deep = options.deep !== false;
   destroyed = true;
+  iconTextureSyncGeneration += 1;
   window.removeEventListener("resize", handleResize);
   window.removeEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   resizeObserver?.disconnect();
@@ -1057,8 +1097,6 @@ function destroyPixi(options = {}) {
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  unsubscribeIconTextureLoadSettlements?.();
-  unsubscribeIconTextureLoadSettlements = null;
   unsubscribeMotionRuntimeRenderSignal?.();
   unsubscribeMotionRuntimeRenderSignal = null;
   if (desktopMotionRuntimeSuspended) {
@@ -1086,7 +1124,6 @@ function destroyPixi(options = {}) {
   }
   singleStageFolderPanelGeometry.value = null;
   singleStageFolderTitleFrame.value = null;
-  clearFolderTexturePrewarmTimer();
   if (currentLayer) {
     currentApp?.stage?.removeChild(currentLayer);
     if (deep) currentLayer.destroy({ children: true });
@@ -1100,7 +1137,7 @@ function destroyPixi(options = {}) {
   hostRef.value?.replaceChildren?.();
   sceneRuntime.value.iconBoundsRegistry.clearBounds("desktop");
   sceneRuntime.value.iconBoundsRegistry.clearBounds("search");
-  if (deep) clearIconTextureCache();
+  if (deep) iconTextureRepository.dispose();
 }
 
 onMounted(async () => {
@@ -1143,9 +1180,6 @@ onMounted(async () => {
     },
   });
   app.stage.addChild(layer);
-  unsubscribeIconTextureLoadSettlements = subscribeIconTextureLoadSettlements(() => {
-    if (!destroyed && app && layer) requestRender("icon-texture-ready");
-  });
   unsubscribeMotionRuntimeRenderSignal = motionRuntime.onRenderSignal((
     activeAnimationCount,
     writesLastFrame,
@@ -1198,7 +1232,7 @@ onMounted(async () => {
       capture: (captureOptions) => capturePixiRenderSnapshot({
         ...captureOptions,
         app,
-        getTextureCacheDebugSnapshot: getIconTextureCacheDebugSnapshot,
+        getTextureCacheDebugSnapshot: iconTextureRepository.snapshot,
         layer,
       }),
     });
@@ -1210,6 +1244,10 @@ onMounted(async () => {
       }),
       createRenderDiagnosticAdapter({
         getFolderVisualSnapshot: () => layer?.getFolderVisualDebugSnapshot?.() || null,
+        getPerformanceSnapshot: () => ({
+          ...runtimePerformanceMetrics.snapshot(),
+          textures: iconTextureRepository.snapshot(),
+        }),
         probe: renderProbe,
       }),
       createSceneDiagnosticAdapter(),
@@ -1237,9 +1275,10 @@ onMounted(async () => {
   window.addEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   await nextTick();
   if (destroyed || !app || !layer) return;
+  await synchronizeActiveIconTextures({ renderOnComplete: false });
+  if (destroyed || !app || !layer) return;
   refreshDesktopDomGeometry();
   requestRender("mount");
-  scheduleFolderTexturePrewarm();
 });
 
 watch(
@@ -1322,7 +1361,10 @@ watchEffect(() => {
   void diagnosticsFrame.value.showMissingLaunchTargetBadge;
   void pixiRenderCopy.value;
   requestRender("structure-watch");
-  scheduleFolderTexturePrewarm();
+});
+
+watchEffect(() => {
+  void synchronizeActiveIconTextures();
 });
 
 watchEffect(() => {

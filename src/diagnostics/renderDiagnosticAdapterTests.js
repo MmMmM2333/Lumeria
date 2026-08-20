@@ -61,6 +61,7 @@ export async function runRenderDiagnosticAdapterTests() {
   };
   const adapter = createRenderDiagnosticAdapter({
     getFolderVisualSnapshot: () => ({ ownerCount: 2 }),
+    getPerformanceSnapshot: () => ({ metrics: { "render.frame.total": { p95Ms: 4.2 } } }),
     probe,
   });
 
@@ -95,6 +96,8 @@ export async function runRenderDiagnosticAdapterTests() {
   assert(inspection.phase === "inspect-test", "inspection should preserve its label");
   const folderVisual = await adapter.invoke("folder-visual.snapshot");
   assert(folderVisual.ownerCount === 2, "the adapter should absorb the replaced folderVisual global path");
+  const performance = await adapter.invoke("performance.snapshot");
+  assert(performance.metrics["render.frame.total"].p95Ms === 4.2, "the adapter should expose the bounded runtime performance snapshot");
 
   await adapter.dispose();
   await adapter.dispose();

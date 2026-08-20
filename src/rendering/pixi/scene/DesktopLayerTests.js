@@ -58,6 +58,11 @@ function makeNode(id) {
       y: 0.7,
     },
     state: { draggable: false, ghosted: true, interactive: false },
+    setState(state) {
+      this.state = state;
+      this.eventMode = state.interactive === false ? "none" : "static";
+      this.visible = !state.dragging && !state.ghosted;
+    },
     setFolderHandoffSourceHidden(hidden) {
       this.visualWrap.visible = !hidden;
       this.labelText.renderable = !hidden;
@@ -545,9 +550,76 @@ export async function runDesktopLayerTests() {
     assert(nearlyEqual(movingNode.x, expectedX), "the hidden real desktop icon should snap to the release target before it is revealed");
     assert(!getBaseAnimation(movingNode, "x"), "the hidden real desktop icon should not keep a layout spring that can twitch after reveal");
 
+    const expectedY = targetRecord.top + targetRecord.height / 2;
+    movingNode.position.set(initialX, movingNode.y);
+    const releaseNode = new Container();
+    const stableReleasePose = layer.resolveGroupReleasePoint({
+      entry: { id: movingItem.id, mode: "move" },
+      node: releaseNode,
+      state: releaseState,
+      target: {
+        area: "desktop",
+        id: movingItem.id,
+        index: 1,
+        pageIndex: 0,
+        semanticAnchor: {
+          index: 1,
+          itemId: movingItem.id,
+          kind: "desktop-slot",
+          pageIndex: 0,
+        },
+      },
+    });
+    assert(
+      nearlyEqual(stableReleasePose?.point?.x, expectedX) &&
+        nearlyEqual(stableReleasePose?.point?.y, expectedY),
+      "desktop point releases should resolve the committed stable slot instead of chasing the hidden node's stale transform"
+    );
+    releaseNode.destroy();
+
+    layer.update({
+      ...releaseState,
+      dragMeta: null,
+      groupDragState: null,
+      groupTransferOwnedItemIds: new Set(),
+    });
+    assert(
+      movingNode.visible === true && nearlyEqual(movingNode.x, expectedX),
+      "a structural ownership release should reveal the real icon only after snapping its stale node to the committed slot"
+    );
+
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
     motionRuntime.reset();
+  }
+
+  {
+    const item = { id: "group-transfer-ownership-app", name: "Ownership App", type: "app" };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const node = makeNode(item.id);
+    node.item = item;
+    node.state = { ...node.state, dragging: false, ghosted: false, item };
+    node.visible = true;
+    layer.iconNodes.set(`page:0:${item.id}`, node);
+    layer.groupDragLayer = {
+      syncVisualOwnership(group) {
+        return group
+          ? { folderShellIds: new Set(), itemIds: new Set([item.id]) }
+          : { folderShellIds: new Set(), itemIds: new Set() };
+      },
+    };
+
+    layer.applyImmediateGroupTransferOwnership({ key: "group-transfer-ownership" });
+    assert(
+      node.state.ghosted === true && node.visible === false,
+      "group transfer acquisition should hide the real desktop icon immediately"
+    );
+    layer.applyImmediateGroupTransferOwnership(null);
+    assert(
+      node.state.ghosted === false && node.visible === true,
+      "group transfer release should reveal the real desktop icon in the same ownership transaction"
+    );
   }
 
   {
@@ -712,11 +784,25 @@ export async function runDesktopLayerTests() {
     const folderEntry = layer.lastDesktopRenderPlan.entries.find((entry) => entry.item.id === folder.id);
     assert(folderNode?.state?.ghosted === true, "created-folder release target should remain hidden behind the release visuals");
     assert(
+      folderNode?.__folderSourceGhostedByOwnership === true,
+      "created-folder shell ownership should be recorded as the source of the folder ghost"
+    );
+    assert(
       nearlyEqual(folderNode?.position?.x, folderEntry?.layoutTarget?.x) &&
         nearlyEqual(folderNode?.position?.y, folderEntry?.layoutTarget?.y) &&
         !getBaseAnimation(folderNode, "x") &&
         !getBaseAnimation(folderNode, "y"),
       "created-folder release target should start at stable layout without the ordinary new-node entry spring"
+    );
+    layer.updateInteraction({
+      ...makeDesktopQuiescenceState(folder),
+      groupDragState: null,
+      groupTransferOwnedFolderShellIds: new Set(),
+      groupTransferOwnedItemIds: new Set(),
+    });
+    assert(
+      folderNode?.state?.ghosted === false && folderNode?.visible === true,
+      "releasing created-folder shell ownership should reveal the real folder in the same interaction lane"
     );
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -1956,7 +2042,7 @@ export async function runDesktopLayerTests() {
     layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
     layer.releaseClosingFolderHandoffVisual("folder-1");
     folder.__folderSourceGhostedByOwnership = true;
-    folder.state.ghosted = false;
+    folder.state = { ...folder.state, ghosted: false };
     folder.visible = true;
 
     layer.applyFolderSourceGhosting({

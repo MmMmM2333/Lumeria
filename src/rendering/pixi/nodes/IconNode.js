@@ -4,7 +4,7 @@ import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motionAdd, motionSequence, motion } from "../animation/motionTween.js";
-import { getCachedIconTexture } from "../assets/iconTextureCache.js";
+import { iconTextureRepository } from "../assets/iconTextureRepository.js";
 import {
   getCenteredLocalRect,
   mapDisplayObjectLocalRectToStageRect,
@@ -323,6 +323,7 @@ export class IconNode extends Container {
     this.describeMotionTargets();
   }
 
+  /** @param {import("./iconVisualState.js").IconVisualState} state */
   setState(state) {
     state = { draggable: true, ...state };
     const wasGhosted = Boolean(this.state?.ghosted);
@@ -792,7 +793,7 @@ export class IconNode extends Container {
 
     this.hideFolderChildren();
     const itemId = this.item?.id;
-    const texture = getCachedIconTexture(this.item, () => {
+    const texture = iconTextureRepository.resolve(this.item, () => {
       if (this.destroyed || this.item?.id !== itemId || !this.state) return;
       this.renderVisual(this.state);
     }, this);
@@ -906,7 +907,7 @@ export class IconNode extends Container {
         continue;
       }
       const childId = child.id;
-      const texture = getCachedIconTexture(child, () => {
+      const texture = iconTextureRepository.resolve(child, () => {
         if (this.destroyed || !this.state || this.item?.type !== "folder") return;
         const currentPlan = getFolderPreviewMotionPlan(this.item, this.state.folderPreviewPageSize, getFolderThumbMetrics(this.iconSize));
         if (!currentPlan.items.some((item) => item?.id === childId)) return;

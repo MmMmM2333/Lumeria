@@ -70,6 +70,7 @@ export {
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 const DESKTOP_DRAG_HANDOFF_LAYOUT_REASON = "desktop-drag-handoff-layout";
+const GROUP_TRANSFER_OWNERSHIP_HANDOFF_LAYOUT_REASON = "group-transfer-ownership-handoff-layout";
 const DESKTOP_RESIZE_LAYOUT_REASON = "desktop-resize-layout";
 const MOTION_TARGET_EPSILON = 0.0001;
 
@@ -677,6 +678,10 @@ export class DesktopLayer extends Container {
     this.widthValue = normalizedState.width;
     this.heightValue = normalizedState.height;
     this.updateFolderDropTargetLayers(plan, normalizedState);
+    this.applyGroupTransferOwnershipSnapshot({
+      folderShellIds: normalizedState.groupTransferOwnedFolderShellIds,
+      itemIds: normalizedState.groupTransferOwnedItemIds,
+    });
     this.applyFolderSourceGhosting(normalizedState);
     this.updateGroupDragLayer(normalizedState);
     return { fullPlanBuilds: 0, handoffReconciliations: 0, reconciledNodes: 0 };
@@ -771,6 +776,8 @@ export class DesktopLayer extends Container {
 
       const seen = new Set();
       const boundsEntries = [];
+      const groupTransferOwnedItemIds = state.groupTransferOwnedItemIds || new Set();
+      const groupTransferOwnedFolderShellIds = state.groupTransferOwnedFolderShellIds || new Set();
       for (const entry of plan.entries) {
         const {
           effectiveFolderHandoffEntry,
@@ -851,8 +858,6 @@ export class DesktopLayer extends Container {
 
       this.emptyText.visible = plan.emptyText.visible;
       this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
-      const groupTransferOwnedItemIds = state.groupTransferOwnedItemIds || new Set();
-      const groupTransferOwnedFolderShellIds = state.groupTransferOwnedFolderShellIds || new Set();
       for (const [key, node] of this.iconNodes) {
         if (seen.has(key)) continue;
         this.retireIconNode(key, node, {
@@ -877,6 +882,10 @@ export class DesktopLayer extends Container {
     }
     this.updateSingleStageFolderLayer(state);
     this.updateFolderDropTargetLayers(plan, state);
+    this.applyGroupTransferOwnershipSnapshot({
+      folderShellIds: state.groupTransferOwnedFolderShellIds,
+      itemIds: state.groupTransferOwnedItemIds,
+    });
     this.applyFolderSourceGhosting(state);
     this.updateGroupDragLayer(state);
     this.updateDiagnostics(state);
@@ -1069,6 +1078,7 @@ export class DesktopLayer extends Container {
   }
 
   hasSingleStageFolderOverlayContent(state = {}) {
+    if (typeof state.isFolderOverlayActive === "boolean") return state.isFolderOverlayActive;
     return Boolean(state.singleStageFolderState?.renderedFolder);
   }
 
@@ -1128,6 +1138,7 @@ export class DesktopLayer extends Container {
     if (options.remember !== false) this.lastFolderSourceGhostingState = state;
     const rawIds = state.folderSourceGhostedIds;
     const ownershipIds = normalizeFolderIdSet(
+      state.groupTransferOwnedFolderShellIds,
       getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
       this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
     );
@@ -1238,36 +1249,72 @@ export class DesktopLayer extends Container {
 
   applyImmediateGroupTransferOwnership(group) {
     const ownership = this.groupDragLayer.syncVisualOwnership(group);
-    if (!ownership.itemIds.size && !ownership.folderShellIds.size) return false;
+    return this.applyGroupTransferOwnershipSnapshot(ownership);
+  }
+
+  applyGroupTransferOwnershipSnapshot(ownership = {}) {
+    const itemIds = ownership.itemIds instanceof Set ? ownership.itemIds : new Set();
+    const folderShellIds = ownership.folderShellIds instanceof Set ? ownership.folderShellIds : new Set();
     let changed = false;
     for (const node of this.iconNodes.values()) {
       if (!node?.state) continue;
-      const isDirectlyOwned = ownership.itemIds.has(node.item?.id) ||
-        ownership.folderShellIds.has(node.item?.id);
+      const wasDirectlyOwned = node.__groupTransferGhostedByOwnership === true;
+      const isDirectlyOwned = itemIds.has(node.item?.id) || folderShellIds.has(node.item?.id);
+      const previousSuppressedFolderPreviewChildIds = node.__groupTransferSuppressedFolderPreviewChildIds || [];
       const suppressedFolderPreviewChildIds = node.item?.type === "folder"
         ? (node.item.childPages || [])
           .flatMap((page) => page || [])
-          .filter((child) => ownership.itemIds.has(child?.id))
+          .filter((child) => itemIds.has(child?.id))
           .map((child) => child.id)
         : [];
-      if (!isDirectlyOwned && !suppressedFolderPreviewChildIds.length) continue;
-      if (isDirectlyOwned) {
+      const previewSuppressionChanged = previousSuppressedFolderPreviewChildIds.length !== suppressedFolderPreviewChildIds.length ||
+        previousSuppressedFolderPreviewChildIds.some((id, index) => id !== suppressedFolderPreviewChildIds[index]);
+      if (!wasDirectlyOwned && !isDirectlyOwned && !previewSuppressionChanged) continue;
+      if (isDirectlyOwned && !wasDirectlyOwned) {
         killMotionOf(node, null, { reason: "group-release-source-handoff" });
         killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });
       }
+      if (!isDirectlyOwned && wasDirectlyOwned) {
+        const committedEntry = this.lastDesktopRenderPlan?.entries?.find(
+          (entry) => entry.item?.id === node.item?.id
+        );
+        if (committedEntry?.layoutTarget) {
+          snapIconLayoutPosition(
+            node,
+            committedEntry.layoutTarget,
+            () => this.markInteractiveBoundsDirty(),
+            GROUP_TRANSFER_OWNERSHIP_HANDOFF_LAYOUT_REASON
+          );
+        }
+      }
+      const baseGhosted = Boolean(node.state.ghosted) && !wasDirectlyOwned;
+      node.__groupTransferGhostedByOwnership = isDirectlyOwned;
+      node.__groupTransferSuppressedFolderPreviewChildIds = [...suppressedFolderPreviewChildIds];
       node.setState({
         ...node.state,
-        ghosted: isDirectlyOwned || node.state.ghosted === true,
+        dragging: isDirectlyOwned ? node.state.dragging : false,
+        ghosted: baseGhosted || node.__folderSourceGhostedByOwnership === true || isDirectlyOwned,
         suppressedFolderPreviewChildIds,
         suppressLabelRevealAfterGhost: true,
       });
       changed = true;
     }
     for (const node of this.singleStageFolderLayer?.iconNodes?.values?.() || []) {
-      if (!node?.state || !ownership.itemIds.has(node.item?.id)) continue;
-      killMotionOf(node, null, { reason: "group-release-folder-source-handoff" });
-      killMotionOf(node.scale, null, { reason: "group-release-folder-source-handoff" });
-      node.setState({ ...node.state, ghosted: true });
+      if (!node?.state) continue;
+      const wasDirectlyOwned = node.__groupTransferGhostedByOwnership === true;
+      const isDirectlyOwned = itemIds.has(node.item?.id);
+      if (wasDirectlyOwned === isDirectlyOwned) continue;
+      if (isDirectlyOwned) {
+        killMotionOf(node, null, { reason: "group-release-folder-source-handoff" });
+        killMotionOf(node.scale, null, { reason: "group-release-folder-source-handoff" });
+      }
+      const baseGhosted = Boolean(node.state.ghosted) && !wasDirectlyOwned;
+      node.__groupTransferGhostedByOwnership = isDirectlyOwned;
+      node.setState({
+        ...node.state,
+        dragging: isDirectlyOwned ? node.state.dragging : false,
+        ghosted: baseGhosted || isDirectlyOwned,
+      });
       changed = true;
     }
     return changed;
@@ -1401,6 +1448,37 @@ export class DesktopLayer extends Container {
     }
     const targetId = target?.id || entry?.id || null;
     if (!targetId) return null;
+    if (semanticAnchor?.kind === "desktop-slot") {
+      const pageIndex = Number.isFinite(Number(semanticAnchor.pageIndex))
+        ? Number(semanticAnchor.pageIndex)
+        : Number(target?.pageIndex) || 0;
+      const stableRecord = this.iconBoundsRegistry?.getBounds?.(
+        BOUNDS_KIND.LAUNCH,
+        BOUNDS_VARIANT.STABLE_STAGE_LAYOUT,
+        {
+          area: "desktop",
+          id: targetId,
+          pageIndex,
+        }
+      );
+      const stableClientRect = stageLayoutRecordToClientRect(stableRecord);
+      const stableStageRect = clientRectToStageVisualRect(stableClientRect, state?.stageRect);
+      const stableIndex = Number(stableRecord?.meta?.index);
+      const expectedIndex = Number(semanticAnchor.index);
+      if (
+        stableStageRect &&
+        (!Number.isFinite(expectedIndex) || !Number.isFinite(stableIndex) || stableIndex === expectedIndex)
+      ) {
+        const targetScale = resolvePointReleaseTargetScale(this.groupDragLayer, releaseNode, {
+          targetStageRect: stableStageRect,
+        });
+        return makeResolvedPoint({
+          x: stableStageRect.left + stableStageRect.width / 2,
+          y: stableStageRect.top + stableStageRect.height / 2,
+        }, targetScale);
+      }
+      return null;
+    }
     const nodeCandidates = [
       this.findIconNodeByItemId(targetId),
       ...Array.from(this.singleStageFolderLayer?.iconNodes?.values?.() || [])
@@ -1531,9 +1609,13 @@ export class DesktopLayer extends Container {
     node.eventMode = "static";
     node.cursor = "pointer";
     if (node.state) {
-      node.state.draggable = true;
-      node.state.ghosted = false;
-      node.state.interactive = true;
+      node.state = Object.freeze({
+        ...node.state,
+        draggable: true,
+        ghosted: false,
+        interactive: true,
+        preserveNodeScale: true,
+      });
     }
     node.resetFolderPreviewAfterGhost?.();
     if (!entry.visualReleased) {

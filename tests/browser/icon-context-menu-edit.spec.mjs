@@ -138,6 +138,28 @@ async function getDesktopSurfacePoint(page) {
   };
 }
 
+async function getFolderOutsidePoint(page) {
+  return page.evaluate(() => {
+    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const main = state?.desktopMainRef?.getBoundingClientRect?.();
+    const panel = state?.folderPanelRef?.getBoundingClientRect?.();
+    if (!main || !panel) throw new Error("Open-folder context menu test requires live main and panel bounds");
+    const middleY = Math.max(main.top + 8, Math.min(main.bottom - 8, panel.top + panel.height / 2));
+    const middleX = Math.max(main.left + 8, Math.min(main.right - 8, panel.left + panel.width / 2));
+    const candidates = [
+      { x: main.left + 8, y: middleY },
+      { x: main.right - 8, y: middleY },
+      { x: middleX, y: main.top + 8 },
+      { x: middleX, y: main.bottom - 8 },
+    ];
+    const outside = candidates.find(({ x, y }) => (
+      x < panel.left || x > panel.right || y < panel.top || y > panel.bottom
+    ));
+    if (!outside) throw new Error("Open folder covers every available desktop context-menu point");
+    return outside;
+  });
+}
+
 async function rightClickDesktopSurface(page) {
   const point = await getDesktopSurfacePoint(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
@@ -404,7 +426,7 @@ test("folder icon, blank panel, and outside context menus keep their scopes sepa
   await expect(page.getByRole("menu", { name: "启动台菜单", exact: true })).toHaveCount(0);
 
   await page.keyboard.press("Escape");
-  const outsidePoint = await getDesktopSurfacePoint(page);
+  const outsidePoint = await getFolderOutsidePoint(page);
   await page.mouse.click(outsidePoint.x, outsidePoint.y, { button: "right" });
   await expect(page.locator("[role='menu']:visible")).toHaveCount(0);
   await expect(page.locator("input.pixi-folder-name-input")).toBeVisible();

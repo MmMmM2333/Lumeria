@@ -60,17 +60,23 @@ function buildSearchQuery(value) {
 
 export function buildAppSearchDocuments(apps) {
   return (apps || []).map((app, originalOrder) => {
-    const nameTokens = tokenizeSearchValue(app?.name);
+    const name = String(app?.name || "");
+    const nameTokens = tokenizeSearchValue(name);
+    const hasHanText = /\p{Script=Han}/u.test(name);
     return {
       app,
       originalOrder,
-      normalizedName: normalizeSearchValue(app?.name),
-      compactName: compactSearchValue(app?.name),
+      normalizedName: normalizeSearchValue(name),
+      compactName: compactSearchValue(name),
       nameTokens,
       wordInitials: nameTokens.map((token) => Array.from(token)[0] || "").join(""),
-      hasHanText: /\p{Script=Han}/u.test(String(app?.name || "")),
-      fullPinyin: compactPinyinValue(pinyin(app?.name || "", { toneType: "none", type: "array" }).join("")),
-      pinyinInitials: compactPinyinValue(pinyin(app?.name || "", { pattern: "first", toneType: "none", type: "array" }).join("")),
+      hasHanText,
+      fullPinyin: hasHanText
+        ? compactPinyinValue(pinyin(name, { toneType: "none", type: "array" }).join(""))
+        : "",
+      pinyinInitials: hasHanText
+        ? compactPinyinValue(pinyin(name, { pattern: "first", toneType: "none", type: "array" }).join(""))
+        : "",
     };
   });
 }

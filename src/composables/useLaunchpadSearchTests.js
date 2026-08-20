@@ -65,6 +65,19 @@ export async function runLaunchpadSearchTests() {
   assert(initial.search.activePages.value === initial.pages.value, "empty search should use desktop pages as active pages");
   assert(initial.search.activePageIndex.value === initial.pageIndex.value, "empty search should use the desktop page index");
 
+  let idleNameReads = 0;
+  const idleApp = {
+    id: "idle-app",
+    type: "app",
+    get name() {
+      idleNameReads += 1;
+      return "Idle App";
+    },
+  };
+  const idle = createSearchFlow({ pages: [[idleApp]] });
+  assert(idle.search.searchPages.value.length >= 0, "idle search pages should remain readable");
+  assert(idleNameReads === 0, "reading idle search pages must not build search documents before a query exists");
+
   const input = createSearchFlow();
   input.search.handleSearchInput({ target: { value: " mail " } });
   assert(input.search.searchQuery.value === " mail ", "search input should preserve the raw query value");

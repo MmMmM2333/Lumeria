@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "benchmark:diagnostics": "node --expose-gc scripts/benchmarkMotionDiagnostics.mjs",
+    "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.mjs",
+    "check": "npm test && npm run typecheck && npm run check:i18n && npm run build",
     "check:i18n": "node scripts/checkI18n.mjs",
     "dev": "vite",
     "icons:export": "node scripts/exportBrandIcons.mjs",
@@ -12,6 +13,7 @@
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.mjs --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.mjs --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",
+    "test:ui": "playwright test --project=chromium --workers=1",
     "build": "vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "tauri:dev": "tauri dev",

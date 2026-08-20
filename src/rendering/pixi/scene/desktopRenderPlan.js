@@ -8,6 +8,7 @@ import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTarg
 import { getDesktopGridMetrics, getGridSlotRect, makeRect } from "../geometry/gridGeometry.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getStageScale, makeStageVirtualElement, snapRectToDevicePixels } from "../geometry/stageCoordinates.js";
+import { makeIconVisualState } from "../nodes/iconVisualState.js";
 import { getDesktopIconSizing } from "./desktopIconSizing.js";
 import { makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { resolveFolderPresentationState } from "./folderPresentationPlan.js";
@@ -462,7 +463,8 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
         item,
         key,
         layoutTarget,
-        nodeState: {
+        nodeState: makeIconVisualState({
+          area: null,
           batchSelected: Boolean(
             state.isBatchSelectionActive &&
             item.type === "app" &&
@@ -477,12 +479,19 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
             ? false
             : isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff && state.dragFolderTargetId === item.id,
           editing: isInteractivePage && !isFolderClosingHandoff && state.isEditMode,
+          focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
+            state.focusedIcon,
+            state.isSearchMode ? "search" : "desktop",
+            item.id,
+            pageIndex
+          ),
           folderHoverState: (item.type === "folder"
             ? false
             : isInteractivePage && !state.isSearchMode && !isFolderClosingHandoff) && state.dragFolderHoverState?.targetId === item.id
             ? state.dragFolderHoverState
             : null,
           folderPreviewPageSize: state.folderPageSize,
+          folderPreviewRelease: false,
           ghosted: !isFolderClosingHandoff && (
             isFolderSourceGhosted ||
             ownedItemIds.has(item.id) ||
@@ -503,12 +512,6 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           preserveNodeScale: folderPresentation?.handoff.pinsLayout === true || isFolderClosingHandoff,
           removable: item.type === "app",
           revealLabelAfterVisualHandoff: shouldDeferLabelReveal,
-          focused: !isFolderClosingHandoff && isInteractivePage && matchesIconFocus(
-            state.focusedIcon,
-            state.isSearchMode ? "search" : "desktop",
-            item.id,
-            pageIndex
-          ),
           selectedChildCount: state.isBatchSelectionActive
             ? countSelectedFolderChildren(item, selectedAppIds)
             : 0,
@@ -523,7 +526,8 @@ export function buildDesktopRenderPlan(inputState = {}, options = {}) {
           suppressedFolderPreviewChildIds,
           suppressLabelRevealAfterGhost,
           textless: state.isTextlessMode,
-        },
+          visualSpecTransition: null,
+        }),
         pageIndex,
         shouldRetireStaleHandoff,
         sizing,

@@ -68,7 +68,7 @@ import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from ".
 import { IconNode } from "../nodes/IconNode.js";
 import { getIconCellTopInteractionOverflow } from "../nodes/iconInteractionGeometry.js";
 import { makeIconVisualSpec, makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
-import { getCachedIconTexture } from "../assets/iconTextureCache.js";
+import { iconTextureRepository } from "../assets/iconTextureRepository.js";
 import {
   cancelPageTrackMotion,
   createPageTrackMotionState,
@@ -733,7 +733,7 @@ export class FolderOverlayLayer extends Container {
     });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
-      getIconTexture: (item, render, ghost) => getCachedIconTexture(item, render, ghost),
+      getIconTexture: (item, render, ghost) => iconTextureRepository.resolve(item, render, ghost),
       graphicsFactory: () => new Graphics(),
       spriteFactory: () => new Sprite(),
       textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),

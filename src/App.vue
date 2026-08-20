@@ -56,7 +56,7 @@
       @search-input="handleSearchInput"
       @search-focus="keyboardFocusArea = 'search'"
       @clear-search="clearSearch"
-      @open-settings="openSettingsPanel"
+      @open-settings="requestOpenSettingsPanel"
       @page-index="commitChromePageIndex"
     >
       <PixiDesktopSurface
@@ -111,7 +111,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
 import LaunchpadChromeFrame from "./components/LaunchpadChromeFrame.vue";
 import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
@@ -142,6 +142,7 @@ import { useLocalization, useLocalizationRuntime } from "./i18n/localization.js"
 import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
+import { runtimePerformanceMetrics } from "./diagnostics/runtimePerformanceMetrics.js";
 import {
   isLaunchpadContextMenuInteractionBlocked,
   resolveLaunchpadContextMenuTarget,
@@ -274,6 +275,31 @@ const {
   openSettingsPanel,
   rescanManagedApps,
 } = settingsPanel;
+let finishFirstSettingsOpen = null;
+let settingsFirstOpenMeasured = false;
+
+function requestOpenSettingsPanel() {
+  if (!settingsFirstOpenMeasured && !finishFirstSettingsOpen && !isSettingsPanelOpen.value) {
+    finishFirstSettingsOpen = runtimePerformanceMetrics.begin("settings.first-open");
+  }
+  openSettingsPanel();
+}
+
+watch(
+  () => shouldRenderSettingsPanel.value,
+  async (shouldRender) => {
+    if (!shouldRender || !finishFirstSettingsOpen || settingsFirstOpenMeasured) return;
+    await nextTick();
+    window.requestAnimationFrame(() => {
+      if (!finishFirstSettingsOpen || settingsFirstOpenMeasured) return;
+      finishFirstSettingsOpen();
+      finishFirstSettingsOpen = null;
+      settingsFirstOpenMeasured = true;
+      runtimePerformanceMetrics.markOnce("settings.first-open-ready");
+    });
+  },
+  { flush: "post" }
+);
 const {
   clearSearch,
   handleSearchInput,
@@ -311,6 +337,7 @@ const {
   launchTargetStatusById,
   launchpadVisualAlpha,
   launchpadVisualTransform,
+  getIconTextureItems,
   getDesktopPageRenderMode,
   setPageRef,
   pageGridMeasureStyle,
@@ -941,6 +968,7 @@ const desktopSceneRuntime = makeDesktopSceneRuntimeAdapter({
   domRefs: desktopDomRefs,
   folderOverlayState: folderOverlay,
   getDesktopPageRenderMode,
+  getIconTextureItems,
   getVisibleDesktopPage,
   iconBoundsRegistry,
   isFolderOpeningPreviewFrameGhosted,
@@ -1110,7 +1138,7 @@ function handleContextMenuAction({ action, item, source, kind } = {}) {
     if (action === "batch-manage") enterBatchSelection();
     if (action === "compact-pages") confirmForceFillAllPages();
     if (action === "scan-apps") void rescanManagedApps();
-    if (action === "open-settings") openSettingsPanel();
+    if (action === "open-settings") requestOpenSettingsPanel();
     return;
   }
   if (kind !== "icon") return;

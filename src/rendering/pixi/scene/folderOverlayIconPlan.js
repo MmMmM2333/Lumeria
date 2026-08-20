@@ -2,6 +2,7 @@ import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { matchesIconFocus } from "../../../domain/iconFocus.js";
 import { resolveIconInteractionPhase } from "../../../domain/input/launchpadTargetPresentation.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
+import { makeIconVisualState } from "../nodes/iconVisualState.js";
 
 export function makeFolderIconRenderPlan(options = {}) {
   const {
@@ -81,7 +82,8 @@ export function makeFolderIconNodeState(options = {}) {
       closingGhostKeys?.has(itemId)
     ))
   );
-  return {
+  return makeIconVisualState({
+    area: null,
     batchSelected: Boolean(
       isBatchSelectionActive &&
       item?.type === "app" &&
@@ -96,7 +98,10 @@ export function makeFolderIconNodeState(options = {}) {
     draggable: isInteractivePage,
     dropTarget: false,
     editing: isInteractivePage && isEditMode,
+    focused: isInteractivePage && matchesIconFocus(focusedIcon, "folder", itemId, pageIndex, folderId),
+    folderHoverState: null,
     folderPreviewPageSize: folderPageSize,
+    folderPreviewRelease: false,
     ghosted,
     hasCustomIcon: Boolean(item?.customIconPath || item?.customIconDataUrl),
     iconSize,
@@ -110,14 +115,20 @@ export function makeFolderIconNodeState(options = {}) {
     jiggleSeed: Math.max(0, Number(pageIndex) || 0) * 100 + (Number(source?.index) || 0),
     launchTargetStatus: isInteractivePage && showMissingLaunchTargetBadge ? launchTargetStatusById?.[itemId] : null,
     opening: isInteractivePage && isIconOpening?.("folder", itemId, pageIndex, folderId),
+    preserveNodeScale: false,
     removable: item?.type === "app",
     revealLabelAfterVisualHandoff,
-    focused: isInteractivePage && matchesIconFocus(focusedIcon, "folder", itemId, pageIndex, folderId),
+    selectedChildCount: 0,
+    singleLineLabel: false,
     source,
     stageHeight,
     stageWidth,
+    suppressFolderThumbFrame: false,
+    suppressedFolderPreviewChildIds: Object.freeze([]),
+    suppressLabelRevealAfterGhost: false,
     textless: isTextlessMode,
-  };
+    visualSpecTransition: null,
+  });
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);
