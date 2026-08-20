@@ -131,10 +131,10 @@ function hasAnyFolderClosingHandoffId(state = {}) {
 }
 
 export function isFolderLayerHandoffActive(folderLayer = null, folderId = null) {
-  const handoffCoordinator = folderLayer?.folderHandoff || null;
-  if (!handoffCoordinator?.isCloseHandoffActive?.()) return false;
+  const close = folderLayer?.folderVisualSession?.snapshot?.().closing || null;
+  if (close?.handoffActive !== true) return false;
   if (!folderId) return true;
-  const activeFolderId = handoffCoordinator.folderId || folderLayer.currentFolderId || null;
+  const activeFolderId = close.folderId || folderLayer.currentFolderId || null;
   return !activeFolderId || activeFolderId === folderId;
 }
 
@@ -179,7 +179,8 @@ export function resolveLaunchpadVisualTransform(state = {}) {
 }
 
 export function shouldFinishFolderHandoff(state = {}, folderLayer = null) {
-  return !hasAnyFolderClosingHandoffId(state) && !folderLayer?.folderHandoff?.isCloseHandoffActive?.();
+  return !hasAnyFolderClosingHandoffId(state) &&
+    folderLayer?.folderVisualSession?.snapshot?.().closing?.handoffActive !== true;
 }
 
 export function shouldFinishFolderHandoffEntry(state = {}, folderLayer = null, folderId = null) {

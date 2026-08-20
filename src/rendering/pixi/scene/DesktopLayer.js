@@ -2053,7 +2053,8 @@ export class DesktopLayer extends Container {
     const lastStateSourceIds = lastState.folderSourceGhostedIds;
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
-    const overlayCloseSnapshot = overlay?.folderHandoff?.snapshot?.() || null;
+    const overlaySessionSnapshot = overlay?.folderVisualSession?.snapshot?.() || null;
+    const overlayCloseSnapshot = overlaySessionSnapshot?.closing || null;
     const folderHandoffNodes = Array.from(this.getFolderHandoffNodes().values()).map((entry) => ({
       display: readDisplay(entry.node),
       folderId: entry.folderId || null,
@@ -2084,15 +2085,13 @@ export class DesktopLayer extends Container {
       },
       overlay: overlay ? {
         closingFolderId: overlayCloseSnapshot?.folderId || null,
-        closingGhostKeys: Array.from(overlayCloseSnapshot?.ghostKeys || []),
-        closingPreviewSwapKeys: Array.from(overlayCloseSnapshot?.previewSwapKeys || []),
+        closingGhostKeys: overlayCloseSnapshot?.ghostIds || [],
+        closingPreviewSwapKeys: overlayCloseSnapshot?.previewKeys || [],
         closingPreviewSwapLayerChildCount: overlay.closingPreviewSwapLayer?.children?.length ?? null,
-        closingGhostSessionToken: overlayCloseSnapshot?.token || null,
         closingHandoffActive: overlayCloseSnapshot?.handoffActive === true,
         currentFolderId: overlay.currentFolderId || null,
         debug: overlay.getVisualDebugSnapshot?.() || null,
-        openingGhostItemIds: Array.from(overlayCloseSnapshot?.opening?.ghostKeys || []),
-        openingSessionToken: overlayCloseSnapshot?.opening?.sessionToken || null,
+        openingGhostItemIds: overlaySessionSnapshot?.opening?.ghostIds || [],
         pageTrackVisible: overlay.pageTrack?.visible ?? null,
       } : null,
       ownership: this.visualOwnership?.snapshot?.() || [],

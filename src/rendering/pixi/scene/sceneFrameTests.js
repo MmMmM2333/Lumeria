@@ -10,11 +10,13 @@ export function runSceneFrameTests() {
     if (!condition) throw new Error(`[Pixi scene frame test failed] ${message}`);
   };
 
-  const activePages = [[{ id: "app-1" }]];
+  const activePages = [[{ id: "app-1", metadata: { label: "App 1" } }]];
+  const selectedAppIds = new Set(["app-1"]);
   const frame = makeDesktopSceneFrame({
     activePages,
     desktopVisualAlpha: 0.7,
     focusedIcon: { id: "app-1" },
+    selectedAppIds,
   });
   const runtime = makeDesktopSceneRuntimeAdapter({
     domRefs: {},
@@ -29,7 +31,24 @@ export function runSceneFrameTests() {
 
   assert(frame.viewport.activePages !== activePages, "scene frame should snapshot mutable page collections");
   activePages.push([]);
+  activePages[0][0].metadata.label = "Changed";
+  selectedAppIds.add("app-2");
   assert(frame.viewport.activePages.length === 1, "later collection mutations should not alter a scene frame");
+  assert(
+    frame.viewport.activePages[0][0].metadata.label === "App 1",
+    "scene frames should isolate nested records from later caller mutation"
+  );
+  assert(
+    frame.interaction.selectedAppIds instanceof Set && !frame.interaction.selectedAppIds.has("app-2"),
+    "scene frames should preserve Set read semantics while isolating the caller collection"
+  );
+  let setMutationThrew = false;
+  try {
+    frame.interaction.selectedAppIds.add("app-3");
+  } catch (error) {
+    setMutationThrew = error instanceof TypeError;
+  }
+  assert(setMutationThrew, "published scene-frame Sets should reject mutation");
   assert(Object.isFrozen(frame) && Object.isFrozen(frame.viewport), "scene frame containers should be immutable snapshots");
   assert(frame.visual.desktopVisualAlpha === 0.7, "scene frame should group visual state");
   assert(frame.interaction.focusedIcon.id === "app-1", "scene frame should group interaction state");
@@ -48,6 +67,58 @@ export function runSceneFrameTests() {
     rejectedUnknownFrameField = true;
   }
   assert(rejectedUnknownFrameField, "unknown scene-frame fields should fail explicitly");
+
+  let rejectedWrongInputType = false;
+  try {
+    makeDesktopSceneFrame({ activePageIndex: "0" });
+  } catch (error) {
+    rejectedWrongInputType = error instanceof TypeError;
+  }
+  assert(rejectedWrongInputType, "scene-frame construction should reject invalid field value types");
+
+  const scrubFrame = makeDesktopSceneFrame({
+    pageTrackScrub: {
+      edge: false,
+      fromIndex: 0,
+      progress: 0.5,
+      scope: "desktop",
+      toIndex: 1,
+    },
+  });
+  assert(
+    scrubFrame.viewport.pageTrackScrub.edge === false,
+    "scene-frame construction should accept the gesture engine's boolean edge marker"
+  );
+
+  let rejectedStringScrubEdge = false;
+  try {
+    makeDesktopSceneFrame({
+      pageTrackScrub: {
+        edge: "false",
+        fromIndex: 0,
+        progress: 0.5,
+        scope: "desktop",
+        toIndex: 1,
+      },
+    });
+  } catch (error) {
+    rejectedStringScrubEdge = error instanceof TypeError;
+  }
+  assert(rejectedStringScrubEdge, "scene-frame construction should reject non-boolean scrub edge markers");
+
+  let rejectedMutableNestedFrame = false;
+  try {
+    assertDesktopSceneFrame(Object.freeze({
+      ...frame,
+      viewport: Object.freeze({
+        ...frame.viewport,
+        pageGridMeasureStyle: { height: "640px" },
+      }),
+    }));
+  } catch (error) {
+    rejectedMutableNestedFrame = error instanceof TypeError;
+  }
+  assert(rejectedMutableNestedFrame, "scene-frame validation should reject mutable nested contract values");
 
   const event = makeIconPointerdownEvent(
     { type: "pointerdown" },

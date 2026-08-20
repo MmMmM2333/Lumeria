@@ -4,32 +4,101 @@ const PHASE_OPEN = "open";
 const PHASE_OPENING = "opening";
 const PHASE_CLOSING = "closing";
 
-function success(extra = {}) {
+export type MainWindowTransitionPhase =
+  | typeof PHASE_HIDDEN
+  | typeof PHASE_IDLE
+  | typeof PHASE_OPEN
+  | typeof PHASE_OPENING
+  | typeof PHASE_CLOSING;
+
+export type MainWindowCapability = "effects" | "frame" | "mode" | "visibility";
+export type MainWindowMutableCapability = Exclude<MainWindowCapability, "visibility">;
+
+export type MainWindowSurfaceValues = Readonly<Record<MainWindowCapability, unknown>>;
+
+export type MainWindowTransitionSnapshot = Readonly<{
+  applied: MainWindowSurfaceValues;
+  epoch: number;
+  generation: number | null;
+  phase: MainWindowTransitionPhase;
+  requested: MainWindowSurfaceValues;
+}>;
+
+export type MainWindowTransitionSuccess = {
+  ok: true;
+  skipped?: boolean;
+  value?: unknown;
+  readonly [key: string]: unknown;
+};
+
+export type MainWindowTransitionFailure = {
+  ok: false;
+  error: unknown;
+  readonly [key: string]: unknown;
+};
+
+export type MainWindowTransitionOutcome = MainWindowTransitionSuccess | MainWindowTransitionFailure;
+
+export type MainWindowNativeMethod = (...args: never[]) => unknown;
+
+export type MainWindowTransitionPort = Readonly<{
+  beginClose: MainWindowNativeMethod;
+  hide: MainWindowNativeMethod;
+  reveal: MainWindowNativeMethod;
+}>;
+
+export type MainWindowTransitionOptions = Readonly<{
+  invoke: (
+    method: MainWindowNativeMethod,
+    args: readonly unknown[],
+  ) => Promise<MainWindowTransitionOutcome>;
+  port: MainWindowTransitionPort;
+  publish?: (snapshot: MainWindowTransitionSnapshot) => void;
+}>;
+
+type MutableMainWindowTransitionState = {
+  applied: Record<MainWindowCapability, unknown>;
+  epoch: number;
+  generation: number | null;
+  phase: MainWindowTransitionPhase;
+  requested: Record<MainWindowCapability, unknown>;
+};
+
+type NativeCloseTransition = Readonly<{
+  accepted: boolean;
+  generation: number;
+}>;
+
+function success<Extra extends Record<string, unknown> = Record<never, never>>(
+  extra: Extra = {} as Extra,
+): MainWindowTransitionSuccess & Extra {
   return { ok: true, ...extra };
 }
 
-function isPositiveSequence(value) {
-  return Number.isSafeInteger(value) && value > 0;
+function isPositiveSequence(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function readCloseTransition(value, openSequence) {
+function readCloseTransition(value: unknown, openSequence: number): NativeCloseTransition {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Native begin-close returned an invalid transition result");
+  }
+  const record = value as Record<string, unknown>;
   if (
-    value === null
-    || typeof value !== "object"
-    || Array.isArray(value)
-    || Object.keys(value).sort().join(",") !== "accepted,generation"
-    || typeof value.accepted !== "boolean"
-    || !isPositiveSequence(value.generation)
+    Object.keys(record).sort().join(",") !== "accepted,generation"
+    || typeof record.accepted !== "boolean"
+    || !isPositiveSequence(record.generation)
   ) {
     throw new TypeError("Native begin-close returned an invalid transition result");
   }
-  if (value.accepted && value.generation <= openSequence) {
+  const transition = record as { accepted: boolean; generation: number };
+  if (transition.accepted && transition.generation <= openSequence) {
     throw new RangeError("Accepted native close generation must advance the open generation");
   }
-  return value;
+  return transition;
 }
 
-function freezeState(state) {
+function freezeState(state: MutableMainWindowTransitionState): MainWindowTransitionSnapshot {
   return Object.freeze({
     applied: Object.freeze({ ...state.applied }),
     epoch: state.epoch,
@@ -45,7 +114,13 @@ function freezeState(state) {
  * the platform adapter confirms the operation.
  */
 export class MainWindowTransition {
-  constructor(options = {}) {
+  readonly invoke: MainWindowTransitionOptions["invoke"];
+  readonly port: MainWindowTransitionPort;
+  readonly publish: (snapshot: MainWindowTransitionSnapshot) => void;
+  private update: Promise<void>;
+  private state: MutableMainWindowTransitionState;
+
+  constructor(options: MainWindowTransitionOptions) {
     if (typeof options.invoke !== "function") {
       throw new TypeError("MainWindowTransition requires an invoke adapter");
     }
@@ -80,27 +155,27 @@ export class MainWindowTransition {
     this.publish(this.snapshot());
   }
 
-  #enqueue(operation) {
+  #enqueue<Result>(operation: () => Result | Promise<Result>): Promise<Result> {
     const result = this.update.then(operation);
     this.update = result.then(() => undefined, () => undefined);
     return result;
   }
 
-  #setRequested(capability, value) {
+  #setRequested(capability: MainWindowCapability, value: unknown): void {
     this.state.requested[capability] = value;
     this.#publish();
   }
 
-  #setApplied(capability, value) {
+  #setApplied(capability: MainWindowCapability, value: unknown): void {
     this.state.applied[capability] = value;
     this.#publish();
   }
 
-  snapshot() {
+  snapshot(): MainWindowTransitionSnapshot {
     return freezeState(this.state);
   }
 
-  acceptOpen(openSequence) {
+  acceptOpen(openSequence: number): boolean {
     if (!isPositiveSequence(openSequence)) {
       throw new TypeError("MainWindowTransition open sequence must be a positive safe integer");
     }
@@ -117,7 +192,13 @@ export class MainWindowTransition {
     return true;
   }
 
-  apply(capability, requested, method, args, resolveApplied = () => requested) {
+  apply(
+    capability: MainWindowMutableCapability,
+    requested: unknown,
+    method: MainWindowNativeMethod,
+    args: readonly unknown[],
+    resolveApplied: (value: unknown) => unknown = () => requested,
+  ): Promise<MainWindowTransitionOutcome> {
     this.#setRequested(capability, requested);
     return this.#enqueue(async () => {
       const outcome = await this.invoke(method, args);
@@ -128,7 +209,7 @@ export class MainWindowTransition {
     });
   }
 
-  reveal(openSequence) {
+  reveal(openSequence: number): Promise<MainWindowTransitionOutcome> {
     const epoch = this.state.epoch;
     this.#setRequested("visibility", "visible");
     return this.#enqueue(async () => {
@@ -155,7 +236,7 @@ export class MainWindowTransition {
     });
   }
 
-  beginClose(openSequence) {
+  beginClose(openSequence: number): Promise<MainWindowTransitionOutcome> {
     if (
       !isPositiveSequence(openSequence)
       || openSequence !== this.state.generation
@@ -192,7 +273,7 @@ export class MainWindowTransition {
     });
   }
 
-  hide(generation) {
+  hide(generation: number): Promise<MainWindowTransitionOutcome> {
     const epoch = this.state.epoch;
     return this.#enqueue(async () => {
       if (

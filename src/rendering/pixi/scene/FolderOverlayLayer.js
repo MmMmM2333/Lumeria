@@ -271,13 +271,12 @@ function makeOpeningGeometryDebugSnapshot(session, currentSnapshot, panel) {
     },
     session: session ? {
       folderId: session.folderId || null,
-      geometryLayoutKey: session.geometryLayoutKey || null,
+      geometryLayoutKey: session.geometrySnapshot?.layoutKey || null,
       ghostsReady: session.ghostsReady === true,
       hasGeometrySnapshot: Boolean(session.geometrySnapshot),
       panelReady: session.panelReady === true,
       revealed: session.revealed === true,
       targetKey: session.targetKey || "",
-      token: session.token ?? null,
     } : null,
     snapshot: snapshot ? {
       coordinateSpace: snapshot.coordinateSpace || null,
@@ -293,7 +292,6 @@ function makeOpeningGeometryDebugSnapshot(session, currentSnapshot, panel) {
         key,
         rect: cloneDebugRect(rect),
       })),
-      sessionToken: snapshot.sessionToken ?? null,
       stageHeight: roundDebugValue(snapshot.stageHeight),
       stageRect: cloneDebugRect(snapshot.stageRect),
       stageWidth: roundDebugValue(snapshot.stageWidth),
@@ -709,7 +707,12 @@ export class FolderOverlayLayer extends Container {
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
-    this.onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
+    this.closingVisualReleaseFolderId = null;
+    const onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
+    this.onClosingHandoffVisualRelease = (folderId = null) => {
+      this.closingVisualReleaseFolderId = folderId || null;
+      onClosingHandoffVisualRelease(folderId || null);
+    };
     this.isHandoffSourceVisible = options.isHandoffSourceVisible || (() => false);
     this.onInternalActivityChange = options.onInternalActivityChange || (() => { });
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => { });
@@ -725,13 +728,8 @@ export class FolderOverlayLayer extends Container {
     this.visualCommitQueue = options.visualCommitQueue || new FolderVisualCommitQueue();
     this.visualOwnership = options.visualOwnership || new VisualOwnershipRegistry();
     this.ownedVisualTokens = new Set();
-    this.folderHandoff = new FolderVisualSession(this, {
-      visualCommitQueue: this.visualCommitQueue,
-      visualOwnership: this.visualOwnership,
-    });
     this.openingGhosts = new FolderOpeningGhostController(this, {
       ghostFactory: () => new IconNode(),
-      handoffCoordinator: this.folderHandoff,
     });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController(this, {
       containerFactory: () => new Container(),
@@ -739,13 +737,20 @@ export class FolderOverlayLayer extends Container {
       graphicsFactory: () => new Graphics(),
       spriteFactory: () => new Sprite(),
       textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }),
-      handoffCoordinator: this.folderHandoff,
     });
     this.closingGhosts = new FolderClosingGhostController(this, {
       ghostFactory: () => new IconNode(),
       previewSwap: this.closingPreviewSwap,
-      handoffCoordinator: this.folderHandoff,
     });
+    this.folderVisualSession = new FolderVisualSession({
+      closingAdapter: this.closingGhosts,
+      onCloseHandoffChange: (active, folderId) => this.onInternalActivityChange?.(active, folderId),
+      onClosingHandoffReady: (folderId) => this.onClosingHandoffReady?.(folderId),
+      openingAdapter: this.openingGhosts,
+      ownershipRevision: () => this.visualOwnership.getRevision?.() ?? null,
+    });
+    this.openingLease = null;
+    this.closingLease = null;
     this.openingPanelReadyFrame = null;
     this.panelAlphaTarget = null;
     this.panelOpenTargetKey = null;
@@ -768,10 +773,10 @@ export class FolderOverlayLayer extends Container {
     this.closingDesktopPageTrackMirrorBaseline = null;
     this.closingDesktopPageTrackMirrorX = 0;
     this.nextDetachedClosingVisualToken = 1;
-    this.nextClosingGhostToken = 1;
+    this.openingFrameEpoch = 0;
     this.titleFrameKey = null;
     this.titleFrameFolderId = null;
-    this.titleFrameSessionToken = null;
+    this.titleFrameOpeningLease = null;
     this.pageDotsLayerRevealKey = null;
     this.panelTitleOpening = false;
     this.panelTitleStartScaleX = 1;
@@ -864,7 +869,7 @@ export class FolderOverlayLayer extends Container {
 
   getDesktopCloseDetachedFolderId(state = {}) {
     return state.renderedFolder?.id ||
-      this.folderHandoff?.folderId ||
+      this.folderVisualSession.snapshot().closing?.folderId ||
       this.currentFolderId ||
       null;
   }
@@ -922,6 +927,7 @@ export class FolderOverlayLayer extends Container {
     const keepDesktopCloseDetachedHandoff = !isPrewarm && this.hasActiveDesktopCloseDetachedHandoff(state);
     this.visible = Boolean(state.renderedFolder) || keepClosingHandoff || keepDesktopCloseDetachedHandoff;
     if (!state.renderedFolder) {
+      this.closingVisualReleaseFolderId = null;
       const clearedFolderId = this.currentFolderId;
       this.clearRegisteredIconBounds();
       if (keepDesktopCloseDetachedHandoff) {
@@ -984,8 +990,15 @@ export class FolderOverlayLayer extends Container {
     const isClosing = Boolean(renderState.isFolderClosing || renderState.isFolderAppLaunchClosing);
     const wasClosing = Boolean(this.isClosing);
     const renderedFolderId = state.renderedFolder?.id || null;
-    const hasPendingRenderedOpen = this.folderHandoff.activeOpenSession?.folderId === renderedFolderId &&
-      this.folderHandoff.isRevealPending();
+    if (
+      this.closingVisualReleaseFolderId &&
+      (this.closingVisualReleaseFolderId !== renderedFolderId || !isClosing)
+    ) {
+      this.closingVisualReleaseFolderId = null;
+    }
+    const visualSessionSnapshot = this.folderVisualSession.snapshot();
+    const hasPendingRenderedOpen = visualSessionSnapshot.opening?.folderId === renderedFolderId &&
+      visualSessionSnapshot.opening.revealPending;
     if (wasClosing && !isClosing && this.currentFolderId === renderedFolderId && !hasPendingRenderedOpen) {
       this.currentFolderId = null;
     }
@@ -997,7 +1010,8 @@ export class FolderOverlayLayer extends Container {
     this.targetFolderGeometry = cloneFolderGeometry(geometry);
     const folderId = state.renderedFolder.id;
     this.describeMotionTargets(renderState, geometry);
-    if (this.folderHandoff.folderId && (this.folderHandoff.folderId !== folderId || !isClosing)) {
+    const closingFolderId = visualSessionSnapshot.closing?.folderId || null;
+    if (closingFolderId && (closingFolderId !== folderId || !isClosing)) {
       this.detachClosingPresentationForOpen(folderId);
     }
     return {
@@ -1218,9 +1232,10 @@ export class FolderOverlayLayer extends Container {
     });
 
     if (!isPrewarm) this.bindFakeRefs(state, targetGeometry);
+    const visualSessionSnapshot = this.folderVisualSession.snapshot();
     const renderPlan = makeFolderOverlayRenderPlan({
       closeThumbRect,
-      closingGhostKeys: this.folderHandoff.getGhostKeys(),
+      closingGhostKeys: new Set(visualSessionSnapshot.closing?.ghostIds || []),
       cols,
       dragMeta: state.dragMeta,
       folderCloseIconGhosts: state.folderCloseIconGhosts,
@@ -1246,7 +1261,7 @@ export class FolderOverlayLayer extends Container {
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
       localMetrics,
-      openingGhostItemIds: this.folderHandoff.getOpeningGhostKeys(),
+      openingGhostItemIds: new Set(visualSessionSnapshot.opening?.ghostIds || []),
       previewSlots,
       rows,
       focusedIcon: state.focusedIcon,
@@ -1454,26 +1469,29 @@ export class FolderOverlayLayer extends Container {
     const openingFrameTargetRect = resizeGeometryMode === "opening" && targetGeometry?.panel
       ? targetGeometry.panel
       : geometry.panel;
-    if (isNewFolder && !isClosing) {
-      this.openingGhosts.start(state, openingGhostTargets, {
-        frameSourceRect: folderThumbClientRect || folderClientRect,
-        frameTargetRect: openingFrameTargetRect,
-        sessionToken: this.folderHandoff.activeOpenToken,
-      });
-    } else if (!isClosing && (
-      this.folderHandoff.hasActiveOpeningVisuals() ||
+    const visualSessionSnapshot = this.folderVisualSession.snapshot();
+    const hasOpeningVisuals = Boolean(visualSessionSnapshot.opening?.ghostIds.length);
+    if (!isClosing && this.openingLease && (
+      isNewFolder ||
+      hasOpeningVisuals ||
       (this.frameGhostState && this.frameGhostPhase === "opening")
     )) {
-      this.openingGhosts.retarget(state, openingGhostTargets, {
-        frameTargetRect: openingFrameTargetRect,
+      this.openingLease.present({
+        options: {
+          frameSourceRect: folderThumbClientRect || folderClientRect,
+          frameTargetRect: openingFrameTargetRect,
+        },
+        state,
+        targets: openingGhostTargets,
       });
     }
-    if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !this.folderHandoff.hasActiveOpeningVisuals()) {
+    if (!isNewFolder && !isClosing && state.folderOpenIconGhosts?.length && !hasOpeningVisuals) {
       for (const ghost of state.folderOpenIconGhosts) {
         if (ghost?.key) state.completeFolderOpenIconGhost?.(ghost.key);
       }
     }
-    if (state.isFolderClosing) {
+    const closingVisualReleased = this.closingVisualReleaseFolderId === folderId;
+    if (state.isFolderClosing && !closingVisualReleased) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       const closeOptions = {
         handoffRect: folderClientRect || closeIconRect,
@@ -1481,15 +1499,26 @@ export class FolderOverlayLayer extends Container {
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
       };
-      if (this.folderHandoff.folderId === folderId) {
-        this.closingGhosts.retarget(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
-      } else {
-        this.closingGhosts.start(state, closingGhostTargets, closeThumbRect, closeFrameRect, closeOptions);
-      }
+      this.closingLease = this.folderVisualSession.close({ folderId });
+      this.closingLease.present({
+        folderRect: closeThumbRect,
+        options: closeOptions,
+        panelRect: closeFrameRect,
+        state,
+        targets: closingGhostTargets,
+      });
+    } else if (closingVisualReleased) {
+      // The controller has already handed the overlay back to the desktop.
+      // Keep the lease only while the Session still owns its terminal record,
+      // so an intervening folder switch can cancel that record instead of
+      // leaving a stale handoff behind. Once cleanup retires it, drop our
+      // pointer; restarting it would flash the full panel and jump the corner
+      // radius back to the opening geometry.
+      if (!this.folderVisualSession.snapshot().closing) this.closingLease = null;
     }
-    if (!state.isFolderClosing && this.folderHandoff.folderId) {
-      this.clearClosingFolderId();
-      this.closingGhosts.clear();
+    if (!state.isFolderClosing && visualSessionSnapshot.closing) {
+      this.closingLease?.cancel();
+      this.closingLease = null;
     }
 
     for (const [key, node] of this.iconNodes) {
@@ -1505,9 +1534,10 @@ export class FolderOverlayLayer extends Container {
         .start();
     }
     this.pageTrack.visible = !isClosing &&
-      !this.folderHandoff.hasActiveCloseVisuals();
+      !this.folderVisualSession.snapshot().closing?.activeVisuals;
     if (!this.frameGhostState) {
       if (!isClosing) this.notifyPanelTitleFrame(geometry.panel, { folderId });
+      else if (closingVisualReleased) this.notifyTitleFrame(null, { folderId });
       else this.notifyTitleFrame(geometry.panel, { folderId });
     }
     this.refreshRegisteredIconBounds();
@@ -1565,7 +1595,7 @@ export class FolderOverlayLayer extends Container {
       !options.sizeChanged &&
       state.dragMeta
     ) return "opening";
-    if (this.folderHandoff?.hasActiveOpeningVisuals?.()) return "opening";
+    if (this.folderVisualSession.snapshot().opening?.ghostIds.length) return "opening";
     return "layout";
   }
 
@@ -1786,7 +1816,10 @@ export class FolderOverlayLayer extends Container {
       preserveDetachedClosing = false,
       releaseOwnership = true,
     } = options;
-    this.folderHandoff.cancelOpen();
+    this.openingLease?.cancel();
+    this.openingLease = null;
+    this.closingLease?.cancel();
+    this.closingLease = null;
     this.cancelOpeningPanelReadyCheck();
     this.panelOpenTargetKey = null;
     this.panelAlphaTarget = null;
@@ -1800,8 +1833,6 @@ export class FolderOverlayLayer extends Container {
     this.clearResizeVisualGeometry(FOLDER_OVERLAY_CLEAR_REASON);
     this.targetFolderGeometry = null;
     this.currentOpeningGeometrySnapshot = null;
-    this.openingGhosts.clear({ cancelSession: true });
-    this.closingGhosts.clear();
     this.resetClosingDesktopPageTrackMirror();
     if (clearDetachedClosingVisuals) this.clearDetachedClosingVisuals(null, { immediate: true });
     if (releaseOwnership) this.releaseAllOwnedVisualOwnership({ preserveDetachedClosing });
@@ -1959,7 +1990,8 @@ export class FolderOverlayLayer extends Container {
   }
 
   hasActiveIconGhosts() {
-    return Boolean(this.folderHandoff.hasActiveOpeningVisuals() || this.closingGhosts.hasActive());
+    const snapshot = this.folderVisualSession.snapshot();
+    return Boolean(snapshot.opening?.ghostIds.length || snapshot.closing?.activeVisuals);
   }
 
   forgetOwnedVisualToken(token) {
@@ -1975,10 +2007,6 @@ export class FolderOverlayLayer extends Container {
 
   getVisualCommitQueue() {
     if (!this.visualCommitQueue) this.visualCommitQueue = new FolderVisualCommitQueue();
-    this.folderHandoff.attachVisualResources({
-      visualCommitQueue: this.visualCommitQueue,
-      visualOwnership: this.visualOwnership || null,
-    });
     return this.visualCommitQueue;
   }
 
@@ -2098,8 +2126,7 @@ export class FolderOverlayLayer extends Container {
   clearDetachedClosingVisual(visual, options = {}) {
     if (!visual || visual.clearing) return false;
     visual.clearing = true;
-    this.getVisualCommitQueue();
-    return this.folderHandoff.enqueueVisualCommit({
+    return this.getVisualCommitQueue().enqueue({
       isStale: () => !this.detachedClosingVisuals.includes(visual),
       mutateOwnership: () => {
         const index = this.detachedClosingVisuals.indexOf(visual);
@@ -2143,7 +2170,9 @@ export class FolderOverlayLayer extends Container {
   detachClosingPresentationForOpen(nextFolderId, options = {}) {
     if (nextFolderId) this.clearDetachedClosingVisuals(nextFolderId, { immediate: true, reveal: false });
     const waitForDesktopClose = options.waitForDesktopClose === true;
-    const closingFolderId = this.folderHandoff.folderId || options.folderId || null;
+    const closingLease = this.closingLease;
+    const closeSnapshot = closingLease?.snapshot() || this.folderVisualSession.snapshot().closing;
+    const closingFolderId = closeSnapshot?.folderId || options.folderId || null;
     if (waitForDesktopClose && this.hasDesktopCloseDetachedVisual(closingFolderId)) return false;
     // Do not re-detach / re-prepare a close whose real desktop icon is already
     // visible (its handoff effectively finished): re-engaging would re-acquire
@@ -2158,13 +2187,13 @@ export class FolderOverlayLayer extends Container {
     const frameState = shouldKeepDetachedVisual
       ? addXOffsetToFrameState(this.frameGhostState, closingMirrorOffsetX)
       : null;
-    const frameTarget = shouldKeepDetachedVisual ? this.folderHandoff.getDetachedFrameTarget() : null;
+    const frameTarget = shouldKeepDetachedVisual ? closeSnapshot?.detachedFrameTarget || null : null;
     const closingGhosts = shouldKeepDetachedVisual
       ? this.closingGhostLayer.removeChildren()
       : [];
     const detachedGhostMotions = new Map(closingGhosts.map((ghost) => [
       ghost,
-      this.folderHandoff.getDetachedClosingGhostMotion(ghost),
+      closingLease?.detachedGhostMotion(ghost) || null,
     ]));
     const previewSwapGhosts = shouldKeepDetachedVisual
       ? this.removeClosingPreviewSwapChildren()
@@ -2231,8 +2260,9 @@ export class FolderOverlayLayer extends Container {
       });
       this.detachedClosingVisuals.push(visual);
       this.pruneDetachedClosingVisuals();
-      this.clearClosingFolderId();
-      this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
+      closingLease?.cancel({ restorePageTrack: false, reveal: false });
+      if (this.closingLease === closingLease) this.closingLease = null;
+      this.resetClosingDesktopPageTrackMirror();
       const finishAfterGeometry = () => {
         if (detachedVisual.destroyed || detachedVisual.finishQueued) return;
         detachedVisual.finishQueued = true;
@@ -2261,8 +2291,9 @@ export class FolderOverlayLayer extends Container {
       return true;
     }
 
-    this.clearClosingFolderId();
-    this.closingGhosts.clear({ restorePageTrack: false, reveal: false });
+    closingLease?.cancel({ restorePageTrack: false, reveal: false });
+    if (this.closingLease === closingLease) this.closingLease = null;
+    this.resetClosingDesktopPageTrackMirror();
     return false;
   }
 
@@ -2296,7 +2327,7 @@ export class FolderOverlayLayer extends Container {
       if (visual?.folderId === folderId && !visual.destroyed && !visual.handoffCommitted) return true;
     }
     const coversActiveFolder = this.currentFolderId === folderId ||
-      this.folderHandoff?.folderId === folderId;
+      this.folderVisualSession.snapshot().closing?.folderId === folderId;
     if (!coversActiveFolder) return false;
     return Boolean(
       this.frameGhost?.visible ||
@@ -2306,26 +2337,11 @@ export class FolderOverlayLayer extends Container {
     );
   }
 
-  setClosingHandoffActive(active) {
-    this.folderHandoff.setCloseHandoffActive(active);
-  }
-
-  clearClosingFolderId() {
-    this.folderHandoff.clearCloseFolderId();
-    this.resetClosingDesktopPageTrackMirror();
-  }
-
   revealIconNodes() {
     for (const node of this.iconNodes.values()) {
       node.visible = true;
       node.alpha = 1;
     }
-  }
-
-  createClosingGhostToken(folderId = null) {
-    const token = `closing:${folderId || ""}:${this.nextClosingGhostToken}`;
-    this.nextClosingGhostToken += 1;
-    return token;
   }
 
   getIconNodeVisualKey(node, fallbackFolderId = null) {
@@ -2414,22 +2430,22 @@ export class FolderOverlayLayer extends Container {
   notifyTitleFrame(rect, metadata = {}) {
     if (!rect) {
       const folderId = metadata.folderId || null;
-      const sessionToken = metadata.sessionToken || null;
+      const openingLease = metadata.openingLease || null;
       if (folderId && this.titleFrameFolderId && folderId !== this.titleFrameFolderId) return;
-      if (sessionToken && this.titleFrameSessionToken && sessionToken !== this.titleFrameSessionToken) return;
+      if (openingLease && this.titleFrameOpeningLease && openingLease !== this.titleFrameOpeningLease) return;
       if (this.titleFrameKey === null) return;
       this.titleFrameKey = null;
       this.titleFrameFolderId = null;
-      this.titleFrameSessionToken = null;
+      this.titleFrameOpeningLease = null;
       this.onTitleFrameChange(null);
       return;
     }
+    const openingLease = metadata.openingLease || null;
     const frame = {
       folderId: metadata.folderId ?? this.currentFolderId ?? null,
       height: rect.height,
       left: rect.left,
       progress: rect.progress ?? 1,
-      sessionToken: metadata.sessionToken ?? null,
       top: rect.top,
       width: rect.width,
     };
@@ -2440,12 +2456,12 @@ export class FolderOverlayLayer extends Container {
       Math.round(frame.width * 100),
       Math.round(frame.height * 100),
       Math.round(frame.progress * 1000),
-      frame.sessionToken || "",
+      openingLease ? this.openingFrameEpoch : "",
     ].join(":");
     if (key === this.titleFrameKey) return;
     this.titleFrameKey = key;
     this.titleFrameFolderId = frame.folderId;
-    this.titleFrameSessionToken = frame.sessionToken;
+    this.titleFrameOpeningLease = openingLease;
     this.onTitleFrameChange(frame);
   }
 
@@ -2481,18 +2497,16 @@ export class FolderOverlayLayer extends Container {
     this.openingPanelReadyFrame = null;
   }
 
-  markOpeningPanelReady(sessionToken) {
-    const markedReady = this.folderHandoff.markPanelReady(sessionToken);
-    const isPanelReady = this.folderHandoff.activeOpenSession?.panelReady === true;
-    if (!markedReady && !isPanelReady) return false;
+  markOpeningPanelReady(openingLease) {
+    if (!openingLease?.isCurrent?.()) return false;
+    const markedReady = openingLease.panelReady();
+    const isPanelReady = openingLease.snapshot().panelReady === true;
+    if (markedReady.status === "stale" || (markedReady.status !== "accepted" && !isPanelReady)) return false;
     this.cancelOpeningPanelReadyCheck();
-    if (this.folderHandoff.getOpeningSessionToken() === sessionToken) {
-      this.openingGhosts.finishTransition({ sessionToken });
-    }
     return true;
   }
 
-  scheduleOpeningPanelReadyCheck(sessionToken, panelRect, folderId = this.currentFolderId) {
+  scheduleOpeningPanelReadyCheck(openingLease, panelRect, folderId = this.currentFolderId) {
     this.cancelOpeningPanelReadyCheck();
     const queueCheck = () => {
       const frame = { cancelled: false };
@@ -2502,11 +2516,11 @@ export class FolderOverlayLayer extends Container {
     const check = (frame) => {
       if (frame.cancelled || this.openingPanelReadyFrame !== frame) return;
       this.openingPanelReadyFrame = null;
-      if (!this.folderHandoff.isCurrentOpen(sessionToken)) return;
-      this.notifyPanelTitleFrame(panelRect, { folderId, sessionToken });
+      if (!openingLease?.isCurrent?.()) return;
+      this.notifyPanelTitleFrame(panelRect, { folderId, openingLease });
       this.markRegisteredBoundsDirty();
       if (this.getPanelTitleProgress() >= FOLDER_PANEL_READY_PROGRESS) {
-        this.markOpeningPanelReady(sessionToken);
+        this.markOpeningPanelReady(openingLease);
         return;
       }
       queueCheck();
@@ -2769,8 +2783,8 @@ export class FolderOverlayLayer extends Container {
     previousMask?.destroy?.();
   }
 
-  getOpeningGeometrySnapshot(sessionToken, state, targetKey, targetX, targetY, panelRect, sourceRect, options = {}) {
-    if (!sessionToken) return null;
+  getOpeningGeometrySnapshot(openingLease, state, targetKey, targetX, targetY, panelRect, sourceRect, options = {}) {
+    if (!openingLease?.isCurrent?.()) return null;
     const folderId = state.renderedFolder?.id || null;
     const layoutKey = makeFolderOpeningGeometryLayoutKey({
       stageHeight: state.height,
@@ -2778,7 +2792,7 @@ export class FolderOverlayLayer extends Container {
       stageWidth: state.width,
       targetKey,
     });
-    const existing = this.folderHandoff.getOpenGeometrySnapshot(sessionToken);
+    const existing = openingLease.geometrySnapshot();
     if (existing?.layoutKey === layoutKey && existing.folderId === folderId) return existing;
     const snapshot = makeFolderOpeningGeometrySnapshot({
       folderId,
@@ -2787,7 +2801,6 @@ export class FolderOverlayLayer extends Container {
       layoutKey,
       panelRect,
       previewSlots: options.previewSlots,
-      sessionToken,
       stageHeight: state.height,
       stageRect: state.stageRect,
       stageWidth: state.width,
@@ -2795,8 +2808,8 @@ export class FolderOverlayLayer extends Container {
       targetX,
       targetY,
     });
-    this.folderHandoff.setOpenGeometrySnapshot(sessionToken, snapshot);
-    return snapshot;
+    openingLease.setGeometrySnapshot(snapshot);
+    return openingLease.geometrySnapshot();
   }
 
   animatePanel(state, targetX, targetY, panelRect, sourceRect = null, options = {}) {
@@ -2805,8 +2818,9 @@ export class FolderOverlayLayer extends Container {
     const folderId = state.renderedFolder?.id || null;
     const markBoundsDirty = () => this.markRegisteredBoundsDirty();
     const isNewPanelSource = this.currentFolderId !== folderId;
-    if (isClosing) {
-      this.folderHandoff.cancelOpen();
+    if (state.isFolderAppLaunchClosing) {
+      this.openingLease?.cancel();
+      this.openingLease = null;
       this.cancelOpeningPanelReadyCheck();
       this.panelOpenTargetKey = null;
       this.panelAlphaTarget = null;
@@ -2836,7 +2850,8 @@ export class FolderOverlayLayer extends Container {
     }
 
     if (isOpenFolderZoomFadeClosing) {
-      this.folderHandoff.cancelOpen();
+      this.openingLease?.cancel();
+      this.openingLease = null;
       this.cancelOpeningPanelReadyCheck();
       this.panelTitleOpening = false;
       this.panelOpenTargetKey = null;
@@ -2900,13 +2915,16 @@ export class FolderOverlayLayer extends Container {
     }
 
     const targetKey = makeFolderPanelTargetKey(folderId, targetX, targetY, panelRect);
-    const shouldOwnOpenSession = isNewPanelSource || Boolean(this.folderHandoff.activeOpenSession);
-    const { session } = shouldOwnOpenSession
-      ? this.folderHandoff.beginOpen(folderId, targetKey, { forceNew: isNewPanelSource })
-      : { session: null };
-    const sessionToken = session?.token || null;
+    const previousOpeningLease = this.openingLease;
+    this.openingLease = this.folderVisualSession.open({
+      folderId,
+      forceNew: isNewPanelSource,
+      targetKey,
+    });
+    if (previousOpeningLease !== this.openingLease) this.openingFrameEpoch += 1;
+    const openingLease = this.openingLease;
     const openingGeometrySnapshot = this.getOpeningGeometrySnapshot(
-      sessionToken,
+      openingLease,
       state,
       targetKey,
       targetX,
@@ -2916,28 +2934,27 @@ export class FolderOverlayLayer extends Container {
       options
     );
     const updateOpeningPanelFrame = () => {
-      if (sessionToken && !this.folderHandoff.isCurrentOpen(sessionToken)) return;
+      if (!openingLease.isCurrent()) return;
       this.notifyPanelTitleFrame(openingGeometrySnapshot?.panelRect || panelRect, {
         folderId,
-        sessionToken,
+        openingLease,
       });
       markBoundsDirty();
-      if (!sessionToken) return;
       if (this.getPanelTitleProgress() < FOLDER_PANEL_READY_PROGRESS) return;
-      this.markOpeningPanelReady(sessionToken);
+      this.markOpeningPanelReady(openingLease);
     };
     const openProgress = readProgress01(state.folderOpenProgress);
     if (openProgress !== null) {
       const shouldRetargetPresentation = !this.panelOpenProgressDriven || this.panelOpenTargetKey !== targetKey;
       if (shouldRetargetPresentation) {
-        if (sessionToken) this.folderHandoff.markPanelPending(sessionToken, targetKey);
+        openingLease.panelPending(targetKey);
         this.panelOpenTargetKey = targetKey;
         this.panelOpenProgressDriven = true;
         this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, {
           panelProps: "x,y,alpha",
           scaleProps: "x,y",
         });
-        if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect, folderId);
+        this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.panelRect || panelRect, folderId);
       }
       this.panelAlphaTarget = 1;
       const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
@@ -2953,7 +2970,7 @@ export class FolderOverlayLayer extends Container {
       updateOpeningPanelFrame();
       return {
         openingGeometrySnapshot,
-        sessionToken,
+        openingLease,
       };
     }
     if (this.panelOpenProgressDriven) this.panelOpenTargetKey = null;
@@ -2969,8 +2986,8 @@ export class FolderOverlayLayer extends Container {
     }
 
     if (options.resizeLayoutSyncActive || options.resizeVisualGeometryActive || options.resizeVisualGeometryFinalFrame) {
-      if (this.panelOpenTargetKey !== targetKey && sessionToken) {
-        this.folderHandoff.markPanelPending(sessionToken, targetKey);
+      if (this.panelOpenTargetKey !== targetKey) {
+        openingLease.panelPending(targetKey);
       }
       this.panelOpenTargetKey = targetKey;
       this.resetPanelMotion(FOLDER_RESIZE_LAYOUT_REASON, {
@@ -2983,12 +3000,12 @@ export class FolderOverlayLayer extends Container {
       updateOpeningPanelFrame();
       return {
         openingGeometrySnapshot,
-        sessionToken,
+        openingLease,
       };
     }
 
     if (this.panelOpenTargetKey !== targetKey) {
-      if (sessionToken) this.folderHandoff.markPanelPending(sessionToken, targetKey);
+      openingLease.panelPending(targetKey);
       this.panelOpenTargetKey = targetKey;
       this.resetPanelMotion(FOLDER_PANEL_OPEN_REASON, {
         panelProps: "x,y",
@@ -3001,12 +3018,12 @@ export class FolderOverlayLayer extends Container {
         x: targetX,
         y: targetY,
       }, { onFrame: updateOpeningPanelFrame, spring: motionSprings.folderPanelOpen });
-      if (sessionToken) this.scheduleOpeningPanelReadyCheck(sessionToken, openingGeometrySnapshot?.panelRect || panelRect, folderId);
+      this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.panelRect || panelRect, folderId);
     }
     updateOpeningPanelFrame();
     return {
       openingGeometrySnapshot,
-      sessionToken,
+      openingLease,
     };
   }
 
@@ -3111,7 +3128,7 @@ export class FolderOverlayLayer extends Container {
         resizeLayoutSync: this.resizeLayoutSync ? { ...this.resizeLayoutSync } : null,
       },
       openingGeometry: makeOpeningGeometryDebugSnapshot(
-        this.folderHandoff?.activeOpenSession || null,
+        this.folderVisualSession.snapshot().opening,
         this.currentOpeningGeometrySnapshot || null,
         this.panel
       ),
@@ -3123,6 +3140,7 @@ export class FolderOverlayLayer extends Container {
       clearDetachedClosingVisuals: true,
       clearVisualCommitQueue: true,
     });
+    this.folderVisualSession.dispose();
     killAllMotion(this.panel, { reason: "destroyed" });
     killAllMotion(this.pageTrack, { reason: "destroyed" });
     this.clearPageDots();

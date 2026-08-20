@@ -8,11 +8,12 @@
     "check:i18n": "node scripts/checkI18n.mjs",
     "dev": "vite",
     "icons:export": "node scripts/exportBrandIcons.mjs",
-    "test": "node src/domain/runLaunchpadLayoutTests.js",
+    "test": "tsx src/domain/runLaunchpadLayoutTests.js",
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.mjs --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.mjs --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.mjs --project=chromium --workers=1",
     "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
@@ -32,11 +33,15 @@
     "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-vue": "^5.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "5.9.3",
     "unplugin-icons": "^23.0.1",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vue-tsc": "^3.3.10"
   },
   "allowScripts": {
-    "esbuild@0.25.12": true
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
   },
   "license": "GPL-3.0-only"
 }

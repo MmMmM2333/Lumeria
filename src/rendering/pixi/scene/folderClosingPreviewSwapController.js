@@ -2,7 +2,6 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeClosingPreviewSwapPlan } from "./folderPreviewSwapMotion.js";
 
@@ -49,7 +48,6 @@ function previewSwapSpring(target, vars, options = {}) {
 export class FolderClosingPreviewSwapController {
   constructor(layer, options = {}) {
     this.layer = layer;
-    this.handoffCoordinator = options.handoffCoordinator || ensureFolderVisualSession(layer);
     this.containerFactory = options.containerFactory;
     this.graphicsFactory = options.graphicsFactory;
     this.spriteFactory = options.spriteFactory;
@@ -57,29 +55,35 @@ export class FolderClosingPreviewSwapController {
     this.getIconTexture = options.getIconTexture;
     this.scheduler = options.scheduler || globalThis;
     this.activeSwap = null;
-    this.handoffCoordinator.ensureClosePreviewSwaps();
+    this.motionControls = new Set();
   }
 
   cancelMotionControls() {
-    const controls = this.handoffCoordinator.consumeClosePreviewSwapMotionControls();
+    const controls = this.motionControls;
+    this.motionControls = new Set();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
 
   ensureLayer() {
-    this.handoffCoordinator.ensureClosePreviewSwaps();
     return this.layer.ensureClosingPreviewSwapLayer(this.containerFactory);
   }
 
   clear() {
     this.cancelMotionControls();
     this.activeSwap = null;
-    this.handoffCoordinator.clearClosePreviewSwaps();
     const ghosts = this.layer.removeClosingPreviewSwapChildren();
     for (const ghost of ghosts) {
       killAllMotion(ghost);
       destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
+  }
+
+  snapshot() {
+    return Object.freeze({
+      activeKey: this.activeSwap?.key || null,
+      motionControlCount: this.motionControls.size,
+    });
   }
 
   createIcon(item, size) {
@@ -115,10 +119,11 @@ export class FolderClosingPreviewSwapController {
     return ghost;
   }
 
-  complete(state, key, root, iconsWrap, onComplete, token = this.handoffCoordinator.closeToken) {
+  complete(state, key, root, iconsWrap, onComplete, reporter) {
     const layer = this.layer;
-    const settlementEvents = this.handoffCoordinator.completeClosePreviewSwap(token, key);
-    if (!settlementEvents) return;
+    if (!reporter) return;
+    const report = reporter.previewComplete(key);
+    if (report.status !== "accepted") return;
     if (this.activeSwap?.key === key) this.activeSwap = null;
     this.cancelMotionControls();
     killMotionOf(root);
@@ -127,7 +132,7 @@ export class FolderClosingPreviewSwapController {
     root.alpha = 1;
     iconsWrap.position.set(iconsWrap.pivot.x, iconsWrap.pivot.y);
     iconsWrap.scale.set(1);
-    onComplete(state, settlementEvents);
+    onComplete?.(state);
   }
 
   start(state, targets, timing, onComplete, options = {}) {
@@ -142,9 +147,15 @@ export class FolderClosingPreviewSwapController {
     if (!plan) return;
 
     const layer = this.layer;
-    const closeToken = options.closeToken ?? this.handoffCoordinator.closeToken;
+    const reporter = options.reporter;
+    if (!reporter || typeof reporter.previewStarted !== "function" || typeof reporter.previewComplete !== "function") {
+      const missing = typeof reporter?.previewStarted !== "function" ? "previewStarted" : "previewComplete";
+      throw new TypeError(`closing preview swap reporter is missing ${missing}()`);
+    }
     const key = makeClosingPreviewSwapKey(state.renderedFolder?.id, state.folderPageIndex);
     const targetKey = makeClosingPreviewSwapTargetsKey(targets);
+    const registration = reporter.previewStarted(key);
+    if (!registration || registration.status !== "accepted") return;
     const root = this.containerFactory();
     const mask = this.graphicsFactory();
     const iconsWrap = this.containerFactory();
@@ -160,8 +171,6 @@ export class FolderClosingPreviewSwapController {
     root.addChild(mask);
     root.addChild(iconsWrap);
     this.ensureLayer().addChild(root);
-    this.handoffCoordinator.trackClosePreviewSwap(key);
-    this.handoffCoordinator.resetClosePreviewSwapMotionControls();
 
     const iconMotions = [];
     const springItems = [
@@ -202,12 +211,12 @@ export class FolderClosingPreviewSwapController {
     let motionControl = null;
     let didComplete = false;
     this.activeSwap = {
-      closeToken,
       iconsByKey,
       iconsWrap,
       key,
       mask,
       onComplete,
+      reporter,
       root,
       state,
       targetKey,
@@ -215,13 +224,13 @@ export class FolderClosingPreviewSwapController {
     motionControl = parallel(springItems, {
       onComplete: () => {
         didComplete = true;
-        if (motionControl) this.handoffCoordinator.deleteClosePreviewSwapMotionControl(motionControl);
-        this.complete(state, key, root, iconsWrap, onComplete, closeToken);
+        if (motionControl) this.motionControls.delete(motionControl);
+        this.complete(state, key, root, iconsWrap, onComplete, reporter);
       },
     });
     if (!didComplete && motionControl) {
       if (this.activeSwap?.key === key) this.activeSwap.motionControl = motionControl;
-      this.handoffCoordinator.addClosePreviewSwapMotionControl(motionControl);
+      this.motionControls.add(motionControl);
     }
   }
 
@@ -239,7 +248,7 @@ export class FolderClosingPreviewSwapController {
     if (!plan) return false;
 
     if (active.motionControl) {
-      this.handoffCoordinator.deleteClosePreviewSwapMotionControl(active.motionControl);
+      this.motionControls.delete(active.motionControl);
       active.motionControl.release?.();
       active.motionControl = null;
     }
@@ -287,14 +296,14 @@ export class FolderClosingPreviewSwapController {
     motionControl = parallel(springItems, {
       onComplete: () => {
         didComplete = true;
-        if (motionControl) this.handoffCoordinator.deleteClosePreviewSwapMotionControl(motionControl);
+        if (motionControl) this.motionControls.delete(motionControl);
         if (this.activeSwap === active) active.motionControl = null;
-        this.complete(state, active.key, active.root, active.iconsWrap, active.onComplete, active.closeToken);
+        this.complete(state, active.key, active.root, active.iconsWrap, active.onComplete, active.reporter);
       },
     });
     if (!didComplete && motionControl && this.activeSwap === active) {
       active.motionControl = motionControl;
-      this.handoffCoordinator.addClosePreviewSwapMotionControl(motionControl);
+      this.motionControls.add(motionControl);
     }
     return true;
   }

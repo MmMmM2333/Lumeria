@@ -147,7 +147,6 @@ export function useFolderOpenIconGhosts(options = {}) {
         frameCompleted: false,
         requestId,
         status: "staged",
-        token: null,
       }
       : null;
     folderOpenIconGhosts.value = ghosts;
@@ -156,14 +155,13 @@ export function useFolderOpenIconGhosts(options = {}) {
     isFolderOpenFrameGhostPending.value = ghosts.length > 0;
   }
 
-  function acceptFolderOpenIconGhostSession(folderId, requestId, token = null) {
+  function acceptFolderOpenIconGhostSession(folderId, requestId) {
     const session = folderOpenIconGhostSession.value;
     if (!session || session.status !== "staged") return false;
     if (session.folderId !== (folderId || null) || session.requestId !== requestId) return false;
     folderOpenIconGhostSession.value = {
       ...session,
       status: "accepted",
-      token: token ?? null,
     };
     if (folderId) folderOpenPreviewFrameGhostedIds.value = new Set([folderId]);
     return true;

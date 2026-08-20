@@ -8,6 +8,149 @@
 
 export const LAYOUT_DOCUMENT_VERSION = 2;
 
+export type CatalogAppOverrides = {
+  name?: string;
+  emoji?: string;
+  customIconPath?: string;
+};
+
+export type CatalogAppLayoutItem = {
+  id: string;
+  type: "catalogApp";
+  overrides?: CatalogAppOverrides;
+};
+
+export type ExecutableLaunchTarget = {
+  kind: "executable";
+  path: string;
+  appUserModelId?: string;
+};
+
+export type PathLaunchTarget = {
+  kind: "shortcut" | "url";
+  path: string;
+  appUserModelId?: string;
+};
+
+export type AppUserModelIdLaunchTarget = {
+  kind: "appUserModelId";
+  appUserModelId: string;
+  path?: string;
+};
+
+export type LaunchTarget =
+  | ExecutableLaunchTarget
+  | PathLaunchTarget
+  | AppUserModelIdLaunchTarget;
+
+type ManualAppBase = {
+  id: string;
+  type: "manualApp";
+  name: string;
+  emoji?: string;
+  iconPath?: string;
+  customIconPath?: string;
+};
+
+export type ManualAppLayoutItem =
+  | (ManualAppBase & {
+      launchTarget: ExecutableLaunchTarget;
+      launchArgs?: string;
+    })
+  | (ManualAppBase & {
+      launchTarget: PathLaunchTarget | AppUserModelIdLaunchTarget;
+      launchArgs?: never;
+    });
+
+export type FolderChildLayoutItem = CatalogAppLayoutItem | ManualAppLayoutItem;
+
+export type FolderLayoutItem = {
+  id: string;
+  type: "folder";
+  name: string;
+  childPages: FolderChildLayoutItem[][];
+};
+
+export type LayoutItem = FolderChildLayoutItem | FolderLayoutItem;
+
+export type ScanRoot = {
+  id: string;
+  type: "startMenuUser" | "startMenuSystem" | "customDirectory" | "windowsAppCatalog";
+  label: string;
+  path: string;
+  enabled: boolean;
+  removable: boolean;
+  lastScannedAt?: string;
+  maxDepth?: number;
+  maxEntries?: number;
+};
+
+export type ScanAppBlacklistEntry = {
+  catalogId: string;
+  name?: string;
+  blockedAt?: string;
+};
+
+export type AcrylicParameters = {
+  brightness: number;
+  contrast: number;
+  noise: number;
+  saturation: number;
+  seed: number;
+  tintColor: [number, number, number];
+  tintStrength: number;
+};
+
+export type LayoutSettings = {
+  gridRows: number;
+  gridCols: number;
+  folderRows: number;
+  folderCols: number;
+  iconSize: number;
+  folderIconSizeMode: "global" | "custom";
+  folderIconSize: number;
+  textless: boolean;
+  hiddenAppIds: string[];
+  scanRoots: ScanRoot[];
+  scanKeywordBlacklist: string[];
+  scanKeywordAllowlist: string[];
+  scanAppBlacklist: ScanAppBlacklistEntry[];
+  showMissingLaunchTargetBadge: boolean;
+  backgroundBaseColor: string;
+  backgroundBaseOpacity: number;
+  backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
+  backgroundEffect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  backgroundImageOpacity: number;
+  backgroundLiveDesktopOpacity: number;
+  backgroundImageLayout: "fill" | "fit" | "stretch" | "tile" | "center";
+  backgroundBlurStrength: number;
+  backgroundAcrylicBlurStrength: number;
+  backgroundDarkenStrength: number;
+  backgroundDarkenColor: string;
+  backgroundAcrylicAppearance: "system" | "dark" | "light";
+  backgroundAcrylicDarkParams: AcrylicParameters;
+  backgroundAcrylicLightParams: AcrylicParameters;
+  backgroundImagePath: string | null;
+  windowEffectMaterial: "none" | "acrylic" | "mica" | "micaAlt";
+  windowEffectAppearance: "system" | "dark" | "light";
+  windowMode: "fullscreen" | "windowed";
+  fullscreenOverscanEnabled: boolean;
+  showCustomTitlebar: boolean;
+  mainWindowShortcut: string | null;
+  localePreference: string;
+  settingsThemePreference: "system" | "dark" | "light";
+  launchpadIconVariant: "light" | "dark" | "pastelLight" | "pastelDark";
+};
+
+export type LayoutDocument = {
+  version: typeof LAYOUT_DOCUMENT_VERSION;
+  pages: LayoutItem[][];
+  settings: LayoutSettings;
+};
+
+type UnknownRecord = Record<string, unknown>;
+type ValidationOptions = { maxUtf8Bytes?: number | null };
+
 const ROOT_FIELDS = ["version", "pages", "settings"];
 const CATALOG_APP_FIELDS = ["id", "type", "overrides"];
 const CATALOG_OVERRIDE_FIELDS = ["name", "emoji", "customIconPath"];
@@ -85,18 +228,23 @@ const SETTINGS_FIELDS = [
   "launchpadIconVariant",
 ];
 
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+const hasOwn = (value: UnknownRecord, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key);
 
-function isObject(value) {
+function isObject(value: unknown): value is UnknownRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function requireObject(value, path) {
+function requireObject(value: unknown, path: string): UnknownRecord {
   if (!isObject(value)) throw new TypeError(`${path} must be an object`);
   return value;
 }
 
-function assertExactFields(object, allowedFields, path, requiredFields = allowedFields) {
+function assertExactFields(
+  object: UnknownRecord,
+  allowedFields: readonly string[],
+  path: string,
+  requiredFields: readonly string[] = allowedFields,
+): void {
   const allowed = new Set(allowedFields);
   for (const key of Object.keys(object)) {
     if (!allowed.has(key)) throw new TypeError(`${path}.${key} is not supported`);
@@ -106,7 +254,11 @@ function assertExactFields(object, allowedFields, path, requiredFields = allowed
   }
 }
 
-function requireNonEmptyString(value, path, { maxUtf8Bytes = null } = {}) {
+function requireNonEmptyString(
+  value: unknown,
+  path: string,
+  { maxUtf8Bytes = null }: ValidationOptions = {},
+): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new TypeError(`${path} must be a non-empty string`);
   }
@@ -116,48 +268,49 @@ function requireNonEmptyString(value, path, { maxUtf8Bytes = null } = {}) {
   return value;
 }
 
-function requireBoolean(value, path) {
+function requireBoolean(value: unknown, path: string): void {
   if (typeof value !== "boolean") throw new TypeError(`${path} must be a boolean`);
 }
 
-function requireIntegerInRange(value, minimum, maximum, path) {
-  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+function requireIntegerInRange(value: unknown, minimum: number, maximum: number, path: string): void {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
     throw new TypeError(`${path} must be an integer from ${minimum} to ${maximum}`);
   }
 }
 
-function requireNumberInRange(value, minimum, maximum, path) {
+function requireNumberInRange(value: unknown, minimum: number, maximum: number, path: string): void {
   if (typeof value !== "number" || !Number.isFinite(value) || value < minimum || value > maximum) {
     throw new TypeError(`${path} must be a number from ${minimum} to ${maximum}`);
   }
 }
 
-function requireEnum(value, allowedValues, path) {
-  if (!allowedValues.includes(value)) {
+function requireEnum<T extends string>(value: unknown, allowedValues: readonly T[], path: string): T {
+  if (typeof value !== "string" || !allowedValues.includes(value as T)) {
     throw new TypeError(`${path} must be ${allowedValues.join(", ")}`);
   }
+  return value as T;
 }
 
-function requireColor(value, path) {
+function requireColor(value: unknown, path: string): void {
   if (typeof value !== "string" || !/^#[0-9a-f]{6}$/.test(value)) {
     throw new TypeError(`${path} must be a lowercase #rrggbb color`);
   }
 }
 
-function requireNonEmptyStringArray(value, path) {
+function requireNonEmptyStringArray(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
   value.forEach((entry, index) => requireNonEmptyString(entry, `${path}[${index}]`));
 }
 
-function requireOptionalNonEmptyString(object, key, path) {
+function requireOptionalNonEmptyString(object: UnknownRecord, key: string, path: string): void {
   if (hasOwn(object, key)) requireNonEmptyString(object[key], `${path}.${key}`);
 }
 
-function assertLaunchTarget(value, path) {
+function assertLaunchTarget(value: unknown, path: string): LaunchTarget["kind"] {
   const target = requireObject(value, path);
   assertExactFields(target, LAUNCH_TARGET_FIELDS, path, ["kind"]);
   const kind = requireNonEmptyString(target.kind, `${path}.kind`);
-  if (["shortcut", "executable", "url"].includes(kind)) {
+  if (kind === "shortcut" || kind === "executable" || kind === "url") {
     requireNonEmptyString(target.path, `${path}.path`);
     requireOptionalNonEmptyString(target, "appUserModelId", path);
     return kind;
@@ -170,7 +323,7 @@ function assertLaunchTarget(value, path) {
   throw new TypeError(`${path}.kind must be shortcut, executable, url, or appUserModelId`);
 }
 
-function assertCatalogApp(item, path) {
+function assertCatalogApp(item: UnknownRecord, path: string): void {
   assertExactFields(item, CATALOG_APP_FIELDS, path, ["id", "type"]);
   if (!hasOwn(item, "overrides")) return;
   const overrides = requireObject(item.overrides, `${path}.overrides`);
@@ -180,7 +333,7 @@ function assertCatalogApp(item, path) {
   }
 }
 
-function assertManualApp(item, path) {
+function assertManualApp(item: UnknownRecord, path: string): void {
   assertExactFields(item, MANUAL_APP_FIELDS, path, ["id", "type", "name", "launchTarget"]);
   requireNonEmptyString(item.name, `${path}.name`);
   for (const key of ["emoji", "iconPath", "customIconPath", "launchArgs"]) {
@@ -192,7 +345,12 @@ function assertManualApp(item, path) {
   }
 }
 
-function assertLayoutItem(value, path, seenIds, { allowFolder = true } = {}) {
+function assertLayoutItem(
+  value: unknown,
+  path: string,
+  seenIds: Set<string>,
+  { allowFolder = true }: { allowFolder?: boolean } = {},
+): void {
   const item = requireObject(value, path);
   const id = requireNonEmptyString(item.id, `${path}.id`);
   if (seenIds.has(id)) throw new TypeError(`layout item id must be unique: ${id}`);
@@ -227,7 +385,7 @@ function assertLayoutItem(value, path, seenIds, { allowFolder = true } = {}) {
   });
 }
 
-function assertScanRoots(value, path) {
+function assertScanRoots(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
   value.forEach((root, index) => {
     const rootPath = `${path}[${index}]`;
@@ -255,7 +413,7 @@ function assertScanRoots(value, path) {
   });
 }
 
-function assertScanAppBlacklist(value, path) {
+function assertScanAppBlacklist(value: unknown, path: string): void {
   if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
   value.forEach((entry, index) => {
     const entryPath = `${path}[${index}]`;
@@ -267,7 +425,7 @@ function assertScanAppBlacklist(value, path) {
   });
 }
 
-function assertAcrylicParameters(value, path) {
+function assertAcrylicParameters(value: unknown, path: string): void {
   const parameters = requireObject(value, path);
   assertExactFields(parameters, ACRYLIC_PARAMETER_FIELDS, path);
   requireNumberInRange(parameters.brightness, 0.4, 1.4, `${path}.brightness`);
@@ -284,7 +442,7 @@ function assertAcrylicParameters(value, path) {
   requireNumberInRange(parameters.tintStrength, 0, 0.8, `${path}.tintStrength`);
 }
 
-function assertLayoutSettings(value) {
+function assertLayoutSettings(value: unknown): void {
   const path = "LayoutDocument.settings";
   const settings = requireObject(value, path);
   assertExactFields(settings, SETTINGS_FIELDS, path);
@@ -343,17 +501,15 @@ function assertLayoutSettings(value) {
  * Assert the canonical persisted layout shape and return the same reference.
  * No migration, repair, or fallback is performed at this boundary.
  *
- * @param {unknown} document
- * @returns {object}
  */
-export function assertLayoutDocument(document) {
+export function assertLayoutDocument(document: unknown): LayoutDocument {
   const layout = requireObject(document, "LayoutDocument");
   assertExactFields(layout, ROOT_FIELDS, "LayoutDocument");
   if (layout.version !== LAYOUT_DOCUMENT_VERSION) {
     throw new TypeError(`LayoutDocument.version must be ${LAYOUT_DOCUMENT_VERSION}`);
   }
   if (!Array.isArray(layout.pages)) throw new TypeError("LayoutDocument.pages must be an array");
-  const seenIds = new Set();
+  const seenIds = new Set<string>();
   layout.pages.forEach((page, pageIndex) => {
     if (!Array.isArray(page)) throw new TypeError(`LayoutDocument.pages[${pageIndex}] must be an array`);
     page.forEach((item, itemIndex) => {
@@ -361,5 +517,5 @@ export function assertLayoutDocument(document) {
     });
   });
   assertLayoutSettings(layout.settings);
-  return layout;
+  return layout as LayoutDocument;
 }

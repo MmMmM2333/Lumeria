@@ -7,7 +7,52 @@ export const RENDER_INVALIDATION_LANES = Object.freeze({
   HANDOFF: "handoff",
   ASSET: "asset",
   DIAGNOSTICS: "diagnostics",
-});
+} as const);
+
+export type RenderInvalidationLane = typeof RENDER_INVALIDATION_LANES[keyof typeof RENDER_INVALIDATION_LANES];
+
+export type RenderInvalidationOptions = Readonly<{
+  invalidateGeometry?: boolean;
+}>;
+
+export type RenderInvalidationMark = Readonly<{
+  lane: RenderInvalidationLane;
+  reason: string;
+  revision: number;
+  wasEmpty: boolean;
+}>;
+
+export type RenderInvalidationSnapshot = Readonly<{
+  lanes: readonly RenderInvalidationLane[];
+  reasons: Readonly<Partial<Record<RenderInvalidationLane, readonly string[]>>>;
+  revision: number;
+  revisions: Readonly<Partial<Record<RenderInvalidationLane, number>>>;
+  requiresDiagnosticsUpdate: boolean;
+  requiresHandoffUpdate: boolean;
+  requiresInteractionUpdate: boolean;
+  requiresStructureUpdate: boolean;
+  requiresVisualUpdate: boolean;
+}>;
+
+export type RenderInvalidationLedger = Readonly<{
+  clear: () => void;
+  consume: () => RenderInvalidationSnapshot;
+  hasPending: () => boolean;
+  mark: (reason?: string, options?: RenderInvalidationOptions) => RenderInvalidationMark;
+  snapshot: () => RenderInvalidationSnapshot;
+}>;
+
+type MutableRenderInvalidationSnapshot = {
+  lanes: RenderInvalidationLane[];
+  reasons: Partial<Record<RenderInvalidationLane, string[]>>;
+  revision: number;
+  revisions: Partial<Record<RenderInvalidationLane, number>>;
+  requiresDiagnosticsUpdate: boolean;
+  requiresHandoffUpdate: boolean;
+  requiresInteractionUpdate: boolean;
+  requiresStructureUpdate: boolean;
+  requiresVisualUpdate: boolean;
+};
 
 const MOTION_REASON_RE = /^(?:motion(?:-|$)|animation(?:-|$))/;
 const INTERACTION_REASON_RE = /^(?:interaction(?:-|$)|visual-ownership(?:-|$)|desktop-source-ownership(?:-|$)|icon-(?:pointerdown|remove|choose-icon|reset-icon)|folder-(?:internal-|outside-pointerdown|panel-pointerdown|closing-pointerdown)|group-|drag-)/;
@@ -17,11 +62,14 @@ const ASSET_REASON_RE = /^(?:icon-texture-ready|asset(?:-|$)|texture(?:-|$))/;
 const DIAGNOSTIC_REASON_RE = /^(?:diagnostic(?:-|$)|debug(?:-|$)|render-probe(?:-|$))/;
 const GEOMETRY_REASON_RE = /^(?:resize|window-state-resize|desktop-projection|page-grid-measure|geometry(?:-|$)|folder-geometry(?:-|$))/;
 
-function normalizeReason(reason) {
+function normalizeReason(reason: unknown): string {
   return String(reason || "desktop-update").trim() || "desktop-update";
 }
 
-export function classifyRenderInvalidation(reason, options = {}) {
+export function classifyRenderInvalidation(
+  reason: string,
+  options: RenderInvalidationOptions = {},
+): RenderInvalidationLane {
   if (options.invalidateGeometry === true) return RENDER_INVALIDATION_LANES.GEOMETRY;
   const normalized = normalizeReason(reason);
   if (MOTION_REASON_RE.test(normalized)) return RENDER_INVALIDATION_LANES.MOTION;
@@ -34,7 +82,7 @@ export function classifyRenderInvalidation(reason, options = {}) {
   return RENDER_INVALIDATION_LANES.STRUCTURE;
 }
 
-function createEmptySnapshot() {
+function createEmptySnapshot(): MutableRenderInvalidationSnapshot {
   return {
     lanes: [],
     reasons: Object.create(null),
@@ -48,12 +96,15 @@ function createEmptySnapshot() {
   };
 }
 
-export function createRenderInvalidationLedger() {
-  const reasonsByLane = new Map();
-  const revisionsByLane = new Map();
+export function createRenderInvalidationLedger(): RenderInvalidationLedger {
+  const reasonsByLane = new Map<RenderInvalidationLane, Set<string>>();
+  const revisionsByLane = new Map<RenderInvalidationLane, number>();
   let revision = 0;
 
-  function mark(reason = "desktop-update", options = {}) {
+  function mark(
+    reason = "desktop-update",
+    options: RenderInvalidationOptions = {},
+  ): RenderInvalidationMark {
     const normalized = normalizeReason(reason);
     const lane = classifyRenderInvalidation(normalized, options);
     let reasons = reasonsByLane.get(lane);
@@ -68,11 +119,11 @@ export function createRenderInvalidationLedger() {
     return { lane, reason: normalized, revision, wasEmpty };
   }
 
-  function hasPending() {
+  function hasPending(): boolean {
     return reasonsByLane.size > 0;
   }
 
-  function snapshot() {
+  function snapshot(): RenderInvalidationSnapshot {
     const result = createEmptySnapshot();
     for (const [lane, reasons] of reasonsByLane) {
       result.lanes.push(lane);
@@ -90,13 +141,13 @@ export function createRenderInvalidationLedger() {
     return result;
   }
 
-  function consume() {
+  function consume(): RenderInvalidationSnapshot {
     const result = snapshot();
     reasonsByLane.clear();
     return result;
   }
 
-  function clear() {
+  function clear(): void {
     reasonsByLane.clear();
     revisionsByLane.clear();
   }

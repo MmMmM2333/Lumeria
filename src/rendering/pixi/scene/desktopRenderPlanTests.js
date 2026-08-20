@@ -29,13 +29,13 @@ function makeBaseState(overrides = {}) {
   };
 }
 
-function makeHandoffCoordinator(active, folderId = null) {
+function makeFolderVisualSession(active, folderId = null) {
   return {
-    get folderId() {
-      return folderId;
-    },
-    isCloseHandoffActive() {
-      return active;
+    snapshot() {
+      return {
+        closing: active ? { folderId, handoffActive: true } : null,
+        opening: null,
+      };
     },
   };
 }
@@ -61,7 +61,7 @@ export function runDesktopRenderPlanTests() {
       launchTargetStatusById: { [app.id]: { missing: true } },
     }), {
       folderHandoffEntries: new Map([[folder.id, handoffEntry]]),
-      folderLayer: { folderHandoff: makeHandoffCoordinator(true, folder.id) },
+      folderLayer: { folderVisualSession: makeFolderVisualSession(true, folder.id) },
     });
 
     assert(plan.entries.length === 2, "plan should include visible desktop entries");
@@ -112,7 +112,7 @@ export function runDesktopRenderPlanTests() {
       effectiveFolderSourceGhostedIds: new Set([folder.id]),
       folderHandoffEntries: new Map([[folder.id, { folderId: folder.id, visualReleased: false }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         hasVisibleFolderSubstitute: () => false,
       },
     });
@@ -146,7 +146,7 @@ export function runDesktopRenderPlanTests() {
         visualReleased: true,
       }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       },
@@ -180,7 +180,7 @@ export function runDesktopRenderPlanTests() {
         visualReleased: true,
       }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       },
@@ -213,7 +213,7 @@ export function runDesktopRenderPlanTests() {
         visualReleased: true,
       }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       },
@@ -244,7 +244,7 @@ export function runDesktopRenderPlanTests() {
         visualReleased: true,
       }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       },
@@ -336,7 +336,7 @@ export function runDesktopRenderPlanTests() {
         visualReleased: true,
       }]]),
       folderLayer: {
-        folderHandoff: makeHandoffCoordinator(false, null),
+        folderVisualSession: makeFolderVisualSession(false, null),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       },

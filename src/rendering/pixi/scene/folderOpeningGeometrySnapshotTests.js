@@ -33,7 +33,6 @@ export function runFolderOpeningGeometrySnapshotTests() {
       layoutKey: "layout-a",
       panelRect,
       previewSlots: [{ id: "app-a" }, { id: "app-b" }],
-      sessionToken: "open-a",
       stageHeight: 600,
       stageRect: { height: 600, left: 0, top: 0, width: 1000 },
       stageWidth: 1000,

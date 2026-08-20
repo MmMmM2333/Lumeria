@@ -8,8 +8,6 @@ import {
 import {
   applyClosingHandoffOnlyOverlayState,
   applyClosingPresentationOverlayState,
-  cancelClosingHandoffCleanup,
-  finishClosingHandoff,
   getClosingPresentationStageHitRects,
 } from "./folderClosingHandoff.js";
 import {
@@ -18,7 +16,7 @@ import {
   ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
-import { FolderVisualSession as FolderHandoffCoordinator } from "./folderVisualSession.js";
+import { FolderVisualSession } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -29,51 +27,78 @@ import {
 const K = ICON_BOUNDS_KIND;
 const V = ICON_BOUNDS_VARIANT;
 
-function attachHandoffCoordinator(layer, options = {}) {
-  const handoffCoordinator = new FolderHandoffCoordinator(layer);
-  layer.folderHandoff = handoffCoordinator;
-  if (options.folderId) handoffCoordinator.beginCloseTransition(options.folderId);
-  if (options.frameComplete) handoffCoordinator.completeCloseFrame(handoffCoordinator.closeToken);
-  for (const key of options.previewSwapKeys || []) handoffCoordinator.trackClosePreviewSwap(key);
-  if (options.handoffRect || options.handoffTarget || options.detachedTarget) {
-    handoffCoordinator.setCloseHandoffGeometry({
-      detachedTarget: options.detachedTarget || null,
-      rect: options.handoffRect || null,
-      target: options.handoffTarget || null,
-    });
-  }
-  return handoffCoordinator;
-}
-
-function makeClosingHandoffHarness(calls) {
-  const layer = {
-    closingPreviewSwapLayer: {
-      destroyed: false,
-      removeChildren() {
-        calls.push("clear-swap");
-        return [];
-      },
-    },
-    pageTrack: { visible: true },
-    clearClosingGhostRevealTimer() {
-      calls.push("clear-timer");
-    },
-    clearCompletedClosingPreviewGhosts() {
-      calls.push("clear-preview");
-    },
-    clearFrameGhost() {
-      calls.push("clear-frame");
-    },
-    flushCompletedClosingControllerGhosts() {
-      calls.push("flush-controller");
+function attachClosingVisualSession(layer, options = {}) {
+  let reporter = null;
+  const adapter = {
+    prepare: () => ({ ghosts: [] }),
+    start(_plan, nextReporter) {
+      reporter = nextReporter;
+      return {
+        cancel(cancelOptions) {
+          layer.closingGhosts?.clear?.(cancelOptions);
+        },
+        onHandoffReady() {},
+        onOverlaySettled() {},
+        retarget() {},
+        snapshot: () => ({ activeVisuals: true }),
+      };
     },
   };
-  attachHandoffCoordinator(layer, {
-    folderId: "folder-a",
-    frameComplete: true,
-    previewSwapKeys: ["swap"],
-  });
-  return layer;
+  const session = new FolderVisualSession({ closingAdapter: adapter });
+  layer.folderVisualSession = session;
+  layer.closingLease = null;
+  const closeFolderId = options.folderId || (
+    options.handoffRect || options.handoffTarget || options.detachedTarget ||
+    options.frameComplete || options.previewSwapKeys?.length
+      ? "folder-test"
+      : null
+  );
+  if (closeFolderId) {
+    layer.closingLease = session.close({ folderId: closeFolderId });
+    layer.closingLease.present({});
+    layer.closingPhaseReporter = reporter;
+    if (options.handoffRect || options.handoffTarget || options.detachedTarget) {
+      reporter.setGeometry({
+        detachedTarget: options.detachedTarget || null,
+        rect: options.handoffRect || null,
+        target: options.handoffTarget || null,
+      });
+    }
+    for (const key of options.previewSwapKeys || []) reporter.previewStarted(key);
+    if (options.frameComplete) reporter.frameComplete();
+  }
+  return { adapter, lease: layer.closingLease, reporter, session };
+}
+
+function attachOpeningVisualSession(layer, options = {}) {
+  let startRecord = null;
+  const ghostIds = Object.freeze([...(options.ghostIds || [])]);
+  const adapter = {
+    prepare: () => ({ ghostIds }),
+    start(plan, reporter) {
+      startRecord = { plan, reporter };
+      return {
+        cancel() {},
+        retarget(nextPlan) {
+          options.onRetarget?.(nextPlan);
+        },
+        reveal() {},
+        snapshot: () => ({ active: true, ghostIds }),
+        takeGhost: () => null,
+      };
+    },
+  };
+  const session = new FolderVisualSession({ openingAdapter: adapter });
+  layer.folderVisualSession = session;
+  layer.openingLease = null;
+  if (options.begin !== false) {
+    layer.openingLease = session.open({
+      folderId: options.folderId || "folder-test",
+      targetKey: options.targetKey || "target-test",
+    });
+    layer.openingLease.present({ state: options.state || {}, targets: [] });
+  }
+  return { adapter, lease: layer.openingLease, session, startRecord: () => startRecord };
 }
 
 export async function runFolderOverlayLayerTests() {
@@ -235,7 +260,7 @@ export async function runFolderOverlayLayerTests() {
       pageDotsLayer: { eventMode: "static", hitArea: { width: 100 }, visible: true },
       stageRect: { left: 100, top: 200, width: 800, height: 600 },
     };
-    attachHandoffCoordinator(layer, {
+    attachClosingVisualSession(layer, {
       handoffRect: { height: 60, left: 140, top: 260, width: 60 },
     });
 
@@ -263,7 +288,7 @@ export async function runFolderOverlayLayerTests() {
       frameGhostState: null,
       stageRect: { left: 100, top: 200, width: 800, height: 600 },
     };
-    attachHandoffCoordinator(layer, {
+    attachClosingVisualSession(layer, {
       handoffRect: { height: 60, left: 140, top: 260, width: 60 },
     });
     const rects = getClosingPresentationStageHitRects(layer);
@@ -313,7 +338,7 @@ export async function runFolderOverlayLayerTests() {
     layer.onClosingFolderPointerDown = (folderId) => calls.push(`closing:${folderId}`);
     layer.stableFolderCloseTarget = { folderId: "folder-a" };
     layer.stageRect = { height: 600, left: 100, top: 200, width: 800 };
-    attachHandoffCoordinator(layer, {
+    attachClosingVisualSession(layer, {
       handoffRect: { height: 60, left: 140, top: 260, width: 60 },
     });
 
@@ -348,20 +373,26 @@ export async function runFolderOverlayLayerTests() {
     const layer = new FolderOverlayLayer({ iconBoundsRegistry });
     const calls = [];
     layer.currentFolderId = "folder-a";
-    layer.folderHandoff.beginCloseTransition("folder-a");
+    const closingAdapter = {
+      prepare: () => ({ ghosts: [] }),
+      start(_plan, reporter) {
+        calls.push(`start:${reporter.snapshot()?.folderId || "null"}`);
+        return {
+          cancel() {},
+          retarget() {},
+          snapshot: () => ({ activeVisuals: true }),
+        };
+      },
+    };
+    layer.folderVisualSession = new FolderVisualSession({ closingAdapter });
+    layer.closingLease = layer.folderVisualSession.close({ folderId: "folder-a" });
+    layer.closingLease.present({});
+    calls.length = 0;
     layer.isClosing = true;
     layer.detachClosingPresentationForOpen = (nextFolderId) => {
-      calls.push(`detach:${nextFolderId}:${layer.folderHandoff.folderId}`);
-      layer.folderHandoff.clearCloseFolderId();
-    };
-    layer.closingGhosts = {
-      clear() {},
-      hasActive: () => false,
-      hasPendingHandoff: () => false,
-      start() {
-        calls.push(`start:${layer.folderHandoff.folderId}`);
-        layer.folderHandoff.beginCloseTransition("folder-b");
-      },
+      calls.push(`detach:${nextFolderId}:${layer.folderVisualSession.snapshot().closing?.folderId || "null"}`);
+      layer.closingLease?.cancel({ restorePageTrack: false, reveal: false });
+      layer.closingLease = null;
     };
 
     layer.update({
@@ -382,7 +413,7 @@ export async function runFolderOverlayLayerTests() {
       width: 1200,
     });
 
-    assert(calls.join(",") === "detach:folder-b:folder-a,start:null", "cross-folder closing update should detach the old live closing before starting the new closing");
+    assert(calls.join(",") === "detach:folder-b:folder-a,start:folder-b", "cross-folder closing update should retire the old lease before starting the new close identity");
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
     motionRuntime.reset();
@@ -493,6 +524,106 @@ export async function runFolderOverlayLayerTests() {
   });
   const getPageMaskBottom = (folderGeometry) => folderGeometry.panel.height - 20;
   const getLayerPageMaskBottom = (layer) => layer.pageMaskRect.top + layer.pageMaskRect.height;
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const folderId = "folder-open-close-atomic-handoff";
+    const page = makeFolderResizeItems("atomic-handoff", 2);
+    const openingOriginBounds = makeOpeningOriginBounds(folderId, page, { previewCount: 2 });
+    const openingGhosts = makeOpeningGhostEntries(folderId, page);
+    const openState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(2, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderOpenIconGhosts: openingGhosts,
+      folderOpenProgress: 0.48,
+      folderOpenProgressTarget: 1,
+      folderOpeningOriginBounds: openingOriginBounds,
+      folderPageSize: 2,
+      folderPages: [page],
+      folderPanelStyle: {
+        "--folder-shell-min-height": "320px",
+      },
+    });
+
+    layer.update(openState);
+    const openingGhost = layer.openingGhostLayer.children.find((ghost) => ghost.item?.id === page[0].id);
+    assert(openingGhost, "atomic close handoff setup should create an opening ghost");
+
+    layer.update({
+      ...openState,
+      folderOpenProgressTarget: 0,
+      isFolderClosing: true,
+    });
+
+    assert(
+      layer.closingGhostLayer.children.includes(openingGhost),
+      "normal close should transfer the opening ghost instead of creating a second full-size ghost",
+    );
+    assert(layer.openingGhostLayer.children.length === 0, "normal close should retire residual opening ghosts after capture");
+    assert(layer.frameGhost.visible, "normal close should keep the closing frame visible after opening cleanup");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const folderId = "folder-close-visual-release-no-restart";
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const titleFrames = [];
+    layer.onTitleFrameChange = (frame) => titleFrames.push(frame);
+    let closeCalls = 0;
+    let visualReleased = false;
+    const closeLease = {
+      cancel() {},
+      present() {},
+      snapshot: () => ({ folderId, phase: "closing" }),
+    };
+    layer.folderVisualSession = {
+      close() {
+        closeCalls += 1;
+        return closeLease;
+      },
+      dispose() {},
+      snapshot() {
+        return {
+          closing: visualReleased ? null : { folderId, phase: "closing" },
+          disposed: false,
+          opening: null,
+          ownershipRevision: null,
+        };
+      },
+    };
+    const closingState = makeFolderResizeState({
+      folderId,
+      isFolderClosing: true,
+      renderedFolder: { id: folderId, name: "Closing Folder", type: "folder", childPages: [[]] },
+      folderPages: [[]],
+      folderPageSize: 1,
+    });
+
+    layer.update(closingState);
+    assert(closeCalls === 1, "the first closing frame should create one visual lease");
+    visualReleased = true;
+    layer.onClosingHandoffVisualRelease(folderId);
+    layer.update(closingState);
+    assert(
+      closeCalls === 1,
+      "a closing visual released before rendered-folder teardown must not restart from the full panel frame",
+    );
+    assert(titleFrames.at(-1) === null, "a released closing visual must clear its title frame instead of republishing the full panel");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
 
   {
     motionRuntime.reset();
@@ -1496,16 +1627,14 @@ export async function runFolderOverlayLayerTests() {
     const expandedPage = compactPages[0].slice();
     expandedPage.splice(7, 0, insertedItem);
     let retargetCall = null;
-    layer.folderHandoff.beginOpeningVisuals({ sessionToken: "opening-row-shift", state: compactState });
-    layer.folderHandoff.registerOpeningGhost(shiftedItemId, "opening-row-shift-ghost");
-    layer.folderHandoff.registerOpeningGhost(sameRowShiftedItemId, "opening-row-shift-same-row-ghost");
-    layer.openingGhosts = {
-      clear() {},
-      finishTransition() {},
-      retarget(_state, targets, options) {
+    attachOpeningVisualSession(layer, {
+      folderId: "folder-opening-row-shift",
+      ghostIds: [shiftedItemId, sameRowShiftedItemId],
+      onRetarget: ({ options, targets }) => {
         retargetCall = { options, targets };
       },
-    };
+      state: compactState,
+    });
 
     const expandedState = makeFolderResizeState({
       dragMeta: {
@@ -1584,15 +1713,14 @@ export async function runFolderOverlayLayerTests() {
       pageIndex: 0,
     });
     let retargetCall = null;
-    layer.folderHandoff.beginOpeningVisuals({ sessionToken: "opening-row-grow", state: compactState });
-    layer.folderHandoff.registerOpeningGhost(activeGhostItemId, "opening-row-grow-ghost");
-    layer.openingGhosts = {
-      clear() {},
-      finishTransition() {},
-      retarget(_state, targets, options) {
+    attachOpeningVisualSession(layer, {
+      folderId: "folder-opening-row-grow",
+      ghostIds: [activeGhostItemId],
+      onRetarget: ({ options, targets }) => {
         retargetCall = { options, targets };
       },
-    };
+      state: compactState,
+    });
 
     const expandedState = makeFolderResizeState({
       folderGridStyle: {
@@ -1669,7 +1797,7 @@ export async function runFolderOverlayLayerTests() {
     const shiftedKey = `folder-opening-held:${shiftedItemId}`;
     const shiftedNode = layer.iconNodes.get(shiftedKey);
     assert(shiftedNode?.visible === false, "arrived opening ghosts should keep real icons hidden while the folder is still opening");
-    assert(layer.folderHandoff.hasOpeningGhost(shiftedItemId), "arrived opening ghosts should keep ownership so held-drag reorders can retarget them");
+    assert(layer.folderVisualSession.snapshot().opening?.ghostIds.includes(shiftedItemId), "arrived opening ghosts should keep ownership so held-drag reorders can retarget them");
     assert(
       layer.openingGhostLayer.children.some((ghost) => ghost.item?.id === shiftedItemId),
       "arrived opening ghosts should stay mounted while the folder is still opening"
@@ -1701,7 +1829,7 @@ export async function runFolderOverlayLayerTests() {
     layer.update(expandedState);
 
     assert(layer.resizeLayoutSync?.mode === "opening", "held-drag row growth should still be treated as opening resize geometry");
-    assert(layer.folderHandoff.hasOpeningGhost(shiftedItemId), "row-growth reorders should keep shifted opening ghosts owned");
+    assert(layer.folderVisualSession.snapshot().opening?.ghostIds.includes(shiftedItemId), "row-growth reorders should keep shifted opening ghosts owned");
     assert(shiftedNode.visible === false, "row-growth reorders should keep shifted real icons hidden instead of exposing snapped layout nodes");
     assert(
       layer.openingGhostLayer.children.some((ghost) => ghost.item?.id === shiftedItemId),
@@ -2051,7 +2179,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingGhosts = { finishTransition() {} };
     layer.panelAlphaTarget = null;
     layer.panelOpenTargetKey = null;
@@ -2105,7 +2233,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingGhosts = { finishTransition() {} };
     layer.panelAlphaTarget = null;
     layer.panelOpenTargetKey = null;
@@ -2152,7 +2280,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingGhosts = { finishTransition() {} };
     layer.openingPanelReadyFrame = null;
     layer.panelAlphaTarget = null;
@@ -2208,7 +2336,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = "folder-1";
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingPanelReadyFrame = null;
     layer.panelAlphaTarget = 1;
     layer.panelOpenProgressDriven = true;
@@ -2259,7 +2387,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.configureDebug({ enabled: true });
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = null;
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingGhosts = { finishTransition() {} };
     layer.panelAlphaTarget = null;
     layer.panelOpenTargetKey = null;
@@ -2314,7 +2442,8 @@ export async function runFolderOverlayLayerTests() {
     assert(reused.folderRect.left === firstSourceRect.left, "reused snapshot should keep the original folder source geometry");
     assert(reused.previewChildRects.get("app-1:0").left === firstChildRect.left, "reused snapshot should keep the original preview child geometry");
     const debug = layer.getVisualDebugSnapshot();
-    assert(debug.openingGeometry.session.token === first.sessionToken, "opening debug should expose the active geometry session token");
+    assert(debug.openingGeometry.session.folderId === first.folderId, "opening debug should identify the lease-owned folder without exposing raw identity");
+    assert(debug.openingGeometry.session.geometryLayoutKey === first.layoutKey, "opening debug should bind geometry to the active lease layout key");
     assert(debug.openingGeometry.currentGeometryMatchesSession, "opening debug should prove current geometry is the active session snapshot");
     assert(debug.openingGeometry.snapshot.folderRect.left === firstSourceRect.left, "opening debug should expose the frozen source geometry");
     assert(debug.openingGeometry.snapshot.panelRect.width === panelRect.width, "opening debug should expose the frozen panel geometry");
@@ -2331,7 +2460,8 @@ export async function runFolderOverlayLayerTests() {
     assert(reopened.folderRect.left === secondSourceRect.left, "fresh snapshot should use the new folder source geometry");
     assert(reopened.previewChildRects.get("app-1:0").left === secondChildRect.left, "fresh snapshot should use the new preview child geometry");
     const reopenedDebug = layer.getVisualDebugSnapshot();
-    assert(reopenedDebug.openingGeometry.session.token === reopened.sessionToken, "reopened debug should expose the fresh session token");
+    assert(reopenedDebug.openingGeometry.session.geometryLayoutKey === reopened.layoutKey, "reopened debug should expose the fresh lease geometry identity");
+    assert(reopenedDebug.openingGeometry.currentGeometryMatchesSession, "reopened debug should bind the fresh geometry to the current lease");
     assert(reopenedDebug.openingGeometry.snapshot.folderRect.left === secondSourceRect.left, "reopened debug should expose the fresh source geometry");
     motionRuntime.reset();
   }
@@ -2340,7 +2470,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = "folder-1";
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
+    attachOpeningVisualSession(layer, { begin: false });
     layer.openingGhosts = { finishTransition() {} };
     layer.panelAlphaTarget = 1;
     layer.panelOpenTargetKey = null;
@@ -2373,7 +2503,14 @@ export async function runFolderOverlayLayerTests() {
       stageRect: { height: 600, left: 0, top: 0, width: 1000 },
     }, 580, 380, { height: 360, left: 180, top: 200, width: 800 }, null);
 
-    assert(layer.folderHandoff.activeOpenSession === null, "settled same-folder updates should not create a pending open session");
+    const sameFolderLease = layer.openingLease;
+    layer.animatePanel({
+      isFolderAppLaunchClosing: false,
+      isFolderClosing: false,
+      renderedFolder: { id: "folder-1" },
+      stageRect: { height: 600, left: 0, top: 0, width: 1000 },
+    }, 580, 380, { height: 360, left: 180, top: 200, width: 800 }, null);
+    assert(layer.openingLease === sameFolderLease, "settled same-folder updates should reuse the same identity-bound open lease");
     motionRuntime.reset();
   }
 
@@ -2383,7 +2520,7 @@ export async function runFolderOverlayLayerTests() {
     const detachedChildren = [];
     let clearCount = 0;
     let clearOptions = null;
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: (options) => { clearCount += 1; clearOptions = options; } };
     layer.detachedClosingVisuals = [];
@@ -2431,7 +2568,7 @@ export async function runFolderOverlayLayerTests() {
       stopPropagation() {},
     });
     assert(pointerProxyCalls.join(",") === "folder-a:pointerdown", "detached closing visual should forward clicks to the closing folder source");
-    assert(clearCount === 1 && layer.folderHandoff.folderId === null, "detaching should clear the live closing controller ownership");
+    assert(clearCount === 1 && layer.folderVisualSession.snapshot().closing === null, "detaching should clear the live closing lease ownership");
     assert(clearOptions?.reveal === false && clearOptions?.restorePageTrack === false, "detaching should clear live closing ownership without revealing current folder visuals");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached closing visual should keep the desktop source folder ghosted");
     const detachedVisual = layer.detachedClosingVisuals[0];
@@ -2452,7 +2589,7 @@ export async function runFolderOverlayLayerTests() {
 
     const sameFolderLayer = Object.create(FolderOverlayLayer.prototype);
     let sameFolderClearCount = 0;
-    attachHandoffCoordinator(sameFolderLayer, { folderId: "folder-a" });
+    attachClosingVisualSession(sameFolderLayer, { folderId: "folder-a" });
     sameFolderLayer.closingGhostLayer = { removeChildren: () => [] };
     sameFolderLayer.closingGhosts = { clear: () => { sameFolderClearCount += 1; } };
     sameFolderLayer.detachedClosingVisuals = [];
@@ -2472,7 +2609,7 @@ export async function runFolderOverlayLayerTests() {
     const detachedChildren = [];
     const releasedHandoffs = [];
     let sourceGhostingCommits = 0;
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
@@ -2502,7 +2639,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderHandoff.setCloseHandoffGeometry({
+    layer.closingPhaseReporter.setGeometry({
       detachedTarget: {
         fillAlpha: 0.2,
         height: 64,
@@ -2536,7 +2673,7 @@ export async function runFolderOverlayLayerTests() {
     const detachedChildren = [];
     let clearCount = 0;
     let sourceGhostingCommits = 0;
-    attachHandoffCoordinator(layer);
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => { clearCount += 1; } };
@@ -2670,7 +2807,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren = [];
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
@@ -2716,8 +2853,8 @@ export async function runFolderOverlayLayerTests() {
     closingGhost.alpha = 1;
     closingGhost.position.set(10, 20);
     closingGhost.scale.set(1);
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
-    layer.folderHandoff.setDetachedClosingGhostMotion(closingGhost, {
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
+    layer.closingPhaseReporter.setDetachedGhostMotion(closingGhost, {
       alpha: 0,
       duration: 0.36,
       scale: 0.2,
@@ -2755,7 +2892,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderHandoff.setCloseHandoffGeometry({
+    layer.closingPhaseReporter.setGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -2798,7 +2935,7 @@ export async function runFolderOverlayLayerTests() {
     const releasedHandoffs = [];
     const releaseDetachedChildCounts = [];
     let sourceGhostingCommits = 0;
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
@@ -2831,7 +2968,7 @@ export async function runFolderOverlayLayerTests() {
       top: 170.3,
       width: 63.7,
     };
-    layer.folderHandoff.setCloseHandoffGeometry({
+    layer.closingPhaseReporter.setGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -2873,8 +3010,8 @@ export async function runFolderOverlayLayerTests() {
     closingGhost.alpha = 1;
     closingGhost.position.set(99.6, 120.3);
     closingGhost.scale.set(0.205);
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
-    layer.folderHandoff.setDetachedClosingGhostMotion(closingGhost, {
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
+    layer.closingPhaseReporter.setDetachedGhostMotion(closingGhost, {
       alpha: 0,
       duration: 0.36,
       scale: 0.2,
@@ -2926,7 +3063,7 @@ export async function runFolderOverlayLayerTests() {
     const releasedHandoffs = [];
     const releaseDetachedChildCounts = [];
     const previewSwapGhost = new Container();
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [previewSwapGhost] };
     layer.closingGhosts = { clear: () => {} };
@@ -2973,7 +3110,7 @@ export async function runFolderOverlayLayerTests() {
     const detachedChildren = [];
     const releasedHandoffs = [];
     let sourceGhostingCommits = 0;
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
@@ -3003,7 +3140,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderHandoff.setCloseHandoffGeometry({
+    layer.closingPhaseReporter.setGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -3032,7 +3169,7 @@ export async function runFolderOverlayLayerTests() {
     motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren = [];
-    attachHandoffCoordinator(layer, { folderId: "folder-a" });
+    attachClosingVisualSession(layer, { folderId: "folder-a" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => {} };
@@ -3059,7 +3196,7 @@ export async function runFolderOverlayLayerTests() {
       top: 30,
       width: 240,
     };
-    layer.folderHandoff.setCloseHandoffGeometry({
+    layer.closingPhaseReporter.setGeometry({
       detachedTarget: {
       fillAlpha: 0.2,
       height: 64,
@@ -3119,7 +3256,7 @@ export async function runFolderOverlayLayerTests() {
       token: existingA.ownerToken,
     });
 
-    attachHandoffCoordinator(layer, { folderId: "folder-b" });
+    attachClosingVisualSession(layer, { folderId: "folder-b" });
     layer.closingGhostLayer = { removeChildren: () => [] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => { clearCount += 1; } };
@@ -3236,23 +3373,14 @@ export async function runFolderOverlayLayerTests() {
 
   {
     const layer = Object.create(FolderOverlayLayer.prototype);
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
-    const session = layer.folderHandoff.beginOpen("folder-a", "target-a").session;
-    layer.folderHandoff.beginOpeningVisuals({ sessionToken: session.token, state: {} });
-    layer.folderHandoff.registerOpeningGhost("app-1", "open-key");
     let retargets = 0;
-    layer.openingGhosts = {
-      retarget() {
+    attachOpeningVisualSession(layer, {
+      folderId: "folder-a",
+      ghostIds: ["app-1"],
+      onRetarget() {
         retargets += 1;
       },
-      start() {
-        throw new Error("existing opening visuals should retarget instead of restarting");
-      },
-    };
-    layer.closingGhosts = {
-      clear() {},
-      start() {},
-    };
+    });
     layer.iconNodes = new Map();
     layer.pageTrack = { visible: false };
     layer.frameGhostState = null;
@@ -3280,27 +3408,20 @@ export async function runFolderOverlayLayerTests() {
       },
     });
 
-    assert(layer.folderHandoff.isRevealPending(), "opening reveal should still be pending during active opening visuals");
+    assert(layer.folderVisualSession.snapshot().opening?.revealPending, "opening reveal should still be pending during active opening visuals");
     assert(retargets === 1, "active opening visuals should still retarget during folder overlay updates");
     assert(layer.pageTrack.visible === true, "opening reveal and opening ghosts should no longer hide the page track");
   }
 
   {
     const layer = Object.create(FolderOverlayLayer.prototype);
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
     let retargetOptions = null;
-    layer.openingGhosts = {
-      retarget(_state, _targets, options) {
-        retargetOptions = options;
+    attachOpeningVisualSession(layer, {
+      folderId: "folder-a",
+      onRetarget(plan) {
+        retargetOptions = plan.options;
       },
-      start() {
-        throw new Error("active opening frame should retarget instead of restarting");
-      },
-    };
-    layer.closingGhosts = {
-      clear() {},
-      start() {},
-    };
+    });
     layer.iconNodes = new Map();
     layer.pageTrack = { visible: false };
     layer.frameGhostState = { height: 120, left: 10, top: 20, width: 220 };
@@ -3368,27 +3489,29 @@ export async function runFolderOverlayLayerTests() {
 
   {
     const layer = Object.create(FolderOverlayLayer.prototype);
-    layer.folderHandoff = new FolderHandoffCoordinator(layer);
-    layer.folderHandoff.beginCloseTransition("folder-a", { closeToken: "close-a" });
     const closeThumbRect = { height: 58, left: 300, top: 340, width: 58 };
     const renderedFolderRect = { height: 64, left: 120, top: 160, width: 64 };
     let starts = 0;
     let retargets = 0;
-    let retargetArgs = null;
-    layer.openingGhosts = {
-      retarget() {},
-      start() {},
-    };
-    layer.closingGhosts = {
-      clear() {},
-      retarget(...args) {
-        retargets += 1;
-        retargetArgs = args;
-      },
+    let retargetPlan = null;
+    const closingAdapter = {
+      prepare: () => ({ ghosts: [] }),
       start() {
         starts += 1;
+        return {
+          cancel() {},
+          retarget(plan) {
+            retargets += 1;
+            retargetPlan = plan;
+          },
+          snapshot: () => ({ activeVisuals: true }),
+        };
       },
     };
+    layer.folderVisualSession = new FolderVisualSession({ closingAdapter });
+    layer.closingLease = layer.folderVisualSession.close({ folderId: "folder-a" });
+    layer.closingLease.present({});
+    starts = 0;
     layer.iconNodes = new Map();
     layer.frameGhost = { destroyed: false, x: 0 };
     layer.closingFrameMask = { destroyed: false, x: 0 };
@@ -3428,8 +3551,8 @@ export async function runFolderOverlayLayerTests() {
 
     assert(starts === 0, "active same-folder close updates should not restart closing ghosts");
     assert(retargets === 1, "active same-folder close updates should retarget closing ghosts");
-    assert(retargetArgs?.[2] === closeThumbRect, "closing retarget should receive the close thumb target rect");
-    assert(retargetArgs?.[4]?.handoffRect === renderedFolderRect, "closing retarget should bind handoff geometry to the rendered folder rect");
+    assert(retargetPlan?.folderRect === closeThumbRect, "closing retarget should receive the close thumb target rect");
+    assert(retargetPlan?.options?.handoffRect === renderedFolderRect, "closing retarget should bind handoff geometry to the rendered folder rect");
     assert(layer.closingDesktopPageTrackMirrorX === -80, "active same-folder close updates should store the desktop pageTrack delta");
     assert(layer.frameGhost.x === 0, "active same-folder close updates should not mirror the frame ghost because it retargets directly");
     assert(layer.closingFrameMask.x === 0, "active same-folder close updates should not mirror the close mask because the frame retargets directly");
@@ -3640,65 +3763,6 @@ export async function runFolderOverlayLayerTests() {
     );
     assert(rect.left === 52, "opening ghost bounds should refresh after hidden real icon bounds and win during folder open");
     iconBoundsRegistry.clearBounds();
-  }
-
-  {
-    const scheduler = {
-      frames: [],
-      cancelAnimationFrame() {
-        this.frames = [];
-      },
-      requestAnimationFrame(callback) {
-        this.frames.push(callback);
-        return this.frames.length;
-      },
-    };
-
-    const clearOverlay = (layer) => {
-      layer.clearCompletedClosingPreviewGhosts();
-      layer.folderHandoff.clearClosePreviewSwaps();
-      layer.closingPreviewSwapLayer.removeChildren();
-      layer.clearFrameGhost();
-    };
-
-    const calls = [];
-    const layer = makeClosingHandoffHarness(calls);
-    finishClosingHandoff(layer, {}, () => clearOverlay(layer), scheduler);
-    assert(layer.pageTrack.visible === false, "closing handoff should keep the page track hidden");
-    assert(calls.join(",") === "clear-timer,flush-controller", "closing handoff should release controller ghosts before clearing overlay visuals");
-    assert(scheduler.frames.length === 1, "closing handoff should schedule deferred overlay cleanup");
-    scheduler.frames.shift()();
-    assert(
-      calls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame",
-      "closing handoff should clear overlay visuals on the deferred frame"
-    );
-
-    const orderingCalls = [];
-    const orderingLayer = makeClosingHandoffHarness(orderingCalls);
-    orderingLayer.flushCompletedClosingControllerGhosts = () => {
-      orderingCalls.push("flush-controller");
-      scheduler.requestAnimationFrame(() => orderingCalls.push("finish-flow"));
-    };
-    scheduler.frames = [];
-    finishClosingHandoff(orderingLayer, {}, () => clearOverlay(orderingLayer), scheduler);
-    scheduler.frames.shift()();
-    scheduler.frames.shift()();
-    assert(
-      orderingCalls.join(",") === "clear-timer,flush-controller,clear-preview,clear-swap,clear-frame,finish-flow",
-      "Pixi overlay cleanup should run before the folder flow reveals the real icon"
-    );
-
-    const cancelCalls = [];
-    const cancelLayer = makeClosingHandoffHarness(cancelCalls);
-    scheduler.frames = [];
-    finishClosingHandoff(cancelLayer, {}, () => clearOverlay(cancelLayer), scheduler);
-    const canceledFrame = scheduler.frames[0];
-    cancelClosingHandoffCleanup(cancelLayer, (id) => scheduler.cancelAnimationFrame(id));
-    canceledFrame();
-    assert(
-      cancelCalls.join(",") === "clear-timer,flush-controller",
-      "canceling a closing handoff should prevent stale deferred cleanup"
-    );
   }
 
 }

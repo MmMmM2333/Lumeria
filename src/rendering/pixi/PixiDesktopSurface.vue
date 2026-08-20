@@ -1194,6 +1194,11 @@ watch(
       singleStageFolderClosingTitleStartOpacity.value = getSingleStageFolderTitleOpenOpacity(
         singleStageFolderTitleFrame.value
       );
+      // A close commit changes the canvas ownership before Vue's next RAF.
+      // Flush that structural handoff in the post-flush microtask so the
+      // browser never composites the previous fully-open folder frame.
+      requestRender("folder-close-commit");
+      getRenderCoordinator().runPendingRender();
       return;
     }
     if (!isClosing) singleStageFolderClosingTitleStartOpacity.value = 1;

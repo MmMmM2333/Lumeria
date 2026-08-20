@@ -1,7 +1,7 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import { FolderOpeningGhostController } from "./folderOpeningGhostController.js";
-import { FolderVisualSession as FolderHandoffCoordinator } from "./folderVisualSession.js";
+import { FolderVisualSession } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
   makeDesktopSourceVisualKey,
@@ -303,7 +303,6 @@ function makeRaceHarness() {
     },
   };
 
-  layer.folderHandoff = new FolderHandoffCoordinator(layer);
   layer.openingGhosts = new FolderOpeningGhostController(layer, {
     ghostFactory: () => makeGhost("opening"),
     scheduler: timerHost,
@@ -320,6 +319,13 @@ function makeRaceHarness() {
     },
     scheduler: timerHost,
   });
+  layer.folderVisualSession = new FolderVisualSession({
+    closingAdapter: layer.closingGhosts,
+    onCloseHandoffChange: (active, folderId) => layer.onInternalActivityChange(active, folderId),
+    onClosingHandoffReady: (folderId) => layer.onClosingHandoffReady(folderId),
+    openingAdapter: layer.openingGhosts,
+    ownershipRevision: () => visualOwnership.getRevision(),
+  });
 
   return {
     activityChanges,
@@ -332,35 +338,47 @@ function makeRaceHarness() {
 }
 
 function startOpening(harness, token = "open:folder-1") {
-  harness.layer.openingGhosts.start(makeState(), [makeTarget()], {
-    frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
-    frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
-    sessionToken: token,
+  const lease = harness.layer.folderVisualSession.open({
+    folderId: "folder-1",
+    forceNew: true,
+    targetKey: token,
   });
+  lease.present({
+    options: {
+      frameSourceRect: { height: 48, left: 10, top: 20, width: 48 },
+      frameTargetRect: { height: 360, left: 180, top: 200, width: 800 },
+    },
+    state: makeState(),
+    targets: [makeTarget()],
+  });
+  harness.openingLease = lease;
+  return visualOwnerToken(harness.visualOwnership, "opening");
 }
 
 function startClosing(harness, targets = [makeTarget()], stateOverrides = {}) {
-  harness.layer.closingGhosts.start(
-    { ...makeState(), ...stateOverrides },
+  const lease = harness.layer.folderVisualSession.close({ folderId: "folder-1" });
+  lease.present({
+    folderRect: { height: 72, left: 10, top: 20, width: 72 },
+    panelRect: { height: 360, left: 180, top: 200, width: 800 },
+    state: { ...makeState(), ...stateOverrides },
     targets,
-    { height: 72, left: 10, top: 20, width: 72 },
-    { height: 360, left: 180, top: 200, width: 800 }
-  );
-  return harness.layer.folderHandoff.closeToken;
+  });
+  harness.closingLease = lease;
+  return visualOwnerToken(harness.visualOwnership, "closing");
 }
 
 function interruptCloseWithOpen(harness, token) {
-  harness.layer.folderHandoff.clearCloseFolderId();
-  harness.layer.closingGhosts.clear({ restorePageTrack: false, reveal: false });
+  harness.closingLease?.cancel({ restorePageTrack: false, reveal: false });
+  harness.closingLease = null;
   startOpening(harness, token);
+}
+
+function visualOwnerToken(registry, kind) {
+  return registry.snapshot().find((entry) => entry.owner?.kind === kind)?.owner?.token || null;
 }
 
 function hasOwnerToken(registry, token) {
   return registry.snapshot().some((entry) => entry.owner?.token === token);
-}
-
-function collectEventTypes(events) {
-  return events.map((event) => event.type);
 }
 
 function hasFolderSubstituteVisual(harness) {
@@ -397,8 +415,7 @@ export function runFolderCloseRaceTests() {
 
     assert(harness.layer.closingGhostLayer.children.length === 0, "open after close should clear closing ghost visuals");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open after close should leave only the new opening ghost");
-    assert(harness.layer.folderHandoff.closeToken === null, "open after close should clear the stale closing token");
-    assert(harness.layer.folderHandoff.folderId === null, "open after close should clear the stale closing folder id");
+    assert(harness.layer.folderVisualSession.snapshot().closing === null, "open after close should clear the stale closing lease");
     assert(!hasOwnerToken(harness.visualOwnership, closeToken), "open after close should not leak the stale closing ownership token");
     motionRuntime.reset();
   }
@@ -411,7 +428,7 @@ export function runFolderCloseRaceTests() {
     interruptCloseWithOpen(harness, "open:middle");
     assert(harness.layer.closingGhostLayer.children.length === 0, "open interrupt should clear the first closing ghost");
     assert(harness.layer.openingGhostLayer.children.length === 1, "open interrupt should create one opening ghost");
-    assert(harness.layer.folderHandoff.closeToken === null, "open interrupt should clear the first close token");
+    assert(harness.layer.folderVisualSession.snapshot().closing === null, "open interrupt should clear the first close lease");
 
     const secondCloseToken = startClosing(harness);
 
@@ -428,7 +445,7 @@ export function runFolderCloseRaceTests() {
 
   {
     const harness = makeRaceHarness();
-    startOpening(harness, "open:page-0");
+    const openingToken = startOpening(harness, "open:page-0");
     harness.layer.iconNodes.set("app-2", {
       alpha: 1,
       item: { id: "app-2" },
@@ -442,54 +459,7 @@ export function runFolderCloseRaceTests() {
     assert(harness.layer.openingGhostLayer.children.length === 0, "open-turn-close should clear the interrupted non-current opening ghost");
     assert(harness.layer.closingGhostLayer.children.length === 1, "open-turn-close should create one closing ghost for the close anchor page");
     assert(harness.layer.closingGhostLayer.children[0].item.id === "app-2", "open-turn-close should hand off the current visual page item");
-    assert(!hasOwnerToken(harness.visualOwnership, "open:page-0"), "open-turn-close should not keep stale origin-page opening ownership");
+    assert(!hasOwnerToken(harness.visualOwnership, openingToken), "open-turn-close should not keep stale origin-page opening ownership");
     motionRuntime.reset();
-  }
-
-  {
-    const session = new FolderHandoffCoordinator({});
-    session.beginCloseTransition("folder-1", { closeToken: "close:ordered" });
-    session.trackCloseGhost({ isThumbnailChild: true, item: { id: "app-1" } }, "close-key");
-    session.trackClosePreviewSwap("swap");
-
-    const events = [
-      ...session.completeCloseFrame("close:ordered"),
-      ...session.completeClosePreviewSwap("close:ordered", "swap"),
-      ...session.completeCloseGhostVisual("close:ordered", "app-1"),
-      ...session.completeCloseGhost("close:ordered", "app-1"),
-      ...session.completeCloseFrame("close:ordered"),
-      ...session.completeCloseGhost("close:ordered", "app-1"),
-    ];
-
-    assert(collectEventTypes(events).join(",") === "handoffReady,overlaySettled", "out-of-order releases should settle handoff and overlay exactly once");
-    assert(session.snapshot().visualPendingKeys.size === 0, "out-of-order releases should clear visual pending state");
-    assert(session.snapshot().overlayPendingKeys.size === 0, "out-of-order releases should clear overlay pending state");
-  }
-
-  {
-    const session = new FolderHandoffCoordinator({});
-    session.beginCloseTransition("folder-1", { closeToken: "close:first" });
-    session.trackCloseGhost({ item: { id: "old-app" } }, "old-key");
-    session.beginCloseTransition("folder-1", { closeToken: "close:current" });
-    session.trackCloseGhost({ item: { id: "current-app" } }, "current-key");
-
-    const staleEvents = [
-      ...session.completeCloseFrame("close:first"),
-      ...(session.completeCloseGhost("close:first", "current-app") || []),
-      ...(session.completeClosePreviewSwap("close:first", "swap") || []),
-    ];
-    const staleSnapshot = session.snapshot();
-
-    assert(staleEvents.length === 0, "stale releases should not emit session events");
-    assert(staleSnapshot.token === "close:current", "stale releases should not replace the current token");
-    assert(staleSnapshot.frameComplete === false, "stale releases should not mutate current frame completion");
-    assert(staleSnapshot.ghostKeys.has("current-app"), "stale releases should not clear current ghost keys");
-    assert(!staleSnapshot.ghostKeys.has("old-app"), "new session should not retain old ghost keys");
-
-    const currentEvents = [
-      ...session.completeCloseFrame("close:current"),
-      ...session.completeCloseGhost("close:current", "current-app"),
-    ];
-    assert(collectEventTypes(currentEvents).join(",") === "handoffReady,overlaySettled", "current token releases should still settle normally");
   }
 }

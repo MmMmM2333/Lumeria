@@ -45,7 +45,6 @@ export function drawFrameGhost(layer, rect, options = {}) {
   if (options.notifyTitleFrame !== false) {
     layer.notifyTitleFrame(drawRect, {
       folderId: options.folderId,
-      sessionToken: options.sessionToken,
     });
   }
 }

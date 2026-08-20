@@ -32,11 +32,11 @@ export function runFolderOpenIconGhostsTests() {
   assert(ghosts.isFolderOpenFrameGhostPending.value, "open play should keep page dots blocked until the frame ghost arrives");
   assert(ghosts.isFolderOpeningIconGhosted(folder.id, appC.id), "open play should ghost folder targets");
   assert(!ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "staged open should not hide the source folder thumbnail before Pixi accepts the visual session");
-  assert(ghosts.acceptFolderOpenIconGhostSession(folder.id, openRequestId, "open-token-1"), "Pixi should be able to accept the staged open visual session");
+  assert(ghosts.acceptFolderOpenIconGhostSession(folder.id, openRequestId), "Pixi should be able to accept the staged open visual session");
   assert(ghosts.folderOpenIconGhostSession.value?.status === "accepted", "accepted open should expose the visual session status");
-  assert(ghosts.folderOpenIconGhostSession.value?.token === "open-token-1", "accepted open should keep the Pixi session token");
+  assert(!("token" in ghosts.folderOpenIconGhostSession.value), "the controller-facing open session should not expose Pixi ownership identity");
   assert(ghosts.isFolderOpeningPreviewFrameGhosted(folder.id), "accepted open should hide the source folder thumbnail frame");
-  assert(!ghosts.acceptFolderOpenIconGhostSession(folder.id, openRequestId - 1, "stale-token"), "stale open session acceptance should be rejected");
+  assert(!ghosts.acceptFolderOpenIconGhostSession(folder.id, openRequestId - 1), "stale open session acceptance should be rejected");
 
   ghosts.completeFolderOpenIconGhost("stale-key");
   assert(ghosts.folderOpenIconGhosts.value.length === 3, "stale open completion should not clear current ghosts");

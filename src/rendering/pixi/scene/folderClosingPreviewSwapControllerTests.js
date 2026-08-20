@@ -1,6 +1,6 @@
-import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
 import { clearMotionPreferencesForTests, setReducedMotionForTests } from "../animation/motionPreferences.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { FolderClosingPreviewSwapController } from "./folderClosingPreviewSwapController.js";
 
 function makePoint() {
   return {
@@ -54,79 +54,94 @@ function makeContainer() {
 
 function makeGraphics() {
   return {
-    destroyed: false,
     clear() {
+      return this;
+    },
+    destroy() {
+      this.destroyed = true;
+    },
+    fill(style) {
+      this.fillStyle = style;
       return this;
     },
     rect(left, top, width, height) {
       this.rectArgs = { height, left, top, width };
       return this;
     },
-    fill(style) {
-      this.fillStyle = style;
-      return this;
-    },
-    destroy() {
-      this.destroyed = true;
-    },
-  };
-}
-
-function makeSprite() {
-  return {
-    anchor: makePoint(),
-    visible: true,
-  };
-}
-
-function makeText(size) {
-  return {
-    anchor: makePoint(),
-    style: { fontSize: size, lineHeight: size },
-    text: "",
-    visible: true,
   };
 }
 
 function makeLayer() {
-  const children = [];
   return {
-    children,
-    closingGhostLayer: makeContainer(),
     closingPreviewSwapLayer: makeContainer(),
     ensureClosingPreviewSwapLayer(containerFactory) {
-      if (this.closingPreviewSwapLayer && !this.closingPreviewSwapLayer.destroyed) return this.closingPreviewSwapLayer;
-      this.closingPreviewSwapLayer = containerFactory();
+      if (!this.closingPreviewSwapLayer || this.closingPreviewSwapLayer.destroyed) {
+        this.closingPreviewSwapLayer = containerFactory();
+      }
       return this.closingPreviewSwapLayer;
     },
     removeClosingPreviewSwapChildren() {
-      if (!this.closingPreviewSwapLayer || this.closingPreviewSwapLayer.destroyed) return [];
-      return this.closingPreviewSwapLayer.removeChildren();
+      return this.closingPreviewSwapLayer?.removeChildren?.() || [];
     },
-    addChild(child) {
-      child.parent?.removeChild?.(child);
-      child.parent = this;
-      children.push(child);
-      return child;
+  };
+}
+
+function makeReporter(options = {}) {
+  const keys = new Set();
+  const reports = [];
+  return {
+    keys,
+    reports,
+    previewComplete(key) {
+      if (options.stale) return { status: "stale" };
+      const status = keys.delete(key) ? "accepted" : "duplicate";
+      reports.push({ key, phase: "complete", status });
+      return { status };
     },
-    addChildAt(child, index) {
-      child.parent?.removeChild?.(child);
-      child.parent = this;
-      children.splice(index, 0, child);
-      return child;
+    previewStarted(key) {
+      if (options.stale) return { status: "stale" };
+      const status = keys.has(key) ? "duplicate" : "accepted";
+      if (status === "accepted") keys.add(key);
+      reports.push({ key, phase: "start", status });
+      return { status };
     },
   };
 }
 
 function createController(layer = makeLayer()) {
-  const controller = new FolderClosingPreviewSwapController(layer, {
-    containerFactory: makeContainer,
-    getIconTexture: () => null,
-    graphicsFactory: makeGraphics,
-    spriteFactory: makeSprite,
-    textFactory: makeText,
-  });
-  return { controller, layer };
+  return {
+    controller: new FolderClosingPreviewSwapController(layer, {
+      containerFactory: makeContainer,
+      getIconTexture: () => null,
+      graphicsFactory: makeGraphics,
+      spriteFactory: () => ({ anchor: makePoint(), visible: true }),
+      textFactory: (size) => ({
+        anchor: makePoint(),
+        style: { fontSize: size, lineHeight: size },
+        text: "",
+        visible: true,
+      }),
+    }),
+    layer,
+  };
+}
+
+function makeState() {
+  return {
+    folderPageIndex: 1,
+    height: 600,
+    renderedFolder: { id: "folder-1" },
+    stageRect: { left: 0, top: 0 },
+    width: 800,
+  };
+}
+
+function makeTarget(left = 40, top = 50) {
+  return {
+    item: { id: "app-1", name: "App" },
+    previewSlotIndex: 0,
+    targetStageLayoutRect: { height: 24, left, top, width: 24 },
+  };
 }
 
 export function runFolderClosingPreviewSwapControllerTests() {
@@ -135,122 +150,90 @@ export function runFolderClosingPreviewSwapControllerTests() {
   };
 
   {
-    const { controller, layer } = createController();
-    const swapLayer = controller.ensureLayer();
-    assert(swapLayer === layer.closingPreviewSwapLayer, "ensure should reuse the existing swap layer");
-    assert(controller.handoffCoordinator.getPreviewSwapKeys() instanceof Set, "ensure should initialize preview swap keys");
+    const { controller } = createController();
+    let thrown = null;
+    try {
+      controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {}, {
+        reporter: { previewStarted: () => ({ status: "accepted" }) },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    assert(/previewComplete/.test(String(thrown)), "preview adapter setup should reject reporters missing completion capability");
   }
 
   {
     const { controller, layer } = createController();
-    const ghost = makeContainer();
-    layer.closingPreviewSwapLayer.addChild(ghost);
-    controller.handoffCoordinator.trackClosePreviewSwap("swap");
-    controller.clear();
-    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 0, "clear should reset preview swap keys");
-    assert(layer.closingPreviewSwapLayer.children.length === 0, "clear should remove swap visuals");
-    assert(ghost.destroyed, "clear should destroy swap children");
+    assert(controller.ensureLayer() === layer.closingPreviewSwapLayer, "ensure should reuse the owned preview-swap layer");
+    assert(controller.snapshot().activeKey === null, "an idle adapter snapshot should not expose coordinator state");
   }
 
   {
     const { controller, layer } = createController();
-    const state = {
-      folderPageIndex: 1,
-      renderedFolder: { id: "folder-1" },
-      stageRect: { left: 0, top: 0 },
-    };
-    controller.start(state, [{
-      item: { id: "app-1", name: "App" },
-      previewSlotIndex: 0,
-      targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
-    }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {});
+    const reporter = makeReporter();
+    controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {}, { reporter });
 
-    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 1, "start should track an active preview swap");
-    assert(layer.closingPreviewSwapLayer.children.length === 1, "start should add the swap root to the layer");
+    assert(reporter.keys.size === 1, "start should register preview participation through the closing reporter");
+    assert(layer.closingPreviewSwapLayer.children.length === 1, "start should install one preview root");
+    assert(controller.snapshot().activeKey?.startsWith("closing-preview-swap:folder-1"), "the adapter snapshot should expose its active presentation key");
+
+    const root = layer.closingPreviewSwapLayer.children[0];
     controller.clear();
+    assert(layer.closingPreviewSwapLayer.children.length === 0, "clear should remove owned preview visuals");
+    assert(root.destroyed, "clear should destroy the removed preview tree");
+    assert(reporter.keys.size === 1, "visual cleanup alone must not forge settlement reports");
   }
 
   {
     motionRuntime.reset();
     const { controller, layer } = createController();
-    const state = {
-      folderPageIndex: 1,
-      height: 600,
-      renderedFolder: { id: "folder-1" },
-      stageRect: { left: 0, top: 0 },
-      width: 800,
-    };
+    const reporter = makeReporter();
     let finished = 0;
-    controller.start(state, [{
-      item: { id: "app-1", name: "App" },
-      previewSlotIndex: 0,
-      targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
-    }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {
+    controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {
       finished += 1;
-    });
+    }, { reporter });
 
     const root = layer.closingPreviewSwapLayer.children[0];
     const iconsWrap = root.children[1];
     const ghost = iconsWrap.children[0];
-    const retargeted = controller.retarget(state, [{
-      item: { id: "app-1", name: "App" },
-      previewSlotIndex: 0,
-      targetStageLayoutRect: { height: 24, left: 80, top: 90, width: 24 },
-    }]);
+    const retargeted = controller.retarget(makeState(), [makeTarget(80, 90)]);
 
-    assert(retargeted === true, "retarget should accept updated active preview swap targets");
-    assert(layer.closingPreviewSwapLayer.children[0] === root, "retarget should reuse the active preview swap root");
-    assert(iconsWrap.children[0] === ghost, "retarget should reuse existing preview icon ghosts");
-    assert(controller.handoffCoordinator.snapshot().previewSwapMotionControlCount === 1, "retarget should replace the tracked preview swap motion control");
+    assert(retargeted, "retarget should accept a changed active target");
+    assert(layer.closingPreviewSwapLayer.children[0] === root, "retarget should reuse the active preview root");
+    assert(iconsWrap.children[0] === ghost, "retarget should reuse the icon ghost for the same slot identity");
+    assert(controller.snapshot().motionControlCount === 1, "retarget should replace the tracked aggregate motion owner");
     for (let remaining = 3; remaining > 0; remaining -= 0.05) motionRuntime.step(Math.min(0.05, remaining));
-    assert(Math.abs(ghost.x - 92) < 0.5 && Math.abs(ghost.y - 102) < 0.5, "retarget should settle the preview icon at the new target center");
-    assert(finished === 1, "retargeted preview swap should complete once");
+    assert(Math.abs(ghost.x - 92) < 0.5 && Math.abs(ghost.y - 102) < 0.5, "retarget should settle at the new target center");
+    assert(finished === 1 && reporter.keys.size === 0, "completion should notify the caller and close reporter exactly once");
+    assert(controller.snapshot().motionControlCount === 0, "completion should release aggregate motion ownership");
     controller.clear();
     motionRuntime.reset();
   }
 
   {
     const { controller, layer } = createController();
-    const state = {
-      folderPageIndex: 1,
-      height: 600,
-      renderedFolder: { id: "folder-1" },
-      stageRect: { left: 0, top: 0 },
-      width: 800,
-    };
-    let finished = 0;
+    const reporter = makeReporter({ stale: true });
+    controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {}, { reporter });
+    assert(layer.closingPreviewSwapLayer.children.length === 0, "a stale phase reporter should prevent installation of orphan preview visuals");
+    assert(controller.snapshot().activeKey === null, "a stale phase reporter should leave the adapter idle");
+  }
 
+  {
+    const { controller } = createController();
+    const reporter = makeReporter();
+    let finished = 0;
     setReducedMotionForTests(true);
     try {
-      controller.start(state, [{
-        item: { id: "app-1", name: "App" },
-        previewSlotIndex: 0,
-        targetStageLayoutRect: { height: 24, left: 40, top: 50, width: 24 },
-      }], { iconDuration: 0.01, progress: 1, swapDuration: 0.01 }, () => {
+      controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {
         finished += 1;
-      });
+      }, { reporter });
     } finally {
       clearMotionPreferencesForTests();
     }
 
-    assert(finished === 1, "synchronous reduced-motion preview swap should finish once");
-    assert(controller.handoffCoordinator.getPreviewSwapKeys().size === 0, "synchronous reduced-motion preview swap should clear its active key");
-    assert(controller.handoffCoordinator.snapshot().previewSwapMotionControlCount === 0, "synchronous reduced-motion preview swap should not register a stale motion control");
-  }
-
-  {
-    const { controller, layer } = createController();
-    const root = makeContainer();
-    const iconsWrap = makeContainer();
-    let finished = false;
-    controller.handoffCoordinator.trackClosePreviewSwap("swap-key");
-
-    controller.complete({}, "swap-key", root, iconsWrap, () => {
-      finished = true;
-    });
-
-    assert(!controller.handoffCoordinator.hasClosePreviewSwap("swap-key"), "complete should remove the active key");
-    assert(finished, "complete should notify the closing controller");
-    assert(root.alpha === 1, "complete should restore root alpha");
+    assert(finished === 1, "synchronous reduced-motion preview should complete once");
+    assert(reporter.keys.size === 0, "synchronous completion should settle its registered preview key");
+    assert(controller.snapshot().motionControlCount === 0, "synchronous completion must not retain a stale motion owner");
+    motionRuntime.reset();
   }
 }

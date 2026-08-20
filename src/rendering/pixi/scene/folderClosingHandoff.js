@@ -1,6 +1,5 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
-import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { getStableFolderClosePresentationHitRects } from "./folderOverlayTargets.js";
 
 function isUsableRect(rect) {
@@ -15,10 +14,6 @@ function isPointInRect(x, y, rect) {
     y <= rect.top + rect.height;
 }
 
-export function cancelClosingHandoffCleanup(layer, cancelAnimationFrame = globalThis.cancelAnimationFrame) {
-  ensureFolderVisualSession(layer).cancelHandoffCleanup(cancelAnimationFrame);
-}
-
 export function applyClosingHandoffOnlyOverlayState(layer) {
   layer.hitArea = null;
   layer.panel.visible = false;
@@ -28,12 +23,14 @@ export function applyClosingHandoffOnlyOverlayState(layer) {
     layer.pageDotsLayer.eventMode = "none";
     layer.pageDotsLayer.hitArea = null;
   }
-  layer.notifyTitleFrame?.(null, { folderId: layer.folderHandoff?.folderId || layer.currentFolderId || null });
+  layer.notifyTitleFrame?.(null, {
+    folderId: layer.folderVisualSession?.snapshot?.().closing?.folderId || layer.currentFolderId || null,
+  });
   return null;
 }
 
 export function getClosingPresentationStageHitRects(layer) {
-  const closeSnapshot = layer?.folderHandoff?.snapshot?.() || null;
+  const closeSnapshot = layer?.folderVisualSession?.snapshot?.().closing || null;
   const targetRects = getStableFolderClosePresentationHitRects({
     handoffRect: closeSnapshot?.handoffRect,
     stableFolderCloseTarget: closeSnapshot?.handoffTarget || layer?.stableFolderCloseTarget,
@@ -62,17 +59,6 @@ export function applyClosingPresentationOverlayState(layer) {
     layer.pageDotsLayer.hitArea = null;
   }
   return layer.hitArea;
-}
-
-export function scheduleClosingHandoffCleanup(layer, cleanup, scheduler = globalThis) {
-  ensureFolderVisualSession(layer).scheduleHandoffCleanup(cleanup, scheduler);
-}
-
-export function finishClosingHandoff(layer, state, cleanup, scheduler = globalThis) {
-  layer.clearClosingGhostRevealTimer();
-  layer.pageTrack.visible = false;
-  scheduleClosingHandoffCleanup(layer, cleanup, scheduler);
-  layer.flushCompletedClosingControllerGhosts(state);
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

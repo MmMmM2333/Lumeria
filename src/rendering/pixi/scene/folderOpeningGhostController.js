@@ -9,9 +9,10 @@ import {
   makeOpeningGhostMotion,
 } from "./folderIconGhostMotion.js";
 import { makeFolderGhostIconNodeState } from "./folderGhostIconState.js";
-import { ensureFolderVisualSession } from "./folderVisualSession.js";
 import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
+import { throwAfterVisualAdapterRollback } from "./folderVisualAdapterLifecycle.js";
+import { assertFolderOpeningPhaseReporter } from "./folderVisualSession.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS = 140;
@@ -193,15 +194,90 @@ export class FolderOpeningGhostController {
   constructor(layer, options = {}) {
     this.layer = layer;
     this.ghostFactory = options.ghostFactory;
-    this.handoffCoordinator = options.handoffCoordinator || ensureFolderVisualSession(layer);
     this.scheduler = options.scheduler || globalThis;
+    this.activeReporter = null;
+    this.activeState = null;
+    this.controllerKeys = new Map();
+    this.ghostItemIds = new Set();
+    this.motionControls = new Set();
+    this.motionControlsByItemId = new Map();
+    this.nextTargetGeneration = 1;
+    this.owner = null;
+    this.revealTimer = null;
+    this.targetGeneration = 0;
     this.openingTargetKeysByItemId = new Map();
     this.openingFrameTargetKey = null;
     this.settledOpeningGhostItemIds = new Set();
   }
 
+  prepare(plan = {}) {
+    const targets = Array.isArray(plan.targets) ? plan.targets : [];
+    return {
+      ghostIds: targets
+        .filter(hasUsableFolderGhostTarget)
+        .map((target) => target?.item?.id)
+        .filter(Boolean),
+    };
+  }
+
+  start(plan = {}, reporter) {
+    assertFolderOpeningPhaseReporter(reporter);
+    const state = plan.state;
+    if (!state || typeof state !== "object") throw new TypeError("opening adapter plan requires state");
+    const targets = Array.isArray(plan.targets) ? plan.targets : [];
+    const options = plan.options && typeof plan.options === "object" ? plan.options : {};
+    this.clearVisuals({
+      completeControllerKeys: false,
+      restorePageTrack: false,
+      reveal: false,
+    });
+    this.activeReporter = reporter;
+    this.owner = reporter.owner();
+    try {
+      this.startVisuals(state, targets, options);
+    } catch (error) {
+      throwAfterVisualAdapterRollback(error, () => {
+        this.clearVisuals({ restorePageTrack: true, reveal: true });
+      }, "opening visual startup and rollback both failed");
+    }
+    const isActive = () => this.activeReporter === reporter;
+    return Object.freeze({
+      cancel: (cancelOptions = {}) => {
+        if (!isActive()) return;
+        this.clearVisuals(cancelOptions);
+      },
+      retarget: (nextPlan = {}) => {
+        if (!isActive()) return;
+        const nextState = nextPlan.state;
+        if (!nextState || typeof nextState !== "object") throw new TypeError("opening retarget plan requires state");
+        this.retargetVisuals(
+          nextState,
+          Array.isArray(nextPlan.targets) ? nextPlan.targets : [],
+          nextPlan.options && typeof nextPlan.options === "object" ? nextPlan.options : {}
+        );
+      },
+      reveal: () => {
+        if (isActive()) this.reveal(reporter);
+      },
+      snapshot: () => this.snapshot(reporter),
+      takeGhost: (itemId, accept) => isActive() ? this.takeGhost(itemId, accept) : null,
+    });
+  }
+
+  snapshot(reporter = this.activeReporter) {
+    const active = reporter != null && this.activeReporter === reporter;
+    return Object.freeze({
+      active,
+      ghostIds: Object.freeze(active ? Array.from(this.ghostItemIds) : []),
+      motionControlCount: active ? this.motionControls.size : 0,
+      revealTimerActive: active && this.revealTimer != null,
+    });
+  }
+
   clearRevealTimer() {
-    this.handoffCoordinator.clearOpeningRevealTimer(this.scheduler.clearTimeout?.bind(this.scheduler));
+    this.targetGeneration = this.nextTargetGeneration++;
+    if (this.revealTimer != null) this.scheduler.clearTimeout?.(this.revealTimer);
+    this.revealTimer = null;
   }
 
   clearFrameTarget() {
@@ -210,32 +286,38 @@ export class FolderOpeningGhostController {
 
   scheduleRevealFallback(targets) {
     this.clearRevealTimer();
-    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
-    const targetGeneration = this.handoffCoordinator.advanceOpeningTargetGeneration(sessionToken);
-    if (!targetGeneration) return;
+    const reporter = this.activeReporter;
+    if (!reporter) return;
+    const targetGeneration = this.nextTargetGeneration++;
+    this.targetGeneration = targetGeneration;
     const maxDelay = getMaxFolderGhostGridDelay(targets, 0.18);
     const fallbackSeconds = Math.max(motionPresets.folderOpenGhost.duration, GHOST_GEOMETRY_FALLBACK_SECONDS);
     const timeoutMs = Math.round((maxDelay + fallbackSeconds) * 1000 + GHOST_REVEAL_FALLBACK_PADDING_MS);
-    this.handoffCoordinator.setOpeningRevealTimer(this.scheduler.setTimeout?.(() => {
-      if (!this.handoffCoordinator.isCurrentOpeningTarget(targetGeneration)) return;
-      this.handoffCoordinator.clearOpeningRevealTimerRef();
-      if (this.handoffCoordinator.hasActiveOpeningVisuals() &&
+    this.revealTimer = this.scheduler.setTimeout?.(() => {
+      if (this.activeReporter !== reporter || this.targetGeneration !== targetGeneration) return;
+      this.revealTimer = null;
+      if (this.ghostItemIds.size > 0 &&
         this.layer.isOpeningGeometryTransitionActive?.() === true) {
         this.scheduleRevealFallback(targets);
         return;
       }
-      if (this.handoffCoordinator.hasActiveOpeningVisuals()) this.clear();
-    }, timeoutMs) || null);
+      if (this.ghostItemIds.size > 0) {
+        this.settledOpeningGhostItemIds = new Set(this.ghostItemIds);
+        this.reportGhostsReady();
+      }
+    }, timeoutMs) || null;
   }
 
   cancelMotionControls() {
-    const controls = this.handoffCoordinator.consumeOpeningMotionControls();
+    const controls = this.motionControls;
+    this.motionControls = new Set();
+    this.motionControlsByItemId = new Map();
     if (!controls?.size) return;
     for (const control of controls) control.cancel();
   }
 
   hasUnsettledOpeningGhosts() {
-    const activeItemIds = this.handoffCoordinator.getOpeningGhostKeys();
+    const activeItemIds = this.ghostItemIds;
     if (!activeItemIds?.size) return false;
     for (const itemId of activeItemIds) {
       if (!this.settledOpeningGhostItemIds.has(itemId)) return true;
@@ -251,8 +333,8 @@ export class FolderOpeningGhostController {
       );
   }
 
-  releaseGhost(itemId) {
-    if (!itemId || !this.handoffCoordinator.hasOpeningGhost(itemId)) return null;
+  takeGhost(itemId, accept = null) {
+    if (!itemId || !this.ghostItemIds.has(itemId)) return null;
     let releasedGhost = null;
     for (const ghost of this.layer.openingGhostLayer.children || []) {
       if (ghost?.item?.id === itemId && !ghost.destroyed) {
@@ -261,41 +343,50 @@ export class FolderOpeningGhostController {
       }
     }
     if (!releasedGhost) return null;
-    const control = this.handoffCoordinator.getOpeningMotionControl(itemId);
+    if (typeof accept === "function" && !accept(releasedGhost)) return null;
+    const control = this.motionControlsByItemId.get(itemId);
     control?.release?.();
-    this.handoffCoordinator.deleteOpeningMotionControl(itemId, control);
+    if (control) this.motionControls.delete(control);
+    this.motionControlsByItemId.delete(itemId);
     killMotionOf(releasedGhost, "alpha", { lane: "base", laneKey: "overlay" });
     if (releasedGhost.labelText) {
       killMotionOf(releasedGhost.labelText);
       killMotionOf(releasedGhost.labelText.scale);
     }
-    this.handoffCoordinator.releaseOpeningGhost(itemId);
+    this.ghostItemIds.delete(itemId);
+    this.controllerKeys.delete(itemId);
     this.settledOpeningGhostItemIds.delete(itemId);
     this.openingTargetKeysByItemId.delete(itemId);
     this.layer.openingGhostBoundsRefreshers.delete(itemId);
     this.layer.removeOpeningGhost(releasedGhost);
-    if (!this.handoffCoordinator.hasActiveOpeningVisuals()) {
-      this.clearRevealTimer();
-      this.handoffCoordinator.clearOpeningVisuals({ keepSessionToken: true });
-    }
+    if (!this.ghostItemIds.size) this.clearRevealTimer();
     return releasedGhost;
   }
 
-  clear(options = {}) {
+  completeControllerKeys() {
+    const state = this.activeState;
+    const keys = Array.from(this.controllerKeys.values());
+    this.controllerKeys.clear();
+    for (const key of keys) {
+      if (key) state?.completeFolderOpenIconGhost?.(key);
+    }
+    return keys;
+  }
+
+  clearVisuals(options = {}) {
     this.clearRevealTimer();
     this.cancelMotionControls();
-    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
-    if (options.cancelSession !== false) {
-      this.handoffCoordinator.cancelOpen(sessionToken);
-    }
-    if (options.completeControllerKeys !== false) {
-      this.handoffCoordinator.completeOpeningControllerGhostKeys();
-    }
-    this.layer.releaseTransitionOwnership(sessionToken, {
+    const owner = this.owner;
+    if (options.completeControllerKeys !== false) this.completeControllerKeys();
+    this.layer.releaseTransitionOwnership(owner?.token, {
       restorePageTrack: options.restorePageTrack,
       reveal: options.reveal,
     });
-    this.handoffCoordinator.clearOpeningVisuals();
+    this.activeReporter = null;
+    this.activeState = null;
+    this.controllerKeys.clear();
+    this.ghostItemIds.clear();
+    this.owner = null;
     this.layer.openingGhostBoundsRefreshers.clear();
     this.layer.clearFrameGhost();
     this.openingTargetKeysByItemId.clear();
@@ -308,35 +399,26 @@ export class FolderOpeningGhostController {
     }
   }
 
-  finishTransition(options = {}) {
+  reportGhostsReady(options = {}) {
     if (!this.canRevealSettledOpeningGhosts({
       ignoreGeometryGate: options.ignoreGeometryGate === true,
     })) return false;
-    const sessionToken = options.sessionToken || this.handoffCoordinator.getOpeningSessionToken();
+    const reporter = this.activeReporter;
+    if (!reporter) return false;
     this.clearRevealTimer();
     this.cancelMotionControls();
-    if (sessionToken == null) {
-      this.handoffCoordinator.completeOpeningControllerGhostKeys();
-      this.handoffCoordinator.clearOpeningVisuals();
-      this.layer.openingGhostBoundsRefreshers.clear();
-      this.layer.revealIconNodes();
-      this.layer.pageTrack.visible = true;
-      this.openingTargetKeysByItemId.clear();
-      this.settledOpeningGhostItemIds.clear();
-      const ghosts = this.layer.openingGhostLayer.removeChildren();
-      for (const ghost of ghosts) {
-        killAllMotion(ghost);
-        destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
-      }
-      return true;
-    }
-    this.handoffCoordinator.markGhostsReady(sessionToken);
-    if (!this.handoffCoordinator.canReveal(sessionToken)) return false;
-    this.handoffCoordinator.finishReveal(sessionToken);
-    this.handoffCoordinator.completeOpeningControllerGhostKeys();
-    this.handoffCoordinator.clearOpeningVisuals();
+    return reporter.ghostsReady().status !== "stale";
+  }
+
+  reveal(reporter = this.activeReporter) {
+    if (!reporter || reporter !== this.activeReporter) return false;
+    const owner = this.owner;
+    this.clearRevealTimer();
+    this.cancelMotionControls();
+    this.completeControllerKeys();
+    this.ghostItemIds.clear();
     this.layer.openingGhostBoundsRefreshers.clear();
-    this.layer.releaseTransitionOwnership(sessionToken, { restorePageTrack: true, reveal: true });
+    this.layer.releaseTransitionOwnership(owner?.token, { restorePageTrack: true, reveal: true });
     this.layer.refreshRegisteredIconBounds();
     this.layer.rebuildPageTrackMask();
     this.openingTargetKeysByItemId.clear();
@@ -346,16 +428,18 @@ export class FolderOpeningGhostController {
       killAllMotion(ghost);
       destroyDisplayObjectAfterFrame(ghost, { children: true }, this.scheduler);
     }
+    this.activeReporter = null;
+    this.activeState = null;
+    this.owner = null;
     return true;
   }
 
   complete(state, target, ghost) {
-    const sessionToken = this.handoffCoordinator.getOpeningSessionToken();
     const itemId = target.item.id;
     this.settledOpeningGhostItemIds.add(itemId);
     finishOpeningGhostReveal(ghost);
     ghost.scale.set(1);
-    this.finishTransition({ sessionToken });
+    this.reportGhostsReady();
   }
 
   completeIfFinalTarget(state, target, ghost, motionControl = null) {
@@ -365,28 +449,28 @@ export class FolderOpeningGhostController {
       return false;
     }
     if (motionControl) {
-      this.handoffCoordinator.deleteOpeningMotionControl(target.item.id, motionControl);
+      this.motionControls.delete(motionControl);
+      this.motionControlsByItemId.delete(target.item.id);
     }
     this.complete(state, target, ghost);
     return true;
   }
 
-  start(state, targets, options = {}) {
-    const sessionToken = options.sessionToken || this.handoffCoordinator.activeOpenToken || null;
+  startVisuals(state, targets, options = {}) {
+    const reporter = this.activeReporter;
+    const owner = this.owner;
+    if (!reporter || !owner) throw new Error("opening visual scope is not active");
     const folderId = state.renderedFolder?.id || this.layer.getCurrentFolderId() || null;
     const requestId = getOpeningFrameGhostRequestId(state);
     const hasStagedGhosts = (state.folderOpenIconGhosts || []).length > 0;
     if (hasStagedGhosts && typeof state.acceptFolderOpenIconGhostSession === "function") {
-      const accepted = state.acceptFolderOpenIconGhostSession(folderId, requestId, sessionToken);
-      if (!accepted) return false;
+      const accepted = state.acceptFolderOpenIconGhostSession(folderId, requestId);
+      if (!accepted) {
+        reporter.fail(new Error(`opening ghost session was rejected for folder ${folderId || "unknown"}`));
+        return false;
+      }
     }
-    this.clear({
-      cancelSession: false,
-      completeControllerKeys: false,
-      restorePageTrack: false,
-      reveal: false,
-    });
-    this.handoffCoordinator.beginOpeningVisuals({ sessionToken, state });
+    this.activeState = state;
     const usableTargets = (targets || []).filter(hasUsableFolderGhostTarget);
     const usableControllerGhostKeys = new Set();
     for (const target of usableTargets) {
@@ -399,11 +483,6 @@ export class FolderOpeningGhostController {
       }
     }
 
-    const owner = {
-      folderId,
-      kind: "opening",
-      token: sessionToken,
-    };
     this.layer.acquireDesktopSourceOwnership(owner);
     const startedFrameGhost = startOpeningFrameGhost(this.layer, state, options);
     this.openingFrameTargetKey = startedFrameGhost
@@ -418,14 +497,15 @@ export class FolderOpeningGhostController {
     }
 
     if (!usableTargets.length) {
-      this.finishTransition({ ignoreGeometryGate: true, sessionToken });
+      this.reportGhostsReady({ ignoreGeometryGate: true });
       return;
     }
     this.scheduleRevealFallback(usableTargets);
 
     for (const target of usableTargets) {
       const controllerGhostKey = target.controllerGhostKey || state.getFolderOpenIconGhostKey?.(target.item.id, target.index);
-      this.handoffCoordinator.registerOpeningGhost(target.item.id, controllerGhostKey);
+      this.ghostItemIds.add(target.item.id);
+      if (controllerGhostKey) this.controllerKeys.set(target.item.id, controllerGhostKey);
     }
 
     for (const target of usableTargets) {
@@ -478,8 +558,9 @@ export class FolderOpeningGhostController {
       motionControl = animateOpeningGhost(ghost, ghostMotion, () => {
         didFinish = this.completeIfFinalTarget(state, target, ghost, motionControl);
       }, { scheduler: this.scheduler, onFrame: updateGhostFrame });
-      if (!didFinish && this.handoffCoordinator.hasOpeningGhost(target.item.id)) {
-        this.handoffCoordinator.addOpeningMotionControl(target.item.id, motionControl);
+      if (!didFinish && this.ghostItemIds.has(target.item.id)) {
+        this.motionControls.add(motionControl);
+        this.motionControlsByItemId.set(target.item.id, motionControl);
       }
     }
   }
@@ -509,13 +590,13 @@ export class FolderOpeningGhostController {
     return retargeted;
   }
 
-  retarget(state, targets, options = {}) {
+  retargetVisuals(state, targets, options = {}) {
     let retargeted = this.retargetFrame(state, options) ? 1 : 0;
-    if (!this.handoffCoordinator.hasActiveOpeningVisuals()) return retargeted;
+    if (!this.ghostItemIds.size) return retargeted;
     const usableTargets = (targets || []).filter((target) =>
       target?.item?.id &&
       hasUsableFolderGhostTarget(target) &&
-      this.handoffCoordinator.hasOpeningGhost(target.item?.id)
+      this.ghostItemIds.has(target.item?.id)
     );
     if (!usableTargets.length) {
       if (retargeted > 0) this.scheduleRevealFallback([]);
@@ -553,8 +634,9 @@ export class FolderOpeningGhostController {
       this.layer.openingGhostBoundsRefreshers.set(itemId, refreshGhostBounds);
       refreshGhostBounds();
 
-      const previousControl = this.handoffCoordinator.getOpeningMotionControl(itemId);
-      if (previousControl) this.handoffCoordinator.deleteOpeningMotionControl(itemId, previousControl);
+      const previousControl = this.motionControlsByItemId.get(itemId);
+      if (previousControl) this.motionControls.delete(previousControl);
+      this.motionControlsByItemId.delete(itemId);
       this.settledOpeningGhostItemIds.delete(itemId);
       this.openingTargetKeysByItemId.set(itemId, targetKey);
 
@@ -569,13 +651,14 @@ export class FolderOpeningGhostController {
       }, { scheduler: this.scheduler, onFrame: updateGhostFrame });
       if (didFinish) {
         this.openingTargetKeysByItemId.delete(itemId);
-      } else if (this.handoffCoordinator.hasOpeningGhost(itemId)) {
-        this.handoffCoordinator.addOpeningMotionControl(itemId, motionControl);
+      } else if (this.ghostItemIds.has(itemId)) {
+        this.motionControls.add(motionControl);
+        this.motionControlsByItemId.set(itemId, motionControl);
       }
       retargeted += 1;
     }
     if (retargeted > 0) this.scheduleRevealFallback(usableTargets);
-    this.finishTransition();
+    this.reportGhostsReady();
     return retargeted;
   }
 }

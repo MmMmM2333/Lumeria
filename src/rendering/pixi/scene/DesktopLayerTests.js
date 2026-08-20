@@ -170,26 +170,20 @@ function makeLayer(DesktopLayer, pageTrack) {
   return layer;
 }
 
-function makeHandoffCoordinator(options = {}) {
+function makeFolderVisualSession(options = {}) {
   const {
     active = false,
     folderId = null,
     ghostKeys = [],
-    token = null,
   } = options;
   return {
-    get folderId() {
-      return folderId;
-    },
-    isCloseHandoffActive() {
-      return active;
-    },
     snapshot() {
       return {
-        folderId,
-        ghostKeys: new Set(ghostKeys),
-        handoffActive: active,
-        token,
+        closing: {
+          folderId,
+          ghostIds: [...ghostKeys],
+          handoffActive: active,
+        },
       };
     },
   };
@@ -921,7 +915,7 @@ export async function runDesktopLayerTests() {
     assert(normalized.folderSourceGhostedIds instanceof Set, "source ghosted ids should normalize to a Set");
     assert(normalized.folderSourceGhostedId === "folder-d", "source ghosted normalizer should preserve the legacy singular id as primary");
     assert(normalized.folderSourceGhostedIds.has("folder-d") && normalized.folderSourceGhostedIds.has("folder-e"), "source ghosted normalizer should merge singular and Set ids");
-    assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { folderHandoff: makeHandoffCoordinator() }), "array closing handoff ids should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { folderVisualSession: makeFolderVisualSession() }), "array closing handoff ids should keep the desktop handoff alive");
     assert(!shouldFinishFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, null, "folder-a"), "legacy singular closing handoff id should keep its folder handoff alive");
     {
       // A stale closing id keeps a never-revealed handoff entry alive while no
@@ -933,7 +927,7 @@ export async function runDesktopLayerTests() {
       const pageTrack = makePageTrack([folder]);
       const layer = makeLayer(DesktopLayer, pageTrack);
       layer.singleStageFolderLayer = {
-        folderHandoff: { folderId: null, isCloseHandoffActive: () => false },
+        folderVisualSession: makeFolderVisualSession(),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       };
@@ -954,7 +948,7 @@ export async function runDesktopLayerTests() {
       const pageTrack = makePageTrack([folder]);
       const layer = makeLayer(DesktopLayer, pageTrack);
       layer.singleStageFolderLayer = {
-        folderHandoff: { folderId: "folder-a", isCloseHandoffActive: () => false },
+        folderVisualSession: makeFolderVisualSession({ folderId: "folder-a" }),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: (folderId) => folderId === "folder-a",
       };
@@ -975,7 +969,7 @@ export async function runDesktopLayerTests() {
       pageTrack.x = -120;
       const layer = makeLayer(DesktopLayer, pageTrack);
       layer.singleStageFolderLayer = {
-        folderHandoff: { folderId: null, isCloseHandoffActive: () => false },
+        folderVisualSession: makeFolderVisualSession(),
         getDesktopSourceGhostedIds: () => new Set(),
         hasVisibleFolderSubstitute: () => false,
       };
@@ -1254,13 +1248,13 @@ export async function runDesktopLayerTests() {
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: -1, y: 12 } }).scale === 0.01, "launchpad transform should clamp scale low");
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: 1.08, y: 12 } }).y === 12, "launchpad transform should preserve y offset");
     assert(resolveLaunchpadVisualTransform({}).scale === 1, "launchpad transform should default to identity scale");
-    assert(!shouldFinishFolderHandoff({}, { folderHandoff: makeHandoffCoordinator({ active: true }) }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
-    assert(shouldFinishFolderHandoff({}, { folderHandoff: makeHandoffCoordinator({ active: false }) }), "idle state with no prop handoff should finish the desktop handoff");
-    assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { folderHandoff: makeHandoffCoordinator({ active: false }) }), "active prop handoff should keep the desktop handoff alive");
-    assert(!shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-1" }) }, "folder-1"), "matching Pixi activity should keep its folder handoff alive");
+    assert(!shouldFinishFolderHandoff({}, { folderVisualSession: makeFolderVisualSession({ active: true }) }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
+    assert(shouldFinishFolderHandoff({}, { folderVisualSession: makeFolderVisualSession({ active: false }) }), "idle state with no prop handoff should finish the desktop handoff");
+    assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { folderVisualSession: makeFolderVisualSession({ active: false }) }), "active prop handoff should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry({}, { folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-1" }) }, "folder-1"), "matching Pixi activity should keep its folder handoff alive");
     assert(!shouldFinishFolderHandoffEntry({}, { getDesktopSourceGhostedIds: () => new Set(["folder-1"]) }, "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
     assert(!shouldFinishFolderHandoffEntry({}, { hasVisibleFolderSubstitute: () => true }, "folder-1"), "visible folder substitutes should keep their folder handoff alive");
-    assert(shouldFinishFolderHandoffEntry({}, { folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-2" }), hasVisibleFolderSubstitute: () => false }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
+    assert(shouldFinishFolderHandoffEntry({}, { folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-2" }), hasVisibleFolderSubstitute: () => false }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
     const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
     assert(
@@ -1663,7 +1657,7 @@ export async function runDesktopLayerTests() {
     layer.markInteractiveBoundsDirty = () => {};
     layer.singleStageDiagnosticsLayer = { update() {} };
     layer.singleStageFolderLayer = {
-      folderHandoff: makeHandoffCoordinator({ active: true, folderId: "folder-b" }),
+      folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-b" }),
       getDesktopSourceGhostedIds: () => new Set(["folder-a"]),
       hasVisibleFolderSubstitute: () => false,
     };
