@@ -1,5 +1,5 @@
 #[cfg(target_os = "windows")]
-use crate::path_utils::extension;
+use crate::{path_utils::extension, windows_com::ComGuard};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LaunchPathErrorKind {
@@ -31,6 +31,12 @@ pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), L
         Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
     };
 
+    let _com_guard = ComGuard::new().map_err(|error| {
+        LaunchPathError::new(
+            LaunchPathErrorKind::WindowsLaunchFailed,
+            format!("Failed to initialize COM before ShellExecuteW for {path}: {error}"),
+        )
+    })?;
     let file = HSTRING::from(path);
     let parameters = launch_args
         .map(str::trim)
@@ -60,8 +66,6 @@ pub(crate) fn launch_app_user_model_id(app_user_model_id: &str) -> Result<(), La
             UI::Shell::{ApplicationActivationManager, IApplicationActivationManager, AO_NONE},
         },
     };
-
-    use crate::windows_com::ComGuard;
 
     let app_user_model_id = app_user_model_id.trim();
     if app_user_model_id.is_empty() {

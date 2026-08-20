@@ -3,6 +3,7 @@ import type {
   DesktopSceneFrameInput,
 } from "./sceneFrame.js";
 import type {
+  AppLaunchCloseFrameCommittedSceneEvent,
   InternalActivitySceneEvent,
   SceneEvent,
   SceneEventControl,
@@ -10,6 +11,7 @@ import type {
 
 const frameInput = {
   activePageIndex: 0,
+  appLaunchCloseSessionId: 1,
   desktopVisualAlpha: 1,
   isEditMode: false,
   folderClosingHandoffId: null,
@@ -20,6 +22,7 @@ void frameInput;
 declare const frame: DesktopSceneFrame;
 void frame.viewport.activePageIndex;
 void frame.visual.desktopVisualAlpha;
+void frame.visual.appLaunchCloseSessionId;
 
 // @ts-expect-error SceneFrame fields must be accessed through their owning group.
 void frame.activePageIndex;
@@ -65,6 +68,12 @@ const activityEvent = {
 
 const event: SceneEvent = activityEvent;
 void event;
+
+const appLaunchCommitEvent = {
+  type: "app-launch-close-frame-committed",
+  sessionId: 1,
+} satisfies AppLaunchCloseFrameCommittedSceneEvent;
+void appLaunchCommitEvent;
 
 declare const control: SceneEventControl;
 control.preventDefault();

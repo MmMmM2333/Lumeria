@@ -13,11 +13,14 @@ export function useLaunchpadLaunchFlow(options) {
   const isDesktopOpen = ref(options.initialDesktopOpen !== false);
   const isDesktopClosing = ref(false);
   const isAppLaunching = ref(false);
+  const appLaunchCloseSessionId = ref(null);
   const launchGhost = shallowRef(null);
   let desktopCloseTimer = null;
   let appLaunchTimer = null;
   let launchGhostTimer = null;
   let launchPrepareRequestId = 0;
+  let nextAppLaunchCloseSessionId = 0;
+  let activeAppLaunchSession = null;
 
   const launchGhostStyle = computed(() => {
     const ghost = launchGhost.value;
@@ -169,6 +172,8 @@ export function useLaunchpadLaunchFlow(options) {
   }
 
   function openDesktop() {
+    activeAppLaunchSession = null;
+    appLaunchCloseSessionId.value = null;
     clearDesktopCloseTimer();
     clearAppLaunchTimer();
     clearLaunchGhost();
@@ -196,27 +201,20 @@ export function useLaunchpadLaunchFlow(options) {
     const shouldClearSearchAfterLaunch = options.isSearchMode();
     const launchSession = {
       animationDone: false,
+      app,
       error: null,
+      id: (nextAppLaunchCloseSessionId += 1),
+      nativeLaunchStarted: false,
       shown: false,
     };
+    activeAppLaunchSession = launchSession;
+    appLaunchCloseSessionId.value = launchSession.id;
     startAppLaunchGhost(app, launchSource);
     options.openingIcon.value = launchSource;
     isAppLaunching.value = true;
 
     if (options.hasFolderLayer()) options.startFolderZoomFadeClose?.({ reason: "app-launch" });
     closeDesktop({ clearSearch: false });
-    window.setTimeout(() => {
-      Promise.resolve(options.launchNativeAppIfAvailable(app))
-        .then((result) => {
-          if (result && result !== true) {
-            launchSession.error = result;
-            maybeShowLaunchErrorAfterAnimation(launchSession);
-          }
-        })
-        .catch((error) => {
-          console.error(`Failed to launch ${app.name}`, error);
-        });
-    }, 0);
 
     clearAppLaunchTimer();
     appLaunchTimer = window.setTimeout(() => {
@@ -228,6 +226,38 @@ export function useLaunchpadLaunchFlow(options) {
       Promise.resolve(options.hideNativeWindow())
         .finally(() => maybeShowLaunchErrorAfterAnimation(launchSession));
     }, APP_LAUNCH_DURATION);
+  }
+
+  function commitAppLaunchCloseFrame(sessionId) {
+    const launchSession = activeAppLaunchSession;
+    if (
+      !Number.isInteger(sessionId) ||
+      !launchSession ||
+      launchSession.id !== sessionId ||
+      launchSession.nativeLaunchStarted
+    ) {
+      return false;
+    }
+    launchSession.nativeLaunchStarted = true;
+    appLaunchCloseSessionId.value = null;
+    let launchResult;
+    try {
+      launchResult = options.launchNativeAppIfAvailable(launchSession.app);
+    } catch (error) {
+      console.error(`Failed to launch ${launchSession.app.name}`, error);
+      return true;
+    }
+    Promise.resolve(launchResult)
+      .then((result) => {
+        if (result && result !== true) {
+          launchSession.error = result;
+          maybeShowLaunchErrorAfterAnimation(launchSession);
+        }
+      })
+      .catch((error) => {
+        console.error(`Failed to launch ${launchSession.app.name}`, error);
+      });
+    return true;
   }
 
   function maybeShowLaunchErrorAfterAnimation(launchSession) {
@@ -264,11 +294,13 @@ export function useLaunchpadLaunchFlow(options) {
   }
 
   return {
+    appLaunchCloseSessionId,
     clearAppLaunchTimer,
     clearDesktopCloseTimer,
     clearLaunchGhost,
     clearLaunchGhostTimer,
     closeDesktop,
+    commitAppLaunchCloseFrame,
     focusDesktopSurface,
     isAppLaunching,
     isDesktopClosing,

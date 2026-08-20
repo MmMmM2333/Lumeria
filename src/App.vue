@@ -286,6 +286,7 @@ const {
 const {
   activePageIndex,
   activePages,
+  appLaunchCloseSessionId,
   handleIconPointerDown,
   commitActivePageIndex,
   desktopMainRef,
@@ -299,6 +300,7 @@ const {
   dragMeta,
   groupDragState,
   completeGroupRelease,
+  commitAppLaunchCloseFrame,
   handleDesktopSurfacePointerDown,
   gridCols,
   gridRows,
@@ -898,6 +900,7 @@ const folderSourceGhostedIds = computed(() => {
 const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
   activePageIndex: resolveMaybeRef(activePageIndex),
   activePages: resolveMaybeRef(activePages),
+  appLaunchCloseSessionId: resolveMaybeRef(appLaunchCloseSessionId),
   desktopGridDebugOptions: resolveMaybeRef(desktopGridDebugOptions),
   desktopProjectionEpoch: resolveMaybeRef(desktopProjectionEpoch),
   desktopTrackMotionKey: resolveMaybeRef(desktopTrackMotionKey),
@@ -949,6 +952,9 @@ const desktopSceneRuntime = makeDesktopSceneRuntimeAdapter({
 function handlePixiSceneEvent(event = {}) {
   assertSceneEvent(event);
   switch (event.type) {
+    case "app-launch-close-frame-committed":
+      commitAppLaunchCloseFrame(event.sessionId);
+      return;
     case "desktop-focus":
       keyboardFocusArea.value = "desktop";
       return;

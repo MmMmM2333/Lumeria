@@ -45,6 +45,7 @@ export type ScenePageTrackScrub = Readonly<{
 type DesktopSceneFrameValues = Readonly<{
   activePageIndex: number;
   activePages: readonly (readonly (SceneItem | null)[])[];
+  appLaunchCloseSessionId: number | null;
   desktopGridDebugOptions: SceneDataRecord | null;
   desktopProjectionEpoch: number;
   desktopTrackMotionKey: string;
@@ -95,6 +96,7 @@ const FRAME_FIELDS = Object.freeze({
     "pageTrackScrub",
   ] as const),
   visual: Object.freeze([
+    "appLaunchCloseSessionId",
     "desktopVisualAlpha",
     "desktopVisualTransform",
     "launchpadVisualAlpha",
@@ -168,6 +170,13 @@ function requireBoolean(value: unknown, path: string): void {
 function requireNumber(value: unknown, path: string): void {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new TypeError(`${path} must be a finite number`);
+  }
+}
+
+function requireNullablePositiveInteger(value: unknown, path: string): void {
+  if (value === null) return;
+  if (!Number.isInteger(value) || Number(value) <= 0) {
+    throw new TypeError(`${path} must be a positive integer or null`);
   }
 }
 
@@ -255,6 +264,7 @@ const nullableRecord: FieldValidator = (value, path) => requireNullableRecord(va
 const FIELD_VALIDATORS = {
   activePageIndex: requireNumber,
   activePages: requireActivePages,
+  appLaunchCloseSessionId: requireNullablePositiveInteger,
   desktopGridDebugOptions: nullableRecord,
   desktopProjectionEpoch: requireNumber,
   desktopTrackMotionKey: requireString,

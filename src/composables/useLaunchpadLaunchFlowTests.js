@@ -227,8 +227,25 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.calls.startFolderZoomFadeClose[0].reason === "app-launch", "folder app launches should mark zoom-fade as app launch");
     assert(launch.calls.startFolderAppLaunchClose === 0, "folder app launches should not use the folder shrink-close path");
     assert(launch.calls.setNativeWindowFrameEnabled.join(",") === "false", "app launch close animation should disable the native window frame");
+    const launchCloseSessionId = launch.flow.appLaunchCloseSessionId.value;
+    assert(Number.isInteger(launchCloseSessionId), "app launch should publish a visual close session id");
     timers.runDelay(0);
-    assert(launch.calls.launchNativeAppIfAvailable.join(",") === "launch-app", "app launch should call native launch on a zero delay timer");
+    assert(launch.calls.launchNativeAppIfAvailable.length === 0, "app launch should wait for the first committed close frame");
+    assert(
+      launch.flow.commitAppLaunchCloseFrame(launchCloseSessionId + 1) === false,
+      "a stale visual close commit should not launch the app"
+    );
+    assert(launch.calls.launchNativeAppIfAvailable.length === 0, "a stale visual close commit should have no side effects");
+    assert(
+      launch.flow.commitAppLaunchCloseFrame(launchCloseSessionId) === true,
+      "the current visual close commit should launch the app"
+    );
+    assert(launch.calls.launchNativeAppIfAvailable.join(",") === "launch-app", "the current visual close commit should call native launch once");
+    assert(
+      launch.flow.commitAppLaunchCloseFrame(launchCloseSessionId) === false,
+      "a committed visual close session should reject duplicate acknowledgements"
+    );
+    assert(launch.calls.launchNativeAppIfAvailable.length === 1, "duplicate visual close commits should not launch twice");
     timers.runDelay(APP_LAUNCH_DURATION);
     assert(!launch.flow.isAppLaunching.value, "app launch timer should end launch state");
     assert(launch.calls.clearSearch.length === 1, "app launch should clear search after the launch animation");
@@ -245,7 +262,7 @@ export async function runLaunchpadLaunchFlowTests() {
     };
     const failedLaunch = createLaunchFlow({ launchNativeAppResult: launchError });
     failedLaunch.flow.openApp(launchApp, source);
-    timers.runDelay(0);
+    failedLaunch.flow.commitAppLaunchCloseFrame(failedLaunch.flow.appLaunchCloseSessionId.value);
     await flushMicrotasks(2);
     assert(failedLaunch.calls.showNativeLaunchError.length === 0, "native launch errors should wait for the launch animation");
     timers.runDelay(APP_LAUNCH_DURATION);

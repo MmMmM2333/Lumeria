@@ -2,6 +2,7 @@ import { assertDesktopSceneFrame, makeDesktopSceneFrame } from "../../sceneFrame
 import { makeDesktopSceneRuntimeAdapter } from "../../sceneRuntime.js";
 import {
   assertSceneEvent,
+  makeAppLaunchCloseFrameCommittedEvent,
   makeIconPointerdownEvent,
 } from "../../sceneEvents.js";
 
@@ -14,6 +15,7 @@ export function runSceneFrameTests() {
   const selectedAppIds = new Set(["app-1"]);
   const frame = makeDesktopSceneFrame({
     activePages,
+    appLaunchCloseSessionId: 7,
     desktopVisualAlpha: 0.7,
     focusedIcon: { id: "app-1" },
     selectedAppIds,
@@ -51,6 +53,7 @@ export function runSceneFrameTests() {
   assert(setMutationThrew, "published scene-frame Sets should reject mutation");
   assert(Object.isFrozen(frame) && Object.isFrozen(frame.viewport), "scene frame containers should be immutable snapshots");
   assert(frame.visual.desktopVisualAlpha === 0.7, "scene frame should group visual state");
+  assert(frame.visual.appLaunchCloseSessionId === 7, "scene frame should carry the active app-launch close session");
   assert(frame.interaction.focusedIcon.id === "app-1", "scene frame should group interaction state");
   assert(runtime.iconBoundsRegistry.name === "registry", "scene runtime should hold mutable services");
   assert(!Object.prototype.hasOwnProperty.call(frame, "runtime"), "scene frame should not carry imperative runtime services");
@@ -132,6 +135,13 @@ export function runSceneFrameTests() {
   );
   assert(Object.isFrozen(event) && Object.isFrozen(event.pointer), "scene events should be immutable");
   assert(!Object.prototype.hasOwnProperty.call(event, "event"), "scene events should not expose raw renderer events");
+
+  const appLaunchCommitEvent = makeAppLaunchCloseFrameCommittedEvent(7);
+  assertSceneEvent(appLaunchCommitEvent);
+  assert(
+    appLaunchCommitEvent.type === "app-launch-close-frame-committed" && appLaunchCommitEvent.sessionId === 7,
+    "scene events should publish the committed app-launch close session"
+  );
 
   let rejectedUnknownEvent = false;
   try {

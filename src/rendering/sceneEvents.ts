@@ -7,6 +7,7 @@
  */
 
 const EVENT_FIELDS = Object.freeze({
+  "app-launch-close-frame-committed": Object.freeze(["type", "sessionId"]),
   "choose-app-icon": Object.freeze(["type", "itemId"]),
   "context-menu-request": Object.freeze(["type", "pointer"]),
   "desktop-focus": Object.freeze(["type"]),
@@ -120,6 +121,10 @@ export type SceneEventControl = Readonly<{
 }>;
 
 export type ChooseAppIconSceneEvent = Readonly<{ type: "choose-app-icon"; itemId: string }>;
+export type AppLaunchCloseFrameCommittedSceneEvent = Readonly<{
+  type: "app-launch-close-frame-committed";
+  sessionId: number;
+}>;
 export type ContextMenuRequestSceneEvent = Readonly<{ type: "context-menu-request"; pointer: PointerSnapshot }>;
 export type DesktopFocusSceneEvent = Readonly<{ type: "desktop-focus" }>;
 export type GroupReleaseCompleteSceneEvent = Readonly<{
@@ -152,6 +157,7 @@ export type WheelSceneEvent = Readonly<{
 }>;
 
 export type SceneEvent =
+  | AppLaunchCloseFrameCommittedSceneEvent
   | ChooseAppIconSceneEvent
   | ContextMenuRequestSceneEvent
   | DesktopFocusSceneEvent
@@ -401,6 +407,15 @@ export function makeChooseAppIconEvent(itemId: string): ChooseAppIconSceneEvent 
   return makeEvent("choose-app-icon", { itemId: requireNonEmptyString(itemId, "itemId") });
 }
 
+export function makeAppLaunchCloseFrameCommittedEvent(
+  sessionId: number,
+): AppLaunchCloseFrameCommittedSceneEvent {
+  if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    throw new TypeError("sessionId must be a positive integer");
+  }
+  return makeEvent("app-launch-close-frame-committed", { sessionId });
+}
+
 /** Context menu requests are controlled in the renderer before publication. */
 export function makeContextMenuRequestEvent(event: unknown): ContextMenuRequestSceneEvent {
   return makeEvent("context-menu-request", { pointer: makePointerSnapshot(event) });
@@ -501,6 +516,11 @@ export function assertSceneEvent(event: unknown): SceneEvent {
   assertExactFields(sceneEvent, fields, `SceneEvent.${eventType}`);
   if (!Object.isFrozen(event)) throw new TypeError("SceneEvent must be immutable");
   switch (eventType) {
+    case "app-launch-close-frame-committed":
+      if (!Number.isInteger(sceneEvent.sessionId) || Number(sceneEvent.sessionId) <= 0) {
+        throw new TypeError("app-launch-close-frame-committed.sessionId must be a positive integer");
+      }
+      break;
     case "choose-app-icon":
     case "remove-app":
     case "reset-app-icon":

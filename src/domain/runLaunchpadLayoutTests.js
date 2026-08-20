@@ -106,6 +106,7 @@ import { runFolderOverlayStateDependenciesTests } from "../rendering/pixi/folder
 import { runDragRenderSnapshotTests } from "../rendering/pixi/dragRenderSnapshotTests.js";
 import { runPixiHostMetricsTests } from "../rendering/pixi/pixiHostMetricsTests.js";
 import { runPixiRenderSchedulerTests } from "../rendering/pixi/pixiRenderSchedulerTests.js";
+import { runAppLaunchVisualCommitTests } from "../rendering/pixi/appLaunchVisualCommitTests.js";
 import { runFolderFramebufferSamplerTests } from "../rendering/pixi/folderFramebufferSamplerTests.js";
 import { runRenderDebugProbeTests } from "../rendering/pixi/renderDebugProbeTests.js";
 import { runPixiRenderTriggersTests } from "../rendering/pixi/pixiRenderTriggersTests.js";
@@ -309,6 +310,7 @@ runFolderOverlayStateDependenciesTests();
 runDragRenderSnapshotTests();
 runPixiHostMetricsTests();
 runPixiRenderSchedulerTests();
+runAppLaunchVisualCommitTests();
 runFolderFramebufferSamplerTests();
 runRenderDebugProbeTests();
 runPixiRenderTriggersTests();

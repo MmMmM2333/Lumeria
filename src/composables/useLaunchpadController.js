@@ -712,10 +712,12 @@ export function useLaunchpadController(options = {}) {
     focusFirstIconInCurrentScope,
   });
   const {
+    appLaunchCloseSessionId,
     clearAppLaunchTimer,
     clearDesktopCloseTimer,
     clearLaunchGhostTimer,
     closeDesktop,
+    commitAppLaunchCloseFrame,
     focusDesktopSurface,
     isAppLaunching,
     isDesktopClosing,
@@ -1902,6 +1904,7 @@ export function useLaunchpadController(options = {}) {
   const desktopSurface = {
     activePageIndex: renderedActivePageIndex,
     activePages: renderedActivePages,
+    appLaunchCloseSessionId,
     handleIconPointerDown,
     commitActivePageIndex,
     desktopMainRef,
@@ -1915,6 +1918,7 @@ export function useLaunchpadController(options = {}) {
     dragMeta,
     groupDragState,
     completeGroupRelease,
+    commitAppLaunchCloseFrame,
     folderOpenPreviewFrameGhostedIds,
     folderPageSize,
     getDesktopPageRenderMode,

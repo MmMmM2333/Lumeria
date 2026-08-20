@@ -62,6 +62,7 @@ import {
   subscribeIconTextureLoadSettlements,
 } from "./assets/iconTextureCache.js";
 import { createPixiRenderCoordinator } from "./pixiRenderCoordinator.js";
+import { createAppLaunchVisualCommitTracker } from "./appLaunchVisualCommit.js";
 import {
   makeFolderInternalActivityRenderReason,
   makeIconActionRenderReason,
@@ -82,6 +83,7 @@ import { assertDesktopSceneFrame } from "../sceneFrame.js";
 import { assertDesktopSceneRuntime } from "../sceneRuntime.js";
 import {
   assertSceneEvent,
+  makeAppLaunchCloseFrameCommittedEvent,
   makeChooseAppIconEvent,
   makeContextMenuRequestEvent,
   makeDesktopFocusEvent,
@@ -141,6 +143,9 @@ function publishSceneEvent(event) {
   emitSceneEvent("scene-event", assertSceneEvent(event));
 }
 function emitChooseAppIcon(itemId) { publishSceneEvent(makeChooseAppIconEvent(itemId)); }
+function emitAppLaunchCloseFrameCommitted(sessionId) {
+  publishSceneEvent(makeAppLaunchCloseFrameCommittedEvent(sessionId));
+}
 function emitContextMenuRequest(event) { publishSceneEvent(makeContextMenuRequestEvent(event)); }
 function emitDesktopFocus() { publishSceneEvent(makeDesktopFocusEvent()); }
 function emitGroupReleaseComplete(payload) { publishSceneEvent(makeGroupReleaseCompleteEvent(payload)); }
@@ -178,6 +183,7 @@ let destroyed = false;
 let folderTexturePrewarmTimer = null;
 let folderTexturePrewarmGeneration = 0;
 let renderCoordinator = null;
+let appLaunchVisualCommitTracker = null;
 let renderProbe = null;
 let diagnosticHub = null;
 let diagnosticGlobalInstallation = null;
@@ -692,6 +698,39 @@ function mergeFrameWork(target, next) {
   return target;
 }
 
+function captureAppLaunchVisualSnapshot() {
+  return {
+    desktopAlpha: Number(layer?.visualRoot?.alpha),
+    desktopScale: Number(layer?.visualRoot?.scale?.x),
+    folderAlpha: Number(layer?.singleStageFolderLayer?.alpha),
+    folderScale: Number(layer?.singleStageFolderLayer?.scale?.x),
+  };
+}
+
+function captureAppLaunchVisualScope() {
+  return sceneRuntime.value.folderOverlayState?.renderedFolder?.value ? "folder" : "desktop";
+}
+
+function getAppLaunchVisualCommitTracker() {
+  if (appLaunchVisualCommitTracker) return appLaunchVisualCommitTracker;
+  appLaunchVisualCommitTracker = createAppLaunchVisualCommitTracker({
+    cancelAnimationFrame: (frame) => window.cancelAnimationFrame(frame),
+    getCurrentSessionId: () => visualFrame.value.appLaunchCloseSessionId ?? null,
+    onCommit: emitAppLaunchCloseFrameCommitted,
+    requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+  });
+  return appLaunchVisualCommitTracker;
+}
+
+function captureAppLaunchCloseTarget() {
+  return {
+    desktopAlpha: Number(visualFrame.value.desktopVisualAlpha),
+    desktopScale: Number(visualFrame.value.desktopVisualTransform?.scale),
+    folderAlpha: Number(visualFrame.value.launchpadVisualAlpha),
+    folderScale: Number(visualFrame.value.launchpadVisualTransform?.scale),
+  };
+}
+
 function renderPixi(options = {}) {
   if (!app || !layer || !hostRef.value) {
     return { didRender: false, hasLayerCapability: false, work: null };
@@ -765,6 +804,14 @@ function getRenderCoordinator() {
     canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
     render: ({ reasons, invalidation }) => {
       const frameStartedAt = nowMs();
+      const appLaunchCloseSessionId = visualFrame.value.appLaunchCloseSessionId ?? null;
+      const appLaunchCommitTracker = getAppLaunchVisualCommitTracker();
+      appLaunchCommitTracker.beforeRender({
+        scope: captureAppLaunchVisualScope(),
+        sessionId: appLaunchCloseSessionId,
+        snapshot: captureAppLaunchVisualSnapshot(),
+        target: captureAppLaunchCloseTarget(),
+      });
       const snapDesktopLayout = desktopResizeLayoutSnapPending;
       const previousPlan = layer?.lastDesktopRenderPlan || null;
       const layerStartedAt = nowMs();
@@ -787,6 +834,12 @@ function getRenderCoordinator() {
       const gpuStartedAt = nowMs();
       try {
         app?.render?.();
+        if (result.didRender) {
+          appLaunchCommitTracker.afterRender({
+            sessionId: appLaunchCloseSessionId,
+            snapshot: captureAppLaunchVisualSnapshot(),
+          });
+        }
       } finally {
         const gpuMs = nowMs() - gpuStartedAt;
         if (import.meta.env.DEV && result.didRender) {
@@ -1018,6 +1071,8 @@ function destroyPixi(options = {}) {
   cancelScheduledRenderPixi();
   renderCoordinator?.destroy();
   renderCoordinator = null;
+  appLaunchVisualCommitTracker?.destroy();
+  appLaunchVisualCommitTracker = null;
   invalidateDesktopDomGeometry();
   pixiResizeSignature = "";
   pixiTextResolution = null;
@@ -1271,6 +1326,7 @@ watchEffect(() => {
 });
 
 watchEffect(() => {
+  void visualFrame.value.appLaunchCloseSessionId;
   void visualFrame.value.desktopVisualTransform;
   void visualFrame.value.desktopVisualAlpha;
   void visualFrame.value.launchpadVisualAlpha;
