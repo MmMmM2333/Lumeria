@@ -1,5 +1,6 @@
 import {
   classifyRenderInvalidation,
+  collectRenderInvalidationReasons,
   createRenderInvalidationLedger,
   RENDER_INVALIDATION_LANES,
 } from "./renderInvalidation.js";
@@ -74,4 +75,8 @@ export function runRenderInvalidationTests() {
   assert(targeted.requiresVisualUpdate, "visual changes should request a visual patch");
   assert(targeted.requiresHandoffUpdate, "handoff frames should request a handoff tick");
   assert(!targeted.requiresStructureUpdate, "targeted lanes should not rebuild the desktop plan");
+  assert(
+    collectRenderInvalidationReasons(targeted).join(",") === "visual-watch,folder-handoff-loop",
+    "reason collection should preserve deterministic lane and insertion order"
+  );
 }

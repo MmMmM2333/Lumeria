@@ -63,12 +63,8 @@ import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { createDragRenderSnapshot } from "./dragRenderSnapshot.js";
 import { iconTextureRepository } from "./assets/iconTextureRepository.js";
-import { createPixiRenderCoordinator } from "./pixiRenderCoordinator.js";
+import { createDesktopPresentationLoop } from "./desktopPresentationLoop.js";
 import { createAppLaunchVisualCommitTracker } from "./appLaunchVisualCommit.js";
-import {
-  makeFolderInternalActivityRenderReason,
-  makeIconActionRenderReason,
-} from "./pixiRenderTriggers.js";
 import {
   installMotionRuntimeDebugAdapterFactory,
   motionRuntime,
@@ -80,7 +76,6 @@ import {
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
-import { createResizeSettleScheduler } from "./resizeSettleScheduler.js";
 import { assertDesktopSceneFrame } from "../sceneFrame.js";
 import { assertDesktopSceneRuntime } from "../sceneRuntime.js";
 import {
@@ -181,7 +176,7 @@ let app = null;
 let layer = null;
 let resizeObserver = null;
 let destroyed = false;
-let renderCoordinator = null;
+let presentationLoop = null;
 let appLaunchVisualCommitTracker = null;
 let renderProbe = null;
 let diagnosticHub = null;
@@ -190,14 +185,7 @@ let desktopDomGeometryCache = null;
 let pixiResizeSignature = "";
 let pixiTextResolution = null;
 let motionDebugOverlay = null;
-let unsubscribeMotionRuntimeRenderSignal = null;
-let desktopMotionRuntimeSuspended = false;
-let desktopFrameHandle = null;
-let desktopFrameLastTime = 0;
-let desktopMotionFrameNeedsRender = false;
-let desktopResizeLayoutSnapPending = false;
 let iconTextureSyncGeneration = 0;
-let resizeSettleScheduler = null;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
 
@@ -340,25 +328,10 @@ function syncPixiTextResolutionIfNeeded() {
   return syncPixiTextResolution(app.stage, resolution);
 }
 
-function getResizeSettleScheduler() {
-  if (resizeSettleScheduler) return resizeSettleScheduler;
-  resizeSettleScheduler = createResizeSettleScheduler({
-    defaultFrameCount: RESIZE_SETTLE_FRAMES,
-    onFrame: (reason) => {
-      invalidateDesktopDomGeometry();
-      refreshDesktopDomGeometry();
-      desktopResizeLayoutSnapPending = true;
-      requestRender(reason);
-    },
-  });
-  return resizeSettleScheduler;
-}
-
 function requestResizeSettle(reason = "resize", frameCount = RESIZE_SETTLE_FRAMES) {
-  if (destroyed) return false;
-  const didStart = getResizeSettleScheduler().request(reason, frameCount);
-  scheduleDesktopFrame();
-  return didStart;
+  if (destroyed || !presentationLoop) return false;
+  presentationLoop.requestResizeSettle({ frames: frameCount, reason });
+  return true;
 }
 
 function handleResize() {
@@ -852,151 +825,77 @@ function applyImmediateFolderSourceGhosting() {
   return true;
 }
 
-function cancelScheduledRenderPixi() {
-  renderCoordinator?.cancel();
-  resizeSettleScheduler?.reset?.();
-  if (desktopFrameHandle != null) {
-    window.cancelAnimationFrame?.(desktopFrameHandle);
-    desktopFrameHandle = null;
+function commitDesktopPresentationFrame({
+  frameIntervalMs,
+  invalidation,
+  mode,
+  reasons,
+  snapDesktopLayout,
+}) {
+  const frameStartedAt = nowMs();
+  const appLaunchCloseSessionId = visualFrame.value.appLaunchCloseSessionId ?? null;
+  const appLaunchCommitTracker = getAppLaunchVisualCommitTracker();
+  appLaunchCommitTracker.beforeRender({
+    scope: captureAppLaunchVisualScope(),
+    sessionId: appLaunchCloseSessionId,
+    snapshot: captureAppLaunchVisualSnapshot(),
+    target: captureAppLaunchCloseTarget(),
+  });
+  const previousPlan = layer?.lastDesktopRenderPlan || null;
+  const layerStartedAt = nowMs();
+  const result = renderPixi({ invalidation, snapDesktopLayout });
+  const layerMs = nowMs() - layerStartedAt;
+  let probeToken = null;
+  if (import.meta.env.DEV && result.didRender) {
+    probeToken = renderProbe?.beforeRender?.({
+      dragMeta: interactionFrame.value.dragMeta,
+      invalidation,
+      reasons,
+      renderer: app?.renderer,
+      hasLayerCapability: result.hasLayerCapability,
+    });
+    if (result.work?.fullPlanBuilds) {
+      renderProbe?.recordDesktopPlan?.(previousPlan, layer?.lastDesktopRenderPlan || null);
+    }
   }
-  desktopFrameLastTime = 0;
-  desktopResizeLayoutSnapPending = false;
-}
-
-function getRenderCoordinator() {
-  if (renderCoordinator) return renderCoordinator;
-  const requestFrame = typeof window.requestAnimationFrame === "function"
-    ? (callback) => window.requestAnimationFrame(callback)
-    : null;
-  const cancelFrame = typeof window.cancelAnimationFrame === "function"
-    ? (frame) => window.cancelAnimationFrame(frame)
-    : null;
-  renderCoordinator = createPixiRenderCoordinator({
-    cancelAnimationFrame: cancelFrame,
-    canRender: () => Boolean(!destroyed && app && layer && hostRef.value),
-    render: ({ reasons, invalidation }) => {
-      const frameStartedAt = nowMs();
-      const appLaunchCloseSessionId = visualFrame.value.appLaunchCloseSessionId ?? null;
-      const appLaunchCommitTracker = getAppLaunchVisualCommitTracker();
-      appLaunchCommitTracker.beforeRender({
-        scope: captureAppLaunchVisualScope(),
+  const gpuStartedAt = nowMs();
+  try {
+    app?.render?.();
+    runtimePerformanceMetrics.markOnce("scene.first-ready");
+    if (result.didRender) {
+      appLaunchCommitTracker.afterRender({
         sessionId: appLaunchCloseSessionId,
         snapshot: captureAppLaunchVisualSnapshot(),
-        target: captureAppLaunchCloseTarget(),
       });
-      const snapDesktopLayout = desktopResizeLayoutSnapPending;
-      const previousPlan = layer?.lastDesktopRenderPlan || null;
-      const layerStartedAt = nowMs();
-      const result = renderPixi({ invalidation, snapDesktopLayout });
-      const layerMs = nowMs() - layerStartedAt;
-      if (result.didRender && invalidation.requiresStructureUpdate) desktopResizeLayoutSnapPending = false;
-      let probeToken = null;
-      if (import.meta.env.DEV && result.didRender) {
-        probeToken = renderProbe?.beforeRender?.({
-          dragMeta: interactionFrame.value.dragMeta,
-          invalidation,
-          reasons,
-          renderer: app?.renderer,
-          hasLayerCapability: result.hasLayerCapability,
-        });
-        if (result.work?.fullPlanBuilds) {
-          renderProbe?.recordDesktopPlan?.(previousPlan, layer?.lastDesktopRenderPlan || null);
-        }
-      }
-      const gpuStartedAt = nowMs();
-      try {
-        app?.render?.();
-        runtimePerformanceMetrics.markOnce("scene.first-ready");
-        if (result.didRender) {
-          appLaunchCommitTracker.afterRender({
-            sessionId: appLaunchCloseSessionId,
-            snapshot: captureAppLaunchVisualSnapshot(),
-          });
-        }
-      } finally {
-        const gpuMs = nowMs() - gpuStartedAt;
-        const totalMs = nowMs() - frameStartedAt;
-        runtimePerformanceMetrics.record("render.frame.gpu", gpuMs);
-        runtimePerformanceMetrics.record("render.frame.layer", layerMs);
-        runtimePerformanceMetrics.record("render.frame.total", totalMs);
-        if (import.meta.env.DEV && result.didRender) {
-          renderProbe?.afterRender?.(probeToken);
-          renderProbe?.recordFrameWork?.({
-            counts: {
-              ...result.work,
-              gpuRenders: 1,
-            },
-            invalidation,
-            reasons,
-            timings: {
-              gpuMs,
-              layerMs,
-              totalMs,
-            },
-          });
-        }
-      }
-    },
-    requestAnimationFrame: requestFrame,
-  });
-  return renderCoordinator;
-}
-
-function shouldRunDesktopFrameLoop() {
-  return Boolean(
-    !destroyed &&
-    app &&
-    layer &&
-    hostRef.value &&
-    (
-      getRenderCoordinator().hasPendingRender() ||
-      resizeSettleScheduler?.hasPending?.() ||
-      motionRuntime.hasActiveWork?.() ||
-      shouldRunHandoffRenderLoop()
-    )
-  );
-}
-
-function runDesktopFrame(time) {
-  desktopFrameHandle = null;
-  if (!app || !layer || !hostRef.value || destroyed) {
-    desktopFrameLastTime = 0;
-    return;
+    }
+  } finally {
+    const gpuMs = nowMs() - gpuStartedAt;
+    const totalMs = nowMs() - frameStartedAt;
+    runtimePerformanceMetrics.record("render.frame.gpu", gpuMs);
+    runtimePerformanceMetrics.record("render.frame.layer", layerMs);
+    runtimePerformanceMetrics.record("render.frame.total", totalMs);
+    if (mode === "animation-frame" && frameIntervalMs > 0) {
+      runtimePerformanceMetrics.record("render.frame.interval", frameIntervalMs);
+    }
+    if (import.meta.env.DEV && result.didRender) {
+      renderProbe?.afterRender?.(probeToken);
+      renderProbe?.recordFrameWork?.({
+        counts: {
+          ...result.work,
+          beforeCompositeCommits: mode === "before-composite" ? 1 : 0,
+          gpuRenders: 1,
+        },
+        invalidation,
+        reasons,
+        timings: {
+          frameIntervalMs,
+          gpuMs,
+          layerMs,
+          totalMs,
+        },
+      });
+    }
   }
-
-  const frameTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
-  const deltaSeconds = desktopFrameLastTime
-    ? Math.max(0, (frameTime - desktopFrameLastTime) / 1000)
-    : 0;
-  desktopFrameLastTime = frameTime;
-
-  motionRuntime.step(deltaSeconds);
-  const coordinator = getRenderCoordinator();
-  resizeSettleScheduler?.consumeFrame?.();
-  if (desktopMotionFrameNeedsRender) {
-    coordinator.markRenderPending("motion-frame");
-    desktopMotionFrameNeedsRender = false;
-  }
-  if (shouldRunHandoffRenderLoop()) {
-    coordinator.markRenderPending("folder-handoff-loop");
-  }
-  coordinator.runPendingRender();
-
-  if (typeof window.requestAnimationFrame === "function" && shouldRunDesktopFrameLoop()) {
-    scheduleDesktopFrame();
-  } else {
-    desktopFrameLastTime = 0;
-  }
-}
-
-function scheduleDesktopFrame() {
-  if (desktopFrameHandle != null || destroyed || !app || !layer || !hostRef.value) return false;
-  if (typeof window.requestAnimationFrame === "function") {
-    desktopFrameHandle = window.requestAnimationFrame(runDesktopFrame);
-    return true;
-  }
-  runDesktopFrame(nowMs());
-  return true;
 }
 
 function requestRender(reason = "desktop-update", options = {}) {
@@ -1007,9 +906,12 @@ function requestRender(reason = "desktop-update", options = {}) {
       reason,
     });
   }
-  const didMark = getRenderCoordinator().markRenderPending(reason, options);
-  scheduleDesktopFrame();
-  return didMark;
+  if (!presentationLoop) return false;
+  presentationLoop.invalidate({
+    invalidateGeometry: options.invalidateGeometry === true,
+    reason,
+  });
+  return true;
 }
 
 function shouldRunHandoffRenderLoop() {
@@ -1027,7 +929,7 @@ function handleIconAction(action, event, item, source) {
   if (action === "remove") emitRemoveApp(item.id);
   if (action === "choose-icon") emitChooseAppIcon(item.id);
   if (action === "reset-icon") emitResetAppIcon(item.id);
-  requestRender(makeIconActionRenderReason(action));
+  requestRender(`icon-${action || "action"}`);
 }
 
 function requestContextMenuAtPointer(event) {
@@ -1038,7 +940,7 @@ function requestContextMenuAtPointer(event) {
 
 function handleFolderInternalActivity(active, folderId = null) {
   emitInternalActivity(Boolean(active), folderId);
-  requestRender(makeFolderInternalActivityRenderReason(active));
+  requestRender(active ? "folder-internal-active" : "folder-internal-idle");
 }
 
 function handleSingleStageFolderGeometryChange(geometry) {
@@ -1091,24 +993,14 @@ function destroyPixi(options = {}) {
   window.removeEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   resizeObserver?.disconnect();
   resizeObserver = null;
+  presentationLoop?.dispose();
+  presentationLoop = null;
   const currentApp = app;
   const currentLayer = layer;
   const currentOverlay = motionDebugOverlay;
   app = null;
   layer = null;
   motionDebugOverlay = null;
-  unsubscribeMotionRuntimeRenderSignal?.();
-  unsubscribeMotionRuntimeRenderSignal = null;
-  if (desktopMotionRuntimeSuspended) {
-    motionRuntime.resumeAutoTicker?.();
-    desktopMotionRuntimeSuspended = false;
-  }
-  desktopMotionFrameNeedsRender = false;
-  desktopResizeLayoutSnapPending = false;
-  resizeSettleScheduler?.reset?.();
-  cancelScheduledRenderPixi();
-  renderCoordinator?.destroy();
-  renderCoordinator = null;
   appLaunchVisualCommitTracker?.destroy();
   appLaunchVisualCommitTracker = null;
   invalidateDesktopDomGeometry();
@@ -1153,8 +1045,6 @@ onMounted(async () => {
     return;
   }
   app = nextApp;
-  motionRuntime.suspendAutoTicker?.();
-  desktopMotionRuntimeSuspended = true;
   layer = new DesktopLayer({
     renderCopy: pixiRenderCopy.value,
     onClosingFolderPointerDown: (folderId) => {
@@ -1180,21 +1070,22 @@ onMounted(async () => {
     },
   });
   app.stage.addChild(layer);
-  unsubscribeMotionRuntimeRenderSignal = motionRuntime.onRenderSignal((
-    activeAnimationCount,
-    writesLastFrame,
-    afterFrameFlushes,
-    reason
-  ) => {
-    desktopMotionFrameNeedsRender = Boolean(
-      Number(activeAnimationCount) > 0 ||
-      Number(afterFrameFlushes) > 0 ||
-      Number(writesLastFrame) > 0
-    );
-    if (reason && reason !== "frame") {
-      getRenderCoordinator().markRenderPending(`motion-${reason}`);
-    }
-    if (motionRuntime.hasActiveWork?.() || getRenderCoordinator().hasPendingRender()) scheduleDesktopFrame();
+  const requestAnimationFrame = window.requestAnimationFrame?.bind(window);
+  const cancelAnimationFrame = window.cancelAnimationFrame?.bind(window);
+  presentationLoop = createDesktopPresentationLoop({
+    canPresent: () => Boolean(!destroyed && app && layer && hostRef.value),
+    commit: commitDesktopPresentationFrame,
+    frameClock: {
+      cancel: cancelAnimationFrame,
+      now: nowMs,
+      request: requestAnimationFrame,
+    },
+    motionRuntime,
+    onResizeSettleFrame: () => {
+      invalidateDesktopDomGeometry();
+      refreshDesktopDomGeometry();
+    },
+    shouldRunHandoffFrame: shouldRunHandoffRenderLoop,
   });
   if (import.meta.env.DEV) {
     const [
@@ -1291,8 +1182,10 @@ watch(
       // A close commit changes the canvas ownership before Vue's next RAF.
       // Flush that structural handoff in the post-flush microtask so the
       // browser never composites the previous fully-open folder frame.
-      requestRender("folder-close-commit");
-      getRenderCoordinator().runPendingRender();
+      const committed = presentationLoop?.flushBeforeComposite({ reason: "folder-close-commit" }) ?? false;
+      if (!committed && !destroyed && app && layer && hostRef.value) {
+        throw new Error("Folder close could not commit before browser composition");
+      }
       return;
     }
     if (!isClosing) singleStageFolderClosingTitleStartOpacity.value = 1;

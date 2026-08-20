@@ -19,7 +19,6 @@ export type RenderInvalidationMark = Readonly<{
   lane: RenderInvalidationLane;
   reason: string;
   revision: number;
-  wasEmpty: boolean;
 }>;
 
 export type RenderInvalidationSnapshot = Readonly<{
@@ -82,6 +81,14 @@ export function classifyRenderInvalidation(
   return RENDER_INVALIDATION_LANES.STRUCTURE;
 }
 
+export function collectRenderInvalidationReasons(
+  snapshot: RenderInvalidationSnapshot,
+): readonly string[] {
+  const reasons: string[] = [];
+  for (const lane of snapshot.lanes) reasons.push(...(snapshot.reasons[lane] ?? []));
+  return reasons;
+}
+
 function createEmptySnapshot(): MutableRenderInvalidationSnapshot {
   return {
     lanes: [],
@@ -108,7 +115,6 @@ export function createRenderInvalidationLedger(): RenderInvalidationLedger {
     const normalized = normalizeReason(reason);
     const lane = classifyRenderInvalidation(normalized, options);
     let reasons = reasonsByLane.get(lane);
-    const wasEmpty = !reasons;
     if (!reasons) {
       reasons = new Set();
       reasonsByLane.set(lane, reasons);
@@ -116,7 +122,7 @@ export function createRenderInvalidationLedger(): RenderInvalidationLedger {
     reasons.add(normalized);
     revision += 1;
     revisionsByLane.set(lane, revision);
-    return { lane, reason: normalized, revision, wasEmpty };
+    return { lane, reason: normalized, revision };
   }
 
   function hasPending(): boolean {
