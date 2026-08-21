@@ -77,6 +77,7 @@ type DesktopSceneFrameValues = Readonly<{
   launchpadVisualTransform: SceneVisualTransform;
   pageGridMeasureStyle: ScenePageGridMeasureStyle;
   pageTrackScrub: ScenePageTrackScrub | null;
+  provisionalFolderRollback: SceneDataRecord | null;
   selectedAppIds: ReadonlySet<string>;
   showMissingLaunchTargetBadge: boolean;
   singleStageDiagnosticsOptions: SceneDataRecord | null;
@@ -115,6 +116,7 @@ const FRAME_FIELDS = Object.freeze({
     "isHomeRevealSettling",
     "isSearchMode",
     "isTextlessMode",
+    "provisionalFolderRollback",
     "selectedAppIds",
   ] as const),
   folder: Object.freeze([
@@ -296,6 +298,7 @@ const FIELD_VALIDATORS = {
   launchpadVisualTransform: requireVisualTransform,
   pageGridMeasureStyle: requirePageGridMeasureStyle,
   pageTrackScrub: requirePageTrackScrub,
+  provisionalFolderRollback: nullableRecord,
   selectedAppIds: requireStringSet,
   showMissingLaunchTargetBadge: requireBoolean,
   singleStageDiagnosticsOptions: nullableRecord,

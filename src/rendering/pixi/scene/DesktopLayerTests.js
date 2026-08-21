@@ -159,6 +159,7 @@ function makeLayer(DesktopLayer, pageTrack) {
   };
   layer.folderHandoffNode = null;
   layer.folderHandoffNodes = new Map();
+  layer.folderDropFrameSuppressedIds = new Set();
   layer.hasDesktopVisualAlpha = false;
   layer.hasDesktopVisualTransform = false;
   layer.hasFolderOverlayAlpha = false;
@@ -168,6 +169,7 @@ function makeLayer(DesktopLayer, pageTrack) {
   layer.pageTrack = pageTrack;
   layer.desktopClosingUnderlayLayer = makeTransformNode();
   layer.singleStageFolderLayer = makeTransformNode();
+  layer.singleStageFolderLayer.folderVisualSession = makeFolderVisualSession();
   layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
   layer.singleStageFolderLayer.hasVisibleFolderSubstitute = () => false;
   layer.visualOwnership = { snapshot: () => [] };
@@ -194,12 +196,26 @@ function makeFolderVisualSession(options = {}) {
   };
 }
 
+function makeDesktopHandoffState({
+  closingFolderIds = [],
+  openingSourceGhosted = () => false,
+  sourceGhostedFolderIds = [],
+} = {}) {
+  return {
+    folderClosingHandoffIds: new Set(closingFolderIds),
+    folderSourceGhostedIds: new Set(sourceGhostedFolderIds),
+    isFolderOpeningPreviewFrameGhosted: openingSourceGhosted,
+    singleStageFolderState: null,
+  };
+}
+
 function makeDesktopQuiescenceState(item = { id: "app-a", type: "app" }) {
   return {
     activePageIndex: 0,
     activePages: [[item]],
     desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
     deviceResolution: 1,
+    folderClosingHandoffIds: new Set(),
     folderPageSize: 9,
     folderSourceGhostedIds: new Set(),
     getDesktopPageRenderMode: () => "interactive",
@@ -230,6 +246,7 @@ function prepareLayerForDesktopQuiescenceTest(layer, item) {
   layer.markInteractiveBoundsDirty = () => {};
   layer.singleStageDiagnosticsLayer = { update() {} };
   layer.singleStageFolderLayer = {
+    folderVisualSession: makeFolderVisualSession(),
     getDesktopSourceGhostedIds: () => new Set(),
     hasVisibleFolderSubstitute: () => false,
   };
@@ -260,15 +277,12 @@ export async function runDesktopLayerTests() {
       value: { userAgent: "node.js" },
     });
   }
+  const { DesktopLayer } = await import("./DesktopLayer.js");
   const {
-    DesktopLayer,
-    normalizeDesktopHandoffState,
     resolveDesktopVisualAlpha,
     resolveLaunchpadVisualAlpha,
     resolveLaunchpadVisualTransform,
-    shouldFinishFolderHandoff,
-    shouldFinishFolderHandoffEntry,
-  } = await import("./DesktopLayer.js");
+  } = await import("./desktopRenderPlan.js");
   const {
     createIconBoundsRegistry,
     ICON_BOUNDS_KIND,
@@ -283,6 +297,12 @@ export async function runDesktopLayerTests() {
   } = await import("./visualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
   const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
+  const {
+    captureDesktopHandoffObservation,
+    mergeFolderIdSets,
+    shouldFinishFolderHandoff,
+    shouldFinishFolderHandoffEntry,
+  } = await import("./desktopHandoffState.js");
   const { Container } = await import("pixi.js");
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[DesktopLayer test failed] ${message}`);
@@ -987,22 +1007,86 @@ export async function runDesktopLayerTests() {
   }
 
   {
-    const normalized = normalizeDesktopHandoffState({
-      folderClosingHandoffId: "folder-a",
-      folderClosingHandoffIds: ["folder-b", "folder-c"],
-      folderSourceGhostedId: "folder-d",
-      folderSourceGhostedIds: new Set(["folder-e"]),
-    });
+    const item = { id: "single-observation-app", name: "Single Observation", type: "app" };
+    const layer = makeLayer(DesktopLayer, makePageTrack([]));
+    prepareLayerForDesktopQuiescenceTest(layer, item);
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.singleStageDiagnosticsLayer.update = () => {};
+    layer.dragHitDebugLayer = { update() {} };
+    let sessionSnapshotReads = 0;
+    let overlayOwnershipReads = 0;
+    let visualOwnershipReads = 0;
+    layer.singleStageFolderLayer.folderVisualSession = {
+      snapshot() {
+        sessionSnapshotReads += 1;
+        return { closing: null };
+      },
+    };
+    layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => {
+      overlayOwnershipReads += 1;
+      return new Set();
+    };
+    layer.visualOwnership = {
+      snapshot() {
+        visualOwnershipReads += 1;
+        return [];
+      },
+    };
 
-    assert(normalized.folderClosingHandoffIds instanceof Set, "closing handoff ids should normalize to a Set");
-    assert(normalized.folderClosingHandoffId === "folder-a", "closing handoff normalizer should preserve the legacy singular id as primary");
-    assert(normalized.folderClosingHandoffIds.has("folder-a"), "closing handoff normalizer should keep the legacy singular id");
-    assert(normalized.folderClosingHandoffIds.has("folder-b") && normalized.folderClosingHandoffIds.has("folder-c"), "closing handoff normalizer should keep array ids");
-    assert(normalized.folderSourceGhostedIds instanceof Set, "source ghosted ids should normalize to a Set");
-    assert(normalized.folderSourceGhostedId === "folder-d", "source ghosted normalizer should preserve the legacy singular id as primary");
-    assert(normalized.folderSourceGhostedIds.has("folder-d") && normalized.folderSourceGhostedIds.has("folder-e"), "source ghosted normalizer should merge singular and Set ids");
-    assert(!shouldFinishFolderHandoff({ folderClosingHandoffIds: ["folder-b"] }, { folderVisualSession: makeFolderVisualSession() }), "array closing handoff ids should keep the desktop handoff alive");
-    assert(!shouldFinishFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, null, "folder-a"), "legacy singular closing handoff id should keep its folder handoff alive");
+    layer.updateStructure(makeDesktopQuiescenceState(item));
+
+    assert(
+      sessionSnapshotReads === 1 && overlayOwnershipReads === 1 && visualOwnershipReads === 1,
+      "one desktop structural frame should share a single handoff and ownership observation across planning, ghosting, and reconciliation",
+    );
+  }
+
+  {
+    const canonicalIds = mergeFolderIdSets(
+      new Set(["folder-a"]),
+      ["folder-b", "folder-c"]
+    );
+    assert(canonicalIds.size === 3 && canonicalIds.has("folder-a"), "canonical handoff ids should compose without a singular compatibility field");
+    let singularRejected = false;
+    try {
+      mergeFolderIdSets("folder-a");
+    } catch (error) {
+      singularRejected = error instanceof TypeError;
+    }
+    assert(singularRejected, "singular folder ids should be rejected at the canonical Set boundary");
+    const emptyObservation = {
+      activeClosingFolderIds: new Set(),
+      desktopSourceGhostedIds: new Set(),
+      visibleSubstituteFolderIds: new Set(),
+    };
+    assert(
+      !shouldFinishFolderHandoff(
+        { folderClosingHandoffIds: new Set(["folder-b"]) },
+        emptyObservation
+      ),
+      "a canonical closing handoff Set should keep the desktop handoff alive"
+    );
+    assert(
+      !shouldFinishFolderHandoffEntry(
+        { folderClosingHandoffIds: new Set(["folder-a"]) },
+        emptyObservation,
+        "folder-a"
+      ),
+      "a canonical closing handoff entry should remain active"
+    );
+    const observed = captureDesktopHandoffObservation({
+      folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-a" }),
+      getDesktopSourceGhostedIds: () => new Set(["folder-b"]),
+      hasVisibleFolderSubstitute: (folderId) => folderId === "folder-c",
+    }, canonicalIds);
+    assert(
+      observed.activeClosingFolderIds.has("folder-a") &&
+        observed.desktopSourceGhostedIds.has("folder-b") &&
+        observed.visibleSubstituteFolderIds.has("folder-c"),
+      "one observation should capture every mutable folder-layer handoff fact used by the frame"
+    );
     {
       // A stale closing id keeps a never-revealed handoff entry alive while no
       // substitute covers the folder: reconcile must REVEAL it in place (real icon
@@ -1021,7 +1105,9 @@ export async function runDesktopLayerTests() {
       const entry = layer.getFolderHandoffEntry("folder-a");
       assert(folder.visualWrap.visible === false && entry.visualReleased !== true, "test setup: a fresh handoff entry hides the real icon");
 
-      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      layer.reconcileFolderHandoffEntry(makeDesktopHandoffState({
+        closingFolderIds: ["folder-a"],
+      }), entry);
       assert(layer.getFolderHandoffEntry("folder-a") === entry, "a stale-id orphan should be healed in place, not retired (avoids the recreate/flash loop)");
       assert(entry.visualReleased === true && folder.visualWrap.visible === true, "a stale-id orphan with no visible substitute should reveal the real folder icon");
     }
@@ -1041,7 +1127,9 @@ export async function runDesktopLayerTests() {
       layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
       const entry = layer.getFolderHandoffEntry("folder-a");
 
-      layer.reconcileFolderHandoffEntry({ folderClosingHandoffId: "folder-a" }, entry);
+      layer.reconcileFolderHandoffEntry(makeDesktopHandoffState({
+        closingFolderIds: ["folder-a"],
+      }), entry);
       assert(layer.getFolderHandoffEntry("folder-a") === entry && entry.visualReleased !== true && folder.visualWrap.visible === false, "a closing handoff with a visible substitute should keep the real icon hidden");
     }
 
@@ -1066,16 +1154,17 @@ export async function runDesktopLayerTests() {
       layer.ensureFolderHandoffNode("folder-a", folder, { x: 0, y: 0 }, { revealLabel: false });
       const entry = layer.getFolderHandoffEntry("folder-a");
 
-      assert(!layer.reconcileFolderHandoffEntry({}, entry), "in-flight desktop page motion should block handoff cleanup");
+      const handoffState = makeDesktopHandoffState();
+      assert(!layer.reconcileFolderHandoffEntry(handoffState, entry), "in-flight desktop page motion should block handoff cleanup");
       assert(entry.cleanupFrame == null, "blocked handoff cleanup should not schedule a cleanup frame");
       assert(folder.visualWrap.visible === false, "blocked handoff cleanup should keep real folder artwork hidden");
 
       layer.pageTrackMotion.control = { completed: true, released: false };
-      assert(!layer.reconcileFolderHandoffEntry({}, entry), "pageTrack geometry that has not reached target should still block cleanup");
+      assert(!layer.reconcileFolderHandoffEntry(handoffState, entry), "pageTrack geometry that has not reached target should still block cleanup");
       assert(entry.cleanupFrame == null, "target mismatch should keep the handoff entry alive");
 
       pageTrack.x = -480;
-      assert(layer.reconcileFolderHandoffEntry({}, entry), "settled desktop page motion should allow handoff cleanup");
+      assert(layer.reconcileFolderHandoffEntry(handoffState, entry), "settled desktop page motion should allow handoff cleanup");
       assert(entry.cleanupFrame?.cancelled === false, "settled handoff cleanup should schedule the normal cleanup frame");
       motionRuntime.flushAfterFrameForTests();
       assert(!layer.getFolderHandoffEntry("folder-a"), "settled cleanup frame should clear the handoff entry");
@@ -1111,7 +1200,7 @@ export async function runDesktopLayerTests() {
         ...makeDesktopQuiescenceState(folder),
         dragFolderHoverState: hoverState,
         dragFolderTargetId: folder.id,
-        folderClosingHandoffId: folder.id,
+        folderClosingHandoffIds: new Set([folder.id]),
         folderSourceGhostedIds: new Set([folder.id]),
       });
 
@@ -1152,6 +1241,7 @@ export async function runDesktopLayerTests() {
     layer.markInteractiveBoundsDirty = () => {};
     layer.singleStageDiagnosticsLayer = { update() {} };
     layer.singleStageFolderLayer = {
+      folderVisualSession: makeFolderVisualSession(),
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
@@ -1192,6 +1282,7 @@ export async function runDesktopLayerTests() {
         activePages: [[{ id: "search-result-app", name: "Search Result", type: "app" }]],
         desktopFrame: { height: 320, left: 0, top: 0, width: 480 },
         deviceResolution: 1,
+        folderClosingHandoffIds: new Set(),
         folderPageSize: 9,
         folderSourceGhostedIds: new Set(),
         getDesktopPageRenderMode: () => "interactive",
@@ -1334,13 +1425,18 @@ export async function runDesktopLayerTests() {
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: -1, y: 12 } }).scale === 0.01, "launchpad transform should clamp scale low");
     assert(resolveLaunchpadVisualTransform({ launchpadVisualTransform: { scale: 1.08, y: 12 } }).y === 12, "launchpad transform should preserve y offset");
     assert(resolveLaunchpadVisualTransform({}).scale === 1, "launchpad transform should default to identity scale");
-    assert(!shouldFinishFolderHandoff({}, { folderVisualSession: makeFolderVisualSession({ active: true }) }), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
-    assert(shouldFinishFolderHandoff({}, { folderVisualSession: makeFolderVisualSession({ active: false }) }), "idle state with no prop handoff should finish the desktop handoff");
-    assert(!shouldFinishFolderHandoff({ folderClosingHandoffId: "folder-1" }, { folderVisualSession: makeFolderVisualSession({ active: false }) }), "active prop handoff should keep the desktop handoff alive");
-    assert(!shouldFinishFolderHandoffEntry({}, { folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-1" }) }, "folder-1"), "matching Pixi activity should keep its folder handoff alive");
-    assert(!shouldFinishFolderHandoffEntry({}, { getDesktopSourceGhostedIds: () => new Set(["folder-1"]) }, "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
-    assert(!shouldFinishFolderHandoffEntry({}, { hasVisibleFolderSubstitute: () => true }, "folder-1"), "visible folder substitutes should keep their folder handoff alive");
-    assert(shouldFinishFolderHandoffEntry({}, { folderVisualSession: makeFolderVisualSession({ active: true, folderId: "folder-2" }), hasVisibleFolderSubstitute: () => false }, "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
+    const makeObservation = ({ active = [], source = [], visible = [] } = {}) => ({
+      activeClosingFolderIds: new Set(active),
+      desktopSourceGhostedIds: new Set(source),
+      visibleSubstituteFolderIds: new Set(visible),
+    });
+    assert(!shouldFinishFolderHandoff(makeDesktopHandoffState(), makeObservation({ active: ["folder-1"] })), "local Pixi handoff activity should keep the desktop handoff alive before the Vue bridge updates");
+    assert(shouldFinishFolderHandoff(makeDesktopHandoffState(), makeObservation()), "idle state with no prop handoff should finish the desktop handoff");
+    assert(!shouldFinishFolderHandoff(makeDesktopHandoffState({ closingFolderIds: ["folder-1"] }), makeObservation()), "active prop handoff should keep the desktop handoff alive");
+    assert(!shouldFinishFolderHandoffEntry(makeDesktopHandoffState(), makeObservation({ active: ["folder-1"] }), "folder-1"), "matching Pixi activity should keep its folder handoff alive");
+    assert(!shouldFinishFolderHandoffEntry(makeDesktopHandoffState(), makeObservation({ source: ["folder-1"] }), "folder-1"), "detached desktop source ownership should keep its folder handoff alive");
+    assert(!shouldFinishFolderHandoffEntry(makeDesktopHandoffState(), makeObservation({ visible: ["folder-1"] }), "folder-1"), "visible folder substitutes should keep their folder handoff alive");
+    assert(shouldFinishFolderHandoffEntry(makeDesktopHandoffState(), makeObservation({ active: ["folder-2"] }), "folder-1"), "different-folder Pixi activity should not keep an old handoff alive by itself");
 
     const actualLayer = new DesktopLayer({ iconBoundsRegistry: createIconBoundsRegistry() });
     assert(
@@ -1544,10 +1640,9 @@ export async function runDesktopLayerTests() {
     layer.iconNodes.set("folder-b", folderB);
     layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-b"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-b"],
+    }));
 
     assert(folderA.state.ghosted === true, "overlay-owned detached folder source should stay ghosted on the desktop");
     assert(folderB.state.ghosted === true, "Vue-owned opening folder source should stay ghosted on the desktop");
@@ -1555,10 +1650,7 @@ export async function runDesktopLayerTests() {
     assert(folderB.__folderSourceGhostedByOwnership === true, "Vue-owned source ghosting should be tracked as ownership");
 
     layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-a"]);
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
 
     assert(folderA.state.ghosted === true, "clearing folder B source ghosting should not reveal detached folder A");
     assert(folderB.state.ghosted === false, "clearing folder B source ghosting should reveal only folder B");
@@ -1570,16 +1662,10 @@ export async function runDesktopLayerTests() {
       kind: "detachedClosing",
       token: "detached-a",
     });
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
     assert(folderA.state.ghosted === true, "root ownership should ghost a detached desktop source");
     layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a");
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
     assert(folderA.state.ghosted === false, "root ownership release should restore the desktop source");
 
     layer.visualOwnership.acquire(makeDesktopSourceVisualKey("folder-a"), {
@@ -1587,10 +1673,9 @@ export async function runDesktopLayerTests() {
       kind: "detachedClosing",
       token: "detached-a-2",
     });
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-b"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-b"],
+    }));
     assert(folderA.state.ghosted === true && folderB.state.ghosted === true, "raw and ownership source ghosting should compose while both are active");
     layer.visualOwnership.release(makeDesktopSourceVisualKey("folder-a"), "detached-a-2");
     layer.commitFolderSourceGhosting();
@@ -1622,6 +1707,7 @@ export async function runDesktopLayerTests() {
     layer.markInteractiveBoundsDirty = () => {};
     layer.singleStageDiagnosticsLayer = { update() {} };
     layer.singleStageFolderLayer = {
+      folderVisualSession: makeFolderVisualSession(),
       getDesktopSourceGhostedIds: () => new Set(),
       hasVisibleFolderSubstitute: () => false,
     };
@@ -1651,6 +1737,7 @@ export async function runDesktopLayerTests() {
       ]],
       desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
       deviceResolution: 1,
+      folderClosingHandoffIds: new Set(),
       folderPageSize: 9,
       folderSourceGhostedIds: new Set(["folder-b"]),
       getDesktopPageRenderMode: () => "interactive",
@@ -1915,10 +2002,7 @@ export async function runDesktopLayerTests() {
     layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
     folder.__folderSourceGhostedByOwnership = true;
     folder.labelText.alpha = 0.4;
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
 
     assert(setStateCount === 0, "source ghosting commits should not use normal setState while a handoff entry owns the folder node");
     assert(folder.labelText.alpha === 0.4, "source ghosting commits should not force an in-progress handoff label fade to full opacity");
@@ -1943,20 +2027,16 @@ export async function runDesktopLayerTests() {
     layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
     assert(layer.getFolderHandoffEntry("folder-1"), "test setup should create a handoff entry");
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-1"],
+    }));
 
     assert(!layer.getFolderHandoffEntry("folder-1"), "new raw source ghosting should clear a stale handoff entry");
     assert(setStateCount === 1, "new raw source ghosting should be committed through normal icon state");
     assert(folder.state.ghosted === true && folder.visible === false, "new raw source ghosting should hide the real folder icon");
 
     const rememberedState = layer.lastFolderSourceGhostingState;
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    }, { remember: false });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState(), { remember: false });
     assert(layer.lastFolderSourceGhostingState === rememberedState, "immediate source ghosting should not replace the full remembered desktop state");
   }
 
@@ -1985,10 +2065,7 @@ export async function runDesktopLayerTests() {
       token: "close-folder-1",
     });
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
 
     assert(!layer.getFolderHandoffEntry("folder-1"), "ownership source ghosting should clear a released stale handoff entry");
     assert(setStateCount === 1, "ownership source ghosting should be committed through normal icon state after stale handoff cleanup");
@@ -2014,10 +2091,10 @@ export async function runDesktopLayerTests() {
     layer.releaseClosingFolderHandoffVisual("folder-1");
     assert(layer.getFolderHandoffEntry("folder-1")?.visualReleased === true, "test setup should leave a released stale handoff entry");
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: (folderId) => folderId === "folder-1",
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      openingSourceGhosted: (folderId) => folderId === "folder-1",
+      sourceGhostedFolderIds: ["folder-1"],
+    }));
 
     assert(!layer.getFolderHandoffEntry("folder-1"), "new opening source ghosting should clear a released stale handoff entry");
     assert(setStateCount === 1, "new opening source ghosting should be committed through normal icon state");
@@ -2045,10 +2122,10 @@ export async function runDesktopLayerTests() {
     folder.state = { ...folder.state, ghosted: false };
     folder.visible = true;
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: (folderId) => folderId === "folder-1",
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      openingSourceGhosted: (folderId) => folderId === "folder-1",
+      sourceGhostedFolderIds: ["folder-1"],
+    }));
 
     assert(!layer.getFolderHandoffEntry("folder-1"), "rapid reopen should retire the released closing handoff entry");
     assert(setStateCount === 1, "rapid reopen should reconcile the real icon even when ownership metadata already says ghosted");
@@ -2076,10 +2153,9 @@ export async function runDesktopLayerTests() {
     entry.cleanupFrame = { cancelled: false };
     assert(entry?.visualReleased === true, "test setup should leave a released close-tail handoff entry");
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-1"],
+    }));
 
     assert(layer.getFolderHandoffEntry("folder-1") === entry, "released close tail should keep the handoff entry until cleanup");
     assert(setStateCount === 0, "released close tail should not re-hide the real folder through ghosted state");
@@ -2110,10 +2186,7 @@ export async function runDesktopLayerTests() {
       token: "detached-folder-1",
     });
 
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState());
 
     assert(layer.getFolderHandoffEntry("folder-1"), "ownership source ghosting should keep an unreleased prepared handoff entry");
     assert(setStateCount === 0, "prepared handoff should not route ownership ghosting through normal setState");
@@ -2137,10 +2210,9 @@ export async function runDesktopLayerTests() {
     layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set(["folder-1"]);
 
     layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 }, { revealLabel: false });
-    layer.applyFolderSourceGhosting({
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    });
+    layer.applyFolderSourceGhosting(makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-1"],
+    }));
 
     assert(layer.getFolderHandoffEntry("folder-1"), "closing-owned raw source ghosting should keep the prepared handoff entry");
     assert(setStateCount === 0, "closing-owned prepared handoff should not fall back to normal ghosted setState");
@@ -2185,10 +2257,7 @@ export async function runDesktopLayerTests() {
 
       layer.ensureFolderHandoffNode("folder-1", folder, { x: 12, y: 34 });
       layer.releaseClosingFolderHandoffVisual("folder-1");
-      layer.lastFolderSourceGhostingState = {
-        folderSourceGhostedIds: new Set(),
-        isFolderOpeningPreviewFrameGhosted: () => false,
-      };
+      layer.lastFolderSourceGhostingState = makeDesktopHandoffState();
 
       layer.commitFolderSourceGhosting();
       assert(layer.getFolderHandoffEntry("folder-1")?.cleanupFrame?.cancelled === false, "source ghosting commit should schedule eligible handoff cleanup");
@@ -2248,17 +2317,13 @@ export async function runDesktopLayerTests() {
 
     layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set();
     layer.singleStageFolderLayer.hasVisibleFolderSubstitute = () => false;
-    layer.lastFolderSourceGhostingState = {
-      folderSourceGhostedIds: new Set(["folder-1"]),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    };
+    layer.lastFolderSourceGhostingState = makeDesktopHandoffState({
+      sourceGhostedFolderIds: ["folder-1"],
+    });
     assert(!layer.revealFolderHandoffLabelWhenSettled(layer.getFolderHandoffEntry("folder-1")), "raw Vue source ghosting should still suppress the handoff label reveal");
     assert(folder.labelRevealCount === 1 && folder.labelRestoreCount === 0, "raw Vue source ghosting should not restart an already released label fade");
 
-    layer.lastFolderSourceGhostingState = {
-      folderSourceGhostedIds: new Set(),
-      isFolderOpeningPreviewFrameGhosted: () => false,
-    };
+    layer.lastFolderSourceGhostingState = makeDesktopHandoffState();
     assert(layer.revealFolderHandoffLabelWhenSettled(layer.getFolderHandoffEntry("folder-1")), "settled source ownership should accept the already released label state");
     assert(folder.labelRevealCount === 1 && folder.labelRestoreCount === 0, "settled source ownership should not restart the released label fade");
   }
@@ -2396,6 +2461,32 @@ export async function runDesktopLayerTests() {
     const snapshot = layer.getFolderVisualDebugSnapshot();
 
     assert(snapshot.overlay.debug === overlayDebug, "folder visual debug snapshot should expose overlay geometry diagnostics");
+  }
+
+  {
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    let detachedFolderCount = 0;
+    layer.provisionalFolderRollbackLayer = {
+      hasHandledToken: (token) => token === 42,
+      snapshot: () => ({ active: false, token: null }),
+    };
+    layer.detachFolderNodeForProvisionalRollback = () => {
+      detachedFolderCount += 1;
+      return {};
+    };
+
+    const preparation = layer.prepareProvisionalFolderRollback({
+      provisionalFolderRollback: {
+        folderId: "folder-provisional",
+        phase: "dissolving",
+        targetAppId: "target-app",
+        token: 42,
+      },
+    });
+
+    assert(preparation === null, "a consumed rollback token should not restart after its visual layer completes");
+    assert(detachedFolderCount === 0, "a consumed rollback token should not detach the completed folder a second time");
   }
 
   {

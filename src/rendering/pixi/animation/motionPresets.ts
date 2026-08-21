@@ -1,4 +1,11 @@
 import { cubicBezier } from "./motionRuntime.js";
+import type { MotionEaseInput, MotionSpringConfig } from "./motionRuntime.js";
+
+export interface MotionPreset {
+  duration?: number;
+  ease?: MotionEaseInput;
+  spring?: Readonly<MotionSpringConfig>;
+}
 
 export const motionEases = Object.freeze({
   emphasized: cubicBezier(0.22, 1, 0.36, 1),
@@ -14,7 +21,7 @@ export const motionSprings = Object.freeze({
   snappy: Object.freeze({ damping: 34, mass: 0.82, restDelta: 0.01, restSpeed: 0.01, stiffness: 520 }),
 });
 
-export const motionPresets = Object.freeze({
+export const motionPresets: Readonly<Record<string, Readonly<MotionPreset>>> = Object.freeze({
   fade: Object.freeze({ duration: 0.16, ease: "power2.out" }),
   folderClose: Object.freeze({ duration: 0.34, ease: motionEases.material }),
   folderOpen: Object.freeze({ duration: 0.38, ease: "power3.out" }),
@@ -30,6 +37,6 @@ export const motionPresets = Object.freeze({
   snappy: Object.freeze({ spring: motionSprings.snappy }),
 });
 
-export function getMotionPreset(name, overrides = {}) {
+export function getMotionPreset(name: string, overrides: MotionPreset = {}): MotionPreset {
   return { ...(motionPresets[name] || {}), ...overrides };
 }

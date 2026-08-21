@@ -1,104 +1,143 @@
-import {
-  makeFolderIconNodeState,
-  makeFolderIconRenderPlan,
-  makeFolderIconTargetCenter,
-} from "./folderOverlayIconPlan.js";
+import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
+import * as iconVisualSpec from "./iconVisualSpec.js";
+
+function makeIconBehaviorPlan(overrides = {}) {
+  const item = overrides.item || {
+    customIconPath: "icon.png",
+    id: "app-1",
+    type: "app",
+  };
+  const geometry = {
+    grid: { width: 500 },
+    panel: { left: 100, top: 60 },
+  };
+  const metrics = {
+    cellHeight: 80,
+    cellWidth: 100,
+    cols: 1,
+    gapX: 0,
+    gapY: 0,
+    gridLeft: 30,
+    gridTop: 40,
+  };
+  const pageSpan = overrides.pageSpan ?? 500;
+  const textless = overrides.textless === true;
+  const interactive = overrides.interactive !== false;
+  return makeFolderOverlayRenderPlan({
+    frame: {
+      closingGhostKeys: new Set(["other-app"]),
+      focusedIcon: { area: "folder", folderId: "folder-1", id: item.id, pageIndex: 2 },
+      folderId: "folder-1",
+      folderPageIndex: 2,
+      folderPages: [[], [], [item]],
+      folderPageSize: 12,
+      getFolderPageRenderMode: (pageIndex) => pageIndex === 2
+        ? interactive ? "interactive" : "static-real"
+        : "empty",
+      getVisibleFolderPage: (page) => page,
+      groupDragState: overrides.groupDragState || {
+        phase: "dragging",
+        totalCount: 1,
+        visualSpec: null,
+      },
+      groupTransferOwnedItemIds: overrides.ownedItemIds || new Set([item.id]),
+      iconGesturePresentation: null,
+      iconSize: 56,
+      isBatchSelectionActive: false,
+      isEditMode: true,
+      isIconOpening: () => true,
+      isTextlessMode: textless,
+      launchTargetStatusById: { [item.id]: "missing" },
+      selectedAppIds: new Set(),
+      showMissingLaunchTargetBadge: true,
+      stageHeight: 900,
+      stageWidth: 1440,
+      visualFolderPageIndex: 2,
+    },
+    isNewFolder: false,
+    liveLayout: {
+      cols: 1,
+      geometry,
+      metrics,
+      pageSpan,
+      rows: 1,
+      trackX: -500,
+    },
+    stableLayout: {
+      closeTarget: null,
+      geometry,
+      metrics,
+      pageSpan,
+      trackX: -500,
+    },
+    transitions: {
+      closeThumbRect: null,
+      folderCloseIconGhosts: [],
+      folderOpenIconGhosts: [],
+      isClosing: false,
+      isFolderClosing: false,
+      openingGhostItemIds: new Set([item.id]),
+      previewSlots: [item],
+    },
+  });
+}
 
 export function runFolderOverlayIconPlanTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay icon plan test failed] ${message}`);
   };
 
-  const geometry = {
-    grid: { width: 500 },
-    panel: { left: 100, top: 60 },
-  };
-  const slot = { height: 80, left: 30, top: 40, width: 100 };
-  const plan = makeFolderIconRenderPlan({
-    folderId: "folder-1",
-    geometry,
-    index: 3,
-    item: { id: "app-1" },
-    pageIndex: 2,
-    slot,
+  const normalizedSpec = iconVisualSpec.makeIconVisualSpec({
+    cellHeight: 40,
+    cellWidth: "80",
+    compact: true,
+    iconSize: "56",
+    singleLineLabel: true,
+    textless: false,
   });
+  assert(normalizedSpec.iconSize === 56, "visual specs should accept finite numeric input at the dynamic boundary");
+  assert(normalizedSpec.cellHeight === 56 && normalizedSpec.cellWidth === 80, "visual spec cells should never be smaller than the icon");
+  assert(iconVisualSpec.makeIconVisualSpec({ iconSize: 0 }) === null, "invalid icon sizes should reject the visual spec");
+  assert(iconVisualSpec.makeIconVisualSpec(Symbol("invalid")) === null, "non-record visual inputs should be rejected without coercion");
+  assert(iconVisualSpec.makeIconVisualSpecKey(normalizedSpec) === "56:80:56:1:1:0", "visual spec keys should be stable and complete");
+  const interpolatedSpec = iconVisualSpec.interpolateIconVisualSpec(
+    { cellHeight: 64, cellWidth: 64, compact: false, iconSize: 48, singleLineLabel: false, textless: false },
+    { cellHeight: 96, cellWidth: 80, compact: true, iconSize: 64, singleLineLabel: true, textless: true },
+    0.5,
+  );
+  assert(interpolatedSpec.iconSize === 56 && interpolatedSpec.compact, "visual spec interpolation should blend dimensions and switch flags at midpoint");
+  assert(iconVisualSpec.hasIconVisualSpecMismatch(normalizedSpec, { ...normalizedSpec, iconSize: 57 }), "visual spec mismatch should detect numeric changes outside epsilon");
+  assert(!iconVisualSpec.hasIconVisualSpecMismatch(normalizedSpec, { ...normalizedSpec, iconSize: 56.4 }), "visual spec mismatch should tolerate sub-epsilon numeric changes");
+  assert(iconVisualSpec.hasIconVisualSpecMismatch(normalizedSpec, { ...normalizedSpec, textless: true }), "visual spec mismatch should detect boolean presentation changes");
+  assert(!("cloneIconVisualSpec" in iconVisualSpec), "the duplicate visual-spec clone path should not remain public");
 
-  assert(plan.key === "folder-1:app-1", "folder icon plan should use folder and item identity independently of page position");
-  assert(plan.x === 1080 && plan.y === 80, "folder icon plan should position items inside the paged grid");
-  assert(plan.source.type === "folder" && plan.source.folderId === "folder-1", "folder icon plan should build folder source metadata");
-  assert(plan.source.index === 3 && plan.source.slotIndex === 3 && plan.source.pageIndex === 2, "folder icon plan should preserve index metadata");
+  const plan = makeIconBehaviorPlan();
+  const [entry] = plan.entries;
+  assert(entry.key === "folder-1:app-1", "folder icon identity should stay independent of page position");
+  assert(entry.x === 1080 && entry.y === 80, "folder icons should be positioned inside the paged grid");
+  assert(entry.targetCenter.x === 680 && entry.targetCenter.y === 126, "target center should include panel, track, and normal visual offset");
+  assert(entry.nodeState.source.type === "folder" && entry.nodeState.source.folderId === "folder-1", "node source should retain folder identity");
+  assert(entry.nodeState.source.index === 0 && entry.nodeState.source.pageIndex === 2, "node source should retain page and slot metadata");
+  assert(entry.nodeState.cellWidth === 100 && entry.nodeState.cellHeight === 80, "node state should preserve slot dimensions");
+  assert(entry.nodeState.dragging && entry.nodeState.draggable && entry.nodeState.editing, "node state should preserve interactive drag/edit flags");
+  assert(entry.nodeState.ghosted, "owned or opening icons should be ghosted");
+  assert(entry.nodeState.hasCustomIcon && entry.nodeState.removable, "node state should derive app icon metadata");
+  assert(entry.nodeState.jiggleSeed === 200, "node state should derive a stable page/index jiggle seed");
+  assert(entry.nodeState.launchTargetStatus === "missing", "interactive entries should expose launch target status");
+  assert(entry.nodeState.opening && entry.nodeState.focused, "node state should preserve opening and focus lookups");
+  assert(entry.nodeState.stageWidth === 1440 && entry.nodeState.stageHeight === 900, "node state should preserve stage dimensions");
 
-  const panelSpacedPlan = makeFolderIconRenderPlan({
-    folderId: "folder-1",
-    geometry,
-    item: { id: "app-1" },
-    pageIndex: 2,
-    pageSpan: 620,
-    slot,
-  });
-  assert(panelSpacedPlan.x === 1320, "folder icon plan should allow page spacing wider than the icon grid");
+  const panelSpacedEntry = makeIconBehaviorPlan({ pageSpan: 620 }).entries[0];
+  assert(panelSpacedEntry.x === 1320, "folder layout should allow page spacing wider than the icon grid");
 
-  const normalTarget = makeFolderIconTargetCenter({
-    geometry,
-    isTextlessMode: false,
-    targetTrackX: -500,
-    x: plan.x,
-    y: plan.y,
-  });
-  assert(normalTarget.x === 680 && normalTarget.y === 126, "target center should include panel, track, and normal visual offset");
+  const textlessEntry = makeIconBehaviorPlan({ textless: true }).entries[0];
+  assert(textlessEntry.targetCenter.x === 680 && textlessEntry.targetCenter.y === 140, "textless target centers should remove the label visual offset");
 
-  const textlessTarget = makeFolderIconTargetCenter({
-    geometry,
-    isTextlessMode: true,
-    targetTrackX: -500,
-    x: plan.x,
-    y: plan.y,
-  });
-  assert(textlessTarget.x === 680 && textlessTarget.y === 140, "textless target center should remove the visual offset");
-
-  const nodeState = makeFolderIconNodeState({
-    closingGhostKeys: new Set(["other-app"]),
-    folderId: "folder-1",
-    folderPageSize: 12,
-    iconSize: 56,
-    isActiveDraggedItem: true,
-    isEditMode: true,
-    isIconOpening: (area, itemId, pageIndex, folderId) =>
-      area === "folder" && itemId === "app-1" && pageIndex === 2 && folderId === "folder-1",
-    isInteractivePage: true,
-    item: { customIconPath: "icon.png", id: "app-1", type: "app" },
-    launchTargetStatusById: { "app-1": "missing" },
-    openingGhostItemIds: new Set(["app-1"]),
-    pageIndex: 2,
-    showMissingLaunchTargetBadge: true,
-    focusedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
-    slot,
-    source: plan.source,
-    stageHeight: 900,
-    stageWidth: 1440,
-  });
-  assert(nodeState.cellWidth === 100 && nodeState.cellHeight === 80, "node state should preserve slot dimensions");
-  assert(nodeState.dragging && nodeState.draggable && nodeState.editing, "node state should preserve interactive drag/edit flags");
-  assert(nodeState.ghosted, "node state should ghost icons tracked by opening or closing ghost keys");
-  assert(nodeState.hasCustomIcon && nodeState.removable, "node state should derive app icon metadata");
-  assert(nodeState.jiggleSeed === 203, "node state should preserve the page/index jiggle seed");
-  assert(nodeState.launchTargetStatus === "missing", "node state should expose launch target status on interactive pages");
-  assert(nodeState.opening && nodeState.focused, "node state should preserve opening and focus lookups");
-  assert(nodeState.stageWidth === 1440 && nodeState.stageHeight === 900, "node state should preserve stage dimensions");
-
-  const inactiveState = makeFolderIconNodeState({
-    folderId: "folder-1",
-    isEditMode: true,
-    isIconOpening: () => true,
-    isInteractivePage: false,
-    item: { id: "app-1", type: "app" },
-    launchTargetStatusById: { "app-1": "missing" },
-    pageIndex: 2,
-    focusedIcon: { area: "folder", folderId: "folder-1", id: "app-1", pageIndex: 2 },
-    slot,
-    source: plan.source,
-  });
-  assert(!inactiveState.draggable && !inactiveState.editing, "inactive pages should not be draggable or editing");
-  assert(!inactiveState.opening && !inactiveState.selected, "inactive pages should suppress opening and selected state");
-  assert(inactiveState.launchTargetStatus === null, "inactive pages should suppress launch target status");
+  const inactiveEntry = makeIconBehaviorPlan({
+    interactive: false,
+    ownedItemIds: new Set(),
+  }).entries[0];
+  assert(!inactiveEntry.nodeState.draggable && !inactiveEntry.nodeState.editing, "inactive pages should not be draggable or editing");
+  assert(!inactiveEntry.nodeState.opening && !inactiveEntry.nodeState.focused, "inactive pages should suppress opening and focus state");
+  assert(inactiveEntry.nodeState.launchTargetStatus === null, "inactive pages should suppress launch target status");
 }

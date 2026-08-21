@@ -17,6 +17,7 @@ export function runFolderLayerStateTests() {
   const state = createFolderLayerState({
     callbacks,
     drag: {
+      groupDragState: { phase: "dragging" },
       meta: { active: true },
     },
     folder: {
@@ -65,6 +66,7 @@ export function runFolderLayerStateTests() {
   assert(state.width === 1 && state.height === 1, "stage dimensions should have a minimum size");
   assert(state.stageRect.left === 4 && state.stageRect.top === 5, "stage rect should be preserved");
   assert(state.iconSize === 52, "folder icon size should be parsed from panel style");
+  assert(state.groupDragState?.phase === "dragging", "the shared group drag snapshot should be forwarded");
   assert(state.dragMeta?.active === true, "the shared drag ownership snapshot should be forwarded");
   assert(state.desktopPageTrackOffset.liveX === -120 && state.desktopPageTrackOffset.targetX === -400, "desktop page track offset should be forwarded");
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");

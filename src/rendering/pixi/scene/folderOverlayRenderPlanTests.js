@@ -1,4 +1,79 @@
-import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
+import { makeFolderOverlayRenderPlan as makeProductionFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
+
+function makeFolderOverlayRenderPlan(options = {}) {
+  const geometry = options.geometry || {
+    grid: { width: 1 },
+    panel: { left: 0, top: 0 },
+  };
+  const metrics = options.localMetrics || {
+    cellHeight: 1,
+    cellWidth: 1,
+    cols: 1,
+    gapX: 0,
+    gapY: 0,
+    gridLeft: 0,
+    gridTop: 0,
+  };
+  const folderPageIndex = options.folderPageIndex ?? 0;
+  return makeProductionFolderOverlayRenderPlan({
+    frame: {
+      closingGhostKeys: options.closingGhostKeys || new Set(),
+      focusedIcon: options.focusedIcon || null,
+      folderId: options.folderId || "test-folder",
+      folderPageIndex,
+      folderPages: options.folderPages || [],
+      folderPageSize: options.folderPageSize ?? 0,
+      getFolderPageRenderMode: options.getFolderPageRenderMode || (() => "interactive"),
+      getVisibleFolderPage: options.getVisibleFolderPage || ((page) => page),
+      groupDragState: options.groupDragState
+        ? {
+          phase: null,
+          totalCount: 0,
+          visualSpec: null,
+          ...options.groupDragState,
+        }
+        : null,
+      groupTransferOwnedItemIds: new Set(options.groupTransferOwnedItemIds || []),
+      iconGesturePresentation: options.iconGesturePresentation || null,
+      iconSize: options.iconSize ?? 64,
+      isBatchSelectionActive: options.isBatchSelectionActive === true,
+      isEditMode: options.isEditMode === true,
+      isIconOpening: options.isIconOpening || null,
+      isTextlessMode: options.isTextlessMode === true,
+      launchTargetStatusById: options.launchTargetStatusById || {},
+      selectedAppIds: options.selectedAppIds || new Set(),
+      showMissingLaunchTargetBadge: options.showMissingLaunchTargetBadge !== false,
+      stageHeight: options.stageHeight ?? 1,
+      stageWidth: options.stageWidth ?? 1,
+      visualFolderPageIndex: options.visualFolderPageIndex ?? folderPageIndex,
+    },
+    isNewFolder: options.isNewFolder === true,
+    liveLayout: {
+      cols: options.cols ?? 1,
+      geometry,
+      metrics,
+      pageSpan: options.folderPageSpan ?? geometry.grid.width,
+      rows: options.rows ?? 1,
+      trackX: options.targetTrackX ?? 0,
+    },
+    stableLayout: {
+      closeTarget: options.stableFolderCloseTarget || null,
+      geometry: options.stableGeometry || geometry,
+      metrics: options.stableLocalMetrics || metrics,
+      pageSpan: options.stableFolderPageSpan ?? options.folderPageSpan ?? geometry.grid.width,
+      trackX: options.stableTargetTrackX ?? options.targetTrackX ?? 0,
+    },
+    transitions: {
+      closeThumbRect: options.closeThumbRect || null,
+      folderCloseIconGhosts: options.folderCloseIconGhosts || [],
+      folderOpenIconGhosts: options.folderOpenIconGhosts || [],
+      isClosing: options.isClosing === true,
+      isFolderClosing: options.isFolderClosing === true,
+      openingGhostItemIds: options.openingGhostItemIds || new Set(),
+      previewSlots: options.previewSlots || [],
+    },
+  });
+}
 
 export function runFolderOverlayRenderPlanTests() {
   const assert = (condition, message) => {
@@ -58,7 +133,12 @@ export function runFolderOverlayRenderPlanTests() {
   });
 
   assert(plan.entries.length === 2, "render plan should skip empty pages");
+  assert(!Object.prototype.hasOwnProperty.call(plan, "previewSlotById"), "preview-slot lookup should stay internal to planning");
   const [entryA, entryB] = plan.entries;
+  assert(!Object.prototype.hasOwnProperty.call(entryA, "iconPlan"), "entries should not expose an internal icon sub-plan");
+  assert(!Object.prototype.hasOwnProperty.call(entryA, "renderMode"), "entries should not repeat page render mode");
+  assert(!Object.prototype.hasOwnProperty.call(entryA, "slot"), "entries should not expose an unused grid slot");
+  assert(!Object.prototype.hasOwnProperty.call(entryA, "source"), "entries should not repeat node source metadata");
   assert(entryA.key === "folder-1:app-a", "entry should expose a page-independent folder icon key");
   assert(entryA.x === 70 && entryA.y === 70, "entry should expose folder-local icon coordinates");
   assert(entryA.nodeState.draggable && entryA.nodeState.editing, "interactive entries should keep draggable edit state");
@@ -145,8 +225,8 @@ export function runFolderOverlayRenderPlanTests() {
     localMetrics,
   });
   assert(
-    mismatchedSingleReturningPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === true,
-    "a single folder-child handoff with different target sizing should defer the target label",
+    mismatchedSingleReturningPlan.entries[0].nodeState.revealLabelAfterVisualHandoff === false,
+    "a labeled single-item actor should keep label continuity after its visual spec reaches the folder target",
   );
 
   const visualOpeningPlan = makeFolderOverlayRenderPlan({

@@ -30,9 +30,8 @@ type DesktopLayerStateValues = Readonly<{
   dragHitDebugState: SceneDataRecord | null;
   dragMeta: SceneDataRecord | null;
   focusedIcon: SceneFocusedIcon | null;
-  folderClosingHandoffId: string | null;
+  folderClosingHandoffIds: ReadonlySet<string>;
   folderPageSize: number;
-  folderSourceGhostedId: string | null;
   folderSourceGhostedIds: ReadonlySet<string>;
   getDesktopPageRenderMode: (pageIndex: number) => unknown;
   getVisibleDesktopPage: (page: readonly (SceneItem | null)[]) => readonly (SceneItem | null)[];
@@ -54,6 +53,7 @@ type DesktopLayerStateValues = Readonly<{
   launchpadVisualAlpha: number;
   launchpadVisualTransform: SceneVisualTransform;
   pageTrackScrub: ScenePageTrackScrub | null;
+  provisionalFolderRollback: SceneDataRecord | null;
   selectedAppIds: ReadonlySet<string>;
   setPageRef: (...args: unknown[]) => unknown;
   shouldSnapTrack: boolean;
@@ -80,9 +80,8 @@ const STRUCTURE_FIELDS = Object.freeze([
   "dragHitDebugState",
   "dragMeta",
   "focusedIcon",
-  "folderClosingHandoffId",
+  "folderClosingHandoffIds",
   "folderPageSize",
-  "folderSourceGhostedId",
   "folderSourceGhostedIds",
   "getDesktopPageRenderMode",
   "getVisibleDesktopPage",
@@ -103,6 +102,7 @@ const STRUCTURE_FIELDS = Object.freeze([
   "launchpadVisualAlpha",
   "launchpadVisualTransform",
   "pageTrackScrub",
+  "provisionalFolderRollback",
   "selectedAppIds",
   "setPageRef",
   "shouldSnapTrack",
@@ -117,9 +117,8 @@ const STRUCTURE_FIELDS = Object.freeze([
 const INTERACTION_FIELDS = Object.freeze([
   "deviceResolution",
   "dragFolderHoverState",
-  "folderClosingHandoffId",
+  "folderClosingHandoffIds",
   "folderPageSize",
-  "folderSourceGhostedId",
   "folderSourceGhostedIds",
   "gridCols",
   "gridRows",
@@ -129,6 +128,7 @@ const INTERACTION_FIELDS = Object.freeze([
   "isBatchSelectionActive",
   "isFolderOpeningPreviewFrameGhosted",
   "isTextlessMode",
+  "provisionalFolderRollback",
   "launchTargetStatusById",
   "showMissingLaunchTargetBadge",
   "singleStageFolderState",
@@ -157,8 +157,7 @@ const DIAGNOSTICS_FIELDS = Object.freeze([
 ] as const);
 
 const HANDOFF_FIELDS = Object.freeze([
-  "folderClosingHandoffId",
-  "folderSourceGhostedId",
+  "folderClosingHandoffIds",
   "folderSourceGhostedIds",
   "isFolderOpeningPreviewFrameGhosted",
 ] as const);

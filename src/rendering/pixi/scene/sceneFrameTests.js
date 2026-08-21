@@ -23,6 +23,7 @@ export function runSceneFrameTests() {
     selectedAppIds,
   });
   const runtime = makeDesktopSceneRuntimeAdapter({
+    completeProvisionalFolderRollback: () => true,
     domRefs: {},
     folderOverlayState: {},
     getDesktopPageRenderMode: () => "desktop",

@@ -209,7 +209,7 @@ function collectTargetTreeEntries(report = {}) {
       label,
       ...props,
       ...sourceLabels,
-      ...records.map(collectRecordText),
+      ...records.map((record) => collectRecordText(record)),
     ].filter(Boolean).join(" ").toLowerCase();
     return {
       activeCount: entry.animations.length,

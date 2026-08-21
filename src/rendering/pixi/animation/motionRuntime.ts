@@ -5,8 +5,467 @@ import {
   readNumber,
 } from "./motionTraceShared.js";
 
-let motionRuntimeDebugAdapterFactory = createMotionRuntimeDebugAdapter;
-const motionRuntimeDebugAdapterInstallers = new Set();
+export type MotionEase = (progress: number) => number;
+export type MotionEaseInput = MotionEase | string;
+export type MotionLane = "additive" | "base" | "factor";
+export type MotionInterruptPolicy = "auto" | "blend" | "ignore" | "replace" | "retarget";
+
+export interface MotionSpringConfig {
+  arriveDelta?: number;
+  damping?: number;
+  mass?: number;
+  restDelta?: number;
+  restSpeed?: number;
+  stiffness?: number;
+}
+
+export interface MotionTweenDriverOptions {
+  arriveDelta?: number | undefined;
+  duration?: number | undefined;
+  ease?: MotionEaseInput | undefined;
+  loop?: boolean | undefined;
+  repeat?: number | undefined;
+  yoyo?: boolean | undefined;
+}
+
+export interface MotionProgressDriverOptions {
+  completeAtEnd?: boolean | undefined;
+  ease?: MotionEaseInput | undefined;
+  progress?: number | undefined;
+}
+
+export interface MotionSpringDriver {
+  readonly config: Readonly<MotionSpringConfig>;
+  readonly type: "spring";
+}
+
+export interface MotionTweenDriver {
+  readonly options: Readonly<MotionTweenDriverOptions>;
+  readonly type: "tween";
+}
+
+export interface MotionProgressDriver {
+  options: MotionProgressDriverOptions;
+  readonly type: "progress";
+}
+
+export type MotionDriver = MotionProgressDriver | MotionSpringDriver | MotionTweenDriver;
+
+export interface MotionMilestoneContext {
+  readonly progress: number;
+  readonly prop: string;
+  readonly target: object;
+}
+
+export interface MotionMilestone {
+  readonly callback: (value: number, context: MotionMilestoneContext) => void;
+  readonly progress: number;
+}
+
+interface RuntimeMotionMilestone extends MotionMilestone {
+  fired: boolean;
+}
+
+interface MotionDebugLaneRecord extends MotionDebugRecord {
+  lane: MotionLane;
+  laneKey: string;
+  output: number;
+}
+
+interface MotionDebugChannelRecord extends MotionDebugRecord {
+  lanes: Record<MotionLane, string[]>;
+}
+
+export interface MotionClamp {
+  max: number;
+  min: number;
+}
+
+export interface MotionAnimationOptions {
+  blendDuration?: number | undefined;
+  blendEase?: MotionEaseInput | undefined;
+  clamp?: Partial<MotionClamp> | undefined;
+  delay?: number | undefined;
+  driver?: MotionDriver | undefined;
+  from?: number | undefined;
+  interrupt?: MotionInterruptPolicy | undefined;
+  lane?: MotionLane | undefined;
+  laneKey?: string | undefined;
+  milestones?: readonly MotionMilestone[] | undefined;
+  onArrive?: ((value: number) => void) | undefined;
+  onCancel?: ((reason: string) => void) | undefined;
+  onComplete?: (() => void) | undefined;
+  onUpdate?: ((value: number) => void) | undefined;
+  snap?: boolean | undefined;
+  velocity?: number | undefined;
+}
+
+export interface MotionStopOptions {
+  lane?: MotionLane | undefined;
+  laneKey?: string | undefined;
+  reason?: string | undefined;
+}
+
+export interface MotionCancelTargetOptions extends MotionStopOptions {
+  recursive?: boolean;
+}
+
+export interface MotionSettleOptions {
+  config?: MotionSpringConfig;
+  delay?: number;
+  driver?: MotionDriver;
+  midpoint?: number;
+  progress?: number;
+  spring?: MotionSpringConfig;
+  valueVelocity?: number;
+  velocity?: number;
+  velocityThreshold?: number;
+}
+
+export interface MotionChannel {
+  readonly activeBaseKey: string | null;
+  readonly additive: ReadonlyMap<string, MotionAnimationState>;
+  readonly base: ReadonlyMap<string, MotionAnimationState>;
+  readonly baseValue: number;
+  readonly clamp?: Readonly<MotionClamp>;
+  readonly factor: ReadonlyMap<string, MotionAnimationState>;
+  readonly prop: string;
+  readonly target: object;
+  readonly value: number;
+}
+
+export interface MotionAnimationState {
+  readonly arrived: boolean;
+  readonly blendDuration: number;
+  readonly blendEase: MotionEaseInput | undefined;
+  readonly blendElapsed: number;
+  readonly blendFrom: number | null;
+  readonly channel: MotionChannel;
+  readonly delay: number;
+  readonly done: boolean;
+  readonly driver: ReadonlyMotionDriver;
+  readonly elapsed: number;
+  readonly from: number;
+  readonly hasExplicitFrom: boolean;
+  readonly interrupt: MotionInterruptPolicy;
+  readonly lane: MotionLane;
+  readonly laneKey: string;
+  readonly milestones: readonly MotionMilestone[];
+  readonly onArrive: ((value: number) => void) | null | undefined;
+  readonly onCancel: ((reason: string) => void) | null | undefined;
+  readonly onComplete: (() => void) | null | undefined;
+  readonly onUpdate: ((value: number) => void) | null | undefined;
+  readonly prop: string;
+  readonly progress?: number;
+  readonly released: boolean;
+  readonly started: boolean;
+  readonly target: object;
+  readonly to: number;
+  readonly value: number;
+  readonly velocity: number;
+}
+
+export type ReadonlyMotionDriver =
+  | MotionSpringDriver
+  | MotionTweenDriver
+  | Readonly<{ options: Readonly<MotionProgressDriverOptions>; type: "progress" }>;
+
+interface RuntimeMotionChannel extends MotionChannel {
+  activeBaseKey: string | null;
+  additive: Map<string, RuntimeMotionAnimationState>;
+  base: Map<string, RuntimeMotionAnimationState>;
+  baseValue: number;
+  clamp?: MotionClamp;
+  factor: Map<string, RuntimeMotionAnimationState>;
+  value: number;
+}
+
+interface RuntimeMotionAnimationState extends MotionAnimationState {
+  arrived: boolean;
+  blendDuration: number;
+  blendEase: MotionEaseInput | undefined;
+  blendElapsed: number;
+  blendFrom: number | null;
+  channel: RuntimeMotionChannel;
+  delay: number;
+  done: boolean;
+  driver: MotionDriver;
+  elapsed: number;
+  from: number;
+  milestones: RuntimeMotionMilestone[];
+  onArrive: ((value: number) => void) | null | undefined;
+  onCancel: ((reason: string) => void) | null | undefined;
+  onComplete: (() => void) | null | undefined;
+  onUpdate: ((value: number) => void) | null | undefined;
+  progress?: number;
+  released: boolean;
+  started: boolean;
+  to: number;
+  value: number;
+  velocity: number;
+}
+
+export interface MotionAnimationControl {
+  readonly arrived: boolean;
+  cancel(reason?: string): void;
+  readonly completed: boolean;
+  readonly laneKey: string;
+  readonly progress: number | undefined;
+  release(): void;
+  readonly released: boolean;
+  reverse(): void;
+  setProgress(progress: number): void;
+  settle(options?: MotionSettleOptions): void;
+  readonly state: MotionAnimationState;
+  readonly value: number;
+  readonly velocity: number;
+}
+
+export type MotionRenderSignalReason =
+  | "arrive"
+  | "cancel"
+  | "complete"
+  | "debug-config"
+  | "frame"
+  | "frame-request"
+  | "motion"
+  | "release"
+  | "retarget"
+  | "settle"
+  | "snap"
+  | "start";
+
+export interface MotionRenderSignal {
+  readonly activeAnimationCount: number;
+  readonly afterFrameFlushes: number;
+  readonly frame: number;
+  readonly reason: MotionRenderSignalReason;
+  readonly timeMs: number;
+  readonly writesLastFrame: number;
+}
+
+export type MotionRenderSignalListener = (signal: MotionRenderSignal) => void;
+
+export interface MotionRenderSignalObserver {
+  handleRenderSignal(signal: MotionRenderSignal): void;
+}
+
+export interface MotionDebugRecordFilter {
+  eventTypes: string[];
+  includeEvents: boolean;
+  includeSamples: boolean;
+  kinds: string[];
+  layers: string[];
+  props: string[];
+  sourceLabels: string[];
+  sourceQuery: string;
+}
+
+export type MotionDebugRecordFilterInput = Readonly<Record<string, unknown>>;
+
+export interface MotionDebugConfig {
+  enabled: boolean;
+  maxEvents: number;
+  maxSamples: number;
+  overlayEnabled: boolean;
+  recordFilter: MotionDebugRecordFilter | null;
+  recordHistory: boolean;
+  recordWindowMs: number;
+  sampleHz: number;
+  timeScale: number;
+}
+
+export interface MotionDebugConfigPatch {
+  enabled?: boolean;
+  maxEvents?: number;
+  maxSamples?: number;
+  overlayEnabled?: boolean;
+  recordFilter?: MotionDebugRecordFilterInput | MotionDebugRecordFilter | false | null;
+  recordHistory?: boolean;
+  recordWindowMs?: number;
+  sampleHz?: number;
+  timeScale?: number;
+}
+
+export type MotionDebugMetadata = Readonly<Record<string, unknown>>;
+
+export interface MotionDebugRecord {
+  [key: string]: unknown;
+  activeAnimationCount?: number | undefined;
+  afterFrameFlushes?: number | undefined;
+  animations?: MotionDebugRecord[] | undefined;
+  blendDuration?: number | undefined;
+  blendProgress?: number | undefined;
+  delay?: number | undefined;
+  driver?: string | undefined;
+  frame?: number | undefined;
+  from?: number | undefined;
+  interrupt?: string | undefined;
+  kind?: string | undefined;
+  label?: string | undefined;
+  lane?: string | undefined;
+  laneKey?: string | undefined;
+  layer?: string | undefined;
+  prop?: string | undefined;
+  reason?: string | undefined;
+  released?: boolean | undefined;
+  sourceLabel?: string | undefined;
+  targetId?: number | null | undefined;
+  targetKind?: string | undefined;
+  targetLabel?: string | undefined;
+  timeMs?: number | undefined;
+  to?: number | undefined;
+  type?: string | undefined;
+  value?: number | undefined;
+  velocity?: number | undefined;
+  writesLastFrame?: number | undefined;
+}
+
+export interface MotionDebugSummary {
+  activeAnimationCount: number;
+  activeChannelCount: number;
+  activeTargetCount: number;
+  byDriver: Record<string, number>;
+  byLane: Record<string, number>;
+  byLaneKey: Record<string, number>;
+  byProp: Record<string, number>;
+  byTargetId: Record<string, number>;
+  warningCount?: number;
+}
+
+export interface MotionDebugCounters {
+  activeChannels: number;
+  activeTargets: number;
+  afterFrameFlushes: number;
+  canceled: number;
+  canceledByReason: Record<string, number>;
+  completed: number;
+  frames: number;
+  released: number;
+  started: number;
+  writes: number;
+  writesLastFrame: number;
+}
+
+export interface MotionDebugHistory {
+  events: MotionDebugRecord[];
+  samples: MotionDebugRecord[];
+}
+
+export interface MotionDebugSnapshot {
+  animations: MotionDebugRecord[];
+  channels?: MotionDebugRecord[];
+  counters: MotionDebugCounters;
+  history?: MotionDebugHistory;
+  summary: MotionDebugSummary;
+  targets?: MotionDebugRecord[];
+  warnings: MotionDebugRecord[];
+}
+
+export interface MotionDebugRuntimeState {
+  activeAnimationCount: number;
+  frames: number;
+  timeMs: number;
+}
+
+export interface MotionDebugReport extends MotionDebugSnapshot {
+  config: MotionDebugConfig;
+  curveStats?: MotionDebugRecord[];
+  history?: MotionDebugHistory;
+  runtime: MotionDebugRuntimeState;
+  version: 1;
+}
+
+export interface MotionDebugSnapshotOptions {
+  includeChannels?: boolean | undefined;
+  includeHistory?: boolean | undefined;
+  includeTargets?: boolean | undefined;
+}
+
+export interface MotionDebugReportOptions extends MotionDebugSnapshotOptions {
+  includeCurveStats?: boolean | undefined;
+}
+
+export interface MotionRuntimeDebugState {
+  animations: MotionDebugRecord[];
+  channels?: MotionDebugRecord[] | undefined;
+  runtime: MotionDebugRuntimeState;
+}
+
+export interface MotionDebugEvent extends MotionDebugRecord {
+  active?: boolean;
+  config?: MotionDebugConfig;
+  metadata?: MotionDebugMetadata | null;
+  record?: MotionDebugRecord;
+  target?: object;
+  type: string;
+}
+
+export type MotionDebugObserverListener = (event: MotionDebugEvent) => void;
+
+export interface MotionDebugObserver {
+  handleEvent(event: MotionDebugEvent): void;
+}
+
+export interface MotionRuntimeDebugAdapter {
+  clearHistory(): void;
+  configureDebug(patch?: MotionDebugConfigPatch): MotionDebugConfig;
+  readonly debug: MotionDebugCounters;
+  getConfig(): MotionDebugConfig;
+  isEnabled(): boolean;
+  makeReport(options?: MotionDebugReportOptions, currentState?: MotionRuntimeDebugState): MotionDebugReport;
+  makeSnapshot(options?: MotionDebugSnapshotOptions, currentState?: MotionRuntimeDebugState): MotionDebugSnapshot;
+  makeTargetMetadataRecord(targetId: number, metadata?: MotionDebugMetadata | null): MotionDebugRecord;
+  observe(event: MotionDebugEvent): void;
+  reset(): void;
+  resolveTarget(targetId: number, options?: { bounds?: boolean }): object | null;
+  shouldBuildSample(timeMs?: number): boolean;
+  shouldObserveSamples(): boolean;
+}
+
+export type MotionRuntimeDebugAdapterFactory = () => MotionRuntimeDebugAdapter;
+
+export interface MotionFrameScheduler {
+  cancelAnimationFrame(handle: number): void;
+  requestAnimationFrame(callback: (timeMs: number) => void): number;
+}
+
+export interface MotionRuntimeOptions {
+  autoStart?: boolean;
+  maxDeltaSeconds?: number;
+  scheduler?: Partial<MotionFrameScheduler>;
+  stepSeconds?: number;
+}
+
+export interface MotionRuntime {
+  addObserver(observer: MotionDebugObserver | MotionDebugObserverListener): () => void;
+  afterFrame(callback: () => void): void;
+  animate(target: object, prop: string, to: number, options?: MotionAnimationOptions): MotionAnimationControl | null;
+  cancelTarget(target: object, options?: MotionCancelTargetOptions): boolean;
+  clearDebugHistory(): void;
+  configureDebug(config?: MotionDebugConfigPatch): MotionDebugConfig;
+  readonly debug: MotionDebugCounters;
+  debugReport(options?: MotionDebugReportOptions): MotionDebugReport;
+  debugSnapshot(options?: MotionDebugSnapshotOptions): MotionDebugSnapshot;
+  describeTarget(target: object, metadata?: MotionDebugMetadata): MotionDebugRecord | null;
+  getChannel(target: object, prop: string): MotionChannel | null;
+  hasActiveWork(): boolean;
+  onRenderSignal(observer: MotionRenderSignalListener | MotionRenderSignalObserver): () => void;
+  recordCoordinationEvent(payload?: MotionDebugMetadata): void;
+  reset(): void;
+  resolveDebugTarget(targetId: number, options?: { bounds?: boolean }): object | null;
+  resumeAutoTicker(): void;
+  step(deltaSeconds?: number): void;
+  stop(target: object, prop: string, options?: MotionStopOptions): boolean;
+  suspendAutoTicker(): void;
+}
+
+interface MotionRuntimeTestControls {
+  flushAfterFrameForTests(): void;
+}
+
+let motionRuntimeDebugAdapterFactory: MotionRuntimeDebugAdapterFactory = createMotionRuntimeDebugAdapter;
+const motionRuntimeDebugAdapterInstallers = new Set<(factory: MotionRuntimeDebugAdapterFactory) => boolean>();
 
 const DEFAULT_MAX_DELTA_SECONDS = 0.05;
 const DEFAULT_STEP_SECONDS = 1 / 120;
@@ -24,7 +483,7 @@ const DEFAULT_SETTLE_SPRING = Object.freeze({
 const NEUTRAL_EPSILON = 0.0001;
 let nextLaneId = 1;
 
-export function installMotionRuntimeDebugAdapterFactory(factory) {
+export function installMotionRuntimeDebugAdapterFactory(factory: MotionRuntimeDebugAdapterFactory): boolean {
   if (typeof factory !== "function") return false;
   if (motionRuntimeDebugAdapterFactory === factory) return true;
   motionRuntimeDebugAdapterFactory = factory;
@@ -32,25 +491,25 @@ export function installMotionRuntimeDebugAdapterFactory(factory) {
   return true;
 }
 
-function nowMs() {
+function nowMs(): number {
   if (typeof performance !== "undefined" && typeof performance.now === "function") return performance.now();
   return Date.now();
 }
 
-function clamp01(value) {
+function clamp01(value: unknown): number {
   return clamp(readNumber(value), 0, 1);
 }
 
-function linear(t) {
+function linear(t: number): number {
   return t;
 }
 
-function normalizeInterrupt(policy) {
+function normalizeInterrupt(policy: MotionInterruptPolicy | undefined): MotionInterruptPolicy {
   if (policy === "blend" || policy === "ignore" || policy === "replace" || policy === "retarget") return policy;
   return "auto";
 }
 
-function normalizeMilestones(milestones) {
+function normalizeMilestones(milestones: readonly MotionMilestone[] | undefined): RuntimeMotionMilestone[] {
   if (!Array.isArray(milestones)) return [];
   return milestones
     .filter((milestone) => typeof milestone?.callback === "function")
@@ -62,7 +521,7 @@ function normalizeMilestones(milestones) {
     .sort((a, b) => a.progress - b.progress);
 }
 
-export const easing = Object.freeze({
+export const easing: Readonly<Record<string, MotionEase>> = Object.freeze({
   linear,
   "power1.out": (t) => 1 - (1 - t) ** 2,
   "power2.in": (t) => t * t * t,
@@ -72,16 +531,16 @@ export const easing = Object.freeze({
   "sine.inOut": (t) => -(Math.cos(Math.PI * t) - 1) / 2,
 });
 
-export function cubicBezier(x1, y1, x2, y2) {
+export function cubicBezier(x1: number, y1: number, x2: number, y2: number): MotionEase {
   // Newton iteration against x(t), with a bisection fallback for flat curves.
-  const sample = (a, b, c, t) => ((a * t + b) * t + c) * t;
+  const sample = (a: number, b: number, c: number, t: number): number => ((a * t + b) * t + c) * t;
   const ax = 1 - 3 * x2 + 3 * x1;
   const bx = 3 * x2 - 6 * x1;
   const cx = 3 * x1;
   const ay = 1 - 3 * y2 + 3 * y1;
   const by = 3 * y2 - 6 * y1;
   const cy = 3 * y1;
-  return (x) => {
+  return (x: number): number => {
     const target = clamp(readNumber(x), 0, 1);
     let t = target;
     for (let i = 0; i < 6; i += 1) {
@@ -104,44 +563,72 @@ export function cubicBezier(x1, y1, x2, y2) {
   };
 }
 
-export function resolveEase(ease) {
+export function resolveEase(ease: MotionEaseInput | undefined): MotionEase {
   if (typeof ease === "function") return ease;
   if (typeof ease === "string" && easing[ease]) return easing[ease];
   return linear;
 }
 
-export function spring(config = {}) {
+export function spring(config: Readonly<MotionSpringConfig> = {}): MotionSpringDriver {
   return Object.freeze({ config, type: "spring" });
 }
 
-export function tween(options = {}) {
+export function tween(options: MotionTweenDriverOptions = {}): MotionTweenDriver {
   return Object.freeze({ options, type: "tween" });
 }
 
-export function progressDriver(options = {}) {
+export function progressDriver(options: MotionProgressDriverOptions = {}): MotionProgressDriver {
   return { options: { progress: 0, ...options }, type: "progress" };
 }
 
-export function createMotionRuntime(options = {}) {
+function isMotionTarget(value: unknown): value is object {
+  return (typeof value === "object" && value !== null) || typeof value === "function";
+}
+
+function assertMotionTarget(value: unknown): asserts value is object {
+  if (!isMotionTarget(value)) throw new TypeError("Motion target must be a non-null object.");
+}
+
+function readTargetNumber(target: object, prop: string, fallback = 0): number {
+  return readNumber(Reflect.get(target, prop), fallback);
+}
+
+function writeTargetNumber(target: object, prop: string, value: number): void {
+  if (!Reflect.set(target, prop, value)) {
+    throw new TypeError(`Unable to write motion target property "${prop}".`);
+  }
+}
+
+function isDestroyedTarget(target: object): boolean {
+  return Boolean(Reflect.get(target, "destroyed"));
+}
+
+function readTargetChildren(target: object): object[] {
+  const children = Reflect.get(target, "children");
+  if (!Array.isArray(children)) return [];
+  return children.filter(isMotionTarget);
+}
+
+export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionRuntime {
   const scheduler = options.scheduler || globalThis;
   const autoStart = options.autoStart !== false;
   const maxDeltaSeconds = Math.max(0.001, readNumber(options.maxDeltaSeconds, DEFAULT_MAX_DELTA_SECONDS));
   const stepSeconds = Math.max(0.001, readNumber(options.stepSeconds, DEFAULT_STEP_SECONDS));
 
-  const targetChannels = new WeakMap();
-  const activeAnimations = new Set();
-  const afterFrameCallbacks = new Set();
-  const dirtyChannels = new Set();
-  const pendingUpdateAnimations = new Set();
-  const targetIds = new WeakMap();
-  let debugAdapter = motionRuntimeDebugAdapterFactory();
-  const observers = new Set();
-  const renderSignalObservers = new Set();
-  const activeAnimationScratch = [];
-  const afterFrameScratch = [];
-  const dirtyChannelScratch = [];
-  const pendingUpdateScratch = [];
-  let frameHandle = null;
+  const targetChannels = new WeakMap<object, Map<string, RuntimeMotionChannel>>();
+  const activeAnimations = new Set<RuntimeMotionAnimationState>();
+  const afterFrameCallbacks = new Set<() => void>();
+  const dirtyChannels = new Set<RuntimeMotionChannel>();
+  const pendingUpdateAnimations = new Set<RuntimeMotionAnimationState>();
+  const targetIds = new WeakMap<object, number>();
+  let debugAdapter: MotionRuntimeDebugAdapter = motionRuntimeDebugAdapterFactory();
+  const observers = new Set<MotionDebugObserver | MotionDebugObserverListener>();
+  const renderSignalObservers = new Set<MotionRenderSignalListener | MotionRenderSignalObserver>();
+  const activeAnimationScratch: RuntimeMotionAnimationState[] = [];
+  const afterFrameScratch: Array<() => void> = [];
+  const dirtyChannelScratch: RuntimeMotionChannel[] = [];
+  const pendingUpdateScratch: RuntimeMotionAnimationState[] = [];
+  let frameHandle: number | null = null;
   let frameCount = 0;
   let frameAfterFrameFlushes = 0;
   let lastFrameTime = 0;
@@ -150,7 +637,7 @@ export function createMotionRuntime(options = {}) {
   let autoTickerSuspended = 0;
   let writesLastFrame = 0;
 
-  function installDebugAdapter(factory = motionRuntimeDebugAdapterFactory) {
+  function installDebugAdapter(factory: MotionRuntimeDebugAdapterFactory = motionRuntimeDebugAdapterFactory): boolean {
     if (typeof factory !== "function") return false;
     const previousConfig = debugAdapter.getConfig?.() || {};
     const nextAdapter = factory();
@@ -161,8 +648,7 @@ export function createMotionRuntime(options = {}) {
 
   motionRuntimeDebugAdapterInstallers.add(installDebugAdapter);
 
-  function getTargetId(target) {
-    if (!target) return null;
+  function getTargetId(target: object): number {
     let id = targetIds.get(target);
     if (!id) {
       id = nextTargetId;
@@ -172,7 +658,7 @@ export function createMotionRuntime(options = {}) {
     return id;
   }
 
-  function emitMotionEvent(type, payload = {}) {
+  function emitMotionEvent(type: string, payload: Omit<MotionDebugEvent, "type"> = {}): void {
     if (!debugAdapter.isEnabled()) return;
     const event = { ...payload, type };
     debugAdapter.observe(event);
@@ -182,38 +668,51 @@ export function createMotionRuntime(options = {}) {
     }
   }
 
-  function addObserver(observer) {
+  function addObserver(observer: MotionDebugObserver | MotionDebugObserverListener): () => void {
     if (!observer || (typeof observer !== "function" && typeof observer.handleEvent !== "function")) {
-      return () => {};
+      throw new TypeError("Motion debug observer must be a function or implement handleEvent(event).");
     }
     observers.add(observer);
-    return () => observers.delete(observer);
+    return () => {
+      observers.delete(observer);
+    };
   }
 
-  function onRenderSignal(observer) {
+  function onRenderSignal(observer: MotionRenderSignalListener | MotionRenderSignalObserver): () => void {
     if (!observer || (typeof observer !== "function" && typeof observer.handleRenderSignal !== "function")) {
-      return () => {};
+      throw new TypeError(
+        "Motion render-signal observer must be a function or implement handleRenderSignal(signal).",
+      );
     }
     renderSignalObservers.add(observer);
-    return () => renderSignalObservers.delete(observer);
+    return () => {
+      renderSignalObservers.delete(observer);
+    };
   }
 
-  function emitRenderSignal(reason = "motion", options = {}) {
+  function emitRenderSignal(reason: MotionRenderSignalReason = "motion", options: Partial<MotionRenderSignal> = {}): void {
     if (!renderSignalObservers.size) return;
     const activeAnimationCount = Math.max(0, Math.floor(readNumber(options.activeAnimationCount, activeAnimations.size)));
     const afterFrameFlushes = Math.max(0, Math.floor(readNumber(options.afterFrameFlushes, frameAfterFrameFlushes)));
     const frame = Math.max(0, Math.floor(readNumber(options.frame, frameCount)));
     const timeMs = readNumber(options.timeMs, runtimeTimeMs);
     const writes = Math.max(0, Math.floor(readNumber(options.writesLastFrame, writesLastFrame)));
+    const signal: MotionRenderSignal = Object.freeze({
+      activeAnimationCount,
+      afterFrameFlushes,
+      frame,
+      reason,
+      timeMs,
+      writesLastFrame: writes,
+    });
     for (const observer of renderSignalObservers) {
-      if (typeof observer === "function") observer(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
-      else observer?.handleRenderSignal?.(activeAnimationCount, writes, afterFrameFlushes, reason, frame, timeMs);
+      if (typeof observer === "function") observer(signal);
+      else observer.handleRenderSignal(signal);
     }
   }
 
-  function rememberTarget(target, metadata = null) {
+  function rememberTarget(target: object, metadata: MotionDebugMetadata | null = null): number {
     const targetId = getTargetId(target);
-    if (targetId == null) return null;
     emitMotionEvent("targetMetadata", {
       metadata,
       record: debugAdapter.makeTargetMetadataRecord(targetId, metadata),
@@ -223,7 +722,10 @@ export function createMotionRuntime(options = {}) {
     return targetId;
   }
 
-  function makeDebugAnimationRecord(animation, options = {}) {
+  function makeDebugAnimationRecord(
+    animation: RuntimeMotionAnimationState,
+    options: { emitTargetMetadata?: boolean } = {},
+  ): MotionDebugRecord {
     const targetId = options.emitTargetMetadata === false
       ? getTargetId(animation.target)
       : rememberTarget(animation.target);
@@ -248,7 +750,11 @@ export function createMotionRuntime(options = {}) {
     };
   }
 
-  function makeDebugEvent(type, animation, extra = {}) {
+  function makeDebugEvent(
+    type: string,
+    animation: RuntimeMotionAnimationState,
+    extra: { reason?: string; value?: number } = {},
+  ): MotionDebugRecord {
     const record = makeDebugAnimationRecord(animation);
     const event = {
       frame: frameCount,
@@ -261,7 +767,11 @@ export function createMotionRuntime(options = {}) {
     return event;
   }
 
-  function recordDebugEvent(type, animation, extra) {
+  function recordDebugEvent(
+    type: string,
+    animation: RuntimeMotionAnimationState,
+    extra?: { reason?: string; value?: number },
+  ): void {
     if (!debugAdapter.isEnabled()) return;
     const event = makeDebugEvent(type, animation, extra);
     emitMotionEvent(type, {
@@ -272,7 +782,7 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  function recordCoordinationEvent(payload = {}) {
+  function recordCoordinationEvent(payload: MotionDebugMetadata = {}): void {
     if (!debugAdapter.isEnabled()) return;
     const sanitized = sanitizeDebugMetadata(payload);
     const action = String(sanitized.action || "coordination");
@@ -305,13 +815,20 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  function recordMotionLifecycle(type, animation, extra) {
+  function recordMotionLifecycle(
+    type: MotionRenderSignalReason,
+    animation: RuntimeMotionAnimationState,
+    extra?: { reason?: string; value?: number },
+  ): void {
     emitRenderSignal(type);
     recordDebugEvent(type, animation, extra);
   }
 
-  function makeDebugLaneRecord(animation, options = {}) {
-    const record = {
+  function makeDebugLaneRecord(
+    animation: RuntimeMotionAnimationState,
+    options: { emitTargetMetadata?: boolean } = {},
+  ): MotionDebugLaneRecord {
+    const record: MotionDebugLaneRecord = {
       driver: animation.driver?.type || "spring",
       from: animation.from,
       interrupt: animation.interrupt,
@@ -330,13 +847,21 @@ export function createMotionRuntime(options = {}) {
     return record;
   }
 
-  function makeChannelBreakdown(channel, options = {}) {
+  function makeChannelBreakdown(
+    channel: RuntimeMotionChannel,
+    options: { emitTargetMetadata?: boolean } = {},
+  ): Record<string, unknown> {
     const baseLanes = Array.from(channel.base.values()).map((animation) => makeDebugLaneRecord(animation, options));
     const additiveLanes = Array.from(channel.additive.values()).map((animation) => makeDebugLaneRecord(animation, options));
     const factorLanes = Array.from(channel.factor.values()).map((animation) => makeDebugLaneRecord(animation, options));
     const additiveValue = additiveLanes.reduce((total, lane) => total + lane.output, 0);
     const factorValue = factorLanes.reduce((total, lane) => total * lane.output, 1);
     const unclampedValue = (channel.baseValue + additiveValue) * factorValue;
+    const composed: Record<string, unknown> = {
+      formula: "(base + additive) * factor",
+      unclampedValue,
+      value: channel.value,
+    };
     const breakdown = {
       additive: {
         lanes: additiveLanes,
@@ -347,11 +872,7 @@ export function createMotionRuntime(options = {}) {
         lanes: baseLanes,
         value: channel.baseValue,
       },
-      composed: {
-        formula: "(base + additive) * factor",
-        unclampedValue,
-        value: channel.value,
-      },
+      composed,
       factor: {
         lanes: factorLanes,
         value: factorValue,
@@ -361,8 +882,10 @@ export function createMotionRuntime(options = {}) {
     return breakdown;
   }
 
-  function makeDebugChannelRecords(options = {}) {
-    const channels = new Map();
+  function makeDebugChannelRecords(
+    options: { emitTargetMetadata?: boolean } = {},
+  ): MotionDebugChannelRecord[] {
+    const channels = new Map<string, MotionDebugChannelRecord>();
     for (const animation of activeAnimations) {
       const targetId = options.emitTargetMetadata === false
         ? getTargetId(animation.target)
@@ -387,7 +910,7 @@ export function createMotionRuntime(options = {}) {
     return Array.from(channels.values());
   }
 
-  function recordDebugSample() {
+  function recordDebugSample(): void {
     emitRenderSignal("frame", {
       activeAnimationCount: activeAnimations.size,
       afterFrameFlushes: frameAfterFrameFlushes,
@@ -417,11 +940,11 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  function clearDebugHistory() {
+  function clearDebugHistory(): void {
     debugAdapter.clearHistory();
   }
 
-  function configureDebug(config = {}) {
+  function configureDebug(config: MotionDebugConfigPatch = {}): MotionDebugConfig {
     const hasPatch = Boolean(config && typeof config === "object" && Object.keys(config).length);
     const nextConfig = debugAdapter.configureDebug(config);
     if (hasPatch) {
@@ -431,19 +954,18 @@ export function createMotionRuntime(options = {}) {
     return nextConfig;
   }
 
-  function describeTarget(target, metadata = {}) {
-    if (!target) return null;
+  function describeTarget(target: object, metadata: MotionDebugMetadata = {}): MotionDebugRecord {
     const targetId = getTargetId(target);
     const record = { targetId, ...sanitizeDebugMetadata(metadata) };
     emitMotionEvent("targetMetadata", { metadata, record, target, targetId });
     return { ...record };
   }
 
-  function resolveDebugTarget(targetId, options = {}) {
+  function resolveDebugTarget(targetId: number, options: { bounds?: boolean } = {}): object | null {
     return debugAdapter.resolveTarget(targetId, options);
   }
 
-  function getTargetMap(target, create = false) {
+  function getTargetMap(target: object, create = false): Map<string, RuntimeMotionChannel> | undefined {
     let targetMap = targetChannels.get(target);
     if (!targetMap && create) {
       targetMap = new Map();
@@ -452,7 +974,7 @@ export function createMotionRuntime(options = {}) {
     return targetMap;
   }
 
-  function getChannel(target, prop, create = false) {
+  function getChannel(target: object, prop: string, create = false): RuntimeMotionChannel | null {
     const targetMap = getTargetMap(target, create);
     if (!targetMap) return null;
     let channel = targetMap.get(prop);
@@ -461,18 +983,18 @@ export function createMotionRuntime(options = {}) {
         additive: new Map(),
         activeBaseKey: null,
         base: new Map(),
-        baseValue: readNumber(target[prop]),
+        baseValue: readTargetNumber(target, prop),
         factor: new Map(),
         prop,
         target,
-        value: readNumber(target[prop]),
+        value: readTargetNumber(target, prop),
       };
       targetMap.set(prop, channel);
     }
-    return channel;
+    return channel ?? null;
   }
 
-  function cleanupChannel(channel) {
+  function cleanupChannel(channel: RuntimeMotionChannel | null): void {
     if (!channel || channel.base.size || channel.additive.size || channel.factor.size) return;
     const targetMap = targetChannels.get(channel.target);
     if (targetMap?.get(channel.prop) === channel) {
@@ -481,7 +1003,7 @@ export function createMotionRuntime(options = {}) {
     }
   }
 
-  function getAnimationOutputValue(animation) {
+  function getAnimationOutputValue(animation: RuntimeMotionAnimationState): number {
     if (!animation) return 0;
     const duration = Math.max(0, readNumber(animation.blendDuration));
     if (animation.blendFrom == null || duration <= 0) return animation.value;
@@ -491,14 +1013,14 @@ export function createMotionRuntime(options = {}) {
     return animation.blendFrom + (animation.value - animation.blendFrom) * eased;
   }
 
-  function advanceBlend(animation, deltaSeconds) {
-    if (animation?.blendFrom == null) return;
+  function advanceBlend(animation: RuntimeMotionAnimationState, deltaSeconds: number): void {
+    if (animation.blendFrom == null) return;
     animation.blendElapsed = Math.min(animation.blendDuration, readNumber(animation.blendElapsed) + deltaSeconds);
   }
 
-  function composeChannel(channel) {
+  function composeChannel(channel: RuntimeMotionChannel): number {
     dirtyChannels.delete(channel);
-    if (channel.target?.destroyed) {
+    if (isDestroyedTarget(channel.target)) {
       cleanupChannel(channel);
       return channel.value;
     }
@@ -507,20 +1029,20 @@ export function createMotionRuntime(options = {}) {
     for (const animation of channel.factor.values()) value *= getAnimationOutputValue(animation);
     if (channel.clamp) value = clamp(value, channel.clamp.min, channel.clamp.max);
     channel.value = value;
-    channel.target[channel.prop] = value;
+    writeTargetNumber(channel.target, channel.prop, value);
     writesLastFrame += 1;
     return value;
   }
 
-  function markChannelDirty(channel) {
-    if (channel) dirtyChannels.add(channel);
+  function markChannelDirty(channel: RuntimeMotionChannel): void {
+    dirtyChannels.add(channel);
   }
 
-  function queueAnimationUpdate(animation) {
-    if (animation?.onUpdate) pendingUpdateAnimations.add(animation);
+  function queueAnimationUpdate(animation: RuntimeMotionAnimationState): void {
+    if (animation.onUpdate) pendingUpdateAnimations.add(animation);
   }
 
-  function setChannelLane(channel, animation) {
+  function setChannelLane(channel: RuntimeMotionChannel, animation: RuntimeMotionAnimationState): void {
     if (animation.lane === "base") {
       channel.base.set(animation.laneKey, animation);
       channel.activeBaseKey = animation.laneKey;
@@ -530,13 +1052,13 @@ export function createMotionRuntime(options = {}) {
     collection.set(animation.laneKey, animation);
   }
 
-  function chooseFallbackBase(channel) {
-    let fallback = null;
+  function chooseFallbackBase(channel: RuntimeMotionChannel): RuntimeMotionAnimationState | null {
+    let fallback: RuntimeMotionAnimationState | null = null;
     for (const animation of channel.base.values()) fallback = animation;
     return fallback;
   }
 
-  function clearChannelLane(animation, options = {}) {
+  function clearChannelLane(animation: RuntimeMotionAnimationState, options: { compose?: boolean } = {}): void {
     const channel = animation.channel;
     if (!channel) return;
     if (animation.lane === "base") {
@@ -555,18 +1077,18 @@ export function createMotionRuntime(options = {}) {
     cleanupChannel(channel);
   }
 
-  function addActiveAnimation(animation) {
+  function addActiveAnimation(animation: RuntimeMotionAnimationState): void {
     activeAnimations.add(animation);
     recordMotionLifecycle("start", animation);
     ensureTicker();
   }
 
-  function removeActiveAnimation(animation) {
+  function removeActiveAnimation(animation: RuntimeMotionAnimationState): void {
     activeAnimations.delete(animation);
   }
 
-  function cancelAnimation(animation, reason = "cancel") {
-    if (!animation || animation.done) return;
+  function cancelAnimation(animation: RuntimeMotionAnimationState, reason = "cancel"): void {
+    if (animation.done) return;
     animation.done = true;
     removeActiveAnimation(animation);
     pendingUpdateAnimations.delete(animation);
@@ -575,8 +1097,8 @@ export function createMotionRuntime(options = {}) {
     animation.onCancel?.(reason);
   }
 
-  function completeAnimation(animation, finalValue = animation.to) {
-    if (!animation || animation.done) return;
+  function completeAnimation(animation: RuntimeMotionAnimationState, finalValue = animation.to): void {
+    if (animation.done) return;
     animation.done = true;
     pendingUpdateAnimations.delete(animation);
     animation.value = finalValue;
@@ -596,14 +1118,14 @@ export function createMotionRuntime(options = {}) {
     animation.onComplete?.();
   }
 
-  function scheduleFrame() {
+  function scheduleFrame(): void {
     if (
       !autoStart ||
       autoTickerSuspended > 0 ||
       frameHandle != null ||
       typeof scheduler.requestAnimationFrame !== "function"
     ) return;
-    frameHandle = scheduler.requestAnimationFrame((time) => {
+    frameHandle = scheduler.requestAnimationFrame((time: number) => {
       frameHandle = null;
       const nextTime = Number.isFinite(Number(time)) ? Number(time) : nowMs();
       if (!lastFrameTime) lastFrameTime = nextTime;
@@ -615,28 +1137,34 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  function ensureTicker() {
+  function ensureTicker(): void {
     if (activeAnimations.size || afterFrameCallbacks.size) scheduleFrame();
   }
 
-  function stopTicker() {
+  function stopTicker(): void {
     if (frameHandle == null || typeof scheduler.cancelAnimationFrame !== "function") return;
     scheduler.cancelAnimationFrame(frameHandle);
     frameHandle = null;
     lastFrameTime = 0;
   }
 
-  function makeAnimation(target, prop, to, animationOptions = {}) {
+  function makeAnimation(
+    target: object,
+    prop: string,
+    to: number,
+    animationOptions: MotionAnimationOptions = {},
+  ): RuntimeMotionAnimationState {
     const lane = animationOptions.lane || "base";
     const channel = getChannel(target, prop, true);
+    if (!channel) throw new Error("Motion channel creation failed.");
     const current = lane === "base"
-      ? readNumber(target[prop], channel.baseValue)
+      ? readTargetNumber(target, prop, channel.baseValue)
       : lane === "factor"
         ? 1
         : 0;
     const from = readNumber(animationOptions.from, current);
     const driver = animationOptions.driver || spring();
-    const animation = {
+    const animation: RuntimeMotionAnimationState = {
       arrived: false,
       channel,
       delay: Math.max(0, readNumber(animationOptions.delay)),
@@ -674,17 +1202,17 @@ export function createMotionRuntime(options = {}) {
     return animation;
   }
 
-  function isEmptySpringAnimation(animation) {
+  function isEmptySpringAnimation(animation: RuntimeMotionAnimationState): boolean {
     if (animation.driver?.type !== "spring") return false;
     if (animation.delay > 0) return false;
     if (animation.onUpdate || animation.milestones.length) return false;
-    const current = readNumber(animation.target?.[animation.prop], animation.from);
+    const current = readTargetNumber(animation.target, animation.prop, animation.from);
     return Math.abs(animation.from - animation.to) <= NEUTRAL_EPSILON &&
       Math.abs(current - animation.to) <= NEUTRAL_EPSILON &&
       Math.abs(animation.velocity) <= NEUTRAL_EPSILON;
   }
 
-  function finishEmptySpringAnimation(animation) {
+  function finishEmptySpringAnimation(animation: RuntimeMotionAnimationState): null {
     animation.done = true;
     animation.value = animation.to;
     animation.arrived = true;
@@ -695,7 +1223,10 @@ export function createMotionRuntime(options = {}) {
     return null;
   }
 
-  function replaceExistingLane(channel, animation) {
+  function replaceExistingLane(
+    channel: RuntimeMotionChannel,
+    animation: RuntimeMotionAnimationState,
+  ): RuntimeMotionAnimationState | null {
     const existing = animation.lane === "base"
       ? channel.base.get(animation.laneKey)
       : animation.lane === "factor"
@@ -753,8 +1284,14 @@ export function createMotionRuntime(options = {}) {
     return null;
   }
 
-  function animate(target, prop, to, animationOptions = {}) {
-    if (!target || !prop) return null;
+  function animate(
+    target: object,
+    prop: string,
+    to: number,
+    animationOptions: MotionAnimationOptions = {},
+  ): MotionAnimationControl | null {
+    assertMotionTarget(target);
+    if (!prop) throw new TypeError("Motion property name must be non-empty.");
     const animation = makeAnimation(target, prop, to, animationOptions);
     const existingLaneAnimation = getLaneAnimation(animation.channel, animation);
     if (animation.interrupt === "ignore" && existingLaneAnimation) {
@@ -790,15 +1327,18 @@ export function createMotionRuntime(options = {}) {
     return makeControl(animation);
   }
 
-  function getLaneAnimation(channel, animation) {
-    if (!channel || !animation) return null;
+  function getLaneAnimation(
+    channel: RuntimeMotionChannel,
+    animation: RuntimeMotionAnimationState,
+  ): RuntimeMotionAnimationState | undefined {
     if (animation.lane === "base") return channel.base.get(animation.laneKey);
     if (animation.lane === "factor") return channel.factor.get(animation.laneKey);
     return channel.additive.get(animation.laneKey);
   }
 
-  function stepSpring(animation, dt) {
-    const config = animation.driver.config || {};
+  function stepSpring(animation: RuntimeMotionAnimationState, dt: number): void {
+    if (animation.driver.type !== "spring") throw new Error("Spring step received a non-spring driver.");
+    const config = animation.driver.config;
     const stiffness = Math.max(0, readNumber(config.stiffness, 0));
     const damping = Math.max(0, readNumber(config.damping, 0));
     const mass = Math.max(0.0001, readNumber(config.mass, 1));
@@ -809,8 +1349,9 @@ export function createMotionRuntime(options = {}) {
     animation.value += animation.velocity * dt;
   }
 
-  function tickSpring(animation, deltaSeconds) {
-    const config = animation.driver.config || {};
+  function tickSpring(animation: RuntimeMotionAnimationState, deltaSeconds: number): void {
+    if (animation.driver.type !== "spring") throw new Error("Spring tick received a non-spring driver.");
+    const config = animation.driver.config;
     let remaining = deltaSeconds;
     while (remaining > 0) {
       const dt = Math.min(stepSeconds, remaining);
@@ -821,7 +1362,7 @@ export function createMotionRuntime(options = {}) {
     const delta = Math.abs(animation.to - animation.value);
     const speed = Math.abs(animation.velocity);
     fireMilestones(animation, getDistanceProgress(animation));
-    const arriveDelta = Math.max(0, readNumber(config.arriveDelta, animation.arriveDelta ?? DEFAULT_ARRIVE_DELTA));
+    const arriveDelta = Math.max(0, readNumber(config.arriveDelta, DEFAULT_ARRIVE_DELTA));
     if (!animation.arrived && delta <= arriveDelta) {
       animation.arrived = true;
       recordMotionLifecycle("arrive", animation, { value: animation.value });
@@ -836,8 +1377,9 @@ export function createMotionRuntime(options = {}) {
     writeAnimation(animation);
   }
 
-  function tickTween(animation, deltaSeconds) {
-    const options = animation.driver.options || {};
+  function tickTween(animation: RuntimeMotionAnimationState, deltaSeconds: number): void {
+    if (animation.driver.type !== "tween") throw new Error("Tween tick received a non-tween driver.");
+    const options = animation.driver.options;
     const duration = Math.max(0, readNumber(options.duration, 0));
     if (duration <= 0) {
       completeAnimation(animation);
@@ -865,9 +1407,9 @@ export function createMotionRuntime(options = {}) {
     if (!repeatsForever && animation.elapsed >= totalDuration) completeAnimation(animation, animation.value);
   }
 
-  function tickAnimation(animation, deltaSeconds) {
+  function tickAnimation(animation: RuntimeMotionAnimationState, deltaSeconds: number): void {
     if (animation.done) return;
-    if (animation.target?.destroyed) {
+    if (isDestroyedTarget(animation.target)) {
       cancelAnimation(animation, "destroyed");
       return;
     }
@@ -885,8 +1427,9 @@ export function createMotionRuntime(options = {}) {
     else tickSpring(animation, deltaSeconds);
   }
 
-  function tickProgress(animation) {
-    const options = animation.driver.options || {};
+  function tickProgress(animation: RuntimeMotionAnimationState): void {
+    if (animation.driver.type !== "progress") throw new Error("Progress tick received a non-progress driver.");
+    const options = animation.driver.options;
     const progress = clamp(readNumber(options.progress, animation.progress ?? 0), 0, 1);
     animation.progress = progress;
     animation.value = animation.from + (animation.to - animation.from) * resolveEase(options.ease)(progress);
@@ -900,20 +1443,20 @@ export function createMotionRuntime(options = {}) {
     if (options.completeAtEnd !== false && progress >= 1) completeAnimation(animation, animation.value);
   }
 
-  function writeAnimation(animation) {
+  function writeAnimation(animation: RuntimeMotionAnimationState): void {
     if (animation.lane === "base" && animation.channel.activeBaseKey === animation.laneKey) animation.channel.baseValue = getAnimationOutputValue(animation);
     markChannelDirty(animation.channel);
     queueAnimationUpdate(animation);
   }
 
-  function getDistanceProgress(animation) {
+  function getDistanceProgress(animation: RuntimeMotionAnimationState): number {
     const distance = animation.to - animation.from;
     if (Math.abs(distance) <= NEUTRAL_EPSILON) return 1;
     return clamp((animation.value - animation.from) / distance, 0, 1);
   }
 
-  function fireMilestones(animation, progress) {
-    if (!animation?.milestones?.length) return;
+  function fireMilestones(animation: RuntimeMotionAnimationState, progress: number): void {
+    if (!animation.milestones.length) return;
     const currentProgress = clamp01(progress);
     for (const milestone of animation.milestones) {
       if (milestone.fired || currentProgress < milestone.progress) continue;
@@ -926,7 +1469,7 @@ export function createMotionRuntime(options = {}) {
     }
   }
 
-  function flushDirtyChannels() {
+  function flushDirtyChannels(): void {
     if (!dirtyChannels.size) return;
     dirtyChannelScratch.length = 0;
     for (const channel of dirtyChannels) dirtyChannelScratch.push(channel);
@@ -935,7 +1478,7 @@ export function createMotionRuntime(options = {}) {
     dirtyChannelScratch.length = 0;
   }
 
-  function flushPendingUpdates() {
+  function flushPendingUpdates(): void {
     if (!pendingUpdateAnimations.size) return;
     pendingUpdateScratch.length = 0;
     for (const animation of pendingUpdateAnimations) pendingUpdateScratch.push(animation);
@@ -946,7 +1489,7 @@ export function createMotionRuntime(options = {}) {
     pendingUpdateScratch.length = 0;
   }
 
-  function flushAfterFrame() {
+  function flushAfterFrame(): void {
     if (!afterFrameCallbacks.size) return;
     frameAfterFrameFlushes += 1;
     afterFrameScratch.length = 0;
@@ -956,7 +1499,7 @@ export function createMotionRuntime(options = {}) {
     afterFrameScratch.length = 0;
   }
 
-  function step(deltaSeconds = 0) {
+  function step(deltaSeconds = 0): void {
     const elapsed = Math.min(maxDeltaSeconds, Math.max(0, readNumber(deltaSeconds))) * debugAdapter.getConfig().timeScale;
     frameCount += 1;
     frameAfterFrameFlushes = 0;
@@ -975,8 +1518,8 @@ export function createMotionRuntime(options = {}) {
     if (!activeAnimations.size && !afterFrameCallbacks.size) stopTicker();
   }
 
-  function releaseAnimation(animation) {
-    if (!animation || animation.done || animation.released) return;
+  function releaseAnimation(animation: RuntimeMotionAnimationState): void {
+    if (animation.done || animation.released) return;
     animation.released = true;
     animation.onArrive = null;
     animation.onCancel = null;
@@ -991,13 +1534,14 @@ export function createMotionRuntime(options = {}) {
     clearChannelLane(animation);
   }
 
-  function afterFrame(callback) {
-    if (typeof callback !== "function") return;
+  function afterFrame(callback: () => void): void {
+    if (typeof callback !== "function") {
+      throw new TypeError("Motion after-frame callback must be a function.");
+    }
     afterFrameCallbacks.add(callback);
     if (autoTickerSuspended > 0) {
       emitRenderSignal("frame-request", {
         activeAnimationCount: activeAnimations.size,
-        afterFramePending: afterFrameCallbacks.size,
         frame: frameCount,
         timeMs: runtimeTimeMs,
       });
@@ -1005,21 +1549,22 @@ export function createMotionRuntime(options = {}) {
     ensureTicker();
   }
 
-  function hasActiveWork() {
+  function hasActiveWork(): boolean {
     return Boolean(activeAnimations.size || afterFrameCallbacks.size);
   }
 
-  function suspendAutoTicker() {
+  function suspendAutoTicker(): void {
     autoTickerSuspended += 1;
     stopTicker();
   }
 
-  function resumeAutoTicker() {
+  function resumeAutoTicker(): void {
     autoTickerSuspended = Math.max(0, autoTickerSuspended - 1);
     ensureTicker();
   }
 
-  function stop(target, prop, stopOptions = {}) {
+  function stop(target: object, prop: string, stopOptions: MotionStopOptions = {}): boolean {
+    assertMotionTarget(target);
     const channel = getChannel(target, prop);
     if (!channel) return false;
     const reason = stopOptions.reason || "cancel";
@@ -1052,20 +1597,21 @@ export function createMotionRuntime(options = {}) {
     return stopped;
   }
 
-  function cancelTarget(target, cancelOptions = {}) {
+  function cancelTarget(target: object, cancelOptions: MotionCancelTargetOptions = {}): boolean {
+    assertMotionTarget(target);
     const targetMap = getTargetMap(target);
     let stopped = false;
     if (targetMap) {
       for (const prop of Array.from(targetMap.keys())) stopped = stop(target, prop, cancelOptions) || stopped;
     }
     if (!cancelOptions.recursive) return stopped;
-    for (const child of target?.children || []) stopped = cancelTarget(child, cancelOptions) || stopped;
+    for (const child of readTargetChildren(target)) stopped = cancelTarget(child, cancelOptions) || stopped;
     return stopped;
   }
 
-  function makeControl(animation) {
+  function makeControl(animation: RuntimeMotionAnimationState): MotionAnimationControl {
     let controlReleased = false;
-    const flushImmediateProgressWrite = () => {
+    const flushImmediateProgressWrite = (): void => {
       if (dirtyChannels.has(animation.channel)) {
         dirtyChannels.delete(animation.channel);
         composeChannel(animation.channel);
@@ -1076,8 +1622,8 @@ export function createMotionRuntime(options = {}) {
       }
     };
 
-    const control = {
-      cancel: (reason) => {
+    const control: MotionAnimationControl = {
+      cancel: (reason = "cancel") => {
         if (controlReleased) return;
         cancelAnimation(animation, reason);
       },
@@ -1103,9 +1649,9 @@ export function createMotionRuntime(options = {}) {
       get released() {
         return controlReleased;
       },
-      settle(settleOptions = {}) {
+      settle(settleOptions: MotionSettleOptions = {}) {
         if (controlReleased || animation.done || animation.driver?.type !== "progress") return;
-        const options = settleOptions || {};
+        const options = settleOptions;
         const currentProgress = clamp(readNumber(animation.driver.options?.progress, animation.progress ?? 0), 0, 1);
         animation.driver.options.progress = currentProgress;
         tickProgress(animation);
@@ -1139,7 +1685,7 @@ export function createMotionRuntime(options = {}) {
       get state() {
         return animation;
       },
-      setProgress(progress) {
+      setProgress(progress: number) {
         if (controlReleased) return;
         if (animation.driver?.type !== "progress" || animation.done) return;
         animation.driver.options.progress = clamp(readNumber(progress), 0, 1);
@@ -1169,7 +1715,7 @@ export function createMotionRuntime(options = {}) {
     return control;
   }
 
-  function reset() {
+  function reset(): void {
     for (const animation of activeAnimations) cancelAnimation(animation, "reset");
     afterFrameCallbacks.clear();
     dirtyChannels.clear();
@@ -1184,7 +1730,7 @@ export function createMotionRuntime(options = {}) {
     writesLastFrame = 0;
   }
 
-  function debugSnapshot(snapshotOptions = {}) {
+  function debugSnapshot(snapshotOptions: MotionDebugSnapshotOptions = {}): MotionDebugSnapshot {
     return debugAdapter.makeSnapshot(snapshotOptions, {
       animations: Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation)),
       channels: snapshotOptions.includeChannels ? makeDebugChannelRecords() : undefined,
@@ -1196,7 +1742,7 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  function debugReport(reportOptions = {}) {
+  function debugReport(reportOptions: MotionDebugReportOptions = {}): MotionDebugReport {
     return debugAdapter.makeReport(reportOptions, {
       animations: Array.from(activeAnimations).map((animation) => makeDebugAnimationRecord(animation)),
       channels: reportOptions.includeChannels ? makeDebugChannelRecords() : undefined,
@@ -1208,7 +1754,7 @@ export function createMotionRuntime(options = {}) {
     });
   }
 
-  return {
+  const runtime = {
     addObserver,
     afterFrame,
     animate,
@@ -1224,7 +1770,6 @@ export function createMotionRuntime(options = {}) {
       return debugAdapter.debug;
     },
     hasActiveWork,
-    installDebugAdapter,
     onRenderSignal,
     recordCoordinationEvent,
     reset,
@@ -1233,7 +1778,8 @@ export function createMotionRuntime(options = {}) {
     step,
     stop,
     suspendAutoTicker,
-  };
+  } satisfies MotionRuntime & MotionRuntimeTestControls;
+  return runtime;
 }
 
 export const motionRuntime = createMotionRuntime();

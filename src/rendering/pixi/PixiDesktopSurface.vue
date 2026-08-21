@@ -50,6 +50,7 @@ import { createPixiApp } from "./createPixiApp.js";
 import { getTextRenderResolution } from "./geometry/stageCoordinates.js";
 import { syncPixiTextResolution } from "./pixiText.js";
 import { DesktopLayer } from "./scene/DesktopLayer.js";
+import { mergeFolderIdSets } from "./scene/desktopHandoffState.js";
 import {
   applyDesktopLayerFrameUpdates,
   makeDesktopDiagnosticsFrame,
@@ -459,6 +460,7 @@ function createSingleStageFolderState(
       setFolderPageRef: source.setFolderPageRef,
     },
     drag: {
+      groupDragState: dragSnapshot.groupDragState,
       meta: dragSnapshot.dragMeta,
     },
     folder: {
@@ -604,6 +606,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
   let dragSnapshot = null;
   let folderClosingHandoffId = null;
   let folderHandoffResolved = false;
+  let handoffSnapshot = null;
   let singleStageDiagnosticsOptions = null;
   let singleStageDiagnosticsResolved = false;
   let singleStageFolderState = null;
@@ -648,12 +651,22 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
     return singleStageFolderState;
   }
 
-  const commonHandoff = () => ({
-    folderClosingHandoffId: getFolderClosingHandoffId(),
-    folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
-    folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
-    isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
-  });
+  function getHandoffSnapshot() {
+    if (handoffSnapshot) return handoffSnapshot;
+    const closingFolderId = getFolderClosingHandoffId();
+    const sourceFolderId = folderFrame.value.folderSourceGhostedId;
+    handoffSnapshot = Object.freeze({
+      folderClosingHandoffIds: mergeFolderIdSets(
+        closingFolderId ? [closingFolderId] : null
+      ),
+      folderSourceGhostedIds: mergeFolderIdSets(
+        folderFrame.value.folderSourceGhostedIds,
+        sourceFolderId ? [sourceFolderId] : null
+      ),
+      isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
+    });
+    return handoffSnapshot;
+  }
 
   return {
     builders: {
@@ -664,11 +677,11 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
         singleStageFolderState: getSingleStageFolderState(),
         stageRect: renderGeometry.stageRect,
       }),
-      handoff: () => makeDesktopHandoffFrame(commonHandoff()),
+      handoff: () => makeDesktopHandoffFrame(getHandoffSnapshot()),
       interaction: () => makeDesktopInteractionFrame({
         deviceResolution: app.renderer?.resolution || 1,
         dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
-        ...commonHandoff(),
+        ...getHandoffSnapshot(),
         folderPageSize: viewportFrame.value.folderPageSize,
         gridCols: viewportFrame.value.gridCols,
         gridRows: viewportFrame.value.gridRows,
@@ -678,6 +691,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
         isBatchSelectionActive: interactionFrame.value.isBatchSelectionActive,
         isTextlessMode: interactionFrame.value.isTextlessMode,
         launchTargetStatusById: diagnosticsFrame.value.launchTargetStatusById,
+        provisionalFolderRollback: interactionFrame.value.provisionalFolderRollback,
         showMissingLaunchTargetBadge: diagnosticsFrame.value.showMissingLaunchTargetBadge,
         singleStageFolderState: getSingleStageFolderState(),
         stageRect: renderGeometry.stageRect,
@@ -700,7 +714,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
           dragHitDebugState: diagnosticsFrame.value.dragHitDebugState,
           dragMeta: currentDragSnapshot.dragMeta,
           focusedIcon: interactionFrame.value.focusedIcon,
-          ...commonHandoff(),
+          ...getHandoffSnapshot(),
           folderPageSize: viewportFrame.value.folderPageSize,
           getDesktopPageRenderMode: sceneRuntime.value.getDesktopPageRenderMode,
           getVisibleDesktopPage: sceneRuntime.value.getVisibleDesktopPage,
@@ -720,6 +734,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
           launchpadVisualAlpha: visualFrame.value.launchpadVisualAlpha,
           launchpadVisualTransform: visualFrame.value.launchpadVisualTransform,
           pageTrackScrub: viewportFrame.value.pageTrackScrub,
+          provisionalFolderRollback: interactionFrame.value.provisionalFolderRollback,
           selectedAppIds: interactionFrame.value.selectedAppIds,
           setPageRef: sceneRuntime.value.setPageRef,
           shouldSnapTrack: viewportFrame.value.desktopTrackMotionKey.includes("snap"),
@@ -816,10 +831,15 @@ function renderPixi(options = {}) {
 function applyImmediateFolderSourceGhosting() {
   if (!app || !layer || !hostRef.value) return false;
   layer.applyImmediateGroupTransferOwnership?.(interactionFrame.value.groupDragState);
+  const sourceFolderId = folderFrame.value.folderSourceGhostedId;
   layer.applyFolderSourceGhosting?.({
-    folderSourceGhostedId: folderFrame.value.folderSourceGhostedId,
-    folderSourceGhostedIds: folderFrame.value.folderSourceGhostedIds,
+    folderClosingHandoffIds: new Set(),
+    folderSourceGhostedIds: mergeFolderIdSets(
+      folderFrame.value.folderSourceGhostedIds,
+      sourceFolderId ? [sourceFolderId] : null
+    ),
     isFolderOpeningPreviewFrameGhosted: sceneRuntime.value.isFolderOpeningPreviewFrameGhosted,
+    singleStageFolderState: null,
   }, { remember: false });
   requestRender("interaction-ownership");
   return true;
@@ -1068,6 +1088,12 @@ onMounted(async () => {
     onGroupReleaseComplete: (payload) => {
       emitGroupReleaseComplete(payload);
     },
+    onProvisionalFolderRollbackComplete: (payload) => {
+      const completed = sceneRuntime.value.completeProvisionalFolderRollback(payload?.token);
+      if (completed !== true) {
+        throw new Error(`Rejected provisional folder rollback completion ${payload?.token}`);
+      }
+    },
   });
   app.stage.addChild(layer);
   const requestAnimationFrame = window.requestAnimationFrame?.bind(window);
@@ -1271,6 +1297,7 @@ watchEffect(() => {
 
 watchEffect(() => {
   void interactionFrame.value.groupDragState;
+  void interactionFrame.value.provisionalFolderRollback;
   requestRender("interaction-watch");
 });
 

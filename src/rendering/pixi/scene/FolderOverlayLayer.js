@@ -256,6 +256,15 @@ function cloneDebugRect(rect) {
   };
 }
 
+function makeFolderOverlayGroupDragSnapshot(groupDragState) {
+  if (!groupDragState || typeof groupDragState !== "object") return null;
+  return Object.freeze({
+    phase: typeof groupDragState.phase === "string" ? groupDragState.phase : null,
+    totalCount: Math.max(0, Number(groupDragState.totalCount) || 0),
+    visualSpec: groupDragState.visualSpec ?? null,
+  });
+}
+
 function makeOpeningGeometryDebugSnapshot(session, currentSnapshot, panel) {
   const sessionSnapshot = session?.geometrySnapshot || null;
   const snapshot = sessionSnapshot || currentSnapshot || null;
@@ -279,22 +288,23 @@ function makeOpeningGeometryDebugSnapshot(session, currentSnapshot, panel) {
       targetKey: session.targetKey || "",
     } : null,
     snapshot: snapshot ? {
-      coordinateSpace: snapshot.coordinateSpace || null,
       folderId: snapshot.folderId || null,
-      folderRect: cloneDebugRect(snapshot.folderRect),
+      folderRect: cloneDebugRect(snapshot.source?.folderRect),
       layoutKey: snapshot.layoutKey || null,
       panelCenter: {
-        x: roundDebugValue(snapshot.panelCenter?.x),
-        y: roundDebugValue(snapshot.panelCenter?.y),
+        x: roundDebugValue(snapshot.target?.panelCenter?.x),
+        y: roundDebugValue(snapshot.target?.panelCenter?.y),
       },
-      panelRect: cloneDebugRect(snapshot.panelRect),
-      previewChildRects: Array.from(snapshot.previewChildRects?.entries?.() || []).map(([key, rect]) => ({
+      panelRect: cloneDebugRect(snapshot.target?.panelRect),
+      previewChildRects: Array.from(snapshot.source?.previewChildRects?.entries?.() || []).map(([key, rect]) => ({
         key,
         rect: cloneDebugRect(rect),
       })),
-      stageHeight: roundDebugValue(snapshot.stageHeight),
-      stageRect: cloneDebugRect(snapshot.stageRect),
-      stageWidth: roundDebugValue(snapshot.stageWidth),
+      sourceCoordinateSpace: snapshot.source?.coordinateSpace || null,
+      stageHeight: roundDebugValue(snapshot.projection?.stageHeight),
+      stageRect: cloneDebugRect(snapshot.projection?.clientStageRect),
+      stageWidth: roundDebugValue(snapshot.projection?.stageWidth),
+      targetCoordinateSpace: snapshot.target?.coordinateSpace || null,
       targetKey: snapshot.targetKey || "",
     } : null,
   };
@@ -818,6 +828,42 @@ export class FolderOverlayLayer extends Container {
     return resolved.targetGeometry || resolved.geometry;
   }
 
+  applyGroupTransferOwnershipSnapshot(ownership = {}) {
+    const itemIds = ownership.itemIds instanceof Set ? ownership.itemIds : new Set();
+    let changed = false;
+    for (const [key, node] of this.iconNodes) {
+      if (!node?.state) continue;
+      const wasDirectlyOwned = node.__groupTransferGhostedByOwnership === true;
+      const isDirectlyOwned = itemIds.has(node.item?.id);
+      if (wasDirectlyOwned === isDirectlyOwned) continue;
+
+      if (isDirectlyOwned) {
+        killMotionOf(node, null, { reason: "group-release-folder-source-handoff" });
+        killMotionOf(node.scale, null, { reason: "group-release-folder-source-handoff" });
+      } else {
+        const layoutTarget = this.folderIconLayoutTargets.get(key);
+        if (layoutTarget) {
+          killMotionOf(node, "x,y", {
+            lane: "base",
+            reason: FOLDER_DRAG_HANDOFF_LAYOUT_REASON,
+          });
+          node.position.set(layoutTarget.x, layoutTarget.y);
+        }
+      }
+
+      const baseGhosted = Boolean(node.state.ghosted) && !wasDirectlyOwned;
+      node.__groupTransferGhostedByOwnership = isDirectlyOwned;
+      node.setState({
+        ...node.state,
+        dragging: isDirectlyOwned ? node.state.dragging : false,
+        ghosted: baseGhosted || isDirectlyOwned,
+      });
+      this.iconBoundsRefreshers.get(key)?.();
+      changed = true;
+    }
+    return changed;
+  }
+
   syncPageTurnVisualSettle(state = {}) {
     const renderedFolderId = state.renderedFolder?.id || null;
     const visualPageIndex = Number(state.visualFolderPageIndex ?? state.folderPageIndex ?? 0);
@@ -1234,48 +1280,55 @@ export class FolderOverlayLayer extends Container {
     if (!isPrewarm) this.bindFakeRefs(state, targetGeometry);
     const visualSessionSnapshot = this.folderVisualSession.snapshot();
     const renderPlan = makeFolderOverlayRenderPlan({
-      closeThumbRect,
-      closingGhostKeys: new Set(visualSessionSnapshot.closing?.ghostIds || []),
-      cols,
-      dragMeta: state.dragMeta,
-      folderCloseIconGhosts: state.folderCloseIconGhosts,
-      folderId,
-      folderOpenIconGhosts: state.folderOpenIconGhosts,
-      folderPageIndex: committedFolderPageIndex,
-      folderPages: state.folderPages,
-      folderPageSize: state.folderPageSize,
-      folderPageSpan,
-      geometry,
-      getFolderPageRenderMode: state.getFolderPageRenderMode,
-      getVisibleFolderPage: state.getVisibleFolderPage,
-      groupDragState: state.groupDragState,
-      groupTransferOwnedItemIds: state.groupTransferOwnedItemIds,
-      iconSize,
-      iconGesturePresentation: state.iconGesturePresentation,
-      isBatchSelectionActive: state.isBatchSelectionActive,
-      isClosing,
-      isEditMode: state.isEditMode,
-      isFolderClosing: state.isFolderClosing,
-      isIconOpening: state.isIconOpening,
+      frame: {
+        closingGhostKeys: new Set(visualSessionSnapshot.closing?.ghostIds || []),
+        focusedIcon: state.focusedIcon,
+        folderId,
+        folderPageIndex: committedFolderPageIndex,
+        folderPages: state.folderPages,
+        folderPageSize: state.folderPageSize,
+        getFolderPageRenderMode: state.getFolderPageRenderMode,
+        getVisibleFolderPage: state.getVisibleFolderPage,
+        groupDragState: makeFolderOverlayGroupDragSnapshot(state.groupDragState),
+        groupTransferOwnedItemIds: new Set(state.groupTransferOwnedItemIds || []),
+        iconGesturePresentation: state.iconGesturePresentation,
+        iconSize,
+        isBatchSelectionActive: state.isBatchSelectionActive,
+        isEditMode: state.isEditMode,
+        isIconOpening: typeof state.isIconOpening === "function" ? state.isIconOpening : null,
+        isTextlessMode: state.isTextlessMode,
+        launchTargetStatusById: state.launchTargetStatusById,
+        selectedAppIds: state.selectedAppIds,
+        showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
+        stageHeight: state.height,
+        stageWidth: state.width,
+        visualFolderPageIndex,
+      },
       isNewFolder,
-      isTextlessMode: state.isTextlessMode,
-      launchTargetStatusById: state.launchTargetStatusById,
-      localMetrics,
-      openingGhostItemIds: new Set(visualSessionSnapshot.opening?.ghostIds || []),
-      previewSlots,
-      rows,
-      focusedIcon: state.focusedIcon,
-      selectedAppIds: state.selectedAppIds,
-      showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
-      stableFolderPageSpan,
-      stableFolderCloseTarget: this.stableFolderCloseTarget,
-      stableGeometry: targetGeometry,
-      stableLocalMetrics,
-      stableTargetTrackX,
-      stageHeight: state.height,
-      stageWidth: state.width,
-      targetTrackX,
-      visualFolderPageIndex,
+      liveLayout: {
+        cols,
+        geometry,
+        metrics: localMetrics,
+        pageSpan: folderPageSpan,
+        rows,
+        trackX: targetTrackX,
+      },
+      stableLayout: {
+        closeTarget: this.stableFolderCloseTarget,
+        geometry: targetGeometry,
+        metrics: stableLocalMetrics,
+        pageSpan: stableFolderPageSpan,
+        trackX: stableTargetTrackX,
+      },
+      transitions: {
+        closeThumbRect,
+        folderCloseIconGhosts: state.folderCloseIconGhosts,
+        folderOpenIconGhosts: state.folderOpenIconGhosts,
+        isClosing,
+        isFolderClosing: state.isFolderClosing,
+        openingGhostItemIds: new Set(visualSessionSnapshot.opening?.ghostIds || []),
+        previewSlots,
+      },
     });
     return {
       ...context,
@@ -1343,6 +1396,11 @@ export class FolderOverlayLayer extends Container {
         this.pageTrack.addChild(node);
       }
 
+      const wasGroupTransferOwned = node.__groupTransferGhostedByOwnership === true;
+      const isGroupTransferOwned = state.groupTransferOwnedItemIds instanceof Set
+        ? state.groupTransferOwnedItemIds.has(item.id)
+        : (state.groupTransferOwnedItemIds || []).includes?.(item.id) === true;
+      node.__groupTransferGhostedByOwnership = isGroupTransferOwned;
       node.stageRect = state.stageRect;
       node.setState(nodeState);
       const visualKey = this.getIconNodeVisualKey(node, folderId);
@@ -1387,10 +1445,9 @@ export class FolderOverlayLayer extends Container {
       nextLayoutTargets.set(key, layoutTarget);
       const shouldSnapIconLayout = shouldSnapIconLayoutForResize &&
         (resizeGeometryMode !== "opening" || isFolderIconLayoutCoveredByVisual(node, hasVisualOwner));
-      const isGroupTransferOwned = state.groupTransferOwnedItemIds instanceof Set
-        ? state.groupTransferOwnedItemIds.has(item.id)
-        : (state.groupTransferOwnedItemIds || []).includes?.(item.id) === true;
-      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem || isGroupTransferOwned;
+      const shouldSnapDragHandoffLayout = entry.isActiveDraggedItem ||
+        wasGroupTransferOwned ||
+        isGroupTransferOwned;
       if (shouldSnapIconLayout || shouldSnapDragHandoffLayout) {
         killMotionOf(node, "x,y", {
           lane: "base",
@@ -1408,7 +1465,7 @@ export class FolderOverlayLayer extends Container {
         const openingGhostTarget = makeOpeningGhostTarget({
           ...entry.openingGhostInput,
           folderId,
-          folderRect: openingGeometrySnapshot?.folderRect || folderClientRect,
+          folderRect: openingGeometrySnapshot?.source?.folderRect || folderClientRect,
           getPreviewChildRect: openingGeometrySnapshot
             ? (item, previewSlotIndex) => getFolderOpeningPreviewChildRect(openingGeometrySnapshot, item, previewSlotIndex)
             : getOpeningPreviewChildClientRect,
@@ -2935,7 +2992,7 @@ export class FolderOverlayLayer extends Container {
     );
     const updateOpeningPanelFrame = () => {
       if (!openingLease.isCurrent()) return;
-      this.notifyPanelTitleFrame(openingGeometrySnapshot?.panelRect || panelRect, {
+      this.notifyPanelTitleFrame(openingGeometrySnapshot?.target?.panelRect || panelRect, {
         folderId,
         openingLease,
       });
@@ -2954,7 +3011,7 @@ export class FolderOverlayLayer extends Container {
           panelProps: "x,y,alpha",
           scaleProps: "x,y",
         });
-        this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.panelRect || panelRect, folderId);
+        this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.target?.panelRect || panelRect, folderId);
       }
       this.panelAlphaTarget = 1;
       const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
@@ -3018,7 +3075,7 @@ export class FolderOverlayLayer extends Container {
         x: targetX,
         y: targetY,
       }, { onFrame: updateOpeningPanelFrame, spring: motionSprings.folderPanelOpen });
-      this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.panelRect || panelRect, folderId);
+      this.scheduleOpeningPanelReadyCheck(openingLease, openingGeometrySnapshot?.target?.panelRect || panelRect, folderId);
     }
     updateOpeningPanelFrame();
     return {

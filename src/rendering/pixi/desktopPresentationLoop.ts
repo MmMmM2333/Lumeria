@@ -4,6 +4,11 @@ import {
   type RenderInvalidationOptions,
   type RenderInvalidationSnapshot,
 } from "./renderInvalidation.js";
+import type {
+  MotionRenderSignal,
+  MotionRenderSignalListener,
+  MotionRuntime,
+} from "./animation/motionRuntime.js";
 
 export type RenderInvalidationRequest = Readonly<{
   reason: string;
@@ -47,22 +52,16 @@ export type DesktopPresentationFrameClock = Readonly<{
   request(callback: (timestamp: number) => void): number;
 }>;
 
-export type DesktopMotionRenderSignalListener = (
-  activeAnimationCount: number,
-  writesLastFrame: number,
-  afterFrameFlushes: number,
-  reason: string,
-  frame: number,
-  timeMs: number,
-) => void;
+export type DesktopMotionRenderSignalListener = MotionRenderSignalListener;
 
-export type DesktopPresentationMotionRuntime = Readonly<{
-  hasActiveWork(): boolean;
-  onRenderSignal(listener: DesktopMotionRenderSignalListener): () => void;
-  resumeAutoTicker(): void;
-  step(deltaSeconds: number): void;
-  suspendAutoTicker(): void;
-}>;
+export type DesktopPresentationMotionRuntime = Pick<
+  MotionRuntime,
+  | "hasActiveWork"
+  | "onRenderSignal"
+  | "resumeAutoTicker"
+  | "step"
+  | "suspendAutoTicker"
+>;
 
 export type DesktopPresentationLoopOptions = Readonly<{
   canPresent(): boolean;
@@ -205,13 +204,14 @@ export function createDesktopPresentationLoop(
     }
   }
 
-  function handleMotionRenderSignal(
-    activeAnimationCount: number,
-    writesLastFrame: number,
-    afterFrameFlushes: number,
-    reason: string,
-  ): void {
+  function handleMotionRenderSignal(signal: MotionRenderSignal): void {
     if (disposed || !options.canPresent()) return;
+    const {
+      activeAnimationCount,
+      afterFrameFlushes,
+      reason,
+      writesLastFrame,
+    } = signal;
     const normalizedReason = String(reason || "signal").trim() || "signal";
     if (normalizedReason === "frame") {
       if (activeAnimationCount <= 0 && writesLastFrame <= 0 && afterFrameFlushes <= 0) return;
@@ -288,6 +288,7 @@ export function createDesktopPresentationLoop(
   try {
     unsubscribeMotionSignal = options.motionRuntime.onRenderSignal(handleMotionRenderSignal);
     requireFunction(unsubscribeMotionSignal, "motionRuntime render-signal unsubscribe");
+    scheduleIfNeeded();
   } catch (error) {
     options.motionRuntime.resumeAutoTicker();
     throw error;

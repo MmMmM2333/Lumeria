@@ -2,6 +2,7 @@ import {
   createDesktopPresentationLoop,
   type DesktopMotionRenderSignalListener,
 } from "./desktopPresentationLoop.js";
+import type { MotionRenderSignal } from "./animation/motionRuntime.js";
 
 type FrameCallback = (timestamp: number) => void;
 
@@ -72,16 +73,17 @@ function createMotionRuntime({
       reason,
       timeMs = 0,
       writesLastFrame = 0,
-    }: Readonly<{
-      activeAnimationCount?: number;
-      afterFrameFlushes?: number;
-      frame?: number;
-      reason: string;
-      timeMs?: number;
-      writesLastFrame?: number;
-    }>) {
+    }: Partial<MotionRenderSignal> & Pick<MotionRenderSignal, "reason">) {
+      const signal: MotionRenderSignal = Object.freeze({
+        activeAnimationCount,
+        afterFrameFlushes,
+        frame,
+        reason,
+        timeMs,
+        writesLastFrame,
+      });
       for (const listener of listeners) {
-        listener(activeAnimationCount, writesLastFrame, afterFrameFlushes, reason, frame, timeMs);
+        listener(signal);
       }
     },
     hasActiveWork: active,
@@ -105,6 +107,32 @@ function createMotionRuntime({
 }
 
 export function runDesktopPresentationLoopTests() {
+  {
+    const clock = createFrameClock();
+    let active = true;
+    let motionSteps = 0;
+    const loop = createDesktopPresentationLoop({
+      canPresent: () => true,
+      commit: () => {},
+      frameClock: clock,
+      motionRuntime: createMotionRuntime({
+        active: () => active,
+        onStep: () => {
+          active = false;
+          motionSteps += 1;
+        },
+      }),
+      onResizeSettleFrame: () => {},
+      shouldRunHandoffFrame: () => false,
+    });
+
+    assert(clock.getPendingCount() === 1, "pre-existing motion work should schedule after the render-signal subscription is installed");
+    clock.runNext(16);
+    assert(motionSteps === 1, "pre-existing motion work should advance exactly once");
+    assert(clock.getPendingCount() === 0, "the presentation loop should return to idle after pre-existing motion settles");
+    loop.dispose();
+  }
+
   {
     const clock = createFrameClock();
     const commits: unknown[] = [];

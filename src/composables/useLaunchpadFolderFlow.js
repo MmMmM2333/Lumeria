@@ -27,6 +27,9 @@ export function useLaunchpadFolderFlow(options) {
   if (typeof options.commitFolderPageIndex !== "function") {
     throw new TypeError("useLaunchpadFolderFlow requires commitFolderPageIndex");
   }
+  if (typeof options.getRenderedPages !== "function") {
+    throw new TypeError("useLaunchpadFolderFlow requires getRenderedPages");
+  }
   const openFolderId = ref(null);
   const renderedFolderId = ref(null);
   const folderOpenProgress = ref(0);
@@ -53,11 +56,22 @@ export function useLaunchpadFolderFlow(options) {
   let normalCloseNeedsHandoff = false;
   let normalCloseProgressArrived = false;
   let normalCloseHandoffReady = false;
+  let normalCloseHandoffPublished = false;
+  let normalCloseHandoffVelocity = 0;
+  let normalCloseHandoffVelocityCaptured = false;
   let folderOpenProgressAnimationId = 0;
+
+  function getRenderedPages() {
+    const renderedPages = options.getRenderedPages();
+    if (!Array.isArray(renderedPages)) {
+      throw new TypeError("useLaunchpadFolderFlow getRenderedPages must return pages");
+    }
+    return renderedPages;
+  }
 
   const renderedFolder = computed(() => {
     if (!renderedFolderId.value) return folderClosingSnapshot.value;
-    return options.findFolder(options.pages.value, renderedFolderId.value)?.item || folderClosingSnapshot.value;
+    return options.findFolder(getRenderedPages(), renderedFolderId.value)?.item || folderClosingSnapshot.value;
   });
 
   const folderPages = computed(() => {
@@ -100,6 +114,29 @@ export function useLaunchpadFolderFlow(options) {
     normalCloseNeedsHandoff = false;
     normalCloseProgressArrived = false;
     normalCloseHandoffReady = false;
+    normalCloseHandoffPublished = false;
+    normalCloseHandoffVelocity = 0;
+    normalCloseHandoffVelocityCaptured = false;
+  }
+
+  function captureNormalCloseHandoffVelocity() {
+    if (normalCloseHandoffVelocityCaptured) return normalCloseHandoffVelocity;
+    const velocity = Number(folderOpenProgressControl?.velocity);
+    if (!Number.isFinite(velocity)) return normalCloseHandoffVelocity;
+    normalCloseHandoffVelocity = Math.max(0, -velocity);
+    normalCloseHandoffVelocityCaptured = true;
+    return normalCloseHandoffVelocity;
+  }
+
+  function publishNormalCloseHandoff() {
+    if (normalCloseHandoffPublished) return false;
+    const folderId = renderedFolderId.value || folderClosingSnapshot.value?.id || null;
+    if (!folderId) return false;
+    normalCloseHandoffPublished = true;
+    options.onFolderCloseHandoffReady?.(folderId, {
+      velocity: captureNormalCloseHandoffVelocity(),
+    });
+    return true;
   }
 
   function animateFolderOpenProgress(target, reason) {
@@ -111,6 +148,7 @@ export function useLaunchpadFolderFlow(options) {
         if (animationId !== folderOpenProgressAnimationId) return;
         if (folderOpenProgressTarget.value !== target) return;
         if (target === 0) {
+          if (isFolderClosing.value) captureNormalCloseHandoffVelocity();
           finishActiveFolderProgressClose();
         }
       },
@@ -205,6 +243,7 @@ export function useLaunchpadFolderFlow(options) {
     if (!isFolderClosing.value) return false;
     if (!normalCloseProgressArrived) return false;
     if (normalCloseNeedsHandoff && !normalCloseHandoffReady) return false;
+    publishNormalCloseHandoff();
     scheduleFolderCloseFinishFrame();
     return true;
   }

@@ -6,6 +6,7 @@ export function runSceneRuntimeTests() {
   };
 
   const runtime = makeDesktopSceneRuntimeAdapter({
+    completeProvisionalFolderRollback: () => true,
     domRefs: {},
     folderOverlayState: {},
     getDesktopPageRenderMode: () => "desktop",

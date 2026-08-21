@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { createLaunchpadDocumentCoordinator } from "../application/launchpadDocumentCoordinator.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
@@ -15,6 +15,7 @@ import { useLaunchpadApps } from "./useLaunchpadApps.js";
 import { useLaunchpadDrag } from "./useLaunchpadDrag.js";
 import { useFolderOpenIconGhosts } from "./useFolderOpenIconGhosts.js";
 import { useLaunchpadFolderFlow } from "./useLaunchpadFolderFlow.js";
+import { useProvisionalFolderRollback } from "./useProvisionalFolderRollback.js";
 import {
   resolveCurrentIconScope,
   useLaunchpadIconActivation,
@@ -461,6 +462,12 @@ export function useLaunchpadController(options = {}) {
     cloneItem,
     folderPreviewSlots,
   });
+  const provisionalFolderRollback = useProvisionalFolderRollback({ cloneItem });
+  const getDragProjectedPages = () => dragControls?.projectedPages?.value || null;
+  const getRenderedLayoutProjection = () => (
+    provisionalFolderRollback.projectedPages.value || getDragProjectedPages()
+  );
+  const getRenderedLayoutPages = () => getRenderedLayoutProjection() || pages.value;
 
   const {
     clearFolderAppLaunchTimer,
@@ -508,16 +515,21 @@ export function useLaunchpadController(options = {}) {
     folderPageSize,
     getFolderIconMotionGeometry: (folderId) => getFolderIconMotionGeometry(folderId),
     getFolderMotionGeometry: () => folderMotionGeometry.value,
+    getRenderedPages: getRenderedLayoutPages,
     getVisibleFolderPages,
     isDragActive: () => requireDragControls().isDragActive(),
     pageRefs,
     pages,
+    onFolderCloseHandoffReady: (folderId, handoff) => {
+      provisionalFolderRollback.beginDissolve(folderId, {
+        handoffVelocity: handoff?.velocity,
+      });
+    },
     resetFolderViewportMetrics,
     setFolderMotionGeometry: (next) => {
       folderMotionGeometry.value = next;
     },
   });
-  const projectedPagesForLayout = shallowRef(null);
   const folderPagesForLayout = computed(() => {
     if (
       isFolderClosing.value ||
@@ -525,7 +537,7 @@ export function useLaunchpadController(options = {}) {
       isFolderZoomFadeClosing.value
     ) return folderPages.value;
     const folderId = renderedFolder.value?.id || openFolderId.value;
-    const projectedPages = projectedPagesForLayout.value;
+    const projectedPages = getRenderedLayoutProjection();
     if (!folderId || !Array.isArray(projectedPages)) return folderPages.value;
     const projectedFolder = projectedPages
       .flatMap((page) => page || [])
@@ -617,11 +629,36 @@ export function useLaunchpadController(options = {}) {
       return;
     }
 
-    const folder = findFolder(pages.value, next)?.item || null;
+    const folder = findFolder(getRenderedLayoutPages(), next)?.item || null;
     const openingFolderPage = folder ? getVisibleFolderPage(getFolderChildPages(folder, folderPageSize.value)[0] || []) : [];
     const capturedGhosts = captureFolderPreviewIconGhosts(folder, openingFolderPage);
     commitOpenFolderNow(next, flowCommitOptions);
     playFolderOpenIconGhosts(next, capturedGhosts);
+  }
+
+  function discardProvisionalFolder(folderId, discardOptions) {
+    const authoritativeFolder = findFolder(pages.value, folderId)?.item || null;
+    if (
+      !folderId ||
+      authoritativeFolder ||
+      renderedFolder.value?.id !== folderId ||
+      openFolderId.value !== folderId
+    ) return false;
+    provisionalFolderRollback.begin({
+      ...discardOptions,
+      folderId,
+    });
+    try {
+      commitOpenFolder(null);
+    } catch (error) {
+      provisionalFolderRollback.dispose();
+      throw error;
+    }
+    return true;
+  }
+
+  function completeProvisionalFolderRollback(token) {
+    return provisionalFolderRollback.complete(Number(token));
   }
 
   function completeFolderCloseIconGhost(key) {
@@ -633,6 +670,7 @@ export function useLaunchpadController(options = {}) {
   const {
     folderMotionGeometry,
     getFolderIconMotionGeometry,
+    getTopLevelIconMotionGeometry,
   } = useFolderMotionGeometry({
     folderPages,
     gridCols,
@@ -1473,6 +1511,7 @@ export function useLaunchpadController(options = {}) {
     commitOpenFolder,
     commitPageIndex,
     desktopMainRef,
+    discardProvisionalFolder,
     findTopLevel,
     finishHomeRevealSettleWindow,
     folderCols,
@@ -1483,6 +1522,9 @@ export function useLaunchpadController(options = {}) {
     folderViewportRef,
     folderPageSize,
     getBatchCancelZoneRect: options.getBatchCancelZoneRect,
+    getFolderCreateMotionGeometry: (targetAppId, folderId) => (
+      getTopLevelIconMotionGeometry(targetAppId, folderId)
+    ),
     getGroupLayoutRevision: () => batchLayoutRevision.value,
     getNewFolderName: () => localizationText.t("launchpad.newFolder"),
     gridCols,
@@ -1501,7 +1543,6 @@ export function useLaunchpadController(options = {}) {
     pageRefs,
     pages,
     planGroupTransfer: planBatchGroupTransfer,
-    projectedPagesRef: projectedPagesForLayout,
     requestFolderPageTurn,
     visualFolderPageIndex,
     visibleFolderRowCount,
@@ -1520,8 +1561,11 @@ export function useLaunchpadController(options = {}) {
     dragMeta,
     groupDragState,
     isDragActive,
-    projectedPages,
+    projectedPages: dragProjectedPages,
   } = dragControls;
+  const projectedPages = computed(() => (
+    provisionalFolderRollback.projectedPages.value || dragProjectedPages.value
+  ));
   const renderedActivePages = computed(() => (
     isSearchMode.value ? activePages.value : projectedPages.value || activePages.value
   ));
@@ -1771,6 +1815,7 @@ export function useLaunchpadController(options = {}) {
     desktopMainRef,
     disposeInteractions: () => {
       disposeDrag();
+      provisionalFolderRollback.dispose();
       disposeInputGestures();
     },
     disconnectFolderViewportObserver,
@@ -1918,6 +1963,7 @@ export function useLaunchpadController(options = {}) {
     dragMeta,
     groupDragState,
     completeGroupRelease,
+    completeProvisionalFolderRollback,
     commitAppLaunchCloseFrame,
     folderOpenPreviewFrameGhostedIds,
     folderPageSize,
@@ -1942,6 +1988,7 @@ export function useLaunchpadController(options = {}) {
     openExistingAppIconChooser,
     pageGridMeasureStyle,
     pageTrackScrub,
+    provisionalFolderRollback: provisionalFolderRollback.presentation,
     resetAppCustomIcon,
     schedulePageGridMetrics,
     focusedIcon,

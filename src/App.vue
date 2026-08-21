@@ -326,6 +326,7 @@ const {
   dragMeta,
   groupDragState,
   completeGroupRelease,
+  completeProvisionalFolderRollback,
   commitAppLaunchCloseFrame,
   handleDesktopSurfacePointerDown,
   gridCols,
@@ -342,6 +343,7 @@ const {
   setPageRef,
   pageGridMeasureStyle,
   pageTrackScrub,
+  provisionalFolderRollback,
   schedulePageGridMetrics,
   focusedIcon,
   getVisibleDesktopPage,
@@ -959,12 +961,14 @@ const desktopSceneFrame = computed(() => makeDesktopSceneFrame({
   launchpadVisualTransform: resolveMaybeRef(launchpadVisualTransform),
   pageGridMeasureStyle: resolveMaybeRef(pageGridMeasureStyle),
   pageTrackScrub: resolveMaybeRef(pageTrackScrub),
+  provisionalFolderRollback: resolveMaybeRef(provisionalFolderRollback),
   selectedAppIds: resolveMaybeRef(batchSelectedIds),
   showMissingLaunchTargetBadge: resolveMaybeRef(showMissingLaunchTargetBadge),
   singleStageDiagnosticsOptions: resolveMaybeRef(singleStageDiagnosticsOptions),
 }));
 
 const desktopSceneRuntime = makeDesktopSceneRuntimeAdapter({
+  completeProvisionalFolderRollback,
   domRefs: desktopDomRefs,
   folderOverlayState: folderOverlay,
   getDesktopPageRenderMode,

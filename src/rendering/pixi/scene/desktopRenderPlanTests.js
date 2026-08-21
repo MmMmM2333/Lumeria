@@ -1,11 +1,66 @@
-import { buildDesktopRenderPlan } from "./desktopRenderPlan.js";
+import { buildDesktopRenderPlan as buildProductionDesktopRenderPlan } from "./desktopRenderPlan.js";
+import {
+  captureDesktopHandoffObservation,
+  getDesktopSourceGhostedIdsFromOwnership,
+  mergeFolderIdSets,
+} from "./desktopHandoffState.js";
+
+function makeTestHandoffObservation(state, folderLayer, candidateFolderIds) {
+  const closing = folderLayer?.folderVisualSession?.snapshot?.().closing || null;
+  const activeFolderId = closing?.handoffActive
+    ? closing.folderId || folderLayer?.currentFolderId || null
+    : null;
+  const activeClosingFolderIds = new Set(activeFolderId ? [activeFolderId] : []);
+  const desktopSourceGhostedIds = new Set(folderLayer?.getDesktopSourceGhostedIds?.() || []);
+  const visibleSubstituteFolderIds = new Set();
+  for (const folderId of candidateFolderIds) {
+    if (folderLayer?.hasVisibleFolderSubstitute?.(folderId) === true) {
+      visibleSubstituteFolderIds.add(folderId);
+    }
+  }
+  return {
+    activeClosingFolderIds,
+    desktopSourceGhostedIds,
+    visibleSubstituteFolderIds,
+  };
+}
+
+function buildDesktopRenderPlan(state, options = {}) {
+  const {
+    folderLayer = null,
+    handoffObservation = null,
+    ...contextOverrides
+  } = options;
+  const folderHandoffEntries = contextOverrides.folderHandoffEntries || new Map();
+  const candidateFolderIds = new Set([
+    ...state.folderClosingHandoffIds,
+    ...state.folderSourceGhostedIds,
+    ...folderHandoffEntries.keys(),
+  ]);
+  return buildProductionDesktopRenderPlan(state, {
+    effectiveFolderSourceGhostedIds: state.folderSourceGhostedIds,
+    folderDropFrameSuppressedIds: new Set(),
+    folderGeometryById: new Map(),
+    folderHandoffEntries,
+    handoffObservation: handoffObservation || makeTestHandoffObservation(
+      state,
+      folderLayer,
+      candidateFolderIds,
+    ),
+    ...contextOverrides,
+  });
+}
 
 function makeBaseState(overrides = {}) {
   return {
     activePageIndex: 0,
     activePages: [[]],
     desktopFrame: { height: 300, left: 0, top: 0, width: 400 },
+    desktopGridDebugOptions: null,
     deviceResolution: 1,
+    dragFolderHoverState: null,
+    dragFolderTargetId: null,
+    folderClosingHandoffIds: new Set(),
     folderPageSize: 9,
     folderSourceGhostedIds: new Set(),
     getDesktopPageRenderMode: () => "interactive",
@@ -13,7 +68,9 @@ function makeBaseState(overrides = {}) {
     gridCols: 2,
     gridRows: 1,
     height: 300,
+    iconGesturePresentation: null,
     iconSize: 64,
+    isBatchSelectionActive: false,
     isEditMode: false,
     isFolderOpeningPreviewFrameGhosted: () => false,
     isIconOpening: () => false,
@@ -21,8 +78,14 @@ function makeBaseState(overrides = {}) {
     isTextlessMode: false,
     launchTargetStatusById: {},
     focusedIcon: null,
-    setPageRef: () => {},
+    groupDragState: null,
+    groupTransferOwnedFolderShellIds: new Set(),
+    groupTransferOwnedItemIds: new Set(),
+    pageTrackScrub: null,
+    selectedAppIds: new Set(),
     showMissingLaunchTargetBadge: false,
+    shouldSnapTrack: false,
+    singleStageFolderState: null,
     stageRect: { height: 300, left: 0, top: 0, width: 400 },
     width: 400,
     ...overrides,
@@ -46,6 +109,69 @@ export function runDesktopRenderPlanTests() {
   };
 
   {
+    let pageRefEffectCount = 0;
+    const state = makeBaseState({
+      activePages: [[{ id: "effect-free-app", type: "app" }]],
+      setPageRef: () => {
+        pageRefEffectCount += 1;
+      },
+    });
+    const plan = buildDesktopRenderPlan(state);
+    assert(pageRefEffectCount === 0, "building a plan must not execute setPageRef effects");
+    assert(plan.pageRefs.length === 1, "building a plan should still describe page-ref effects as data");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "state"), "plans should not return their state input");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "pages"), "plans should not return their pages input");
+  }
+
+  {
+    let snapshotReads = 0;
+    let ownershipReads = 0;
+    const substituteReads = [];
+    const observation = captureDesktopHandoffObservation({
+      folderVisualSession: {
+        snapshot() {
+          snapshotReads += 1;
+          return { closing: { folderId: "folder-observed", handoffActive: true } };
+        },
+      },
+      getDesktopSourceGhostedIds() {
+        ownershipReads += 1;
+        return new Set(["folder-owned"]);
+      },
+      hasVisibleFolderSubstitute(folderId) {
+        substituteReads.push(folderId);
+        return folderId === "folder-substitute";
+      },
+    }, new Set(["folder-substitute"]));
+    assert(snapshotReads === 1 && ownershipReads === 1, "handoff observation should sample mutable layer sources once per frame");
+    assert(observation.activeClosingFolderIds.has("folder-observed"), "handoff observation should retain the active closing folder");
+    assert(observation.desktopSourceGhostedIds.has("folder-owned"), "handoff observation should retain desktop-source ownership");
+    assert(observation.visibleSubstituteFolderIds.has("folder-substitute"), "handoff observation should retain visible substitute coverage");
+    assert(new Set(substituteReads).size === 3, "handoff observation should inspect each relevant folder exactly once");
+    let rejectedSingularSource = false;
+    try {
+      mergeFolderIdSets("folder-observed");
+    } catch (error) {
+      rejectedSingularSource = error instanceof TypeError;
+    }
+    assert(rejectedSingularSource, "handoff ids should reject the removed singular compatibility path");
+    let rejectedMissingLayer = false;
+    try {
+      captureDesktopHandoffObservation(null, new Set());
+    } catch (error) {
+      rejectedMissingLayer = error instanceof TypeError;
+    }
+    assert(rejectedMissingLayer, "handoff observation should reject a missing layer port");
+    let rejectedMissingOwnership = false;
+    try {
+      getDesktopSourceGhostedIdsFromOwnership(null);
+    } catch (error) {
+      rejectedMissingOwnership = error instanceof TypeError;
+    }
+    assert(rejectedMissingOwnership, "desktop ownership observation should reject a missing registry port");
+  }
+
+  {
     const app = { id: "app-a", type: "app" };
     const folder = { id: "folder-a", type: "folder" };
     const handoffEntry = { folderId: folder.id, visualReleased: false };
@@ -58,7 +184,7 @@ export function runDesktopRenderPlanTests() {
       isIconOpening: (area, itemId) => area === "desktop" && itemId === app.id,
       focusedIcon: { area: "desktop", folderId: null, id: app.id, pageIndex: 0 },
       showMissingLaunchTargetBadge: true,
-      launchTargetStatusById: { [app.id]: { missing: true } },
+      launchTargetStatusById: { [app.id]: "missing" },
     }), {
       folderHandoffEntries: new Map([[folder.id, handoffEntry]]),
       folderLayer: { folderVisualSession: makeFolderVisualSession(true, folder.id) },
@@ -75,7 +201,7 @@ export function runDesktopRenderPlanTests() {
     assert(appEntry.key === "page:0:app-a", "app entry should expose the stable desktop node key");
     assert(appEntry.nodeState.dragging === true, "app entry should preserve drag state");
     assert(appEntry.nodeState.opening === true && appEntry.nodeState.focused === true, "app entry should preserve icon focus and opening state");
-    assert(appEntry.nodeState.launchTargetStatus?.missing === true, "app entry should preserve launch target status");
+    assert(appEntry.nodeState.launchTargetStatus === "missing", "app entry should preserve launch target status");
     assert(appEntry.boundsEntry?.area === "desktop", "interactive app entry should expose bounds registration input");
     assert(Number.isFinite(appEntry.layoutTarget.x) && Number.isFinite(appEntry.layoutTarget.y), "app entry should expose a numeric layout target");
 

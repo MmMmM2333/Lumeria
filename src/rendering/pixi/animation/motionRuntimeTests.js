@@ -4,6 +4,7 @@ import {
   spring,
   tween,
 } from "./motionRuntime.js";
+import { createMotionRuntimeDebugAdapter } from "./motionRuntimeDebugAdapter.dev.js";
 
 function nearlyEqual(actual, expected, epsilon = 0.001) {
   return Math.abs(actual - expected) <= epsilon;
@@ -25,10 +26,69 @@ function containsReference(value, reference, seen = new Set()) {
   return Object.values(value).some((entry) => containsReference(entry, reference, seen));
 }
 
+function createFakeFrameScheduler() {
+  const callbacks = new Map();
+  let cancelCount = 0;
+  let nextHandle = 1;
+  let requestCount = 0;
+
+  return {
+    cancelAnimationFrame(handle) {
+      cancelCount += 1;
+      callbacks.delete(handle);
+    },
+    flush(timeMs) {
+      const entry = callbacks.entries().next().value;
+      if (!entry) return false;
+      const [handle, callback] = entry;
+      callbacks.delete(handle);
+      callback(timeMs);
+      return true;
+    },
+    get cancelCount() {
+      return cancelCount;
+    },
+    get pendingCount() {
+      return callbacks.size;
+    },
+    get requestCount() {
+      return requestCount;
+    },
+    requestAnimationFrame(callback) {
+      const handle = nextHandle;
+      nextHandle += 1;
+      requestCount += 1;
+      callbacks.set(handle, callback);
+      return handle;
+    },
+  };
+}
+
 export function runMotionRuntimeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Motion runtime test failed] ${message}`);
   };
+
+  {
+    const adapter = createMotionRuntimeDebugAdapter();
+    adapter.configureDebug({ enabled: true });
+    const record = {
+      driver: "tween",
+      lane: "base",
+      laneKey: "adapter-default-state",
+      prop: "x",
+      targetId: 1,
+      to: 10,
+      value: 2,
+    };
+    adapter.observe({ frame: 7, record, timeMs: 125, type: "start" });
+    adapter.observe({ activeAnimationCount: 1, frame: 7, timeMs: 125, type: "frame" });
+
+    const snapshot = adapter.makeSnapshot();
+    const report = adapter.makeReport();
+    assert(snapshot.animations.length === 1, "adapter snapshots without explicit runtime state should retain observed active animations");
+    assert(report.runtime.frames === 7 && report.runtime.timeMs === 125, "adapter reports without explicit runtime state should retain observed frame metadata");
+  }
 
   {
     const runtime = createMotionRuntime({ autoStart: false, maxDeltaSeconds: 1 });
@@ -452,20 +512,96 @@ export function runMotionRuntimeTests() {
   }
 
   {
+    const scheduler = createFakeFrameScheduler();
+    const runtime = createMotionRuntime({ maxDeltaSeconds: 1, scheduler });
+    const target = { x: 0, y: 0 };
+    runtime.animate(target, "x", 10, { driver: tween({ duration: 0.1, ease: "linear" }) });
+    runtime.animate(target, "y", 20, { driver: tween({ duration: 0.1, ease: "linear" }) });
+
+    assert(scheduler.pendingCount === 1, "multiple animations should share one pending runtime RAF");
+    assert(scheduler.requestCount === 1, "runtime should request only one RAF while a frame is pending");
+    assert(scheduler.flush(100), "fake scheduler should flush the first runtime frame");
+    assert(scheduler.pendingCount === 1, "active work should demand exactly one subsequent RAF");
+    assert(scheduler.flush(200), "fake scheduler should flush the completing runtime frame");
+    assert(scheduler.pendingCount === 0, "completed work should leave no queued RAF");
+    assert(!runtime.hasActiveWork(), "completed scheduler-driven animations should return runtime to idle");
+
+    let afterFrameCalls = 0;
+    const afterFrame = () => {
+      afterFrameCalls += 1;
+    };
+    runtime.afterFrame(afterFrame);
+    runtime.afterFrame(afterFrame);
+    assert(scheduler.pendingCount === 1, "coalesced afterFrame work should request one RAF");
+    scheduler.flush(300);
+    assert(afterFrameCalls === 1, "coalesced afterFrame work should flush once");
+    assert(scheduler.pendingCount === 0, "flushed afterFrame-only work should not keep RAF alive");
+
+    runtime.animate(target, "x", 30, { driver: tween({ duration: 1, ease: "linear" }) });
+    assert(scheduler.pendingCount === 1, "new work should wake an idle runtime");
+    runtime.suspendAutoTicker();
+    assert(scheduler.pendingCount === 0 && scheduler.cancelCount === 1, "suspending should cancel the sole pending RAF");
+    runtime.resumeAutoTicker();
+    assert(scheduler.pendingCount === 1, "resuming should restore one RAF for pending work");
+    runtime.reset();
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: true });
     const signals = [];
-    const unsubscribe = runtime.onRenderSignal((
-      activeAnimationCount,
-      writesLastFrame,
-      afterFrameFlushes,
-      reason
-    ) => signals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame }));
+    const objectSignals = [];
+    const signalArgumentCounts = [];
+    const unsubscribe = runtime.onRenderSignal((...args) => {
+      signalArgumentCounts.push(args.length);
+      signals.push(args[0]);
+    });
+    const unsubscribeObject = runtime.onRenderSignal({
+      handleRenderSignal(signal) {
+        objectSignals.push(signal);
+      },
+    });
     runtime.suspendAutoTicker();
     runtime.afterFrame(() => {});
     assert(signals.some((signal) => signal.reason === "frame-request"), "suspended runtime should emit a render signal for external frame drivers");
+    assert(signalArgumentCounts.every((count) => count === 1), "render listeners should receive exactly one event argument");
+    assert(objectSignals[0] === signals[0], "function and object listeners should receive the same render event object");
+    assert(Object.isFrozen(signals[0]), "render signals should be immutable event objects");
     runtime.step(0);
     runtime.resumeAutoTicker();
     unsubscribe();
+    unsubscribeObject();
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const rejectedInputs = [];
+    for (const registerInvalidInput of [
+      () => runtime.addObserver(null),
+      () => runtime.onRenderSignal({}),
+      () => runtime.afterFrame(null),
+    ]) {
+      try {
+        registerInvalidInput();
+      } catch (error) {
+        rejectedInputs.push(error instanceof TypeError);
+      }
+    }
+    assert(
+      rejectedInputs.length === 3 && rejectedInputs.every(Boolean),
+      "motion callback seams should reject invalid registrations instead of silently dropping them",
+    );
+  }
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    const target = Object.freeze({ x: 0 });
+    let writeFailure = null;
+    try {
+      runtime.animate(target, "x", 10, { driver: tween({ duration: 1 }) });
+    } catch (error) {
+      writeFailure = error;
+    }
+    assert(writeFailure instanceof TypeError, "non-writable dynamic target properties should fail explicitly");
   }
 
   {
@@ -791,9 +927,7 @@ export function runMotionRuntimeTests() {
     const debugEvents = [];
     const renderSignals = [];
     runtime.addObserver((event) => debugEvents.push(event));
-    runtime.onRenderSignal((activeAnimationCount, writesLastFrame, afterFrameFlushes, reason) => {
-      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
-    });
+    runtime.onRenderSignal((signal) => renderSignals.push(signal));
 
     runtime.configureDebug();
     assert(debugEvents.length === 0, "reading debug config should not emit debugConfig events");
@@ -822,14 +956,7 @@ export function runMotionRuntimeTests() {
         objectEvents.push(event.type);
       },
     });
-    const unsubscribeRenderSignal = runtime.onRenderSignal((
-      activeAnimationCount,
-      writesLastFrame,
-      afterFrameFlushes,
-      reason
-    ) => {
-      renderSignals.push({ activeAnimationCount, afterFrameFlushes, reason, writesLastFrame });
-    });
+    const unsubscribeRenderSignal = runtime.onRenderSignal((signal) => renderSignals.push(signal));
 
     runtime.describeTarget(target, {
       kind: "ObserverTarget",
@@ -1339,6 +1466,7 @@ export function runMotionRuntimeTests() {
     assert(stats.arriveCompleteGapMs === stats.completeTimeMs - stats.arriveTimeMs, "curve stats should expose arrive-complete gap");
     assert(stats.sampleCount > 0, "curve stats should count samples");
     assert(stats.eventCount > 0, "curve stats should count lifecycle events");
+    assert(!Object.keys(stats).some((key) => key.startsWith("_")), "curve stats should not leak private accumulator fields");
     assert(typeof JSON.stringify(report.curveStats) === "string", "curve stats should remain JSON serializable");
   }
 

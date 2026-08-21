@@ -98,10 +98,12 @@ function createFolderFlow(overrides = {}) {
     clearFolderPageTurnRequest: 0,
     commitFolderPageTurnRequest: 0,
     folderOpenProgressAnimations: [],
+    handoffFolderCloses: [],
     resetFolderViewportMetrics: 0,
     setFolderMotionGeometry: [],
   };
   const pages = ref(overrides.pages ?? [[folder]]);
+  const renderedPages = overrides.renderedPages ?? pages;
   const folderPageIndex = ref(overrides.folderPageIndex ?? 1);
   const folderPageTurnRequest = ref(overrides.folderPageTurnRequest ?? null);
   const folderPageRefs = [{ id: "folder-page" }];
@@ -114,6 +116,7 @@ function createFolderFlow(overrides = {}) {
       calls.folderOpenProgressAnimations.push(animation);
       const control = {
         cancelReason: null,
+        velocity: 0,
         cancel(reason) {
           control.cancelReason = reason;
         },
@@ -155,12 +158,18 @@ function createFolderFlow(overrides = {}) {
     folderPageSize: ref(overrides.folderPageSize ?? 2),
     getFolderIconMotionGeometry: (folderId) => ({ id: folderId, source: "icon" }),
     getFolderMotionGeometry: () => folderMotionGeometry,
+    getRenderedPages: overrides.omitRenderedPagesProvider
+      ? undefined
+      : () => renderedPages.value || pages.value,
     getVisibleFolderPages: (currentFolder, pageSize, minPageCount) => {
       const visiblePages = (currentFolder.childPages || []).slice();
       while (visiblePages.length < minPageCount) visiblePages.push([]);
       return visiblePages;
     },
     isDragActive: () => Boolean(overrides.isDragActive),
+    onFolderCloseHandoffReady: (folderId, handoff) => {
+      calls.handoffFolderCloses.push({ folderId, ...handoff });
+    },
     pageRefs,
     pages,
     resetFolderViewportMetrics: () => {
@@ -192,6 +201,7 @@ function createFolderFlow(overrides = {}) {
     },
     pageRefs,
     pages,
+    renderedPages,
   };
 }
 
@@ -204,6 +214,17 @@ export function runLaunchpadFolderFlowTests() {
   globalThis.window = timers;
 
   try {
+    let missingRenderedPagesError = null;
+    try {
+      createFolderFlow({ omitRenderedPagesProvider: true });
+    } catch (error) {
+      missingRenderedPagesError = error;
+    }
+    assert(
+      missingRenderedPagesError instanceof TypeError,
+      "folder flow should reject a missing rendered-page provider instead of falling back to authoritative pages"
+    );
+
     const open = createFolderFlow({ folderPageIndex: 2 });
     open.flow.startHomeRevealSettleWindow();
     open.flow.commitOpenFolder("folder-1", { originGeometry: { id: "origin", x: 18 } });
@@ -221,6 +242,75 @@ export function runLaunchpadFolderFlowTests() {
     assert(open.folderMotionGeometry.id === "folder-1" && open.folderMotionGeometry.x === 18, "opening should set origin geometry with the folder id");
     assert(open.calls.resetFolderViewportMetrics === 1, "opening a different folder should reset stale folder viewport metrics");
     assert(open.calls.clearFolderPageTurnRequest === 1, "opening a different folder should clear stale folder page turn requests");
+
+    const provisionalFolder = {
+      id: "folder-provisional",
+      type: "folder",
+      name: "Provisional Folder",
+      childPages: [[{ id: "provisional-target", type: "app", name: "Target" }]],
+    };
+    const provisionalPages = ref([[provisionalFolder]]);
+    const provisional = createFolderFlow({
+      pages: [[{ id: "provisional-target", type: "app", name: "Target" }]],
+      renderedPages: provisionalPages,
+    });
+    provisional.flow.commitOpenFolder("folder-provisional");
+    assert(
+      provisional.flow.renderedFolder.value?.id === "folder-provisional",
+      "opening should resolve a provisional folder from the current rendered-page projection"
+    );
+    assert(
+      provisional.flow.folderPages.value[0]?.[0]?.id === "provisional-target",
+      "the provisional folder overlay should expose projected children before the authoritative commit"
+    );
+    provisional.flow.commitOpenFolder(null);
+    provisionalPages.value = null;
+    assert(
+      provisional.flow.renderedFolder.value?.id === "folder-provisional",
+      "closing should retain a snapshot after the provisional page projection is discarded"
+    );
+
+    const rolledBackPages = ref([[provisionalFolder]]);
+    const rolledBack = createFolderFlow({
+      pages: [[{ id: "provisional-target", type: "app", name: "Target" }]],
+      renderedPages: rolledBackPages,
+    });
+    rolledBack.flow.commitOpenFolder("folder-provisional");
+    rolledBack.flow.folderOpenProgress.value = 1;
+    rolledBack.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    assert(
+      rolledBack.flow.openFolderId.value === null &&
+        rolledBack.flow.renderedFolderId.value === "folder-provisional" &&
+        rolledBack.flow.renderedFolder.value?.id === "folder-provisional" &&
+        rolledBack.flow.isFolderClosing.value,
+      "a projected folder rollback should enter the same formal closing state as a persisted folder"
+    );
+    assert(
+      rolledBack.flow.folderClosingSnapshot.value?.id === "folder-provisional",
+      "formal closing should retain a projected folder snapshot through handoff"
+    );
+    rolledBackPages.value = null;
+    rolledBack.folderOpenProgressControls.at(-1).velocity = -0.75;
+    rolledBack.arriveFolderOpenProgress(0);
+    assert(rolledBack.flow.isFolderClosing.value, "close progress alone should wait for the desktop handoff");
+    rolledBack.folderOpenProgressControls.at(-1).velocity = -0.01;
+    rolledBack.flow.finishFolderCloseAfterHandoffFrame();
+    assert(
+      rolledBack.calls.handoffFolderCloses.length === 1 &&
+        rolledBack.calls.handoffFolderCloses[0].folderId === "folder-provisional" &&
+        rolledBack.calls.handoffFolderCloses[0].velocity === 0.75,
+      "the visual handoff should publish the closing momentum before the cleanup frame"
+    );
+    assert(
+      rolledBack.flow.renderedFolderId.value === "folder-provisional",
+      "publishing rollback momentum must not retire the formal close in the same frame"
+    );
+    timers.runAnimationFrames();
+    assert(
+      rolledBack.flow.renderedFolderId.value === null &&
+        rolledBack.flow.renderedFolder.value === null,
+      "the close handoff should release its retained projection on the cleanup frame"
+    );
 
     const cancelledOpen = createFolderFlow();
     cancelledOpen.flow.commitOpenFolder("folder-1");

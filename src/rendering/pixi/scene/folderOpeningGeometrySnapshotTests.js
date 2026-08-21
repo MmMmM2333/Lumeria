@@ -45,10 +45,13 @@ export function runFolderOpeningGeometrySnapshotTests() {
     panelRect.width = 999;
     childRect.top = 999;
 
-    assert(snapshot.coordinateSpace === "client-visual", "snapshot should declare client visual coordinates");
-    assert(snapshot.folderRect.left === 100, "snapshot should clone the folder source rect");
-    assert(snapshot.panelRect.width === 800, "snapshot should clone the panel target rect");
-    assert(snapshot.panelCenter.x === 580 && snapshot.panelCenter.y === 380, "snapshot should retain the panel target center");
+    assert(snapshot.source.coordinateSpace === "client-visual", "snapshot source should declare client visual coordinates");
+    assert(snapshot.target.coordinateSpace === "stage-layout", "snapshot target should declare stage layout coordinates");
+    assert(snapshot.source.folderRect.left === 100, "snapshot should clone the folder source rect");
+    assert(snapshot.target.panelRect.width === 800, "snapshot should clone the panel target rect");
+    assert(snapshot.target.panelCenter.x === 580 && snapshot.target.panelCenter.y === 380, "snapshot should retain the panel target center");
+    assert(snapshot.projection.clientStageRect.width === 1000, "snapshot should retain the client stage projection rect");
+    assert(snapshot.projection.stageWidth === 1000 && snapshot.projection.stageHeight === 600, "snapshot should retain stage layout dimensions");
     const previewRect = getFolderOpeningPreviewChildRect(snapshot, { id: "app-b" }, 1);
     assert(previewRect.top === 136, "snapshot should clone preview child rects at capture time");
     previewRect.top = 777;

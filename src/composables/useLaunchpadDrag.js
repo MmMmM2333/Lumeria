@@ -49,6 +49,18 @@ const GROUP_DRAG_VISUAL_LIMIT = 12;
 const GROUP_DROP_INTENT_DELAY_MS = 42;
 const GROUP_FOLDER_HOVER_OPEN_MS = 920;
 const GROUP_FOLDER_HOVER_FLASH_MS = 540;
+const GROUP_APP_FOLDER_HOVER_SETTLE_MS = 660;
+const GROUP_APP_FOLDER_HOVER_FLASH_TOTAL_MS = 540;
+const GROUP_APP_FOLDER_HOVER_OPEN_BUFFER_MS = 20;
+const GROUP_APP_FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS = 90;
+const GROUP_APP_FOLDER_HOVER_OPEN_MS =
+  GROUP_APP_FOLDER_HOVER_SETTLE_MS +
+  GROUP_APP_FOLDER_HOVER_FLASH_TOTAL_MS +
+  GROUP_APP_FOLDER_HOVER_OPEN_BUFFER_MS;
+const GROUP_APP_FOLDER_HOVER_OPENING_MS = Math.max(
+  0,
+  GROUP_APP_FOLDER_HOVER_OPEN_MS - GROUP_APP_FOLDER_HOVER_RESTORE_BEFORE_OPEN_MS
+);
 const FOLDER_HIT_CANDIDATE_MARGIN = 6;
 const FOLDER_HIT_INTENT_MAX_SIZE = 64;
 const LAYOUT_PROJECTION_RELEASE_DELAY_MS = 260;
@@ -179,6 +191,22 @@ function intentKey(intent) {
 }
 
 function updateLayoutProjection(group, intent, plan) {
+  if (
+    group.provisionalFolder?.folderId &&
+    group.folderTransit?.folderId === group.provisionalFolder.folderId &&
+    group.folderTransit.hasEnteredPanel !== true
+  ) {
+    group.projectedPages = group.provisionalFolder.projectedPages;
+    return;
+  }
+  if (
+    group.provisionalFolder?.folderId &&
+    intent?.type === "folder-slot" &&
+    intent.folderId === group.provisionalFolder.folderId
+  ) {
+    group.projectedPages = group.provisionalFolder.projectedPages;
+    return;
+  }
   // Folder/app intent is semantic only; keep the last slot projection until
   // release so the hidden source never exposes a hole in the base layout.
   if (!["desktop-slot", "folder-slot"].includes(intent?.type)) return;
@@ -245,15 +273,16 @@ export function useLaunchpadDrag(options) {
   if (typeof options.commitGroupDrop !== "function") {
     throw new TypeError("useLaunchpadDrag requires commitGroupDrop");
   }
+  if (typeof options.discardProvisionalFolder !== "function") {
+    throw new TypeError("useLaunchpadDrag requires discardProvisionalFolder");
+  }
 
   const dragMeta = shallowRef(null);
   const dragFolderHoverState = shallowRef(null);
   const dragFolderTargetId = shallowRef(null);
   const dragHitDebugState = shallowRef(null);
   const groupDragState = shallowRef(null);
-  const projectedPages = options.projectedPagesRef && typeof options.projectedPagesRef === "object"
-    ? options.projectedPagesRef
-    : shallowRef(null);
+  const projectedPages = shallowRef(null);
 
   let activeDrag = null;
   let pendingDragStart = null;
@@ -263,6 +292,7 @@ export function useLaunchpadDrag(options) {
   let folderPageTurnState = { phase: "idle", timer: null };
   let folderHoverTimer = null;
   let folderHoverFlashTimer = null;
+  let folderHoverOpeningTimer = null;
   let projectionReleaseTimer = null;
   let contextMenuAttached = false;
   let groupKey = 0;
@@ -344,8 +374,10 @@ export function useLaunchpadDrag(options) {
   function clearFolderHoverTimers() {
     if (folderHoverTimer) window.clearTimeout(folderHoverTimer);
     if (folderHoverFlashTimer) window.clearTimeout(folderHoverFlashTimer);
+    if (folderHoverOpeningTimer) window.clearTimeout(folderHoverOpeningTimer);
     folderHoverTimer = null;
     folderHoverFlashTimer = null;
+    folderHoverOpeningTimer = null;
   }
 
   function clearLockedTarget() {
@@ -855,9 +887,10 @@ export function useLaunchpadDrag(options) {
     return rect ? { ...found, rect } : null;
   }
 
-  function getTargetIntentRect(rect) {
-    const safeRect = cloneRect(rect);
+  function getTargetIntentRect(target) {
+    const safeRect = cloneRect(target?.rect);
     if (!safeRect || safeRect.width <= 0 || safeRect.height <= 0) return null;
+    if (target?.item?.type === "app") return safeRect;
     return makeCenteredRect(
       safeRect,
       Math.min(safeRect.width, FOLDER_HIT_INTENT_MAX_SIZE),
@@ -866,7 +899,7 @@ export function useLaunchpadDrag(options) {
   }
 
   function getTargetStickyRect(target) {
-    const intentRect = getTargetIntentRect(target?.rect);
+    const intentRect = getTargetIntentRect(target);
     return intentRect ? expandRect(intentRect, FOLDER_HOVER_STICKY_MARGIN) : null;
   }
 
@@ -939,24 +972,103 @@ export function useLaunchpadDrag(options) {
   }
 
   function isTargetIntentAccepted(target, point) {
-    const intentRect = getTargetIntentRect(target?.rect);
+    const intentRect = getTargetIntentRect(target);
     return Boolean(intentRect && point && isPointInsideRect(intentRect, point.x, point.y));
+  }
+
+  function makeFolderHoverSession(target, plan) {
+    return {
+      group: activeDrag?.group || null,
+      hoverStateKey: dragFolderHoverState.value?.key || null,
+      plan,
+      targetId: target?.item?.id || null,
+      targetType: target?.item?.type || null,
+    };
+  }
+
+  function clearFolderHoverSession(session) {
+    if (
+      activeDrag?.group !== session?.group ||
+      activeDrag.group.pendingOpenFolderId !== session.targetId ||
+      dragFolderHoverState.value?.key !== session.hoverStateKey
+    ) return;
+    clearPendingTarget();
+  }
+
+  function getActiveFolderHoverTarget(session) {
+    const drag = activeDrag;
+    const group = drag?.group;
+    if (
+      !session?.targetId ||
+      !group ||
+      group !== session.group ||
+      group.pendingOpenFolderId !== session.targetId ||
+      dragFolderHoverState.value?.key !== session.hoverStateKey ||
+      group.lastPlan !== session.plan ||
+      group.planRevision !== options.getGroupLayoutRevision()
+    ) return null;
+    const target = getTopLevelTargetById(session.targetId);
+    const point = getPointerCenter(drag) || drag.pointer;
+    const stickyRect = getTargetStickyRect(target);
+    if (
+      !target ||
+      target.item.type !== session.targetType ||
+      !point ||
+      !stickyRect ||
+      !isPointInsideRect(stickyRect, point.x, point.y)
+    ) return null;
+    return target;
+  }
+
+  function requireActiveFolderHoverTarget(session) {
+    const target = getActiveFolderHoverTarget(session);
+    if (!target) clearFolderHoverSession(session);
+    return target;
+  }
+
+  function discardProvisionalApplicationFolder(group = activeDrag?.group) {
+    const provisional = group?.provisionalFolder;
+    if (!provisional?.folderId || group.didCommit) return false;
+    if (options.openFolderId.value === provisional.folderId) {
+      const discarded = options.discardProvisionalFolder(provisional.folderId, {
+        previewSlotIndex: 0,
+        projectedPages: provisional.projectedPages,
+        reducedMotion: prefersReducedMotion(),
+        targetIndex: provisional.target?.index,
+        targetItem: provisional.target?.item,
+        targetPageIndex: provisional.target?.pageIndex,
+        targetRect: cloneRect(provisional.target?.rect),
+      });
+      if (discarded !== true) {
+        throw new Error(`Failed to discard provisional folder ${provisional.folderId}`);
+      }
+    }
+    if (group.folderTransit?.folderId === provisional.folderId) group.folderTransit = null;
+    group.provisionalFolder = null;
+    group.projectedPages = null;
+    projectedPages.value = null;
+    group.projectionRefreshIntentKey = null;
+    return true;
   }
 
   function leaveFolderTransit() {
     const group = activeDrag?.group;
     const transit = group?.folderTransit;
     if (!transit?.folderId || options.openFolderId.value !== transit.folderId) return false;
+    const isProvisionalCreate = group.provisionalFolder?.folderId === transit.folderId;
     clearPendingTarget();
     clearFolderPageTurn();
+    if (isProvisionalCreate) discardProvisionalApplicationFolder(group);
     group.returnedFromFolder = true;
     group.folderTransit = null;
     group.projectedPages = null;
     projectedPages.value = null;
     group.projectionRefreshIntentKey = null;
-    options.commitOpenFolder(null, {
-      excludeCloseGhostIds: group.draggedIds,
-    });
+    if (!isProvisionalCreate) {
+      options.commitOpenFolder(null, {
+        excludeCloseGhostIds: group.draggedIds,
+      });
+    }
     return true;
   }
 
@@ -971,7 +1083,18 @@ export function useLaunchpadDrag(options) {
       transit.hasEnteredPanel = true;
       return "inside";
     }
-    if (!transit.hasEnteredPanel && syncOptions.finalize !== true) return "awaiting-entry";
+    if (!transit.hasEnteredPanel && syncOptions.finalize !== true) {
+      const provisionalTarget = group.provisionalFolder?.folderId === transit.folderId
+        ? group.provisionalFolder.target
+        : null;
+      const point = getPointerCenter() || { x: clientX, y: clientY };
+      const stickyRect = getTargetStickyRect(provisionalTarget);
+      if (provisionalTarget && (!stickyRect || !isPointInsideRect(stickyRect, point.x, point.y))) {
+        leaveFolderTransit();
+        return "desktop";
+      }
+      return "awaiting-entry";
+    }
     leaveFolderTransit();
     return "desktop";
   }
@@ -1070,17 +1193,65 @@ export function useLaunchpadDrag(options) {
 
   function makePlan(intent) {
     const group = activeDrag.group;
+    const semanticIntent = group.provisionalFolder?.folderId &&
+      intent?.type === "folder-slot" &&
+      intent.folderId === group.provisionalFolder.folderId
+      ? group.provisionalFolder.semanticIntent
+      : intent;
     return options.planGroupTransfer({
       basePages: group.basePages,
       baseRevision: group.baseRevision,
       createdFolderId: group.createdFolderId,
       currentRevision: options.getGroupLayoutRevision(),
       draggedIds: group.draggedIds,
-      intent,
+      intent: semanticIntent,
       leadId: group.leadId,
       selectionRevision: group.selectionRevision,
       standalone: group.standalone,
     });
+  }
+
+  function makeProvisionalApplicationFolderProjection(plan, targetAppId) {
+    const folderId = plan?.effects?.createdFolderId;
+    if (plan?.status !== "accepted" || !folderId || !targetAppId) return null;
+    const projection = options.clonePages(plan.nextPages);
+    const folder = findFolderInPages(projection, folderId);
+    const targetApp = getFolderChildrenPages(folder)
+      .flatMap((page) => page || [])
+      .find((item) => item?.id === targetAppId && item.type === "app");
+    if (!folder || !targetApp) return null;
+    folder.childPages = [[options.cloneItem(targetApp)]];
+    return projection;
+  }
+
+  function openProvisionalApplicationFolder(target, plan) {
+    const group = activeDrag?.group;
+    const folderId = plan?.effects?.createdFolderId;
+    const projection = makeProvisionalApplicationFolderProjection(plan, target?.item?.id);
+    if (!group || !folderId || !projection || group.pendingOpenFolderId !== target.item.id) return false;
+    group.pendingOpenFolderId = null;
+    group.provisionalFolder = {
+      folderId,
+      projectedPages: projection,
+      semanticIntent: { targetAppId: target.item.id, type: "application" },
+      target: {
+        index: target.index,
+        item: options.cloneItem(target.item),
+        pageIndex: target.pageIndex,
+        rect: cloneRect(target.rect),
+      },
+    };
+    group.folderTransit = {
+      folderId,
+      hasEnteredPanel: false,
+      origin: "create",
+    };
+    group.projectedPages = projection;
+    projectedPages.value = projection;
+    publishGroupState();
+    const originGeometry = options.getFolderCreateMotionGeometry?.(target.item.id, folderId) || null;
+    options.commitOpenFolder(folderId, originGeometry ? { originGeometry } : undefined);
+    return true;
   }
 
   function publishTarget(target, plan, resolved = null) {
@@ -1117,7 +1288,41 @@ export function useLaunchpadDrag(options) {
         targetType: target.item.type,
       };
     }
-    if (target.item.type !== "folder" || options.openFolderId.value === target.item.id) {
+    if (target.item.type === "app") {
+      if (
+        activeDrag.group.pendingOpenFolderId === target.item.id ||
+        activeDrag.group.provisionalFolder?.target?.item?.id === target.item.id
+      ) return;
+      clearFolderHoverTimers();
+      activeDrag.group.pendingOpenFolderId = target.item.id;
+      const hoverSession = makeFolderHoverSession(target, plan);
+      folderHoverFlashTimer = window.setTimeout(() => {
+        folderHoverFlashTimer = null;
+        if (!requireActiveFolderHoverTarget(hoverSession)) return;
+        dragFolderHoverState.value = {
+          ...dragFolderHoverState.value,
+          phase: "flash",
+        };
+        publishGroupState();
+      }, GROUP_APP_FOLDER_HOVER_SETTLE_MS);
+      folderHoverOpeningTimer = window.setTimeout(() => {
+        folderHoverOpeningTimer = null;
+        if (!requireActiveFolderHoverTarget(hoverSession)) return;
+        dragFolderHoverState.value = {
+          ...dragFolderHoverState.value,
+          phase: "opening",
+        };
+        publishGroupState();
+      }, GROUP_APP_FOLDER_HOVER_OPENING_MS);
+      folderHoverTimer = window.setTimeout(() => {
+        folderHoverTimer = null;
+        const latestTarget = requireActiveFolderHoverTarget(hoverSession);
+        if (!latestTarget) return;
+        openProvisionalApplicationFolder(latestTarget, plan);
+      }, GROUP_APP_FOLDER_HOVER_OPEN_MS);
+      return;
+    }
+    if (options.openFolderId.value === target.item.id) {
       activeDrag.group.pendingOpenFolderId = null;
       clearFolderHoverTimers();
       return;
@@ -1128,9 +1333,10 @@ export function useLaunchpadDrag(options) {
     ) return;
     clearFolderHoverTimers();
     activeDrag.group.pendingOpenFolderId = target.item.id;
+    const hoverSession = makeFolderHoverSession(target, plan);
     folderHoverFlashTimer = window.setTimeout(() => {
       folderHoverFlashTimer = null;
-      if (!activeDrag || activeDrag.group.pendingOpenFolderId !== target.item.id) return;
+      if (!requireActiveFolderHoverTarget(hoverSession)) return;
       dragFolderHoverState.value = {
         ...dragFolderHoverState.value,
         phase: "flash",
@@ -1139,10 +1345,11 @@ export function useLaunchpadDrag(options) {
     }, GROUP_FOLDER_HOVER_FLASH_MS);
     folderHoverTimer = window.setTimeout(() => {
       folderHoverTimer = null;
-      if (!activeDrag || activeDrag.group.pendingOpenFolderId !== target.item.id) return;
+      const latestTarget = requireActiveFolderHoverTarget(hoverSession);
+      if (!latestTarget) return;
       activeDrag.group.pendingOpenFolderId = null;
       activeDrag.group.folderTransit = {
-        folderId: target.item.id,
+        folderId: latestTarget.item.id,
         hasEnteredPanel: false,
         origin: "auto",
       };
@@ -1150,7 +1357,7 @@ export function useLaunchpadDrag(options) {
         ...dragFolderHoverState.value,
         phase: "opening",
       };
-      options.commitOpenFolder(target.item.id);
+      options.commitOpenFolder(latestTarget.item.id);
     }, GROUP_FOLDER_HOVER_OPEN_MS);
   }
 
@@ -1377,8 +1584,10 @@ export function useLaunchpadDrag(options) {
   }
 
   function makeFolderCreateTargetEntry(plan, resolved) {
-    if (!plan?.effects?.createdFolderId || resolved?.intent?.type !== "application") return null;
-    const target = resolved.target;
+    if (!plan?.effects?.createdFolderId) return null;
+    const target = resolved?.intent?.type === "application"
+      ? resolved.target
+      : activeDrag?.group?.provisionalFolder?.target;
     if (!target?.item?.id || target.item.type !== "app" || !target.rect) return null;
     return {
       bundleCount: 1,
@@ -1425,6 +1634,7 @@ export function useLaunchpadDrag(options) {
     clearPageTurn();
     clearFolderPageTurn();
     normalizeUncommittedNavigation(drag);
+    discardProvisionalApplicationFolder(drag.group);
     drag.group.cancelArmed = false;
     drag.group.cancelSource = cancelSource;
     drag.group.phase = GROUP_TRANSFER_PHASE.RETURNING;
@@ -1481,6 +1691,7 @@ export function useLaunchpadDrag(options) {
 
   function acceptDrop(plan, resolved) {
     const drag = activeDrag;
+    const isProvisionalCreate = drag.group.provisionalFolder?.folderId === plan.effects?.createdFolderId;
     const folderCreateTargetEntry = makeFolderCreateTargetEntry(plan, resolved);
     if (
       folderCreateTargetEntry?.item?.id &&
@@ -1492,8 +1703,10 @@ export function useLaunchpadDrag(options) {
     drag.group.outcome = GROUP_TRANSFER_OUTCOME.ACCEPTED;
     drag.group.reason = null;
     drag.group.semanticPlan = plan;
-    drag.group.projectedPages = null;
-    projectedPages.value = null;
+    if (!isProvisionalCreate) {
+      drag.group.projectedPages = null;
+      projectedPages.value = null;
+    }
     updateGroupPresentation(drag, "release", {
       key: `group-release-${groupKey}-${drag.group.leadId}`,
       transferPlan: plan,
@@ -1522,6 +1735,13 @@ export function useLaunchpadDrag(options) {
       return;
     }
     drag.group.didCommit = true;
+    if (isProvisionalCreate) {
+      drag.group.projectedPages = null;
+      projectedPages.value = null;
+      drag.group.provisionalFolder = null;
+      drag.group.folderTransit = null;
+      drag.group.returnedFromFolder = false;
+    }
     if (
       resolved.intent.type === "folder-slot" &&
       resolved.intent.folderId === options.openFolderId.value
@@ -1731,6 +1951,7 @@ export function useLaunchpadDrag(options) {
 
   function endDrag() {
     const ended = activeDrag?.group || null;
+    discardProvisionalApplicationFolder(ended);
     detachContextMenu();
     cancelPreviewRaf();
     clearIntentTimer();
@@ -1846,6 +2067,7 @@ export function useLaunchpadDrag(options) {
         planRevision: payload.layoutRevision,
         projectionRefreshIntentKey: null,
         projectedPages: null,
+        provisionalFolder: null,
         presentationPlan: null,
         reason: null,
         runtimePlan: null,

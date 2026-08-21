@@ -78,7 +78,9 @@ function attachOpeningVisualSession(layer, options = {}) {
     start(plan, reporter) {
       startRecord = { plan, reporter };
       return {
-        cancel() {},
+        cancel(cancelOptions) {
+          options.onCancel?.(cancelOptions);
+        },
         retarget(nextPlan) {
           options.onRetarget?.(nextPlan);
         },
@@ -404,6 +406,7 @@ export async function runFolderOverlayLayerTests() {
       folderPageSize: 9,
       folderPages: [[]],
       folderPanelStyle: {},
+      getFolderPageRenderMode: () => "interactive",
       getVisibleFolderPage: (page) => page || [],
       height: 800,
       iconSize: 64,
@@ -566,6 +569,87 @@ export async function runFolderOverlayLayerTests() {
     );
     assert(layer.openingGhostLayer.children.length === 0, "normal close should retire residual opening ghosts after capture");
     assert(layer.frameGhost.visible, "normal close should keep the closing frame visible after opening cleanup");
+
+    layer.destroy({ children: true });
+    iconBoundsRegistry.clearBounds();
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const iconBoundsRegistry = createIconBoundsRegistry();
+    const layer = new FolderOverlayLayer({ iconBoundsRegistry });
+    const existingItem = { id: "interaction-handoff-existing", name: "Existing", type: "app" };
+    const insertedItem = { id: "interaction-handoff-inserted", name: "Inserted", type: "app" };
+    const folderId = "folder-interaction-handoff";
+    const baseState = makeFolderResizeState({
+      folderGridStyle: {
+        gridTemplateColumns: "repeat(2, var(--folder-icon-cell-width))",
+        gridTemplateRows: "repeat(1, var(--folder-icon-cell-height))",
+      },
+      folderId,
+      folderPages: [[existingItem]],
+      folderPageSize: 2,
+    });
+    layer.update(baseState);
+    settleResizeUpdate(layer, baseState);
+
+    const makeOwnedState = (folderPages) => makeFolderResizeState({
+      ...baseState,
+      dragMeta: {
+        draggedIds: [insertedItem.id],
+        item: insertedItem,
+        source: { index: 0, pageIndex: 0, type: "page" },
+      },
+      folderPages,
+      groupDragState: {
+        phase: "releasing",
+        totalCount: 1,
+        visualSpec: {
+          cellHeight: 132,
+          cellWidth: 116,
+          compact: false,
+          iconSize: 88,
+          singleLineLabel: false,
+          textless: false,
+        },
+      },
+      groupTransferOwnedItemIds: new Set([insertedItem.id]),
+    });
+    layer.update(makeOwnedState([[existingItem, insertedItem]]));
+    layer.update(makeOwnedState([[insertedItem, existingItem]]));
+
+    const insertedKey = `${folderId}:${insertedItem.id}`;
+    const insertedNode = layer.iconNodes.get(insertedKey);
+    const latestTarget = layer.folderIconLayoutTargets.get(insertedKey);
+    assert(
+      insertedNode?.__groupTransferGhostedByOwnership === true &&
+        insertedNode.state.ghosted === true &&
+        insertedNode.visible === false,
+      "a newly inserted folder node should record transfer ownership while its actor supplies the visible pixels"
+    );
+
+    layer.applyGroupTransferOwnershipSnapshot({ itemIds: new Set() });
+
+    assert(
+      insertedNode?.__groupTransferGhostedByOwnership === false &&
+        insertedNode.state.ghosted === false &&
+        insertedNode.visible === true &&
+        insertedNode.eventMode === "static",
+      "interaction-only ownership release should atomically reveal and re-enable the inserted folder node"
+    );
+    assert(
+      nearlyEqual(insertedNode.x, latestTarget.x) &&
+        nearlyEqual(insertedNode.y, latestTarget.y) &&
+        !getBaseAnimation(insertedNode, "x") &&
+        !getBaseAnimation(insertedNode, "y"),
+      "the first visible ownership-release frame should use the latest authoritative slot without a layout twitch"
+    );
+    assert(
+      insertedNode.labelText.alpha === 1 &&
+        insertedNode.folderHandoffLabelRevealInProgress !== true,
+      "a labeled single-item actor should hand off to an already-visible folder label without restarting a fade"
+    );
 
     layer.destroy({ children: true });
     iconBoundsRegistry.clearBounds();
@@ -2439,8 +2523,8 @@ export async function runFolderOverlayLayerTests() {
     layer.currentOpeningGeometrySnapshot = reused;
 
     assert(first === reused, "same open session should reuse its geometry snapshot while the target is unchanged");
-    assert(reused.folderRect.left === firstSourceRect.left, "reused snapshot should keep the original folder source geometry");
-    assert(reused.previewChildRects.get("app-1:0").left === firstChildRect.left, "reused snapshot should keep the original preview child geometry");
+    assert(reused.source.folderRect.left === firstSourceRect.left, "reused snapshot should keep the original folder source geometry");
+    assert(reused.source.previewChildRects.get("app-1:0").left === firstChildRect.left, "reused snapshot should keep the original preview child geometry");
     const debug = layer.getVisualDebugSnapshot();
     assert(debug.openingGeometry.session.folderId === first.folderId, "opening debug should identify the lease-owned folder without exposing raw identity");
     assert(debug.openingGeometry.session.geometryLayoutKey === first.layoutKey, "opening debug should bind geometry to the active lease layout key");
@@ -2457,8 +2541,8 @@ export async function runFolderOverlayLayerTests() {
     layer.currentOpeningGeometrySnapshot = reopened;
 
     assert(reopened !== first, "a new open session should capture a fresh geometry snapshot");
-    assert(reopened.folderRect.left === secondSourceRect.left, "fresh snapshot should use the new folder source geometry");
-    assert(reopened.previewChildRects.get("app-1:0").left === secondChildRect.left, "fresh snapshot should use the new preview child geometry");
+    assert(reopened.source.folderRect.left === secondSourceRect.left, "fresh snapshot should use the new folder source geometry");
+    assert(reopened.source.previewChildRects.get("app-1:0").left === secondChildRect.left, "fresh snapshot should use the new preview child geometry");
     const reopenedDebug = layer.getVisualDebugSnapshot();
     assert(reopenedDebug.openingGeometry.session.geometryLayoutKey === reopened.layoutKey, "reopened debug should expose the fresh lease geometry identity");
     assert(reopenedDebug.openingGeometry.currentGeometryMatchesSession, "reopened debug should bind the fresh geometry to the current lease");

@@ -26,6 +26,7 @@ import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import { makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import { SingleStageDiagnosticsLayer } from "./singleStageDiagnostics.js";
 import { GroupDragLayer } from "./GroupDragLayer.js";
+import { ProvisionalFolderRollbackLayer } from "./ProvisionalFolderRollbackLayer.js";
 import { DragHitDebugLayer } from "./DragHitDebugLayer.js";
 import { FolderDropTargetLayer } from "./FolderDropTargetLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
@@ -42,30 +43,22 @@ import {
 } from "./pageTrackMotion.js";
 import {
   buildDesktopRenderPlan,
-  getDesktopSourceGhostedIdsFromOwnership,
-  hasFolderClosingHandoffId,
-  isDesktopLayoutTargetChanged,
-  isFolderLayerHandoffActive,
-  isFolderOpeningSourceGhosted,
-  isStaleHiddenFolderHandoffEntry,
-  normalizeDesktopHandoffState,
-  normalizeFolderIdSet,
+  isLayoutTargetChanged,
   readNumber,
   resolveDesktopVisualAlpha,
   resolveLaunchpadVisualAlpha,
   resolveLaunchpadVisualTransform,
-  shouldFinishFolderHandoff,
-  shouldFinishFolderHandoffEntry,
 } from "./desktopRenderPlan.js";
-
-export {
-  normalizeDesktopHandoffState,
-  resolveDesktopVisualAlpha,
-  resolveLaunchpadVisualAlpha,
-  resolveLaunchpadVisualTransform,
+import {
+  captureDesktopHandoffObservation,
+  getDesktopSourceGhostedIdsFromOwnership,
+  hasFolderClosingHandoffId,
+  isFolderOpeningSourceGhosted,
+  isStaleHiddenFolderHandoffEntry,
+  mergeFolderIdSets,
   shouldFinishFolderHandoff,
   shouldFinishFolderHandoffEntry,
-};
+} from "./desktopHandoffState.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
@@ -258,7 +251,7 @@ function makePointerOnlyPlanSnapshot(state, effectiveFolderSourceGhostedIds, fol
       makeIdListSignature(state.groupTransferOwnedItemIds),
       makeIdListSignature(state.selectedAppIds),
       makeIdListSignature(effectiveFolderSourceGhostedIds),
-      makeIdListSignature(state.folderClosingHandoffIds || state.folderClosingHandoffId),
+      makeIdListSignature(state.folderClosingHandoffIds),
       frame.left ?? "",
       frame.top ?? "",
       frame.width ?? "",
@@ -505,6 +498,13 @@ export class DesktopLayer extends Container {
       resolvePointTarget: (payload) => this.resolveGroupReleasePoint(payload),
       visualOwnership: this.visualOwnership,
     });
+    this.provisionalFolderRollbackLayer = new ProvisionalFolderRollbackLayer({
+      onComplete: (payload) => {
+        options.onProvisionalFolderRollbackComplete?.(payload);
+        this.onFolderRenderRequest("provisional-folder-rollback-complete");
+      },
+    });
+    this.provisionalFolderRollbackState = null;
     this.folderDropStrokeLayer = new FolderDropTargetLayer({ part: "stroke" });
     this.dragHitDebugLayer = new DragHitDebugLayer();
     this.folderHandoffNodes = new Map();
@@ -531,6 +531,7 @@ export class DesktopLayer extends Container {
     this.emptyText.anchor.set(0.5);
     this.visualRoot.addChild(this.pageTrack);
     this.visualRoot.addChild(this.emptyText);
+    this.visualRoot.addChild(this.provisionalFolderRollbackLayer);
     this.addChild(this.folderDropFillLayer);
     this.addChild(this.visualRoot);
     this.addChild(this.desktopClosingUnderlayLayer);
@@ -654,22 +655,22 @@ export class DesktopLayer extends Container {
   }
 
   updateInteraction(state) {
-    state = normalizeDesktopHandoffState(state);
     const ownership = this.groupDragLayer?.syncVisualOwnership?.(state.groupDragState) || {
       folderShellIds: new Set(),
       itemIds: new Set(),
     };
     const normalizedState = {
       ...state,
-      groupTransferOwnedFolderShellIds: normalizeFolderIdSet(
+      groupTransferOwnedFolderShellIds: mergeFolderIdSets(
         state.groupTransferOwnedFolderShellIds,
         ownership.folderShellIds
       ),
-      groupTransferOwnedItemIds: normalizeFolderIdSet(
+      groupTransferOwnedItemIds: mergeFolderIdSets(
         state.groupTransferOwnedItemIds,
         ownership.itemIds
       ),
     };
+    this.provisionalFolderRollbackState = normalizedState.provisionalFolderRollback || null;
     const plan = this.lastDesktopRenderPlan;
     if (!plan) {
       throw new Error("DesktopLayer.updateInteraction requires an initialized structural render plan");
@@ -694,28 +695,39 @@ export class DesktopLayer extends Container {
         boundsTransaction: false,
       }));
     }
-    state = normalizeDesktopHandoffState(state);
     const groupTransferOwnership = this.groupDragLayer?.syncVisualOwnership?.(state.groupDragState) || {
       folderShellIds: new Set(),
       itemIds: new Set(),
     };
     state = {
       ...state,
-      groupTransferOwnedFolderShellIds: normalizeFolderIdSet(
+      groupTransferOwnedFolderShellIds: mergeFolderIdSets(
         state.groupTransferOwnedFolderShellIds,
         groupTransferOwnership.folderShellIds
       ),
-      groupTransferOwnedItemIds: normalizeFolderIdSet(
+      groupTransferOwnedItemIds: mergeFolderIdSets(
         state.groupTransferOwnedItemIds,
         groupTransferOwnership.itemIds
       ),
     };
-    const effectiveFolderSourceGhostedIds = normalizeFolderIdSet(
-      state.folderSourceGhostedIds,
-      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
-      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
-    );
+    this.provisionalFolderRollbackState = state.provisionalFolderRollback || null;
     const folderHandoffEntries = this.getFolderHandoffNodes();
+    const ownershipSourceGhostedIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const handoffObservation = captureDesktopHandoffObservation(
+      this.singleStageFolderLayer,
+      mergeFolderIdSets(
+        state.folderClosingHandoffIds,
+        state.folderSourceGhostedIds,
+        state.groupTransferOwnedFolderShellIds,
+        ownershipSourceGhostedIds,
+        new Set(folderHandoffEntries.keys())
+      )
+    );
+    const effectiveFolderSourceGhostedIds = mergeFolderIdSets(
+      state.folderSourceGhostedIds,
+      ownershipSourceGhostedIds,
+      handoffObservation.desktopSourceGhostedIds
+    );
     const pointerOnlyPlanSnapshot = makePointerOnlyPlanSnapshot(
       state,
       effectiveFolderSourceGhostedIds,
@@ -728,23 +740,22 @@ export class DesktopLayer extends Container {
     );
     const nextPlanRevision = Math.max(0, Number(this.desktopPlanRevision) || 0) + 1;
     const plan = canReusePlan
-      ? {
-        ...this.lastDesktopRenderPlan,
-        state,
-      }
+      ? this.lastDesktopRenderPlan
       : {
         ...buildDesktopRenderPlan(state, {
           effectiveFolderSourceGhostedIds,
           folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
           folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
           folderHandoffEntries,
-          folderLayer: this.singleStageFolderLayer,
+          handoffObservation,
         }),
         revision: nextPlanRevision,
       };
+    if (!plan) {
+      throw new Error("DesktopLayer.updateScene requires an initialized render plan before reuse");
+    }
     if (!canReusePlan) this.desktopPlanRevision = nextPlanRevision;
     this.lastPointerOnlyPlanSnapshot = pointerOnlyPlanSnapshot;
-    state = plan.state;
     this.stageRect = state.stageRect;
     this.widthValue = state.width;
     this.heightValue = state.height;
@@ -760,6 +771,9 @@ export class DesktopLayer extends Container {
       previousPlan?.pageTrack && previousPlan.pageTrack.scope !== plan.pageTrack.scope
     );
     this.lastDesktopRenderPlan = plan;
+    const provisionalRollbackPreparation = shouldApplyDesktopPlan
+      ? this.prepareProvisionalFolderRollback(state)
+      : null;
 
     if (shouldApplyDesktopPlan) {
       const previousEntries = new Map((previousPlan?.entries || []).map((entry) => [entry.key, entry]));
@@ -789,10 +803,13 @@ export class DesktopLayer extends Container {
           nodeState,
           shouldRetireStaleHandoff,
         } = entry;
+        const isProvisionalRollbackTarget = Boolean(
+          provisionalRollbackPreparation?.rollback?.targetAppId === item?.id
+        );
         const previousEntry = previousEntries.get(key);
         const shouldSpringLayout = !previousEntry ||
           previousEntry.isFolderClosingHandoff !== isFolderClosingHandoff ||
-          isDesktopLayoutTargetChanged(previousEntry.layoutTarget, layoutTarget);
+          isLayoutTargetChanged(previousEntry.layoutTarget, layoutTarget);
         if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
         seen.add(key);
         let node = this.iconNodes.get(key);
@@ -825,9 +842,14 @@ export class DesktopLayer extends Container {
         node.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
         node.setState(nodeState);
         if (isNewNode) {
-          node.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout ? 1 : 0;
-          node.position.set(layoutTarget.x, isFolderClosingHandoff || shouldSnapDragHandoffLayout ? layoutTarget.y : layoutTarget.y + 8);
-          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout) {
+          node.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout || isProvisionalRollbackTarget ? 1 : 0;
+          node.position.set(
+            layoutTarget.x,
+            isFolderClosingHandoff || shouldSnapDragHandoffLayout || isProvisionalRollbackTarget
+              ? layoutTarget.y
+              : layoutTarget.y + 8
+          );
+          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout && !isProvisionalRollbackTarget) {
             motion(node)
               .preset("fade")
               .layout()
@@ -836,6 +858,10 @@ export class DesktopLayer extends Container {
               .start();
             springIconLayoutPosition(node, layoutTarget, markBoundsDirty);
           }
+        }
+        if (isProvisionalRollbackTarget) {
+          node.renderable = false;
+          node.eventMode = "none";
         }
         let folderHandoffEntry = effectiveFolderHandoffEntry;
         if (isFolderClosingHandoff && isActiveFolderClosingHandoff) {
@@ -879,6 +905,7 @@ export class DesktopLayer extends Container {
         springConfig: motionSprings.layout,
       });
       this.flushInteractiveBounds({ force: true });
+      this.startPreparedProvisionalFolderRollback(provisionalRollbackPreparation);
     }
     this.updateSingleStageFolderLayer(state);
     this.updateFolderDropTargetLayers(plan, state);
@@ -886,10 +913,13 @@ export class DesktopLayer extends Container {
       folderShellIds: state.groupTransferOwnedFolderShellIds,
       itemIds: state.groupTransferOwnedItemIds,
     });
-    this.applyFolderSourceGhosting(state);
+    this.applyFolderSourceGhosting(state, {
+      handoffObservation,
+      visualOwnershipIds: ownershipSourceGhostedIds,
+    });
     this.updateGroupDragLayer(state);
     this.updateDiagnostics(state);
-    const handoffReconciled = this.reconcileFolderHandoffs(state);
+    const handoffReconciled = this.reconcileFolderHandoffs(state, handoffObservation);
     return {
       fullPlanBuilds: shouldApplyDesktopPlan ? 1 : 0,
       handoffReconciliations: handoffReconciled ? 1 : 0,
@@ -930,29 +960,51 @@ export class DesktopLayer extends Container {
     };
   }
 
-  reconcileFolderHandoffs(state) {
+  reconcileFolderHandoffs(state, handoffObservation = null) {
+    const entries = Array.from(this.getFolderHandoffNodes().values());
+    const observation = handoffObservation ?? this.captureFolderHandoffObservation(
+      state,
+      entries.map((entry) => entry.folderId)
+    );
     let handoffReconciled = false;
-    for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      if (this.reconcileFolderHandoffEntry(state, entry)) handoffReconciled = true;
+    for (const entry of entries) {
+      if (this.reconcileFolderHandoffEntry(state, entry, observation)) {
+        handoffReconciled = true;
+      }
     }
     if (handoffReconciled) this.onFolderRenderRequest("folder-handoff-reconciled");
     return handoffReconciled;
   }
 
-  reconcileFolderHandoffEntry(state, entry) {
-    const normalizedState = normalizeDesktopHandoffState(state);
+  captureFolderHandoffObservation(state, extraFolderIds = []) {
+    return captureDesktopHandoffObservation(
+      this.singleStageFolderLayer,
+      mergeFolderIdSets(
+        state?.folderClosingHandoffIds,
+        state?.folderSourceGhostedIds,
+        extraFolderIds
+      )
+    );
+  }
+
+  reconcileFolderHandoffEntry(state, entry, handoffObservation = null) {
+    if (this.isProvisionalFolderRollbackActive(entry?.folderId)) return false;
+    const observation = handoffObservation ?? this.captureFolderHandoffObservation(
+      state,
+      entry?.folderId ? [entry.folderId] : []
+    );
     const rawSourceGhostingSettling = entry?.visualReleased === true && (
-      normalizedState.folderSourceGhostedIds.has(entry.folderId) ||
-      normalizedState.isFolderOpeningPreviewFrameGhosted?.(entry.folderId) === true
+      state.folderSourceGhostedIds.has(entry.folderId) ||
+      state.isFolderOpeningPreviewFrameGhosted(entry.folderId) === true
     );
     const noSubstitute = !rawSourceGhostingSettling &&
-      shouldFinishFolderHandoffEntry(normalizedState, this.singleStageFolderLayer, entry.folderId);
+      shouldFinishFolderHandoffEntry(state, observation, entry.folderId);
     const pageTrackInFlight = noSubstitute && isPageTrackMotionActive(this.pageTrackMotion, this.pageTrack);
     if (noSubstitute && !pageTrackInFlight) {
       const hadCleanupFrame = entry.cleanupFrame != null;
       this.finishFolderHandoffNodeAfterFrame(entry.folderId);
       return !hadCleanupFrame && entry.cleanupFrame != null;
-    } else if (!pageTrackInFlight && isStaleHiddenFolderHandoffEntry(state, entry, this.singleStageFolderLayer, entry.folderId)) {
+    } else if (!pageTrackInFlight && isStaleHiddenFolderHandoffEntry(state, entry, observation, entry.folderId)) {
       // Close finished without ever restoring this entry, yet a stale Vue closing
       // id keeps it alive and hidden. Restore the artwork without retiring; the
       // label still waits for source ownership to settle.
@@ -1134,13 +1186,21 @@ export class DesktopLayer extends Container {
   }
 
   applyFolderSourceGhosting(state, options = {}) {
-    state = normalizeDesktopHandoffState(state);
     if (options.remember !== false) this.lastFolderSourceGhostingState = state;
     const rawIds = state.folderSourceGhostedIds;
-    const ownershipIds = normalizeFolderIdSet(
+    const visualOwnershipIds = options.visualOwnershipIds ??
+      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const handoffObservation = options.handoffObservation ?? this.captureFolderHandoffObservation(
+      state,
+      mergeFolderIdSets(
+        visualOwnershipIds,
+        new Set(this.getFolderHandoffNodes().keys())
+      )
+    );
+    const ownershipIds = mergeFolderIdSets(
       state.groupTransferOwnedFolderShellIds,
-      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
-      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
+      visualOwnershipIds,
+      handoffObservation.desktopSourceGhostedIds
     );
     for (const node of this.iconNodes.values()) {
       if (node.item?.type !== "folder" || !node.state) continue;
@@ -1154,7 +1214,7 @@ export class DesktopLayer extends Container {
         const openingSourceGhosted = desktopSourceOwnerKind === "opening" ||
           isFolderOpeningSourceGhosted(state, folderId);
         const activeClosingHandoff = hasFolderClosingHandoffId(state, folderId) ||
-          isFolderLayerHandoffActive(this.singleStageFolderLayer, folderId);
+          handoffObservation.activeClosingFolderIds.has(folderId);
         const shouldKeepPreparedHandoff = handoffEntry.visualReleased !== true &&
           (activeClosingHandoff || (ownershipGhosted && !openingSourceGhosted));
         const retainsSourceVisibility = handoffEntry.visualReleased === true &&
@@ -1186,13 +1246,30 @@ export class DesktopLayer extends Container {
 
   commitFolderSourceGhosting() {
     if (!this.lastFolderSourceGhostingState) return;
-    this.applyFolderSourceGhosting(this.lastFolderSourceGhostingState);
-    this.reconcileFolderHandoffEntries(this.lastFolderSourceGhostingState);
+    const state = this.lastFolderSourceGhostingState;
+    const visualOwnershipIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const observation = this.captureFolderHandoffObservation(
+      state,
+      mergeFolderIdSets(
+        visualOwnershipIds,
+        new Set(this.getFolderHandoffNodes().keys())
+      )
+    );
+    this.applyFolderSourceGhosting(state, {
+      handoffObservation: observation,
+      visualOwnershipIds,
+    });
+    this.reconcileFolderHandoffEntries(state, observation);
   }
 
-  reconcileFolderHandoffEntries(state = this.lastFolderSourceGhostingState || {}) {
-    for (const entry of Array.from(this.getFolderHandoffNodes().values())) {
-      this.reconcileFolderHandoffEntry(state, entry);
+  reconcileFolderHandoffEntries(state, handoffObservation = null) {
+    const entries = Array.from(this.getFolderHandoffNodes().values());
+    const observation = handoffObservation ?? this.captureFolderHandoffObservation(
+      state,
+      entries.map((entry) => entry.folderId)
+    );
+    for (const entry of entries) {
+      this.reconcileFolderHandoffEntry(state, entry, observation);
     }
   }
 
@@ -1299,22 +1376,7 @@ export class DesktopLayer extends Container {
       });
       changed = true;
     }
-    for (const node of this.singleStageFolderLayer?.iconNodes?.values?.() || []) {
-      if (!node?.state) continue;
-      const wasDirectlyOwned = node.__groupTransferGhostedByOwnership === true;
-      const isDirectlyOwned = itemIds.has(node.item?.id);
-      if (wasDirectlyOwned === isDirectlyOwned) continue;
-      if (isDirectlyOwned) {
-        killMotionOf(node, null, { reason: "group-release-folder-source-handoff" });
-        killMotionOf(node.scale, null, { reason: "group-release-folder-source-handoff" });
-      }
-      const baseGhosted = Boolean(node.state.ghosted) && !wasDirectlyOwned;
-      node.__groupTransferGhostedByOwnership = isDirectlyOwned;
-      node.setState({
-        ...node.state,
-        dragging: isDirectlyOwned ? node.state.dragging : false,
-        ghosted: baseGhosted || isDirectlyOwned,
-      });
+    if (this.singleStageFolderLayer?.applyGroupTransferOwnershipSnapshot?.({ itemIds })) {
       changed = true;
     }
     return changed;
@@ -1524,6 +1586,64 @@ export class DesktopLayer extends Container {
       null;
   }
 
+  isProvisionalFolderRollbackActive(folderId = null) {
+    const rollback = this.provisionalFolderRollbackState;
+    return Boolean(
+      rollback?.token != null &&
+      (!folderId || rollback.folderId === folderId) &&
+      ["closing", "dissolving"].includes(rollback.phase)
+    );
+  }
+
+  detachFolderNodeForProvisionalRollback(folderId) {
+    const entry = this.getFolderHandoffEntry(folderId);
+    const node = entry?.node || this.findIconNodeByItemId(folderId);
+    if (!node || node.destroyed || this.isIconNodeRetired(node)) {
+      throw new Error(`Missing handed-off folder node for provisional rollback ${folderId}`);
+    }
+    if (entry?.cleanupFrame != null) entry.cleanupFrame.cancelled = true;
+    this.getFolderHandoffNodes().delete(folderId);
+    if (this.primaryFolderHandoffId === folderId) this.setPrimaryFolderHandoffNode(null);
+    for (const [key, candidate] of this.iconNodes) {
+      if (candidate === node) this.iconNodes.delete(key);
+    }
+    return node;
+  }
+
+  prepareProvisionalFolderRollback(state) {
+    const rollback = state.provisionalFolderRollback;
+    if (rollback?.phase !== "dissolving") return null;
+    if (this.provisionalFolderRollbackLayer?.hasHandledToken?.(rollback.token)) return null;
+    const activeSnapshot = this.provisionalFolderRollbackLayer?.snapshot?.();
+    if (activeSnapshot?.token === rollback.token) return null;
+    if (activeSnapshot?.active) {
+      throw new Error(`Provisional folder rollback ${activeSnapshot.token} overlaps ${rollback.token}`);
+    }
+    return {
+      folderNode: this.detachFolderNodeForProvisionalRollback(rollback.folderId),
+      rollback,
+    };
+  }
+
+  startPreparedProvisionalFolderRollback(preparation) {
+    if (!preparation) return false;
+    const { folderNode, rollback } = preparation;
+    const targetNode = this.findIconNodeByItemId(rollback.targetAppId);
+    if (!targetNode || targetNode.destroyed || this.isIconNodeRetired(targetNode)) {
+      throw new Error(`Missing target app node for provisional rollback ${rollback.targetAppId}`);
+    }
+    return this.provisionalFolderRollbackLayer.start({
+      folderId: rollback.folderId,
+      folderNode,
+      handoffVelocity: rollback.handoffVelocity,
+      previewSlotIndex: rollback.previewSlotIndex,
+      reducedMotion: rollback.reducedMotion,
+      targetAppId: rollback.targetAppId,
+      targetNode,
+      token: rollback.token,
+    });
+  }
+
   getFolderHandoffNodes() {
     if (!(this.folderHandoffNodes instanceof Map)) this.folderHandoffNodes = new Map();
     return this.folderHandoffNodes;
@@ -1567,6 +1687,7 @@ export class DesktopLayer extends Container {
         labelRevealStarted: false,
         node,
         originalIndex: this.getPageTrackChildIndex(node),
+        suppressLabelReveal: false,
         visualHidden: false,
         visualReleased: false,
       };
@@ -1576,10 +1697,12 @@ export class DesktopLayer extends Container {
       entry.node = node;
       entry.originalIndex = this.getPageTrackChildIndex(node);
       entry.labelRevealStarted = false;
+      entry.suppressLabelReveal = false;
       entry.visualHidden = false;
       entry.visualReleased = false;
     } else if (options.resetVisual === true) {
       entry.labelRevealStarted = false;
+      entry.suppressLabelReveal = false;
       entry.visualHidden = false;
       entry.visualReleased = false;
     }
@@ -1653,7 +1776,10 @@ export class DesktopLayer extends Container {
     const entry = this.getFolderHandoffEntry(folderId);
     if (!entry || (folderId && entry.folderId !== folderId)) return;
     this.debugFolderHandoffRestore(entry, "desktop-restore-before");
-    this.restoreFolderHandoffVisual(entry, { fadeLabel: true });
+    this.restoreFolderHandoffVisual(entry, {
+      fadeLabel: true,
+      suppressLabel: this.isProvisionalFolderRollbackActive(entry.folderId),
+    });
     this.debugFolderHandoffRestore(entry, "desktop-restore-after");
   }
 
@@ -1662,6 +1788,21 @@ export class DesktopLayer extends Container {
     if (!node || node.destroyed || this.isIconNodeRetired(node)) return;
     entry.visualHidden = false;
     entry.visualReleased = true;
+    if (options.suppressLabel === true || entry.suppressLabelReveal === true) {
+      entry.suppressLabelReveal = true;
+      entry.labelRevealStarted = true;
+      if (typeof node.setFolderHandoffSourceHidden === "function") {
+        node.setFolderHandoffSourceHidden(false);
+      } else {
+        node.setFolderHandoffVisualHidden?.(false);
+      }
+      if (node.labelText) {
+        killMotionOf(node.labelText);
+        node.labelText.alpha = 0;
+        node.labelText.renderable = false;
+      }
+      return;
+    }
     const labelFadeActive = node.folderHandoffLabelRevealInProgress === true &&
       node.folderHandoffLabelFadeFrame != null;
     const shouldReleaseLabel = !entry.labelRevealStarted ||
@@ -1688,16 +1829,13 @@ export class DesktopLayer extends Container {
   }
 
   isFolderHandoffLabelRevealSafe(entry, state = this.lastFolderSourceGhostingState || {}) {
-    if (!entry || !entry.visualReleased || entry.visualHidden) return false;
-    const normalized = normalizeDesktopHandoffState(state || {});
-    if (normalized.folderSourceGhostedIds.has(entry.folderId)) return false;
-    if (normalized.isFolderOpeningPreviewFrameGhosted?.(entry.folderId) === true) return false;
-    const ownershipIds = normalizeFolderIdSet(
-      getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership),
-      this.singleStageFolderLayer.getDesktopSourceGhostedIds?.()
-    );
+    if (!entry || entry.suppressLabelReveal || !entry.visualReleased || entry.visualHidden) return false;
+    if (state.folderSourceGhostedIds.has(entry.folderId)) return false;
+    if (state.isFolderOpeningPreviewFrameGhosted(entry.folderId) === true) return false;
+    const ownershipIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     if (ownershipIds.has(entry.folderId)) return false;
-    return shouldFinishFolderHandoffEntry(normalized, this.singleStageFolderLayer, entry.folderId);
+    const observation = this.captureFolderHandoffObservation(state, [entry.folderId]);
+    return shouldFinishFolderHandoffEntry(state, observation, entry.folderId);
   }
 
   revealFolderHandoffLabelWhenSettled(entry = this.folderHandoffNode, state = this.lastFolderSourceGhostingState || {}, options = {}) {
@@ -2131,8 +2269,7 @@ export class DesktopLayer extends Container {
       });
     }
     const overlay = this.singleStageFolderLayer;
-    const lastState = normalizeDesktopHandoffState(this.lastFolderSourceGhostingState || {});
-    const lastStateSourceIds = lastState.folderSourceGhostedIds;
+    const lastStateSourceIds = this.lastFolderSourceGhostingState?.folderSourceGhostedIds || new Set();
     const ownershipSourceIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
     const overlaySourceIds = overlay?.getDesktopSourceGhostedIds?.() || new Set();
     const overlaySessionSnapshot = overlay?.folderVisualSession?.snapshot?.() || null;
@@ -2177,6 +2314,16 @@ export class DesktopLayer extends Container {
         pageTrackVisible: overlay.pageTrack?.visible ?? null,
       } : null,
       ownership: this.visualOwnership?.snapshot?.() || [],
+      provisionalFolderRollback: {
+        layer: this.provisionalFolderRollbackLayer?.snapshot?.() || null,
+        presentation: this.provisionalFolderRollbackState ? {
+          folderId: this.provisionalFolderRollbackState.folderId || null,
+          handoffVelocity: this.provisionalFolderRollbackState.handoffVelocity ?? null,
+          phase: this.provisionalFolderRollbackState.phase || null,
+          targetAppId: this.provisionalFolderRollbackState.targetAppId || null,
+          token: this.provisionalFolderRollbackState.token ?? null,
+        } : null,
+      },
     };
   }
 

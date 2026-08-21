@@ -1,5 +1,6 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { snapshotContractValue } from "../../contractSnapshot.js";
+import type { FolderOpeningGeometrySnapshot } from "./folderOpeningGeometrySnapshot.js";
 
 const FRAME_VISUAL_PENDING_KEY = "frame:visual";
 const FRAME_COMPLETE_PENDING_KEY = "frame:complete";
@@ -123,7 +124,7 @@ export type FolderCloseGeometry = Readonly<{
 export type FolderOpenSnapshot = Readonly<{
   error: unknown | null;
   folderId: string;
-  geometrySnapshot: Readonly<UnknownRecord> | null;
+  geometrySnapshot: FolderOpeningGeometrySnapshot | null;
   ghostIds: readonly string[];
   ghostsReady: boolean;
   panelReady: boolean;
@@ -161,12 +162,12 @@ export type FolderVisualSessionSnapshot = Readonly<{
 
 export type FolderOpenLease = Readonly<{
   cancel(options?: CancelOptions): FolderVisualReportResult;
-  geometrySnapshot(): Readonly<UnknownRecord> | null;
+  geometrySnapshot(): FolderOpeningGeometrySnapshot | null;
   isCurrent(): boolean;
   panelPending(targetKey?: string): FolderVisualReportResult;
   panelReady(): FolderVisualReportResult;
   present(plan: FolderOpeningVisualPlan): FolderVisualReportResult;
-  setGeometrySnapshot(snapshot: UnknownRecord): FolderVisualReportResult;
+  setGeometrySnapshot(snapshot: FolderOpeningGeometrySnapshot): FolderVisualReportResult;
   snapshot(): FolderOpenSnapshot;
 }>;
 
@@ -195,8 +196,8 @@ type OpenRecord = {
   adapterScope: FolderOpeningAdapterScope | null;
   error: unknown | null;
   folderId: string;
-  geometryLayoutKey: unknown;
-  geometrySnapshot: Readonly<UnknownRecord> | null;
+  geometryLayoutKey: string | null;
+  geometrySnapshot: FolderOpeningGeometrySnapshot | null;
   ghostIds: Set<string>;
   ghostsReady: boolean;
   id: number;
@@ -572,7 +573,7 @@ export class FolderVisualSession {
         return ACCEPTED;
       },
       present: (plan: FolderOpeningVisualPlan) => this.#presentOpen(record, plan),
-      setGeometrySnapshot: (snapshot: UnknownRecord) => {
+      setGeometrySnapshot: (snapshot: FolderOpeningGeometrySnapshot) => {
         if (!this.#isCurrentOpen(record)) return STALE;
         assertObject(snapshot, "FolderOpenLease geometry snapshot");
         const layoutKey = snapshot.layoutKey ?? null;
@@ -584,7 +585,10 @@ export class FolderVisualSession {
           record.panelReady = false;
         }
         record.geometryLayoutKey = layoutKey;
-        record.geometrySnapshot = cloneRecord(snapshot);
+        record.geometrySnapshot = snapshotContractValue(
+          snapshot,
+          "FolderOpenLease geometry snapshot",
+        );
         return ACCEPTED;
       },
       snapshot: () => this.#openSnapshot(record),

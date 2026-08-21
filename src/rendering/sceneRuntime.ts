@@ -3,6 +3,7 @@ import type { IconTextureItem } from "./pixi/assets/iconTextureRepository.js";
 type UnknownRecord = Record<string, unknown>;
 
 export type DesktopSceneRuntime = Readonly<{
+  completeProvisionalFolderRollback: (token: number) => unknown;
   domRefs: UnknownRecord;
   folderOverlayState: UnknownRecord;
   getDesktopPageRenderMode: (pageIndex: number) => unknown;
@@ -30,6 +31,10 @@ function requireFunction<FunctionType>(value: unknown, path: string): FunctionTy
 export function makeDesktopSceneRuntimeAdapter(input: unknown = {}): DesktopSceneRuntime {
   const source = requireObject(input, "DesktopSceneRuntime");
   const runtime: DesktopSceneRuntime = {
+    completeProvisionalFolderRollback: requireFunction(
+      source.completeProvisionalFolderRollback,
+      "DesktopSceneRuntime.completeProvisionalFolderRollback",
+    ),
     domRefs: requireObject(source.domRefs, "DesktopSceneRuntime.domRefs"),
     folderOverlayState: requireObject(source.folderOverlayState, "DesktopSceneRuntime.folderOverlayState"),
     getDesktopPageRenderMode: requireFunction(source.getDesktopPageRenderMode, "DesktopSceneRuntime.getDesktopPageRenderMode"),

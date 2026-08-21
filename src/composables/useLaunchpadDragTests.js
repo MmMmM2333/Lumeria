@@ -136,6 +136,8 @@ function createAtomicDragHarness(initialPages, options = {}) {
   const revision = ref(0);
   const calls = {
     commits: [],
+    discardedFolderRequests: [],
+    discardedFolders: [],
     dragEnds: [],
     dragStarts: [],
     openFolders: [],
@@ -220,6 +222,13 @@ function createAtomicDragHarness(initialPages, options = {}) {
     desktopMainRef: ref({
       getBoundingClientRect: () => desktopMainRect,
     }),
+    discardProvisionalFolder: (folderId, discardOptions) => {
+      calls.discardedFolderRequests.push({ folderId, options: discardOptions || null });
+      calls.discardedFolders.push(folderId);
+      if (openFolderId.value !== folderId) return false;
+      openFolderId.value = null;
+      return true;
+    },
     effectiveFolderIconSize: ref(56),
     findTopLevel,
     finishHomeRevealSettleWindow: () => {},
@@ -1321,7 +1330,7 @@ export async function runLaunchpadDragTests() {
       clientY: 182,
       timeStamp: 160,
     }));
-    flushTimers(timers, harness.drag);
+    assert(flushTimerByDelay(timers, 42), "the sticky edge excursion should resolve without consuming its hover dwell");
     assert(
       harness.drag.groupDragState.value?.intent?.targetAppId === b.id,
       "an acquired folder target should remain sticky through a small edge excursion"
@@ -1337,6 +1346,393 @@ export async function runLaunchpadDragTests() {
     assert(harness.calls.commits.length === 1, "a sticky edge release should commit folder creation");
     assert(harness.pages.value[0][0]?.type === "folder", "the sticky release should create a folder instead of a slot reorder");
     flushTimers(timers, harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("large-visible-source");
+    const targetApp = app("large-visible-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]]);
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 128, left: 16, top: 120, width: 128 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 128, left: 200, top: 150, width: 128 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(174, sourceElement, { clientX: 80, clientY: 184 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(174, sourceElement, {
+      clientX: 216,
+      clientY: 214,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "large visible target should resolve after the group intent cadence");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "application" &&
+        harness.drag.groupDragState.value?.intent?.targetAppId === targetApp.id,
+      "a drag center inside the full rendered 128px app should acquire folder-create intent"
+    );
+    assert(
+      harness.drag.dragFolderTargetId.value === targetApp.id &&
+        harness.drag.dragFolderHoverState.value?.phase === "hover",
+      "the visible large target should publish its circular folder-create frame"
+    );
+    harness.drag.cancelDrag(makePointerEvent(174, sourceElement, {
+      button: 0,
+      buttons: 0,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-create-source");
+    const targetApp = app("hover-create-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]]);
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(171, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(171, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "app hover should resolve after the group intent cadence");
+    assert(
+      harness.drag.dragFolderHoverState.value?.phase === "hover",
+      "an accepted application target should start in the hover phase"
+    );
+    assert(flushTimerByDelay(timers, 660), "application hover should wait for the historical settle duration");
+    assert(
+      harness.drag.dragFolderHoverState.value?.phase === "flash",
+      "the settled application target should start the double-flash phase"
+    );
+    assert(harness.calls.commits.length === 0, "flashing must not persist a folder before pointer release");
+    assert(flushTimerByDelay(timers, 1130), "application hover should publish the opening lead-in after both flashes");
+    assert(
+      harness.drag.dragFolderHoverState.value?.phase === "opening" && harness.openFolderId.value === null,
+      "the opening lead-in should precede the provisional folder open"
+    );
+    assert(flushTimerByDelay(timers, 1220), "application hover should open after settle, double flash, and buffer");
+
+    const projectedFolder = harness.drag.projectedPages.value?.flat().find(
+      (item) => item?.id === "folder-created"
+    );
+    assert(harness.calls.commits.length === 0, "opening the provisional folder must leave the authoritative layout untouched");
+    assert(
+      harness.pages.value[0].map((item) => item.id).join(",") === "hover-create-source,hover-create-target",
+      "provisional folder opening must not remove either authoritative desktop app"
+    );
+    assert(projectedFolder?.type === "folder", "the hover-open projection should replace the target app with a folder");
+    assert(
+      projectedFolder?.childPages?.flat().map((item) => item.id).join(",") === "hover-create-target",
+      "the provisional folder should contain only the stable target until release"
+    );
+    assert(harness.openFolderId.value === "folder-created", "the projected folder should open for the active drag");
+    harness.drag.cancelDrag(makePointerEvent(171, sourceElement, {
+      button: 0,
+      buttons: 0,
+      type: "pointercancel",
+    }));
+    assert(harness.openFolderId.value === null, "pointer cancellation should close an uncommitted provisional folder");
+    assert(harness.drag.projectedPages.value === null, "pointer cancellation should discard the provisional projection");
+    assert(harness.calls.commits.length === 0, "pointer cancellation should never persist the provisional folder");
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-race-source");
+    const targetApp = app("hover-race-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]]);
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(175, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(175, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "race fixture should acquire its application target");
+    assert(flushTimerByDelay(timers, 660), "race fixture should enter the double flash");
+    assert(flushTimerByDelay(timers, 1130), "race fixture should enter the opening lead-in");
+
+    harness.drag.updateDragPointer(makePointerEvent(175, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 160,
+    }));
+    assert(
+      flushTimerByDelay(timers, 1220),
+      "the stale open callback should race ahead of the delayed pointer intent evaluation"
+    );
+    assert(
+      harness.openFolderId.value === null && harness.drag.projectedPages.value === null,
+      "leaving the target before the open callback fires must not open an unrendered provisional folder"
+    );
+    assert(flushTimerByDelay(timers, 42), "the latest desktop intent should still settle after the stale callback is rejected");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "desktop-slot",
+      "the post-race drag should remain in the desktop interaction state"
+    );
+    harness.drag.cancelDrag(makePointerEvent(175, sourceElement, {
+      button: 0,
+      buttons: 0,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-entry-source");
+    const targetApp = app("hover-entry-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]], {
+      folderPanelRect: {
+        bottom: 520,
+        height: 440,
+        left: 300,
+        right: 400,
+        top: 80,
+        width: 100,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(176, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(176, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "entry fixture should acquire its application target");
+    assert(flushTimerByDelay(timers, 660), "entry fixture should enter the double flash");
+    assert(flushTimerByDelay(timers, 1130), "entry fixture should enter the opening lead-in");
+    assert(flushTimerByDelay(timers, 1220), "entry fixture should open its provisional folder");
+
+    harness.drag.updateDragPointer(makePointerEvent(176, sourceElement, {
+      clientX: 240,
+      clientY: 182,
+      timeStamp: 150,
+    }));
+    assert(flushTimerByDelay(timers, 42), "entry fixture should settle an awaiting-entry pointer sample");
+    assert(
+      harness.openFolderId.value === "folder-created" &&
+        harness.drag.projectedPages.value?.flat().some((item) => item?.id === "folder-created"),
+      "an awaiting-entry pointer sample inside the target leash must retain the provisional folder projection"
+    );
+
+    harness.drag.updateDragPointer(makePointerEvent(176, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 180,
+    }));
+    assert(
+      harness.openFolderId.value === null &&
+        harness.drag.projectedPages.value === null &&
+        harness.calls.discardedFolders.join(",") === "folder-created",
+      "leaving before the first panel-entry sample should atomically discard the provisional folder"
+    );
+    harness.drag.cancelDrag(makePointerEvent(176, sourceElement, {
+      button: 0,
+      buttons: 0,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-cancel-source");
+    const targetApp = app("hover-cancel-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]]);
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(172, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "cancel fixture should acquire its application target");
+    assert(flushTimerByDelay(timers, 660), "cancel fixture should enter the double flash");
+    assert(flushTimerByDelay(timers, 1130), "cancel fixture should enter the opening lead-in");
+    assert(flushTimerByDelay(timers, 1220), "cancel fixture should open its provisional folder");
+    assert(harness.openFolderId.value === "folder-created", "cancel fixture should start with the provisional folder open");
+
+    harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
+      clientX: 233,
+      clientY: 182,
+      timeStamp: 160,
+    }));
+    harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
+      clientX: 50,
+      clientY: 240,
+      timeStamp: 190,
+    }));
+    assert(harness.openFolderId.value === null, "leaving an entered provisional folder should begin closing immediately");
+    assert(
+      harness.calls.discardedFolderRequests[0]?.options?.projectedPages
+        ?.flat().some((item) => item?.id === "folder-created"),
+      "leaving should transfer the projected folder to the rollback transaction before drag ownership is cleared"
+    );
+    assert(harness.calls.commits.length === 0, "leaving should need no compensating authoritative commit");
+    assert(
+      harness.calls.discardedFolders.join(",") === "folder-created" &&
+        !harness.calls.openFolders.some((call) => call.next === null),
+      "leaving a provisional folder should cross the controller rollback boundary exactly once"
+    );
+    assert(
+      harness.calls.discardedFolderRequests[0]?.options?.targetRect?.left === 200 &&
+        harness.calls.discardedFolderRequests[0]?.options?.targetRect?.width === 64,
+      "provisional cancellation should carry the original target application rect into the visual boundary"
+    );
+    assert(
+      harness.pages.value[0].map((item) => item.id).join(",") === "hover-cancel-source,hover-cancel-target",
+      "leaving should preserve the exact authoritative desktop order"
+    );
+
+    assert(flushTimerByDelay(timers, 42), "desktop intent should settle after leaving the provisional folder");
+    harness.drag.updateDragPointer(makePointerEvent(172, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 220,
+    }));
+    assert(flushTimerByDelay(timers, 42), "returning to the same target should reacquire application intent");
+    assert(
+      flushTimerByDelay(timers, 660),
+      "returning after cancellation should start a fresh folder-create dwell instead of retaining stale session state"
+    );
+    harness.drag.cancelDrag(makePointerEvent(172, sourceElement, {
+      button: 0,
+      buttons: 0,
+      type: "pointercancel",
+    }));
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-commit-source");
+    const targetApp = app("hover-commit-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]]);
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(173, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(173, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "commit fixture should acquire its application target");
+    assert(flushTimerByDelay(timers, 660), "commit fixture should enter the double flash");
+    assert(flushTimerByDelay(timers, 1130), "commit fixture should enter the opening lead-in");
+    assert(flushTimerByDelay(timers, 1220), "commit fixture should open its provisional folder");
+
+    harness.drag.updateDragPointer(makePointerEvent(173, sourceElement, {
+      clientX: 240,
+      clientY: 220,
+      timeStamp: 160,
+    }));
+    assert(flushTimerByDelay(timers, 42), "entering the provisional panel should resolve its folder slot");
+    assert(
+      harness.drag.groupDragState.value?.intent?.type === "folder-slot" &&
+        harness.drag.groupDragState.value?.intent?.folderId === "folder-created",
+      "the open provisional panel should expose the normal folder-slot interaction"
+    );
+    assert(
+      harness.drag.groupDragState.value?.intentPlan?.status === "accepted",
+      "a provisional folder slot should retain the accepted atomic application plan"
+    );
+    assert(
+      harness.drag.projectedPages.value?.flat().find((item) => item?.id === "folder-created")
+        ?.childPages?.flat().map((item) => item.id).join(",") === "hover-commit-target",
+      "entering the panel should keep the dragged app actor-owned until release"
+    );
+
+    harness.drag.finishDrag(makePointerEvent(173, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 240,
+      clientY: 220,
+      type: "pointerup",
+    }));
+    const committedFolder = harness.pages.value.flat().find((item) => item?.id === "folder-created");
+    assert(harness.calls.commits.length === 1, "releasing inside the provisional folder should commit exactly once");
+    assert(
+      harness.calls.commits[0]?.operation?.intent?.type === "folder-slot",
+      "the commit operation should retain the visible folder-slot destination"
+    );
+    assert(
+      committedFolder?.childPages?.flat().map((item) => item.id).join(",") ===
+        "hover-commit-target,hover-commit-source",
+      "the single commit should materialize target then dragged app in the created folder"
+    );
+    assert(harness.openFolderId.value === "folder-created", "the committed provisional folder should remain open");
+    assert(
+      harness.drag.groupDragState.value?.entries.some(
+        (entry) => entry.item.id === targetApp.id && entry.originKind === "folder-create-target"
+      ),
+      "the committed release should retain the target app as a release actor"
+    );
+    settleRelease(harness.drag);
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {

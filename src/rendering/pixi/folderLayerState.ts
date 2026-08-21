@@ -67,7 +67,10 @@ type FolderLayerUiInput = Readonly<{
 
 export type FolderOverlayFrameInput = Readonly<{
   callbacks: FolderLayerCallbacks;
-  drag: Readonly<{ meta?: SceneDataRecord | null }>;
+  drag: Readonly<{
+    groupDragState?: SceneDataRecord | null;
+    meta?: SceneDataRecord | null;
+  }>;
   folder: FolderLayerFolderInput;
   geometry: Readonly<{
     canvasStageRect: RectLike;
@@ -113,6 +116,7 @@ export type FolderOverlayFrame = Readonly<{
   getFolderOpenIconGhostKey: (itemId: string, slotIndex: number) => string | null;
   getFolderPageRenderMode: FolderLayerCallbacks["getFolderPageRenderMode"];
   getVisibleFolderPage: FolderLayerCallbacks["getVisibleFolderPage"];
+  groupDragState: SceneDataRecord | null;
   height: number;
   iconGesturePresentation: SceneDataRecord | null;
   iconSize: number;
@@ -203,6 +207,7 @@ export function createFolderLayerState(groups: FolderOverlayFrameInput): FolderO
     getFolderOpenIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(folderOpenIconGhosts, itemId, slotIndex),
     getFolderPageRenderMode: callbacks.getFolderPageRenderMode,
     getVisibleFolderPage: callbacks.getVisibleFolderPage,
+    groupDragState: drag.groupDragState || null,
     height: Math.max(1, finiteNumber(rect.height, 1)),
     iconGesturePresentation: ui.iconGesturePresentation || null,
     iconSize: Number.parseFloat(folderPanelStyle["--folder-icon-size"] || "") || 64,
