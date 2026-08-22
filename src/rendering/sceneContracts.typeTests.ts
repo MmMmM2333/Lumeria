@@ -2,12 +2,21 @@ import type {
   DesktopSceneFrame,
   DesktopSceneFrameInput,
 } from "./sceneFrame.js";
+import type { DesktopFolderOverlayRuntime } from "./sceneRuntime.js";
 import type {
   AppLaunchCloseFrameCommittedSceneEvent,
   InternalActivitySceneEvent,
   SceneEvent,
   SceneEventControl,
 } from "./sceneEvents.js";
+
+type AssertTrue<Value extends true> = Value;
+type SceneRuntimeAdapterInputIsRequired = AssertTrue<
+  [] extends Parameters<
+    (typeof import("./sceneRuntime.js"))["makeDesktopSceneRuntimeAdapter"]
+  > ? false : true
+>;
+void (null as unknown as SceneRuntimeAdapterInputIsRequired);
 
 const frameInput = {
   activePageIndex: 0,
@@ -23,6 +32,14 @@ declare const frame: DesktopSceneFrame;
 void frame.viewport.activePageIndex;
 void frame.visual.desktopVisualAlpha;
 void frame.visual.appLaunchCloseSessionId;
+
+const invalidFolderPanelRefRuntime: DesktopFolderOverlayRuntime = {
+  renderedFolder: { value: null },
+  renameFolder: () => undefined,
+  // @ts-expect-error Folder DOM refs must expose a mutable value slot.
+  folderPanelRef: true,
+};
+void invalidFolderPanelRefRuntime;
 
 // @ts-expect-error SceneFrame fields must be accessed through their owning group.
 void frame.activePageIndex;

@@ -37,7 +37,7 @@ import { GROUP_TRANSFER_RUNTIME_MODE } from "./groupTransferRuntimeAdapter.js";
 export type DesktopRect = FolderOverlayRect;
 
 export type DesktopItem = Readonly<{
-  childPages?: readonly (readonly DesktopItem[])[];
+  childPages?: readonly (readonly (DesktopItem | null | undefined)[])[];
   customIconDataUrl?: string | null;
   customIconPath?: string | null;
   id: string;
@@ -280,7 +280,7 @@ function clamp01(value: unknown): number {
 
 function getFolderPreviewChildren(folder: DesktopItem): readonly DesktopItem[] {
   return Array.isArray(folder.childPages)
-    ? folder.childPages.flatMap((page) => page)
+    ? folder.childPages.flatMap((page) => page).filter((child): child is DesktopItem => Boolean(child))
     : [];
 }
 

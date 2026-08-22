@@ -99,7 +99,7 @@ export type FolderOverlayTransitions = Readonly<{
   isClosing: boolean;
   isFolderClosing: boolean;
   openingGhostItemIds: ReadonlySet<string>;
-  previewSlots: readonly SceneItem[];
+  previewSlots: readonly (SceneItem | null)[];
 }>;
 
 export type FolderOverlayRenderPlanInput = Readonly<{

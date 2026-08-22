@@ -42,7 +42,7 @@ export type FolderOpeningGeometrySnapshotInput = Readonly<{
   ) => FolderOverlayRect | null | undefined;
   layoutKey?: string | null;
   panelRect?: FolderOverlayRect | null;
-  previewSlots?: readonly FolderOverlayItem[] | null;
+  previewSlots?: readonly (FolderOverlayItem | null)[] | null;
   stageHeight?: unknown;
   stageRect?: FolderOverlayRect | null;
   stageWidth?: unknown;

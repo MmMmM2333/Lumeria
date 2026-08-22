@@ -1,26 +1,26 @@
-import type { SceneItem } from "../../sceneFrame.js";
-
 export type DesktopHandoffObservation = Readonly<{
   activeClosingFolderIds: ReadonlySet<string>;
   desktopSourceGhostedIds: ReadonlySet<string>;
   visibleSubstituteFolderIds: ReadonlySet<string>;
 }>;
 
+type DesktopFolderHandoffFolderState = Readonly<{
+  folderOpenIconGhostSession?: Readonly<{
+    folderId?: string | null;
+    status?: string;
+  }> | null;
+  isDesktopClosing?: boolean;
+  isFolderAppLaunchClosing?: boolean;
+  isFolderClosing?: boolean;
+  isFolderZoomFadeClosing?: boolean;
+  renderedFolder?: Readonly<{ id: string }> | null;
+}>;
+
 export type DesktopFolderHandoffState = Readonly<{
   folderClosingHandoffIds: ReadonlySet<string>;
   folderSourceGhostedIds: ReadonlySet<string>;
   isFolderOpeningPreviewFrameGhosted: (folderId: string) => boolean;
-  singleStageFolderState: Readonly<{
-    folderOpenIconGhostSession?: Readonly<{
-      folderId?: string | null;
-      status?: string | null;
-    }> | null;
-    isDesktopClosing?: boolean;
-    isFolderAppLaunchClosing?: boolean;
-    isFolderClosing?: boolean;
-    isFolderZoomFadeClosing?: boolean;
-    renderedFolder?: SceneItem | null;
-  }> | null;
+  singleStageFolderState: DesktopFolderHandoffFolderState | null;
 }>;
 
 export type DesktopFolderHandoffEntry = Readonly<{

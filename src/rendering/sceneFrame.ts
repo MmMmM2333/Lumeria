@@ -42,6 +42,20 @@ export type ScenePageTrackScrub = Readonly<{
   velocity?: number;
 }>;
 
+export type SceneGroupDragState = SceneDataRecord & Readonly<{
+  key?: string;
+  phase?: string;
+  presentationPlan?: SceneDataRecord | null;
+  projectedPages?: readonly (readonly (SceneItem | null)[])[];
+  runtimePlan?: (SceneDataRecord & Readonly<{ key?: string }>) | null;
+}>;
+
+export type SceneSingleStageDiagnosticsOptions = Readonly<{
+  diagnostics?: boolean;
+  log?: boolean;
+  probe?: boolean;
+}>;
+
 type DesktopSceneFrameValues = Readonly<{
   activePageIndex: number;
   activePages: readonly (readonly (SceneItem | null)[])[];
@@ -63,7 +77,7 @@ type DesktopSceneFrameValues = Readonly<{
   folderSourceGhostedIds: ReadonlySet<string>;
   gridCols: number;
   gridRows: number;
-  groupDragState: SceneDataRecord | null;
+  groupDragState: SceneGroupDragState | null;
   iconGesturePresentation: SceneDataRecord | null;
   iconSize: number;
   isBatchSelectionActive: boolean;
@@ -80,7 +94,7 @@ type DesktopSceneFrameValues = Readonly<{
   provisionalFolderRollback: SceneDataRecord | null;
   selectedAppIds: ReadonlySet<string>;
   showMissingLaunchTargetBadge: boolean;
-  singleStageDiagnosticsOptions: SceneDataRecord | null;
+  singleStageDiagnosticsOptions: SceneSingleStageDiagnosticsOptions | null;
 }>;
 
 const FRAME_FIELDS = Object.freeze({
@@ -153,6 +167,18 @@ export type DesktopSceneFrame = Readonly<{
   interaction: DesktopSceneFrameInteraction;
   folder: DesktopSceneFrameFolder;
   diagnostics: DesktopSceneFrameDiagnostics;
+}>;
+
+type CompleteFrameGroup<Fields extends readonly FrameFieldName[]> = Readonly<{
+  [Field in Fields[number]]: DesktopSceneFrameValues[Field];
+}>;
+
+export type CompleteDesktopSceneFrame = Readonly<{
+  viewport: CompleteFrameGroup<FrameFields["viewport"]>;
+  visual: CompleteFrameGroup<FrameFields["visual"]>;
+  interaction: CompleteFrameGroup<FrameFields["interaction"]>;
+  folder: CompleteFrameGroup<FrameFields["folder"]>;
+  diagnostics: CompleteFrameGroup<FrameFields["diagnostics"]>;
 }>;
 
 export type DesktopSceneFrameInput = Partial<DesktopSceneFrameValues>;
@@ -353,6 +379,21 @@ export function assertDesktopSceneFrame(frame: unknown): asserts frame is Deskto
       const fieldValue = value[field];
       assertContractSnapshot(fieldValue, `DesktopSceneFrame.${group}.${field}`);
       optional(fieldValue, `DesktopSceneFrame.${group}.${field}`, FIELD_VALIDATORS[field]);
+    }
+  }
+}
+
+/** Surface-only guard: composition roots publish every field, including explicit nulls. */
+export function assertCompleteDesktopSceneFrame(
+  frame: unknown,
+): asserts frame is CompleteDesktopSceneFrame {
+  assertDesktopSceneFrame(frame);
+  for (const group of FRAME_GROUPS) {
+    const groupFrame = frame[group] as unknown as Readonly<Record<FrameFieldName, unknown>>;
+    for (const field of FRAME_FIELDS[group]) {
+      if (groupFrame[field] === undefined) {
+        throw new TypeError(`DesktopSceneFrame.${group}.${field} must be published by the surface composition root`);
+      }
     }
   }
 }

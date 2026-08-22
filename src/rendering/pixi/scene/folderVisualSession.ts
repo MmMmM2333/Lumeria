@@ -17,7 +17,7 @@ type VisualOwner = Readonly<{
   token: string;
 }>;
 
-type CancelOptions = Readonly<{
+export type FolderVisualCancelOptions = Readonly<{
   completeControllerKeys?: boolean;
   restorePageTrack?: boolean;
   reveal?: boolean;
@@ -25,32 +25,41 @@ type CancelOptions = Readonly<{
 
 type UnknownRecord = Record<string, unknown>;
 
-export type FolderOpeningVisualPlan = Readonly<{
-  options?: UnknownRecord;
-  state: UnknownRecord;
-  targets: readonly UnknownRecord[];
+export type FolderOpeningVisualPlan<
+  State extends object = object,
+  Target extends object = object,
+  Options extends object = object,
+> = Readonly<{
+  options?: Options;
+  state: State;
+  targets: readonly Target[];
 }>;
 
-export type FolderClosingVisualPlan = Readonly<{
-  folderRect?: UnknownRecord | null;
-  options?: UnknownRecord;
-  panelRect?: UnknownRecord | null;
-  state: UnknownRecord;
-  targets: readonly UnknownRecord[];
+export type FolderClosingVisualPlan<
+  State extends object = object,
+  Target extends object = object,
+  Options extends object = object,
+  Rect extends object = object,
+> = Readonly<{
+  folderRect?: Rect | null;
+  options?: Options;
+  panelRect?: Rect | null;
+  state: State;
+  targets: readonly Target[];
 }>;
 
-type OpeningAdapterPreparation = Readonly<{
+export type FolderOpeningAdapterPreparation = Readonly<{
   ghostIds?: readonly string[];
 }>;
 
-type ClosingGhostParticipant = Readonly<{
+export type FolderClosingGhostParticipant = Readonly<{
   controllerKey?: string | null;
   itemId: string;
   visualCritical?: boolean;
 }>;
 
-type ClosingAdapterPreparation = Readonly<{
-  ghosts?: readonly ClosingGhostParticipant[];
+export type FolderClosingAdapterPreparation = Readonly<{
+  ghosts?: readonly FolderClosingGhostParticipant[];
 }>;
 
 export type FolderOpeningPhaseReporter = Readonly<{
@@ -79,30 +88,38 @@ export type FolderClosingPhaseReporter = Readonly<{
   takeOpeningGhost(itemId: string, accept?: (ghost: unknown) => boolean): unknown;
 }>;
 
-type FolderOpeningAdapterScope = {
-  cancel(options?: CancelOptions): void;
-  retarget(plan: FolderOpeningVisualPlan): void;
+export type FolderOpeningAdapterScope<
+  Plan extends FolderOpeningVisualPlan = FolderOpeningVisualPlan,
+> = {
+  cancel(options?: FolderVisualCancelOptions): void;
+  retarget(plan: Plan): void;
   reveal(): void;
   snapshot?(): UnknownRecord;
   takeGhost?(itemId: string, accept?: (ghost: unknown) => boolean): unknown;
 };
 
-type FolderClosingAdapterScope = {
-  cancel(options?: CancelOptions): void;
+export type FolderClosingAdapterScope<
+  Plan extends FolderClosingVisualPlan = FolderClosingVisualPlan,
+> = {
+  cancel(options?: FolderVisualCancelOptions): void;
   onHandoffReady?(event: Readonly<{ controllerKeys: readonly string[] }>): void;
   onOverlaySettled?(): void;
-  retarget(plan: FolderClosingVisualPlan): void;
+  retarget(plan: Plan): void;
   snapshot?(): UnknownRecord;
 };
 
-export type FolderOpeningVisualAdapter = Readonly<{
-  prepare(plan: FolderOpeningVisualPlan): OpeningAdapterPreparation;
-  start(plan: FolderOpeningVisualPlan, reporter: FolderOpeningPhaseReporter): FolderOpeningAdapterScope;
+export type FolderOpeningVisualAdapter<
+  Plan extends FolderOpeningVisualPlan = FolderOpeningVisualPlan,
+> = Readonly<{
+  prepare(plan: Plan): FolderOpeningAdapterPreparation;
+  start(plan: Plan, reporter: FolderOpeningPhaseReporter): FolderOpeningAdapterScope<Plan>;
 }>;
 
-export type FolderClosingVisualAdapter = Readonly<{
-  prepare(plan: FolderClosingVisualPlan): ClosingAdapterPreparation;
-  start(plan: FolderClosingVisualPlan, reporter: FolderClosingPhaseReporter): FolderClosingAdapterScope;
+export type FolderClosingVisualAdapter<
+  Plan extends FolderClosingVisualPlan = FolderClosingVisualPlan,
+> = Readonly<{
+  prepare(plan: Plan): FolderClosingAdapterPreparation;
+  start(plan: Plan, reporter: FolderClosingPhaseReporter): FolderClosingAdapterScope<Plan>;
 }>;
 
 export type FolderOpenRequest = Readonly<{
@@ -160,22 +177,26 @@ export type FolderVisualSessionSnapshot = Readonly<{
   ownershipRevision: number | null;
 }>;
 
-export type FolderOpenLease = Readonly<{
-  cancel(options?: CancelOptions): FolderVisualReportResult;
+export type FolderOpenLease<
+  Plan extends FolderOpeningVisualPlan = FolderOpeningVisualPlan,
+> = Readonly<{
+  cancel(options?: FolderVisualCancelOptions): FolderVisualReportResult;
   geometrySnapshot(): FolderOpeningGeometrySnapshot | null;
   isCurrent(): boolean;
   panelPending(targetKey?: string): FolderVisualReportResult;
   panelReady(): FolderVisualReportResult;
-  present(plan: FolderOpeningVisualPlan): FolderVisualReportResult;
+  present(plan: Plan): FolderVisualReportResult;
   setGeometrySnapshot(snapshot: FolderOpeningGeometrySnapshot): FolderVisualReportResult;
   snapshot(): FolderOpenSnapshot;
 }>;
 
-export type FolderCloseLease = Readonly<{
-  cancel(options?: CancelOptions): FolderVisualReportResult;
+export type FolderCloseLease<
+  Plan extends FolderClosingVisualPlan = FolderClosingVisualPlan,
+> = Readonly<{
+  cancel(options?: FolderVisualCancelOptions): FolderVisualReportResult;
   detachedGhostMotion(ghost: object): Readonly<UnknownRecord> | null;
   isCurrent(): boolean;
-  present(plan: FolderClosingVisualPlan): FolderVisualReportResult;
+  present(plan: Plan): FolderVisualReportResult;
   snapshot(): FolderCloseSnapshot;
 }>;
 
@@ -183,17 +204,20 @@ type EventSink = {
   recordCoordinationEvent?(event: UnknownRecord): void;
 };
 
-type SessionOptions = Readonly<{
-  closingAdapter?: FolderClosingVisualAdapter;
+type SessionOptions<
+  OpeningPlan extends FolderOpeningVisualPlan,
+  ClosingPlan extends FolderClosingVisualPlan,
+> = Readonly<{
+  closingAdapter?: FolderClosingVisualAdapter<ClosingPlan>;
   eventSink?: EventSink;
   onCloseHandoffChange?(active: boolean, folderId: string | null): void;
   onClosingHandoffReady?(folderId: string): void;
-  openingAdapter?: FolderOpeningVisualAdapter;
+  openingAdapter?: FolderOpeningVisualAdapter<OpeningPlan>;
   ownershipRevision?(): number | null;
 }>;
 
-type OpenRecord = {
-  adapterScope: FolderOpeningAdapterScope | null;
+type OpenRecord<Plan extends FolderOpeningVisualPlan> = {
+  adapterScope: FolderOpeningAdapterScope<Plan> | null;
   error: unknown | null;
   folderId: string;
   geometryLayoutKey: string | null;
@@ -201,7 +225,7 @@ type OpenRecord = {
   ghostIds: Set<string>;
   ghostsReady: boolean;
   id: number;
-  lease: FolderOpenLease | null;
+  lease: FolderOpenLease<Plan> | null;
   owner: VisualOwner;
   panelReady: boolean;
   reporter: FolderOpeningPhaseReporter | null;
@@ -211,8 +235,8 @@ type OpenRecord = {
 
 type CloseEffect = "handoffReady" | "overlaySettled";
 
-type CloseRecord = {
-  adapterScope: FolderClosingAdapterScope | null;
+type CloseRecord<Plan extends FolderClosingVisualPlan> = {
+  adapterScope: FolderClosingAdapterScope<Plan> | null;
   completedControllerKeys: string[];
   detachedFrameTarget: Readonly<UnknownRecord> | null;
   detachedGhostMotions: WeakMap<object, Readonly<UnknownRecord>>;
@@ -227,7 +251,7 @@ type CloseRecord = {
   handoffRect: Readonly<UnknownRecord> | null;
   handoffTarget: Readonly<UnknownRecord> | null;
   id: number;
-  lease: FolderCloseLease | null;
+  lease: FolderCloseLease<Plan> | null;
   overlayPendingKeys: Set<string>;
   overlaySettled: boolean;
   owner: VisualOwner;
@@ -282,7 +306,7 @@ export function makeFolderPanelTargetKey(
   folderId: string | null | undefined,
   targetX: unknown,
   targetY: unknown,
-  panelRect: UnknownRecord | null | undefined,
+  panelRect: Readonly<{ height?: unknown; width?: unknown }> | null | undefined,
 ): string {
   return [
     folderId || "",
@@ -380,20 +404,23 @@ function previewKey(key: string): string {
  * reporters whose closures carry that identity, so callers never pass raw
  * tokens or target generations back into the session.
  */
-export class FolderVisualSession {
-  readonly #closingAdapter: FolderClosingVisualAdapter | null;
+export class FolderVisualSession<
+  OpeningPlan extends FolderOpeningVisualPlan = FolderOpeningVisualPlan,
+  ClosingPlan extends FolderClosingVisualPlan = FolderClosingVisualPlan,
+> {
+  readonly #closingAdapter: FolderClosingVisualAdapter<ClosingPlan> | null;
   readonly #eventSink: EventSink;
-  readonly #onCloseHandoffChange: SessionOptions["onCloseHandoffChange"];
-  readonly #onClosingHandoffReady: SessionOptions["onClosingHandoffReady"];
-  readonly #openingAdapter: FolderOpeningVisualAdapter | null;
-  readonly #ownershipRevision: SessionOptions["ownershipRevision"];
-  #close: CloseRecord | null = null;
+  readonly #onCloseHandoffChange: SessionOptions<OpeningPlan, ClosingPlan>["onCloseHandoffChange"];
+  readonly #onClosingHandoffReady: SessionOptions<OpeningPlan, ClosingPlan>["onClosingHandoffReady"];
+  readonly #openingAdapter: FolderOpeningVisualAdapter<OpeningPlan> | null;
+  readonly #ownershipRevision: SessionOptions<OpeningPlan, ClosingPlan>["ownershipRevision"];
+  #close: CloseRecord<ClosingPlan> | null = null;
   #disposed = false;
   #nextCloseId = 1;
   #nextOpenId = 1;
-  #open: OpenRecord | null = null;
+  #open: OpenRecord<OpeningPlan> | null = null;
 
-  constructor(options: SessionOptions = {}) {
+  constructor(options: SessionOptions<OpeningPlan, ClosingPlan> = {}) {
     this.#closingAdapter = options.closingAdapter || null;
     this.#eventSink = options.eventSink || motionRuntime;
     this.#onCloseHandoffChange = options.onCloseHandoffChange;
@@ -402,7 +429,7 @@ export class FolderVisualSession {
     this.#ownershipRevision = options.ownershipRevision;
   }
 
-  open(request: FolderOpenRequest): FolderOpenLease {
+  open(request: FolderOpenRequest): FolderOpenLease<OpeningPlan> {
     this.#assertUsable();
     assertObject(request, "FolderVisualSession.open request");
     assertFolderId(request.folderId, "FolderVisualSession.open folderId");
@@ -419,12 +446,12 @@ export class FolderVisualSession {
         if (!current.revealed) current.panelReady = false;
         this.#record("phase", "open-retarget", current);
       }
-      return current.lease as FolderOpenLease;
+      return current.lease as FolderOpenLease<OpeningPlan>;
     }
 
     if (current) this.#cancelOpen(current, { restorePageTrack: false, reveal: false });
     const id = this.#nextOpenId++;
-    const record: OpenRecord = {
+    const record: OpenRecord<OpeningPlan> = {
       adapterScope: null,
       error: null,
       folderId: request.folderId,
@@ -451,19 +478,19 @@ export class FolderVisualSession {
     return record.lease;
   }
 
-  close(request: FolderCloseRequest): FolderCloseLease {
+  close(request: FolderCloseRequest): FolderCloseLease<ClosingPlan> {
     this.#assertUsable();
     assertObject(request, "FolderVisualSession.close request");
     assertFolderId(request.folderId, "FolderVisualSession.close folderId");
 
     const current = this.#close;
     if (current?.folderId === request.folderId && current.phase !== "settled") {
-      return current.lease as FolderCloseLease;
+      return current.lease as FolderCloseLease<ClosingPlan>;
     }
     if (current) this.#cancelClose(current, { restorePageTrack: false, reveal: false });
 
     const id = this.#nextCloseId++;
-    const record: CloseRecord = {
+    const record: CloseRecord<ClosingPlan> = {
       adapterScope: null,
       completedControllerKeys: [],
       detachedFrameTarget: null,
@@ -533,17 +560,17 @@ export class FolderVisualSession {
     if (this.#disposed) throw new Error("FolderVisualSession has been disposed");
   }
 
-  #isCurrentOpen(record: OpenRecord): boolean {
+  #isCurrentOpen(record: OpenRecord<OpeningPlan>): boolean {
     return !this.#disposed && this.#open === record;
   }
 
-  #isCurrentClose(record: CloseRecord): boolean {
+  #isCurrentClose(record: CloseRecord<ClosingPlan>): boolean {
     return !this.#disposed && this.#close === record;
   }
 
-  #makeOpenLease(record: OpenRecord): FolderOpenLease {
+  #makeOpenLease(record: OpenRecord<OpeningPlan>): FolderOpenLease<OpeningPlan> {
     return Object.freeze({
-      cancel: (options?: CancelOptions) => {
+      cancel: (options?: FolderVisualCancelOptions) => {
         if (!this.#isCurrentOpen(record)) return STALE;
         this.#cancelOpen(record, options);
         return ACCEPTED;
@@ -572,7 +599,7 @@ export class FolderVisualSession {
         this.#maybeReveal(record);
         return ACCEPTED;
       },
-      present: (plan: FolderOpeningVisualPlan) => this.#presentOpen(record, plan),
+      present: (plan: OpeningPlan) => this.#presentOpen(record, plan),
       setGeometrySnapshot: (snapshot: FolderOpeningGeometrySnapshot) => {
         if (!this.#isCurrentOpen(record)) return STALE;
         assertObject(snapshot, "FolderOpenLease geometry snapshot");
@@ -595,9 +622,9 @@ export class FolderVisualSession {
     });
   }
 
-  #makeCloseLease(record: CloseRecord): FolderCloseLease {
+  #makeCloseLease(record: CloseRecord<ClosingPlan>): FolderCloseLease<ClosingPlan> {
     return Object.freeze({
-      cancel: (options?: CancelOptions) => {
+      cancel: (options?: FolderVisualCancelOptions) => {
         if (!this.#isCurrentClose(record)) return STALE;
         this.#cancelClose(record, options);
         return ACCEPTED;
@@ -608,12 +635,12 @@ export class FolderVisualSession {
         return motion || null;
       },
       isCurrent: () => this.#isCurrentClose(record),
-      present: (plan: FolderClosingVisualPlan) => this.#presentClose(record, plan),
+      present: (plan: ClosingPlan) => this.#presentClose(record, plan),
       snapshot: () => this.#closeSnapshot(record),
     });
   }
 
-  #makeOpeningReporter(record: OpenRecord): FolderOpeningPhaseReporter {
+  #makeOpeningReporter(record: OpenRecord<OpeningPlan>): FolderOpeningPhaseReporter {
     return Object.freeze({
       fail: (error: unknown) => {
         if (!this.#isCurrentOpen(record)) return STALE;
@@ -634,7 +661,7 @@ export class FolderVisualSession {
     });
   }
 
-  #makeClosingReporter(record: CloseRecord): FolderClosingPhaseReporter {
+  #makeClosingReporter(record: CloseRecord<ClosingPlan>): FolderClosingPhaseReporter {
     const current = (): boolean => this.#isCurrentClose(record);
     return Object.freeze({
       cleanupFinished: () => {
@@ -778,7 +805,7 @@ export class FolderVisualSession {
     });
   }
 
-  #presentOpen(record: OpenRecord, plan: FolderOpeningVisualPlan): FolderVisualReportResult {
+  #presentOpen(record: OpenRecord<OpeningPlan>, plan: OpeningPlan): FolderVisualReportResult {
     if (!this.#isCurrentOpen(record)) return STALE;
     assertObject(plan, "FolderOpenLease presentation plan");
     if (!this.#openingAdapter) throw new Error("FolderVisualSession requires an opening adapter before presenting an open lease");
@@ -810,7 +837,7 @@ export class FolderVisualSession {
     }
   }
 
-  #presentClose(record: CloseRecord, plan: FolderClosingVisualPlan): FolderVisualReportResult {
+  #presentClose(record: CloseRecord<ClosingPlan>, plan: ClosingPlan): FolderVisualReportResult {
     if (!this.#isCurrentClose(record)) return STALE;
     assertObject(plan, "FolderCloseLease presentation plan");
     if (!this.#closingAdapter) throw new Error("FolderVisualSession requires a closing adapter before presenting a close lease");
@@ -859,7 +886,7 @@ export class FolderVisualSession {
     }
   }
 
-  #maybeReveal(record: OpenRecord): void {
+  #maybeReveal(record: OpenRecord<OpeningPlan>): void {
     if (!this.#isCurrentOpen(record) || record.revealed || record.error != null) return;
     if (!record.panelReady || !record.ghostsReady || !record.adapterScope) return;
     record.revealed = true;
@@ -876,7 +903,7 @@ export class FolderVisualSession {
     }
   }
 
-  #collectCloseEffects(record: CloseRecord): void {
+  #collectCloseEffects(record: CloseRecord<ClosingPlan>): void {
     if (!this.#isCurrentClose(record) || !record.settlementStarted) return;
     if (!record.handoffReady && record.visualPendingKeys.size === 0) {
       record.handoffReady = true;
@@ -898,7 +925,7 @@ export class FolderVisualSession {
     this.#flushCloseEffects(record);
   }
 
-  #flushCloseEffects(record: CloseRecord): void {
+  #flushCloseEffects(record: CloseRecord<ClosingPlan>): void {
     const scope = record.adapterScope;
     if (!scope || !this.#isCurrentClose(record)) return;
     try {
@@ -920,7 +947,7 @@ export class FolderVisualSession {
     }
   }
 
-  #setCloseHandoffActive(record: CloseRecord, active: boolean): void {
+  #setCloseHandoffActive(record: CloseRecord<ClosingPlan>, active: boolean): void {
     if (record.handoffActive === active) return;
     record.handoffActive = active;
     const folderId = active ? record.folderId : null;
@@ -929,7 +956,7 @@ export class FolderVisualSession {
     this.#onCloseHandoffChange?.(active, folderId);
   }
 
-  #retireOpeningForClose(record: CloseRecord): FolderVisualReportResult {
+  #retireOpeningForClose(record: CloseRecord<ClosingPlan>): FolderVisualReportResult {
     const opening = this.#open;
     if (!opening || opening.folderId !== record.folderId) return DUPLICATE;
     this.#cancelOpen(opening, {
@@ -940,7 +967,7 @@ export class FolderVisualSession {
     return ACCEPTED;
   }
 
-  #cancelOpen(record: OpenRecord, options: CancelOptions = {}): void {
+  #cancelOpen(record: OpenRecord<OpeningPlan>, options: FolderVisualCancelOptions = {}): void {
     if (this.#open === record) this.#open = null;
     const scope = record.adapterScope;
     record.adapterScope = null;
@@ -951,7 +978,7 @@ export class FolderVisualSession {
     ]);
   }
 
-  #cancelClose(record: CloseRecord, options: CancelOptions = {}): void {
+  #cancelClose(record: CloseRecord<ClosingPlan>, options: FolderVisualCancelOptions = {}): void {
     if (this.#close === record) this.#close = null;
     const scope = record.adapterScope;
     record.adapterScope = null;
@@ -964,7 +991,7 @@ export class FolderVisualSession {
     ]);
   }
 
-  #openSnapshot(record: OpenRecord): FolderOpenSnapshot {
+  #openSnapshot(record: OpenRecord<OpeningPlan>): FolderOpenSnapshot {
     const adapter = freezeAdapterSnapshot(record.adapterScope);
     const adapterGhostIds = Array.isArray(adapter?.ghostIds)
       ? adapter.ghostIds.filter((id): id is string => typeof id === "string")
@@ -982,7 +1009,7 @@ export class FolderVisualSession {
     });
   }
 
-  #closeSnapshot(record: CloseRecord): FolderCloseSnapshot {
+  #closeSnapshot(record: CloseRecord<ClosingPlan>): FolderCloseSnapshot {
     const adapter = freezeAdapterSnapshot(record.adapterScope);
     return Object.freeze({
       activeVisuals: adapter?.activeVisuals === true,
@@ -1008,7 +1035,7 @@ export class FolderVisualSession {
   #record(
     action: string,
     event: string,
-    record: OpenRecord | CloseRecord,
+    record: OpenRecord<OpeningPlan> | CloseRecord<ClosingPlan>,
     details: UnknownRecord = {},
   ): void {
     this.#eventSink.recordCoordinationEvent?.({

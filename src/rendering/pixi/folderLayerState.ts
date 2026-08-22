@@ -1,5 +1,12 @@
-import type { SceneDataRecord, SceneFocusedIcon, SceneItem } from "../sceneFrame.js";
+import type {
+  SceneDataRecord,
+  SceneFocusedIcon,
+  SceneItem,
+  ScenePageTrackScrub,
+} from "../sceneFrame.js";
+import type { SceneRuntimeRef } from "../sceneRuntime.js";
 import { findFolderGhostKey } from "./scene/folderOverlayTargets.js";
+import type { CapturedFolderOriginBounds } from "./scene/folderOverlayTargetResolver.js";
 
 type RectLike = Readonly<{
   height: number;
@@ -14,55 +21,67 @@ type FolderGhost = Readonly<{
   slotIndex?: number | null;
 }>;
 
-type FolderLayerCallbacks = Readonly<{
-  acceptFolderOpenIconGhostSession?: (...args: unknown[]) => unknown;
-  completeFolderCloseIconGhost?: (...args: unknown[]) => unknown;
-  completeFolderOpenFrameGhost?: (...args: unknown[]) => unknown;
-  completeFolderOpenIconGhost?: (...args: unknown[]) => unknown;
-  getFolderPageRenderMode?: (...args: unknown[]) => unknown;
-  getVisibleFolderPage?: (...args: unknown[]) => unknown;
-  isIconOpening?: (...args: unknown[]) => unknown;
-  setFolderPageRef?: (...args: unknown[]) => unknown;
+type FolderPageRenderMode = "empty" | "interactive" | "static-real";
+
+type FolderLayerFolder = SceneItem & Readonly<{
+  childPages?: readonly (readonly (SceneItem | null)[])[];
+  name?: string;
+}>;
+
+export type FolderLayerCallbacks = Readonly<{
+  acceptFolderOpenIconGhostSession?: ((folderId: string | null, requestId: unknown) => boolean) | undefined;
+  completeFolderCloseIconGhost?: ((key: string) => boolean | void) | undefined;
+  completeFolderOpenFrameGhost?: ((folderId: string | null, requestId: unknown) => unknown) | undefined;
+  completeFolderOpenIconGhost?: ((key: string) => unknown) | undefined;
+  getFolderPageRenderMode?: ((pageIndex: number) => FolderPageRenderMode) | undefined;
+  getVisibleFolderPage?: ((page: readonly (SceneItem | null)[]) => readonly SceneItem[]) | undefined;
+  isIconOpening?: ((
+    area: "folder",
+    itemId: string,
+    pageIndex: number,
+    folderId: string,
+  ) => boolean) | undefined;
+  setFolderPageRef?: ((element: unknown, pageIndex: number) => unknown) | undefined;
 }>;
 
 type FolderLayerFolderInput = Readonly<{
-  closeIconGhosts?: readonly FolderGhost[] | null;
-  desktopClosing?: boolean;
-  desktopPageTrackOffset?: SceneDataRecord | null;
-  gridStyle?: SceneDataRecord | null;
-  isAppLaunchClosing?: boolean;
-  isClosing?: boolean;
-  isZoomFadeClosing?: boolean;
-  openingCancelRequest?: SceneDataRecord | null;
-  openingOriginBounds?: SceneDataRecord | null;
-  openIconGhostSession?: SceneDataRecord | null;
-  openIconGhosts?: readonly FolderGhost[] | null;
-  openProgress?: number;
-  openProgressTarget?: number;
-  pageDotsVisible?: boolean;
-  pageIndex?: number;
-  pageIndexCommit?: (...args: unknown[]) => unknown;
-  pageSize?: number;
-  pageTrackScrub?: SceneDataRecord | null;
+  closeIconGhosts?: readonly FolderGhost[] | null | undefined;
+  desktopClosing?: boolean | undefined;
+  desktopPageTrackOffset?: SceneDataRecord | null | undefined;
+  gridStyle?: SceneDataRecord | null | undefined;
+  isAppLaunchClosing?: boolean | undefined;
+  isClosing?: boolean | undefined;
+  isZoomFadeClosing?: boolean | undefined;
+  openingCancelRequest?: SceneDataRecord | null | undefined;
+  openingOriginBounds?: CapturedFolderOriginBounds | null | undefined;
+  openIconGhostSession?: SceneDataRecord | null | undefined;
+  openIconGhosts?: readonly FolderGhost[] | null | undefined;
+  openProgress?: number | undefined;
+  openProgressTarget?: number | undefined;
+  pageDotsVisible?: boolean | undefined;
+  pageIndex?: number | undefined;
+  pageIndexCommit?: ((pageIndex: number) => unknown) | undefined;
+  pageSize?: number | undefined;
+  pageTrackScrub?: ScenePageTrackScrub | null | undefined;
   pageTurnToken?: unknown;
-  pages?: readonly (readonly (SceneItem | null)[])[] | null;
-  panelRef?: unknown;
-  panelStyle?: Readonly<Record<string, string>> | null;
-  renderedFolder?: SceneItem | null;
-  viewportRef?: unknown;
-  visualPageIndex?: number;
-  zoomFadeCloseReason?: string | null;
+  pages?: readonly (readonly (SceneItem | null)[])[] | null | undefined;
+  panelRef?: SceneRuntimeRef<unknown> | null | undefined;
+  panelStyle?: Readonly<Record<string, string>> | null | undefined;
+  renderedFolder?: FolderLayerFolder | null | undefined;
+  viewportRef?: SceneRuntimeRef<unknown> | null | undefined;
+  visualPageIndex?: number | undefined;
+  zoomFadeCloseReason?: string | null | undefined;
 }>;
 
 type FolderLayerUiInput = Readonly<{
-  focusedIcon?: SceneFocusedIcon | null;
-  iconGesturePresentation?: SceneDataRecord | null;
-  isBatchSelectionActive?: boolean;
-  isEditMode?: boolean;
-  isTextlessMode?: boolean;
-  launchTargetStatusById?: Readonly<Record<string, string>> | null;
-  selectedAppIds?: ReadonlySet<string> | readonly string[] | null;
-  showMissingLaunchTargetBadge?: boolean;
+  focusedIcon?: SceneFocusedIcon | null | undefined;
+  iconGesturePresentation?: SceneDataRecord | null | undefined;
+  isBatchSelectionActive?: boolean | undefined;
+  isEditMode?: boolean | undefined;
+  isTextlessMode?: boolean | undefined;
+  launchTargetStatusById?: Readonly<Record<string, string>> | null | undefined;
+  selectedAppIds?: ReadonlySet<string> | readonly string[] | null | undefined;
+  showMissingLaunchTargetBadge?: boolean | undefined;
 }>;
 
 export type FolderOverlayFrameInput = Readonly<{
@@ -100,17 +119,17 @@ export type FolderOverlayFrame = Readonly<{
   folderOpenProgress: number;
   folderOpenProgressTarget: number;
   folderOpeningCancelRequest: SceneDataRecord | null;
-  folderOpeningOriginBounds: SceneDataRecord | null;
+  folderOpeningOriginBounds: CapturedFolderOriginBounds | null;
   folderPageDotsVisible: boolean;
   folderPageIndex: number;
   folderPageIndexCommit: FolderLayerFolderInput["pageIndexCommit"];
   folderPageSize: number;
   folderPages: readonly (readonly (SceneItem | null)[])[];
-  folderPageTrackScrub: SceneDataRecord | null;
+  folderPageTrackScrub: ScenePageTrackScrub | null;
   folderPageTurnToken: unknown;
-  folderPanelRef: unknown;
+  folderPanelRef: SceneRuntimeRef<unknown> | null;
   folderPanelStyle: Readonly<Record<string, string>>;
-  folderViewportRef: unknown;
+  folderViewportRef: SceneRuntimeRef<unknown> | null;
   folderZoomFadeCloseReason: string | null;
   getFolderCloseIconGhostKey: (itemId: string, slotIndex: number) => string | null;
   getFolderOpenIconGhostKey: (itemId: string, slotIndex: number) => string | null;
@@ -129,7 +148,7 @@ export type FolderOverlayFrame = Readonly<{
   isIconOpening: FolderLayerCallbacks["isIconOpening"];
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
-  renderedFolder: SceneItem | null;
+  renderedFolder: FolderLayerFolder | null;
   selectedAppIds: ReadonlySet<string> | readonly string[];
   setFolderPageRef: FolderLayerCallbacks["setFolderPageRef"];
   showMissingLaunchTargetBadge: boolean;
@@ -199,12 +218,14 @@ export function createFolderLayerState(groups: FolderOverlayFrameInput): FolderO
     folderPages: folder.pages || Object.freeze([]),
     folderPageTrackScrub: folder.pageTrackScrub || null,
     folderPageTurnToken: folder.pageTurnToken ?? null,
-    folderPanelRef: folder.panelRef,
+    folderPanelRef: folder.panelRef || null,
     folderPanelStyle,
-    folderViewportRef: folder.viewportRef,
+    folderViewportRef: folder.viewportRef || null,
     folderZoomFadeCloseReason: folder.zoomFadeCloseReason || null,
-    getFolderCloseIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(folderCloseIconGhosts, itemId, slotIndex),
-    getFolderOpenIconGhostKey: (itemId, slotIndex) => findFolderGhostKey(folderOpenIconGhosts, itemId, slotIndex),
+    getFolderCloseIconGhostKey: (itemId: string, slotIndex: number) =>
+      findFolderGhostKey(folderCloseIconGhosts, itemId, slotIndex),
+    getFolderOpenIconGhostKey: (itemId: string, slotIndex: number) =>
+      findFolderGhostKey(folderOpenIconGhosts, itemId, slotIndex),
     getFolderPageRenderMode: callbacks.getFolderPageRenderMode,
     getVisibleFolderPage: callbacks.getVisibleFolderPage,
     groupDragState: drag.groupDragState || null,

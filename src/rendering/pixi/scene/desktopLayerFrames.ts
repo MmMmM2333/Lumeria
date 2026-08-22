@@ -1,8 +1,10 @@
 import type {
   SceneDataRecord,
   SceneFocusedIcon,
+  SceneGroupDragState,
   SceneItem,
   ScenePageTrackScrub,
+  SceneSingleStageDiagnosticsOptions,
   SceneVisualTransform,
 } from "../../sceneFrame.js";
 import type { RenderInvalidationSnapshot } from "../renderInvalidation.js";
@@ -33,11 +35,11 @@ type DesktopLayerStateValues = Readonly<{
   folderClosingHandoffIds: ReadonlySet<string>;
   folderPageSize: number;
   folderSourceGhostedIds: ReadonlySet<string>;
-  getDesktopPageRenderMode: (pageIndex: number) => unknown;
-  getVisibleDesktopPage: (page: readonly (SceneItem | null)[]) => readonly (SceneItem | null)[];
+  getDesktopPageRenderMode: (pageIndex: number) => "empty" | "interactive" | "static-real";
+  getVisibleDesktopPage: (page: readonly (SceneItem | null)[]) => readonly SceneItem[];
   gridCols: number;
   gridRows: number;
-  groupDragState: SceneDataRecord | null;
+  groupDragState: SceneGroupDragState | null;
   height: number;
   iconGesturePresentation: SceneDataRecord | null;
   iconSize: number;
@@ -46,7 +48,12 @@ type DesktopLayerStateValues = Readonly<{
   isFolderOpeningPreviewFrameGhosted: (folderId: string) => boolean;
   isFolderOverlayActive: boolean;
   isHomeRevealSettling: boolean;
-  isIconOpening: (...args: unknown[]) => boolean;
+  isIconOpening: (
+    area: "desktop" | "folder" | "search",
+    itemId: string,
+    pageIndex: number,
+    folderId?: string,
+  ) => boolean;
   isSearchMode: boolean;
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
@@ -55,10 +62,10 @@ type DesktopLayerStateValues = Readonly<{
   pageTrackScrub: ScenePageTrackScrub | null;
   provisionalFolderRollback: SceneDataRecord | null;
   selectedAppIds: ReadonlySet<string>;
-  setPageRef: (...args: unknown[]) => unknown;
+  setPageRef: (element: unknown, pageIndex: number) => unknown;
   shouldSnapTrack: boolean;
   showMissingLaunchTargetBadge: boolean;
-  singleStageDiagnosticsEnabled: SceneDataRecord | null;
+  singleStageDiagnosticsEnabled: SceneSingleStageDiagnosticsOptions | null;
   singleStageFolderState: FolderOverlayFrame | null;
   snapDesktopLayout: boolean;
   stageRect: RectLike;

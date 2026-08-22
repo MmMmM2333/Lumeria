@@ -29,14 +29,14 @@
           class="folder-name-input pixi-folder-name-input"
           :class="{ 'is-closing': isSingleStageFolderClosing }"
           name="pixiSingleStageFolderName"
-          :value="sceneRuntime.folderOverlayState.renderedFolder.value.name"
+          :value="singleStageFolderName"
           :disabled="isSingleStageFolderInputDisabled"
           :style="singleStageFolderNameInputStyle"
           maxlength="32"
           :aria-label="t('launchpad.folderName')"
           @input="handleSingleStageFolderNameInput"
           @blur="restoreSingleStageEmptyFolderName"
-          @keydown.enter.prevent.stop="$event.target.blur()"
+          @keydown.enter.prevent.stop="blurInputTarget"
           @pointerdown.stop
         />
       </div>
@@ -44,8 +44,10 @@
   </main>
 </template>
 
-<script setup>
+<script setup lang="ts">
+import type { Application } from "pixi.js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import type { StyleValue } from "vue";
 import { WINDOW_CHROME_STATE_CHANGE_EVENT } from "../../api/windowChromeApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { getTextRenderResolution } from "./geometry/stageCoordinates.js";
@@ -61,25 +63,54 @@ import {
   makeDesktopStructureFrame,
   makeDesktopVisualFrame,
 } from "./scene/desktopLayerFrames.js";
+import type {
+  DesktopHandoffFrame,
+  DesktopLayerFrameWork,
+} from "./scene/desktopLayerFrames.js";
 import { createFolderLayerState } from "./folderLayerState.js";
 import { readFolderOverlayStateRenderDependencies } from "./folderOverlayStateDependencies.js";
 import { createDragRenderSnapshot } from "./dragRenderSnapshot.js";
+import type { DragRenderSnapshot } from "./dragRenderSnapshot.js";
+import type {
+  IconNodeAction,
+} from "./nodes/IconNode.js";
 import { iconTextureRepository } from "./assets/iconTextureRepository.js";
 import { createDesktopPresentationLoop } from "./desktopPresentationLoop.js";
+import type {
+  DesktopPresentationCommit,
+  DesktopPresentationLoop,
+  ResizeSettleReason,
+} from "./desktopPresentationLoop.js";
 import { createAppLaunchVisualCommitTracker } from "./appLaunchVisualCommit.js";
+import type { AppLaunchVisualCommitTracker } from "./appLaunchVisualCommit.js";
 import {
   installMotionRuntimeDebugAdapterFactory,
   motionRuntime,
 } from "./animation/motionRuntime.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { getPixiHostMetrics } from "./pixiHostMetrics.js";
+import type { PixiHostMetrics } from "./pixiHostMetrics.js";
 import {
   makeDesktopRenderGeometry as makeRootStageDesktopRenderGeometry,
   makeRootStageHostStyle as makeRootStageHostStyleFromRect,
 } from "./geometry/rootStageCoordinates.js";
+import type {
+  DesktopRenderGeometry,
+  RootStageRect,
+} from "./geometry/rootStageCoordinates.js";
 import { createFolderClosingHandoffRetainer } from "./scene/folderClosingHandoffRetainer.js";
-import { assertDesktopSceneFrame } from "../sceneFrame.js";
-import { assertDesktopSceneRuntime } from "../sceneRuntime.js";
+import { assertCompleteDesktopSceneFrame } from "../sceneFrame.js";
+import type {
+  CompleteDesktopSceneFrame,
+  SceneDataRecord,
+  SceneGroupDragState,
+  SceneItem,
+} from "../sceneFrame.js";
+import { makeDesktopSceneRuntimeAdapter } from "../sceneRuntime.js";
+import type {
+  DesktopSceneFolderItem,
+  DesktopSceneRuntime,
+} from "../sceneRuntime.js";
 import {
   assertSceneEvent,
   makeAppLaunchCloseFrameCommittedEvent,
@@ -94,6 +125,7 @@ import {
   makeSurfacePointerdownEvent,
   makeWheelEvent,
 } from "../sceneEvents.js";
+import type { SceneEvent } from "../sceneEvents.js";
 import {
   getFolderHandoffDebugOptions,
   rectDelta as getDebugRectDelta,
@@ -101,27 +133,112 @@ import {
   roundRect as roundDebugRect,
 } from "./scene/folderHandoffDebug.js";
 import { getSingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
+import type { SingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
 import {
   isSingleStageFolderTitleFrameCurrent,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
+import type { SingleStageFolderTitleFrame } from "./scene/singleStageFolderDomControls.js";
+import type { FolderOverlayFrame } from "./folderLayerState.js";
+import type { MotionDebugOverlayLayer } from "./animation/motionDebugOverlayLayer.js";
+import type { RenderInvalidationSnapshot } from "./renderInvalidation.js";
 import { useLocalization } from "../../i18n/localization.js";
 import { runtimePerformanceMetrics } from "../../diagnostics/runtimePerformanceMetrics.js";
 
 const RESIZE_SETTLE_FRAMES = 3;
 const WINDOW_CHROME_RESIZE_SETTLE_FRAMES = 12;
 
-const props = defineProps({
-  sceneFrame: { type: Object, required: true },
-  sceneRuntime: { type: Object, required: true },
-});
-const sceneFrame = computed(() => {
-  assertDesktopSceneFrame(props.sceneFrame);
+type PixiRenderProbe = ReturnType<
+  (typeof import("./renderDebugProbe.dev.js"))["createPixiRenderProbe"]
+>;
+
+interface DiagnosticHubLike {
+  dispose(): unknown;
+}
+
+interface DiagnosticAdapterLike {
+  describe(): unknown;
+  dispose(): unknown;
+  getStatus(): unknown;
+  invoke(...args: never[]): unknown;
+}
+
+interface DiagnosticGlobalInstallation {
+  uninstall(): unknown;
+}
+
+interface DesktopDomGeometry {
+  metrics: PixiHostMetrics;
+  renderGeometry: DesktopRenderGeometry;
+  rootStageHostStyle: ReturnType<typeof makeRootStageHostStyleFromRect>;
+}
+
+interface RenderPixiOptions {
+  invalidation?: RenderInvalidationSnapshot;
+  snapDesktopLayout?: boolean;
+}
+
+interface RequestRenderOptions {
+  invalidateGeometry?: boolean;
+}
+
+interface SynchronizeIconTextureOptions {
+  renderOnComplete?: boolean;
+}
+
+interface DestroyPixiOptions {
+  deep?: boolean;
+}
+
+interface EventControlLike {
+  preventDefault?(): void;
+  stopPropagation?(): void;
+}
+
+interface DomRefElementLike {
+  getBoundingClientRect?(): RootStageRect;
+}
+
+interface FolderHandoffDebugSnapshot extends Readonly<Record<string, unknown>> {
+  active?: unknown;
+  childIndex?: unknown;
+  clearing?: unknown;
+  iconRect?: unknown;
+  layoutTarget?: unknown;
+  liveTargetRect?: unknown;
+  node?: unknown;
+  pageTrackX?: unknown;
+  registeredThumbRect?: unknown;
+  source?: unknown;
+  stableTargetRect?: unknown;
+  stale?: unknown;
+  targetDelta?: unknown;
+  targetRect?: unknown;
+  thumbRect?: unknown;
+}
+
+type DesktopDragRenderSnapshot = Readonly<
+  DragRenderSnapshot<SceneDataRecord, SceneGroupDragState>
+>;
+
+type RenderProbePointerInput = NonNullable<Parameters<PixiRenderProbe["notePointerDown"]>[0]>;
+
+interface RenderPixiResult {
+  didRender: boolean;
+  hasLayerCapability: boolean;
+  work: DesktopLayerFrameWork | null;
+}
+
+const props = defineProps<{
+  sceneFrame: CompleteDesktopSceneFrame;
+  sceneRuntime: DesktopSceneRuntime;
+}>();
+const sceneFrame = computed<CompleteDesktopSceneFrame>(() => {
+  assertCompleteDesktopSceneFrame(props.sceneFrame);
   return props.sceneFrame;
 });
-const sceneRuntime = computed(() => {
-  assertDesktopSceneRuntime(props.sceneRuntime);
-  return props.sceneRuntime;
+const sceneRuntime = computed<DesktopSceneRuntime>(() => {
+  return makeDesktopSceneRuntimeAdapter(props.sceneRuntime);
 });
 const viewportFrame = computed(() => sceneFrame.value.viewport);
 const visualFrame = computed(() => sceneFrame.value.visual);
@@ -135,56 +252,67 @@ const pixiRenderCopy = computed(() => ({
   searchEmpty: t("launchpad.search.empty"),
 }));
 
-const emitSceneEvent = defineEmits(["scene-event"]);
-function publishSceneEvent(event) {
+const emitSceneEvent = defineEmits<{
+  (event: "scene-event", payload: SceneEvent): void;
+}>();
+function publishSceneEvent(event: unknown): void {
   emitSceneEvent("scene-event", assertSceneEvent(event));
 }
-function emitChooseAppIcon(itemId) { publishSceneEvent(makeChooseAppIconEvent(itemId)); }
-function emitAppLaunchCloseFrameCommitted(sessionId) {
+function emitChooseAppIcon(itemId: string): void { publishSceneEvent(makeChooseAppIconEvent(itemId)); }
+function emitAppLaunchCloseFrameCommitted(sessionId: number): void {
   publishSceneEvent(makeAppLaunchCloseFrameCommittedEvent(sessionId));
 }
-function emitContextMenuRequest(event) { publishSceneEvent(makeContextMenuRequestEvent(event)); }
-function emitDesktopFocus() { publishSceneEvent(makeDesktopFocusEvent()); }
-function emitGroupReleaseComplete(payload) { publishSceneEvent(makeGroupReleaseCompleteEvent(payload)); }
-function emitIconPointerdown(event, item, source) { publishSceneEvent(makeIconPointerdownEvent(event, item, source)); }
-function emitInternalActivity(active, folderId) { publishSceneEvent(makeInternalActivityEvent(active, folderId)); }
-function emitRemoveApp(itemId) { publishSceneEvent(makeRemoveAppEvent(itemId)); }
-function emitResetAppIcon(itemId) { publishSceneEvent(makeResetAppIconEvent(itemId)); }
-function emitSurfacePointerdown(event) { publishSceneEvent(makeSurfacePointerdownEvent(event)); }
-function emitWheel(event) { publishSceneEvent(makeWheelEvent(event)); }
+function emitContextMenuRequest(event: unknown): void { publishSceneEvent(makeContextMenuRequestEvent(event)); }
+function emitDesktopFocus(): void { publishSceneEvent(makeDesktopFocusEvent()); }
+function emitGroupReleaseComplete(payload: unknown): void { publishSceneEvent(makeGroupReleaseCompleteEvent(payload)); }
+function emitIconPointerdown(event: unknown, item: unknown, source: unknown): void {
+  publishSceneEvent(makeIconPointerdownEvent(event, item, source));
+}
+function emitInternalActivity(active: boolean, folderId: string | null): void {
+  publishSceneEvent(makeInternalActivityEvent(active, folderId));
+}
+function emitRemoveApp(itemId: string): void { publishSceneEvent(makeRemoveAppEvent(itemId)); }
+function emitResetAppIcon(itemId: string): void { publishSceneEvent(makeResetAppIconEvent(itemId)); }
+function emitSurfacePointerdown(event: unknown): void { publishSceneEvent(makeSurfacePointerdownEvent(event)); }
+function emitWheel(event: unknown): void { publishSceneEvent(makeWheelEvent(event)); }
 
-function getResolvedSingleStageDiagnosticsOptions() {
+function getResolvedSingleStageDiagnosticsOptions(): SingleStageDiagnosticsOptions {
   const options = diagnosticsFrame.value.singleStageDiagnosticsOptions;
-  if (options && typeof options === "object") {
-    if ("value" in options) return getSingleStageDiagnosticsOptions(options.value);
+  if (options && typeof options === "object" && "value" in options) {
+    const wrapped = options.value;
+    if (
+      typeof wrapped === "boolean"
+      || wrapped == null
+      || (typeof wrapped === "object" && !Array.isArray(wrapped))
+    ) {
+      return getSingleStageDiagnosticsOptions(
+        wrapped as Parameters<typeof getSingleStageDiagnosticsOptions>[0],
+      );
+    }
   }
   return getSingleStageDiagnosticsOptions(options);
 }
 
-function resolveMaybeRef(value) {
-  return value && typeof value === "object" && "value" in value ? value.value : value;
-}
-
-const hostRef = ref(null);
-const mainRef = ref(null);
-const folderNameInputRef = ref(null);
+const hostRef = ref<HTMLElement | null>(null);
+const mainRef = ref<HTMLElement | null>(null);
+const folderNameInputRef = ref<HTMLInputElement | null>(null);
 const rootStageHostStyle = ref(makeRootStageHostStyle());
-const singleStageFolderPanelGeometry = ref(null);
-const singleStageFolderTitleFrame = ref(null);
+const singleStageFolderPanelGeometry = ref<unknown>(null);
+const singleStageFolderTitleFrame = ref<SingleStageFolderTitleFrame | null>(null);
 const singleStageFolderNameBeforeEdit = ref("");
-let app = null;
-let layer = null;
-let resizeObserver = null;
+let app: Application | null = null;
+let layer: DesktopLayer | null = null;
+let resizeObserver: ResizeObserver | null = null;
 let destroyed = false;
-let presentationLoop = null;
-let appLaunchVisualCommitTracker = null;
-let renderProbe = null;
-let diagnosticHub = null;
-let diagnosticGlobalInstallation = null;
-let desktopDomGeometryCache = null;
+let presentationLoop: DesktopPresentationLoop | null = null;
+let appLaunchVisualCommitTracker: AppLaunchVisualCommitTracker | null = null;
+let renderProbe: PixiRenderProbe | null = null;
+let diagnosticHub: DiagnosticHubLike | null = null;
+let diagnosticGlobalInstallation: DiagnosticGlobalInstallation | null = null;
+let desktopDomGeometryCache: DesktopDomGeometry | null = null;
 let pixiResizeSignature = "";
-let pixiTextResolution = null;
-let motionDebugOverlay = null;
+let pixiTextResolution: number | null = null;
+let motionDebugOverlay: MotionDebugOverlayLayer | null = null;
 let iconTextureSyncGeneration = 0;
 const folderClosingHandoffRetainer = createFolderClosingHandoffRetainer();
 let handoffDebugSequence = 0;
@@ -222,7 +350,7 @@ const isSingleStageDragPreviewActive = computed(() => Boolean(
   interactionFrame.value.groupDragState?.key
 ));
 
-const singleStageFolderNameInputStyle = computed(() => {
+const singleStageFolderNameInputStyle = computed<StyleValue>(() => {
   const folderId = sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   const frame = isSingleStageFolderTitleFrameCurrent(singleStageFolderTitleFrame.value, folderId)
     ? singleStageFolderTitleFrame.value
@@ -232,33 +360,42 @@ const singleStageFolderNameInputStyle = computed(() => {
     frame,
     isClosing: isSingleStageFolderClosing.value,
     isInputDisabled: isSingleStageFolderInputDisabled.value,
-  });
+  }) as unknown as StyleValue;
 });
 
-function shouldShowSingleStageFolderPageDots() {
+const singleStageFolderName = computed(() => String(
+  sceneRuntime.value.folderOverlayState.renderedFolder.value?.name || ""
+));
+
+function blurInputTarget(event: Event): void {
+  (event.target as HTMLInputElement).blur();
+}
+
+function shouldShowSingleStageFolderPageDots(): boolean {
   const state = sceneRuntime.value.folderOverlayState;
   return Boolean(
     shouldRenderSingleStageFolderDomControls.value &&
     state?.renderedFolder?.value &&
-    state.folderPages?.value?.length > 1 &&
+    (state.folderPages?.value?.length || 0) > 1 &&
     !isSingleStageFolderPageDotsBlocked.value
   );
 }
 
-function handleSingleStageFolderNameInput(event) {
+function handleSingleStageFolderNameInput(event: Event): void {
   const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
-  const nextName = String(event?.target?.value || "").slice(0, 32);
+  const input = event.target as HTMLInputElement | null;
+  const nextName = String(input?.value || "").slice(0, 32);
   if (!nextName) return;
   state.renameFolder(folder.id, nextName);
 }
 
-function restoreSingleStageEmptyFolderName(event) {
+function restoreSingleStageEmptyFolderName(event: Event): void {
   const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
-  const input = event?.target;
+  const input = event.target as HTMLInputElement | null;
   if (input?.value) {
     singleStageFolderNameBeforeEdit.value = input.value;
     return;
@@ -302,7 +439,7 @@ watch(
   }
 );
 
-function syncPixiResizeTarget(metrics = null) {
+function syncPixiResizeTarget(metrics: PixiHostMetrics | null = null): void {
   if (!app || !hostRef.value) return;
   let shouldResize = false;
   if ("resizeTo" in app && app.resizeTo !== hostRef.value) {
@@ -319,7 +456,7 @@ function syncPixiResizeTarget(metrics = null) {
   if (shouldResize) app.resize?.();
 }
 
-function syncPixiTextResolutionIfNeeded() {
+function syncPixiTextResolutionIfNeeded(): number {
   if (!app?.stage) return 0;
   const resolution = getTextRenderResolution();
   if (pixiTextResolution === resolution) return 0;
@@ -327,35 +464,40 @@ function syncPixiTextResolutionIfNeeded() {
   return syncPixiTextResolution(app.stage, resolution);
 }
 
-function requestResizeSettle(reason = "resize", frameCount = RESIZE_SETTLE_FRAMES) {
+function requestResizeSettle(
+  reason: ResizeSettleReason = "resize",
+  frameCount = RESIZE_SETTLE_FRAMES,
+): boolean {
   if (destroyed || !presentationLoop) return false;
   presentationLoop.requestResizeSettle({ frames: frameCount, reason });
   return true;
 }
 
-function handleResize() {
+function handleResize(): void {
   requestResizeSettle("resize", RESIZE_SETTLE_FRAMES);
 }
 
-function handleWindowChromeStateChange() {
+function handleWindowChromeStateChange(): void {
   requestResizeSettle("window-state-resize", WINDOW_CHROME_RESIZE_SETTLE_FRAMES);
 }
 
-function nowMs() {
+function nowMs(): number {
   return globalThis.performance?.now?.() || Date.now();
 }
 
-function hasFolderHandoffTimelineDebug() {
+function hasFolderHandoffTimelineDebug(): boolean {
   const options = getFolderHandoffDebugOptions();
   return Boolean(options?.log && options.timeline);
 }
 
-function readCssPx(value) {
-  const parsed = Number.parseFloat(value);
+function readCssPx(value: string | null | undefined): number {
+  const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function flattenFolderHandoffSnapshot(snapshot) {
+function flattenFolderHandoffSnapshot(
+  snapshot: FolderHandoffDebugSnapshot | null,
+): Readonly<Record<string, unknown>> {
   if (!snapshot) return {};
   return {
     desktopActive: snapshot.active,
@@ -376,12 +518,17 @@ function flattenFolderHandoffSnapshot(snapshot) {
   };
 }
 
-function getDomRefElement(nodeRef) {
-  const node = nodeRef && typeof nodeRef === "object" && "value" in nodeRef ? nodeRef.value : nodeRef;
-  return node?.$el || node || null;
+function getDomRefElement(nodeRef: unknown): DomRefElementLike | null {
+  const node = nodeRef && typeof nodeRef === "object" && "value" in nodeRef
+    ? (nodeRef as { value?: unknown }).value
+    : nodeRef;
+  const element = node && typeof node === "object" && "$el" in node
+    ? (node as { $el?: unknown }).$el
+    : node;
+  return element && typeof element === "object" ? element as DomRefElementLike : null;
 }
 
-function getElementRect(nodeRef) {
+function getElementRect(nodeRef: unknown): RootStageRect | null {
   const element = getDomRefElement(nodeRef);
   const rect = element?.getBoundingClientRect?.();
   if (!rect || rect.width <= 0 || rect.height <= 0) return null;
@@ -393,7 +540,7 @@ function getElementRect(nodeRef) {
   };
 }
 
-function makeRootStageHostStyle(rootRect = null) {
+function makeRootStageHostStyle(rootRect: RootStageRect | null = null) {
   const resolvedRootRect = rootRect || getElementRect(sceneRuntime.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
@@ -403,16 +550,18 @@ function makeRootStageHostStyle(rootRect = null) {
   return makeRootStageHostStyleFromRect(resolvedRootRect);
 }
 
-function readMainPadding() {
+function readMainPadding(): Readonly<{ bottom: number; top: number }> {
   if (typeof globalThis.getComputedStyle !== "function") return { bottom: 0, top: 0 };
-  const styles = globalThis.getComputedStyle(getDomRefElement(mainRef));
+  const mainElement = getDomRefElement(mainRef);
+  if (!mainElement) return { bottom: 0, top: 0 };
+  const styles = globalThis.getComputedStyle(mainElement as Element);
   return {
     bottom: readCssPx(styles?.paddingBottom),
     top: readCssPx(styles?.paddingTop),
   };
 }
 
-function resolveFolderClosingHandoffId(metrics) {
+function resolveFolderClosingHandoffId(metrics: PixiHostMetrics): string | null {
   const result = folderClosingHandoffRetainer.resolve(metrics, folderFrame.value.folderClosingHandoffId, {
     now: nowMs(),
     timelineDebug: hasFolderHandoffTimelineDebug(),
@@ -421,11 +570,11 @@ function resolveFolderClosingHandoffId(metrics) {
 }
 
 function createSingleStageFolderState(
-  metrics,
-  dragSnapshot,
-  diagnosticsOptions = {},
-  renderGeometry = makeDesktopRenderGeometry(metrics)
-) {
+  metrics: PixiHostMetrics,
+  dragSnapshot: DesktopDragRenderSnapshot,
+  diagnosticsOptions: SingleStageDiagnosticsOptions = getSingleStageDiagnosticsOptions(),
+  renderGeometry: DesktopRenderGeometry = makeDesktopRenderGeometry(metrics),
+): FolderOverlayFrame | null {
   const source = sceneRuntime.value.folderOverlayState;
   if (!source) return null;
   const sourceFolder = source.renderedFolder?.value;
@@ -433,11 +582,11 @@ function createSingleStageFolderState(
     source.isFolderClosing?.value ||
     source.isFolderZoomFadeClosingFromFolderClose?.value
   );
-  const projectedFolder = sourceFolder?.id && !isFolderClosing
+  const projectedFolder = (sourceFolder?.id && !isFolderClosing
     ? dragSnapshot.groupDragState?.projectedPages
       ?.flatMap((page) => page || [])
       .find((item) => item?.type === "folder" && item.id === sourceFolder.id) || null
-    : null;
+    : null) as DesktopSceneFolderItem | null;
   const renderedFolder = projectedFolder || sourceFolder;
   const folderPages = projectedFolder
     ? (
@@ -478,7 +627,7 @@ function createSingleStageFolderState(
       pageIndex: source.folderPageIndex?.value,
       pageIndexCommit: source.commitFolderPageIndex,
       pageTurnToken: source.folderPageTurnRequest?.value?.token ?? null,
-      pageTrackScrub: resolveMaybeRef(source.folderPageTrackScrub) || null,
+      pageTrackScrub: source.folderPageTrackScrub?.value || null,
       pageDotsVisible: shouldShowSingleStageFolderPageDots(),
       pageSize: source.folderPageSize?.value || viewportFrame.value.folderPageSize,
       pages: folderPages,
@@ -508,7 +657,7 @@ function createSingleStageFolderState(
   });
 }
 
-function makeDesktopRenderGeometryFromDom(metrics) {
+function makeDesktopRenderGeometryFromDom(metrics: PixiHostMetrics): DesktopDomGeometry {
   const rootRect = getElementRect(sceneRuntime.value.domRefs?.rootRef) || {
     height: globalThis.innerHeight || 1,
     left: 0,
@@ -530,11 +679,11 @@ function makeDesktopRenderGeometryFromDom(metrics) {
   };
 }
 
-function invalidateDesktopDomGeometry() {
+function invalidateDesktopDomGeometry(): void {
   desktopDomGeometryCache = null;
 }
 
-function refreshDesktopDomGeometry() {
+function refreshDesktopDomGeometry(): DesktopDomGeometry | null {
   if (!hostRef.value) return null;
   const metrics = getPixiHostMetrics(hostRef.value);
   desktopDomGeometryCache = makeDesktopRenderGeometryFromDom(metrics);
@@ -543,22 +692,25 @@ function refreshDesktopDomGeometry() {
   return desktopDomGeometryCache;
 }
 
-function getDesktopDomGeometry() {
+function getDesktopDomGeometry(): DesktopDomGeometry | null {
   return desktopDomGeometryCache || refreshDesktopDomGeometry();
 }
 
-function makeDesktopRenderGeometry(metrics) {
+function makeDesktopRenderGeometry(metrics: PixiHostMetrics): DesktopRenderGeometry {
   if (desktopDomGeometryCache?.metrics === metrics) return desktopDomGeometryCache.renderGeometry;
   const cached = getDesktopDomGeometry();
   return cached?.renderGeometry || makeDesktopRenderGeometryFromDom(metrics).renderGeometry;
 }
 
-function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
+function logFolderHandoffTimeline(
+  metrics: PixiHostMetrics,
+  folderClosingHandoffId: string | null,
+): void {
   const options = getFolderHandoffDebugOptions();
   if (!options?.log || !options.timeline) return;
   const decision = folderClosingHandoffRetainer.decision;
   if (!decision || (decision.phase === "idle" && folderClosingHandoffRetainer.postReleaseFrames <= 0)) return;
-  const snapshot = layer?.getFolderHandoffDebugSnapshot?.(decision.folderId) || null;
+  const snapshot = (layer?.getFolderHandoffDebugSnapshot?.(decision.folderId) || null) as FolderHandoffDebugSnapshot | null;
   const seq = ++handoffDebugSequence;
   console.log("[folder-handoff-timeline]", {
     desktop: snapshot,
@@ -584,7 +736,7 @@ function logFolderHandoffTimeline(metrics, folderClosingHandoffId) {
   folderClosingHandoffRetainer.consumePostReleaseFrame(folderClosingHandoffId);
 }
 
-function updateMotionDebugOverlay() {
+function updateMotionDebugOverlay(): void {
   if (!import.meta.env.DEV || !motionDebugOverlay) return;
   const config = motionRuntime.configureDebug();
   if (!config.overlayEnabled) {
@@ -600,27 +752,31 @@ function updateMotionDebugOverlay() {
   });
 }
 
-function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
-  let dragSnapshot = null;
-  let folderClosingHandoffId = null;
+function makeDesktopLayerFrameBuilders(
+  metrics: PixiHostMetrics,
+  renderGeometry: DesktopRenderGeometry,
+  options: RenderPixiOptions = {},
+) {
+  let dragSnapshot: DesktopDragRenderSnapshot | null = null;
+  let folderClosingHandoffId: string | null = null;
   let folderHandoffResolved = false;
-  let handoffSnapshot = null;
-  let singleStageDiagnosticsOptions = null;
+  let handoffSnapshot: DesktopHandoffFrame | null = null;
+  let singleStageDiagnosticsOptions: SingleStageDiagnosticsOptions | null = null;
   let singleStageDiagnosticsResolved = false;
-  let singleStageFolderState = null;
+  let singleStageFolderState: FolderOverlayFrame | null = null;
   let singleStageFolderStateResolved = false;
 
-  function getDragSnapshot() {
+  function getDragSnapshot(): DesktopDragRenderSnapshot {
     if (!dragSnapshot) {
       // Nested controller refs can update before Vue flushes the matching props.
       // Capture drag ownership once so real icons and the preview cannot disagree
       // about the same release during this Pixi frame.
-      dragSnapshot = createDragRenderSnapshot(interactionFrame.value);
+      dragSnapshot = createDragRenderSnapshot<SceneDataRecord, SceneGroupDragState>(interactionFrame.value);
     }
     return dragSnapshot;
   }
 
-  function getFolderClosingHandoffId() {
+  function getFolderClosingHandoffId(): string | null {
     if (!folderHandoffResolved) {
       folderClosingHandoffId = resolveFolderClosingHandoffId(metrics);
       folderHandoffResolved = true;
@@ -628,15 +784,15 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
     return folderClosingHandoffId;
   }
 
-  function getSingleStageDiagnosticsOptions() {
+  function getSingleStageDiagnosticsOptions(): SingleStageDiagnosticsOptions {
     if (!singleStageDiagnosticsResolved) {
       singleStageDiagnosticsOptions = getResolvedSingleStageDiagnosticsOptions();
       singleStageDiagnosticsResolved = true;
     }
-    return singleStageDiagnosticsOptions;
+    return singleStageDiagnosticsOptions!;
   }
 
-  function getSingleStageFolderState() {
+  function getSingleStageFolderState(): FolderOverlayFrame | null {
     if (!singleStageFolderStateResolved) {
       singleStageFolderState = createSingleStageFolderState(
         metrics,
@@ -649,7 +805,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
     return singleStageFolderState;
   }
 
-  function getHandoffSnapshot() {
+  function getHandoffSnapshot(): DesktopHandoffFrame {
     if (handoffSnapshot) return handoffSnapshot;
     const closingFolderId = getFolderClosingHandoffId();
     const sourceFolderId = folderFrame.value.folderSourceGhostedId;
@@ -677,7 +833,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
       }),
       handoff: () => makeDesktopHandoffFrame(getHandoffSnapshot()),
       interaction: () => makeDesktopInteractionFrame({
-        deviceResolution: app.renderer?.resolution || 1,
+        deviceResolution: app!.renderer?.resolution || 1,
         dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
         ...getHandoffSnapshot(),
         folderPageSize: viewportFrame.value.folderPageSize,
@@ -705,7 +861,7 @@ function makeDesktopLayerFrameBuilders(metrics, renderGeometry, options = {}) {
           desktopTrackMotionKey: viewportFrame.value.desktopTrackMotionKey,
           desktopVisualAlpha: visualFrame.value.desktopVisualAlpha,
           desktopVisualTransform: visualFrame.value.desktopVisualTransform,
-          deviceResolution: app.renderer?.resolution || 1,
+          deviceResolution: app!.renderer?.resolution || 1,
           dragFolderHoverState: interactionFrame.value.dragFolderHoverState,
           dragFolderTargetId: interactionFrame.value.dragFolderTargetId,
           dragHitDebugOptions: diagnosticsFrame.value.dragHitDebugOptions,
@@ -774,7 +930,7 @@ function captureAppLaunchVisualSnapshot() {
   };
 }
 
-function captureAppLaunchVisualScope() {
+function captureAppLaunchVisualScope(): "desktop" | "folder" {
   return sceneRuntime.value.folderOverlayState?.renderedFolder?.value ? "folder" : "desktop";
 }
 
@@ -798,18 +954,20 @@ function captureAppLaunchCloseTarget() {
   };
 }
 
-function renderPixi(options = {}) {
+function renderPixi(options: RenderPixiOptions = {}): RenderPixiResult {
   if (!app || !layer || !hostRef.value) {
     return { didRender: false, hasLayerCapability: false, work: null };
   }
   syncPixiTextResolutionIfNeeded();
-  const invalidation = options.invalidation || { requiresStructureUpdate: true };
+  const invalidation = (options.invalidation || {
+    requiresStructureUpdate: true,
+  }) as RenderInvalidationSnapshot;
   const hasLayerCapability = invalidation.requiresStructureUpdate ||
     invalidation.requiresInteractionUpdate ||
     invalidation.requiresVisualUpdate ||
     invalidation.requiresDiagnosticsUpdate ||
     invalidation.requiresHandoffUpdate;
-  let work = null;
+  let work: DesktopLayerFrameWork | null = null;
   if (hasLayerCapability) {
     const domGeometry = getDesktopDomGeometry();
     if (!domGeometry) return { didRender: false, hasLayerCapability, work };
@@ -849,7 +1007,7 @@ function commitDesktopPresentationFrame({
   mode,
   reasons,
   snapDesktopLayout,
-}) {
+}: DesktopPresentationCommit): void {
   const frameStartedAt = nowMs();
   const appLaunchCloseSessionId = visualFrame.value.appLaunchCloseSessionId ?? null;
   const appLaunchCommitTracker = getAppLaunchVisualCommitTracker();
@@ -869,7 +1027,7 @@ function commitDesktopPresentationFrame({
       dragMeta: interactionFrame.value.dragMeta,
       invalidation,
       reasons,
-      renderer: app?.renderer,
+      renderer: app!.renderer,
       hasLayerCapability: result.hasLayerCapability,
     });
     if (result.work?.fullPlanBuilds) {
@@ -916,7 +1074,10 @@ function commitDesktopPresentationFrame({
   }
 }
 
-function requestRender(reason = "desktop-update", options = {}) {
+function requestRender(
+  reason = "desktop-update",
+  options: RequestRenderOptions = {},
+): boolean {
   if (options.invalidateGeometry) invalidateDesktopDomGeometry();
   if (import.meta.env.DEV) {
     renderProbe?.record?.("render-request", {
@@ -932,47 +1093,59 @@ function requestRender(reason = "desktop-update", options = {}) {
   return true;
 }
 
-function shouldRunHandoffRenderLoop() {
+function shouldRunHandoffRenderLoop(): boolean {
   return Boolean(folderClosingHandoffRetainer.shouldRun({
     propFolderClosingHandoffId: folderFrame.value.folderClosingHandoffId,
     timelineDebug: hasFolderHandoffTimelineDebug(),
   }) && app && layer && hostRef.value && !destroyed);
 }
 
-function handleIconAction(action, event, item, source) {
+function handleIconAction(
+  action: IconNodeAction,
+  event: unknown,
+  item: SceneItem | null,
+  source: SceneDataRecord | null,
+): void {
   if (action === "pointerdown") {
-    if (import.meta.env.DEV) renderProbe?.notePointerDown?.({ event, item, source });
+    if (import.meta.env.DEV) renderProbe?.notePointerDown?.({
+      event: event as RenderProbePointerInput["event"],
+      item,
+      source: source as RenderProbePointerInput["source"],
+    });
     emitIconPointerdown(event, item, source);
   }
-  if (action === "remove") emitRemoveApp(item.id);
-  if (action === "choose-icon") emitChooseAppIcon(item.id);
-  if (action === "reset-icon") emitResetAppIcon(item.id);
+  if (action === "remove") emitRemoveApp(item!.id);
+  if (action === "choose-icon") emitChooseAppIcon(item!.id);
+  if (action === "reset-icon") emitResetAppIcon(item!.id);
   requestRender(`icon-${action || "action"}`);
 }
 
-function requestContextMenuAtPointer(event) {
+function requestContextMenuAtPointer(event: EventControlLike): void {
   event?.preventDefault?.();
   event?.stopPropagation?.();
   emitContextMenuRequest(event);
 }
 
-function handleFolderInternalActivity(active, folderId = null) {
+function handleFolderInternalActivity(active: boolean, folderId: string | null = null): void {
   emitInternalActivity(Boolean(active), folderId);
   requestRender(active ? "folder-internal-active" : "folder-internal-idle");
 }
 
-function handleSingleStageFolderGeometryChange(geometry) {
+function handleSingleStageFolderGeometryChange(geometry: unknown): void {
   singleStageFolderPanelGeometry.value = geometry || null;
 }
 
-function handleSingleStageFolderTitleFrameChange(frame) {
+function handleSingleStageFolderTitleFrameChange(
+  frame: unknown,
+): void {
+  const candidate = frame as SingleStageFolderTitleFrame | null;
   const folderId = sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
-  singleStageFolderTitleFrame.value = isSingleStageFolderTitleFrameCurrent(frame, folderId)
-    ? frame
+  singleStageFolderTitleFrame.value = isSingleStageFolderTitleFrameCurrent(candidate, folderId)
+    ? candidate
     : null;
 }
 
-async function synchronizeActiveIconTextures(options = {}) {
+async function synchronizeActiveIconTextures(options: SynchronizeIconTextureOptions = {}) {
   const generation = ++iconTextureSyncGeneration;
   try {
     const snapshot = await runtimePerformanceMetrics.measureAsync(
@@ -992,18 +1165,19 @@ async function synchronizeActiveIconTextures(options = {}) {
   }
 }
 
-function disposeDiagnosticHub(hub) {
+function disposeDiagnosticHub(hub: DiagnosticHubLike | null): void {
   if (!hub || typeof hub.dispose !== "function") return;
-  void Promise.resolve(hub.dispose()).then((result) => {
-    if (result?.ok === false) {
-      console.error("Diagnostic entry disposal was incomplete", result.error);
+  void Promise.resolve(hub.dispose()).then((result: unknown) => {
+    if (result && typeof result === "object" && "ok" in result && result.ok === false) {
+      const error = "error" in result ? result.error : null;
+      console.error("Diagnostic entry disposal was incomplete", error);
     }
   }).catch((error) => {
     console.error("Failed to dispose the diagnostic entry", error);
   });
 }
 
-function destroyPixi(options = {}) {
+function destroyPixi(options: DestroyPixiOptions = {}): void {
   const deep = options.deep !== false;
   destroyed = true;
   iconTextureSyncGeneration += 1;
@@ -1053,7 +1227,9 @@ function destroyPixi(options = {}) {
 onMounted(async () => {
   destroyed = false;
   if (sceneRuntime.value.domRefs?.desktopMainRef) sceneRuntime.value.domRefs.desktopMainRef.value = mainRef.value;
-  const nextApp = await createPixiApp(hostRef.value, {
+  const mountedHost = hostRef.value;
+  if (!mountedHost) throw new Error("PixiDesktopSurface mounted without its canvas host");
+  const nextApp = await createPixiApp(mountedHost, {
     autoStart: false,
     className: "pixi-launchpad-canvas",
   });
@@ -1152,7 +1328,7 @@ onMounted(async () => {
       }),
     });
     renderProbe.attachCanvas(app.canvas);
-    const diagnosticAdapters = [
+    const diagnosticAdapters: DiagnosticAdapterLike[] = [
       createMotionDiagnosticAdapter({
         getOverlaySnapshot: () => motionDebugOverlay?.debugSnapshot?.() || null,
         runtime: motionRuntime,
@@ -1169,9 +1345,11 @@ onMounted(async () => {
     ];
     if (sceneRuntime.value.liveDesktopDiagnosticsPort) {
       const liveDesktopController = createLiveDesktopDiagnosticsController({
-        applyRuntime: (request) => sceneRuntime.value.liveDesktopDiagnosticsPort.applyRuntime(request),
-        getRuntimeStatus: () => sceneRuntime.value.liveDesktopDiagnosticsPort.getRuntimeStatus(),
-        refreshRuntime: () => sceneRuntime.value.liveDesktopDiagnosticsPort.refreshRuntime(),
+        applyRuntime: (request: Parameters<NonNullable<DesktopSceneRuntime["liveDesktopDiagnosticsPort"]>["applyRuntime"]>[0]) => (
+          sceneRuntime.value.liveDesktopDiagnosticsPort!.applyRuntime(request)
+        ),
+        getRuntimeStatus: () => sceneRuntime.value.liveDesktopDiagnosticsPort!.getRuntimeStatus(),
+        refreshRuntime: () => sceneRuntime.value.liveDesktopDiagnosticsPort!.refreshRuntime(),
         settingsStore: createBrowserLiveDesktopDebugSettingsStore(),
       });
       diagnosticAdapters.push(createLiveDesktopDiagnosticAdapter({
@@ -1185,7 +1363,9 @@ onMounted(async () => {
     diagnosticGlobalInstallation = installDiagnosticHubGlobal({ hub: diagnosticHub });
   }
   resizeObserver = new ResizeObserver(handleResize);
-  resizeObserver.observe(hostRef.value);
+  const observedHost = hostRef.value;
+  if (!observedHost) throw new Error("PixiDesktopSurface lost its canvas host during mount");
+  resizeObserver.observe(observedHost);
   window.addEventListener("resize", handleResize);
   window.addEventListener(WINDOW_CHROME_STATE_CHANGE_EVENT, handleWindowChromeStateChange);
   await nextTick();
