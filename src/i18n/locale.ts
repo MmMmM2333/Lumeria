@@ -4,7 +4,11 @@ export const SUPPORTED_LOCALES = Object.freeze(["zh-CN", "en-US"] as const);
 
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 export type LocaleMatch = "default" | "exact" | "explicit" | "language";
-export type LocaleIssue = Readonly<{ code: "unsupportedPreference"; value: string }>;
+export type LocaleIssueCode =
+  | "unsupportedPreference"
+  | "preferenceLoadFailed"
+  | "systemLocaleUnavailable";
+export type LocaleIssue = Readonly<{ code: LocaleIssueCode; value: string }>;
 export type LocaleState = Readonly<{
   preference: string;
   resolvedLocale: SupportedLocale;

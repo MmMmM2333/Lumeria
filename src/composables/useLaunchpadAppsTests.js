@@ -24,6 +24,18 @@ function makeScanStats(overrides = {}) {
   };
 }
 
+function makeCatalogSource(key, type, state = "primary") {
+  return {
+    key,
+    type,
+    state,
+    rootId: `root:${type}`,
+    rootLabel: type,
+    relativePath: key,
+    absolutePath: `C:/Catalog/${key}`,
+  };
+}
+
 function withMockTauri(invoke, run) {
   setLaunchpadApiBridgeForTests({
     convertFileSrc: (path) => `http://asset.localhost/${path}`,
@@ -327,7 +339,7 @@ export async function runLaunchpadAppsTests() {
       origin: "catalog",
       name: "Scanned App",
       iconUrl: "http://asset.localhost/scanned-app.png",
-      sources: [{ key: "scan-root:tools:scanned-app.lnk", type: "customDirectory", state: "primary" }],
+      sources: [makeCatalogSource("scan-root:tools:scanned-app.lnk", "customDirectory")],
       launchTarget: { kind: "shortcut", path: "C:/Tools/Scanned App.lnk" },
     };
     const manualWindowsApp = {
@@ -426,7 +438,7 @@ export async function runLaunchpadAppsTests() {
       presentationOverrides: {},
       trackingKey: "launch:editor",
       identityStatus: "exact",
-      sources: [{ key: "editor", type: "startMenuUser", state: "primary" }],
+      sources: [makeCatalogSource("editor", "startMenuUser")],
       launchTarget: { kind: "executable", path: "C:/Apps/Editor.exe" },
     };
     const { apps, hiddenAppIds, pages } = createManagedAppRemovalHarness([[catalogApp]], 0);
@@ -459,6 +471,8 @@ export async function runLaunchpadAppsTests() {
         path: "C:\\Tools\\Shortcut.lnk",
         launchTarget: { kind: "shortcut", path: "C:\\Tools\\Shortcut.lnk" },
         launchArgs: "",
+        iconPath: null,
+        iconDataUrl: null,
       };
     }
     if (command !== "scan_apps") throw new Error(`Unexpected invoke: ${command}`);
@@ -472,7 +486,7 @@ export async function runLaunchpadAppsTests() {
         launchTarget: { kind: "shortcut", path: "C:/Apps/Native.lnk" },
         trackingKey: "launch:native",
         identityStatus: "exact",
-        sources: [{ key: "scan-root:root:native.lnk", type: "customDirectory", state: "primary" }],
+        sources: [makeCatalogSource("scan-root:root:native.lnk", "customDirectory")],
       },
       {
         id: "win-app-store",
@@ -484,7 +498,7 @@ export async function runLaunchpadAppsTests() {
         },
         trackingKey: "launch:settings",
         identityStatus: "exact",
-        sources: [{ key: "windows-app:windows.settings_123!app", type: "windowsAppCatalog", state: "primary" }],
+        sources: [makeCatalogSource("windows-app:windows.settings_123!app", "windowsAppCatalog")],
       },
     ], excludedApps: [{
       id: "catalog-blocked",
@@ -494,7 +508,7 @@ export async function runLaunchpadAppsTests() {
       launchTarget: { kind: "shortcut", path: "C:/Apps/Blocked.lnk" },
       trackingKey: "launch:blocked",
       identityStatus: "exact",
-      sources: [{ key: "scan-root:root:blocked.lnk", type: "customDirectory", state: "primary" }],
+      sources: [makeCatalogSource("scan-root:root:blocked.lnk", "customDirectory")],
     }], keywordExcludedApps: [{
       app: {
         id: "keyword-uninstall-native",
@@ -505,7 +519,7 @@ export async function runLaunchpadAppsTests() {
         launchTarget: { kind: "shortcut", path: "C:\\Tools\\Uninstall Native.lnk" },
         trackingKey: "launch:keyword-uninstall-native",
         identityStatus: "exact",
-        sources: [{ key: "scan-root:root:uninstall-native.lnk", type: "customDirectory", state: "primary" }],
+        sources: [makeCatalogSource("scan-root:root:uninstall-native.lnk", "customDirectory")],
       },
       matchedKeyword: "uninstall",
     }, {
@@ -517,7 +531,7 @@ export async function runLaunchpadAppsTests() {
         launchTarget: { kind: "appUserModelId", appUserModelId: "blocked.uninstall!app" },
         trackingKey: "launch:keyword-blocked-uninstall",
         identityStatus: "exact",
-        sources: [{ key: "windows-app:blocked.uninstall!app", type: "windowsAppCatalog", state: "primary" }],
+        sources: [makeCatalogSource("windows-app:blocked.uninstall!app", "windowsAppCatalog")],
       },
       matchedKeyword: "卸载",
     }], warnings: [], stats: makeScanStats({ physicalAppsFound: 5, keywordExcludedApps: 2, excludedApps: 1, appsFound: 2 }) };

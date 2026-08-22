@@ -35,6 +35,21 @@ export async function runLocaleRuntimeTests() {
   const nativeApply = await native.applyPreference("zh-CN");
   assert(nativeApply.ok && nativeCalls.join(",") === "zh-CN", "native apply should cross the dedicated native boundary once");
 
+  for (const code of ["preferenceLoadFailed", "systemLocaleUnavailable"] as const) {
+    const degradedNative = createLocaleRuntimePort({
+      isNative: () => true,
+      getNativeState: async () => ({
+        ...nativeState,
+        issue: { code, value: code === "preferenceLoadFailed" ? "layout" : "windows" },
+      }),
+    });
+    const degradedBootstrap = await degradedNative.bootstrap();
+    assert(
+      degradedBootstrap.ok && degradedBootstrap.state.issue?.code === code,
+      `native ${code} issues should remain successful degraded locale outcomes`,
+    );
+  }
+
   const nativeFailure = new Error("native locale unavailable");
   const failingNative = createLocaleRuntimePort({
     isNative: () => true,

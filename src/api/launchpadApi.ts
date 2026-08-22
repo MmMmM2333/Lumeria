@@ -1,6 +1,47 @@
 import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import { assertLayoutDocument, type LayoutDocument, type LayoutSettings } from "../domain/layoutDocument.js";
+import {
+  assertLiveDesktopBackgroundSupport,
+  assertLiveDesktopRuntimeConfig,
+  assertLiveDesktopRuntimeStatus,
+  type LiveDesktopBackgroundSupport,
+  type LiveDesktopRuntimeConfig,
+  type LiveDesktopRuntimeStatus,
+} from "./liveDesktopContract.js";
+import {
+  assertCatalogScanFilters,
+  assertCatalogScanRoot,
+  assertCatalogScanWarning,
+  assertScannedCatalogApp,
+  assertCatalogLaunchTarget,
+  type CatalogScanFilters,
+  type CatalogScanRoot,
+  type CatalogScanWarning,
+  type ScannedCatalogApp,
+} from "../domain/applicationCatalog.js";
+import {
+  assertLayoutDocument,
+  type LaunchTarget,
+  type LayoutDocument,
+  type LayoutSettings,
+} from "../domain/layoutDocument.js";
+import type { LocaleIssueCode, LocaleState } from "../i18n/locale.js";
+
+export type {
+  LiveDesktopAcrylicEffectPlan,
+  LiveDesktopAcrylicParams,
+  LiveDesktopBackgroundSupport,
+  LiveDesktopBlurEffectPlan,
+  LiveDesktopEffectPlan,
+  LiveDesktopPrerequisiteProbe,
+  LiveDesktopRendererProbe,
+  LiveDesktopRuntimeConfig,
+  LiveDesktopRuntimeDiagnostics,
+  LiveDesktopRuntimeStatus,
+  LiveDesktopWindowDiagnostics,
+  LiveDesktopWindowInfo,
+  LiveDesktopWindowRect,
+} from "./liveDesktopContract.js";
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 type NativeInvoke = (command: string, args?: UnknownRecord) => Promise<unknown>;
@@ -14,12 +55,7 @@ export type LaunchpadApiBridge = Readonly<{
 }>;
 
 export type LaunchContext = Readonly<{ origin: "loginStartup" | "manual" }>;
-export type NativeLocaleState = Readonly<{
-  preference: string;
-  resolvedLocale: "zh-CN" | "en-US";
-  match: "default" | "exact" | "explicit" | "language";
-  issue: Readonly<{ code: "unsupportedPreference"; value: string }> | null;
-}>;
+export type NativeLocaleState = LocaleState;
 export type ScanStats = Readonly<{
   dirsVisited: number;
   entriesSeen: number;
@@ -33,20 +69,20 @@ export type ScanStats = Readonly<{
   limitReached: boolean;
 }>;
 export type KeywordExcludedApp = Readonly<{
-  app: UnknownRecord;
+  app: ScannedCatalogApp;
   matchedKeyword: string;
 }>;
 export type ScanAppsResult = Readonly<{
-  apps: readonly unknown[];
-  excludedApps: readonly unknown[];
+  apps: readonly ScannedCatalogApp[];
+  excludedApps: readonly ScannedCatalogApp[];
   keywordExcludedApps: readonly KeywordExcludedApp[];
-  warnings: readonly unknown[];
+  warnings: readonly CatalogScanWarning[];
   stats: ScanStats;
 }>;
 export type PickedLaunchFile = Readonly<{
   name: string;
   path: string;
-  launchTarget: UnknownRecord;
+  launchTarget: LaunchTarget;
   launchArgs: string;
   iconPath: string | null;
   iconDataUrl: string | null;
@@ -63,7 +99,17 @@ export type BackgroundLayoutContext = Readonly<{
 }>;
 export type AppIconChoice = Readonly<{ id: string; iconPath: string; iconDataUrl: string }>;
 export type CachedCustomIconResult = Readonly<{ iconPath: string; iconDataUrl: string }>;
-export type LaunchTargetCheckResult = Readonly<{ id: string; status: string }>;
+export type LaunchTargetCheckRequest = Readonly<{ id: string; launchTarget: LaunchTarget }>;
+export type LaunchTargetCheckStatus = "ok" | "missing" | "unknown";
+export type LaunchTargetCheckResult = Readonly<{ id: string; status: LaunchTargetCheckStatus }>;
+export type LaunchableApp = Readonly<{ id: string; name?: string }>;
+export type LaunchFailureReport = Readonly<{
+  kind: string;
+  title: string;
+  message: string;
+  suggestion: string;
+  detail: string;
+}>;
 export type MainWindowCloseTransition = Readonly<{ accepted: boolean; generation: number }>;
 export type MainWindowEffectsSupport = Readonly<{
   platform: string;
@@ -71,24 +117,6 @@ export type MainWindowEffectsSupport = Readonly<{
   supportsAcrylic: boolean;
   supportsMica: boolean;
   supportsMicaAlt: boolean;
-}>;
-export type LiveDesktopBackgroundSupport = Readonly<{
-  platform: string;
-  supportsLiveDesktopBackground: boolean;
-  supportsLiveDesktopBackgroundEffects: boolean;
-  reason: string;
-  detail?: string;
-  prerequisiteProbe?: UnknownRecord;
-  rendererProbe?: UnknownRecord;
-}>;
-export type LiveDesktopRuntimeStatus = Readonly<{
-  phase: string;
-  active: boolean;
-  generation: number;
-  reason: string;
-  detail: string;
-  diagnostics?: UnknownRecord;
-  windowDiagnostics?: UnknownRecord;
 }>;
 export type MainWindowEffectOptions = Readonly<{
   material?: LayoutSettings["windowEffectMaterial"];
@@ -109,6 +137,11 @@ const SCAN_COUNT_STAT_FIELDS = [
   "excludedApps",
   "appsFound",
 ] as const;
+const LOCALE_ISSUE_CODES = new Set<LocaleIssueCode>([
+  "unsupportedPreference",
+  "preferenceLoadFailed",
+  "systemLocaleUnavailable",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -143,8 +176,8 @@ function requireNonNegativeSafeInteger(value: unknown, label: string): number {
   return value as number;
 }
 
-function optionalString(value: unknown, label: string): string | null {
-  if (value === null || value === undefined) return null;
+function requireNullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
   return requireString(value, label);
 }
 
@@ -204,8 +237,8 @@ function validateNativeLocaleState(value: unknown): NativeLocaleState {
   }
   if (record.issue !== null) {
     const issueRecord = requireRecord(record.issue, "locale state.issue");
-    if (issueRecord.code !== "unsupportedPreference") {
-      throw new TypeError("locale state.issue.code must be unsupportedPreference");
+    if (typeof issueRecord.code !== "string" || !LOCALE_ISSUE_CODES.has(issueRecord.code as LocaleIssueCode)) {
+      throw new TypeError("locale state.issue.code must be a supported native locale issue");
     }
     requireString(issueRecord.value, "locale state.issue.value");
   }
@@ -218,10 +251,10 @@ export async function getLaunchContext(): Promise<LaunchContext> {
   return validateLaunchContext(await invoke("get_launch_context"));
 }
 
-export async function completeRendererStartup(): Promise<unknown | null> {
+export async function completeRendererStartup(): Promise<void> {
   const invoke = getTauriInvoke();
-  if (!invoke) return null;
-  return invoke("complete_renderer_startup");
+  if (!invoke) return;
+  await invoke("complete_renderer_startup");
 }
 
 export async function getAutostartStatus(): Promise<boolean> {
@@ -234,7 +267,7 @@ export function isAutostartAvailable() {
   return isNativeBridgeAvailable();
 }
 
-export async function setAutostartEnabled(enabled: unknown): Promise<boolean> {
+export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
   return requireBoolean(
@@ -250,11 +283,13 @@ export async function listenNativeEvent(eventName: string, handler: NativeEventH
 }
 
 export async function scanApps(
-  roots: readonly unknown[] = [],
-  filters: UnknownRecord = {},
+  roots: readonly CatalogScanRoot[] = [],
+  filters: CatalogScanFilters = {},
 ): Promise<ScanAppsResult | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
+  roots.forEach((root, index) => assertCatalogScanRoot(root, `scan roots[${index}]`));
+  assertCatalogScanFilters(filters);
   return normalizeScanAppsResult(await invoke("scan_apps", { roots, filters }));
 }
 
@@ -281,25 +316,36 @@ export function normalizeScanAppsResult(result: unknown): ScanAppsResult {
   if (typeof result.stats.limitReached !== "boolean") {
     throw new TypeError("scan_apps result stats.limitReached must be a boolean");
   }
+  result.apps.forEach((app, index) => assertScannedCatalogApp(app, `scan_apps result apps[${index}]`));
+  result.excludedApps.forEach((app, index) => (
+    assertScannedCatalogApp(app, `scan_apps result excludedApps[${index}]`)
+  ));
   const keywordExcludedApps = result.keywordExcludedApps.map((entry, index): KeywordExcludedApp => {
     if (!isRecord(entry)) {
       throw new TypeError(`scan_apps result keywordExcludedApps[${index}] must be an object`);
     }
-    if (!isRecord(entry.app)) {
-      throw new TypeError(`scan_apps result keywordExcludedApps[${index}].app must be an object`);
-    }
-    const matchedKeyword = String(entry.matchedKeyword || "").trim();
+    const app = assertScannedCatalogApp(entry.app, `scan_apps result keywordExcludedApps[${index}].app`);
+    const matchedKeyword = requireString(
+      entry.matchedKeyword,
+      `scan_apps result keywordExcludedApps[${index}].matchedKeyword`,
+    ).trim();
     if (!matchedKeyword) {
       throw new TypeError(`scan_apps result keywordExcludedApps[${index}].matchedKeyword must be a non-empty string`);
     }
-    return { app: entry.app, matchedKeyword };
+    return { app, matchedKeyword };
   });
+  result.warnings.forEach((warning, index) => (
+    assertCatalogScanWarning(warning, `scan_apps result warnings[${index}]`)
+  ));
+  const apps = result.apps as ScannedCatalogApp[];
+  const excludedApps = result.excludedApps as ScannedCatalogApp[];
+  const warnings = result.warnings as CatalogScanWarning[];
   const stats = result.stats as ScanStats;
   return {
-    apps: result.apps,
-    excludedApps: result.excludedApps,
+    apps,
+    excludedApps,
     keywordExcludedApps,
-    warnings: result.warnings,
+    warnings,
     stats,
   };
 }
@@ -312,11 +358,11 @@ export async function loadLayout(): Promise<LayoutDocument | null> {
   return assertLayoutDocument(layout);
 }
 
-export async function saveLayout(layout: LayoutDocument): Promise<unknown | null> {
+export async function saveLayout(layout: LayoutDocument): Promise<void> {
   assertLayoutDocument(layout);
   const invoke = getTauriInvoke();
-  if (!invoke) return null;
-  return invoke("save_layout", { layout });
+  if (!invoke) return;
+  await invoke("save_layout", { layout });
 }
 
 export async function getAppLocaleState(): Promise<NativeLocaleState | null> {
@@ -335,10 +381,10 @@ function validatePickedLaunchFile(value: unknown): PickedLaunchFile {
   const record = requireRecord(value, "picked launch file");
   requireString(record.name, "picked launch file.name");
   requireString(record.path, "picked launch file.path");
-  requireRecord(record.launchTarget, "picked launch file.launchTarget");
+  assertCatalogLaunchTarget(record.launchTarget, "picked launch file.launchTarget");
   requireString(record.launchArgs, "picked launch file.launchArgs");
-  optionalString(record.iconPath, "picked launch file.iconPath");
-  optionalString(record.iconDataUrl, "picked launch file.iconDataUrl");
+  requireNullableString(record.iconPath, "picked launch file.iconPath");
+  requireNullableString(record.iconDataUrl, "picked launch file.iconDataUrl");
   return record as PickedLaunchFile;
 }
 
@@ -431,37 +477,45 @@ export async function cacheCustomIcon(dataUrl: string): Promise<CachedCustomIcon
   return record as CachedCustomIconResult;
 }
 
-export async function checkLaunchTargets(targets: readonly unknown[]): Promise<readonly LaunchTargetCheckResult[]> {
+export async function checkLaunchTargets(
+  targets: readonly LaunchTargetCheckRequest[],
+): Promise<readonly LaunchTargetCheckResult[]> {
   const invoke = getTauriInvoke();
   if (!invoke) return [];
+  targets.forEach((target, index) => {
+    requireString(target.id, `check_launch_targets targets[${index}].id`);
+    assertCatalogLaunchTarget(target.launchTarget, `check_launch_targets targets[${index}].launchTarget`);
+  });
   const result = await invoke("check_launch_targets", { targets });
   if (!Array.isArray(result)) throw new TypeError("check_launch_targets result must be an array");
   result.forEach((entry, index) => {
     const record = requireRecord(entry, `check_launch_targets result[${index}]`);
     requireString(record.id, `check_launch_targets result[${index}].id`);
-    requireString(record.status, `check_launch_targets result[${index}].status`);
+    if (record.status !== "ok" && record.status !== "missing" && record.status !== "unknown") {
+      throw new TypeError(`check_launch_targets result[${index}].status must be ok, missing, or unknown`);
+    }
   });
   return result as readonly LaunchTargetCheckResult[];
 }
 
-function makeLaunchAppRequest(app: UnknownRecord) {
-  return {
-    id: String(app?.id || ""),
-    name: String(app?.name || "Application"),
-  };
+function makeLaunchAppRequest(app: LaunchableApp): Readonly<{ id: string }> {
+  return { id: requireString(app.id, "launch app id") };
 }
 
-export async function launchApp(app: UnknownRecord): Promise<boolean> {
+export async function launchApp(app: LaunchableApp): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("launch_app", { request: makeLaunchAppRequest(app) });
   return true;
 }
 
-export async function showLaunchErrorMessage(error: unknown): Promise<boolean> {
+export async function showLaunchErrorMessage(report: LaunchFailureReport): Promise<boolean> {
   const invoke = getTauriInvoke();
-  if (!invoke || !error) return false;
-  await invoke("show_launch_error_message", { report: error });
+  if (!invoke) return false;
+  for (const key of ["kind", "title", "message", "suggestion", "detail"] as const) {
+    requireString(report[key], `launch failure report.${key}`);
+  }
+  await invoke("show_launch_error_message", { report });
   return true;
 }
 
@@ -479,7 +533,7 @@ function validateMainWindowCloseTransition(value: unknown): MainWindowCloseTrans
   return record as MainWindowCloseTransition;
 }
 
-export async function beginMainWindowClose(openSequence: unknown): Promise<MainWindowCloseTransition | null> {
+export async function beginMainWindowClose(openSequence: number): Promise<MainWindowCloseTransition | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
   return validateMainWindowCloseTransition(await invoke("begin_main_window_close", {
@@ -487,7 +541,7 @@ export async function beginMainWindowClose(openSequence: unknown): Promise<MainW
   }));
 }
 
-export async function hideMainWindow(generation?: unknown): Promise<boolean> {
+export async function hideMainWindow(generation: number): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   return requireBoolean(await invoke("hide_main_window", {
@@ -495,7 +549,7 @@ export async function hideMainWindow(generation?: unknown): Promise<boolean> {
   }), "hide_main_window result");
 }
 
-export async function revealMainWindow(openSequence: unknown): Promise<boolean> {
+export async function revealMainWindow(openSequence: number): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   return requireBoolean(await invoke("reveal_main_window", {
@@ -519,70 +573,41 @@ export async function getMainWindowEffectsSupport(): Promise<MainWindowEffectsSu
   return validateMainWindowEffectsSupport(await invoke("get_main_window_effects_support"));
 }
 
-function validateLiveDesktopBackgroundSupport(value: unknown): LiveDesktopBackgroundSupport {
-  const record = requireRecord(value, "live desktop background support");
-  requireString(record.platform, "live desktop background support.platform");
-  requireBoolean(record.supportsLiveDesktopBackground, "live desktop background support.supportsLiveDesktopBackground");
-  requireBoolean(record.supportsLiveDesktopBackgroundEffects, "live desktop background support.supportsLiveDesktopBackgroundEffects");
-  requireString(record.reason, "live desktop background support.reason");
-  if (record.detail !== undefined) requireString(record.detail, "live desktop background support.detail");
-  if (record.prerequisiteProbe !== undefined) {
-    requireRecord(record.prerequisiteProbe, "live desktop background support.prerequisiteProbe");
-  }
-  if (record.rendererProbe !== undefined) {
-    requireRecord(record.rendererProbe, "live desktop background support.rendererProbe");
-  }
-  return record as LiveDesktopBackgroundSupport;
-}
-
-function validateLiveDesktopRuntimeStatus(value: unknown): LiveDesktopRuntimeStatus {
-  const record = requireRecord(value, "live desktop runtime status");
-  requireString(record.phase, "live desktop runtime status.phase");
-  requireBoolean(record.active, "live desktop runtime status.active");
-  requireNonNegativeSafeInteger(record.generation, "live desktop runtime status.generation");
-  requireString(record.reason, "live desktop runtime status.reason");
-  requireString(record.detail, "live desktop runtime status.detail");
-  if (record.diagnostics !== undefined) requireRecord(record.diagnostics, "live desktop runtime status.diagnostics");
-  if (record.windowDiagnostics !== undefined) {
-    requireRecord(record.windowDiagnostics, "live desktop runtime status.windowDiagnostics");
-  }
-  return record as LiveDesktopRuntimeStatus;
-}
-
 export async function getLiveDesktopBackgroundSupport(): Promise<LiveDesktopBackgroundSupport | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopBackgroundSupport(await invoke("get_live_desktop_background_support"));
+  return assertLiveDesktopBackgroundSupport(await invoke("get_live_desktop_background_support"));
 }
 
 export async function getLiveDesktopRuntimeStatus(): Promise<LiveDesktopRuntimeStatus | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopRuntimeStatus(await invoke("get_live_desktop_runtime_status"));
+  return assertLiveDesktopRuntimeStatus(await invoke("get_live_desktop_runtime_status"));
 }
 
-export async function configureLiveDesktopBackground(config: UnknownRecord): Promise<LiveDesktopRuntimeStatus | null> {
+export async function configureLiveDesktopBackground(config: LiveDesktopRuntimeConfig): Promise<LiveDesktopRuntimeStatus | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopRuntimeStatus(await invoke("configure_live_desktop_background", { config }));
+  assertLiveDesktopRuntimeConfig(config);
+  return assertLiveDesktopRuntimeStatus(await invoke("configure_live_desktop_background", { config }));
 }
 
 export async function startLiveDesktopBackground(): Promise<LiveDesktopRuntimeStatus | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopRuntimeStatus(await invoke("start_live_desktop_background"));
+  return assertLiveDesktopRuntimeStatus(await invoke("start_live_desktop_background"));
 }
 
 export async function stopLiveDesktopBackground(): Promise<LiveDesktopRuntimeStatus | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopRuntimeStatus(await invoke("stop_live_desktop_background"));
+  return assertLiveDesktopRuntimeStatus(await invoke("stop_live_desktop_background"));
 }
 
-export async function setLiveDesktopBackgroundVisible(visible: unknown): Promise<LiveDesktopRuntimeStatus | null> {
+export async function setLiveDesktopBackgroundVisible(visible: boolean): Promise<LiveDesktopRuntimeStatus | null> {
   const invoke = getTauriInvoke();
   if (!invoke) return null;
-  return validateLiveDesktopRuntimeStatus(await invoke(
+  return assertLiveDesktopRuntimeStatus(await invoke(
     "set_live_desktop_background_visible",
     { visible: Boolean(visible) },
   ));
@@ -628,7 +653,7 @@ export async function setMainWindowShortcut(shortcut: string | null): Promise<st
   return result === null ? null : requireString(result, "set_main_window_shortcut result");
 }
 
-export async function setMainWindowShortcutCaptureActive(active: unknown): Promise<boolean> {
+export async function setMainWindowShortcutCaptureActive(active: boolean): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("set_main_window_shortcut_capture_active", { active: Boolean(active) });
@@ -647,7 +672,7 @@ export async function setLaunchpadIconVariant(
   return result;
 }
 
-export async function setMainWindowNativeFrameEnabled(enabled: unknown): Promise<boolean> {
+export async function setMainWindowNativeFrameEnabled(enabled: boolean): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("set_main_window_native_frame_enabled", { enabled: Boolean(enabled) });
@@ -668,7 +693,7 @@ export async function quitApp(): Promise<boolean> {
   return true;
 }
 
-export async function confirmQuitAfterSave(saved: unknown): Promise<boolean> {
+export async function confirmQuitAfterSave(saved: boolean): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
   await invoke("confirm_quit_after_save", { saved: Boolean(saved) });

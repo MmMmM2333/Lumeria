@@ -1096,6 +1096,7 @@ export function useLaunchpadNative(options) {
   return {
     beginNativeWindowClose,
     clearNativeEventListeners,
+    closeDesktopFromNativeWindow,
     completeRendererStartup,
     clearNativeSaveTimer,
     configureNativeLiveDesktopBackground,

@@ -26,15 +26,24 @@ import type {
   LaunchTarget,
   ManualAppLayoutItem,
   ScanAppBlacklistEntry,
+  ScanRoot,
 } from "./layoutDocument.js";
+import type { CatalogSource, ScannedCatalogApp } from "./applicationCatalog.js";
 
 export const DEFAULT_SCAN_KEYWORD_BLACKLIST = ["卸载", "uninstall"];
+
+const SCAN_ROOT_TYPES = new Set<ScanRoot["type"]>([
+  "windowsAppCatalog",
+  "startMenuUser",
+  "startMenuSystem",
+  "customDirectory",
+]);
 
 type UnknownRecord = Record<string, unknown>;
 type DefaultScanRoot = UnknownRecord & { labelKey: string };
 export type NormalizedScanRoot = {
   id: string;
-  type: string;
+  type: ScanRoot["type"];
   label: string;
   path: string;
   enabled: boolean;
@@ -52,11 +61,11 @@ export type PresentationOverrides = {
 
 export type CatalogRuntimeApp = LaunchpadApp & {
   origin: "catalog";
-  launchTarget: UnknownRecord;
+  launchTarget: LaunchTarget;
   launchArgs: string;
   trackingKey: string;
   identityStatus: "exact" | "unresolved";
-  sources: UnknownRecord[];
+  sources: CatalogSource[];
   presentationOverrides: PresentationOverrides;
 };
 
@@ -169,13 +178,10 @@ export function compareAppsByDefaultOrder(
   return 0;
 }
 
-export function normalizeNativeApp(app: unknown): CatalogRuntimeApp {
-  const source = isRecord(app) ? app : {};
+export function normalizeNativeApp(app: ScannedCatalogApp): CatalogRuntimeApp {
+  const source = app;
   const id = String(source.id || "").trim();
   if (!id) throw new TypeError("Catalog apps require a canonical id");
-  if (!source.launchTarget || typeof source.launchTarget !== "object") {
-    throw new TypeError(`Catalog app ${id} requires a launch target`);
-  }
   const trackingKey = String(source.trackingKey || "").trim();
   if (!trackingKey) throw new TypeError(`Catalog app ${id} requires a tracking key`);
   const identityStatus = String(source.identityStatus || "");
@@ -186,7 +192,7 @@ export function normalizeNativeApp(app: unknown): CatalogRuntimeApp {
     throw new TypeError(`Catalog app ${id} requires provenance sources`);
   }
   const name = String(source.name || "Application").trim() || "Application";
-  const launchTarget = source.launchTarget as UnknownRecord;
+  const launchTarget = source.launchTarget;
   return {
     ...source,
     id,
@@ -194,15 +200,15 @@ export function normalizeNativeApp(app: unknown): CatalogRuntimeApp {
     name,
     launchTarget,
     launchArgs: launchTarget.kind === "executable" && typeof source.launchArgs === "string" ? source.launchArgs : "",
-    iconDataUrl: source.iconDataUrl || null,
+    iconDataUrl: null,
     iconPath: source.iconPath || null,
-    customIconPath: source.customIconPath || null,
+    customIconPath: null,
     emoji: typeof source.emoji === "string" ? source.emoji : fallbackAppGlyph(name),
     origin: "catalog",
     presentationOverrides: {},
     trackingKey,
     identityStatus: identityStatus as CatalogRuntimeApp["identityStatus"],
-    sources: source.sources.filter(isRecord).map((entry) => ({ ...entry })),
+    sources: source.sources.map((entry) => ({ ...entry })),
   } as CatalogRuntimeApp;
 }
 
@@ -214,9 +220,13 @@ export function normalizeScanRoots(roots: unknown): NormalizedScanRoot[] {
       const path = String(root?.path || "").trim();
       if (!path) return null;
       const label = String(root?.label || path).trim() || path;
+      const type = root?.type === undefined ? "customDirectory" : root.type;
+      if (typeof type !== "string" || !SCAN_ROOT_TYPES.has(type as ScanRoot["type"])) {
+        throw new TypeError(`Scan root ${String(root?.id || index)} has an invalid type`);
+      }
       const normalized: NormalizedScanRoot = {
         id: String(root?.id || `root-${index}`),
-        type: String(root?.type || "customDirectory"),
+        type: type as ScanRoot["type"],
         label,
         path,
         enabled: root?.enabled !== false,

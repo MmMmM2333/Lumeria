@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { hideMainWindow, isNativeBridgeAvailable } from "./launchpadApi.js";
+import { isNativeBridgeAvailable } from "./launchpadApi.js";
 
 export const WINDOW_RESIZE_DIRECTIONS = Object.freeze([
   "North",
@@ -97,8 +97,4 @@ export async function isWindowMaximized() {
   const bridge = getWindowChromeBridge();
   if (typeof bridge?.isMaximized !== "function") return false;
   return Boolean(await bridge.isMaximized());
-}
-
-export async function hideWindow() {
-  return hideMainWindow();
 }

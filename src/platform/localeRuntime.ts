@@ -1,7 +1,7 @@
 import {
   SUPPORTED_LOCALES,
   resolveLocalePreference,
-  type LocaleIssue,
+  type LocaleIssueCode,
   type LocaleMatch,
   type LocaleState,
   type SupportedLocale,
@@ -19,6 +19,11 @@ export type LocaleRuntimeOptions = Readonly<{
 }>;
 
 const LOCALE_MATCHES = new Set<LocaleMatch>(["default", "exact", "explicit", "language"]);
+const LOCALE_ISSUE_CODES = new Set<LocaleIssueCode>([
+  "unsupportedPreference",
+  "preferenceLoadFailed",
+  "systemLocaleUnavailable",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -45,8 +50,12 @@ function validateLocaleState(state: unknown): LocaleState {
     throw new TypeError("locale state issue must be null or an object");
   }
   if (state.issue !== null) {
-    if (state.issue.code !== "unsupportedPreference" || typeof state.issue.value !== "string") {
-      throw new TypeError("locale state issue must describe an unsupported preference");
+    if (
+      typeof state.issue.code !== "string"
+      || !LOCALE_ISSUE_CODES.has(state.issue.code as LocaleIssueCode)
+      || typeof state.issue.value !== "string"
+    ) {
+      throw new TypeError("locale state issue must describe a supported native locale issue");
     }
   }
   return state as LocaleState;

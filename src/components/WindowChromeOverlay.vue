@@ -46,7 +46,6 @@ import SubtractIcon from "~icons/fluent/subtract-24-regular";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   emitWindowChromeStateChange,
-  hideWindow,
   isWindowMaximized,
   minimizeWindow,
   startWindowDrag,
@@ -65,6 +64,7 @@ const props = defineProps({
     default: true,
   },
 });
+const emit = defineEmits(["request-close"]);
 
 const resizeHandles = Object.freeze([
   { className: "north", direction: "North" },
@@ -122,7 +122,7 @@ function handleDragAreaDoubleClick(event) {
 }
 
 function handleCloseClick() {
-  hideWindow().catch((error) => handleWindowChromeError("hide", error));
+  emit("request-close");
 }
 
 function handleResizePointerDown(event, direction) {

@@ -8,6 +8,7 @@
   "files": [
     "src/api/launchpadApi.ts",
     "src/api/launchpadApiTests.ts",
+    "src/api/liveDesktopContract.ts",
     "src/api/windowChromeApi.ts",
     "src/api/windowChromeApiTests.ts",
     "src/application/launchpadDocumentCoordinator.ts",
@@ -16,6 +17,7 @@
     "src/diagnostics/runtimePerformanceMetrics.ts",
     "src/domain/appearancePreference.ts",
     "src/domain/appearancePreferenceTests.ts",
+    "src/domain/applicationCatalog.ts",
     "src/domain/backgroundAcrylicParams.ts",
     "src/domain/backgroundEffectPlan.ts",
     "src/domain/backgroundImageLayout.ts",

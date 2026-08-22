@@ -53,11 +53,20 @@ export function runLaunchpadDataTests() {
 
   const normalized = normalizeNativeApp({
     id: "catalog-native",
+    type: "app",
     name: "Native",
     launchTarget: { kind: "shortcut", path: "native.lnk" },
     trackingKey: "launch:native",
     identityStatus: "exact",
-    sources: [{ key: "native", type: "customDirectory", state: "primary" }],
+    sources: [{
+      key: "native",
+      type: "customDirectory",
+      state: "primary",
+      rootId: "root-native",
+      rootLabel: "Native",
+      relativePath: "native.exe",
+      absolutePath: "C:/Apps/native.exe",
+    }],
   });
   assert(normalized.id === "catalog-native", "native apps should preserve canonical catalog ids");
   assert(normalized.launchTarget.path === "native.lnk", "native apps should preserve launch targets");

@@ -1429,6 +1429,7 @@ export function useLaunchpadController(options = {}) {
   const {
     beginNativeWindowClose,
     clearNativeEventListeners,
+    closeDesktopFromNativeWindow,
     completeRendererStartup,
     clearNativeSaveTimer,
     flushNativeLayoutSave,
@@ -1911,6 +1912,7 @@ export function useLaunchpadController(options = {}) {
   const chrome = {
     activePageIndex,
     activePages,
+    closeNativeWindow: closeDesktopFromNativeWindow,
     commitChromePageIndex,
     dragMeta,
     headerRef,

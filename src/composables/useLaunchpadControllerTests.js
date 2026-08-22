@@ -112,4 +112,8 @@ export async function runLaunchpadControllerTests() {
     controller.overlays.resolvedSettingsTheme.value === "dark",
     "launchpad overlays should preserve the existing dark default"
   );
+  assert(
+    typeof controller.chrome.closeNativeWindow === "function",
+    "window chrome should expose the generation-owned native close action"
+  );
 }

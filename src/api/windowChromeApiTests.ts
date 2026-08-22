@@ -1,6 +1,5 @@
 import {
   emitWindowChromeStateChange,
-  hideWindow,
   isWindowMaximized,
   minimizeWindow,
   normalizeWindowResizeDirection,
@@ -77,5 +76,4 @@ export async function runWindowChromeApiTests() {
   assert(!emitWindowChromeStateChange({ reason: "missing-target" }, null), "missing event target should be ignored");
 
   assert(!(await isWindowMaximized()), "maximize state should be false without a native bridge");
-  assert(!(await hideWindow()), "hide should be a no-op without a native bridge");
 }

@@ -2,15 +2,18 @@ import { readFileSync } from "node:fs";
 import {
   applyAppLocalePreference,
   beginMainWindowClose,
+  checkLaunchTargets,
   completeRendererStartup,
   getAutostartStatus,
   getAppLocaleState,
   getLaunchContext,
   getLiveDesktopBackgroundSupport,
+  getLiveDesktopRuntimeStatus,
   hideMainWindow,
   loadLayout,
   normalizeScanAppsResult,
   openDeveloperConsole,
+  pickLaunchFile,
   revealMainWindow,
   saveLayout,
   setAutostartEnabled,
@@ -57,6 +60,25 @@ export async function runLaunchpadApiTests() {
     appsFound: 0,
     limitReached: false,
   };
+  const validCatalogApp = {
+    id: "catalog-app",
+    type: "app",
+    name: "Catalog App",
+    emoji: "C",
+    launchTarget: { kind: "executable", path: "C:/Apps/catalog.exe" },
+    launchArgs: "--catalog",
+    trackingKey: "path:c:/apps/catalog.exe",
+    identityStatus: "exact",
+    sources: [{
+      key: "custom:catalog.exe",
+      type: "customDirectory",
+      state: "primary",
+      rootId: "root-custom",
+      rootLabel: "Custom",
+      relativePath: "catalog.exe",
+      absolutePath: "C:/Apps/catalog.exe",
+    }],
+  };
   const { keywordExcludedApps: _keywordExcludedApps, ...statsWithoutKeywordExclusions } = validStats;
   let missingKeywordExclusionsError: unknown = null;
   try {
@@ -85,14 +107,14 @@ export async function runLaunchpadApiTests() {
     missingExcludedAppsError = error;
   }
   assert(missingExcludedAppsError instanceof TypeError, "scan results should require runtime excluded-app presentation data");
-  const excludedApps = [{ id: "catalog-blocked", name: "Blocked" }];
+  const excludedApps = [{ ...validCatalogApp, id: "catalog-blocked", name: "Blocked" }];
   const normalizedResult = normalizeScanAppsResult({
     apps: [],
     excludedApps,
     keywordExcludedApps: [{
       app: {
+        ...validCatalogApp,
         id: "catalog-uninstall",
-        type: "app",
         name: "Uninstall Example",
         iconPath: "C:/Icons/uninstall.png",
         launchTarget: { kind: "shortcut", path: "C:/Users/Example/Uninstall Example.lnk" },
@@ -101,7 +123,7 @@ export async function runLaunchpadApiTests() {
       rootId: "root-system",
       rootLabel: "System Start Menu",
     }],
-    warnings: [],
+    warnings: [{ rootId: "root-custom", rootLabel: "Custom", kind: "readFailed", message: "denied" }],
     stats: validStats,
   });
   assert(
@@ -111,8 +133,8 @@ export async function runLaunchpadApiTests() {
   assert(
     JSON.stringify(normalizedResult.keywordExcludedApps) === JSON.stringify([{
       app: {
+        ...validCatalogApp,
         id: "catalog-uninstall",
-        type: "app",
         name: "Uninstall Example",
         iconPath: "C:/Icons/uninstall.png",
         launchTarget: { kind: "shortcut", path: "C:/Users/Example/Uninstall Example.lnk" },
@@ -122,6 +144,55 @@ export async function runLaunchpadApiTests() {
     "scan results should preserve complete keyword-excluded apps and their matched keyword"
   );
   assert(normalizedResult.stats === validStats, "complete scan stats should pass through unchanged");
+
+  let malformedMatchedKeywordError: unknown = null;
+  try {
+    normalizeScanAppsResult({
+      apps: [],
+      excludedApps: [],
+      keywordExcludedApps: [{ app: validCatalogApp, matchedKeyword: 42 }],
+      warnings: [],
+      stats: validStats,
+    });
+  } catch (error) {
+    malformedMatchedKeywordError = error;
+  }
+  assert(
+    malformedMatchedKeywordError instanceof TypeError,
+    "scan results should reject non-string matched keywords instead of coercing bridge payloads",
+  );
+
+  for (const [label, payload] of [
+    ["launch target", { ...validCatalogApp, launchTarget: { kind: "executable" } }],
+    ["source", { ...validCatalogApp, sources: [{ ...validCatalogApp.sources[0], type: "registry" }] }],
+  ] as const) {
+    let malformedCatalogError: unknown = null;
+    try {
+      normalizeScanAppsResult({
+        apps: [payload],
+        excludedApps: [],
+        keywordExcludedApps: [],
+        warnings: [],
+        stats: validStats,
+      });
+    } catch (error) {
+      malformedCatalogError = error;
+    }
+    assert(malformedCatalogError instanceof TypeError, `scan results should reject malformed catalog ${label} fields`);
+  }
+  let malformedWarningError: unknown = null;
+  try {
+    normalizeScanAppsResult({
+      apps: [],
+      excludedApps: [],
+      keywordExcludedApps: [],
+      warnings: [{ rootId: "root", rootLabel: "Root", kind: "readFailed" }],
+      stats: validStats,
+    });
+  } catch (error) {
+    malformedWarningError = error;
+  }
+  assert(malformedWarningError instanceof TypeError, "scan results should reject incomplete warning payloads");
 
   const validLayout = JSON.parse(
     readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url), "utf8")
@@ -148,6 +219,16 @@ export async function runLaunchpadApiTests() {
       }
       if (command === "get_launch_context") return { origin: "loginStartup" };
       if (command === "complete_renderer_startup") return null;
+      if (command === "pick_launch_file") {
+        return {
+          name: "Catalog App",
+          path: "C:/Apps/catalog.exe",
+          launchTarget: { kind: "executable", path: "C:/Apps/catalog.exe" },
+          launchArgs: "--catalog",
+          iconPath: null,
+          iconDataUrl: null,
+        };
+      }
       if (command === "begin_main_window_close") {
         const openSequence = args?.openSequence;
         if (typeof openSequence !== "number") throw new Error("missing test open sequence");
@@ -201,6 +282,8 @@ export async function runLaunchpadApiTests() {
     assert((await getLaunchContext()).origin === "loginStartup", "launch context should cross the native bridge");
     await completeRendererStartup();
     assert(invocations.some(({ command }) => command === "complete_renderer_startup"), "renderer startup completion should cross the native bridge");
+    const pickedLaunchFile = await pickLaunchFile();
+    assert(pickedLaunchFile?.launchTarget.kind === "executable", "picked launch files should expose a validated launch target");
     const close = await beginMainWindowClose(17);
     assert(close !== null && close.accepted && close.generation === 18, "begin-close should return the native transition generation");
     assert(await hideMainWindow(close.generation), "hide should return the native generation check result");
@@ -247,6 +330,49 @@ export async function runLaunchpadApiTests() {
       "locale state should reject unbundled native locales at the IPC boundary",
     );
 
+    for (const code of ["preferenceLoadFailed", "systemLocaleUnavailable"] as const) {
+      setLaunchpadApiBridgeForTests({
+        invoke: async (command) => command === "get_app_locale_state"
+          ? { ...nativeLocaleState, issue: { code, value: code === "preferenceLoadFailed" ? "layout" : "windows" } }
+          : null,
+      });
+      const degradedLocale = await getAppLocaleState();
+      assert(degradedLocale?.issue?.code === code, `locale API should preserve the native ${code} degraded state`);
+    }
+
+    setLaunchpadApiBridgeForTests({
+      invoke: async (command) => command === "pick_launch_file"
+        ? {
+            name: "Broken",
+            path: "C:/Apps/broken.exe",
+            launchTarget: { kind: "executable" },
+            launchArgs: "",
+            iconPath: null,
+            iconDataUrl: null,
+          }
+        : null,
+    });
+    let invalidPickedTargetError: unknown = null;
+    try {
+      await pickLaunchFile();
+    } catch (error) {
+      invalidPickedTargetError = error;
+    }
+    assert(invalidPickedTargetError instanceof TypeError, "picked launch files should reject malformed launch targets");
+
+    setLaunchpadApiBridgeForTests({
+      invoke: async (command) => command === "check_launch_targets"
+        ? [{ id: "broken", status: "gone" }]
+        : null,
+    });
+    let invalidLaunchTargetStatusError: unknown = null;
+    try {
+      await checkLaunchTargets([]);
+    } catch (error) {
+      invalidLaunchTargetStatusError = error;
+    }
+    assert(invalidLaunchTargetStatusError instanceof TypeError, "launch target checks should reject unknown native status values");
+
     setLaunchpadApiBridgeForTests({
       invoke: async (command) => command === "get_live_desktop_background_support"
         ? { platform: "windows", supportsLiveDesktopBackground: true, reason: "available" }
@@ -262,6 +388,40 @@ export async function runLaunchpadApiTests() {
       invalidLiveDesktopSupportError instanceof TypeError,
       "live desktop support should require both native capability flags",
     );
+
+    setLaunchpadApiBridgeForTests({
+      invoke: async (command) => command === "get_live_desktop_background_support"
+        ? {
+            platform: "windows",
+            supportsLiveDesktopBackground: true,
+            supportsLiveDesktopBackgroundEffects: true,
+            reason: "available",
+            detail: "ready",
+            prerequisiteProbe: {},
+            rendererProbe: {},
+          }
+        : null,
+    });
+    let invalidLiveDesktopProbeError: unknown = null;
+    try {
+      await getLiveDesktopBackgroundSupport();
+    } catch (error) {
+      invalidLiveDesktopProbeError = error;
+    }
+    assert(invalidLiveDesktopProbeError instanceof TypeError, "live desktop support should deeply validate native probes");
+
+    setLaunchpadApiBridgeForTests({
+      invoke: async (command) => command === "get_live_desktop_runtime_status"
+        ? { phase: "running", active: true, generation: 1, reason: "running", detail: "ready" }
+        : null,
+    });
+    let invalidLiveDesktopDiagnosticsError: unknown = null;
+    try {
+      await getLiveDesktopRuntimeStatus();
+    } catch (error) {
+      invalidLiveDesktopDiagnosticsError = error;
+    }
+    assert(invalidLiveDesktopDiagnosticsError instanceof TypeError, "live desktop status should require native diagnostics payloads");
   } finally {
     setLaunchpadApiBridgeForTests(null);
   }

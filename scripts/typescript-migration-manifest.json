@@ -2,12 +2,14 @@
   "baselineCommit": "f58b8f0c5e931306ab3e5000d60573b91cf1abf7",
   "legacyClosureRoots": [
     "src/api/launchpadApi.ts",
+    "src/api/liveDesktopContract.ts",
     "src/api/windowChromeApi.ts",
     "src/application/launchpadDocumentCoordinator.ts",
     "src/assets/branding/launchpadIconUrls.ts",
     "src/composables/mainWindowTransition.ts",
     "src/diagnostics/runtimePerformanceMetrics.ts",
     "src/domain/appearancePreference.ts",
+    "src/domain/applicationCatalog.ts",
     "src/domain/backgroundAcrylicParams.ts",
     "src/domain/backgroundEffectPlan.ts",
     "src/domain/backgroundImageLayout.ts",
@@ -120,10 +122,25 @@
         "CachedCustomIconResult",
         "KeywordExcludedApp",
         "LaunchContext",
-        "LaunchpadApiBridge",
+        "LaunchFailureReport",
+        "LaunchTargetCheckRequest",
         "LaunchTargetCheckResult",
+        "LaunchTargetCheckStatus",
+        "LaunchableApp",
+        "LaunchpadApiBridge",
+        "LiveDesktopAcrylicEffectPlan",
+        "LiveDesktopAcrylicParams",
         "LiveDesktopBackgroundSupport",
+        "LiveDesktopBlurEffectPlan",
+        "LiveDesktopEffectPlan",
+        "LiveDesktopPrerequisiteProbe",
+        "LiveDesktopRendererProbe",
+        "LiveDesktopRuntimeConfig",
+        "LiveDesktopRuntimeDiagnostics",
         "LiveDesktopRuntimeStatus",
+        "LiveDesktopWindowDiagnostics",
+        "LiveDesktopWindowInfo",
+        "LiveDesktopWindowRect",
         "MainWindowCloseTransition",
         "MainWindowEffectOptions",
         "MainWindowEffectsSupport",
@@ -182,6 +199,603 @@
         "stopLiveDesktopBackground"
       ]
     },
+    "src/api/liveDesktopContract.ts": {
+      "types": [
+        "LiveDesktopAcrylicEffectPlan",
+        "LiveDesktopAcrylicParams",
+        "LiveDesktopBackgroundSupport",
+        "LiveDesktopBlurEffectPlan",
+        "LiveDesktopEffectPlan",
+        "LiveDesktopPrerequisiteProbe",
+        "LiveDesktopRendererProbe",
+        "LiveDesktopRuntimeConfig",
+        "LiveDesktopRuntimeDiagnostics",
+        "LiveDesktopRuntimeStatus",
+        "LiveDesktopWindowDiagnostics",
+        "LiveDesktopWindowInfo",
+        "LiveDesktopWindowRect"
+      ],
+      "values": [
+        "assertLiveDesktopBackgroundSupport",
+        "assertLiveDesktopRuntimeConfig",
+        "assertLiveDesktopRuntimeStatus"
+      ]
+    },
+    "src/api/launchpadApiTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadApiTests"
+      ]
+    },
+    "src/api/windowChromeApi.ts": {
+      "types": [
+        "WindowResizeDirection"
+      ],
+      "values": [
+        "WINDOW_CHROME_STATE_CHANGE_EVENT",
+        "WINDOW_RESIZE_DIRECTIONS",
+        "emitWindowChromeStateChange",
+        "isWindowMaximized",
+        "minimizeWindow",
+        "normalizeWindowResizeDirection",
+        "setWindowChromeBridgeForTests",
+        "startWindowDrag",
+        "startWindowResize",
+        "toggleWindowMaximize"
+      ]
+    },
+    "src/api/windowChromeApiTests.ts": {
+      "types": [],
+      "values": [
+        "runWindowChromeApiTests"
+      ]
+    },
+    "src/application/launchpadDocumentCoordinator.ts": {
+      "types": [],
+      "values": [
+        "createLaunchpadDocumentCoordinator"
+      ]
+    },
+    "src/application/launchpadDocumentCoordinatorTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadDocumentCoordinatorTests"
+      ]
+    },
+    "src/assets/branding/launchpadIconUrls.ts": {
+      "types": [],
+      "values": [
+        "launchpadIconUrls"
+      ]
+    },
+    "src/composables/mainWindowTransition.ts": {
+      "types": [
+        "MainWindowCapability",
+        "MainWindowMutableCapability",
+        "MainWindowNativeMethod",
+        "MainWindowSurfaceValues",
+        "MainWindowTransition",
+        "MainWindowTransitionFailure",
+        "MainWindowTransitionOptions",
+        "MainWindowTransitionOutcome",
+        "MainWindowTransitionPhase",
+        "MainWindowTransitionPort",
+        "MainWindowTransitionSnapshot",
+        "MainWindowTransitionSuccess"
+      ],
+      "values": [
+        "MainWindowTransition"
+      ]
+    },
+    "src/diagnostics/runtimePerformanceMetrics.ts": {
+      "types": [
+        "RuntimeMetricSummary",
+        "RuntimePerformanceMetrics",
+        "RuntimePerformanceSnapshot"
+      ],
+      "values": [
+        "createRuntimePerformanceMetrics",
+        "runtimePerformanceMetrics"
+      ]
+    },
+    "src/domain/appearancePreference.ts": {
+      "types": [
+        "AppearancePreference"
+      ],
+      "values": [
+        "APPEARANCE_DARK",
+        "APPEARANCE_LIGHT",
+        "APPEARANCE_SYSTEM",
+        "normalizeAppearancePreference",
+        "resolveAppearancePreference"
+      ]
+    },
+    "src/domain/appearancePreferenceTests.ts": {
+      "types": [],
+      "values": [
+        "runAppearancePreferenceTests"
+      ]
+    },
+    "src/domain/applicationCatalog.ts": {
+      "types": [
+        "CatalogScanFilters",
+        "CatalogScanRoot",
+        "CatalogScanWarning",
+        "CatalogSource",
+        "CatalogSourceState",
+        "ScannedCatalogApp"
+      ],
+      "values": [
+        "assertCatalogLaunchTarget",
+        "assertCatalogScanFilters",
+        "assertCatalogScanRoot",
+        "assertCatalogScanWarning",
+        "assertCatalogSource",
+        "assertScannedCatalogApp"
+      ]
+    },
+    "src/domain/backgroundAcrylicParams.ts": {
+      "types": [],
+      "values": [
+        "ACRYLIC_COMPOSITE_PRESETS",
+        "DEFAULT_ACRYLIC_COMPOSITE_PARAMS",
+        "copyAcrylicCompositeParams",
+        "hexToRgbArray",
+        "normalizeAcrylicCompositeParams",
+        "rgbArrayToHex"
+      ]
+    },
+    "src/domain/backgroundEffectPlan.ts": {
+      "types": [
+        "BackgroundEffectPlan",
+        "BlurEffectParams",
+        "BlurKernel"
+      ],
+      "values": [
+        "ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT",
+        "ACRYLIC_RENDER_MAX_HEIGHT",
+        "ACRYLIC_RENDER_MAX_WIDTH",
+        "AUTO_DUAL_KAWASE_OFFSET_SCALE_DEFAULT",
+        "BLUR_GAUSSIAN_CUTOFF_DEFAULT",
+        "BLUR_KERNEL_AUTO",
+        "BLUR_KERNEL_DUAL_KAWASE",
+        "BLUR_KERNEL_GAUSSIAN",
+        "DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX",
+        "DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN",
+        "DUAL_KAWASE_MIN_SIZE",
+        "DUAL_KAWASE_OFFSET_SCALE_MAX",
+        "DUAL_KAWASE_OFFSET_SCALE_MIN",
+        "DUAL_KAWASE_PASS_COUNT",
+        "DUAL_KAWASE_PASS_COUNT_MIN",
+        "GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_PX_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_PX_MAX",
+        "GAUSSIAN_BLUR_RADIUS_PX_MIN",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_MAX",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_MIN",
+        "clampDualKawaseOffsetScale",
+        "clampDualKawasePassCount",
+        "clampGaussianBlurCutoff",
+        "clampGaussianBlurRadiusPx",
+        "clampGaussianBlurRadiusScale",
+        "createBackgroundEffectPlan",
+        "createDualKawaseLevels",
+        "normalizeBlurEffectParams",
+        "normalizeBlurKernel",
+        "normalizeDualKawaseParams",
+        "resolveAcrylicBackgroundAlpha",
+        "resolveAcrylicRenderSize",
+        "resolveAutoBlurKernel",
+        "resolveAutoDualKawaseOffsetScale",
+        "resolveAutoGaussianRadiusPx",
+        "resolveBlurOffsetScale",
+        "resolveCoverLayout"
+      ]
+    },
+    "src/domain/backgroundImageLayout.ts": {
+      "types": [
+        "BackgroundImageLayout",
+        "BackgroundImagePlacementOptions",
+        "CssBackgroundImageLayout",
+        "CssBackgroundImagePlacementOptions",
+        "ImageLayout",
+        "WindowsImagePlacementContext"
+      ],
+      "values": [
+        "BACKGROUND_IMAGE_LAYOUT_CENTER",
+        "BACKGROUND_IMAGE_LAYOUT_FILL",
+        "BACKGROUND_IMAGE_LAYOUT_FIT",
+        "BACKGROUND_IMAGE_LAYOUT_STRETCH",
+        "BACKGROUND_IMAGE_LAYOUT_TILE",
+        "DEFAULT_BACKGROUND_IMAGE_LAYOUT",
+        "normalizeBackgroundImageLayout",
+        "resolveBackgroundImagePlacement",
+        "resolveCssBackgroundImageLayout",
+        "resolveCssBackgroundImagePlacement",
+        "resolveCssBackgroundImageTransform",
+        "resolveImageLayout"
+      ]
+    },
+    "src/domain/backgroundImageLayoutTests.ts": {
+      "types": [],
+      "values": [
+        "runBackgroundImageLayoutTests"
+      ]
+    },
+    "src/domain/backgroundSettings.ts": {
+      "types": [
+        "BackgroundEffect",
+        "BackgroundSource"
+      ],
+      "values": [
+        "BACKGROUND_ACRYLIC_APPEARANCE_DARK",
+        "BACKGROUND_ACRYLIC_APPEARANCE_LIGHT",
+        "BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM",
+        "BACKGROUND_BASE_OPACITY_MAX",
+        "BACKGROUND_BASE_OPACITY_MIN",
+        "BACKGROUND_BASE_OPACITY_STEP",
+        "BACKGROUND_BLUR_STRENGTH_MAX",
+        "BACKGROUND_BLUR_STRENGTH_MIN",
+        "BACKGROUND_BLUR_STRENGTH_STEP",
+        "BACKGROUND_DARKEN_STRENGTH_MAX",
+        "BACKGROUND_DARKEN_STRENGTH_MIN",
+        "BACKGROUND_DARKEN_STRENGTH_STEP",
+        "BACKGROUND_EFFECT_ACRYLIC_WEBGL",
+        "BACKGROUND_EFFECT_BLUR",
+        "BACKGROUND_EFFECT_DIMMED",
+        "BACKGROUND_EFFECT_NONE",
+        "BACKGROUND_IMAGE_OPACITY_MAX",
+        "BACKGROUND_IMAGE_OPACITY_MIN",
+        "BACKGROUND_IMAGE_OPACITY_STEP",
+        "BACKGROUND_LIVE_DESKTOP_OPACITY_MAX",
+        "BACKGROUND_LIVE_DESKTOP_OPACITY_MIN",
+        "BACKGROUND_LIVE_DESKTOP_OPACITY_STEP",
+        "BACKGROUND_SOURCE_CUSTOM_IMAGE",
+        "BACKGROUND_SOURCE_SYSTEM_MATERIAL",
+        "BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP",
+        "BACKGROUND_SOURCE_WINDOWS_WALLPAPER",
+        "DEFAULT_BACKGROUND_ACRYLIC_APPEARANCE",
+        "DEFAULT_BACKGROUND_ACRYLIC_BLUR_STRENGTH",
+        "DEFAULT_BACKGROUND_BASE_COLOR",
+        "DEFAULT_BACKGROUND_BASE_OPACITY",
+        "DEFAULT_BACKGROUND_BLUR_STRENGTH",
+        "DEFAULT_BACKGROUND_DARKEN_COLOR",
+        "DEFAULT_BACKGROUND_DARKEN_STRENGTH",
+        "DEFAULT_BACKGROUND_IMAGE_OPACITY",
+        "DEFAULT_BACKGROUND_LIVE_DESKTOP_OPACITY",
+        "backgroundSourceUsesImage",
+        "backgroundSourceUsesLiveDesktop",
+        "clampBackgroundAcrylicBlurStrength",
+        "clampBackgroundBaseOpacity",
+        "clampBackgroundBlurStrength",
+        "clampBackgroundDarkenStrength",
+        "clampBackgroundImageOpacity",
+        "clampBackgroundLiveDesktopOpacity",
+        "normalizeBackgroundAcrylicAppearance",
+        "normalizeBackgroundBaseColor",
+        "normalizeBackgroundDarkenColor",
+        "normalizeBackgroundEffect",
+        "normalizeBackgroundSource"
+      ]
+    },
+    "src/domain/domainDependencyTests.ts": {
+      "types": [],
+      "values": [
+        "runDomainDependencyTests"
+      ]
+    },
+    "src/domain/experimentalFeatures.ts": {
+      "types": [],
+      "values": [
+        "isLiveDesktopExperimentEnabled",
+        "setLiveDesktopExperimentEnabledForTests"
+      ]
+    },
+    "src/domain/groupTransferPlanner.ts": {
+      "types": [
+        "GroupTransferAcceptedPlan",
+        "GroupTransferDesktopLocation",
+        "GroupTransferEffects",
+        "GroupTransferFolderLocation",
+        "GroupTransferLocation",
+        "GroupTransferMember",
+        "GroupTransferPlan",
+        "GroupTransferPlanOptions",
+        "GroupTransferRejectedPlan"
+      ],
+      "values": [
+        "planGroupTransfer"
+      ]
+    },
+    "src/domain/groupTransferPlannerTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupTransferPlannerTests"
+      ]
+    },
+    "src/domain/groupTransferPresentation.ts": {
+      "types": [
+        "CurrentGroupTransferActor",
+        "GroupTransferActor",
+        "GroupTransferAlphaPolicy",
+        "GroupTransferAnchor",
+        "GroupTransferPresentationMember",
+        "GroupTransferPresentationOptions",
+        "GroupTransferVisibilityPolicy"
+      ],
+      "values": [
+        "GROUP_TRANSFER_Z_BAND",
+        "makeGroupTransferPresentation"
+      ]
+    },
+    "src/domain/groupTransferPresentationTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupTransferPresentationTests"
+      ]
+    },
+    "src/domain/groupTransferSession.ts": {
+      "types": [
+        "GroupTransferOutcome",
+        "GroupTransferPhase"
+      ],
+      "values": [
+        "GROUP_TRANSFER_OUTCOME",
+        "GROUP_TRANSFER_PHASE",
+        "isInteractiveGroupTransferPhase",
+        "isVisualGroupTransferPhase"
+      ]
+    },
+    "src/domain/groupTransferSessionTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupTransferSessionTests"
+      ]
+    },
+    "src/domain/groupTransferSourceCapture.ts": {
+      "types": [
+        "DesktopGroupTransferSource",
+        "FolderGroupTransferSource",
+        "GroupTransferAppItem",
+        "GroupTransferFolderItem",
+        "GroupTransferItem",
+        "GroupTransferPoint",
+        "GroupTransferRect",
+        "GroupTransferSourceEntry",
+        "GroupTransferSourceLocation"
+      ],
+      "values": [
+        "captureGroupTransferSourceEntries",
+        "indexGroupTransferSources"
+      ]
+    },
+    "src/domain/groupTransferSourceCaptureTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupTransferSourceCaptureTests"
+      ]
+    },
+    "src/domain/iconFocus.ts": {
+      "types": [
+        "IconFocus"
+      ],
+      "values": [
+        "matchesIconFocus"
+      ]
+    },
+    "src/domain/iconFocusTests.ts": {
+      "types": [],
+      "values": [
+        "runIconFocusTests"
+      ]
+    },
+    "src/domain/iconSource.ts": {
+      "types": [],
+      "values": [
+        "applyCachedIconAssetUrlsToApp",
+        "applyCachedIconAssetUrlsToPages",
+        "getDefaultIconSource",
+        "getIconSource"
+      ]
+    },
+    "src/domain/iconSourceTests.ts": {
+      "types": [],
+      "values": [
+        "runIconSourceTests"
+      ]
+    },
+    "src/domain/input/launchpadGestureEngine.ts": {
+      "types": [
+        "LaunchpadGestureCommand",
+        "LaunchpadGestureDeadline",
+        "LaunchpadGestureInput",
+        "LaunchpadGestureOutput",
+        "LaunchpadGestureTarget",
+        "LaunchpadGestureViewport",
+        "LaunchpadPagePresentation",
+        "LaunchpadTargetPresentation"
+      ],
+      "values": [
+        "createLaunchpadGestureEngine"
+      ]
+    },
+    "src/domain/input/launchpadGestureEngineTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadGestureEngineTests"
+      ]
+    },
+    "src/domain/input/launchpadGesturePolicy.ts": {
+      "types": [
+        "LaunchpadGesturePolicy"
+      ],
+      "values": [
+        "launchpadGesturePolicy"
+      ]
+    },
+    "src/domain/input/launchpadPointerTarget.ts": {
+      "types": [
+        "LaunchSource",
+        "LaunchpadBoundsMeta",
+        "LaunchpadBoundsTarget",
+        "LaunchpadContextMenuTarget",
+        "LaunchpadItem"
+      ],
+      "values": [
+        "isLaunchpadContextMenuInteractionBlocked",
+        "makeLaunchSourceFromBounds",
+        "resolveLaunchpadContextMenuTarget"
+      ]
+    },
+    "src/domain/input/launchpadPointerTargetTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadPointerTargetTests"
+      ]
+    },
+    "src/domain/input/launchpadTargetPresentation.ts": {
+      "types": [
+        "IconInteractionPhase"
+      ],
+      "values": [
+        "resolveIconInteractionPhase"
+      ]
+    },
+    "src/domain/launchContext.ts": {
+      "types": [
+        "LaunchContext",
+        "LaunchOrigin"
+      ],
+      "values": [
+        "LAUNCH_ORIGIN_LOGIN_STARTUP",
+        "LAUNCH_ORIGIN_MANUAL",
+        "isLoginStartupContext",
+        "normalizeLaunchContext"
+      ]
+    },
+    "src/domain/launchContextTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchContextTests"
+      ]
+    },
+    "src/domain/launchpadData.ts": {
+      "types": [
+        "CatalogRuntimeApp",
+        "NormalizedScanRoot",
+        "PresentationOverrides",
+        "ReconcileIssue"
+      ],
+      "values": [
+        "DEFAULT_SCAN_KEYWORD_BLACKLIST",
+        "canExcludeAppFromScan",
+        "compareAppsByDefaultOrder",
+        "createDefaultScanRoots",
+        "createLaunchpadDataHelpers",
+        "fallbackAppGlyph",
+        "isAppExcludedFromScan",
+        "makeLaunchTarget",
+        "makeScanAppExclusionEntry",
+        "normalizeNativeApp",
+        "normalizeScanAppBlacklist",
+        "normalizeScanKeywordAllowlist",
+        "normalizeScanKeywordBlacklist",
+        "normalizeScanRoots"
+      ]
+    },
+    "src/domain/launchpadDataTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadDataTests"
+      ]
+    },
+    "src/domain/launchpadGridDefaults.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_COLS",
+        "DEFAULT_FOLDER_COLS",
+        "DEFAULT_FOLDER_ROWS",
+        "DEFAULT_ICON_SIZE",
+        "DEFAULT_ROWS",
+        "ICON_SIZE_MAX",
+        "ICON_SIZE_MIN"
+      ]
+    },
+    "src/domain/launchpadIconVariant.ts": {
+      "types": [
+        "LaunchpadIconVariant"
+      ],
+      "values": [
+        "DEFAULT_LAUNCHPAD_ICON_VARIANT",
+        "LAUNCHPAD_ICON_DARK",
+        "LAUNCHPAD_ICON_LIGHT",
+        "LAUNCHPAD_ICON_PASTEL_DARK",
+        "LAUNCHPAD_ICON_PASTEL_LIGHT",
+        "LAUNCHPAD_ICON_VARIANTS",
+        "normalizeLaunchpadIconVariant"
+      ]
+    },
+    "src/domain/launchpadIconVariantTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadIconVariantTests"
+      ]
+    },
+    "src/domain/launchpadLayout.ts": {
+      "types": [
+        "LaunchpadApp",
+        "LaunchpadFolder",
+        "LaunchpadItem",
+        "LaunchpadPages",
+        "Rect"
+      ],
+      "values": [
+        "chunkIntoPages",
+        "clamp",
+        "createLaunchpadLayoutHelpers",
+        "cx",
+        "expandRect",
+        "getFolderPreviewSlots",
+        "isPointInsideRect",
+        "makePageSize",
+        "shouldCommitPlacementFromLast",
+        "shrinkRect"
+      ]
+    },
+    "src/domain/launchpadLayoutTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadHelperTests"
+      ]
+    },
+    "src/domain/launchpadSearch.ts": {
+      "types": [
+        "AppSearchDocument",
+        "SearchableApp"
+      ],
+      "values": [
+        "buildAppSearchDocuments",
+        "searchAppDocuments"
+      ]
+    },
+    "src/domain/launchpadSearchTests.ts": {
+      "types": [],
+      "values": [
+        "runLaunchpadSearchDomainTests"
+      ]
+    },
+    "src/domain/layoutConfiguration.ts": {
+      "types": [
+        "FolderIconSizeMode"
+      ],
+      "values": [
+        "FOLDER_ICON_SIZE_MODE_CUSTOM",
+        "FOLDER_ICON_SIZE_MODE_GLOBAL",
+        "clampLaunchpadIconSize",
+        "normalizeFolderIconSizeMode"
+      ]
+    },
     "src/domain/layoutDocument.ts": {
       "types": [
         "AcrylicParameters",
@@ -200,7 +814,122 @@
         "ScanAppBlacklistEntry",
         "ScanRoot"
       ],
-      "values": ["LAYOUT_DOCUMENT_VERSION", "assertLayoutDocument"]
+      "values": [
+        "LAYOUT_DOCUMENT_VERSION",
+        "assertLayoutDocument"
+      ]
+    },
+    "src/domain/layoutDocument.typeTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/domain/layoutDocumentTests.ts": {
+      "types": [],
+      "values": [
+        "runLayoutDocumentTests"
+      ]
+    },
+    "src/domain/mainWindowShortcut.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_MAIN_WINDOW_SHORTCUT",
+        "NO_MAIN_WINDOW_SHORTCUT",
+        "formatMainWindowShortcut",
+        "normalizeMainWindowShortcut",
+        "normalizeMainWindowShortcutKey"
+      ]
+    },
+    "src/domain/mainWindowShortcutTests.ts": {
+      "types": [],
+      "values": [
+        "runMainWindowShortcutTests"
+      ]
+    },
+    "src/domain/runLaunchpadLayoutTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/fluent/registerFluentComponents.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/i18n/catalogs.ts": {
+      "types": [
+        "LocaleMetadata",
+        "TranslationValues"
+      ],
+      "values": [
+        "getBundledMessages",
+        "getLocaleMetadata",
+        "hasMessage",
+        "listLocaleMetadata",
+        "translateMessage",
+        "validateBundledCatalogs"
+      ]
+    },
+    "src/i18n/catalogTests.ts": {
+      "types": [],
+      "values": [
+        "runCatalogTests"
+      ]
+    },
+    "src/i18n/locale.ts": {
+      "types": [
+        "LocaleIssue",
+        "LocaleIssueCode",
+        "LocaleMatch",
+        "LocaleState",
+        "SupportedLocale"
+      ],
+      "values": [
+        "DEFAULT_LOCALE",
+        "DEFAULT_LOCALE_PREFERENCE",
+        "SUPPORTED_LOCALES",
+        "normalizeLocalePreference",
+        "resolveLocalePreference"
+      ]
+    },
+    "src/i18n/localeTests.ts": {
+      "types": [],
+      "values": [
+        "runLocaleTests"
+      ]
+    },
+    "src/i18n/localization.ts": {
+      "types": [
+        "LocalizationRuntime",
+        "LocalizationText"
+      ],
+      "values": [
+        "createLocalization",
+        "useLocalization",
+        "useLocalizationRuntime"
+      ]
+    },
+    "src/i18n/localizationTests.ts": {
+      "types": [],
+      "values": [
+        "runLocalizationTests"
+      ]
+    },
+    "src/mocks/appSeeds.ts": {
+      "types": [
+        "AppSeed",
+        "FolderAppSeed",
+        "ObjectAppSeed",
+        "TupleAppSeed"
+      ],
+      "values": [
+        "appSeeds"
+      ]
+    },
+    "src/platform/applicationCatalogDefaults.ts": {
+      "types": [
+        "DefaultScanRoot"
+      ],
+      "values": [
+        "DEFAULT_SCAN_ROOTS"
+      ]
     },
     "src/platform/launchpadPorts.ts": {
       "types": [
@@ -228,6 +957,198 @@
         "mainWindowPort",
         "nativeLifecyclePort",
         "nativeStartupPort"
+      ]
+    },
+    "src/platform/localeRuntime.ts": {
+      "types": [
+        "LocaleRuntimeOptions",
+        "LocaleRuntimeOutcome"
+      ],
+      "values": [
+        "createLocaleRuntimePort"
+      ]
+    },
+    "src/platform/localeRuntimeTests.ts": {
+      "types": [],
+      "values": [
+        "runLocaleRuntimeTests"
+      ]
+    },
+    "src/platform/mainWindowShortcutInput.ts": {
+      "types": [
+        "MainWindowShortcutInputResult",
+        "ShortcutKeyboardEvent"
+      ],
+      "values": [
+        "mainWindowShortcutFromKeyboardEvent"
+      ]
+    },
+    "src/rendering/backgroundDebugPort.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_KAWASE_DEBUG_PARAMS",
+        "KAWASE_DEBUG_BLUR_KERNEL_AUTO",
+        "KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN",
+        "KAWASE_DEBUG_OFFSET_SCALE_MAX",
+        "KAWASE_DEBUG_OFFSET_SCALE_MIN",
+        "KAWASE_DEBUG_PASS_COUNT_MAX",
+        "KAWASE_DEBUG_PASS_COUNT_MIN",
+        "KAWASE_DEBUG_TEST_STRENGTH_MAX",
+        "KAWASE_DEBUG_TEST_STRENGTH_MIN",
+        "formatAcrylicDebugParams",
+        "formatKawaseDebugParams",
+        "getAcrylicDebugParams",
+        "getKawaseDebugEffectPlanParams",
+        "getKawaseDebugParams",
+        "hexToRgbArray",
+        "isAcrylicDebugEnabled",
+        "isKawaseDebugEnabled",
+        "resetAcrylicDebugParams",
+        "resetKawaseDebugParams",
+        "rgbArrayToHex",
+        "setAcrylicDebugOverrideEnabled",
+        "setKawaseDebugOverrideEnabled",
+        "updateAcrylicDebugParams",
+        "updateKawaseDebugParams",
+        "useAcrylicDebugOverrideEnabled",
+        "useAcrylicDebugParams",
+        "useKawaseDebugOverrideEnabled",
+        "useKawaseDebugParams"
+      ]
+    },
+    "src/rendering/backgroundPort.ts": {
+      "types": [
+        "PixiBackgroundCapabilityConfig"
+      ],
+      "values": [
+        "BackgroundEffectPreviewRenderer",
+        "backgroundEffectUsesPixi",
+        "resolveBackgroundEffectPreviewSizes",
+        "shouldUsePixiBackgroundEffect"
+      ]
+    },
+    "src/rendering/contractSnapshot.ts": {
+      "types": [
+        "ContractPrimitive",
+        "ContractRecord",
+        "ContractValue"
+      ],
+      "values": [
+        "assertContractSnapshot",
+        "snapshotContractValue"
+      ]
+    },
+    "src/rendering/desktopScenePort.ts": {
+      "types": [],
+      "values": [
+        "ICON_BOUNDS_KIND",
+        "ICON_BOUNDS_VARIANT",
+        "appendGroupTrailPoint",
+        "createIconBoundsRegistry",
+        "getSingleStageDiagnosticsOptions",
+        "getSingleStageRenderKey",
+        "killMotionOf",
+        "makeGroupTransferRuntimeEntries",
+        "makeGroupTransferRuntimeReleasePlan",
+        "makeIconVisualSpec",
+        "motion",
+        "motionSprings",
+        "prefersReducedMotion",
+        "resolveFolderClosingHandoffId",
+        "resolveFolderPixiActivityUpdate",
+        "resolveFolderSourceGhostedIds",
+        "shouldClearFolderClosingHandoffRetainId",
+        "stageLayoutRecordToClientRect"
+      ]
+    },
+    "src/rendering/diagnosticPort.ts": {
+      "types": [],
+      "values": [
+        "deleteLaunchpadDebugValue",
+        "readLaunchpadDebugValue",
+        "setLaunchpadDebugValue"
+      ]
+    },
+    "src/rendering/motionLabRendererAdapter.ts": {
+      "types": [],
+      "values": [
+        "createPixiApp",
+        "createPixiText"
+      ]
+    },
+    "src/rendering/motionPort.ts": {
+      "types": [],
+      "values": [
+        "MOTION_REPLAY_CAPTURE_DEFAULT_SECONDS",
+        "MOTION_REPLAY_CAPTURE_MAX_SECONDS",
+        "MOTION_REPLAY_CAPTURE_MIN_SECONDS",
+        "MOTION_REPLAY_CAPTURE_SAMPLE_HZ",
+        "MOTION_REPLAY_TRACE_SCHEMA",
+        "MOTION_REPLAY_TRACE_VERSION",
+        "aggregateMotionTracks",
+        "buildMotionReplayCaptureDebugConfig",
+        "clamp",
+        "collectMotionTrackRecordsFromHistory",
+        "collectMotionTrackRecordsFromReplay",
+        "collectRecordText",
+        "createMotionDebugAIReport",
+        "createMotionReplayCaptureController",
+        "createMotionReplayTrace",
+        "createMotionReplayTraceFromRuntime",
+        "createMotionRuntime",
+        "createMotionRuntimeDebugAdapter",
+        "cubicBezier",
+        "easing",
+        "expandRange",
+        "finalizeRange",
+        "formatMotionDebugMarkdown",
+        "installMotionRuntimeDebugAdapterFactory",
+        "killMotionOf",
+        "lanePreset",
+        "makeMotionDebugSummary",
+        "makeTargetsById",
+        "makeTrackKey",
+        "motion",
+        "motionAdd",
+        "motionLanes",
+        "motionRuntime",
+        "motionSequence",
+        "motionTo",
+        "normalizeMotionReplayCaptureSeconds",
+        "normalizeQuery",
+        "parallel",
+        "progressDriver",
+        "readNumber",
+        "readPositiveNumber",
+        "resolveEase",
+        "resolveRecordLabel",
+        "sanitizeDebugMetadata",
+        "spring",
+        "tween"
+      ]
+    },
+    "src/rendering/pixi/animation/motionPreferences.ts": {
+      "types": [],
+      "values": [
+        "clearMotionPreferencesForTests",
+        "prefersReducedMotion",
+        "setReducedMotionForTests"
+      ]
+    },
+    "src/rendering/pixi/animation/motionPresets.ts": {
+      "types": [
+        "MotionPreset"
+      ],
+      "values": [
+        "getMotionPreset",
+        "motionEases",
+        "motionPresets",
+        "motionSprings"
       ]
     },
     "src/rendering/pixi/animation/motionRuntime.ts": {
@@ -294,6 +1215,298 @@
         "tween"
       ]
     },
+    "src/rendering/pixi/animation/motionRuntime.typeTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts": {
+      "types": [],
+      "values": [
+        "createMotionRuntimeDebugAdapter",
+        "sanitizeDebugMetadata"
+      ]
+    },
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts": {
+      "types": [],
+      "values": [
+        "createMotionRuntimeDebugAdapter",
+        "sanitizeDebugMetadata"
+      ]
+    },
+    "src/rendering/pixi/animation/motionRuntimeTestHarness.ts": {
+      "types": [],
+      "values": [
+        "flushMotionRuntimeTestFrame"
+      ]
+    },
+    "src/rendering/pixi/animation/motionTraceShared.ts": {
+      "types": [
+        "MotionDebugSummary",
+        "MotionTraceRange",
+        "MotionTraceRecord",
+        "MotionTrackRecord"
+      ],
+      "values": [
+        "aggregateMotionTracks",
+        "clamp",
+        "collectMotionTrackRecordsFromHistory",
+        "collectMotionTrackRecordsFromReplay",
+        "collectRecordText",
+        "expandRange",
+        "finalizeRange",
+        "makeMotionDebugSummary",
+        "makeTargetsById",
+        "makeTrackKey",
+        "normalizeQuery",
+        "readNumber",
+        "readPositiveNumber",
+        "resolveRecordLabel"
+      ]
+    },
+    "src/rendering/pixi/animation/motionTween.ts": {
+      "types": [
+        "MotionBuilder",
+        "MotionCallOptions",
+        "MotionControl",
+        "MotionDebugMetadataContext",
+        "MotionItem",
+        "MotionKillOptions",
+        "MotionLanePreset",
+        "MotionNumericValues",
+        "MotionSequenceStep",
+        "MotionTarget",
+        "MotionTargetInput",
+        "MotionVars"
+      ],
+      "values": [
+        "killMotionOf",
+        "lanePreset",
+        "motion",
+        "motionAdd",
+        "motionLanes",
+        "motionSequence",
+        "motionTo",
+        "parallel"
+      ]
+    },
+    "src/rendering/pixi/assets/iconTextureRepository.ts": {
+      "types": [
+        "IconTextureItem",
+        "IconTextureRepository",
+        "IconTextureRepositorySnapshot"
+      ],
+      "values": [
+        "createIconTextureRepository",
+        "iconTextureRepository"
+      ]
+    },
+    "src/rendering/pixi/desktopPresentationLoop.ts": {
+      "types": [
+        "DesktopMotionRenderSignalListener",
+        "DesktopPresentationCommit",
+        "DesktopPresentationCommitMode",
+        "DesktopPresentationFrameClock",
+        "DesktopPresentationLoop",
+        "DesktopPresentationLoopOptions",
+        "DesktopPresentationMotionRuntime",
+        "FolderCloseCommitRequest",
+        "RenderInvalidationRequest",
+        "ResizeSettleReason",
+        "ResizeSettleRequest"
+      ],
+      "values": [
+        "createDesktopPresentationLoop"
+      ]
+    },
+    "src/rendering/pixi/desktopPresentationLoopTests.ts": {
+      "types": [],
+      "values": [
+        "runDesktopPresentationLoopTests"
+      ]
+    },
+    "src/rendering/pixi/folderLayerState.ts": {
+      "types": [
+        "FolderOverlayFrame",
+        "FolderOverlayFrameInput"
+      ],
+      "values": [
+        "createFolderLayerState"
+      ]
+    },
+    "src/rendering/pixi/nodes/iconVisualState.ts": {
+      "types": [
+        "IconVisualState"
+      ],
+      "values": [
+        "getIconVisualStateFields",
+        "makeIconVisualState"
+      ]
+    },
+    "src/rendering/pixi/renderInvalidation.ts": {
+      "types": [
+        "RenderInvalidationLane",
+        "RenderInvalidationLedger",
+        "RenderInvalidationMark",
+        "RenderInvalidationOptions",
+        "RenderInvalidationSnapshot"
+      ],
+      "values": [
+        "RENDER_INVALIDATION_LANES",
+        "classifyRenderInvalidation",
+        "collectRenderInvalidationReasons",
+        "createRenderInvalidationLedger"
+      ]
+    },
+    "src/rendering/pixi/scene/desktopHandoffState.ts": {
+      "types": [
+        "DesktopFolderHandoffEntry",
+        "DesktopFolderHandoffState",
+        "DesktopHandoffObservation"
+      ],
+      "values": [
+        "captureDesktopHandoffObservation",
+        "getDesktopSourceGhostedIdsFromOwnership",
+        "hasFolderClosingHandoffId",
+        "hasRawFolderSourceGhosting",
+        "isFolderOpeningSourceGhosted",
+        "isStaleHiddenFolderHandoffEntry",
+        "mergeFolderIdSets",
+        "shouldFinishFolderHandoff",
+        "shouldFinishFolderHandoffEntry"
+      ]
+    },
+    "src/rendering/pixi/scene/desktopLayerFrames.ts": {
+      "types": [
+        "DesktopDiagnosticsFrame",
+        "DesktopHandoffFrame",
+        "DesktopInteractionFrame",
+        "DesktopLayerFrameBuilders",
+        "DesktopLayerFrameUpdate",
+        "DesktopLayerFrameWork",
+        "DesktopStructureFrame",
+        "DesktopVisualFrame"
+      ],
+      "values": [
+        "applyDesktopLayerFrameUpdates",
+        "getDesktopLayerFrameFields",
+        "makeDesktopDiagnosticsFrame",
+        "makeDesktopHandoffFrame",
+        "makeDesktopInteractionFrame",
+        "makeDesktopLayerFrameUpdates",
+        "makeDesktopStructureFrame",
+        "makeDesktopVisualFrame"
+      ]
+    },
+    "src/rendering/pixi/scene/desktopRenderPlan.ts": {
+      "types": [
+        "DesktopFolderGeometry",
+        "DesktopGroupDragState",
+        "DesktopGroupRuntimeEntry",
+        "DesktopIconSizing",
+        "DesktopItem",
+        "DesktopLayoutTarget",
+        "DesktopPageRefElement",
+        "DesktopRect",
+        "DesktopRenderBoundsEntry",
+        "DesktopRenderEntry",
+        "DesktopRenderPlan",
+        "DesktopRenderPlanContext",
+        "DesktopRenderPlanState",
+        "FolderDropTarget",
+        "FolderPresentationRect",
+        "FolderPresentationState"
+      ],
+      "values": [
+        "DESKTOP_LAYOUT_TARGET_EPSILON",
+        "buildDesktopRenderPlan",
+        "getDesktopFrame",
+        "isLayoutTargetChanged",
+        "readNumber",
+        "resolveDesktopVisualAlpha",
+        "resolveLaunchpadVisualAlpha",
+        "resolveLaunchpadVisualTransform"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts": {
+      "types": [
+        "FolderOpeningGeometryLayoutKeyInput",
+        "FolderOpeningGeometrySnapshot",
+        "FolderOpeningGeometrySnapshotInput"
+      ],
+      "values": [
+        "getFolderOpeningPreviewChildRect",
+        "makeFolderOpeningGeometryLayoutKey",
+        "makeFolderOpeningGeometrySnapshot"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.ts": {
+      "types": [],
+      "values": [
+        "runFolderOverlayIconRenderPlanTests"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts": {
+      "types": [
+        "FolderOverlayGeometry",
+        "FolderOverlayGridMetrics",
+        "FolderOverlayGroupDragState",
+        "FolderOverlayLiveLayout",
+        "FolderOverlayPlanFrame",
+        "FolderOverlayRenderEntry",
+        "FolderOverlayRenderPlan",
+        "FolderOverlayRenderPlanInput",
+        "FolderOverlayStableLayout",
+        "FolderOverlayTransitions",
+        "FolderPageRenderMode"
+      ],
+      "values": [
+        "makeFolderOverlayRenderPlan"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOverlayTargets.ts": {
+      "types": [
+        "ClosingGhostTarget",
+        "ClosingGhostTargetInput",
+        "ClosingPreviewSwapTarget",
+        "FolderGhost",
+        "FolderGhostTarget",
+        "FolderOverlayItem",
+        "FolderOverlayRect",
+        "FolderTargetCoordinateSpace",
+        "FolderTargetProjection",
+        "OpeningGhostTarget",
+        "OpeningGhostTargetInput",
+        "ProjectedFolderCloseTarget",
+        "StableFolderCloseRectsInput",
+        "StableFolderCloseTarget",
+        "StableFolderCloseTargetInput",
+        "UsableFolderGhostTarget"
+      ],
+      "values": [
+        "cloneRect",
+        "findFolderGhostKey",
+        "getStableFolderClosePresentationHitRects",
+        "getStableFolderCloseRects",
+        "hasUsableFolderGhostTarget",
+        "makeClosingGhostTarget",
+        "makeClosingPreviewSwapTargets",
+        "makeFolderCenterCollapseRect",
+        "makeFolderThumbPreviewRect",
+        "makeOpeningGhostTarget",
+        "makePreviewChildKey",
+        "makePreviewSlotById",
+        "makeProjectedPreviewRect",
+        "makeStableFolderCloseTarget",
+        "projectFolderCloseTargetRectToClient",
+        "projectFolderCloseTargetToClient"
+      ]
+    },
+    "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts": {
+      "types": [],
+      "values": [
+        "throwAfterVisualAdapterRollback"
+      ]
+    },
     "src/rendering/pixi/scene/folderVisualSession.ts": {
       "types": [
         "FolderCloseGeometry",
@@ -320,6 +1533,34 @@
         "assertFolderOpeningPhaseReporter",
         "makeFolderPanelTargetKey"
       ]
+    },
+    "src/rendering/pixi/scene/folderVisualSession.typeTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/rendering/pixi/scene/iconVisualSpec.ts": {
+      "types": [
+        "IconVisualSpec"
+      ],
+      "values": [
+        "hasIconVisualSpecMismatch",
+        "interpolateIconVisualSpec",
+        "makeIconVisualSpec",
+        "makeIconVisualSpecFromNodeState",
+        "makeIconVisualSpecKey"
+      ]
+    },
+    "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/rendering/runtimeContracts.typeTests.ts": {
+      "types": [],
+      "values": []
+    },
+    "src/rendering/sceneContracts.typeTests.ts": {
+      "types": [],
+      "values": []
     },
     "src/rendering/sceneEvents.ts": {
       "types": [
@@ -380,7 +1621,19 @@
         "ScenePageTrackScrub",
         "SceneVisualTransform"
       ],
-      "values": ["assertDesktopSceneFrame", "makeDesktopSceneFrame"]
+      "values": [
+        "assertDesktopSceneFrame",
+        "makeDesktopSceneFrame"
+      ]
+    },
+    "src/rendering/sceneRuntime.ts": {
+      "types": [
+        "DesktopSceneRuntime"
+      ],
+      "values": [
+        "assertDesktopSceneRuntime",
+        "makeDesktopSceneRuntimeAdapter"
+      ]
     }
   },
   "callerBaselines": {
@@ -395,10 +1648,273 @@
       "src/rendering/pixi/PixiBackgroundSurface.vue",
       "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js"
     ],
+    "src/api/liveDesktopContract.ts": [
+      "src/api/launchpadApi.ts"
+    ],
+    "src/api/launchpadApiTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/api/windowChromeApi.ts": [
+      "src/api/windowChromeApiTests.ts",
+      "src/components/WindowChromeOverlay.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/api/windowChromeApiTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/application/launchpadDocumentCoordinator.ts": [
+      "src/application/launchpadDocumentCoordinatorTests.ts",
+      "src/composables/useLaunchpadController.js",
+      "src/composables/useLaunchpadNativeTests.js"
+    ],
+    "src/application/launchpadDocumentCoordinatorTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/assets/branding/launchpadIconUrls.ts": [
+      "src/components/settings/AboutSettingsPage.vue",
+      "src/components/settings/GeneralSettingsPage.vue"
+    ],
+    "src/composables/mainWindowTransition.ts": [
+      "src/composables/useMainWindowRuntime.js",
+      "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/diagnostics/runtimePerformanceMetrics.ts": [
+      "src/App.vue",
+      "src/composables/useLaunchpadNative.js",
+      "src/composables/useLaunchpadSearch.js",
+      "src/diagnostics/runtimePerformanceMetricsTests.js",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/domain/appearancePreference.ts": [
+      "src/composables/useLaunchpadController.js",
+      "src/composables/useLaunchpadLifecycle.js",
+      "src/composables/useLaunchpadNative.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useLaunchpadSettingsConfig.js",
+      "src/composables/useLaunchpadSettingsTests.js",
+      "src/composables/useMainWindowRuntime.js",
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/appearancePreferenceTests.ts",
+      "src/domain/backgroundSettings.ts",
+      "src/domain/launchpadData.ts"
+    ],
+    "src/domain/appearancePreferenceTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/applicationCatalog.ts": [
+      "src/api/launchpadApi.ts",
+      "src/domain/launchpadData.ts",
+      "src/platform/launchpadPorts.ts"
+    ],
+    "src/domain/backgroundAcrylicParams.ts": [
+      "src/composables/useLaunchpadSettingsConfig.js",
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/backgroundEffectPlan.ts",
+      "src/rendering/pixi/background/acrylicParams.js"
+    ],
+    "src/domain/backgroundEffectPlan.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/composables/useLaunchpadNative.js",
+      "src/rendering/pixi/background/acrylicBackgroundPlan.js",
+      "src/rendering/pixi/background/kawaseDebugParams.js"
+    ],
+    "src/domain/backgroundImageLayout.ts": [
+      "src/App.vue",
+      "src/components/BackgroundEffectPreview.vue",
+      "src/components/BackgroundImagePreviewCanvas.vue",
+      "src/composables/useLaunchpadSettingsConfig.js",
+      "src/composables/useLaunchpadViewState.js",
+      "src/domain/backgroundImageLayoutTests.ts",
+      "src/domain/launchpadData.ts",
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js"
+    ],
+    "src/domain/backgroundImageLayoutTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/backgroundSettings.ts": [
+      "src/composables/useLaunchpadSettingsConfig.js",
+      "src/domain/backgroundEffectPlan.ts",
+      "src/rendering/backgroundCapability.js",
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/background/acrylicBackgroundPlanTests.js",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js",
+      "src/rendering/pixi/background/kawaseDebugParams.js"
+    ],
+    "src/domain/domainDependencyTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/experimentalFeatures.ts": [
+      "src/App.vue",
+      "src/components/BackgroundDebugPanel.vue",
+      "src/composables/useLaunchpadNative.js",
+      "src/composables/useLaunchpadNativeTests.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useLaunchpadViewState.js",
+      "src/composables/useLaunchpadViewStateTests.js",
+      "src/composables/useLiveDesktopRuntime.js",
+      "src/composables/useSettingsPanelModel.js"
+    ],
+    "src/domain/groupTransferPlanner.ts": [
+      "src/composables/useLaunchpadController.js",
+      "src/composables/useLaunchpadDragTests.js",
+      "src/domain/groupTransferPlannerTests.ts",
+      "src/domain/groupTransferPresentation.ts",
+      "src/domain/groupTransferPresentationTests.ts"
+    ],
+    "src/domain/groupTransferPlannerTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/groupTransferPresentation.ts": [
+      "src/composables/useLaunchpadDrag.js",
+      "src/domain/groupTransferPresentationTests.ts"
+    ],
+    "src/domain/groupTransferPresentationTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/groupTransferSession.ts": [
+      "src/composables/useLaunchpadDrag.js",
+      "src/domain/groupTransferSessionTests.ts",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
+    ],
+    "src/domain/groupTransferSessionTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/groupTransferSourceCapture.ts": [
+      "src/composables/useLaunchpadDrag.js",
+      "src/domain/groupTransferPlanner.ts",
+      "src/domain/groupTransferPlannerTests.ts",
+      "src/domain/groupTransferPresentation.ts",
+      "src/domain/groupTransferPresentationTests.ts",
+      "src/domain/groupTransferSourceCaptureTests.ts"
+    ],
+    "src/domain/groupTransferSourceCaptureTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/iconFocus.ts": [
+      "src/domain/iconFocusTests.ts",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
+    ],
+    "src/domain/iconFocusTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/iconSource.ts": [
+      "src/application/launchpadDocumentCoordinator.ts",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/ManagedAppEditorDialog.vue",
+      "src/components/ScanResultAppRow.vue",
+      "src/components/settings/AppsSettingsPage.vue",
+      "src/composables/useLaunchpadApps.js",
+      "src/domain/iconSourceTests.ts"
+    ],
+    "src/domain/iconSourceTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/input/launchpadGestureEngine.ts": [
+      "src/composables/useLaunchpadInputGestures.js",
+      "src/domain/input/launchpadGestureEngineTests.ts"
+    ],
+    "src/domain/input/launchpadGestureEngineTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/input/launchpadGesturePolicy.ts": [
+      "src/domain/input/launchpadGestureEngine.ts"
+    ],
+    "src/domain/input/launchpadPointerTarget.ts": [
+      "src/App.vue",
+      "src/composables/useLaunchpadInputGestures.js",
+      "src/domain/input/launchpadPointerTargetTests.ts"
+    ],
+    "src/domain/input/launchpadPointerTargetTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/input/launchpadTargetPresentation.ts": [
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
+    ],
+    "src/domain/launchContext.ts": [
+      "src/composables/useLaunchpadController.js",
+      "src/domain/launchContextTests.ts",
+      "src/main.js"
+    ],
+    "src/domain/launchContextTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/launchpadData.ts": [
+      "src/composables/useLaunchpadApps.js",
+      "src/composables/useLaunchpadLayout.js",
+      "src/domain/launchpadDataTests.ts"
+    ],
+    "src/domain/launchpadDataTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/launchpadGridDefaults.ts": [
+      "src/composables/launchpadConstants.js",
+      "src/domain/launchpadLayout.ts",
+      "src/domain/layoutConfiguration.ts"
+    ],
+    "src/domain/launchpadIconVariant.ts": [
+      "src/assets/branding/launchpadIconUrls.ts",
+      "src/composables/useLaunchpadNativeTests.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useLaunchpadSettingsTests.js",
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/launchpadData.ts",
+      "src/domain/launchpadIconVariantTests.ts"
+    ],
+    "src/domain/launchpadIconVariantTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/launchpadLayout.ts": [
+      "src/components/LaunchpadChromeFrame.vue",
+      "src/components/LaunchpadHeader.vue",
+      "src/components/SettingsPanel.vue",
+      "src/composables/useFolderLayoutStyles.js",
+      "src/composables/useFolderMotionGeometry.js",
+      "src/composables/useIconFocus.js",
+      "src/composables/useLaunchpadAppsTests.js",
+      "src/composables/useLaunchpadController.js",
+      "src/composables/useLaunchpadDrag.js",
+      "src/composables/useLaunchpadIconActivation.js",
+      "src/composables/useLaunchpadLayout.js",
+      "src/composables/useLaunchpadPageCommandsTests.js",
+      "src/composables/useLaunchpadSearch.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/usePageRenderRange.js",
+      "src/composables/useSettingsPanelFlow.js",
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/backgroundSettings.ts",
+      "src/domain/launchpadData.ts",
+      "src/domain/launchpadDataTests.ts",
+      "src/domain/launchpadLayoutTests.ts",
+      "src/domain/layoutConfiguration.ts",
+      "src/domain/runLaunchpadLayoutTests.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.js"
+    ],
+    "src/domain/launchpadLayoutTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/launchpadSearch.ts": [
+      "src/composables/useLaunchpadSearch.js",
+      "src/domain/launchpadSearchTests.ts"
+    ],
+    "src/domain/launchpadSearchTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/layoutConfiguration.ts": [
+      "src/composables/useLaunchpadLayout.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useLaunchpadSettingsConfig.js"
+    ],
     "src/domain/layoutDocument.ts": [
       "src/api/launchpadApi.ts",
       "src/application/launchpadDocumentCoordinator.ts",
       "src/application/launchpadDocumentCoordinatorTests.ts",
+      "src/domain/applicationCatalog.ts",
       "src/domain/backgroundAcrylicParams.ts",
       "src/domain/backgroundEffectPlan.ts",
       "src/domain/launchpadData.ts",
@@ -406,6 +1922,106 @@
       "src/domain/layoutDocumentTests.ts",
       "src/platform/launchpadPorts.ts",
       "src/rendering/backgroundPort.ts"
+    ],
+    "src/domain/layoutDocument.typeTests.ts": [],
+    "src/domain/layoutDocumentTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/mainWindowShortcut.ts": [
+      "src/composables/useLaunchpadNativeTests.js",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useMainWindowRuntime.js",
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/launchpadData.ts",
+      "src/domain/mainWindowShortcutTests.ts",
+      "src/platform/mainWindowShortcutInput.ts"
+    ],
+    "src/domain/mainWindowShortcutTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/domain/runLaunchpadLayoutTests.ts": [],
+    "src/fluent/registerFluentComponents.ts": [
+      "src/main.js"
+    ],
+    "src/i18n/catalogs.ts": [
+      "scripts/checkI18n.mjs",
+      "src/components/backgroundDebug/motionDebugPanelModelTests.js",
+      "src/diagnostics/diagnosticMessages.js",
+      "src/i18n/catalogTests.ts",
+      "src/i18n/localization.ts",
+      "src/main.js",
+      "src/motionLab/motionLabModelTests.js"
+    ],
+    "src/i18n/catalogTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/i18n/locale.ts": [
+      "src/api/launchpadApi.ts",
+      "src/composables/useLaunchpadSettings.js",
+      "src/diagnostics/diagnosticMessages.js",
+      "src/domain/launchpadData.ts",
+      "src/i18n/catalogs.ts",
+      "src/i18n/localeTests.ts",
+      "src/i18n/localization.ts",
+      "src/i18n/localizationTests.ts",
+      "src/main.js",
+      "src/platform/localeRuntime.ts"
+    ],
+    "src/i18n/localeTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/i18n/localization.ts": [
+      "src/App.vue",
+      "src/application/launchpadDocumentCoordinatorTests.ts",
+      "src/components/AppIconChooserDialog.vue",
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/BackgroundEffectPreview.vue",
+      "src/components/BackgroundImagePreviewCanvas.vue",
+      "src/components/LaunchpadChromeFrame.vue",
+      "src/components/LaunchpadDialogs.vue",
+      "src/components/LaunchpadHeader.vue",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/LaunchpadSelectionToolbar.vue",
+      "src/components/ManagedAppEditorDialog.vue",
+      "src/components/ScanResultAppRow.vue",
+      "src/components/ScanResultDialog.vue",
+      "src/components/SettingsPanel.vue",
+      "src/components/WindowChromeOverlay.vue",
+      "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionInspector.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue",
+      "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
+      "src/components/backgroundDebug/diagnosticUiErrorTests.js",
+      "src/components/backgroundDebug/liveDesktopDiagnosticsTests.js",
+      "src/components/backgroundDebug/renderProbePanelModelTests.js",
+      "src/components/settings/AboutSettingsPage.vue",
+      "src/components/settings/AppsSettingsPage.vue",
+      "src/components/settings/GeneralSettingsPage.vue",
+      "src/components/settings/InterfaceSettingsPage.vue",
+      "src/components/settings/SettingsSpinButton.vue",
+      "src/composables/useLaunchpadAppsTests.js",
+      "src/composables/useLaunchpadControllerTests.js",
+      "src/composables/useLaunchpadLaunchFlowTests.js",
+      "src/composables/useLaunchpadNativeTests.js",
+      "src/composables/useLaunchpadNoticesTests.js",
+      "src/composables/useLaunchpadPageCommandsTests.js",
+      "src/composables/useLaunchpadSettingsTests.js",
+      "src/composables/useSettingsPanelModelTests.js",
+      "src/i18n/localizationTests.ts",
+      "src/main.js",
+      "src/motionLab/MotionLabApp.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/i18n/localizationTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/mocks/appSeeds.ts": [
+      "src/composables/useLaunchpadLayout.js"
+    ],
+    "src/platform/applicationCatalogDefaults.ts": [
+      "src/composables/useLaunchpadApps.js",
+      "src/domain/launchpadDataTests.ts"
     ],
     "src/platform/launchpadPorts.ts": [
       "src/composables/useLaunchpadApps.js",
@@ -417,6 +2033,84 @@
       "src/composables/useSettingsPanelModel.js",
       "src/main.js",
       "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/platform/localeRuntime.ts": [
+      "src/platform/launchpadPorts.ts",
+      "src/platform/localeRuntimeTests.ts"
+    ],
+    "src/platform/localeRuntimeTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/platform/mainWindowShortcutInput.ts": [
+      "src/composables/useSettingsPanelModel.js",
+      "src/domain/mainWindowShortcutTests.ts"
+    ],
+    "src/rendering/backgroundDebugPort.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/BackgroundEffectPreview.vue",
+      "src/composables/useLaunchpadNative.js"
+    ],
+    "src/rendering/backgroundPort.ts": [
+      "src/components/BackgroundEffectPreview.vue",
+      "src/composables/useLaunchpadSettings.js",
+      "src/composables/useLaunchpadViewState.js",
+      "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/rendering/contractSnapshot.ts": [
+      "src/rendering/pixi/scene/folderVisualSession.ts",
+      "src/rendering/sceneFrame.ts"
+    ],
+    "src/rendering/desktopScenePort.ts": [
+      "src/App.vue",
+      "src/composables/useFolderMotionGeometry.js",
+      "src/composables/useLaunchpadController.js",
+      "src/composables/useLaunchpadDrag.js",
+      "src/composables/useLaunchpadFolderFlow.js",
+      "src/composables/useLaunchpadIconActivation.js",
+      "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/rendering/diagnosticPort.ts": [
+      "src/diagnostics/diagnosticClient.js",
+      "src/diagnostics/diagnosticGlobal.js"
+    ],
+    "src/rendering/motionLabRendererAdapter.ts": [
+      "src/motionLab/MotionLabApp.vue"
+    ],
+    "src/rendering/motionPort.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionCaptureProfileModel.js",
+      "src/components/backgroundDebug/motionDebugPanelModel.js",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.js",
+      "src/components/backgroundDebug/motionInspectorModel.js",
+      "src/components/backgroundDebug/motionReplayViewerModel.js",
+      "src/components/backgroundDebug/motionTrackChartModel.js",
+      "src/diagnostics/motionDiagnosticAdapter.js",
+      "src/diagnostics/motionReplayAnalyzer.js",
+      "src/motionLab/MotionLabApp.vue",
+      "src/motionLab/motionLabScenarios.js"
+    ],
+    "src/rendering/pixi/animation/motionPreferences.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/animation/motionPreferencesTests.js",
+      "src/rendering/pixi/animation/motionTween.ts",
+      "src/rendering/pixi/animation/motionTweenTests.js",
+      "src/rendering/pixi/scene/folderClosingGhostControllerTests.js",
+      "src/rendering/pixi/scene/folderClosingPreviewSwapControllerTests.js",
+      "src/rendering/pixi/scene/folderOpeningGhostControllerTests.js"
+    ],
+    "src/rendering/pixi/animation/motionPresets.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/animation/motionCleanupTests.js",
+      "src/rendering/pixi/animation/motionPresetsTests.js",
+      "src/rendering/pixi/animation/motionTween.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderClosingPreviewSwapController.js",
+      "src/rendering/pixi/scene/folderFrameGhost.js",
+      "src/rendering/pixi/scene/folderIconGhostMotion.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/pageTrackMotion.js"
     ],
     "src/rendering/pixi/animation/motionRuntime.ts": [
       "src/domain/runLaunchpadLayoutTests.ts",
@@ -461,6 +2155,140 @@
       "src/rendering/pixi/scene/pageTrackMotionTests.js",
       "src/rendering/pixi/scene/visualOwnershipRegistry.js"
     ],
+    "src/rendering/pixi/animation/motionRuntime.typeTests.ts": [],
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts",
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/animation/motionRuntime.typeTests.ts",
+      "src/rendering/pixi/animation/motionRuntimeTests.js"
+    ],
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts": [
+      "src/rendering/pixi/animation/motionRuntime.ts",
+      "src/rendering/pixi/animation/motionRuntime.typeTests.ts"
+    ],
+    "src/rendering/pixi/animation/motionRuntimeTestHarness.ts": [
+      "src/rendering/pixi/animation/motionRuntimeTests.js",
+      "src/rendering/pixi/scene/DesktopLayerTests.js",
+      "src/rendering/pixi/scene/FolderOverlayLayerTests.js"
+    ],
+    "src/rendering/pixi/animation/motionTraceShared.ts": [
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/animation/motionDebugOverlay.js",
+      "src/rendering/pixi/animation/motionDebugOverlayLayer.js",
+      "src/rendering/pixi/animation/motionDebugReport.js",
+      "src/rendering/pixi/animation/motionReplayTrace.js",
+      "src/rendering/pixi/animation/motionRuntime.ts",
+      "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts",
+      "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts",
+      "src/rendering/pixi/animation/motionTween.ts"
+    ],
+    "src/rendering/pixi/animation/motionTween.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/animation/motionCleanup.js",
+      "src/rendering/pixi/animation/motionCleanupTests.js",
+      "src/rendering/pixi/animation/motionTweenTests.js",
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/IconNodeTests.js",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderDropTargetLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/ProvisionalFolderRollbackLayer.js",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderClosingPreviewSwapController.js",
+      "src/rendering/pixi/scene/folderFrameGhost.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/folderReleaseController.js",
+      "src/rendering/pixi/scene/pageTrackMotion.js"
+    ],
+    "src/rendering/pixi/assets/iconTextureRepository.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/assets/iconTextureRepositoryTests.js",
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/sceneRuntime.ts"
+    ],
+    "src/rendering/pixi/desktopPresentationLoop.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/desktopPresentationLoopTests.ts",
+      "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/desktopPresentationLoopTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/folderLayerState.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/folderLayerStateTests.js",
+      "src/rendering/pixi/scene/desktopLayerFrames.ts"
+    ],
+    "src/rendering/pixi/nodes/iconVisualState.ts": [
+      "src/rendering/pixi/nodes/iconVisualStateTests.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
+    ],
+    "src/rendering/pixi/renderInvalidation.ts": [
+      "src/rendering/pixi/desktopPresentationLoop.ts",
+      "src/rendering/pixi/renderInvalidationTests.js",
+      "src/rendering/pixi/scene/desktopLayerFrames.ts",
+      "src/rendering/runtimeContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/scene/desktopHandoffState.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DesktopLayerTests.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/desktopRenderPlanTests.js"
+    ],
+    "src/rendering/pixi/scene/desktopLayerFrames.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/scene/desktopLayerFramesTests.js"
+    ],
+    "src/rendering/pixi/scene/desktopRenderPlan.ts": [
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DesktopLayerTests.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/desktopRenderPlanTests.js",
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts": [
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/folderOpeningGeometrySnapshotTests.js",
+      "src/rendering/pixi/scene/folderVisualSession.ts",
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts": [
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlanTests.js",
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderOverlayTargets.ts": [
+      "src/rendering/pixi/folderLayerState.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/desktopBoundsTargets.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderClosingHandoff.js",
+      "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.js",
+      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.js",
+      "src/rendering/pixi/scene/folderOverlayTargetsTests.js",
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts",
+      "src/rendering/pixi/scene/singleStagePlan.js"
+    ],
+    "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts": [
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js"
+    ],
     "src/rendering/pixi/scene/folderVisualSession.ts": [
       "src/rendering/pixi/scene/FolderOverlayLayer.js",
       "src/rendering/pixi/scene/FolderOverlayLayerTests.js",
@@ -472,6 +2300,19 @@
       "src/rendering/pixi/scene/folderVisualSession.typeTests.ts",
       "src/rendering/pixi/scene/folderVisualSessionTests.js"
     ],
+    "src/rendering/pixi/scene/folderVisualSession.typeTests.ts": [],
+    "src/rendering/pixi/scene/iconVisualSpec.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.ts",
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts"
+    ],
+    "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts": [],
+    "src/rendering/runtimeContracts.typeTests.ts": [],
+    "src/rendering/sceneContracts.typeTests.ts": [],
     "src/rendering/sceneEvents.ts": [
       "src/App.vue",
       "src/rendering/pixi/PixiDesktopSurface.vue",
@@ -491,6 +2332,12 @@
       "src/rendering/pixi/scene/folderOverlayTargets.ts",
       "src/rendering/pixi/scene/sceneFrameTests.js",
       "src/rendering/sceneContracts.typeTests.ts"
+    ],
+    "src/rendering/sceneRuntime.ts": [
+      "src/App.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/scene/sceneFrameTests.js",
+      "src/rendering/sceneRuntimeTests.js"
     ]
   },
   "scanRoots": [
@@ -512,6 +2359,7 @@
   "strictRoots": [
     "src/api/launchpadApi.ts",
     "src/api/launchpadApiTests.ts",
+    "src/api/liveDesktopContract.ts",
     "src/api/windowChromeApi.ts",
     "src/api/windowChromeApiTests.ts",
     "src/application/launchpadDocumentCoordinator.ts",
@@ -520,6 +2368,7 @@
     "src/diagnostics/runtimePerformanceMetrics.ts",
     "src/domain/appearancePreference.ts",
     "src/domain/appearancePreferenceTests.ts",
+    "src/domain/applicationCatalog.ts",
     "src/domain/backgroundAcrylicParams.ts",
     "src/domain/backgroundEffectPlan.ts",
     "src/domain/backgroundImageLayout.ts",

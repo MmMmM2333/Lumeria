@@ -26,6 +26,9 @@ const TYPED_TO_LEGACY_EXTENSION = new Map([
   [".ts", ".js"],
   [".tsx", ".jsx"],
 ]);
+const LEGACY_TO_TYPED_EXTENSION = new Map(
+  [...TYPED_TO_LEGACY_EXTENSION].map(([typed, legacy]) => [legacy, typed]),
+);
 const STRICT_OPTION_NAMES = [
   "alwaysStrict",
   "noImplicitAny",
@@ -84,6 +87,11 @@ export type MigrationInventory = Readonly<{
 export type TypeScriptMigrationAnalysis = Readonly<{
   inventory: MigrationInventory;
   violations: readonly MigrationViolation[];
+}>;
+
+export type RetiredReplacementSnapshots = Readonly<{
+  callerBaselines: Readonly<Record<string, readonly string[]>>;
+  exportBaselines: Readonly<Record<string, MigrationExportBaseline>>;
 }>;
 
 type AnalyzeTypeScriptMigrationOptions = Readonly<{
@@ -552,6 +560,95 @@ function checkLegacySources(
   }
 }
 
+function collectRetiredTypedReplacements(
+  projectRoot: string,
+  sources: ReadonlyMap<string, SourceFile>,
+  manifest: TypeScriptMigrationManifest,
+): ReadonlyMap<string, string> {
+  const replacements = new Map<string, string>();
+  for (const rawRetiredSource of manifest.retiredSources) {
+    const retiredSource = normalizeRelativePath(rawRetiredSource);
+    const extension = extname(retiredSource).toLowerCase();
+    const typedExtension = LEGACY_TO_TYPED_EXTENSION.get(extension);
+    if (!typedExtension) continue;
+    const replacement = `${retiredSource.slice(0, -extension.length)}${typedExtension}`;
+    const absoluteReplacement = resolve(projectRoot, replacement);
+    if (
+      sources.get(replacement)?.typed
+      || (existsSync(absoluteReplacement) && statSync(absoluteReplacement).isFile())
+    ) {
+      replacements.set(retiredSource, replacement);
+    }
+  }
+  return new Map([...replacements].sort(([left], [right]) => left.localeCompare(right)));
+}
+
+export function collectRetiredReplacementSnapshots(
+  options: Readonly<{ manifest: TypeScriptMigrationManifest; projectRoot: string }>,
+): RetiredReplacementSnapshots {
+  const projectRoot = resolve(options.projectRoot);
+  const graphViolations: MigrationViolation[] = [];
+  const projectPaths = collectProjectPaths(projectRoot, options.manifest, graphViolations);
+  const sources = makeSourceFiles(projectRoot, projectPaths);
+  const edges = makeImportGraph(projectRoot, sources, graphViolations);
+  if (graphViolations.length > 0) {
+    const details = sortViolations(graphViolations)
+      .map(({ code, detail, path }) => `[${code}] ${path}: ${detail}`)
+      .join("\n");
+    throw new Error(`Cannot collect retired replacement snapshots from an invalid source graph:\n${details}`);
+  }
+
+  const callerBaselines: Record<string, readonly string[]> = {};
+  const exportBaselines: Record<string, MigrationExportBaseline> = {};
+  for (const replacement of collectRetiredTypedReplacements(projectRoot, sources, options.manifest).values()) {
+    const sourceFile = sources.get(replacement);
+    if (!sourceFile) {
+      throw new Error(`Cannot freeze ${replacement}: typed replacement is outside the declared migration scan roots`);
+    }
+    const exportSurface = collectExportSurface(sourceFile);
+    if (exportSurface.unsupportedExportAll) {
+      throw new Error(`Cannot freeze ${replacement}: export-star modules require an explicit public surface`);
+    }
+    callerBaselines[replacement] = Object.freeze([
+      ...new Set(edges.filter((edge) => edge.target === replacement).map((edge) => edge.source)),
+    ].sort());
+    exportBaselines[replacement] = Object.freeze({
+      types: Object.freeze([...exportSurface.types]),
+      values: Object.freeze([...exportSurface.values]),
+    });
+  }
+  return Object.freeze({
+    callerBaselines: Object.freeze(callerBaselines),
+    exportBaselines: Object.freeze(exportBaselines),
+  });
+}
+
+function checkRetiredReplacementBaselines(
+  projectRoot: string,
+  sources: ReadonlyMap<string, SourceFile>,
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): void {
+  const exportBaselinePaths = new Set(Object.keys(manifest.exportBaselines).map(normalizeRelativePath));
+  const callerBaselinePaths = new Set(Object.keys(manifest.callerBaselines).map(normalizeRelativePath));
+  for (const [retiredSource, replacement] of collectRetiredTypedReplacements(projectRoot, sources, manifest)) {
+    if (!exportBaselinePaths.has(replacement)) {
+      violations.push({
+        code: "missing-retired-replacement-export-baseline",
+        detail: `typed replacement for retired source ${retiredSource} must freeze its exact export surface`,
+        path: replacement,
+      });
+    }
+    if (!callerBaselinePaths.has(replacement)) {
+      violations.push({
+        code: "missing-retired-replacement-caller-baseline",
+        detail: `typed replacement for retired source ${retiredSource} must freeze its exact caller set`,
+        path: replacement,
+      });
+    }
+  }
+}
+
 function checkTsToJsEdges(
   sources: ReadonlyMap<string, SourceFile>,
   edges: readonly ImportEdge[],
@@ -984,6 +1081,7 @@ export function analyzeTypeScriptMigration(
   checkStrictConfig(projectRoot, options.manifest, violations);
   checkDuplicateSources(sources, violations);
   checkLegacySources(projectRoot, sources, baselineLegacyPaths, options.manifest, violations);
+  checkRetiredReplacementBaselines(projectRoot, sources, options.manifest, violations);
   checkExportBaselines(sources, options.manifest, violations);
   checkCallerBaselines(sources, edges, options.manifest, violations);
   const { physicalJsEdges, testRunnerEdges } = checkTsToJsEdges(sources, edges, options.manifest, violations);
@@ -1088,6 +1186,24 @@ function runCli(): void {
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const manifestPath = resolve(projectRoot, "scripts", "typescript-migration-manifest.json");
   const manifest = readManifest(manifestPath);
+  if (process.argv.slice(2).includes("--print-retired-replacement-snapshots")) {
+    const snapshots = collectRetiredReplacementSnapshots({ manifest, projectRoot });
+    const offsetFlagIndex = process.argv.indexOf("--snapshot-offset");
+    const limitFlagIndex = process.argv.indexOf("--snapshot-limit");
+    const offset = offsetFlagIndex >= 0 ? Number.parseInt(process.argv[offsetFlagIndex + 1] ?? "0", 10) : 0;
+    const limit = limitFlagIndex >= 0
+      ? Number.parseInt(process.argv[limitFlagIndex + 1] ?? "0", 10)
+      : Number.POSITIVE_INFINITY;
+    if (!Number.isSafeInteger(offset) || offset < 0 || !(Number.isSafeInteger(limit) || limit === Number.POSITIVE_INFINITY) || limit < 1) {
+      throw new TypeError("snapshot offset must be non-negative and limit must be positive");
+    }
+    const paths = Object.keys(snapshots.exportBaselines).slice(offset, offset + limit);
+    console.log(JSON.stringify({
+      callerBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.callerBaselines[path]])),
+      exportBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.exportBaselines[path]])),
+    }, null, 2));
+    return;
+  }
   const result = analyzeTypeScriptMigration({ manifest, projectRoot });
   if (result.violations.length > 0) {
     for (const violation of result.violations) {

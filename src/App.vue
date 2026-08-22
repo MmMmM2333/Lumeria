@@ -94,7 +94,11 @@
       @context-menu-action="handleContextMenuAction"
       @context-menu-request="handleContextMenuRequest"
     />
-    <WindowChromeOverlay :active="isWindowChromeOverlayActive" :show-titlebar="isWindowTitlebarVisible" />
+    <WindowChromeOverlay
+      :active="isWindowChromeOverlayActive"
+      :show-titlebar="isWindowTitlebarVisible"
+      @request-close="chrome.closeNativeWindow"
+    />
     <BackgroundDebugPanel
       v-if="isAcrylicDebugPanelEnabled"
       :state="settingsPanelState"

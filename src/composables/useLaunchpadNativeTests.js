@@ -84,6 +84,139 @@ function makeScanStats(overrides = {}) {
   };
 }
 
+const EMPTY_LIVE_DESKTOP_DIAGNOSTICS = Object.freeze({
+  framesCopied: 0,
+  frameTimeouts: 0,
+  copyErrors: 0,
+  commitErrors: 0,
+  frameArrivedEvents: 0,
+  frameArrivedDroppedSignals: 0,
+  frameCopySamples: 0,
+  frameCopyMicrosTotal: 0,
+  lastFrameCopyMicros: 0,
+  maxFrameCopyMicros: 0,
+  frameCommitSamples: 0,
+  frameCommitMicrosTotal: 0,
+  lastFrameCommitMicros: 0,
+  maxFrameCommitMicros: 0,
+  configUpdates: 0,
+  configErrors: 0,
+  lastFrameWidth: 0,
+  lastFrameHeight: 0,
+  lastFrameFormat: 0,
+  testPatternFrames: 0,
+  pixelProbeSamples: 0,
+  pixelProbeErrors: 0,
+  blankFrameSkips: 0,
+  shaderCopyFallbacks: 0,
+  abandonedRendererWorkers: 0,
+  reapedAbandonedRendererWorkers: 0,
+  lastPixelProbeWidth: 0,
+  lastPixelProbeHeight: 0,
+  lastPixelProbeMinRgb: 0,
+  lastPixelProbeMaxRgb: 0,
+  lastPixelProbeAvgRgb: 0,
+  lastPixelProbeMinAlpha: 0,
+  lastPixelProbeMaxAlpha: 0,
+  lastPixelProbeAvgAlpha: 0,
+  lastShaderCopyError: "",
+  lastAbandonedRendererReason: "",
+  lastError: "",
+  recentErrors: [],
+});
+
+const EMPTY_LIVE_DESKTOP_WINDOW_DIAGNOSTICS = Object.freeze({
+  platform: "windows",
+  available: true,
+  reason: "available",
+  detail: "test fixture",
+  windowCount: 0,
+  candidateCount: 0,
+  windows: [],
+  candidates: [],
+});
+
+function completeLiveDesktopSupportFixture(value = {}) {
+  return {
+    platform: "windows",
+    supportsLiveDesktopBackground: false,
+    supportsLiveDesktopBackgroundEffects: false,
+    reason: "nativeRendererUnavailable",
+    detail: "test fixture",
+    prerequisiteProbe: {
+      supportsD3d11: true,
+      adapterCount: 1,
+      outputCount: 1,
+      reason: "available",
+      detail: "test fixture",
+    },
+    rendererProbe: {
+      supportsDirectComposition: true,
+      supportsWindowTarget: true,
+      supportsRootVisual: true,
+      supportsNativeRenderer: false,
+      supportsNativeEffects: false,
+      reason: "nativeRendererUnavailable",
+      detail: "test fixture",
+    },
+    ...value,
+  };
+}
+
+function completeLiveDesktopStatusFixture(value = {}) {
+  return {
+    phase: value.phase || "stopped",
+    active: value.active === true,
+    generation: Number.isSafeInteger(value.generation) ? value.generation : 0,
+    reason: typeof value.reason === "string" ? value.reason : value.phase || "stopped",
+    detail: typeof value.detail === "string" ? value.detail : "",
+    diagnostics: { ...EMPTY_LIVE_DESKTOP_DIAGNOSTICS, ...(value.diagnostics || {}) },
+    windowDiagnostics: { ...EMPTY_LIVE_DESKTOP_WINDOW_DIAGNOSTICS, ...(value.windowDiagnostics || {}) },
+  };
+}
+
+function completeCatalogSourceFixture(source, appId, index) {
+  const key = source?.key || `test:${appId}:${index}`;
+  return {
+    key,
+    type: source?.type || "customDirectory",
+    state: source?.state || "primary",
+    rootId: source?.rootId || "root-test",
+    rootLabel: source?.rootLabel || "Test",
+    relativePath: source?.relativePath || key,
+    absolutePath: source?.absolutePath || `C:/Catalog/${key}`,
+  };
+}
+
+function completeCatalogAppFixture(value, index) {
+  const id = value?.id || `catalog-test-${index}`;
+  return {
+    ...value,
+    id,
+    type: "app",
+    name: value?.name || "Application",
+    launchTarget: value?.launchTarget || { kind: "executable", path: `C:/Catalog/${id}.exe` },
+    trackingKey: value?.trackingKey || `launch:${id}`,
+    identityStatus: value?.identityStatus || "exact",
+    sources: (value?.sources?.length ? value.sources : [{}])
+      .map((source, sourceIndex) => completeCatalogSourceFixture(source, id, sourceIndex)),
+  };
+}
+
+function completeScanResultFixture(value) {
+  return {
+    ...value,
+    apps: (value?.apps || []).map(completeCatalogAppFixture),
+    excludedApps: (value?.excludedApps || []).map(completeCatalogAppFixture),
+    keywordExcludedApps: (value?.keywordExcludedApps || []).map((entry, index) => ({
+      ...entry,
+      app: completeCatalogAppFixture(entry.app, index),
+    })),
+    warnings: value?.warnings || [],
+    stats: value?.stats || makeScanStats(),
+  };
+}
+
 // Native load mocks below intentionally focus on one setting at a time. Keep
 // those fixtures on the current document contract without adding a production
 // migration path; the real Rust loader already supplies/validates these fields.
@@ -301,20 +434,27 @@ function withMockTauri(invoke, run, bridgeOverrides = {}) {
         return true;
       }
       if (command === "get_live_desktop_background_support" && !bridgeOverrides.passLiveDesktopBackgroundSupport) {
-        return {
-          platform: "windows",
-          supportsLiveDesktopBackground: false,
-          supportsLiveDesktopBackgroundEffects: false,
-          reason: "nativeRendererUnavailable",
-        };
+        return completeLiveDesktopSupportFixture();
       }
       if (command === "scan_apps" && !bridgeOverrides.passScanAppsCommand) {
         return { apps: [], excludedApps: [], keywordExcludedApps: [], warnings: [], stats: makeScanStats() };
       }
       const result = invoke(command, args);
-      return command === "load_layout"
-        ? Promise.resolve(result).then(completeLayoutFixture)
-        : result;
+      if (command === "load_layout") return Promise.resolve(result).then(completeLayoutFixture);
+      if (command === "scan_apps") return Promise.resolve(result).then(completeScanResultFixture);
+      if (command === "get_live_desktop_background_support") {
+        return Promise.resolve(result).then(completeLiveDesktopSupportFixture);
+      }
+      if ([
+        "get_live_desktop_runtime_status",
+        "configure_live_desktop_background",
+        "start_live_desktop_background",
+        "stop_live_desktop_background",
+        "set_live_desktop_background_visible",
+      ].includes(command)) {
+        return Promise.resolve(result).then(completeLiveDesktopStatusFixture);
+      }
+      return result;
     },
     listen: bridgeOverrides.listen || (async () => () => {}),
   });
@@ -1474,16 +1614,20 @@ export async function runLaunchpadNativeTests() {
     }
     throw new Error(`Unexpected invoke: ${command}`);
   }, async (timers) => {
-    const { options } = makeOptions();
+    const { calls, options } = makeOptions();
+    options.closeDesktop = () => {
+      calls.closeDesktop += 1;
+      options.isDesktopOpen.value = false;
+    };
     const native = createNative(options);
     await native.refreshLiveDesktopBackgroundSupport();
     options.restoreSettings({ backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP });
     await native.startNativeLiveDesktopBackground();
     closeAnimationCommands.length = 0;
-    options.isDesktopOpen.value = false;
     options.mainWindowRuntime.acceptOpen(7);
 
-    native.hideNativeWindowAfterCloseAnimation();
+    native.closeDesktopFromNativeWindow();
+    assert(calls.closeDesktop === 1, "custom window chrome close should enter the desktop close owner");
     assert(timers.length === 1, "close animation should schedule one native hide timer");
     await flushMicrotasks(12);
     assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled", `close animation should invalidate reveal, hide the live desktop visual, and remove the native frame before the delayed hide; received ${closeAnimationCommands.join(",")}`);
@@ -2002,7 +2146,7 @@ export async function runLaunchpadNativeTests() {
     if (command === "launch_app") {
       launchCommands.push(command);
       assert(args.request.id === "custom-app", "native launch should pass the current app id");
-      assert(args.request.name === "Custom App", "native launch should pass the current app name");
+      assert(!("name" in args.request), "native launch should send only the catalog id owned by Rust");
       assert(!("launchTarget" in args.request), "native launch should not pass launch target from the renderer");
       assert(!("launchArgs" in args.request), "native launch should not pass launch arguments from the renderer");
       return null;

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   analyzeTypeScriptMigration,
+  collectRetiredReplacementSnapshots,
   type TypeScriptMigrationManifest,
 } from "./checkTypeScriptMigration.js";
 
@@ -198,6 +201,80 @@ function violationCodes(
     ["src/value.js"],
   );
   assert(codes.includes("missing-retired-source"), "same-stem baseline JS paths replaced by TS must be declared retired");
+}
+
+{
+  const codes = violationCodes(
+    { "src/value.ts": "export const value = 1;\n" },
+    makeManifest({ retiredSources: ["src/value.js"] }),
+    ["src/value.js"],
+  );
+  assert(
+    codes.includes("missing-retired-replacement-export-baseline"),
+    "every retired source with a typed replacement must freeze the replacement export surface",
+  );
+  assert(
+    codes.includes("missing-retired-replacement-caller-baseline"),
+    "every retired source with a typed replacement must freeze the replacement caller set",
+  );
+}
+
+{
+  const codes = violationCodes(
+    {
+      "outside/value.ts": "export const value = 1;\n",
+      "src/entry.ts": "export const entry = 1;\n",
+    },
+    makeManifest({ retiredSources: ["outside/value.js"] }),
+    ["outside/value.js"],
+  );
+  assert(
+    codes.includes("missing-retired-replacement-export-baseline")
+      && codes.includes("missing-retired-replacement-caller-baseline"),
+    "physical typed replacements outside scan roots must not evade baseline coverage",
+  );
+}
+
+{
+  withFixture({
+    "src/caller.ts": "import { publicValue } from './public.js'; void publicValue;\n",
+    "src/public.ts": "export type PublicType = string;\nexport const publicValue = 1;\n",
+  }, (projectRoot) => {
+    const snapshots = collectRetiredReplacementSnapshots({
+      manifest: makeManifest({ retiredSources: ["src/public.js"] }),
+      projectRoot,
+    });
+    assert.deepEqual(snapshots, {
+      callerBaselines: {
+        "src/public.ts": ["src/caller.ts"],
+      },
+      exportBaselines: {
+        "src/public.ts": {
+          types: ["PublicType"],
+          values: ["publicValue"],
+        },
+      },
+    }, "replacement snapshots must return exact, reviewable export and caller baselines without mutating the manifest");
+  });
+}
+
+{
+  const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "tsx", join(scriptsDirectory, "checkTypeScriptMigration.ts"), "--print-retired-replacement-snapshots"],
+    { cwd: dirname(scriptsDirectory), encoding: "utf8", shell: false },
+  );
+  assert.equal(result.status, 0, result.stderr || "the replacement snapshot CLI must exit successfully");
+  const snapshots: unknown = JSON.parse(result.stdout);
+  assert(
+    snapshots !== null
+      && typeof snapshots === "object"
+      && !Array.isArray(snapshots)
+      && Reflect.get(snapshots, "callerBaselines")
+      && Reflect.get(snapshots, "exportBaselines"),
+    "the replacement snapshot CLI must print reviewable export and caller JSON without editing the manifest",
+  );
 }
 
 {
