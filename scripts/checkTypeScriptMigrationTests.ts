@@ -13,13 +13,63 @@ function makeManifest(overrides: Partial<TypeScriptMigrationManifest> = {}): Typ
   return {
     allowedTsToJsEdges: [],
     baselineCommit: "fixture-baseline",
+    callerBaselines: {},
     directEntries: [],
+    exportBaselines: {},
+    legacyClosure: [],
+    legacyClosureRoots: [],
     retiredSources: [],
     scanRoots: ["src"],
     strictRoots: [],
     testRunners: [],
     ...overrides,
   };
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/entry.ts": "export { value } from './legacy.js';\n",
+      "src/legacy.js": "export const value = 1;\n",
+    },
+    makeManifest({ legacyClosureRoots: ["src/entry.ts"] }),
+    ["src/legacy.js"],
+  );
+  assert(codes.includes("unexpected-legacy-closure-source"), "the transitive legacy closure must be frozen as exact paths");
+}
+
+{
+  const codes = violationCodes(
+    { "src/entry.ts": "export const value = 1;\n" },
+    makeManifest({
+      legacyClosure: ["src/legacy.js"],
+      legacyClosureRoots: ["src/entry.ts"],
+    }),
+  );
+  assert(codes.includes("stale-legacy-closure-source"), "retired paths must be removed from the transitive legacy closure baseline");
+}
+
+{
+  const codes = violationCodes(
+    { "src/public.ts": "export type PublicType = string;\nexport const publicValue = 1;\n" },
+    makeManifest({
+      exportBaselines: {
+        "src/public.ts": { types: [], values: ["publicValue"] },
+      },
+    }),
+  );
+  assert(codes.includes("export-baseline-mismatch"), "core value and type exports must match the frozen baseline");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/caller.ts": "import { publicValue } from './public.js'; void publicValue;\n",
+      "src/public.ts": "export const publicValue = 1;\n",
+    },
+    makeManifest({ callerBaselines: { "src/public.ts": [] } }),
+  );
+  assert(codes.includes("caller-baseline-mismatch"), "core module callers must match the frozen baseline");
 }
 
 function withFixture(
@@ -94,6 +144,38 @@ function violationCodes(
 
 {
   const codes = violationCodes(
+    {
+      "src/entry.ts": "import type { Legacy } from './legacy.js'; export type Current = Legacy;\n",
+      "src/legacy.js": "/** @typedef {{ value: number }} Legacy */ export const marker = 1;\n",
+    },
+    makeManifest({ strictRoots: ["src/entry.ts"] }),
+    ["src/legacy.js"],
+  );
+  assert(codes.includes("strict-root-physical-js"), "type-only imports must participate in strict physical closure checks");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "outside.js": "export const value = 1;\n",
+      "src/entry.ts": "export { value } from '../outside.js';\n",
+    },
+    makeManifest({ strictRoots: ["src/entry.ts"] }),
+    ["outside.js"],
+  );
+  assert(codes.includes("untracked-local-import"), "local imports outside declared scan roots must fail explicitly");
+}
+
+{
+  const codes = violationCodes(
+    {},
+    makeManifest({ scanRoots: ["missing"] }),
+  );
+  assert(codes.includes("missing-scan-root"), "missing scan roots must not silently shrink migration coverage");
+}
+
+{
+  const codes = violationCodes(
     { "src/newLegacy.js": "export const value = 1;\n" },
     makeManifest(),
   );
@@ -107,6 +189,26 @@ function violationCodes(
     ["src/retired.js"],
   );
   assert(codes.includes("retired-source-present"), "a retired physical source must never reappear");
+}
+
+{
+  const codes = violationCodes(
+    { "src/value.ts": "export const value = 1;\n" },
+    makeManifest(),
+    ["src/value.js"],
+  );
+  assert(codes.includes("missing-retired-source"), "same-stem baseline JS paths replaced by TS must be declared retired");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/entry.ts": "import { value } from './value.js'; export { value };\n",
+      "src/value.ts": "export const value = 1;\n",
+    },
+    makeManifest({ allowedTsToJsEdges: ["src/entry.ts -> src/legacy.js"] }),
+  );
+  assert(codes.includes("stale-allowed-ts-js-edge"), "the allowed TS-to-JS edge baseline must exactly match physical debt");
 }
 
 {
@@ -133,6 +235,19 @@ function violationCodes(
     }),
   );
   assert(codes.includes("uninvoked-test"), "importing a suite without invoking it must fail registration");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/exampleTests.ts": "export function helper() {}\nexport function runExampleTests() {}\n",
+      "src/runTests.ts": "import { helper } from './exampleTests.js';\nhelper();\n",
+    },
+    makeManifest({
+      testRunners: [{ root: "src", runner: "src/runTests.ts" }],
+    }),
+  );
+  assert(codes.includes("unregistered-test"), "calling a non-suite helper from a test module must not count as suite registration");
 }
 
 {
@@ -202,6 +317,25 @@ function violationCodes(
 
 {
   const codes = violationCodes(
+    {
+      "src/entry.ts": "export const value = 1;\n",
+      "tsconfig.strict.json": JSON.stringify({
+        compilerOptions: { allowJs: false, checkJs: false, strict: true },
+        files: ["src/entry.ts"],
+        include: [],
+      }),
+    },
+    makeManifest({
+      directEntries: ["tsconfig.strict.json"],
+      strictConfig: "tsconfig.strict.json",
+      strictRoots: ["src/entry.ts"],
+    }),
+  );
+  assert(codes.includes("strict-config-mismatch"), "strict frontier config must extend the main project config");
+}
+
+{
+  const codes = violationCodes(
     { "src/entry.ts": "void import('./missing.dev.js');\n" },
     makeManifest(),
   );
@@ -214,6 +348,14 @@ function violationCodes(
     makeManifest({ directEntries: ["index.html"], scanRoots: [] }),
   );
   assert(codes.includes("unresolved-entry-reference"), "HTML module entry references must resolve physically");
+}
+
+{
+  const codes = violationCodes(
+    { "package.json": JSON.stringify({ scripts: { tool: "tsx scripts/missing.ts" } }) },
+    makeManifest({ directEntries: ["package.json"], scanRoots: [] }),
+  );
+  assert(codes.includes("unresolved-entry-reference"), "package script physical entries must resolve without output-extension remapping");
 }
 
 console.log("TypeScript migration policy tests passed");

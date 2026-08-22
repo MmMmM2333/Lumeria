@@ -20,6 +20,12 @@ import ts from "typescript";
 const CODE_EXTENSIONS = new Set([".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx", ".vue"]);
 const LEGACY_EXTENSIONS = new Set([".cjs", ".js", ".jsx", ".mjs"]);
 const TYPED_EXTENSIONS = new Set([".cts", ".mts", ".ts", ".tsx"]);
+const TYPED_TO_LEGACY_EXTENSION = new Map([
+  [".cts", ".cjs"],
+  [".mts", ".mjs"],
+  [".ts", ".js"],
+  [".tsx", ".jsx"],
+]);
 const IGNORED_DIRECTORY_NAMES = new Set([".git", ".worktrees", "dist", "node_modules", "target"]);
 
 export type MigrationTestRunner = Readonly<{
@@ -27,10 +33,19 @@ export type MigrationTestRunner = Readonly<{
   runner: string;
 }>;
 
+export type MigrationExportBaseline = Readonly<{
+  types: readonly string[];
+  values: readonly string[];
+}>;
+
 export type TypeScriptMigrationManifest = Readonly<{
   allowedTsToJsEdges: readonly string[];
   baselineCommit: string;
+  callerBaselines: Readonly<Record<string, readonly string[]>>;
   directEntries: readonly string[];
+  exportBaselines: Readonly<Record<string, MigrationExportBaseline>>;
+  legacyClosure: readonly string[];
+  legacyClosureRoots: readonly string[];
   retiredSources: readonly string[];
   scanRoots: readonly string[];
   strictConfig?: string;
@@ -46,6 +61,7 @@ export type MigrationViolation = Readonly<{
 
 export type MigrationInventory = Readonly<{
   codeFiles: number;
+  legacyClosureSources: number;
   legacySources: number;
   localEdges: number;
   testRunnerToLegacyEdges: number;
@@ -142,10 +158,22 @@ function collectFilesRecursively(directory: string): string[] {
   return files;
 }
 
-function collectProjectPaths(projectRoot: string, manifest: TypeScriptMigrationManifest): string[] {
+function collectProjectPaths(
+  projectRoot: string,
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): string[] {
   const paths = new Set<string>();
   for (const root of manifest.scanRoots) {
     const absoluteRoot = resolve(projectRoot, root);
+    if (!existsSync(absoluteRoot) || !statSync(absoluteRoot).isDirectory()) {
+      violations.push({
+        code: "missing-scan-root",
+        detail: "declared migration scan root does not exist or is not a directory",
+        path: normalizeRelativePath(root),
+      });
+      continue;
+    }
     for (const path of collectFilesRecursively(absoluteRoot)) paths.add(resolve(path));
   }
   for (const entry of manifest.directEntries) {
@@ -236,6 +264,14 @@ function makeImportGraph(
         continue;
       }
       if (!isCodePath(resolution.target)) continue;
+      if (!sources.has(resolution.target)) {
+        violations.push({
+          code: "untracked-local-import",
+          detail: `resolved local code import is outside declared migration coverage: ${resolution.target}`,
+          path: sourceFile.relativePath,
+        });
+        continue;
+      }
       edges.push(Object.freeze({
         source: sourceFile.relativePath,
         specifier: importedFile.fileName,
@@ -328,6 +364,141 @@ function checkDuplicateSources(sources: ReadonlyMap<string, SourceFile>, violati
   }
 }
 
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+  return Boolean(ts.canHaveModifiers(node) && ts.getModifiers(node)?.some((modifier) => modifier.kind === kind));
+}
+
+function collectBindingNames(name: ts.BindingName, names: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    names.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) collectBindingNames(element.name, names);
+  }
+}
+
+function collectExportSurface(sourceFile: SourceFile): Readonly<{
+  types: readonly string[];
+  unsupportedExportAll: boolean;
+  values: readonly string[];
+}> {
+  const parsed = ts.createSourceFile(
+    sourceFile.relativePath,
+    readSourceForImports(sourceFile.relativePath, sourceFile.source),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const types = new Set<string>();
+  const values = new Set<string>();
+  let unsupportedExportAll = false;
+  for (const statement of parsed.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (!statement.exportClause) {
+        unsupportedExportAll = true;
+        continue;
+      }
+      if (ts.isNamespaceExport(statement.exportClause)) {
+        values.add(statement.exportClause.name.text);
+        continue;
+      }
+      for (const element of statement.exportClause.elements) {
+        const target = statement.isTypeOnly || element.isTypeOnly ? types : values;
+        target.add(element.name.text);
+      }
+      continue;
+    }
+    if (ts.isExportAssignment(statement)) {
+      values.add(statement.isExportEquals ? "export=" : "default");
+      continue;
+    }
+    if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue;
+    const exportName = hasModifier(statement, ts.SyntaxKind.DefaultKeyword) ? "default" : null;
+    if (ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) {
+      types.add(exportName ?? statement.name.text);
+    } else if (ts.isClassDeclaration(statement) || ts.isEnumDeclaration(statement)) {
+      const name = exportName ?? statement.name?.text;
+      if (name) {
+        types.add(name);
+        values.add(name);
+      }
+    } else if (ts.isFunctionDeclaration(statement)) {
+      const name = exportName ?? statement.name?.text;
+      if (name) values.add(name);
+    } else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        collectBindingNames(declaration.name, values);
+      }
+    }
+  }
+  return Object.freeze({
+    types: Object.freeze([...types].sort()),
+    unsupportedExportAll,
+    values: Object.freeze([...values].sort()),
+  });
+}
+
+function checkExportBaselines(
+  sources: ReadonlyMap<string, SourceFile>,
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): void {
+  for (const [rawPath, baseline] of Object.entries(manifest.exportBaselines)) {
+    const path = normalizeRelativePath(rawPath);
+    const sourceFile = sources.get(path);
+    if (!sourceFile) {
+      violations.push({ code: "missing-export-baseline-source", detail: "export baseline source does not exist", path });
+      continue;
+    }
+    const actual = collectExportSurface(sourceFile);
+    if (actual.unsupportedExportAll) {
+      violations.push({
+        code: "unsupported-export-baseline",
+        detail: "export-star modules require an explicit public port before their surface can be frozen",
+        path,
+      });
+      continue;
+    }
+    const expectedTypes = [...baseline.types].sort();
+    const expectedValues = [...baseline.values].sort();
+    if (
+      JSON.stringify(actual.types) !== JSON.stringify(expectedTypes)
+      || JSON.stringify(actual.values) !== JSON.stringify(expectedValues)
+    ) {
+      violations.push({
+        code: "export-baseline-mismatch",
+        detail: `expected types [${expectedTypes.join(", ")}], values [${expectedValues.join(", ")}]; actual types [${actual.types.join(", ")}], values [${actual.values.join(", ")}]`,
+        path,
+      });
+    }
+  }
+}
+
+function checkCallerBaselines(
+  sources: ReadonlyMap<string, SourceFile>,
+  edges: readonly ImportEdge[],
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): void {
+  for (const [rawTarget, baseline] of Object.entries(manifest.callerBaselines)) {
+    const target = normalizeRelativePath(rawTarget);
+    if (!sources.has(target)) {
+      violations.push({ code: "missing-caller-baseline-target", detail: "caller baseline target does not exist", path: target });
+      continue;
+    }
+    const actual = [...new Set(edges.filter((edge) => edge.target === target).map((edge) => edge.source))].sort();
+    const expected = [...baseline].map(normalizeRelativePath).sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      violations.push({
+        code: "caller-baseline-mismatch",
+        detail: `expected callers [${expected.join(", ")}]; actual callers [${actual.join(", ")}]`,
+        path: target,
+      });
+    }
+  }
+}
+
 function checkLegacySources(
   projectRoot: string,
   sources: ReadonlyMap<string, SourceFile>,
@@ -336,13 +507,25 @@ function checkLegacySources(
   violations: MigrationViolation[],
 ): void {
   const baseline = new Set(baselineLegacyPaths.map(normalizeRelativePath));
+  const retired = new Set(manifest.retiredSources.map(normalizeRelativePath));
   for (const sourceFile of sources.values()) {
-    if (!isLegacySource(sourceFile.relativePath, sourceFile.source)) continue;
-    if (!baseline.has(sourceFile.relativePath)) {
+    if (isLegacySource(sourceFile.relativePath, sourceFile.source) && !baseline.has(sourceFile.relativePath)) {
       violations.push({
         code: "new-legacy-source",
         detail: `legacy source did not exist at baseline ${manifest.baselineCommit}`,
         path: sourceFile.relativePath,
+      });
+    }
+    if (!sourceFile.typed) continue;
+    const extension = extname(sourceFile.relativePath).toLowerCase();
+    const legacyExtension = TYPED_TO_LEGACY_EXTENSION.get(extension);
+    if (!legacyExtension) continue;
+    const legacyPath = `${sourceFile.relativePath.slice(0, -extension.length)}${legacyExtension}`;
+    if (baseline.has(legacyPath) && !retired.has(legacyPath)) {
+      violations.push({
+        code: "missing-retired-source",
+        detail: "same-stem baseline legacy source replaced by a typed module must be declared retired",
+        path: legacyPath,
       });
     }
   }
@@ -372,12 +555,22 @@ function checkTsToJsEdges(
     return Boolean(source?.typed && target && isLegacySource(target.relativePath, target.source));
   });
   const testRunnerEdges = physicalJsEdges.filter((edge) => testRunners.has(edge.source));
-  for (const edge of physicalJsEdges.filter((edge) => !testRunners.has(edge.source))) {
+  const productionEdges = physicalJsEdges.filter((edge) => !testRunners.has(edge.source));
+  const currentDescriptions = new Set(productionEdges.map((edge) => `${edge.source} -> ${edge.target}`));
+  for (const edge of productionEdges) {
     const description = `${edge.source} -> ${edge.target}`;
     if (allowed.has(description)) continue;
     violations.push({
       code: "unexpected-ts-js-edge",
       detail: "typed source depends directly on a physical legacy source",
+      path: description,
+    });
+  }
+  for (const description of allowed) {
+    if (currentDescriptions.has(description)) continue;
+    violations.push({
+      code: "stale-allowed-ts-js-edge",
+      detail: "declared TS-to-JS debt edge no longer exists and must be removed from the manifest",
       path: description,
     });
   }
@@ -439,6 +632,72 @@ function checkStrictRoots(
   return strictClosure;
 }
 
+function checkLegacyClosure(
+  sources: ReadonlyMap<string, SourceFile>,
+  edges: readonly ImportEdge[],
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): ReadonlySet<string> {
+  const adjacency = new Map<string, ImportEdge[]>();
+  for (const edge of edges) {
+    const outgoing = adjacency.get(edge.source) ?? [];
+    outgoing.push(edge);
+    adjacency.set(edge.source, outgoing);
+  }
+  const visited = new Set<string>();
+  const queue: string[] = [];
+  for (const rawRoot of manifest.legacyClosureRoots) {
+    const root = normalizeRelativePath(rawRoot);
+    const sourceFile = sources.get(root);
+    if (!sourceFile) {
+      violations.push({ code: "missing-legacy-closure-root", detail: "declared legacy closure root does not exist", path: root });
+      continue;
+    }
+    if (!sourceFile.typed) {
+      violations.push({ code: "untyped-legacy-closure-root", detail: "legacy closure roots must be typed sources", path: root });
+      continue;
+    }
+    if (!visited.has(root)) {
+      visited.add(root);
+      queue.push(root);
+    }
+  }
+  const actual = new Set<string>();
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    if (!current) continue;
+    for (const edge of adjacency.get(current) ?? []) {
+      const target = sources.get(edge.target);
+      if (!target) continue;
+      if (isLegacySource(target.relativePath, target.source)) actual.add(target.relativePath);
+      if (!visited.has(target.relativePath)) {
+        visited.add(target.relativePath);
+        queue.push(target.relativePath);
+      }
+    }
+  }
+  const expected = new Set(manifest.legacyClosure.map(normalizeRelativePath));
+  for (const path of actual) {
+    if (!expected.has(path)) {
+      violations.push({
+        code: "unexpected-legacy-closure-source",
+        detail: "typed production closure reaches an undeclared physical legacy source",
+        path,
+      });
+    }
+  }
+  for (const path of expected) {
+    if (!actual.has(path)) {
+      violations.push({
+        code: "stale-legacy-closure-source",
+        detail: "declared physical legacy closure source is no longer reachable and must be removed",
+        path,
+      });
+    }
+  }
+  return actual;
+}
+
 function checkStrictConfig(
   projectRoot: string,
   manifest: TypeScriptMigrationManifest,
@@ -460,14 +719,29 @@ function checkStrictConfig(
     return;
   }
   const compilerOptions = Reflect.get(parsed, "compilerOptions");
+  const extendsValue = Reflect.get(parsed, "extends");
   const files = Reflect.get(parsed, "files");
   const include = Reflect.get(parsed, "include");
+  const extendedPath = typeof extendsValue === "string"
+    ? resolve(dirname(configPath), extname(extendsValue) ? extendsValue : `${extendsValue}.json`)
+    : null;
+  const extendsMainConfig = extendedPath === resolve(projectRoot, "tsconfig.json");
+  const configReadResult = ts.readConfigFile(configPath, ts.sys.readFile);
+  const effectiveConfig = configReadResult.error
+    ? null
+    : ts.parseJsonConfigFileContent(configReadResult.config, ts.sys, dirname(configPath), undefined, configPath);
   const hasStrictCompilerOptions = Boolean(
     compilerOptions
     && typeof compilerOptions === "object"
     && !Array.isArray(compilerOptions)
     && Reflect.get(compilerOptions, "allowJs") === false
     && Reflect.get(compilerOptions, "checkJs") === false,
+  ) && Boolean(
+    effectiveConfig
+    && effectiveConfig.errors.length === 0
+    && effectiveConfig.options.allowJs === false
+    && effectiveConfig.options.checkJs === false
+    && effectiveConfig.options.strict === true,
   );
   const configFiles = Array.isArray(files) && files.every((entry) => typeof entry === "string")
     ? files.map((entry) => projectRelativePath(projectRoot, resolve(dirname(configPath), entry))).sort()
@@ -475,7 +749,8 @@ function checkStrictConfig(
   const manifestRoots = manifest.strictRoots.map(normalizeRelativePath).sort();
   const hasEmptyInclude = Array.isArray(include) && include.length === 0;
   if (
-    !hasStrictCompilerOptions
+    !extendsMainConfig
+    || !hasStrictCompilerOptions
     || !hasEmptyInclude
     || JSON.stringify(configFiles) !== JSON.stringify(manifestRoots)
   ) {
@@ -489,6 +764,45 @@ function checkStrictConfig(
 
 function isOrdinaryTest(path: string): boolean {
   return /Tests\.(?:js|ts)$/.test(path) && !/\.typeTests\.ts$/.test(path);
+}
+
+function collectTestSuiteExports(sourceFile: SourceFile): ReadonlySet<string> {
+  const parsed = ts.createSourceFile(
+    sourceFile.relativePath,
+    readSourceForImports(sourceFile.relativePath, sourceFile.source),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const exports = new Set<string>();
+  for (const statement of parsed.statements) {
+    if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name && /^run.+Tests$/.test(statement.name.text)) {
+      exports.add(statement.name.text);
+    }
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (ts.isIdentifier(declaration.name) && /^run.+Tests$/.test(declaration.name.text)) {
+          exports.add(declaration.name.text);
+        }
+      }
+    }
+  }
+  return exports;
+}
+
+function collectTopLevelCallCounts(parsedRunner: ts.SourceFile): ReadonlyMap<string, number> {
+  const callCounts = new Map<string, number>();
+  for (const statement of parsedRunner.statements) {
+    if (!ts.isExpressionStatement(statement)) continue;
+    const expression = ts.isAwaitExpression(statement.expression)
+      ? statement.expression.expression
+      : statement.expression;
+    if (!ts.isCallExpression(expression) || !ts.isIdentifier(expression.expression)) continue;
+    const name = expression.expression.text;
+    callCounts.set(name, (callCounts.get(name) ?? 0) + 1);
+  }
+  return callCounts;
 }
 
 function checkTestRegistration(
@@ -514,30 +828,30 @@ function checkTestRegistration(
       true,
       ts.ScriptKind.TS,
     );
+    const suiteExports = new Map<string, ReadonlySet<string>>();
+    for (const [path, sourceFile] of sources) {
+      if (path !== runner && path.startsWith(`${root}/`) && isOrdinaryTest(path)) {
+        suiteExports.set(path, collectTestSuiteExports(sourceFile));
+      }
+    }
     const suiteBindings = new Map<string, Set<string>>();
     for (const statement of parsedRunner.statements) {
       if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
       const resolution = resolveCodeImport(projectRoot, runnerSource.absolutePath, statement.moduleSpecifier.text);
       if (!resolution.target || !statement.importClause) continue;
+      const exportedSuites = suiteExports.get(resolution.target);
+      if (!exportedSuites?.size) continue;
       const bindings = suiteBindings.get(resolution.target) ?? new Set<string>();
-      if (statement.importClause.name) bindings.add(statement.importClause.name.text);
       const namedBindings = statement.importClause.namedBindings;
       if (namedBindings && ts.isNamedImports(namedBindings)) {
-        for (const element of namedBindings.elements) bindings.add(element.name.text);
-      } else if (namedBindings && ts.isNamespaceImport(namedBindings)) {
-        bindings.add(namedBindings.name.text);
+        for (const element of namedBindings.elements) {
+          const importedName = element.propertyName?.text ?? element.name.text;
+          if (exportedSuites.has(importedName)) bindings.add(element.name.text);
+        }
       }
       suiteBindings.set(resolution.target, bindings);
     }
-    const callCounts = new Map<string, number>();
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-        const name = node.expression.text;
-        callCounts.set(name, (callCounts.get(name) ?? 0) + 1);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(parsedRunner);
+    const callCounts = collectTopLevelCallCounts(parsedRunner);
     for (const path of sources.keys()) {
       if (path === runner || !path.startsWith(`${root}/`) || !isOrdinaryTest(path)) continue;
       const bindings = suiteBindings.get(path);
@@ -639,9 +953,9 @@ export function analyzeTypeScriptMigration(
   options: AnalyzeTypeScriptMigrationOptions,
 ): TypeScriptMigrationAnalysis {
   const projectRoot = resolve(options.projectRoot);
-  const projectPaths = collectProjectPaths(projectRoot, options.manifest);
-  const sources = makeSourceFiles(projectRoot, projectPaths);
   const violations: MigrationViolation[] = [];
+  const projectPaths = collectProjectPaths(projectRoot, options.manifest, violations);
+  const sources = makeSourceFiles(projectRoot, projectPaths);
   const edges = makeImportGraph(projectRoot, sources, violations);
   const baselineLegacyPaths = options.baselineLegacyPaths
     ?? readBaselineLegacyPaths(projectRoot, options.manifest.baselineCommit);
@@ -650,14 +964,18 @@ export function analyzeTypeScriptMigration(
   checkStrictConfig(projectRoot, options.manifest, violations);
   checkDuplicateSources(sources, violations);
   checkLegacySources(projectRoot, sources, baselineLegacyPaths, options.manifest, violations);
+  checkExportBaselines(sources, options.manifest, violations);
+  checkCallerBaselines(sources, edges, options.manifest, violations);
   const { physicalJsEdges, testRunnerEdges } = checkTsToJsEdges(sources, edges, options.manifest, violations);
   const strictClosure = checkStrictRoots(sources, edges, options.manifest, violations);
+  const legacyClosure = checkLegacyClosure(sources, edges, options.manifest, violations);
   checkSourcePolicies(sources, edges, strictClosure, violations);
   checkTestRegistration(projectRoot, sources, edges, options.manifest, violations);
 
   const sourceValues = [...sources.values()];
   const inventory: MigrationInventory = Object.freeze({
     codeFiles: sources.size,
+    legacyClosureSources: legacyClosure.size,
     legacySources: sourceValues.filter(({ relativePath, source }) => isLegacySource(relativePath, source)).length,
     localEdges: edges.length,
     testRunnerToLegacyEdges: testRunnerEdges.length,
@@ -675,6 +993,33 @@ function requireStringArray(value: unknown, path: string): readonly string[] {
     throw new TypeError(`${path} must be an array of strings`);
   }
   return Object.freeze([...value]);
+}
+
+function requireStringArrayRecord(value: unknown, path: string): Readonly<Record<string, readonly string[]>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${path} must be an object of string arrays`);
+  }
+  return Object.freeze(Object.fromEntries(
+    Object.entries(value).map(([key, entries]) => [key, requireStringArray(entries, `${path}.${key}`)]),
+  ));
+}
+
+function requireExportBaselineRecord(
+  value: unknown,
+  path: string,
+): Readonly<Record<string, MigrationExportBaseline>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${path} must be an object of export baselines`);
+  }
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, baseline]) => {
+    if (!baseline || typeof baseline !== "object" || Array.isArray(baseline)) {
+      throw new TypeError(`${path}.${key} must be an object`);
+    }
+    return [key, Object.freeze({
+      types: requireStringArray(Reflect.get(baseline, "types"), `${path}.${key}.types`),
+      values: requireStringArray(Reflect.get(baseline, "values"), `${path}.${key}.values`),
+    })];
+  })));
 }
 
 function readManifest(path: string): TypeScriptMigrationManifest {
@@ -706,7 +1051,11 @@ function readManifest(path: string): TypeScriptMigrationManifest {
   return Object.freeze({
     allowedTsToJsEdges: requireStringArray(Reflect.get(parsed, "allowedTsToJsEdges"), "allowedTsToJsEdges"),
     baselineCommit,
+    callerBaselines: requireStringArrayRecord(Reflect.get(parsed, "callerBaselines"), "callerBaselines"),
     directEntries: requireStringArray(Reflect.get(parsed, "directEntries"), "directEntries"),
+    exportBaselines: requireExportBaselineRecord(Reflect.get(parsed, "exportBaselines"), "exportBaselines"),
+    legacyClosure: requireStringArray(Reflect.get(parsed, "legacyClosure"), "legacyClosure"),
+    legacyClosureRoots: requireStringArray(Reflect.get(parsed, "legacyClosureRoots"), "legacyClosureRoots"),
     retiredSources: requireStringArray(Reflect.get(parsed, "retiredSources"), "retiredSources"),
     scanRoots: requireStringArray(Reflect.get(parsed, "scanRoots"), "scanRoots"),
     ...(typeof strictConfig === "string" ? { strictConfig } : {}),
@@ -731,7 +1080,8 @@ function runCli(): void {
   console.log(
     `TypeScript migration checks passed: ${inventory.typedSources} typed, `
     + `${inventory.legacySources} legacy, ${inventory.untypedVueFiles} untyped Vue, `
-    + `${inventory.tsToPhysicalJsEdges} allowed TS->JS edges`,
+    + `${inventory.tsToPhysicalJsEdges} allowed TS->JS edges, `
+    + `${inventory.legacyClosureSources} transitive legacy closure sources`,
   );
 }
 
