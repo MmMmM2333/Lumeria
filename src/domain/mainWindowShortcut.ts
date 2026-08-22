@@ -1,0 +1,168 @@
+export const DEFAULT_MAIN_WINDOW_SHORTCUT = "alt+Space";
+export const NO_MAIN_WINDOW_SHORTCUT = null;
+
+type ShortcutModifier = "alt" | "control" | "shift" | "super";
+
+const MODIFIER_ALIASES = new Map<string, ShortcutModifier>([
+  ["alt", "alt"],
+  ["option", "alt"],
+  ["control", "control"],
+  ["ctrl", "control"],
+  ["cmd", "super"],
+  ["command", "super"],
+  ["meta", "super"],
+  ["super", "super"],
+  ["win", "super"],
+  ["windows", "super"],
+  ["shift", "shift"],
+]);
+
+const MODIFIER_ORDER: readonly ShortcutModifier[] = ["control", "alt", "shift", "super"];
+const MODIFIER_LABELS: Readonly<Record<ShortcutModifier, string>> = {
+  alt: "Alt",
+  control: "Ctrl",
+  shift: "Shift",
+  super: "Win",
+};
+
+const KEY_LABELS: Readonly<Record<string, string>> = {
+  Backquote: "`",
+  Backslash: "\\",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Comma: ",",
+  Equal: "=",
+  Minus: "-",
+  Period: ".",
+  Quote: "'",
+  Semicolon: ";",
+  Slash: "/",
+  Space: "Space",
+  Escape: "Esc",
+  ArrowDown: "Down",
+  ArrowLeft: "Left",
+  ArrowRight: "Right",
+  ArrowUp: "Up",
+  NumpadAdd: "Num +",
+  NumpadDecimal: "Num .",
+  NumpadDivide: "Num /",
+  NumpadEnter: "Num Enter",
+  NumpadEqual: "Num =",
+  NumpadMultiply: "Num *",
+  NumpadSubtract: "Num -",
+};
+
+const SPECIAL_KEY_ALIASES = new Map<string, string>([
+  ["`", "Backquote"],
+  ["backquote", "Backquote"],
+  ["\\", "Backslash"],
+  ["backslash", "Backslash"],
+  ["[", "BracketLeft"],
+  ["bracketleft", "BracketLeft"],
+  ["]", "BracketRight"],
+  ["bracketright", "BracketRight"],
+  [",", "Comma"],
+  ["comma", "Comma"],
+  ["=", "Equal"],
+  ["equal", "Equal"],
+  ["-", "Minus"],
+  ["minus", "Minus"],
+  [".", "Period"],
+  ["period", "Period"],
+  ["'", "Quote"],
+  ["quote", "Quote"],
+  [";", "Semicolon"],
+  ["semicolon", "Semicolon"],
+  ["/", "Slash"],
+  ["slash", "Slash"],
+  ["backspace", "Backspace"],
+  ["capslock", "CapsLock"],
+  ["enter", "Enter"],
+  ["space", "Space"],
+  ["tab", "Tab"],
+  ["delete", "Delete"],
+  ["end", "End"],
+  ["home", "Home"],
+  ["insert", "Insert"],
+  ["pagedown", "PageDown"],
+  ["pageup", "PageUp"],
+  ["printscreen", "PrintScreen"],
+  ["scrolllock", "ScrollLock"],
+  ["arrowdown", "ArrowDown"],
+  ["down", "ArrowDown"],
+  ["arrowleft", "ArrowLeft"],
+  ["left", "ArrowLeft"],
+  ["arrowright", "ArrowRight"],
+  ["right", "ArrowRight"],
+  ["arrowup", "ArrowUp"],
+  ["up", "ArrowUp"],
+  ["numlock", "NumLock"],
+  ["escape", "Escape"],
+  ["esc", "Escape"],
+]);
+
+function normalizeKeyToken(token: unknown): string | null {
+  const value = String(token || "").trim();
+  if (!value) return null;
+  if (/^Key[A-Z]$/i.test(value)) return `Key${value.slice(3).toUpperCase()}`;
+  if (/^[A-Z]$/i.test(value)) return `Key${value.toUpperCase()}`;
+  if (/^Digit[0-9]$/i.test(value)) return `Digit${value.slice(5)}`;
+  if (/^[0-9]$/.test(value)) return `Digit${value}`;
+  if (/^Numpad[0-9]$/i.test(value)) return `Numpad${value.slice(6)}`;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/i.test(value)) return value.toUpperCase();
+
+  const lower = value.toLowerCase();
+  if (SPECIAL_KEY_ALIASES.has(lower)) return SPECIAL_KEY_ALIASES.get(lower) ?? null;
+  if (/^Numpad(Add|Decimal|Divide|Enter|Equal|Multiply|Subtract)$/i.test(value)) {
+    return `Numpad${value.slice(6, 7).toUpperCase()}${value.slice(7)}`;
+  }
+  return null;
+}
+
+export function normalizeMainWindowShortcutKey(token: unknown): string | null {
+  return normalizeKeyToken(token);
+}
+
+export function normalizeMainWindowShortcut(shortcut: null): null;
+export function normalizeMainWindowShortcut(shortcut?: string): string;
+export function normalizeMainWindowShortcut(shortcut: unknown): string | null;
+export function normalizeMainWindowShortcut(shortcut: unknown): string | null {
+  if (shortcut === null) return NO_MAIN_WINDOW_SHORTCUT;
+  const tokens = String(shortcut || "")
+    .split("+")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (!tokens.length) return DEFAULT_MAIN_WINDOW_SHORTCUT;
+
+  const modifiers = new Set<ShortcutModifier>();
+  let key: string | null = null;
+  for (const token of tokens) {
+    const modifier = MODIFIER_ALIASES.get(token.toLowerCase());
+    if (modifier) {
+      modifiers.add(modifier);
+      continue;
+    }
+    const normalizedKey = normalizeKeyToken(token);
+    if (!normalizedKey || key) return DEFAULT_MAIN_WINDOW_SHORTCUT;
+    key = normalizedKey;
+  }
+
+  if (!key || modifiers.size === 0) return DEFAULT_MAIN_WINDOW_SHORTCUT;
+  return [...MODIFIER_ORDER.filter((modifier) => modifiers.has(modifier)), key].join("+");
+}
+
+export function formatMainWindowShortcut(shortcut: null): null;
+export function formatMainWindowShortcut(shortcut?: string): string;
+export function formatMainWindowShortcut(shortcut: string | null | undefined): string | null {
+  if (shortcut === null) return null;
+  return normalizeMainWindowShortcut(shortcut)
+    .split("+")
+    .map((token) => {
+      if (token in MODIFIER_LABELS) return MODIFIER_LABELS[token as ShortcutModifier];
+      if (/^Key[A-Z]$/.test(token)) return token.slice(3);
+      if (/^Digit[0-9]$/.test(token)) return token.slice(5);
+      if (/^Numpad[0-9]$/.test(token)) return `Num ${token.slice(6)}`;
+      return KEY_LABELS[token] || token;
+    })
+    .join(" + ");
+}

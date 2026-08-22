@@ -12,7 +12,7 @@ const sourceExtensions = new Set([".css", ".html", ".js", ".jsx", ".mjs", ".ts",
 const testFilePattern = /Tests?\.[cm]?[jt]sx?$/i;
 const nonLatinTextPattern = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 const allowedSourceText = new Map([
-  ["src/domain/launchpadData.js", new Set(["卸载"])],
+  ["src/domain/launchpadData.ts", new Set(["卸载"])],
 ]);
 
 function normalizePath(filePath) {

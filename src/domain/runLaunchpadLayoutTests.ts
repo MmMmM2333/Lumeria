@@ -201,11 +201,6 @@ const helpers = createLaunchpadLayoutHelpers({
 
 runLaunchpadHelperTests({
   helpers,
-  pageSize,
-  folderPageSize,
-  searchQuery: state.searchQuery,
-  gridRows: state.gridRows,
-  gridCols: state.gridCols,
 });
 await runWindowChromeApiTests();
 runLaunchpadDocumentCoordinatorTests();

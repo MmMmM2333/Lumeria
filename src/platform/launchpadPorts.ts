@@ -40,34 +40,47 @@ import {
   startLiveDesktopBackground,
   stopLiveDesktopBackground,
 } from "../api/launchpadApi.js";
+import type {
+  AppIconChoice,
+  CachedCustomIconResult,
+  LaunchContext,
+  LaunchTargetCheckResult,
+  LiveDesktopBackgroundSupport,
+  LiveDesktopRuntimeStatus,
+  MainWindowCloseTransition,
+  MainWindowEffectsSupport,
+  PickedBackgroundImage,
+  PickedLaunchFile,
+  ScanAppsResult,
+} from "../api/launchpadApi.js";
 import type { LayoutDocument, LayoutSettings } from "../domain/layoutDocument.js";
-import { createLocaleRuntimePort } from "./localeRuntime.js";
+import { createLocaleRuntimePort, type LocaleRuntimeOutcome } from "./localeRuntime.js";
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 type NativeEventHandler = (event: unknown) => void;
 
 export type BackgroundAssetPort = Readonly<{
-  getDesktopWallpaper(): Promise<unknown | null>;
-  pickImage(): Promise<unknown | null>;
+  getDesktopWallpaper(): Promise<PickedBackgroundImage | null>;
+  pickImage(): Promise<PickedBackgroundImage | null>;
   toAssetUrl(filePath: string | null | undefined): string | null;
 }>;
 
 export type CatalogPort = Readonly<{
-  cacheCustomIcon(dataUrl: string): Promise<unknown | null>;
-  loadIconChoices(targetPath: string): Promise<readonly unknown[]>;
-  pickLaunchFile(): Promise<unknown | null>;
-  pickScanRoot(): Promise<unknown | null>;
-  scan(roots?: readonly unknown[], filters?: UnknownRecord): Promise<unknown | null>;
+  cacheCustomIcon(dataUrl: string): Promise<CachedCustomIconResult | null>;
+  loadIconChoices(targetPath: string): Promise<readonly AppIconChoice[]>;
+  pickLaunchFile(): Promise<PickedLaunchFile | null>;
+  pickScanRoot(): Promise<string | null>;
+  scan(roots?: readonly unknown[], filters?: UnknownRecord): Promise<ScanAppsResult | null>;
   toAssetUrl(filePath: string | null | undefined): string | null;
 }>;
 
 export type MainWindowPort = Readonly<{
-  beginClose(openSequence: number): Promise<unknown | null>;
-  getEffectsSupport(): Promise<unknown | null>;
-  hide(generation: number): Promise<unknown>;
+  beginClose(openSequence: number): Promise<MainWindowCloseTransition | null>;
+  getEffectsSupport(): Promise<MainWindowEffectsSupport | null>;
+  hide(generation: number): Promise<boolean>;
   isAvailable(): boolean;
   registerShortcut(shortcut: string | null): Promise<unknown | null>;
-  reveal(openSequence: number): Promise<unknown>;
+  reveal(openSequence: number): Promise<boolean>;
   setEffectsEnabled(
     enabled: boolean,
     openSequence?: number | null,
@@ -80,7 +93,7 @@ export type MainWindowPort = Readonly<{
   setMode(
     mode: LayoutSettings["windowMode"],
     options?: Readonly<{ fullscreenOverscanEnabled?: boolean }>,
-  ): Promise<unknown>;
+  ): Promise<LayoutSettings["windowMode"] | null | false>;
   setShortcutCaptureActive(active: boolean): Promise<boolean>;
 }>;
 
@@ -90,33 +103,33 @@ export type DeveloperToolsPort = Readonly<{
 }>;
 
 export type LiveDesktopPort = Readonly<{
-  configure(config: UnknownRecord): Promise<unknown | null>;
-  getStatus(): Promise<unknown | null>;
-  getSupport(): Promise<unknown | null>;
+  configure(config: UnknownRecord): Promise<LiveDesktopRuntimeStatus | null>;
+  getStatus(): Promise<LiveDesktopRuntimeStatus | null>;
+  getSupport(): Promise<LiveDesktopBackgroundSupport | null>;
   isAvailable(): boolean;
-  setVisible(visible: boolean): Promise<unknown | null>;
-  start(): Promise<unknown | null>;
-  stop(): Promise<unknown | null>;
+  setVisible(visible: boolean): Promise<LiveDesktopRuntimeStatus | null>;
+  start(): Promise<LiveDesktopRuntimeStatus | null>;
+  stop(): Promise<LiveDesktopRuntimeStatus | null>;
 }>;
 
 export type LayoutStorePort = Readonly<{
   confirmQuit(saved: boolean): Promise<boolean>;
   load(): Promise<LayoutDocument | null>;
-  save(layout: LayoutDocument): Promise<unknown | null>;
+  save(layout: LayoutDocument): Promise<void>;
 }>;
 
 export type LaunchpadIconPort = Readonly<{
-  applyVariant(variant: LayoutSettings["launchpadIconVariant"]): Promise<unknown | null>;
+  applyVariant(variant: LayoutSettings["launchpadIconVariant"]): Promise<LayoutSettings["launchpadIconVariant"] | null>;
   isAvailable(): boolean;
 }>;
 
 export type LocaleRuntimePort = Readonly<{
-  applyPreference(preference: string): Promise<unknown>;
-  bootstrap(): Promise<unknown>;
+  applyPreference(preference: string): Promise<LocaleRuntimeOutcome>;
+  bootstrap(): Promise<LocaleRuntimeOutcome>;
 }>;
 
 export type NativeLifecyclePort = Readonly<{
-  checkLaunchTargets(targets: readonly unknown[]): Promise<readonly unknown[]>;
+  checkLaunchTargets(targets: readonly unknown[]): Promise<readonly LaunchTargetCheckResult[]>;
   isAvailable(): boolean;
   launchApp(app: UnknownRecord): Promise<boolean>;
   listen(eventName: string, handler: NativeEventHandler): Promise<(() => void) | null>;
@@ -124,8 +137,8 @@ export type NativeLifecyclePort = Readonly<{
 }>;
 
 export type NativeStartupPort = Readonly<{
-  complete(): Promise<unknown | null>;
-  getLaunchContext(): Promise<UnknownRecord>;
+  complete(): Promise<void>;
+  getLaunchContext(): Promise<LaunchContext>;
   isAvailable(): boolean;
 }>;
 
@@ -186,7 +199,9 @@ export const liveDesktopPort: LiveDesktopPort = Object.freeze({
 export const layoutStorePort: LayoutStorePort = Object.freeze({
   confirmQuit: confirmQuitAfterSave,
   load: loadLayout,
-  save: saveLayout,
+  save: async (layout) => {
+    await saveLayout(layout);
+  },
 });
 
 export const launchpadIconPort: LaunchpadIconPort = Object.freeze({
@@ -212,7 +227,9 @@ export const nativeLifecyclePort: NativeLifecyclePort = Object.freeze({
 });
 
 export const nativeStartupPort: NativeStartupPort = Object.freeze({
-  complete: completeRendererStartup,
+  complete: async () => {
+    await completeRendererStartup();
+  },
   getLaunchContext,
   isAvailable: isNativeBridgeAvailable,
 });

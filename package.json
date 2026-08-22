@@ -6,7 +6,7 @@
   "scripts": {
     "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.mjs",
     "check": "npm test && npm run typecheck && npm run check:migration && npm run check:i18n && npm run build",
-    "check:i18n": "node scripts/checkI18n.mjs",
+    "check:i18n": "tsx scripts/checkI18n.mjs",
     "check:migration": "tsx scripts/checkTypeScriptMigration.ts",
     "dev": "vite",
     "icons:export": "node scripts/exportBrandIcons.mjs",
