@@ -107,7 +107,7 @@ export function makePreviewChildKey(childId: string, slotIndex: number): string 
 }
 
 export function makePreviewSlotById(
-  previewSlots: readonly FolderOverlayItem[] | null | undefined,
+  previewSlots: readonly (FolderOverlayItem | null | undefined)[] | null | undefined,
 ): ReadonlyMap<string, number> {
   const result = new Map<string, number>();
   (previewSlots ?? []).forEach((item, previewSlotIndex) => {
@@ -190,7 +190,7 @@ export type StableFolderCloseTargetInput = Readonly<{
     previewSlotIndex: number,
   ) => FolderOverlayRect | null | undefined;
   iconRect?: FolderOverlayRect | null;
-  previewSlots?: readonly FolderOverlayItem[] | null;
+  previewSlots?: readonly (FolderOverlayItem | null | undefined)[] | null;
   projection?: FolderTargetProjection | null;
   source?: string | null;
   thumbRect?: FolderOverlayRect | null;
@@ -461,7 +461,7 @@ export type ClosingPreviewSwapTarget = Readonly<{
 export function makeClosingPreviewSwapTargets(options: Readonly<{
   folderId?: string | null;
   folderRect?: FolderOverlayRect | null;
-  previewSlots?: readonly FolderOverlayItem[] | null;
+  previewSlots?: readonly (FolderOverlayItem | null | undefined)[] | null;
   stableFolderCloseTarget?: StableFolderCloseTarget | null;
 }> = {}): readonly ClosingPreviewSwapTarget[] {
   const { folderId, folderRect, previewSlots, stableFolderCloseTarget } = options;

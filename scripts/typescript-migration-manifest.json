@@ -75,45 +75,7 @@
     "src/rendering/pixi/scene/folderVisualSession.ts",
     "src/rendering/pixi/scene/iconVisualSpec.ts"
   ],
-  "legacyClosure": [
-    "src/diagnostics/diagnosticError.js",
-    "src/diagnostics/diagnosticPresentation.js",
-    "src/rendering/backgroundCapability.js",
-    "src/rendering/pixi/animation/motionDebugReport.js",
-    "src/rendering/pixi/animation/motionReplayTrace.js",
-    "src/rendering/pixi/animation/motionReplayTraceSchema.js",
-    "src/rendering/pixi/assets/iconTextureSourceAdapter.js",
-    "src/rendering/pixi/background/acrylicBackgroundPlan.js",
-    "src/rendering/pixi/background/acrylicDebugParams.js",
-    "src/rendering/pixi/background/acrylicFilters.js",
-    "src/rendering/pixi/background/acrylicNoiseTexture.js",
-    "src/rendering/pixi/background/acrylicParams.js",
-    "src/rendering/pixi/background/backgroundEffectPipeline.js",
-    "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js",
-    "src/rendering/pixi/background/backgroundTextureLoader.js",
-    "src/rendering/pixi/background/kawaseDebugParams.js",
-    "src/rendering/pixi/createPixiApp.js",
-    "src/rendering/pixi/debugNamespace.js",
-    "src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/geometry/displayObjectBounds.js",
-    "src/rendering/pixi/geometry/gridGeometry.js",
-    "src/rendering/pixi/geometry/iconBoundsRegistry.js",
-    "src/rendering/pixi/geometry/iconMetrics.js",
-    "src/rendering/pixi/geometry/stageCoordinates.js",
-    "src/rendering/pixi/nodes/folderThumbMetrics.js",
-    "src/rendering/pixi/nodes/iconFolderHoverState.js",
-    "src/rendering/pixi/nodes/iconInteractionGeometry.js",
-    "src/rendering/pixi/pixiText.js",
-    "src/rendering/pixi/renderDebugFingerprint.js",
-    "src/rendering/pixi/scene/desktopIconSizing.js",
-    "src/rendering/pixi/scene/folderClosingHandoffActivity.js",
-    "src/rendering/pixi/scene/folderOverlayTargetResolver.js",
-    "src/rendering/pixi/scene/folderPresentationPlan.js",
-    "src/rendering/pixi/scene/groupDragPresentation.js",
-    "src/rendering/pixi/scene/groupTransferRuntimeAdapter.js",
-    "src/rendering/pixi/scene/iconSceneHelpers.js",
-    "src/rendering/pixi/scene/singleStagePlan.js"
-  ],
+  "legacyClosure": [],
   "exportBaselines": {
     "src/api/launchpadApi.ts": {
       "types": [
@@ -1634,6 +1596,638 @@
         "assertDesktopSceneRuntime",
         "makeDesktopSceneRuntimeAdapter"
       ]
+    },
+    "src/diagnostics/diagnosticError.ts": {
+      "types": [
+        "DiagnosticError"
+      ],
+      "values": [
+        "DiagnosticError",
+        "makeDiagnosticErrorPayload",
+        "unsupportedDiagnosticOperation"
+      ]
+    },
+    "src/diagnostics/diagnosticPresentation.ts": {
+      "types": [],
+      "values": [
+        "DIAGNOSTIC_PRESENTATIONS",
+        "createDiagnosticPresentation"
+      ]
+    },
+    "src/rendering/backgroundCapability.ts": {
+      "types": [],
+      "values": [
+        "backgroundEffectUsesPixi",
+        "shouldUsePixiBackgroundEffect"
+      ]
+    },
+    "src/rendering/pixi/animation/motionDebugReport.ts": {
+      "types": [],
+      "values": [
+        "createMotionDebugAIReport",
+        "formatMotionDebugMarkdown"
+      ]
+    },
+    "src/rendering/pixi/animation/motionDebugReportTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDebugReportTests"
+      ]
+    },
+    "src/rendering/pixi/animation/motionReplayTrace.ts": {
+      "types": [],
+      "values": [
+        "MOTION_REPLAY_CAPTURE_DEFAULT_SECONDS",
+        "MOTION_REPLAY_CAPTURE_MAX_SECONDS",
+        "MOTION_REPLAY_CAPTURE_MIN_SECONDS",
+        "MOTION_REPLAY_CAPTURE_SAMPLE_HZ",
+        "MOTION_REPLAY_TRACE_SCHEMA",
+        "MOTION_REPLAY_TRACE_VERSION",
+        "buildMotionReplayCaptureDebugConfig",
+        "createMotionReplayCaptureController",
+        "createMotionReplayTrace",
+        "createMotionReplayTraceFromRuntime",
+        "normalizeMotionReplayCaptureSeconds"
+      ]
+    },
+    "src/rendering/pixi/animation/motionReplayTraceSchema.ts": {
+      "types": [],
+      "values": [
+        "MOTION_REPLAY_TRACE_SCHEMA",
+        "MOTION_REPLAY_TRACE_VERSION"
+      ]
+    },
+    "src/rendering/pixi/animation/motionReplayTraceTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionReplayTraceTests"
+      ]
+    },
+    "src/rendering/pixi/assets/iconTextureSourceAdapter.ts": {
+      "types": [],
+      "values": [
+        "getPixiIconTextureSource",
+        "isPixiTextureSafeIconSource",
+        "isTauriAssetIconSource"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicBackgroundPlan.ts": {
+      "types": [],
+      "values": [
+        "ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT",
+        "ACRYLIC_RENDER_MAX_HEIGHT",
+        "ACRYLIC_RENDER_MAX_WIDTH",
+        "AUTO_DUAL_KAWASE_OFFSET_SCALE_DEFAULT",
+        "BLUR_GAUSSIAN_CUTOFF_DEFAULT",
+        "BLUR_KERNEL_AUTO",
+        "BLUR_KERNEL_DUAL_KAWASE",
+        "BLUR_KERNEL_GAUSSIAN",
+        "DUAL_KAWASE_BLUR_OFFSET_SCALE_MAX",
+        "DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN",
+        "DUAL_KAWASE_MIN_SIZE",
+        "DUAL_KAWASE_OFFSET_SCALE_MAX",
+        "DUAL_KAWASE_OFFSET_SCALE_MIN",
+        "DUAL_KAWASE_PASS_COUNT",
+        "DUAL_KAWASE_PASS_COUNT_MIN",
+        "GAUSSIAN_BLUR_RADIUS_AUTO_MAX_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_PX_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_PX_MAX",
+        "GAUSSIAN_BLUR_RADIUS_PX_MIN",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_DEFAULT",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_MAX",
+        "GAUSSIAN_BLUR_RADIUS_SCALE_MIN",
+        "clampDualKawaseOffsetScale",
+        "clampDualKawasePassCount",
+        "clampGaussianBlurCutoff",
+        "clampGaussianBlurRadiusPx",
+        "clampGaussianBlurRadiusScale",
+        "createBackgroundEffectPlan",
+        "createDualKawaseLevels",
+        "normalizeBlurEffectParams",
+        "normalizeBlurKernel",
+        "normalizeDualKawaseParams",
+        "resolveAcrylicBackgroundAlpha",
+        "resolveAcrylicRenderSize",
+        "resolveAutoBlurKernel",
+        "resolveAutoDualKawaseOffsetScale",
+        "resolveAutoGaussianRadiusPx",
+        "resolveBlurOffsetScale",
+        "resolveCoverLayout",
+        "shouldUsePixiBackgroundEffect"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicBackgroundPlanTests.ts": {
+      "types": [],
+      "values": [
+        "runAcrylicBackgroundPlanTests"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicDebugParams.ts": {
+      "types": [],
+      "values": [
+        "formatAcrylicDebugParams",
+        "getAcrylicDebugParams",
+        "hexToRgbArray",
+        "isAcrylicDebugEnabled",
+        "resetAcrylicDebugParams",
+        "rgbArrayToHex",
+        "setAcrylicDebugOverrideEnabled",
+        "updateAcrylicDebugParams",
+        "useAcrylicDebugOverrideEnabled",
+        "useAcrylicDebugParams"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicFilters.ts": {
+      "types": [],
+      "values": [
+        "ACRYLIC_COMPOSITE_FRAGMENT",
+        "GAUSSIAN_FRAGMENT",
+        "KAWASE_FRAGMENT",
+        "createAcrylicCompositeFilter",
+        "createGaussianFilter",
+        "createKawaseFilter"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicFiltersTests.ts": {
+      "types": [],
+      "values": [
+        "runAcrylicFiltersTests"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicNoiseTexture.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_ACRYLIC_NOISE_TEXTURE_SIZE",
+        "createAcrylicNoiseTexture",
+        "generateAcrylicNoisePixels",
+        "resolveAcrylicNoiseTextureSize"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicNoiseTextureTests.ts": {
+      "types": [],
+      "values": [
+        "runAcrylicNoiseTextureTests"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicParams.ts": {
+      "types": [],
+      "values": [
+        "ACRYLIC_COMPOSITE_PRESETS",
+        "DEFAULT_ACRYLIC_COMPOSITE_PARAMS",
+        "copyAcrylicCompositeParams",
+        "hexToRgbArray",
+        "normalizeAcrylicCompositeParams",
+        "rgbArrayToHex"
+      ]
+    },
+    "src/rendering/pixi/background/acrylicParamsTests.ts": {
+      "types": [],
+      "values": [
+        "runAcrylicParamsTests"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundEffectPipeline.ts": {
+      "types": [
+        "BackgroundEffectPipeline"
+      ],
+      "values": [
+        "BackgroundEffectPipeline",
+        "createBackgroundEffectTexturePlan",
+        "destroyTexture",
+        "resolveGaussianAxis"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundEffectPipelineTests.ts": {
+      "types": [],
+      "values": [
+        "runBackgroundEffectPipelineTests"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts": {
+      "types": [
+        "BackgroundEffectPreviewRenderer"
+      ],
+      "values": [
+        "BackgroundEffectPreviewRenderer",
+        "resolveBackgroundEffectPreviewSizes"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundEffectPreviewRendererTests.ts": {
+      "types": [],
+      "values": [
+        "runBackgroundEffectPreviewRendererTests"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundTextureLoader.ts": {
+      "types": [],
+      "values": [
+        "loadBackgroundTextureFromImage",
+        "resolveBackgroundTextureSize",
+        "shouldRequestCorsForTextureImage"
+      ]
+    },
+    "src/rendering/pixi/background/backgroundTextureLoaderTests.ts": {
+      "types": [],
+      "values": [
+        "runBackgroundTextureLoaderTests"
+      ]
+    },
+    "src/rendering/pixi/background/kawaseDebugParams.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_KAWASE_DEBUG_PARAMS",
+        "KAWASE_DEBUG_BLUR_KERNEL_AUTO",
+        "KAWASE_DEBUG_GAUSSIAN_CUTOFF_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_CUTOFF_MIN",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_PX_MIN",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MAX",
+        "KAWASE_DEBUG_GAUSSIAN_RADIUS_SCALE_MIN",
+        "KAWASE_DEBUG_OFFSET_SCALE_MAX",
+        "KAWASE_DEBUG_OFFSET_SCALE_MIN",
+        "KAWASE_DEBUG_PASS_COUNT_MAX",
+        "KAWASE_DEBUG_PASS_COUNT_MIN",
+        "KAWASE_DEBUG_TEST_STRENGTH_MAX",
+        "KAWASE_DEBUG_TEST_STRENGTH_MIN",
+        "formatKawaseDebugParams",
+        "getKawaseDebugEffectPlanParams",
+        "getKawaseDebugParams",
+        "isKawaseDebugEnabled",
+        "resetKawaseDebugParams",
+        "setKawaseDebugOverrideEnabled",
+        "updateKawaseDebugParams",
+        "useKawaseDebugOverrideEnabled",
+        "useKawaseDebugParams"
+      ]
+    },
+    "src/rendering/pixi/createPixiApp.ts": {
+      "types": [],
+      "values": [
+        "createPixiApp"
+      ]
+    },
+    "src/rendering/pixi/debugNamespace.ts": {
+      "types": [],
+      "values": [
+        "LUMERIA_DEBUG_GLOBAL_KEY",
+        "deleteLaunchpadDebugValue",
+        "hasLaunchpadDebugValue",
+        "readLaunchpadDebugValue",
+        "setLaunchpadDebugValue"
+      ]
+    },
+    "src/rendering/pixi/devHmr.ts": {
+      "types": [],
+      "values": [
+        "disposePixiForHotReload",
+        "reloadOnPixiHotUpdate",
+        "requestPixiHotReload"
+      ]
+    },
+    "src/rendering/pixi/geometry/displayObjectBounds.ts": {
+      "types": [
+        "MapDisplayObjectLocalRectOptions"
+      ],
+      "values": [
+        "getCenteredLocalRect",
+        "getTransformedLocalRectBounds",
+        "mapDisplayObjectLocalRectToStageRect"
+      ]
+    },
+    "src/rendering/pixi/geometry/displayObjectBoundsTests.ts": {
+      "types": [],
+      "values": [
+        "runDisplayObjectBoundsTests"
+      ]
+    },
+    "src/rendering/pixi/geometry/gridGeometry.ts": {
+      "types": [
+        "DesktopGridMetrics",
+        "DesktopGridOptions",
+        "FolderGridMetricsOptions",
+        "FolderPanelGeometryOptions",
+        "GeometryRect",
+        "GridMetrics",
+        "GridSlotMetrics"
+      ],
+      "values": [
+        "clamp",
+        "getDesktopGridMetrics",
+        "getFolderGridMetrics",
+        "getFolderPanelGeometry",
+        "getGridSlotRect",
+        "makeRect",
+        "parseRepeatCount",
+        "readPx"
+      ]
+    },
+    "src/rendering/pixi/geometry/gridGeometryTests.ts": {
+      "types": [],
+      "values": [
+        "runGridGeometryTests"
+      ]
+    },
+    "src/rendering/pixi/geometry/iconBoundsRegistry.ts": {
+      "types": [
+        "IconBoundsClearCriteria",
+        "IconBoundsClearScope",
+        "IconBoundsGetOptions",
+        "IconBoundsHit",
+        "IconBoundsKeyInput",
+        "IconBoundsKind",
+        "IconBoundsMeta",
+        "IconBoundsPointOptions",
+        "IconBoundsRecord",
+        "IconBoundsRect",
+        "IconBoundsRegistry",
+        "IconBoundsVariant",
+        "LaunchBoundsKeyInput",
+        "PreviewChildBoundsKeyInput",
+        "StableIconBoundsRecord"
+      ],
+      "values": [
+        "ICON_BOUNDS_KIND",
+        "ICON_BOUNDS_VARIANT",
+        "createIconBoundsRegistry",
+        "makeIconBoundsKey"
+      ]
+    },
+    "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts": {
+      "types": [],
+      "values": [
+        "runIconBoundsRegistryTests"
+      ]
+    },
+    "src/rendering/pixi/geometry/iconMetrics.ts": {
+      "types": [],
+      "values": [
+        "ICON_LABEL_GAP",
+        "ICON_VISUAL_OFFSET_Y",
+        "getIconLabelLocalY",
+        "getIconLabelTopFromVisualRect",
+        "getIconNodeOffsetFromVisualCenter",
+        "getIconVisualOffsetY"
+      ]
+    },
+    "src/rendering/pixi/geometry/rootStageCoordinates.ts": {
+      "types": [
+        "DesktopRenderGeometry",
+        "RootStageRect"
+      ],
+      "values": [
+        "makeDesktopFrameFromStageRects",
+        "makeDesktopRenderGeometry",
+        "makeRootStageDesktopContentRect",
+        "makeRootStageHostStyle",
+        "makeRootStageRect",
+        "mapClientRectToRootStageLocal",
+        "mapDesktopLocalRectToRootStageLocal",
+        "mapRootStageLocalRectToDesktopLocal",
+        "resolveSingleStageCandidateRect"
+      ]
+    },
+    "src/rendering/pixi/geometry/rootStageCoordinatesTests.ts": {
+      "types": [],
+      "values": [
+        "runRootStageCoordinatesTests"
+      ]
+    },
+    "src/rendering/pixi/geometry/stageCoordinates.ts": {
+      "types": [
+        "StageLayoutRecord",
+        "StageOrigin",
+        "StagePoint",
+        "StageProjectionMeta",
+        "StageRect",
+        "StageVirtualElement",
+        "StageVisualRect"
+      ],
+      "values": [
+        "MAX_RENDER_RESOLUTION",
+        "MIN_TEXT_RENDER_RESOLUTION",
+        "STAGE_COORDINATE_SPACES",
+        "clientPointToStageVisualPoint",
+        "clientRectToStageVisualRect",
+        "getEffectiveDevicePixelRatio",
+        "getStageScale",
+        "getTextRenderResolution",
+        "makeStageVirtualElement",
+        "snapRectToDevicePixels",
+        "snapValueToDevicePixels",
+        "stageLayoutRecordToClientRect",
+        "stageLayoutRectToClientRect",
+        "stageLayoutRectToStageVisualRect"
+      ]
+    },
+    "src/rendering/pixi/geometry/stageCoordinatesTests.ts": {
+      "types": [],
+      "values": [
+        "runStageCoordinatesTests"
+      ]
+    },
+    "src/rendering/pixi/nodes/folderThumbMetrics.ts": {
+      "types": [
+        "FolderThumbChildLocalRect",
+        "FolderThumbMetrics"
+      ],
+      "values": [
+        "getFolderThumbChildLocalRect",
+        "getFolderThumbMetrics"
+      ]
+    },
+    "src/rendering/pixi/nodes/iconFolderHoverState.ts": {
+      "types": [
+        "IconFolderHoverState"
+      ],
+      "values": [
+        "getActiveAppFolderCreateHoverState",
+        "getActiveFolderHoverState",
+        "getAppFolderCreateTargetPadding",
+        "getFolderHoverTargetPadding",
+        "getFolderPreviewPlanKey"
+      ]
+    },
+    "src/rendering/pixi/nodes/iconFolderHoverStateTests.ts": {
+      "types": [],
+      "values": [
+        "runIconFolderHoverStateTests"
+      ]
+    },
+    "src/rendering/pixi/nodes/iconInteractionGeometry.ts": {
+      "types": [
+        "EditButtonAction",
+        "EditButtonGeometry",
+        "IconInteractionRect"
+      ],
+      "values": [
+        "EDIT_BUTTON_HIT_PADDING",
+        "EDIT_BUTTON_HIT_RADIUS",
+        "ICON_INTERACTION_CLEARANCE",
+        "ICON_INTERACTION_PADDING",
+        "MIN_ICON_HIT_SIZE",
+        "getEditButtonActionAt",
+        "getIconCellContentMaxWidth",
+        "getIconCellTopInteractionOverflow",
+        "getIconHitAreaRect",
+        "isPointInsideEditButton"
+      ]
+    },
+    "src/rendering/pixi/nodes/iconInteractionGeometryTests.ts": {
+      "types": [],
+      "values": [
+        "runIconInteractionGeometryTests"
+      ]
+    },
+    "src/rendering/pixi/pixiText.ts": {
+      "types": [],
+      "values": [
+        "createPixiText",
+        "syncPixiTextResolution"
+      ]
+    },
+    "src/rendering/pixi/renderDebugFingerprint.ts": {
+      "types": [],
+      "values": [
+        "hashDebugBytes",
+        "hashDebugSample",
+        "makeDebugSourceSnapshot"
+      ]
+    },
+    "src/rendering/pixi/scene/desktopIconSizing.ts": {
+      "types": [],
+      "values": [
+        "DESKTOP_TEXTLESS_LABEL_RESERVE",
+        "DESKTOP_WRAPPED_LABEL_RESERVE",
+        "getDesktopIconSizing"
+      ]
+    },
+    "src/rendering/pixi/scene/desktopIconSizingTests.ts": {
+      "types": [],
+      "values": [
+        "runDesktopIconSizingTests"
+      ]
+    },
+    "src/rendering/pixi/scene/folderClosingHandoffActivity.ts": {
+      "types": [],
+      "values": [
+        "resolveFolderClosingHandoffId",
+        "resolveFolderPixiActivityUpdate",
+        "resolveFolderSourceGhostedIds",
+        "shouldClearFolderClosingHandoffRetainId"
+      ]
+    },
+    "src/rendering/pixi/scene/folderClosingHandoffActivityTests.ts": {
+      "types": [],
+      "values": [
+        "runFolderClosingHandoffActivityTests"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOverlayTargetResolver.ts": {
+      "types": [
+        "CapturedFolderOriginBounds",
+        "FolderOverlayTargetFolder",
+        "ResolvedFolderOverlayTargets"
+      ],
+      "values": [
+        "getCapturedPreviewChildRect",
+        "resolveFolderOverlayTargets"
+      ]
+    },
+    "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts": {
+      "types": [],
+      "values": [
+        "runFolderOverlayTargetResolverTests"
+      ]
+    },
+    "src/rendering/pixi/scene/folderPresentationPlan.ts": {
+      "types": [
+        "FolderPresentationRect",
+        "ResolvedFolderPresentationGeometry",
+        "ResolvedFolderPresentationState"
+      ],
+      "values": [
+        "resolveFolderPresentationState"
+      ]
+    },
+    "src/rendering/pixi/scene/folderPresentationPlanTests.ts": {
+      "types": [],
+      "values": [
+        "runFolderPresentationPlanTests"
+      ]
+    },
+    "src/rendering/pixi/scene/groupDragPresentation.ts": {
+      "types": [
+        "GroupTrailPoint"
+      ],
+      "values": [
+        "GROUP_FOLLOWER_DELAY_CAP",
+        "GROUP_FOLLOWER_DELAY_STEP_MS",
+        "appendGroupTrailPoint",
+        "getGroupFollowerDelayMs",
+        "getGroupTrailSettleDurationMs",
+        "makeGroupFollowerTarget",
+        "makeGroupReleaseDelayMs",
+        "makeGroupStackTarget",
+        "sampleGroupTrailPoint"
+      ]
+    },
+    "src/rendering/pixi/scene/groupDragPresentationTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupDragPresentationTests"
+      ]
+    },
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts": {
+      "types": [
+        "GroupTransferReleaseStart",
+        "GroupTransferRuntimeActor",
+        "GroupTransferRuntimeEntry",
+        "GroupTransferRuntimeMode",
+        "GroupTransferRuntimeReleaseEntry",
+        "GroupTransferRuntimeRole",
+        "GroupTransferRuntimeSourceEntry",
+        "GroupTransferRuntimeTarget"
+      ],
+      "values": [
+        "GROUP_TRANSFER_RUNTIME_MODE",
+        "makeGroupTransferRuntimeEntries",
+        "makeGroupTransferRuntimeReleasePlan"
+      ]
+    },
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.ts": {
+      "types": [],
+      "values": [
+        "runGroupTransferRuntimeAdapterTests"
+      ]
+    },
+    "src/rendering/pixi/scene/iconSceneHelpers.ts": {
+      "types": [
+        "SyntheticPointerEvent"
+      ],
+      "values": [
+        "makeContainerTargetIconBounds",
+        "makeIconRect",
+        "makeSyntheticPointerEvent",
+        "makeTargetIconBounds"
+      ]
+    },
+    "src/rendering/pixi/scene/iconSceneHelpersTests.ts": {
+      "types": [],
+      "values": [
+        "runIconSceneHelpersTests"
+      ]
+    },
+    "src/rendering/pixi/scene/singleStagePlan.ts": {
+      "types": [
+        "SingleStageDiagnosticsOptions"
+      ],
+      "values": [
+        "SINGLE_STAGE_RENDER_KEY",
+        "getSingleStageDiagnosticsOptions",
+        "getSingleStageRenderKey",
+        "isSingleStageDiagnosticsEnabled",
+        "makeSingleStageDiagnosticsPlan"
+      ]
     }
   },
   "callerBaselines": {
@@ -1646,7 +2240,7 @@
       "src/composables/useLaunchpadNativeTests.js",
       "src/platform/launchpadPorts.ts",
       "src/rendering/pixi/PixiBackgroundSurface.vue",
-      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js"
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts"
     ],
     "src/api/liveDesktopContract.ts": [
       "src/api/launchpadApi.ts"
@@ -1710,13 +2304,13 @@
       "src/composables/useLaunchpadSettingsConfig.js",
       "src/composables/useSettingsPanelModel.js",
       "src/domain/backgroundEffectPlan.ts",
-      "src/rendering/pixi/background/acrylicParams.js"
+      "src/rendering/pixi/background/acrylicParams.ts"
     ],
     "src/domain/backgroundEffectPlan.ts": [
       "src/components/BackgroundDebugPanel.vue",
       "src/composables/useLaunchpadNative.js",
-      "src/rendering/pixi/background/acrylicBackgroundPlan.js",
-      "src/rendering/pixi/background/kawaseDebugParams.js"
+      "src/rendering/pixi/background/acrylicBackgroundPlan.ts",
+      "src/rendering/pixi/background/kawaseDebugParams.ts"
     ],
     "src/domain/backgroundImageLayout.ts": [
       "src/App.vue",
@@ -1727,7 +2321,7 @@
       "src/domain/backgroundImageLayoutTests.ts",
       "src/domain/launchpadData.ts",
       "src/rendering/pixi/PixiBackgroundSurface.vue",
-      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js"
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts"
     ],
     "src/domain/backgroundImageLayoutTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -1735,11 +2329,11 @@
     "src/domain/backgroundSettings.ts": [
       "src/composables/useLaunchpadSettingsConfig.js",
       "src/domain/backgroundEffectPlan.ts",
-      "src/rendering/backgroundCapability.js",
+      "src/rendering/backgroundCapability.ts",
       "src/rendering/pixi/PixiBackgroundSurface.vue",
-      "src/rendering/pixi/background/acrylicBackgroundPlanTests.js",
-      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js",
-      "src/rendering/pixi/background/kawaseDebugParams.js"
+      "src/rendering/pixi/background/acrylicBackgroundPlanTests.ts",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts",
+      "src/rendering/pixi/background/kawaseDebugParams.ts"
     ],
     "src/domain/domainDependencyTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -1760,14 +2354,17 @@
       "src/composables/useLaunchpadDragTests.js",
       "src/domain/groupTransferPlannerTests.ts",
       "src/domain/groupTransferPresentation.ts",
-      "src/domain/groupTransferPresentationTests.ts"
+      "src/domain/groupTransferPresentationTests.ts",
+      "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts"
     ],
     "src/domain/groupTransferPlannerTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/domain/groupTransferPresentation.ts": [
       "src/composables/useLaunchpadDrag.js",
-      "src/domain/groupTransferPresentationTests.ts"
+      "src/domain/groupTransferPresentationTests.ts",
+      "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts",
+      "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.ts"
     ],
     "src/domain/groupTransferPresentationTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -1789,7 +2386,8 @@
       "src/domain/groupTransferPlannerTests.ts",
       "src/domain/groupTransferPresentation.ts",
       "src/domain/groupTransferPresentationTests.ts",
-      "src/domain/groupTransferSourceCaptureTests.ts"
+      "src/domain/groupTransferSourceCaptureTests.ts",
+      "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts"
     ],
     "src/domain/groupTransferSourceCaptureTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -1893,7 +2491,7 @@
       "src/domain/launchpadLayoutTests.ts",
       "src/domain/layoutConfiguration.ts",
       "src/domain/runLaunchpadLayoutTests.ts",
-      "src/rendering/pixi/scene/folderOverlayTargetResolver.js"
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts"
     ],
     "src/domain/launchpadLayoutTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -2118,11 +2716,11 @@
       "src/rendering/motionPort.ts",
       "src/rendering/pixi/PixiDesktopSurface.vue",
       "src/rendering/pixi/animation/motionCleanupTests.js",
-      "src/rendering/pixi/animation/motionDebugReport.js",
-      "src/rendering/pixi/animation/motionDebugReportTests.js",
+      "src/rendering/pixi/animation/motionDebugReport.ts",
+      "src/rendering/pixi/animation/motionDebugReportTests.ts",
       "src/rendering/pixi/animation/motionPresets.ts",
-      "src/rendering/pixi/animation/motionReplayTrace.js",
-      "src/rendering/pixi/animation/motionReplayTraceTests.js",
+      "src/rendering/pixi/animation/motionReplayTrace.ts",
+      "src/rendering/pixi/animation/motionReplayTraceTests.ts",
       "src/rendering/pixi/animation/motionRuntime.typeTests.ts",
       "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts",
       "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts",
@@ -2176,8 +2774,8 @@
       "src/rendering/motionPort.ts",
       "src/rendering/pixi/animation/motionDebugOverlay.js",
       "src/rendering/pixi/animation/motionDebugOverlayLayer.js",
-      "src/rendering/pixi/animation/motionDebugReport.js",
-      "src/rendering/pixi/animation/motionReplayTrace.js",
+      "src/rendering/pixi/animation/motionDebugReport.ts",
+      "src/rendering/pixi/animation/motionReplayTrace.ts",
       "src/rendering/pixi/animation/motionRuntime.ts",
       "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts",
       "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts",
@@ -2279,11 +2877,11 @@
       "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts",
       "src/rendering/pixi/scene/folderOpeningGhostController.js",
       "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
-      "src/rendering/pixi/scene/folderOverlayTargetResolver.js",
-      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.js",
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts",
       "src/rendering/pixi/scene/folderOverlayTargetsTests.js",
       "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts",
-      "src/rendering/pixi/scene/singleStagePlan.js"
+      "src/rendering/pixi/scene/singleStagePlan.ts"
     ],
     "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts": [
       "src/rendering/pixi/scene/folderClosingGhostController.js",
@@ -2338,6 +2936,390 @@
       "src/rendering/pixi/PixiDesktopSurface.vue",
       "src/rendering/pixi/scene/sceneFrameTests.js",
       "src/rendering/sceneRuntimeTests.js"
+    ],
+    "src/diagnostics/diagnosticError.ts": [
+      "src/components/backgroundDebug/motionReplayViewerModel.js",
+      "src/diagnostics/diagnosticAnalysisFormatter.js",
+      "src/diagnostics/diagnosticArtifactStore.js",
+      "src/diagnostics/diagnosticClient.js",
+      "src/diagnostics/diagnosticHub.js",
+      "src/diagnostics/diagnosticHubTests.js",
+      "src/diagnostics/diagnosticMessages.js",
+      "src/diagnostics/diagnosticPresentation.ts",
+      "src/diagnostics/liveDesktopDebugSettings.js",
+      "src/diagnostics/liveDesktopDiagnosticAdapter.js",
+      "src/diagnostics/liveDesktopDiagnosticsController.js",
+      "src/diagnostics/motionDiagnosticAdapter.js",
+      "src/diagnostics/motionDiagnosticSession.js",
+      "src/diagnostics/motionLabDiagnosticAdapter.js",
+      "src/diagnostics/motionReplayDocument.js",
+      "src/diagnostics/renderDiagnosticAdapter.js",
+      "src/diagnostics/sceneDiagnosticAdapter.js",
+      "src/diagnostics/sceneDiagnosticsState.js",
+      "src/rendering/pixi/animation/motionDebugReport.ts"
+    ],
+    "src/diagnostics/diagnosticPresentation.ts": [
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.js",
+      "src/components/backgroundDebug/motionReplayViewerModel.js",
+      "src/motionLab/motionLabModel.js",
+      "src/rendering/pixi/animation/motionDebugReport.ts"
+    ],
+    "src/rendering/backgroundCapability.ts": [
+      "src/rendering/backgroundPort.ts",
+      "src/rendering/pixi/background/acrylicBackgroundPlan.ts"
+    ],
+    "src/rendering/pixi/animation/motionDebugReport.ts": [
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/animation/motionDebugReportTests.ts"
+    ],
+    "src/rendering/pixi/animation/motionDebugReportTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/animation/motionReplayTrace.ts": [
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/animation/motionReplayTraceTests.ts"
+    ],
+    "src/rendering/pixi/animation/motionReplayTraceSchema.ts": [
+      "src/rendering/motionPort.ts",
+      "src/rendering/pixi/animation/motionReplayTrace.ts"
+    ],
+    "src/rendering/pixi/animation/motionReplayTraceTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/assets/iconTextureSourceAdapter.ts": [
+      "src/domain/iconSourceTests.ts",
+      "src/rendering/pixi/assets/iconTextureRepository.ts",
+      "src/rendering/pixi/renderDebugProbe.dev.js"
+    ],
+    "src/rendering/pixi/background/acrylicBackgroundPlan.ts": [
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/background/acrylicBackgroundPlanTests.ts",
+      "src/rendering/pixi/background/backgroundEffectPipeline.ts",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts"
+    ],
+    "src/rendering/pixi/background/acrylicBackgroundPlanTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/acrylicDebugParams.ts": [
+      "src/rendering/backgroundDebugPort.ts",
+      "src/rendering/pixi/PixiBackgroundSurface.vue"
+    ],
+    "src/rendering/pixi/background/acrylicFilters.ts": [
+      "src/rendering/pixi/background/acrylicFiltersTests.ts",
+      "src/rendering/pixi/background/backgroundEffectPipeline.ts"
+    ],
+    "src/rendering/pixi/background/acrylicFiltersTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/acrylicNoiseTexture.ts": [
+      "src/rendering/pixi/background/acrylicFilters.ts",
+      "src/rendering/pixi/background/acrylicNoiseTextureTests.ts",
+      "src/rendering/pixi/background/backgroundEffectPipeline.ts"
+    ],
+    "src/rendering/pixi/background/acrylicNoiseTextureTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/acrylicParams.ts": [
+      "src/rendering/pixi/background/acrylicDebugParams.ts",
+      "src/rendering/pixi/background/acrylicFilters.ts",
+      "src/rendering/pixi/background/acrylicParamsTests.ts"
+    ],
+    "src/rendering/pixi/background/acrylicParamsTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/backgroundEffectPipeline.ts": [
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/background/backgroundEffectPipelineTests.ts",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts"
+    ],
+    "src/rendering/pixi/background/backgroundEffectPipelineTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts": [
+      "src/rendering/backgroundPort.ts",
+      "src/rendering/pixi/background/backgroundEffectPreviewRendererTests.ts"
+    ],
+    "src/rendering/pixi/background/backgroundEffectPreviewRendererTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/backgroundTextureLoader.ts": [
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts",
+      "src/rendering/pixi/background/backgroundTextureLoaderTests.ts"
+    ],
+    "src/rendering/pixi/background/backgroundTextureLoaderTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/background/kawaseDebugParams.ts": [
+      "src/rendering/backgroundDebugPort.ts",
+      "src/rendering/pixi/PixiBackgroundSurface.vue"
+    ],
+    "src/rendering/pixi/createPixiApp.ts": [
+      "src/rendering/motionLabRendererAdapter.ts",
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/rendering/pixi/debugNamespace.ts": [
+      "src/diagnostics/diagnosticGlobalTests.js",
+      "src/rendering/diagnosticPort.ts"
+    ],
+    "src/rendering/pixi/devHmr.ts": [
+      "src/rendering/pixi/PixiBackgroundSurface.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/animation/motionDebugOverlayLayer.js",
+      "src/rendering/pixi/animation/motionPreferences.ts",
+      "src/rendering/pixi/animation/motionRuntime.ts",
+      "src/rendering/pixi/assets/iconTextureRepository.ts",
+      "src/rendering/pixi/createPixiApp.ts",
+      "src/rendering/pixi/geometry/displayObjectBounds.ts",
+      "src/rendering/pixi/geometry/gridGeometry.ts",
+      "src/rendering/pixi/geometry/iconBoundsRegistry.ts",
+      "src/rendering/pixi/geometry/iconMetrics.ts",
+      "src/rendering/pixi/geometry/rootStageCoordinates.ts",
+      "src/rendering/pixi/geometry/stageCoordinates.ts",
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/batchSelectionGeometry.js",
+      "src/rendering/pixi/nodes/folderThumbDrawing.js",
+      "src/rendering/pixi/nodes/iconControlDrawing.js",
+      "src/rendering/pixi/nodes/iconFocusFrame.js",
+      "src/rendering/pixi/nodes/iconFolderHoverState.ts",
+      "src/rendering/pixi/nodes/iconInteractionGeometry.ts",
+      "src/rendering/pixi/nodes/iconLabelLayout.js",
+      "src/rendering/pixi/pixiHostMetrics.js",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DragHitDebugLayer.js",
+      "src/rendering/pixi/scene/FolderDropTargetLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/ProvisionalFolderRollbackLayer.js",
+      "src/rendering/pixi/scene/desktopIconSizing.ts",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderClosingHandoff.js",
+      "src/rendering/pixi/scene/folderClosingPreviewSwapController.js",
+      "src/rendering/pixi/scene/folderFrameGhost.js",
+      "src/rendering/pixi/scene/folderFrameGhostMath.js",
+      "src/rendering/pixi/scene/folderGhostIconState.js",
+      "src/rendering/pixi/scene/folderIconGhostMotion.js",
+      "src/rendering/pixi/scene/folderIconSizing.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayTargets.ts",
+      "src/rendering/pixi/scene/folderPresentationPlan.ts",
+      "src/rendering/pixi/scene/folderPreviewSwapMotion.js",
+      "src/rendering/pixi/scene/folderReleaseController.js",
+      "src/rendering/pixi/scene/iconVisualSpec.ts",
+      "src/rendering/pixi/scene/singleStageDiagnostics.js",
+      "src/rendering/pixi/scene/singleStageFolderDomControls.js"
+    ],
+    "src/rendering/pixi/geometry/displayObjectBounds.ts": [
+      "src/rendering/pixi/animation/motionDebugOverlay.js",
+      "src/rendering/pixi/geometry/displayObjectBoundsTests.ts",
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/scene/iconSceneHelpers.ts"
+    ],
+    "src/rendering/pixi/geometry/displayObjectBoundsTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/geometry/gridGeometry.ts": [
+      "src/rendering/pixi/geometry/gridGeometryTests.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
+      "src/rendering/pixi/scene/singleStagePlan.ts"
+    ],
+    "src/rendering/pixi/geometry/gridGeometryTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/geometry/iconBoundsRegistry.ts": [
+      "src/composables/useLaunchpadDragTests.js",
+      "src/composables/useLaunchpadIconActivationTests.js",
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DesktopLayerTests.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayerTests.js",
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts",
+      "src/rendering/pixi/scene/singleStageDiagnosticsTests.js",
+      "src/rendering/pixi/scene/singleStagePlan.ts"
+    ],
+    "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/geometry/iconMetrics.ts": [
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/iconLabelLayout.js",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderIconGhostMotion.js",
+      "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
+    ],
+    "src/rendering/pixi/geometry/rootStageCoordinates.ts": [
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/geometry/rootStageCoordinatesTests.ts"
+    ],
+    "src/rendering/pixi/geometry/rootStageCoordinatesTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/geometry/stageCoordinates.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/createPixiApp.ts",
+      "src/rendering/pixi/geometry/displayObjectBounds.ts",
+      "src/rendering/pixi/geometry/displayObjectBoundsTests.ts",
+      "src/rendering/pixi/geometry/iconBoundsRegistry.ts",
+      "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts",
+      "src/rendering/pixi/geometry/stageCoordinatesTests.ts",
+      "src/rendering/pixi/pixiText.ts",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DragHitDebugLayer.js",
+      "src/rendering/pixi/scene/FolderDropTargetLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/desktopBoundsRegistration.js",
+      "src/rendering/pixi/scene/desktopBoundsTargets.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderClosingHandoff.js",
+      "src/rendering/pixi/scene/folderIconGhostMotion.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts",
+      "src/rendering/pixi/scene/folderOverlayTargets.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetsTests.js",
+      "src/rendering/pixi/scene/folderPreviewSwapMotion.js",
+      "src/rendering/pixi/scene/folderReleaseController.js",
+      "src/rendering/pixi/scene/iconSceneHelpers.ts",
+      "src/rendering/pixi/scene/iconSceneHelpersTests.ts",
+      "src/rendering/pixi/scene/singleStagePlan.ts"
+    ],
+    "src/rendering/pixi/geometry/stageCoordinatesTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/nodes/folderThumbMetrics.ts": [
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/IconNodeTests.js",
+      "src/rendering/pixi/nodes/folderThumbDrawing.js",
+      "src/rendering/pixi/nodes/folderThumbDrawingTests.js",
+      "src/rendering/pixi/renderDebugProbe.dev.js",
+      "src/rendering/pixi/scene/FolderDropTargetLayer.js",
+      "src/rendering/pixi/scene/FolderDropTargetLayerTests.js",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/folderClosingGhostController.js",
+      "src/rendering/pixi/scene/folderOpeningGhostController.js",
+      "src/rendering/pixi/scene/folderOverlayTargets.ts",
+      "src/rendering/pixi/scene/folderOverlayTargetsTests.js",
+      "src/rendering/pixi/scene/folderReleaseVisual.js"
+    ],
+    "src/rendering/pixi/nodes/iconFolderHoverState.ts": [
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/iconFolderHoverStateTests.ts",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/folderPresentationPlan.ts"
+    ],
+    "src/rendering/pixi/nodes/iconFolderHoverStateTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/nodes/iconInteractionGeometry.ts": [
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/iconFocusFrame.js",
+      "src/rendering/pixi/nodes/iconInteractionGeometryTests.ts",
+      "src/rendering/pixi/nodes/iconLabelLayout.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/desktopIconSizing.ts",
+      "src/rendering/pixi/scene/folderIconSizing.js"
+    ],
+    "src/rendering/pixi/nodes/iconInteractionGeometryTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/pixiText.ts": [
+      "src/rendering/motionLabRendererAdapter.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/animation/motionDebugOverlayLayer.js",
+      "src/rendering/pixi/nodes/IconNode.js",
+      "src/rendering/pixi/nodes/IconNodeTests.js",
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/DragHitDebugLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/singleStageDiagnostics.js"
+    ],
+    "src/rendering/pixi/renderDebugFingerprint.ts": [
+      "src/rendering/pixi/assets/iconTextureRepository.ts",
+      "src/rendering/pixi/folderFramebufferSampler.dev.js",
+      "src/rendering/pixi/renderDebugProbe.dev.js"
+    ],
+    "src/rendering/pixi/scene/desktopIconSizing.ts": [
+      "src/rendering/pixi/scene/desktopIconSizingTests.ts",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts"
+    ],
+    "src/rendering/pixi/scene/desktopIconSizingTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderClosingHandoffActivity.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/scene/folderClosingHandoffActivityTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderClosingHandoffActivityTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderOverlayTargetResolver.ts": [
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts",
+      "src/rendering/pixi/scene/singleStagePlan.ts"
+    ],
+    "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderPresentationPlan.ts": [
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderPresentationPlanTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderPresentationPlanTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/groupDragPresentation.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/scene/GroupDragLayer.js",
+      "src/rendering/pixi/scene/groupDragPresentationTests.ts"
+    ],
+    "src/rendering/pixi/scene/groupDragPresentationTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/scene/GroupReleaseController.js",
+      "src/rendering/pixi/scene/GroupReleaseControllerTests.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderReleaseVisual.js",
+      "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.ts"
+    ],
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/iconSceneHelpers.ts": [
+      "src/rendering/pixi/scene/DesktopLayer.js",
+      "src/rendering/pixi/scene/FolderOverlayLayer.js",
+      "src/rendering/pixi/scene/desktopBoundsTargets.js",
+      "src/rendering/pixi/scene/desktopRenderPlan.ts",
+      "src/rendering/pixi/scene/folderOverlayTargets.ts",
+      "src/rendering/pixi/scene/iconSceneHelpersTests.ts"
+    ],
+    "src/rendering/pixi/scene/iconSceneHelpersTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/rendering/pixi/scene/singleStagePlan.ts": [
+      "src/rendering/desktopScenePort.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue",
+      "src/rendering/pixi/scene/singleStageDiagnostics.js",
+      "src/rendering/pixi/scene/singleStageDiagnosticsTests.js"
     ]
   },
   "scanRoots": [
@@ -2365,6 +3347,8 @@
     "src/application/launchpadDocumentCoordinator.ts",
     "src/assets/branding/launchpadIconUrls.ts",
     "src/composables/mainWindowTransition.ts",
+    "src/diagnostics/diagnosticError.ts",
+    "src/diagnostics/diagnosticPresentation.ts",
     "src/diagnostics/runtimePerformanceMetrics.ts",
     "src/domain/appearancePreference.ts",
     "src/domain/appearancePreferenceTests.ts",
@@ -2387,6 +3371,7 @@
     "src/domain/iconFocus.ts",
     "src/domain/iconFocusTests.ts",
     "src/domain/iconSource.ts",
+    "src/domain/iconSourceTests.ts",
     "src/domain/input/launchpadGestureEngine.ts",
     "src/domain/input/launchpadGestureEngineTests.ts",
     "src/domain/input/launchpadGesturePolicy.ts",
@@ -2423,59 +3408,110 @@
     "src/platform/localeRuntime.ts",
     "src/platform/localeRuntimeTests.ts",
     "src/platform/mainWindowShortcutInput.ts",
+    "src/rendering/backgroundCapability.ts",
+    "src/rendering/backgroundDebugPort.ts",
+    "src/rendering/backgroundPort.ts",
     "src/rendering/contractSnapshot.ts",
+    "src/rendering/desktopScenePort.ts",
+    "src/rendering/diagnosticPort.ts",
+    "src/rendering/motionLabRendererAdapter.ts",
+    "src/rendering/motionPort.ts",
+    "src/rendering/pixi/animation/motionDebugReport.ts",
+    "src/rendering/pixi/animation/motionDebugReportTests.ts",
+    "src/rendering/pixi/animation/motionPreferences.ts",
+    "src/rendering/pixi/animation/motionPresets.ts",
+    "src/rendering/pixi/animation/motionReplayTrace.ts",
+    "src/rendering/pixi/animation/motionReplayTraceSchema.ts",
+    "src/rendering/pixi/animation/motionReplayTraceTests.ts",
+    "src/rendering/pixi/animation/motionRuntime.ts",
+    "src/rendering/pixi/animation/motionRuntime.typeTests.ts",
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts",
+    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts",
+    "src/rendering/pixi/animation/motionRuntimeTestHarness.ts",
     "src/rendering/pixi/animation/motionTraceShared.ts",
+    "src/rendering/pixi/animation/motionTween.ts",
+    "src/rendering/pixi/assets/iconTextureRepository.ts",
+    "src/rendering/pixi/assets/iconTextureSourceAdapter.ts",
+    "src/rendering/pixi/background/acrylicBackgroundPlan.ts",
+    "src/rendering/pixi/background/acrylicBackgroundPlanTests.ts",
+    "src/rendering/pixi/background/acrylicDebugParams.ts",
+    "src/rendering/pixi/background/acrylicFilters.ts",
+    "src/rendering/pixi/background/acrylicFiltersTests.ts",
+    "src/rendering/pixi/background/acrylicNoiseTexture.ts",
+    "src/rendering/pixi/background/acrylicNoiseTextureTests.ts",
+    "src/rendering/pixi/background/acrylicParams.ts",
+    "src/rendering/pixi/background/acrylicParamsTests.ts",
+    "src/rendering/pixi/background/backgroundEffectPipeline.ts",
+    "src/rendering/pixi/background/backgroundEffectPipelineTests.ts",
+    "src/rendering/pixi/background/backgroundEffectPreviewRenderer.ts",
+    "src/rendering/pixi/background/backgroundEffectPreviewRendererTests.ts",
+    "src/rendering/pixi/background/backgroundTextureLoader.ts",
+    "src/rendering/pixi/background/backgroundTextureLoaderTests.ts",
+    "src/rendering/pixi/background/kawaseDebugParams.ts",
+    "src/rendering/pixi/createPixiApp.ts",
+    "src/rendering/pixi/debugNamespace.ts",
+    "src/rendering/pixi/desktopPresentationLoop.ts",
+    "src/rendering/pixi/desktopPresentationLoopTests.ts",
+    "src/rendering/pixi/devHmr.ts",
+    "src/rendering/pixi/folderLayerState.ts",
+    "src/rendering/pixi/geometry/displayObjectBounds.ts",
+    "src/rendering/pixi/geometry/displayObjectBoundsTests.ts",
+    "src/rendering/pixi/geometry/gridGeometry.ts",
+    "src/rendering/pixi/geometry/gridGeometryTests.ts",
+    "src/rendering/pixi/geometry/iconBoundsRegistry.ts",
+    "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts",
+    "src/rendering/pixi/geometry/iconMetrics.ts",
+    "src/rendering/pixi/geometry/rootStageCoordinates.ts",
+    "src/rendering/pixi/geometry/rootStageCoordinatesTests.ts",
+    "src/rendering/pixi/geometry/stageCoordinates.ts",
+    "src/rendering/pixi/geometry/stageCoordinatesTests.ts",
+    "src/rendering/pixi/nodes/folderThumbMetrics.ts",
+    "src/rendering/pixi/nodes/iconFolderHoverState.ts",
+    "src/rendering/pixi/nodes/iconFolderHoverStateTests.ts",
+    "src/rendering/pixi/nodes/iconInteractionGeometry.ts",
+    "src/rendering/pixi/nodes/iconInteractionGeometryTests.ts",
     "src/rendering/pixi/nodes/iconVisualState.ts",
+    "src/rendering/pixi/pixiText.ts",
+    "src/rendering/pixi/renderDebugFingerprint.ts",
     "src/rendering/pixi/renderInvalidation.ts",
     "src/rendering/pixi/scene/desktopHandoffState.ts",
+    "src/rendering/pixi/scene/desktopIconSizing.ts",
+    "src/rendering/pixi/scene/desktopIconSizingTests.ts",
+    "src/rendering/pixi/scene/desktopLayerFrames.ts",
+    "src/rendering/pixi/scene/desktopRenderPlan.ts",
+    "src/rendering/pixi/scene/folderClosingHandoffActivity.ts",
+    "src/rendering/pixi/scene/folderClosingHandoffActivityTests.ts",
+    "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts",
+    "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.ts",
+    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
+    "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
+    "src/rendering/pixi/scene/folderOverlayTargetResolverTests.ts",
+    "src/rendering/pixi/scene/folderOverlayTargets.ts",
+    "src/rendering/pixi/scene/folderPresentationPlan.ts",
+    "src/rendering/pixi/scene/folderPresentationPlanTests.ts",
     "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts",
+    "src/rendering/pixi/scene/folderVisualSession.ts",
+    "src/rendering/pixi/scene/folderVisualSession.typeTests.ts",
+    "src/rendering/pixi/scene/groupDragPresentation.ts",
+    "src/rendering/pixi/scene/groupDragPresentationTests.ts",
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapter.ts",
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.ts",
+    "src/rendering/pixi/scene/iconSceneHelpers.ts",
+    "src/rendering/pixi/scene/iconSceneHelpersTests.ts",
+    "src/rendering/pixi/scene/iconVisualSpec.ts",
+    "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts",
+    "src/rendering/pixi/scene/singleStagePlan.ts",
+    "src/rendering/runtimeContracts.typeTests.ts",
     "src/rendering/sceneContracts.typeTests.ts",
     "src/rendering/sceneEvents.ts",
-    "src/rendering/sceneFrame.ts"
+    "src/rendering/sceneFrame.ts",
+    "src/rendering/sceneRuntime.ts"
   ],
   "allowedTsToJsEdges": [
     "src/application/launchpadDocumentCoordinatorTests.ts -> src/composables/useLaunchpadApps.js",
     "src/application/launchpadDocumentCoordinatorTests.ts -> src/composables/useLaunchpadLayout.js",
     "src/application/launchpadDocumentCoordinatorTests.ts -> src/composables/useLaunchpadSettings.js",
-    "src/application/launchpadDocumentCoordinatorTests.ts -> src/composables/useLiveDesktopRuntime.js",
-    "src/domain/iconSourceTests.ts -> src/rendering/pixi/assets/iconTextureSourceAdapter.js",
-    "src/rendering/backgroundDebugPort.ts -> src/rendering/pixi/background/acrylicDebugParams.js",
-    "src/rendering/backgroundDebugPort.ts -> src/rendering/pixi/background/kawaseDebugParams.js",
-    "src/rendering/backgroundPort.ts -> src/rendering/backgroundCapability.js",
-    "src/rendering/backgroundPort.ts -> src/rendering/pixi/background/backgroundEffectPreviewRenderer.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/geometry/iconBoundsRegistry.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/geometry/stageCoordinates.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/scene/folderClosingHandoffActivity.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/scene/groupDragPresentation.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/scene/groupTransferRuntimeAdapter.js",
-    "src/rendering/desktopScenePort.ts -> src/rendering/pixi/scene/singleStagePlan.js",
-    "src/rendering/diagnosticPort.ts -> src/rendering/pixi/debugNamespace.js",
-    "src/rendering/motionLabRendererAdapter.ts -> src/rendering/pixi/createPixiApp.js",
-    "src/rendering/motionLabRendererAdapter.ts -> src/rendering/pixi/pixiText.js",
-    "src/rendering/motionPort.ts -> src/rendering/pixi/animation/motionDebugReport.js",
-    "src/rendering/motionPort.ts -> src/rendering/pixi/animation/motionReplayTrace.js",
-    "src/rendering/motionPort.ts -> src/rendering/pixi/animation/motionReplayTraceSchema.js",
-    "src/rendering/pixi/animation/motionPreferences.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/animation/motionRuntime.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/assets/iconTextureRepository.ts -> src/rendering/pixi/assets/iconTextureSourceAdapter.js",
-    "src/rendering/pixi/assets/iconTextureRepository.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/assets/iconTextureRepository.ts -> src/rendering/pixi/renderDebugFingerprint.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/geometry/gridGeometry.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/geometry/iconMetrics.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/geometry/stageCoordinates.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/scene/desktopIconSizing.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/scene/folderPresentationPlan.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/scene/groupTransferRuntimeAdapter.js",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts -> src/rendering/pixi/scene/iconSceneHelpers.js",
-    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts -> src/rendering/pixi/geometry/gridGeometry.js",
-    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts -> src/rendering/pixi/geometry/iconMetrics.js",
-    "src/rendering/pixi/scene/folderOverlayTargets.ts -> src/rendering/pixi/devHmr.js",
-    "src/rendering/pixi/scene/folderOverlayTargets.ts -> src/rendering/pixi/geometry/stageCoordinates.js",
-    "src/rendering/pixi/scene/folderOverlayTargets.ts -> src/rendering/pixi/nodes/folderThumbMetrics.js",
-    "src/rendering/pixi/scene/folderOverlayTargets.ts -> src/rendering/pixi/scene/iconSceneHelpers.js",
-    "src/rendering/pixi/scene/iconVisualSpec.ts -> src/rendering/pixi/devHmr.js"
+    "src/application/launchpadDocumentCoordinatorTests.ts -> src/composables/useLiveDesktopRuntime.js"
   ],
   "retiredSources": [
     "src/api/launchpadApi.js",
@@ -2486,6 +3522,8 @@
     "src/application/launchpadDocumentCoordinatorTests.js",
     "src/assets/branding/launchpadIconUrls.js",
     "src/composables/mainWindowTransition.js",
+    "src/diagnostics/diagnosticError.js",
+    "src/diagnostics/diagnosticPresentation.js",
     "src/diagnostics/runtimePerformanceMetrics.js",
     "src/domain/appearancePreference.js",
     "src/domain/appearancePreferenceTests.js",
@@ -2545,6 +3583,7 @@
     "src/platform/localeRuntime.js",
     "src/platform/localeRuntimeTests.js",
     "src/platform/mainWindowShortcutInput.js",
+    "src/rendering/backgroundCapability.js",
     "src/rendering/backgroundDebugPort.js",
     "src/rendering/backgroundPort.js",
     "src/rendering/contractSnapshot.js",
@@ -2552,34 +3591,92 @@
     "src/rendering/diagnosticPort.js",
     "src/rendering/motionLabRendererAdapter.js",
     "src/rendering/motionPort.js",
+    "src/rendering/pixi/animation/motionDebugReport.js",
+    "src/rendering/pixi/animation/motionDebugReportTests.js",
     "src/rendering/pixi/animation/motionPreferences.js",
     "src/rendering/pixi/animation/motionPresets.js",
+    "src/rendering/pixi/animation/motionReplayTrace.js",
+    "src/rendering/pixi/animation/motionReplayTraceSchema.js",
+    "src/rendering/pixi/animation/motionReplayTraceTests.js",
     "src/rendering/pixi/animation/motionRuntime.js",
     "src/rendering/pixi/animation/motionRuntime.typeTests.js",
-    "src/rendering/pixi/animation/motionRuntimeTestHarness.js",
     "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.js",
     "src/rendering/pixi/animation/motionRuntimeDebugAdapter.js",
+    "src/rendering/pixi/animation/motionRuntimeTestHarness.js",
     "src/rendering/pixi/animation/motionTraceShared.js",
     "src/rendering/pixi/animation/motionTween.js",
     "src/rendering/pixi/assets/iconTextureRepository.js",
+    "src/rendering/pixi/assets/iconTextureSourceAdapter.js",
+    "src/rendering/pixi/background/acrylicBackgroundPlan.js",
+    "src/rendering/pixi/background/acrylicBackgroundPlanTests.js",
+    "src/rendering/pixi/background/acrylicDebugParams.js",
+    "src/rendering/pixi/background/acrylicFilters.js",
+    "src/rendering/pixi/background/acrylicFiltersTests.js",
+    "src/rendering/pixi/background/acrylicNoiseTexture.js",
+    "src/rendering/pixi/background/acrylicNoiseTextureTests.js",
+    "src/rendering/pixi/background/acrylicParams.js",
+    "src/rendering/pixi/background/acrylicParamsTests.js",
+    "src/rendering/pixi/background/backgroundEffectPipeline.js",
+    "src/rendering/pixi/background/backgroundEffectPipelineTests.js",
+    "src/rendering/pixi/background/backgroundEffectPreviewRenderer.js",
+    "src/rendering/pixi/background/backgroundEffectPreviewRendererTests.js",
+    "src/rendering/pixi/background/backgroundTextureLoader.js",
+    "src/rendering/pixi/background/backgroundTextureLoaderTests.js",
+    "src/rendering/pixi/background/kawaseDebugParams.js",
+    "src/rendering/pixi/createPixiApp.js",
+    "src/rendering/pixi/debugNamespace.js",
     "src/rendering/pixi/desktopPresentationLoop.js",
     "src/rendering/pixi/desktopPresentationLoopTests.js",
+    "src/rendering/pixi/devHmr.js",
     "src/rendering/pixi/folderLayerState.js",
+    "src/rendering/pixi/geometry/displayObjectBounds.js",
+    "src/rendering/pixi/geometry/displayObjectBoundsTests.js",
+    "src/rendering/pixi/geometry/gridGeometry.js",
+    "src/rendering/pixi/geometry/gridGeometryTests.js",
+    "src/rendering/pixi/geometry/iconBoundsRegistry.js",
+    "src/rendering/pixi/geometry/iconBoundsRegistryTests.js",
+    "src/rendering/pixi/geometry/iconMetrics.js",
+    "src/rendering/pixi/geometry/rootStageCoordinates.js",
+    "src/rendering/pixi/geometry/rootStageCoordinatesTests.js",
+    "src/rendering/pixi/geometry/stageCoordinates.js",
+    "src/rendering/pixi/geometry/stageCoordinatesTests.js",
+    "src/rendering/pixi/nodes/folderThumbMetrics.js",
+    "src/rendering/pixi/nodes/iconFolderHoverState.js",
+    "src/rendering/pixi/nodes/iconFolderHoverStateTests.js",
+    "src/rendering/pixi/nodes/iconInteractionGeometry.js",
+    "src/rendering/pixi/nodes/iconInteractionGeometryTests.js",
     "src/rendering/pixi/nodes/iconVisualState.js",
+    "src/rendering/pixi/pixiText.js",
+    "src/rendering/pixi/renderDebugFingerprint.js",
     "src/rendering/pixi/renderInvalidation.js",
     "src/rendering/pixi/scene/desktopHandoffState.js",
+    "src/rendering/pixi/scene/desktopIconSizing.js",
+    "src/rendering/pixi/scene/desktopIconSizingTests.js",
     "src/rendering/pixi/scene/desktopLayerFrames.js",
     "src/rendering/pixi/scene/desktopRenderPlan.js",
+    "src/rendering/pixi/scene/folderClosingHandoffActivity.js",
+    "src/rendering/pixi/scene/folderClosingHandoffActivityTests.js",
     "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.js",
-    "src/rendering/pixi/scene/folderOverlayRenderPlan.js",
     "src/rendering/pixi/scene/folderOverlayIconPlanTests.js",
     "src/rendering/pixi/scene/folderOverlayIconRenderPlanTests.js",
+    "src/rendering/pixi/scene/folderOverlayRenderPlan.js",
+    "src/rendering/pixi/scene/folderOverlayTargetResolver.js",
+    "src/rendering/pixi/scene/folderOverlayTargetResolverTests.js",
     "src/rendering/pixi/scene/folderOverlayTargets.js",
+    "src/rendering/pixi/scene/folderPresentationPlan.js",
+    "src/rendering/pixi/scene/folderPresentationPlanTests.js",
     "src/rendering/pixi/scene/folderVisualAdapterLifecycle.js",
     "src/rendering/pixi/scene/folderVisualSession.js",
     "src/rendering/pixi/scene/folderVisualSession.typeTests.js",
+    "src/rendering/pixi/scene/groupDragPresentation.js",
+    "src/rendering/pixi/scene/groupDragPresentationTests.js",
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapter.js",
+    "src/rendering/pixi/scene/groupTransferRuntimeAdapterTests.js",
+    "src/rendering/pixi/scene/iconSceneHelpers.js",
+    "src/rendering/pixi/scene/iconSceneHelpersTests.js",
     "src/rendering/pixi/scene/iconVisualSpec.js",
     "src/rendering/pixi/scene/renderPlanContracts.typeTests.js",
+    "src/rendering/pixi/scene/singleStagePlan.js",
     "src/rendering/runtimeContracts.typeTests.js",
     "src/rendering/sceneContracts.typeTests.js",
     "src/rendering/sceneEvents.js",

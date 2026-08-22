@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -321,14 +321,18 @@ function violationCodes(
   const snapshots: unknown = JSON.parse(result.stdout);
   const exportBaselines = Reflect.get(snapshots as object, "exportBaselines");
   const callerBaselines = Reflect.get(snapshots as object, "callerBaselines");
+  const manifest: unknown = JSON.parse(readFileSync(join(scriptsDirectory, "typescript-migration-manifest.json"), "utf8"));
+  const legacyClosure = Reflect.get(manifest as object, "legacyClosure");
+  assert(Array.isArray(legacyClosure), "the migration manifest must declare the legacy closure as an array");
+  const expectedPagePaths = legacyClosure.slice(0, 1);
   assert(
     exportBaselines !== null
       && typeof exportBaselines === "object"
       && callerBaselines !== null
       && typeof callerBaselines === "object"
-      && Object.keys(exportBaselines as object).length === 1
-      && Object.keys(callerBaselines as object).length === 1,
-    "the legacy closure snapshot CLI must emit a reviewable, paged pre-migration freeze",
+      && JSON.stringify(Object.keys(exportBaselines as object)) === JSON.stringify(expectedPagePaths)
+      && JSON.stringify(Object.keys(callerBaselines as object)) === JSON.stringify(expectedPagePaths),
+    "the legacy closure snapshot CLI must emit the requested reviewable page, including an empty page after closure reaches zero",
   );
 }
 
