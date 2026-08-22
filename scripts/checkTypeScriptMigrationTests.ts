@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   analyzeTypeScriptMigration,
   collectRetiredReplacementSnapshots,
+  collectSourceSnapshots,
   type TypeScriptMigrationManifest,
 } from "./checkTypeScriptMigration.js";
 
@@ -259,6 +260,31 @@ function violationCodes(
 }
 
 {
+  withFixture({
+    "src/caller.ts": "import { publicValue } from './public.js'; void publicValue;\n",
+    "src/public.js": "export const publicValue = 1;\n",
+    "src/reexport.js": "export { publicValue } from './public.js';\n",
+  }, (projectRoot) => {
+    const snapshots = collectSourceSnapshots({
+      manifest: makeManifest(),
+      projectRoot,
+      sourcePaths: ["src/public.js"],
+    });
+    assert.deepEqual(snapshots, {
+      callerBaselines: {
+        "src/public.js": ["src/caller.ts", "src/reexport.js"],
+      },
+      exportBaselines: {
+        "src/public.js": {
+          types: [],
+          values: ["publicValue"],
+        },
+      },
+    }, "source snapshots must freeze legacy exports and all physical callers before a migration rename");
+  });
+}
+
+{
   const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
   const result = spawnSync(
     process.execPath,
@@ -274,6 +300,35 @@ function violationCodes(
       && Reflect.get(snapshots, "callerBaselines")
       && Reflect.get(snapshots, "exportBaselines"),
     "the replacement snapshot CLI must print reviewable export and caller JSON without editing the manifest",
+  );
+}
+
+{
+  const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      join(scriptsDirectory, "checkTypeScriptMigration.ts"),
+      "--print-legacy-closure-snapshots",
+      "--snapshot-limit",
+      "1",
+    ],
+    { cwd: dirname(scriptsDirectory), encoding: "utf8", shell: false },
+  );
+  assert.equal(result.status, 0, result.stderr || "the legacy closure snapshot CLI must exit successfully");
+  const snapshots: unknown = JSON.parse(result.stdout);
+  const exportBaselines = Reflect.get(snapshots as object, "exportBaselines");
+  const callerBaselines = Reflect.get(snapshots as object, "callerBaselines");
+  assert(
+    exportBaselines !== null
+      && typeof exportBaselines === "object"
+      && callerBaselines !== null
+      && typeof callerBaselines === "object"
+      && Object.keys(exportBaselines as object).length === 1
+      && Object.keys(callerBaselines as object).length === 1,
+    "the legacy closure snapshot CLI must emit a reviewable, paged pre-migration freeze",
   );
 }
 

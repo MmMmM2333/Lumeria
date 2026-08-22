@@ -89,10 +89,12 @@ export type TypeScriptMigrationAnalysis = Readonly<{
   violations: readonly MigrationViolation[];
 }>;
 
-export type RetiredReplacementSnapshots = Readonly<{
+export type SourceSnapshots = Readonly<{
   callerBaselines: Readonly<Record<string, readonly string[]>>;
   exportBaselines: Readonly<Record<string, MigrationExportBaseline>>;
 }>;
+
+export type RetiredReplacementSnapshots = SourceSnapshots;
 
 type AnalyzeTypeScriptMigrationOptions = Readonly<{
   baselineLegacyPaths?: readonly string[];
@@ -583,36 +585,26 @@ function collectRetiredTypedReplacements(
   return new Map([...replacements].sort(([left], [right]) => left.localeCompare(right)));
 }
 
-export function collectRetiredReplacementSnapshots(
-  options: Readonly<{ manifest: TypeScriptMigrationManifest; projectRoot: string }>,
-): RetiredReplacementSnapshots {
-  const projectRoot = resolve(options.projectRoot);
-  const graphViolations: MigrationViolation[] = [];
-  const projectPaths = collectProjectPaths(projectRoot, options.manifest, graphViolations);
-  const sources = makeSourceFiles(projectRoot, projectPaths);
-  const edges = makeImportGraph(projectRoot, sources, graphViolations);
-  if (graphViolations.length > 0) {
-    const details = sortViolations(graphViolations)
-      .map(({ code, detail, path }) => `[${code}] ${path}: ${detail}`)
-      .join("\n");
-    throw new Error(`Cannot collect retired replacement snapshots from an invalid source graph:\n${details}`);
-  }
-
+function collectSnapshotsFromGraph(
+  edges: readonly ImportEdge[],
+  sources: ReadonlyMap<string, SourceFile>,
+  sourcePaths: readonly string[],
+): SourceSnapshots {
   const callerBaselines: Record<string, readonly string[]> = {};
   const exportBaselines: Record<string, MigrationExportBaseline> = {};
-  for (const replacement of collectRetiredTypedReplacements(projectRoot, sources, options.manifest).values()) {
-    const sourceFile = sources.get(replacement);
+  for (const rawPath of [...new Set(sourcePaths.map(normalizeRelativePath))].sort()) {
+    const sourceFile = sources.get(rawPath);
     if (!sourceFile) {
-      throw new Error(`Cannot freeze ${replacement}: typed replacement is outside the declared migration scan roots`);
+      throw new Error(`Cannot freeze ${rawPath}: source is outside the declared migration scan roots or does not exist`);
     }
     const exportSurface = collectExportSurface(sourceFile);
     if (exportSurface.unsupportedExportAll) {
-      throw new Error(`Cannot freeze ${replacement}: export-star modules require an explicit public surface`);
+      throw new Error(`Cannot freeze ${rawPath}: export-star modules require an explicit public surface`);
     }
-    callerBaselines[replacement] = Object.freeze([
-      ...new Set(edges.filter((edge) => edge.target === replacement).map((edge) => edge.source)),
+    callerBaselines[rawPath] = Object.freeze([
+      ...new Set(edges.filter((edge) => edge.target === rawPath).map((edge) => edge.source)),
     ].sort());
-    exportBaselines[replacement] = Object.freeze({
+    exportBaselines[rawPath] = Object.freeze({
       types: Object.freeze([...exportSurface.types]),
       values: Object.freeze([...exportSurface.values]),
     });
@@ -621,6 +613,47 @@ export function collectRetiredReplacementSnapshots(
     callerBaselines: Object.freeze(callerBaselines),
     exportBaselines: Object.freeze(exportBaselines),
   });
+}
+
+function makeSnapshotGraph(
+  projectRoot: string,
+  manifest: TypeScriptMigrationManifest,
+): Readonly<{ edges: readonly ImportEdge[]; sources: ReadonlyMap<string, SourceFile> }> {
+  const graphViolations: MigrationViolation[] = [];
+  const projectPaths = collectProjectPaths(projectRoot, manifest, graphViolations);
+  const sources = makeSourceFiles(projectRoot, projectPaths);
+  const edges = makeImportGraph(projectRoot, sources, graphViolations);
+  if (graphViolations.length > 0) {
+    const details = sortViolations(graphViolations)
+      .map(({ code, detail, path }) => `[${code}] ${path}: ${detail}`)
+      .join("\n");
+    throw new Error(`Cannot collect source snapshots from an invalid source graph:\n${details}`);
+  }
+  return Object.freeze({ edges, sources });
+}
+
+export function collectSourceSnapshots(
+  options: Readonly<{
+    manifest: TypeScriptMigrationManifest;
+    projectRoot: string;
+    sourcePaths: readonly string[];
+  }>,
+): SourceSnapshots {
+  const projectRoot = resolve(options.projectRoot);
+  const { edges, sources } = makeSnapshotGraph(projectRoot, options.manifest);
+  return collectSnapshotsFromGraph(edges, sources, options.sourcePaths);
+}
+
+export function collectRetiredReplacementSnapshots(
+  options: Readonly<{ manifest: TypeScriptMigrationManifest; projectRoot: string }>,
+): RetiredReplacementSnapshots {
+  const projectRoot = resolve(options.projectRoot);
+  const { edges, sources } = makeSnapshotGraph(projectRoot, options.manifest);
+  return collectSnapshotsFromGraph(
+    edges,
+    sources,
+    [...collectRetiredTypedReplacements(projectRoot, sources, options.manifest).values()],
+  );
 }
 
 function checkRetiredReplacementBaselines(
@@ -1182,26 +1215,37 @@ function readManifest(path: string): TypeScriptMigrationManifest {
   });
 }
 
+function printSnapshotPage(snapshots: SourceSnapshots): void {
+  const offsetFlagIndex = process.argv.indexOf("--snapshot-offset");
+  const limitFlagIndex = process.argv.indexOf("--snapshot-limit");
+  const offset = offsetFlagIndex >= 0 ? Number.parseInt(process.argv[offsetFlagIndex + 1] ?? "0", 10) : 0;
+  const limit = limitFlagIndex >= 0
+    ? Number.parseInt(process.argv[limitFlagIndex + 1] ?? "0", 10)
+    : Number.POSITIVE_INFINITY;
+  if (!Number.isSafeInteger(offset) || offset < 0 || !(Number.isSafeInteger(limit) || limit === Number.POSITIVE_INFINITY) || limit < 1) {
+    throw new TypeError("snapshot offset must be non-negative and limit must be positive");
+  }
+  const paths = Object.keys(snapshots.exportBaselines).slice(offset, offset + limit);
+  console.log(JSON.stringify({
+    callerBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.callerBaselines[path]])),
+    exportBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.exportBaselines[path]])),
+  }, null, 2));
+}
+
 function runCli(): void {
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const manifestPath = resolve(projectRoot, "scripts", "typescript-migration-manifest.json");
   const manifest = readManifest(manifestPath);
   if (process.argv.slice(2).includes("--print-retired-replacement-snapshots")) {
-    const snapshots = collectRetiredReplacementSnapshots({ manifest, projectRoot });
-    const offsetFlagIndex = process.argv.indexOf("--snapshot-offset");
-    const limitFlagIndex = process.argv.indexOf("--snapshot-limit");
-    const offset = offsetFlagIndex >= 0 ? Number.parseInt(process.argv[offsetFlagIndex + 1] ?? "0", 10) : 0;
-    const limit = limitFlagIndex >= 0
-      ? Number.parseInt(process.argv[limitFlagIndex + 1] ?? "0", 10)
-      : Number.POSITIVE_INFINITY;
-    if (!Number.isSafeInteger(offset) || offset < 0 || !(Number.isSafeInteger(limit) || limit === Number.POSITIVE_INFINITY) || limit < 1) {
-      throw new TypeError("snapshot offset must be non-negative and limit must be positive");
-    }
-    const paths = Object.keys(snapshots.exportBaselines).slice(offset, offset + limit);
-    console.log(JSON.stringify({
-      callerBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.callerBaselines[path]])),
-      exportBaselines: Object.fromEntries(paths.map((path) => [path, snapshots.exportBaselines[path]])),
-    }, null, 2));
+    printSnapshotPage(collectRetiredReplacementSnapshots({ manifest, projectRoot }));
+    return;
+  }
+  if (process.argv.slice(2).includes("--print-legacy-closure-snapshots")) {
+    printSnapshotPage(collectSourceSnapshots({
+      manifest,
+      projectRoot,
+      sourcePaths: manifest.legacyClosure,
+    }));
     return;
   }
   const result = analyzeTypeScriptMigration({ manifest, projectRoot });
