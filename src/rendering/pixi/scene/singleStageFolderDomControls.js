@@ -17,15 +17,11 @@ export function getSingleStageFolderTitleOpenOpacity(frame) {
 }
 
 export function getSingleStageFolderTitleOpacity(frame, options = {}) {
-  if (!options.isClosing) return getSingleStageFolderTitleOpenOpacity(frame);
-  const progress = clamp01(frame?.progress ?? 0);
-  const closingStartOpacity = clamp01(options.closingStartOpacity ?? 1);
-  return closingStartOpacity * clamp01(1 - progress / 0.28);
+  return options.isClosing ? 0 : getSingleStageFolderTitleOpenOpacity(frame);
 }
 
 export function makeSingleStageFolderNameInputStyle(options = {}) {
   const {
-    closingStartOpacity = 1,
     controlsVisible = false,
     frame = null,
     isClosing = false,
@@ -33,7 +29,7 @@ export function makeSingleStageFolderNameInputStyle(options = {}) {
     width = SINGLE_STAGE_FOLDER_NAME_INPUT_WIDTH,
   } = options;
   if (!controlsVisible || !frame) return { opacity: 0, pointerEvents: "none" };
-  const opacity = getSingleStageFolderTitleOpacity(frame, { closingStartOpacity, isClosing });
+  const opacity = getSingleStageFolderTitleOpacity(frame, { isClosing });
   const isInteractive = opacity >= 0.99 && !isInputDisabled;
   return {
     left: `${frame.left + frame.width / 2 - width / 2}px`,

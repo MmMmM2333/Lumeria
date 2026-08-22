@@ -1658,6 +1658,67 @@ export async function runLaunchpadDragTests() {
   });
 
   await withMockPointerEnvironment(async ({ timers }) => {
+    const draggedApp = app("hover-stationary-release-source");
+    const targetApp = app("hover-stationary-release-target");
+    const harness = createAtomicDragHarness([[draggedApp, targetApp]], {
+      folderPanelRect: {
+        bottom: 520,
+        height: 440,
+        left: 300,
+        right: 400,
+        top: 80,
+        width: 100,
+      },
+    });
+    const sourceElement = {
+      getBoundingClientRect: () => ({ height: 64, left: 16, top: 120, width: 64 }),
+    };
+    harness.iconBoundsRegistry.registerBounds(
+      ICON_BOUNDS_KIND.LAUNCH,
+      ICON_BOUNDS_VARIANT.RENDERED,
+      { area: "desktop", id: targetApp.id, pageIndex: 0 },
+      { height: 64, left: 200, top: 150, width: 64 },
+      { area: "desktop", id: targetApp.id, index: 1, item: targetApp, pageIndex: 0 }
+    );
+    harness.drag.startDrag(
+      makePointerEvent(177, sourceElement, { clientX: 48, clientY: 152 }),
+      draggedApp,
+      { index: 0, pageIndex: 0, type: "page" }
+    );
+    harness.drag.updateDragPointer(makePointerEvent(177, sourceElement, {
+      clientX: 232,
+      clientY: 182,
+      timeStamp: 130,
+    }));
+    assert(flushTimerByDelay(timers, 42), "stationary release should acquire its application target");
+    assert(flushTimerByDelay(timers, 660), "stationary release should enter the double flash");
+    assert(flushTimerByDelay(timers, 1130), "stationary release should enter the opening lead-in");
+    assert(flushTimerByDelay(timers, 1220), "stationary release should open its provisional folder");
+    assert(
+      harness.openFolderId.value === "folder-created",
+      "stationary release should begin with the provisional folder open"
+    );
+
+    harness.drag.finishDrag(makePointerEvent(177, sourceElement, {
+      button: 0,
+      buttons: 0,
+      clientX: 232,
+      clientY: 182,
+      type: "pointerup",
+    }));
+    const committedFolder = harness.pages.value.flat().find((item) => item?.id === "folder-created");
+    assert(harness.calls.commits.length === 1, "releasing on the retained target leash should commit exactly once");
+    assert(harness.calls.discardedFolders.length === 0, "stationary release must not cross the provisional discard path");
+    assert(
+      committedFolder?.childPages?.flat().map((item) => item.id).join(",") ===
+        "hover-stationary-release-target,hover-stationary-release-source",
+      "stationary release should materialize target then dragged app"
+    );
+    assert(harness.openFolderId.value === "folder-created", "the stationary committed folder should remain open");
+    settleRelease(harness.drag);
+  });
+
+  await withMockPointerEnvironment(async ({ timers }) => {
     const draggedApp = app("hover-commit-source");
     const targetApp = app("hover-commit-target");
     const harness = createAtomicDragHarness([[draggedApp, targetApp]]);

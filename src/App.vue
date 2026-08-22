@@ -61,6 +61,7 @@
     >
       <PixiDesktopSurface
         :key="singleStageRenderKey"
+        ref="pixiDesktopSurfaceRef"
         :scene-frame="desktopSceneFrame"
         :scene-runtime="desktopSceneRuntime"
         @scene-event="handlePixiSceneEvent"
@@ -130,6 +131,7 @@ import { makeDesktopSceneRuntimeAdapter } from "./rendering/sceneRuntime.js";
 import {
   getSingleStageDiagnosticsOptions,
   getSingleStageRenderKey,
+  ICON_BOUNDS_VARIANT,
   resolveFolderClosingHandoffId,
   resolveFolderPixiActivityUpdate,
   resolveFolderSourceGhostedIds,
@@ -172,6 +174,7 @@ const props = defineProps({
 });
 const localizationText = useLocalization();
 const localizationRuntime = useLocalizationRuntime();
+const pixiDesktopSurfaceRef = ref(null);
 const selectionToolbarRef = ref(null);
 const controller = useLaunchpadController({
   activateLocale: localizationRuntime.activate,
@@ -388,6 +391,56 @@ const isLiveDesktopExperimentActive = computed(() => isLiveDesktopExperimentEnab
 const LIVE_DESKTOP_COMPOSITOR_KEEPER_INTERVAL_MS = 250;
 const launchpadOverlaysRef = ref(null);
 const BACKGROUND_MEDIA_FADE_MS = 220;
+if (import.meta.env.DEV) {
+  let disposeLaunchpadE2eProbe = null;
+  let launchpadE2eProbeDisposed = false;
+
+  function getLaunchpadE2eIconBounds(iconId) {
+    const pages = activePages.value || [];
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+      if (!(pages[pageIndex] || []).some((item) => item?.id === iconId)) continue;
+      return iconBoundsRegistry.getBounds(
+        ICON_BOUNDS_KIND.LAUNCH,
+        ICON_BOUNDS_VARIANT.RENDERED,
+        { area: "desktop", id: iconId, pageIndex }
+      );
+    }
+    throw new Error(`Launchpad E2E fixture does not contain desktop icon ${iconId}`);
+  }
+
+  async function mountLaunchpadE2eProbe() {
+    if (launchpadE2eProbeDisposed || !isMultiSelectFixture) return;
+    const { installLaunchpadE2eProbe } = await import("./testing/launchpadE2eProbe.js");
+    if (launchpadE2eProbeDisposed || !isMultiSelectFixture) return;
+    disposeLaunchpadE2eProbe = installLaunchpadE2eProbe({
+      getIconBounds: getLaunchpadE2eIconBounds,
+      getSnapshotState: () => ({
+        authoritativePages: chrome.activePages.value,
+        drag: groupDragState.value,
+        folder: {
+          closing: isFolderClosing.value,
+          layerActive: isFolderLayerActive.value,
+          openFolderId: openFolderId.value,
+          renderedFolderId: renderedFolder.value?.id || null,
+        },
+        hover: dragFolderHoverState.value,
+        renderedPages: activePages.value,
+        rollback: provisionalFolderRollback.value,
+        visual: pixiDesktopSurfaceRef.value?.getLaunchpadE2eVisualSnapshot?.() || null,
+      }),
+    });
+  }
+
+  onMounted(() => {
+    if (isMultiSelectFixture) void mountLaunchpadE2eProbe();
+  });
+
+  onBeforeUnmount(() => {
+    launchpadE2eProbeDisposed = true;
+    disposeLaunchpadE2eProbe?.();
+    disposeLaunchpadE2eProbe = null;
+  });
+}
 const PIXI_BACKGROUND_HANDOFF_DELAY_MS = 220;
 const STARTUP_MASK_FADE_MS = 260;
 const STARTUP_MASK_MAX_WAIT_MS = 8000;

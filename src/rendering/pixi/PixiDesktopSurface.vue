@@ -27,6 +27,7 @@
         <input
           ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
+          :class="{ 'is-closing': isSingleStageFolderClosing }"
           name="pixiSingleStageFolderName"
           :value="sceneRuntime.folderOverlayState.renderedFolder.value.name"
           :disabled="isSingleStageFolderInputDisabled"
@@ -101,7 +102,6 @@ import {
 } from "./scene/folderHandoffDebug.js";
 import { getSingleStageDiagnosticsOptions } from "./scene/singleStagePlan.js";
 import {
-  getSingleStageFolderTitleOpenOpacity,
   isSingleStageFolderTitleFrameCurrent,
   makeSingleStageFolderNameInputStyle,
 } from "./scene/singleStageFolderDomControls.js";
@@ -172,7 +172,6 @@ const rootStageHostStyle = ref(makeRootStageHostStyle());
 const singleStageFolderPanelGeometry = ref(null);
 const singleStageFolderTitleFrame = ref(null);
 const singleStageFolderNameBeforeEdit = ref("");
-const singleStageFolderClosingTitleStartOpacity = ref(1);
 let app = null;
 let layer = null;
 let resizeObserver = null;
@@ -229,7 +228,6 @@ const singleStageFolderNameInputStyle = computed(() => {
     ? singleStageFolderTitleFrame.value
     : null;
   return makeSingleStageFolderNameInputStyle({
-    closingStartOpacity: singleStageFolderClosingTitleStartOpacity.value,
     controlsVisible: shouldRenderSingleStageFolderDomControls.value,
     frame,
     isClosing: isSingleStageFolderClosing.value,
@@ -1201,20 +1199,14 @@ onMounted(async () => {
 watch(
   () => isSingleStageFolderClosing.value,
   (isClosing, wasClosing) => {
-    if (isClosing && !wasClosing) {
-      singleStageFolderClosingTitleStartOpacity.value = getSingleStageFolderTitleOpenOpacity(
-        singleStageFolderTitleFrame.value
-      );
-      // A close commit changes the canvas ownership before Vue's next RAF.
-      // Flush that structural handoff in the post-flush microtask so the
-      // browser never composites the previous fully-open folder frame.
-      const committed = presentationLoop?.flushBeforeComposite({ reason: "folder-close-commit" }) ?? false;
-      if (!committed && !destroyed && app && layer && hostRef.value) {
-        throw new Error("Folder close could not commit before browser composition");
-      }
-      return;
+    if (!isClosing || wasClosing) return;
+    // A close commit changes the canvas ownership before Vue's next RAF.
+    // Flush that structural handoff in the post-flush microtask so the
+    // browser never composites the previous fully-open folder frame.
+    const committed = presentationLoop?.flushBeforeComposite({ reason: "folder-close-commit" }) ?? false;
+    if (!committed && !destroyed && app && layer && hostRef.value) {
+      throw new Error("Folder close could not commit before browser composition");
     }
-    if (!isClosing) singleStageFolderClosingTitleStartOpacity.value = 1;
   }
 );
 
@@ -1320,6 +1312,31 @@ watchEffect(() => {
 });
 
 onBeforeUnmount(destroyPixi);
+
+defineExpose(import.meta.env.DEV ? {
+  getLaunchpadE2eVisualSnapshot() {
+    const folderCreateTargets = [];
+    for (const node of layer?.iconNodes?.values?.() || []) {
+      if (!node?.item?.id || node.item.type !== "app") continue;
+      const backdrop = node.folderCreateBackdrop;
+      const flash = node.folderCreateFlashOverlay;
+      if (!node.appFolderCreateActive && !backdrop?.visible && !flash?.visible) continue;
+      folderCreateTargets.push(Object.freeze({
+        active: node.appFolderCreateActive === true,
+        backdropAlpha: Number(backdrop?.alpha) || 0,
+        backdropVisible: backdrop?.visible === true,
+        flashAlpha: Number(flash?.alpha) || 0,
+        flashVisible: flash?.visible === true,
+        id: node.item.id,
+        phase: node.appFolderCreatePhase || null,
+      }));
+    }
+    return Object.freeze({
+      folderCreateTargets: Object.freeze(folderCreateTargets),
+      folderVisual: layer?.getFolderVisualDebugSnapshot?.() || null,
+    });
+  },
+} : {});
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => disposePixiForHotReload(destroyPixi));

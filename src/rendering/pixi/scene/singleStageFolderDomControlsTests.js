@@ -35,10 +35,13 @@ export function runSingleStageFolderDomControlsTests() {
   const disabledInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame, isInputDisabled: true });
   assert(disabledInput.pointerEvents === "none", "disabled input should not receive pointer events");
 
-  const closingOpacity = getSingleStageFolderTitleOpacity({ progress: 0.14 }, {
-    closingStartOpacity: 0.8,
-    isClosing: true,
-  });
-  assert(nearlyEqual(closingOpacity, 0.4), "closing title opacity should fade from the captured start opacity");
+  const closingOpacity = getSingleStageFolderTitleOpacity({ progress: 0.14 }, { isClosing: true });
+  assert(closingOpacity === 0, "closing title should expose one stable CSS transition target");
+
+  const closingInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame, isClosing: true });
+  assert(
+    closingInput.opacity === 0 && closingInput.pointerEvents === "none",
+    "closing input should transition toward hidden without remaining interactive",
+  );
 
 }

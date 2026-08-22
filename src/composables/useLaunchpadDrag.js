@@ -1083,17 +1083,19 @@ export function useLaunchpadDrag(options) {
       transit.hasEnteredPanel = true;
       return "inside";
     }
-    if (!transit.hasEnteredPanel && syncOptions.finalize !== true) {
-      const provisionalTarget = group.provisionalFolder?.folderId === transit.folderId
-        ? group.provisionalFolder.target
+    if (!transit.hasEnteredPanel) {
+      const provisional = group.provisionalFolder?.folderId === transit.folderId
+        ? group.provisionalFolder
         : null;
+      const provisionalTarget = provisional?.target || null;
       const point = getPointerCenter() || { x: clientX, y: clientY };
       const stickyRect = getTargetStickyRect(provisionalTarget);
       if (provisionalTarget && (!stickyRect || !isPointInsideRect(stickyRect, point.x, point.y))) {
         leaveFolderTransit();
         return "desktop";
       }
-      return "awaiting-entry";
+      if (syncOptions.finalize !== true) return "awaiting-entry";
+      if (provisional) return "provisional-target";
     }
     leaveFolderTransit();
     return "desktop";
@@ -1102,6 +1104,28 @@ export function useLaunchpadDrag(options) {
   function resolveDropIntent(clientX, clientY, resolveOptions = {}) {
     const point = getPointerCenter() || { x: clientX, y: clientY };
     const transitPhase = syncFolderTransit(clientX, clientY, resolveOptions);
+    if (transitPhase === "provisional-target") {
+      const provisional = activeDrag.group.provisionalFolder;
+      if (!provisional) {
+        throw new Error("Provisional folder transit lost its release projection");
+      }
+      const folder = findFolderInPages(provisional.projectedPages, provisional.folderId);
+      if (!folder) {
+        throw new Error(`Provisional folder ${provisional.folderId} is missing from its release projection`);
+      }
+      const index = getFolderChildrenPages(folder).flatMap((page) => page || []).length;
+      return {
+        fallbackPoint: point,
+        intent: {
+          folderId: provisional.folderId,
+          folderPageIndex: 0,
+          index,
+          type: "folder-slot",
+        },
+        locked: false,
+        target: null,
+      };
+    }
     if (transitPhase === "awaiting-entry") {
       const pageIndex = getVisualDesktopPageIndex();
       const pageRect = getPageRect(pageIndex);

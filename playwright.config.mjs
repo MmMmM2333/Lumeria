@@ -13,6 +13,8 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4175",
     deviceScaleFactor: 1,
     headless: true,
+    screenshot: "only-on-failure",
+    trace: "retain-on-failure",
     viewport: { height: 600, width: 800 },
   },
   projects: [
