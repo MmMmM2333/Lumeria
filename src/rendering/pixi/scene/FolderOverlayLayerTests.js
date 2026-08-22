@@ -16,6 +16,7 @@ import {
   ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { flushMotionRuntimeTestFrame } from "../animation/motionRuntimeTestHarness.js";
 import { FolderVisualSession } from "./folderVisualSession.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
@@ -2801,7 +2802,7 @@ export async function runFolderOverlayLayerTests() {
     assert(detachedChildren[0].eventMode === "none", "source lock should not create a stale pointer target");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should keep the real desktop folder ghosted");
     assert(clearCount === 1, "source lock setup should still clear live closing controller state");
-    motionRuntime.flushAfterFrameForTests();
+    flushMotionRuntimeTestFrame(motionRuntime);
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should survive idle geometry completion while desktop is still closing");
     layer.syncDesktopCloseDetachedHandoff({ isDesktopClosing: false });
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "source lock should release after desktop close completes");
@@ -2846,7 +2847,7 @@ export async function runFolderOverlayLayerTests() {
     assert(layer.detachedClosingVisuals.length === 1, "desktop close detached state should keep a detached handoff/source lock");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "desktop close detached state should keep the real source ghosted");
 
-    motionRuntime.flushAfterFrameForTests();
+    flushMotionRuntimeTestFrame(motionRuntime);
     layer.panel.visible = true;
     layer.pageTrack.visible = true;
     layer.pageDotsLayer.visible = true;
@@ -2918,7 +2919,7 @@ export async function runFolderOverlayLayerTests() {
     assert((detachedVisual.motionControls?.size || 0) > 0, "test setup: detached frame should register a geometry animation control");
 
     for (const control of Array.from(detachedVisual.motionControls || [])) control.cancel?.("interrupted");
-    motionRuntime.flushAfterFrameForTests();
+    flushMotionRuntimeTestFrame(motionRuntime);
 
     assert(handoffVisualReleases.join(",") === "folder-a", "a cancelled detached closing animation must still reveal the desktop source icon (no stuck-hidden handoff)");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "a cancelled detached closing animation must release the desktop source ownership");
@@ -3800,7 +3801,7 @@ export async function runFolderOverlayLayerTests() {
       layer.markRegisteredBoundsDirty();
       layer.markRegisteredBoundsDirty();
       assert(refreshCount === 0, "registered bounds dirty should wait until the runtime frame-end flush");
-      motionRuntime.flushAfterFrameForTests();
+      flushMotionRuntimeTestFrame(motionRuntime);
       assert(refreshCount === 1, "registered bounds dirty should coalesce repeated marks into one refresh");
       assert(layer.registeredBoundsDirty === false && layer.registeredBoundsFlushQueued === false, "registered bounds flush should clear queued flags");
     } finally {

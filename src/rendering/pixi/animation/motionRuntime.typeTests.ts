@@ -52,6 +52,9 @@ const renderListener: MotionRenderSignalListener = (signal) => {
 };
 runtime.onRenderSignal(renderListener);
 
+// @ts-expect-error Production motion runtimes must not expose test-only flush controls.
+runtime.flushAfterFrameForTests();
+
 const stubFactory: MotionRuntimeDebugAdapterFactory = createStubDebugAdapter;
 const devFactory: MotionRuntimeDebugAdapterFactory = createDevDebugAdapter;
 

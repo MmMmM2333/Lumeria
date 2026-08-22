@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "checkJs": false
+  },
+  "files": [
+    "src/composables/mainWindowTransition.ts",
+    "src/diagnostics/runtimePerformanceMetrics.ts",
+    "src/domain/layoutDocument.ts",
+    "src/domain/layoutDocument.typeTests.ts",
+    "src/rendering/contractSnapshot.ts",
+    "src/rendering/pixi/animation/motionTraceShared.ts",
+    "src/rendering/pixi/nodes/iconVisualState.ts",
+    "src/rendering/pixi/renderInvalidation.ts",
+    "src/rendering/pixi/scene/desktopHandoffState.ts",
+    "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts",
+    "src/rendering/sceneContracts.typeTests.ts",
+    "src/rendering/sceneEvents.ts",
+    "src/rendering/sceneFrame.ts"
+  ],
+  "include": []
+}

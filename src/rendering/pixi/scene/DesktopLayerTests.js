@@ -296,6 +296,7 @@ export async function runDesktopLayerTests() {
     makeDesktopSourceVisualKey,
   } = await import("./visualOwnershipRegistry.js");
   const { motionRuntime } = await import("../animation/motionRuntime.js");
+  const { flushMotionRuntimeTestFrame } = await import("../animation/motionRuntimeTestHarness.js");
   const { sceneDiagnosticsState } = await import("../../../diagnostics/sceneDiagnosticsState.js");
   const {
     captureDesktopHandoffObservation,
@@ -1166,7 +1167,7 @@ export async function runDesktopLayerTests() {
       pageTrack.x = -480;
       assert(layer.reconcileFolderHandoffEntry(handoffState, entry), "settled desktop page motion should allow handoff cleanup");
       assert(entry.cleanupFrame?.cancelled === false, "settled handoff cleanup should schedule the normal cleanup frame");
-      motionRuntime.flushAfterFrameForTests();
+      flushMotionRuntimeTestFrame(motionRuntime);
       assert(!layer.getFolderHandoffEntry("folder-a"), "settled cleanup frame should clear the handoff entry");
       motionRuntime.reset();
     }
@@ -1405,7 +1406,7 @@ export async function runDesktopLayerTests() {
       layer.markInteractiveBoundsDirty();
       layer.markInteractiveBoundsDirty();
       assert(refreshCount === 0, "bounds dirty should wait until the runtime frame-end flush");
-      motionRuntime.flushAfterFrameForTests();
+      flushMotionRuntimeTestFrame(motionRuntime);
       assert(refreshCount === 1, "bounds dirty should coalesce repeated marks into one refresh");
       assert(folderRefreshCount === 1, "bounds dirty flush should refresh folder overlay bounds once");
       assert(layer.boundsDirty === false && layer.boundsFlushQueued === false, "bounds dirty flush should clear queued flags");
@@ -2261,7 +2262,7 @@ export async function runDesktopLayerTests() {
 
       layer.commitFolderSourceGhosting();
       assert(layer.getFolderHandoffEntry("folder-1")?.cleanupFrame?.cancelled === false, "source ghosting commit should schedule eligible handoff cleanup");
-      motionRuntime.flushAfterFrameForTests();
+      flushMotionRuntimeTestFrame(motionRuntime);
       assert(!layer.getFolderHandoffEntry("folder-1"), "scheduled source ghosting reconciliation should clear eligible handoff entries");
     } finally {
       motionRuntime.reset();
@@ -2435,7 +2436,7 @@ export async function runDesktopLayerTests() {
       assert(folder.labelRevealCount === 1, "late visual release should not restart the label reveal before cleanup");
       assert(folder.visualWrap.visible === true, "settled overlay release should restore artwork before final handoff cleanup");
 
-      motionRuntime.flushAfterFrameForTests();
+      flushMotionRuntimeTestFrame(motionRuntime);
 
       assert(layer.folderHandoffNode === null, "cleanup frame should clear handoff state");
       assert(layer.folderHandoffNodes.size === 0, "cleanup frame should clear handoff entries");

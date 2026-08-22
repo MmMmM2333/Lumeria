@@ -1,8 +1,23 @@
-import { makeFolderOverlayRenderPlan } from "./folderOverlayRenderPlan.js";
+import type { SceneItem } from "../../sceneFrame.js";
+import {
+  makeFolderOverlayRenderPlan,
+  type FolderOverlayGroupDragState,
+  type FolderOverlayRenderEntry,
+  type FolderOverlayRenderPlan,
+} from "./folderOverlayRenderPlan.js";
 import * as iconVisualSpec from "./iconVisualSpec.js";
 
-function makeIconBehaviorPlan(overrides = {}) {
-  const item = overrides.item || {
+type IconBehaviorPlanOverrides = Readonly<{
+  groupDragState?: FolderOverlayGroupDragState;
+  interactive?: boolean;
+  item?: SceneItem;
+  ownedItemIds?: ReadonlySet<string>;
+  pageSpan?: number;
+  textless?: boolean;
+}>;
+
+function makeIconBehaviorPlan(overrides: IconBehaviorPlanOverrides = {}): FolderOverlayRenderPlan {
+  const item: SceneItem = overrides.item ?? {
     customIconPath: "icon.png",
     id: "app-1",
     type: "app",
@@ -34,13 +49,13 @@ function makeIconBehaviorPlan(overrides = {}) {
       getFolderPageRenderMode: (pageIndex) => pageIndex === 2
         ? interactive ? "interactive" : "static-real"
         : "empty",
-      getVisibleFolderPage: (page) => page,
-      groupDragState: overrides.groupDragState || {
+      getVisibleFolderPage: (page) => page.filter((entry): entry is SceneItem => entry !== null),
+      groupDragState: overrides.groupDragState ?? {
         phase: "dragging",
         totalCount: 1,
         visualSpec: null,
       },
-      groupTransferOwnedItemIds: overrides.ownedItemIds || new Set([item.id]),
+      groupTransferOwnedItemIds: overrides.ownedItemIds ?? new Set([item.id]),
       iconGesturePresentation: null,
       iconSize: 56,
       isBatchSelectionActive: false,
@@ -82,10 +97,16 @@ function makeIconBehaviorPlan(overrides = {}) {
   });
 }
 
-export function runFolderOverlayIconPlanTests() {
-  const assert = (condition, message) => {
+function firstEntry(plan: FolderOverlayRenderPlan): FolderOverlayRenderEntry {
+  const entry = plan.entries[0];
+  if (!entry) throw new Error("[Pixi folder overlay icon render-plan test failed] expected a planned icon entry");
+  return entry;
+}
+
+export function runFolderOverlayIconRenderPlanTests(): void {
+  function assert(condition: unknown, message: string): asserts condition {
     if (!condition) throw new Error(`[Pixi folder overlay icon plan test failed] ${message}`);
-  };
+  }
 
   const normalizedSpec = iconVisualSpec.makeIconVisualSpec({
     cellHeight: 40,
@@ -95,6 +116,7 @@ export function runFolderOverlayIconPlanTests() {
     singleLineLabel: true,
     textless: false,
   });
+  assert(normalizedSpec !== null, "valid visual inputs should produce a visual spec");
   assert(normalizedSpec.iconSize === 56, "visual specs should accept finite numeric input at the dynamic boundary");
   assert(normalizedSpec.cellHeight === 56 && normalizedSpec.cellWidth === 80, "visual spec cells should never be smaller than the icon");
   assert(iconVisualSpec.makeIconVisualSpec({ iconSize: 0 }) === null, "invalid icon sizes should reject the visual spec");
@@ -105,6 +127,7 @@ export function runFolderOverlayIconPlanTests() {
     { cellHeight: 96, cellWidth: 80, compact: true, iconSize: 64, singleLineLabel: true, textless: true },
     0.5,
   );
+  assert(interpolatedSpec !== null, "compatible visual specs should interpolate");
   assert(interpolatedSpec.iconSize === 56 && interpolatedSpec.compact, "visual spec interpolation should blend dimensions and switch flags at midpoint");
   assert(iconVisualSpec.hasIconVisualSpecMismatch(normalizedSpec, { ...normalizedSpec, iconSize: 57 }), "visual spec mismatch should detect numeric changes outside epsilon");
   assert(!iconVisualSpec.hasIconVisualSpecMismatch(normalizedSpec, { ...normalizedSpec, iconSize: 56.4 }), "visual spec mismatch should tolerate sub-epsilon numeric changes");
@@ -112,7 +135,8 @@ export function runFolderOverlayIconPlanTests() {
   assert(!("cloneIconVisualSpec" in iconVisualSpec), "the duplicate visual-spec clone path should not remain public");
 
   const plan = makeIconBehaviorPlan();
-  const [entry] = plan.entries;
+  const entry = firstEntry(plan);
+  assert(entry.nodeState.source !== null, "planned folder icons should retain a source descriptor");
   assert(entry.key === "folder-1:app-1", "folder icon identity should stay independent of page position");
   assert(entry.x === 1080 && entry.y === 80, "folder icons should be positioned inside the paged grid");
   assert(entry.targetCenter.x === 680 && entry.targetCenter.y === 126, "target center should include panel, track, and normal visual offset");
@@ -127,16 +151,16 @@ export function runFolderOverlayIconPlanTests() {
   assert(entry.nodeState.opening && entry.nodeState.focused, "node state should preserve opening and focus lookups");
   assert(entry.nodeState.stageWidth === 1440 && entry.nodeState.stageHeight === 900, "node state should preserve stage dimensions");
 
-  const panelSpacedEntry = makeIconBehaviorPlan({ pageSpan: 620 }).entries[0];
+  const panelSpacedEntry = firstEntry(makeIconBehaviorPlan({ pageSpan: 620 }));
   assert(panelSpacedEntry.x === 1320, "folder layout should allow page spacing wider than the icon grid");
 
-  const textlessEntry = makeIconBehaviorPlan({ textless: true }).entries[0];
+  const textlessEntry = firstEntry(makeIconBehaviorPlan({ textless: true }));
   assert(textlessEntry.targetCenter.x === 680 && textlessEntry.targetCenter.y === 140, "textless target centers should remove the label visual offset");
 
-  const inactiveEntry = makeIconBehaviorPlan({
+  const inactiveEntry = firstEntry(makeIconBehaviorPlan({
     interactive: false,
     ownedItemIds: new Set(),
-  }).entries[0];
+  }));
   assert(!inactiveEntry.nodeState.draggable && !inactiveEntry.nodeState.editing, "inactive pages should not be draggable or editing");
   assert(!inactiveEntry.nodeState.opening && !inactiveEntry.nodeState.focused, "inactive pages should suppress opening and focus state");
   assert(inactiveEntry.nodeState.launchTargetStatus === null, "inactive pages should suppress launch target status");

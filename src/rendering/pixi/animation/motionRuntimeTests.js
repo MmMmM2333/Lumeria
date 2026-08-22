@@ -5,6 +5,7 @@ import {
   tween,
 } from "./motionRuntime.js";
 import { createMotionRuntimeDebugAdapter } from "./motionRuntimeDebugAdapter.dev.js";
+import { flushMotionRuntimeTestFrame } from "./motionRuntimeTestHarness.js";
 
 function nearlyEqual(actual, expected, epsilon = 0.001) {
   return Math.abs(actual - expected) <= epsilon;
@@ -68,6 +69,19 @@ export function runMotionRuntimeTests() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(`[Motion runtime test failed] ${message}`);
   };
+
+  {
+    const runtime = createMotionRuntime({ autoStart: false });
+    let afterFrameCalls = 0;
+    runtime.afterFrame(() => {
+      afterFrameCalls += 1;
+    });
+
+    flushMotionRuntimeTestFrame(runtime);
+
+    assert(afterFrameCalls === 1, "test harness should flush queued after-frame callbacks through the public step seam");
+    assert(!("flushAfterFrameForTests" in runtime), "production runtime should not expose a test-only frame flush method");
+  }
 
   {
     const adapter = createMotionRuntimeDebugAdapter();

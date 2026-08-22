@@ -460,10 +460,6 @@ export interface MotionRuntime {
   suspendAutoTicker(): void;
 }
 
-interface MotionRuntimeTestControls {
-  flushAfterFrameForTests(): void;
-}
-
 let motionRuntimeDebugAdapterFactory: MotionRuntimeDebugAdapterFactory = createMotionRuntimeDebugAdapter;
 const motionRuntimeDebugAdapterInstallers = new Set<(factory: MotionRuntimeDebugAdapterFactory) => boolean>();
 
@@ -1764,7 +1760,6 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
     debugReport,
     debugSnapshot,
     describeTarget,
-    flushAfterFrameForTests: flushAfterFrame,
     getChannel: (target, prop) => getChannel(target, prop),
     get debug() {
       return debugAdapter.debug;
@@ -1778,7 +1773,7 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
     step,
     stop,
     suspendAutoTicker,
-  } satisfies MotionRuntime & MotionRuntimeTestControls;
+  } satisfies MotionRuntime;
   return runtime;
 }
 

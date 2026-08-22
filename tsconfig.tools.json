@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "checkJs": false,
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "files": [
+    "scripts/checkTypeScriptMigration.ts",
+    "scripts/checkTypeScriptMigrationTests.ts"
+  ],
+  "include": []
+}
