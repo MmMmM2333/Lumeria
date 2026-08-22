@@ -9,6 +9,7 @@ import {
   type LaunchpadApp,
   type LaunchpadFolder,
 } from "./launchpadLayout.js";
+import { cloneLaunchpadApp } from "./launchpadClone.js";
 
 export function runLaunchpadHelperTests(
   context: { helpers: ReturnType<typeof createLaunchpadLayoutHelpers> },
@@ -36,6 +37,26 @@ export function runLaunchpadHelperTests(
   const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
     if (!condition) throw new Error(`[Launchpad Vue helper test failed] ${message}`);
   };
+
+  const cloneSource: LaunchpadApp = {
+    id: "clone-source",
+    type: "app",
+    name: "Clone Source",
+    catalogPresentation: { name: "Catalog Clone", emoji: "C" },
+    launchTarget: { kind: "executable", path: "C:/Apps/Clone.exe" },
+    presentationOverrides: { name: "Override Clone" },
+    sources: [{ key: "clone-source-key", rootId: "clone-root" }],
+  };
+  const clonedApp = cloneLaunchpadApp(cloneSource);
+  assert(
+    clonedApp !== cloneSource
+      && clonedApp.catalogPresentation !== cloneSource.catalogPresentation
+      && clonedApp.launchTarget !== cloneSource.launchTarget
+      && clonedApp.presentationOverrides !== cloneSource.presentationOverrides
+      && clonedApp.sources !== cloneSource.sources
+      && clonedApp.sources?.[0] !== cloneSource.sources?.[0],
+    "app cloning should detach every known nested mutable field",
+  );
 
   assert(makePageSize(4, 6) === 24, "page size should equal rows * cols");
   assert(chunkIntoPages([a, b, c], 2).length === 2, "custom page size should repack into more pages when capacity shrinks");

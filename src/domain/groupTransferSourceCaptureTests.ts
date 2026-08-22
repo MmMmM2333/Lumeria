@@ -1,14 +1,15 @@
 import {
   captureGroupTransferSourceEntries,
   indexGroupTransferSources,
-  type GroupTransferItem,
+  type GroupTransferAppItem,
+  type GroupTransferFolderItem,
 } from "./groupTransferSourceCapture.js";
 
-function app(id: string): GroupTransferItem {
+function app(id: string): GroupTransferAppItem {
   return { id, name: id, type: "app" };
 }
 
-function folder(id: string, childIds: readonly string[]): GroupTransferItem {
+function folder(id: string, childIds: readonly string[]): GroupTransferFolderItem {
   const children = childIds.map(app);
   return {
     childPages: [children.slice(0, 6), children.slice(6)],

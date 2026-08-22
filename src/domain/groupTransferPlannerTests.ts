@@ -14,8 +14,13 @@ function app(id: string): GroupTransferAppItem {
   return { id, name: id, type: "app" };
 }
 
-function folder(id: string, pages: readonly (readonly string[])[]): GroupTransferFolderItem {
-  const childPages = pages.map((page) => page.map((id) => app(id)));
+function folder(
+  id: string,
+  pages: readonly (readonly (string | null | undefined)[])[],
+): GroupTransferFolderItem {
+  const childPages = pages.map((page) => page.flatMap((childId) => (
+    childId ? [app(childId)] : []
+  )));
   return {
     childPages,
     id,
@@ -24,8 +29,10 @@ function folder(id: string, pages: readonly (readonly string[])[]): GroupTransfe
   };
 }
 
-function ids(items: readonly GroupTransferItem[] | null | undefined): string {
-  return (items || []).map((item) => item.id).join(",");
+function ids(
+  items: readonly (GroupTransferItem | null | undefined)[] | null | undefined,
+): string {
+  return (items || []).flatMap((item) => item ? [item.id] : []).join(",");
 }
 
 function folderById(
@@ -39,7 +46,10 @@ function folderById(
 function allItemIds(pages: readonly (readonly GroupTransferItem[])[]): string[] {
   return pages.flatMap((page) => page.flatMap((item) => (
     item.type === "folder"
-      ? [item.id, ...item.childPages.flat().map((child) => child.id)]
+      ? [
+          item.id,
+          ...item.childPages.flat().flatMap((child) => child ? [child.id] : []),
+        ]
       : [item.id]
   )));
 }

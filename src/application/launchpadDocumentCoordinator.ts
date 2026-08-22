@@ -1,16 +1,15 @@
 import { applyCachedIconAssetUrlsToPages } from "../domain/iconSource.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
+import type { ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
 
 type UnknownRecord = Record<string, unknown>;
-type RuntimeItem = UnknownRecord;
-type RuntimePages = RuntimeItem[][];
 type LayoutFragment = Readonly<{
   configuration: UnknownRecord;
-  pages: RuntimePages;
+  pages: ReadonlyLaunchpadPages;
 }>;
 type AppsFragment = UnknownRecord & Readonly<{ hiddenAppIds: readonly string[] }>;
 type Reconciliation = Readonly<{
-  pages: RuntimePages;
+  pages: ReadonlyLaunchpadPages;
   issues: readonly unknown[];
 }>;
 type LayoutOwner = Readonly<{
@@ -22,7 +21,7 @@ type LayoutOwner = Readonly<{
     hiddenAppIds: readonly string[],
   ): Reconciliation;
   restoreConfiguration(configuration: UnknownRecord): unknown;
-  restorePages(pages: RuntimePages): unknown;
+  restorePages(pages: ReadonlyLaunchpadPages): unknown;
 }>;
 type FragmentOwner<T extends UnknownRecord = UnknownRecord> = Readonly<{
   capture(): T;

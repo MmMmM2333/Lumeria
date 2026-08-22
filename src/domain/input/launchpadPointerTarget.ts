@@ -4,11 +4,12 @@ export type LaunchpadItem = Readonly<{
 }> & Readonly<Record<string, unknown>>;
 
 export type LaunchpadBoundsMeta = Readonly<{
-  area?: "desktop" | "folder" | "search";
+  area?: string | null;
   folderId?: string | null;
-  index?: number;
+  id?: string | null;
+  index?: number | null;
   item?: LaunchpadItem;
-  pageIndex?: number;
+  pageIndex?: number | null;
 }>;
 
 export type LaunchpadBoundsTarget = Readonly<{

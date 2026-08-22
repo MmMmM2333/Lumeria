@@ -1,4 +1,5 @@
 import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "./launchpadGridDefaults.js";
+import { cloneLaunchpadApp as cloneApp } from "./launchpadClone.js";
 
 export type Rect = {
   left: number;
@@ -42,6 +43,25 @@ export type LaunchpadFolder = {
 
 export type LaunchpadItem = LaunchpadApp | LaunchpadFolder;
 export type LaunchpadPages = LaunchpadItem[][];
+export type DeepReadonlyValue<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly (infer Element)[]
+    ? readonly DeepReadonlyValue<Element>[]
+    : T extends object
+      ? { readonly [Key in keyof T]: DeepReadonlyValue<T[Key]> }
+      : T;
+export type ReadonlyLaunchpadApp = DeepReadonlyValue<LaunchpadApp>;
+export type ReadonlyLaunchpadFolder = DeepReadonlyValue<LaunchpadFolder>;
+export type ReadonlyLaunchpadItem = ReadonlyLaunchpadApp | ReadonlyLaunchpadFolder;
+export type ReadonlyLaunchpadPages = readonly (readonly ReadonlyLaunchpadItem[])[];
+export type ReadonlyLaunchpadFolderInput = Readonly<{
+  id: string;
+  type: "folder";
+  name: string;
+  emoji?: string;
+  childPages?: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[];
+  [key: string]: unknown;
+}>;
 
 type LayoutHelperOptions = {
   getPageSize: () => number;
@@ -171,28 +191,28 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   const getPageSize = options.getPageSize;
   const getFolderPageSize = options.getFolderPageSize;
 
-  function flattenTopLevelPages(sourcePages: LaunchpadPages): LaunchpadItem[] {
+  function flattenTopLevelPages(sourcePages: ReadonlyLaunchpadPages): LaunchpadItem[] {
     return sourcePages.flatMap((page) => page.map((item) => cloneItem(item)));
   }
 
-  function trimFolderSlots(children: readonly (LaunchpadApp | null | undefined)[]): LaunchpadApp[] {
+  function trimFolderSlots(children: readonly (ReadonlyLaunchpadApp | null | undefined)[]): LaunchpadApp[] {
     return (children || []).filter(isPresent).map((item) => cloneApp(item));
   }
 
   function compactFolderPages(
-    folderPages: readonly (readonly (LaunchpadApp | null | undefined)[])[],
+    folderPages: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[],
   ): LaunchpadApp[][] {
     const pages = (folderPages || []).map((page) => trimFolderSlots(page)).filter((page) => page.length > 0);
     return pages.length ? pages : [[]];
   }
 
   function flattenFolderPages(
-    folderPages: readonly (readonly (LaunchpadApp | null | undefined)[])[],
+    folderPages: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[],
   ): LaunchpadApp[] {
     return compactFolderPages(folderPages).flatMap((page) => page.map(cloneApp));
   }
 
-  function getFolderChildPages(folder: LaunchpadFolder, size: unknown): LaunchpadApp[][] {
+  function getFolderChildPages(folder: ReadonlyLaunchpadFolder, size: unknown): LaunchpadApp[][] {
     const pageSize = Math.max(1, Number(size) || DEFAULT_FOLDER_ROWS * DEFAULT_FOLDER_COLS);
 
     if (Array.isArray(folder?.childPages)) {
@@ -202,7 +222,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function padFolderPages(
-    folderPages: readonly (readonly (LaunchpadApp | null | undefined)[])[],
+    folderPages: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[],
     minPageCount: unknown,
   ): LaunchpadApp[][] {
     const pages = compactFolderPages(folderPages);
@@ -212,34 +232,36 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function withFolderPages(
-  folder: Omit<LaunchpadFolder, "childPages"> & { childPages?: (LaunchpadApp | null | undefined)[][] },
-    folderPages: readonly (readonly (LaunchpadApp | null | undefined)[])[],
+    folder: ReadonlyLaunchpadFolderInput,
+    folderPages: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[],
   ): LaunchpadFolder {
     const childPages = compactFolderPages(folderPages);
     return {
       ...folder,
       childPages,
-    } as LaunchpadFolder;
+    };
   }
 
-  function folderItemCount(folder: LaunchpadFolder): number {
+  function folderItemCount(folder: ReadonlyLaunchpadFolder): number {
     return flattenFolderPages(getFolderChildPages(folder, getFolderPageSize())).length;
   }
 
-  function folderPreviewSlots(folder: LaunchpadFolder): (LaunchpadApp | null)[] {
-    return getFolderPreviewSlots(folder, getFolderPageSize());
+  function folderPreviewSlots(folder: ReadonlyLaunchpadFolder): (ReadonlyLaunchpadApp | null)[] {
+    return getFolderPreviewSlots<ReadonlyLaunchpadApp>(folder, getFolderPageSize());
   }
 
-  function getVisibleDesktopPage(page: readonly LaunchpadItem[]): LaunchpadItem[] {
+  function getVisibleDesktopPage(page: readonly ReadonlyLaunchpadItem[]): ReadonlyLaunchpadItem[] {
     return (page || []).slice(0, getPageSize());
   }
 
-  function getVisibleFolderPage(page: readonly LaunchpadApp[]): LaunchpadApp[] {
-    return (page || []).slice(0, getFolderPageSize());
+  function getVisibleFolderPage(
+    page: readonly (ReadonlyLaunchpadApp | null | undefined)[],
+  ): ReadonlyLaunchpadApp[] {
+    return (page || []).slice(0, getFolderPageSize()).filter(isPresent);
   }
 
   function getVisibleFolderPages(
-    folder: LaunchpadFolder,
+    folder: ReadonlyLaunchpadFolder,
     size: unknown,
     minPageCount: unknown,
   ): LaunchpadApp[][] {
@@ -247,7 +269,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function repackFolderForPageSize(
-    folder: LaunchpadFolder,
+    folder: ReadonlyLaunchpadFolder,
     oldSize: unknown,
     newSize: unknown,
   ): LaunchpadFolder {
@@ -297,13 +319,11 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return item as LaunchpadApp;
   }
 
-  function cloneApp(item: LaunchpadApp): LaunchpadApp {
-    return { ...item };
-  }
-
-  function cloneItem(item: LaunchpadItem): LaunchpadItem;
+  function cloneItem(item: ReadonlyLaunchpadApp): LaunchpadApp;
+  function cloneItem(item: ReadonlyLaunchpadFolder): LaunchpadFolder;
+  function cloneItem(item: ReadonlyLaunchpadItem): LaunchpadItem;
   function cloneItem(item: null | undefined): null;
-  function cloneItem(item: LaunchpadItem | null | undefined): LaunchpadItem | null {
+  function cloneItem(item: ReadonlyLaunchpadItem | null | undefined): LaunchpadItem | null {
     if (!item) return null;
     if (item.type === "folder") {
       const childPages = Array.isArray(item.childPages) ? compactFolderPages(item.childPages) : getFolderChildPages(item, getFolderPageSize());
@@ -312,12 +332,12 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return cloneApp(item);
   }
 
-  function clonePages(sourcePages: readonly (readonly LaunchpadItem[])[]): LaunchpadPages {
+  function clonePages(sourcePages: ReadonlyLaunchpadPages): LaunchpadPages {
     return sourcePages.map((page) => page.filter(isPresent).map((item) => cloneItem(item)));
   }
 
   function cleanFolderItem(
-    folder: LaunchpadFolder,
+    folder: ReadonlyLaunchpadFolder,
     options?: FolderCleanupOptions,
   ): LaunchpadFolder | null {
     const pageSizeForFolder = options?.folderPageSize || getFolderPageSize();
@@ -328,7 +348,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function compactPages(
-    sourcePages: readonly (readonly (LaunchpadItem | null | undefined)[])[],
+    sourcePages: readonly (readonly (ReadonlyLaunchpadItem | null | undefined)[])[],
     options?: FolderCleanupOptions,
   ): LaunchpadPages {
     const safeOptions = options || {};
@@ -336,7 +356,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
       ? sourcePages.map((page) =>
           page
             .filter(isPresent)
-            .map((item) => (item.type === "folder" ? cleanFolderItem(item, safeOptions) : item))
+            .map((item) => (item.type === "folder" ? cleanFolderItem(item, safeOptions) : cloneApp(item)))
             .filter(isPresent)
         )
       : [[]];
@@ -350,7 +370,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return sourcePages;
   }
 
-  function findTopLevel(sourcePages: LaunchpadPages, id: string) {
+  function findTopLevel(sourcePages: ReadonlyLaunchpadPages, id: string) {
     for (let currentPageIndex = 0; currentPageIndex < sourcePages.length; currentPageIndex += 1) {
       const page = sourcePages[currentPageIndex]!;
       const index = page.findIndex((item) => item.id === id);
@@ -359,7 +379,18 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return null;
   }
 
-  function findFolder(sourcePages: LaunchpadPages, folderId: string) {
+  function findFolder(
+    sourcePages: LaunchpadPages,
+    folderId: string,
+  ): Readonly<{ pageIndex: number; index: number; item: LaunchpadFolder }> | null;
+  function findFolder(
+    sourcePages: ReadonlyLaunchpadPages,
+    folderId: string,
+  ): Readonly<{ pageIndex: number; index: number; item: ReadonlyLaunchpadFolder }> | null;
+  function findFolder(
+    sourcePages: ReadonlyLaunchpadPages,
+    folderId: string,
+  ): Readonly<{ pageIndex: number; index: number; item: ReadonlyLaunchpadFolder }> | null {
     for (let currentPageIndex = 0; currentPageIndex < sourcePages.length; currentPageIndex += 1) {
       const page = sourcePages[currentPageIndex]!;
       for (let index = 0; index < page.length; index += 1) {
@@ -370,7 +401,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return null;
   }
 
-  function findInFolder(sourcePages: LaunchpadPages, folderId: string, itemId: string) {
+  function findInFolder(sourcePages: ReadonlyLaunchpadPages, folderId: string, itemId: string) {
     const folder = findFolder(sourcePages, folderId)?.item;
     if (!folder) return null;
     const childPages = getFolderChildPages(folder, getFolderPageSize());
@@ -382,7 +413,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return null;
   }
 
-  function countItemOccurrences(sourcePages: LaunchpadPages, itemId: string): number {
+  function countItemOccurrences(sourcePages: ReadonlyLaunchpadPages, itemId: string): number {
     let count = 0;
     for (const page of sourcePages) {
       for (const item of page) {
@@ -393,7 +424,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return count;
   }
 
-  function collectAppsFromPages(sourcePages: LaunchpadPages): LaunchpadApp[] {
+  function collectAppsFromPages(sourcePages: ReadonlyLaunchpadPages): LaunchpadApp[] {
     const apps: LaunchpadApp[] = [];
     const seen = new Set<string>();
     for (const page of sourcePages || []) {
@@ -415,7 +446,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return apps;
   }
 
-  function assertNoDuplicateItemIds(sourcePages: LaunchpadPages): void {
+  function assertNoDuplicateItemIds(sourcePages: ReadonlyLaunchpadPages): void {
     const seen = new Set<string>();
     const duplicates = new Set<string>();
     for (const page of sourcePages) {
@@ -440,7 +471,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function removeEverywhere(
-    sourcePages: LaunchpadPages,
+    sourcePages: ReadonlyLaunchpadPages,
     itemId: string,
     options?: FolderCleanupOptions,
   ): LaunchpadPages {
@@ -460,7 +491,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     return compactPages(next, { deleteEmptyFolders: !safeOptions.keepEmptyFolders, preserveFolderIds: safeOptions.preserveFolderIds, folderPageSize: getFolderPageSize() });
   }
 
-  function dissolveFolder(sourcePages: LaunchpadPages, folderId: string, size: unknown): LaunchpadPages {
+  function dissolveFolder(sourcePages: ReadonlyLaunchpadPages, folderId: string, size: unknown): LaunchpadPages {
     const pageSize = Math.max(1, Number(size) || getPageSize());
     const next = clonePages(sourcePages);
     const folder = findFolder(next, folderId);
@@ -480,8 +511,8 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function insertTopLevelItem(
-    sourcePages: LaunchpadPages,
-    item: LaunchpadItem,
+    sourcePages: ReadonlyLaunchpadPages,
+    item: ReadonlyLaunchpadItem,
     targetPageIndex: number,
     insertIndex: number,
     size: number,
@@ -507,9 +538,9 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function insertAppIntoFolder(
-    sourcePages: LaunchpadPages,
+    sourcePages: ReadonlyLaunchpadPages,
     folderId: string,
-    app: LaunchpadItem,
+    app: ReadonlyLaunchpadItem,
     targetPageIndex: unknown,
     insertIndex: unknown,
     size: unknown,
@@ -527,7 +558,7 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
     const targetPage = childPages[safePageIndex]!;
     const requestedIndex = Number.isFinite(Number(insertIndex)) ? Math.floor(Number(insertIndex)) : targetPage.length;
     const safeIndex = clamp(requestedIndex, 0, Math.min(folderSize, targetPage.length));
-    targetPage.splice(safeIndex, 0, { ...app });
+    targetPage.splice(safeIndex, 0, cloneApp(app));
 
     for (let pageIndex = safePageIndex; pageIndex < childPages.length; pageIndex += 1) {
       const page = childPages[pageIndex]!;
@@ -544,9 +575,9 @@ export function createLaunchpadLayoutHelpers(options: LayoutHelperOptions) {
   }
 
   function replaceFolderWithItem(
-    sourcePages: LaunchpadPages,
+    sourcePages: ReadonlyLaunchpadPages,
     folderId: string,
-    item: LaunchpadItem,
+    item: ReadonlyLaunchpadItem,
   ): LaunchpadPages {
     const next = clonePages(sourcePages);
     const folder = findFolder(next, folderId);

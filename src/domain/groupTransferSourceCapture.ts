@@ -1,15 +1,13 @@
-export type GroupTransferAppItem = Readonly<{
-  id: string;
-  type: "app";
-}> & Readonly<Record<string, unknown>>;
+import type {
+  ReadonlyLaunchpadApp,
+  ReadonlyLaunchpadFolder,
+  ReadonlyLaunchpadItem,
+  ReadonlyLaunchpadPages,
+} from "./launchpadLayout.js";
 
-export type GroupTransferFolderItem = Readonly<{
-  childPages: readonly (readonly GroupTransferItem[])[];
-  id: string;
-  type: "folder";
-}> & Readonly<Record<string, unknown>>;
-
-export type GroupTransferItem = GroupTransferAppItem | GroupTransferFolderItem;
+export type GroupTransferAppItem = ReadonlyLaunchpadApp;
+export type GroupTransferFolderItem = ReadonlyLaunchpadFolder;
+export type GroupTransferItem = ReadonlyLaunchpadItem;
 
 export type GroupTransferPoint = Readonly<{ x: number; y: number }>;
 export type GroupTransferRect = Readonly<{
@@ -31,7 +29,7 @@ export type FolderGroupTransferSource = Readonly<{
   flatIndex: number;
   folderId: string;
   folderPageIndex: number;
-  item: GroupTransferItem;
+  item: GroupTransferAppItem;
   kind: "folder";
   ownerIndex: number;
   ownerPageIndex: number;
@@ -72,7 +70,7 @@ type CaptureOptions = Readonly<{
   leadId?: string | null;
   leadRect?: GroupTransferRect | null;
   openFolderId?: string | null;
-  pages?: readonly (readonly GroupTransferItem[])[];
+  pages?: ReadonlyLaunchpadPages;
   pointer?: GroupTransferPoint;
   viewportRect?: GroupTransferRect | null;
 }>;
@@ -88,11 +86,13 @@ function centerOfRect(
   };
 }
 
-function getFolderPages(folder: GroupTransferFolderItem): readonly (readonly GroupTransferItem[])[] {
+function getFolderPages(
+  folder: GroupTransferFolderItem,
+): readonly (readonly (GroupTransferAppItem | null | undefined)[])[] {
   return Array.isArray(folder.childPages) ? folder.childPages : [[]];
 }
 
-export function indexGroupTransferSources(pages: readonly (readonly GroupTransferItem[])[]) {
+export function indexGroupTransferSources(pages: ReadonlyLaunchpadPages) {
   const apps = new Map<string, GroupTransferSourceLocation>();
   const order: string[] = [];
   for (let pageIndex = 0; pageIndex < (pages || []).length; pageIndex += 1) {

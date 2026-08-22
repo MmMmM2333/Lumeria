@@ -4,6 +4,11 @@ import {
   type LaunchpadFolder,
   type LaunchpadItem,
   type LaunchpadPages,
+  type ReadonlyLaunchpadApp,
+  type ReadonlyLaunchpadFolder,
+  type ReadonlyLaunchpadFolderInput,
+  type ReadonlyLaunchpadItem,
+  type ReadonlyLaunchpadPages,
 } from "./launchpadLayout.js";
 import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
@@ -75,24 +80,28 @@ export type ReconcileIssue = {
   path: string;
 };
 
+type CloneLaunchpadItem = {
+  (item: ReadonlyLaunchpadApp): LaunchpadApp;
+  (item: ReadonlyLaunchpadFolder): LaunchpadFolder;
+  (item: ReadonlyLaunchpadItem): LaunchpadItem;
+};
+
 type DataHelperOptions = {
-  cloneItem: (item: LaunchpadItem) => LaunchpadItem;
-  clonePages: (pages: readonly (readonly LaunchpadItem[])[]) => LaunchpadPages;
+  cloneItem: CloneLaunchpadItem;
+  clonePages: (pages: ReadonlyLaunchpadPages) => LaunchpadPages;
   compactPages: (
-    pages: readonly (readonly (LaunchpadItem | null | undefined)[])[],
+    pages: readonly (readonly (ReadonlyLaunchpadItem | null | undefined)[])[],
     options?: { folderPageSize?: number | undefined },
   ) => LaunchpadPages;
   ensurePage: (pages: LaunchpadPages, pageIndex: number) => LaunchpadPages;
-  getFolderChildPages: (folder: LaunchpadFolder, size: unknown) => LaunchpadApp[][];
+  getFolderChildPages: (folder: ReadonlyLaunchpadFolder, size: unknown) => LaunchpadApp[][];
   getFolderPageSize: () => number;
   getNewFolderName: () => unknown;
   getPageSize: () => number;
   makeId: (prefix: unknown) => string;
   withFolderPages: (
-    folder: Omit<LaunchpadFolder, "childPages"> & {
-      childPages?: (LaunchpadApp | null | undefined)[][];
-    },
-    childPages: readonly (readonly LaunchpadApp[])[],
+    folder: ReadonlyLaunchpadFolderInput,
+    childPages: readonly (readonly ReadonlyLaunchpadApp[])[],
   ) => LaunchpadFolder;
 };
 
@@ -458,7 +467,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
     app: LaunchpadApp,
     savedReference: CatalogAppLayoutItem | null = null,
   ): LaunchpadApp {
-    const next = cloneItem(app) as LaunchpadApp;
+    const next = cloneItem(app);
     const overrides = normalizePresentationOverrides(savedReference?.overrides);
     next.catalogPresentation = {
       name: String(app?.name || "Application"),
@@ -603,10 +612,10 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
   }
 
   function appendAppsToPages(
-    sourcePages: LaunchpadPages,
+    sourcePages: ReadonlyLaunchpadPages,
     apps: readonly LaunchpadApp[],
   ): LaunchpadPages {
-    const next = sourcePages.length ? sourcePages.map((page) => page.slice()) : [[]];
+    const next = sourcePages.length ? clonePages(sourcePages) : [[]];
     for (const app of apps) {
       if (next[next.length - 1]!.length >= getPageSize()) next.push([]);
       next[next.length - 1]!.push(cloneItem(app));

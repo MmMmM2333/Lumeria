@@ -52,7 +52,6 @@ function createHarness() {
   const apps = useLaunchpadApps({
     appendAppsToPages: layout.operations.appendAppsToPages,
     localizationText,
-    cloneItem: layout.operations.cloneItem,
     clonePages: layout.operations.clonePages,
     collectAppsFromPages: layout.operations.collectAppsFromPages,
     commitOpenFolder: () => {},

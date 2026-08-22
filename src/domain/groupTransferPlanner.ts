@@ -1,7 +1,15 @@
 import type {
-  GroupTransferFolderItem,
-  GroupTransferItem,
-} from "./groupTransferSourceCapture.js";
+  LaunchpadApp,
+  LaunchpadFolder,
+  LaunchpadItem,
+  LaunchpadPages,
+  ReadonlyLaunchpadApp,
+  ReadonlyLaunchpadFolder,
+  ReadonlyLaunchpadItem,
+  ReadonlyLaunchpadPages,
+} from "./launchpadLayout.js";
+import { cloneLaunchpadApp as cloneApp } from "./launchpadClone.js";
+import type { GroupTransferItem } from "./groupTransferSourceCapture.js";
 
 export type GroupTransferDesktopLocation = Readonly<{
   index: number;
@@ -59,7 +67,7 @@ export type GroupTransferMember = Readonly<{
 export type GroupTransferAcceptedPlan = Readonly<{
   effects: GroupTransferEffects;
   members: GroupTransferMember[];
-  nextPages: GroupTransferItem[][];
+  nextPages: LaunchpadPages;
   orderedSelectedIds: string[];
   reason: "same-placement" | null;
   status: "accepted" | "noop";
@@ -77,7 +85,7 @@ export type GroupTransferRejectedPlan = Readonly<{
 export type GroupTransferPlan = GroupTransferAcceptedPlan | GroupTransferRejectedPlan;
 
 export type GroupTransferPlanOptions = Readonly<{
-  basePages?: readonly (readonly GroupTransferItem[])[];
+  basePages?: ReadonlyLaunchpadPages;
   baseRevision?: unknown;
   currentRevision?: unknown;
   folderName?: unknown;
@@ -123,29 +131,24 @@ function normalizeIds(ids: readonly unknown[] | undefined): string[] {
   ));
 }
 
-function getFolderPages(folder: GroupTransferItem, folderPageSize: number): GroupTransferItem[][] {
-  if (folder.type === "folder" && Array.isArray(folder.childPages)) {
-    const sourcePages = folder.childPages as readonly (readonly GroupTransferItem[])[];
-    const pages = sourcePages.map((page) => (
-      (page || []).filter(Boolean).map((item) => cloneItem(item, folderPageSize))
-    ));
-    return pages.length ? pages : [[]];
-  }
-  const children: GroupTransferItem[] = [];
-  const pages: GroupTransferItem[][] = [];
-  for (let index = 0; index < children.length; index += folderPageSize) {
-    pages.push(children.slice(index, index + folderPageSize));
-  }
+function getFolderPages(
+  folder: ReadonlyLaunchpadItem,
+  _folderPageSize: number,
+): LaunchpadApp[][] {
+  if (folder.type !== "folder") return [[]];
+  const pages = folder.childPages.map((page) => (
+    page.flatMap((item) => (item ? [cloneApp(item)] : []))
+  ));
   return pages.length ? pages : [[]];
 }
 
 function withFolderPages(
-  folder: GroupTransferFolderItem,
-  pages: readonly (readonly GroupTransferItem[])[],
+  folder: ReadonlyLaunchpadFolder,
+  pages: readonly (readonly (ReadonlyLaunchpadApp | null | undefined)[])[],
   options: Readonly<{ folderPageSize?: number; keepEmptyPages?: boolean }> = {},
-): GroupTransferFolderItem {
-  let childPages = (pages || []).map((page) => (
-    (page || []).filter(Boolean).map((item) => cloneItem(item, options.folderPageSize || 1))
+): LaunchpadFolder {
+  let childPages: LaunchpadApp[][] = (pages || []).map((page) => (
+    (page || []).flatMap((item) => (item ? [cloneApp(item)] : []))
   ));
   if (options.keepEmptyPages !== true) childPages = childPages.filter((page) => page.length > 0);
   if (!childPages.length) childPages = [[]];
@@ -155,14 +158,16 @@ function withFolderPages(
   };
 }
 
-function cloneItem(item: GroupTransferItem, folderPageSize: number): GroupTransferItem;
+function cloneItem(item: ReadonlyLaunchpadApp, folderPageSize: number): LaunchpadApp;
+function cloneItem(item: ReadonlyLaunchpadFolder, folderPageSize: number): LaunchpadFolder;
+function cloneItem(item: ReadonlyLaunchpadItem, folderPageSize: number): LaunchpadItem;
 function cloneItem(item: null | undefined, folderPageSize: number): null;
 function cloneItem(
-  item: GroupTransferItem | null | undefined,
+  item: ReadonlyLaunchpadItem | null | undefined,
   folderPageSize: number,
-): GroupTransferItem | null {
+): LaunchpadItem | null {
   if (!item) return null;
-  if (item.type !== "folder") return { ...item };
+  if (item.type !== "folder") return cloneApp(item);
   return withFolderPages(
     { ...item },
     getFolderPages(item, folderPageSize),
@@ -171,11 +176,11 @@ function cloneItem(
 }
 
 function clonePages(
-  pages: readonly (readonly GroupTransferItem[])[] | undefined,
+  pages: ReadonlyLaunchpadPages | undefined,
   folderPageSize: number,
-): GroupTransferItem[][] {
+): LaunchpadPages {
   const cloned = (pages || []).map((page) => (
-    (page || []).filter(Boolean).map((item) => cloneItem(item, folderPageSize))
+    (page || []).map((item) => cloneItem(item, folderPageSize))
   ));
   return cloned.length ? cloned : [[]];
 }
@@ -199,7 +204,7 @@ function sourceOf(location: IndexedLocation): GroupTransferLocation {
   };
 }
 
-function indexLayout(pages: readonly (readonly GroupTransferItem[])[], folderPageSize: number) {
+function indexLayout(pages: ReadonlyLaunchpadPages, folderPageSize: number) {
   const duplicates = new Set<string>();
   const folders = new Map<string, IndexedDesktopLocation>();
   const items = new Map<string, IndexedLocation>();
@@ -254,8 +259,11 @@ function indexLayout(pages: readonly (readonly GroupTransferItem[])[], folderPag
   return { duplicates: [...duplicates], folders, items };
 }
 
-function compactIndexedPages(pages: GroupTransferItem[][], preservedIndex: number | null = null) {
-  const nextPages: GroupTransferItem[][] = [];
+function compactIndexedPages<T>(
+  pages: T[][],
+  preservedIndex: number | null = null,
+): { pageMap: Map<number, number>; pages: T[][] } {
+  const nextPages: T[][] = [];
   const pageMap = new Map<number, number>();
   for (let index = 0; index < pages.length; index += 1) {
     const page = pages[index] || [];
@@ -271,7 +279,7 @@ function compactIndexedPages(pages: GroupTransferItem[][], preservedIndex: numbe
 }
 
 function removeSelectedItems(
-  basePages: GroupTransferItem[][],
+  basePages: LaunchpadPages,
   selectedIds: ReadonlySet<string>,
   folderPageSize: number,
   options: Readonly<{
@@ -283,17 +291,20 @@ function removeSelectedItems(
   const affectedFolderIds = new Set<string>();
   const emptiedFolderIds: string[] = [];
   const folderPageMaps = new Map<string, Map<number, number>>();
-  const removedPages = basePages.map((page) => page.flatMap((item) => {
+  const removedPages: LaunchpadPages = basePages.map((page) => (
+    page.flatMap<LaunchpadItem>((item): LaunchpadItem[] => {
     if (selectedIds.has(item.id)) return [];
-    if (item.type !== "folder") return [{ ...item }];
+    if (item.type !== "folder") return [cloneApp(item)];
 
     const originalPages = getFolderPages(item, folderPageSize);
     let changed = false;
-    const childPages = originalPages.map((folderPage) => folderPage.flatMap((child) => {
-      if (!selectedIds.has(child.id)) return [{ ...child }];
+    const childPages: LaunchpadApp[][] = originalPages.map((folderPage) => (
+      folderPage.flatMap<LaunchpadApp>((child): LaunchpadApp[] => {
+      if (!selectedIds.has(child.id)) return [cloneApp(child)];
       changed = true;
       return [];
-    }));
+      })
+    ));
     if (!changed) return [cloneItem(item, folderPageSize)];
 
     affectedFolderIds.add(item.id);
@@ -311,7 +322,8 @@ function removeSelectedItems(
       folderPageSize,
       keepEmptyPages: preservedPageIndex != null,
     })];
-  }));
+    })
+  ));
   const compacted = compactIndexedPages(removedPages, options.preserveDesktopPageIndex ?? null);
   return {
     affectedFolderIds,
@@ -322,11 +334,11 @@ function removeSelectedItems(
   };
 }
 
-function ensurePage(pages: GroupTransferItem[][], pageIndex: number): void {
+function ensurePage(pages: LaunchpadPages, pageIndex: number): void {
   while (pages.length <= pageIndex) pages.push([]);
 }
 
-function cascadePages(pages: GroupTransferItem[][], startPageIndex: number, pageSize: number): void {
+function cascadePages(pages: LaunchpadPages, startPageIndex: number, pageSize: number): void {
   for (let pageIndex = startPageIndex; pageIndex < pages.length; pageIndex += 1) {
     const page = pages[pageIndex];
     if (!page || page.length <= pageSize) continue;
@@ -336,7 +348,7 @@ function cascadePages(pages: GroupTransferItem[][], startPageIndex: number, page
   }
 }
 
-function findTopLevel(pages: readonly (readonly GroupTransferItem[])[], id: string) {
+function findTopLevel(pages: ReadonlyLaunchpadPages, id: string) {
   for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
     const page = pages[pageIndex];
     if (!page) continue;
@@ -346,20 +358,27 @@ function findTopLevel(pages: readonly (readonly GroupTransferItem[])[], id: stri
   return null;
 }
 
+function requireAppItem(item: ReadonlyLaunchpadItem): ReadonlyLaunchpadApp {
+  if (item.type !== "app") {
+    throw new TypeError(`Group transfer folder child ${item.id} must be an app`);
+  }
+  return item;
+}
+
 function makeFolderItem({
   children,
   folderId,
   folderName,
   folderPageSize,
 }: Readonly<{
-  children: readonly GroupTransferItem[];
+  children: readonly ReadonlyLaunchpadApp[];
   folderId: string;
   folderName: string;
   folderPageSize: number;
-}>): GroupTransferFolderItem {
-  const childPages: GroupTransferItem[][] = [];
+}>): LaunchpadFolder {
+  const childPages: LaunchpadApp[][] = [];
   for (let index = 0; index < children.length; index += folderPageSize) {
-    childPages.push(children.slice(index, index + folderPageSize).map((item) => ({ ...item })));
+    childPages.push(children.slice(index, index + folderPageSize).map(cloneApp));
   }
   return withFolderPages({
     childPages: [],
@@ -370,7 +389,7 @@ function makeFolderItem({
 }
 
 function layoutSignature(
-  pages: readonly (readonly GroupTransferItem[])[],
+  pages: ReadonlyLaunchpadPages,
   folderPageSize: number,
 ): string {
   return JSON.stringify((pages || []).map((page) => page.map((item) => (
@@ -411,7 +430,7 @@ function rejected(
 }
 
 function adjustedTopLevelIndex(
-  basePage: readonly GroupTransferItem[],
+  basePage: readonly ReadonlyLaunchpadItem[],
   originalIndex: number,
   removedIds: ReadonlySet<string>,
   emptiedFolderIds: readonly string[],
@@ -428,7 +447,7 @@ function adjustedTopLevelIndex(
 
 function destinationMembers(
   memberDescriptors: readonly MemberDescriptor[],
-  nextPages: GroupTransferItem[][],
+  nextPages: LaunchpadPages,
   folderPageSize: number,
 ): GroupTransferMember[] {
   const finalIndex = indexLayout(nextPages, folderPageSize);
@@ -553,10 +572,12 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
   });
   let nextPages = removal.pages;
   const affectedFolderIds = new Set(removal.affectedFolderIds);
-  const memberDescriptors: MemberDescriptor[] = selectedLocations.map((sourceLocation) => ({
+  const memberDescriptors: MemberDescriptor[] = selectedLocations.map((
+    sourceLocation,
+  ): MemberDescriptor => ({
     id: sourceLocation.item.id,
     item: sourceLocation.item,
-    role: "selected" as const,
+    role: "selected",
     selected: true,
     sourceLocation,
   }));
@@ -603,7 +624,7 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
     targetFolderPage.splice(
       index,
       0,
-      ...selectedLocations.map((location) => cloneItem(location.item, folderPageSize))
+      ...selectedLocations.map((location) => cloneApp(requireAppItem(location.item)))
     );
     cascadePages(folderPages, targetFolderPageIndex, folderPageSize);
     nextPages[target.pageIndex]![target.index] = withFolderPages(target.item, folderPages, { folderPageSize });
@@ -618,7 +639,7 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
     if (!folderPages.length) folderPages.push([]);
     const targetFolderPageIndex = folderPages.length - 1;
     folderPages[targetFolderPageIndex]!.push(
-      ...selectedLocations.map((location) => cloneItem(location.item, folderPageSize))
+      ...selectedLocations.map((location) => cloneApp(requireAppItem(location.item)))
     );
     cascadePages(folderPages, targetFolderPageIndex, folderPageSize);
     nextPages[target.pageIndex]![target.index] = withFolderPages(target.item, folderPages, { folderPageSize });
@@ -640,7 +661,10 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
       selected: false,
       sourceLocation: targetSource,
     });
-    const children = [target.item, ...selectedLocations.map((location) => location.item)];
+    const children = [
+      target.item,
+      ...selectedLocations.map((location) => requireAppItem(location.item)),
+    ];
     nextPages[target.pageIndex]!.splice(target.index, 1, makeFolderItem({
       children,
       folderId,
@@ -685,7 +709,7 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
     }
     if (targetPageIndex == null) return rejected("folder-anchor-missing", { orderedSelectedIds });
     nextPages[targetPageIndex]!.splice(targetIndex, 0, makeFolderItem({
-      children: selectedLocations.map((location) => location.item),
+      children: selectedLocations.map((location) => requireAppItem(location.item)),
       folderId,
       folderName: String(options.folderName || "New Folder"),
       folderPageSize,
@@ -700,7 +724,7 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
   nextPages = compacted.map((page) => page.map((item) => (
     item.type === "folder"
       ? withFolderPages(item, getFolderPages(item, folderPageSize), { folderPageSize })
-      : { ...item }
+      : cloneApp(item)
   )));
   const finalIndex = indexLayout(nextPages, folderPageSize);
   if (effects.createdFolderId) {
