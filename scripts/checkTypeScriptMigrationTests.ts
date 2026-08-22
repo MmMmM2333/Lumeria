@@ -253,6 +253,19 @@ function violationCodes(
 {
   const codes = violationCodes(
     {
+      "src/exampleTests.ts": "export function runFirstTests() {}\nexport function runSecondTests() {}\n",
+      "src/runTests.ts": "import { runFirstTests } from './exampleTests.js';\nrunFirstTests();\n",
+    },
+    makeManifest({
+      testRunners: [{ root: "src", runner: "src/runTests.ts" }],
+    }),
+  );
+  assert(codes.includes("invalid-test-suite-export-count"), "each ordinary test module must expose exactly one run*Tests suite");
+}
+
+{
+  const codes = violationCodes(
+    {
       "src/exampleTests.ts": "export function runExampleTests() {}\n",
       "src/runTests.ts": [
         "import { runExampleTests } from './exampleTests.js';",
@@ -332,6 +345,27 @@ function violationCodes(
     }),
   );
   assert(codes.includes("strict-config-mismatch"), "strict frontier config must extend the main project config");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/entry.ts": "export const value = 1;\n",
+      "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true } }),
+      "tsconfig.strict.json": JSON.stringify({
+        extends: "./tsconfig.json",
+        compilerOptions: { allowJs: false, checkJs: false, noImplicitAny: false },
+        files: ["src/entry.ts"],
+        include: [],
+      }),
+    },
+    makeManifest({
+      directEntries: ["tsconfig.json", "tsconfig.strict.json"],
+      strictConfig: "tsconfig.strict.json",
+      strictRoots: ["src/entry.ts"],
+    }),
+  );
+  assert(codes.includes("strict-config-mismatch"), "strict frontier config must not disable individual strict-mode options");
 }
 
 {

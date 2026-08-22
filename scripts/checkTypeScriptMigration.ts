@@ -26,6 +26,17 @@ const TYPED_TO_LEGACY_EXTENSION = new Map([
   [".ts", ".js"],
   [".tsx", ".jsx"],
 ]);
+const STRICT_OPTION_NAMES = [
+  "alwaysStrict",
+  "noImplicitAny",
+  "noImplicitThis",
+  "strictBindCallApply",
+  "strictBuiltinIteratorReturn",
+  "strictFunctionTypes",
+  "strictNullChecks",
+  "strictPropertyInitialization",
+  "useUnknownInCatchVariables",
+] as const satisfies readonly (keyof ts.CompilerOptions)[];
 const IGNORED_DIRECTORY_NAMES = new Set([".git", ".worktrees", "dist", "node_modules", "target"]);
 
 export type MigrationTestRunner = Readonly<{
@@ -741,7 +752,8 @@ function checkStrictConfig(
     && effectiveConfig.errors.length === 0
     && effectiveConfig.options.allowJs === false
     && effectiveConfig.options.checkJs === false
-    && effectiveConfig.options.strict === true,
+    && effectiveConfig.options.strict === true
+    && STRICT_OPTION_NAMES.every((name) => effectiveConfig.options[name] !== false)
   );
   const configFiles = Array.isArray(files) && files.every((entry) => typeof entry === "string")
     ? files.map((entry) => projectRelativePath(projectRoot, resolve(dirname(configPath), entry))).sort()
@@ -831,7 +843,15 @@ function checkTestRegistration(
     const suiteExports = new Map<string, ReadonlySet<string>>();
     for (const [path, sourceFile] of sources) {
       if (path !== runner && path.startsWith(`${root}/`) && isOrdinaryTest(path)) {
-        suiteExports.set(path, collectTestSuiteExports(sourceFile));
+        const exports = collectTestSuiteExports(sourceFile);
+        suiteExports.set(path, exports);
+        if (exports.size !== 1) {
+          violations.push({
+            code: "invalid-test-suite-export-count",
+            detail: `ordinary test modules must export exactly one run*Tests suite; found ${exports.size}`,
+            path,
+          });
+        }
       }
     }
     const suiteBindings = new Map<string, Set<string>>();
