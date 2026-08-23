@@ -45,30 +45,40 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import ChevronDownIcon from "~icons/fluent/chevron-down-12-regular";
 import ChevronUpIcon from "~icons/fluent/chevron-up-12-regular";
 import { useLocalization } from "../../i18n/localization.js";
 
-const props = defineProps({
-  ariaLabel: { type: String, required: true },
-  decreaseLabel: { type: String, default: "" },
-  disabled: { type: Boolean, default: false },
-  increaseLabel: { type: String, default: "" },
-  max: { type: Number, default: Number.POSITIVE_INFINITY },
-  min: { type: Number, default: Number.NEGATIVE_INFINITY },
-  modelValue: { type: Number, required: true },
-  name: { type: String, default: "" },
-  step: { type: Number, default: 1 },
-  unit: { type: String, default: "" },
-  wide: { type: Boolean, default: false },
+const props = withDefaults(defineProps<{
+  ariaLabel: string;
+  decreaseLabel?: string;
+  disabled?: boolean;
+  increaseLabel?: string;
+  max?: number;
+  min?: number;
+  modelValue: number;
+  name?: string;
+  step?: number;
+  unit?: string;
+  wide?: boolean;
+}>(), {
+  decreaseLabel: "",
+  disabled: false,
+  increaseLabel: "",
+  max: Number.POSITIVE_INFINITY,
+  min: Number.NEGATIVE_INFINITY,
+  name: "",
+  step: 1,
+  unit: "",
+  wide: false,
 });
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits<{ "update:modelValue": [value: number] }>();
 const { t } = useLocalization();
 
-const inputRef = ref(null);
+const inputRef = ref<HTMLInputElement | null>(null);
 const draftValue = ref(formatValue(props.modelValue));
 
 const finiteMin = computed(() => (Number.isFinite(props.min) ? props.min : undefined));
@@ -88,11 +98,18 @@ watch(
   },
 );
 
-function handleInput(event) {
-  draftValue.value = event.target.value;
+function handleInput(event: Event): void {
+  draftValue.value = requireSpinButtonInput(event).value;
 }
 
-function handleKeydown(event) {
+function requireSpinButtonInput(event: Event): HTMLInputElement {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("Settings spin button event currentTarget must be an input element");
+  }
+  return event.currentTarget;
+}
+
+function handleKeydown(event: KeyboardEvent): void {
   if (props.disabled) return;
   if (event.key === "ArrowUp") {
     event.preventDefault();
@@ -127,22 +144,22 @@ function handleKeydown(event) {
   if (event.key === "Enter") {
     event.preventDefault();
     commitDraft();
-    event.target.select?.();
+    requireSpinButtonInput(event).select();
     return;
   }
   if (event.key === "Escape") {
     draftValue.value = formatValue(props.modelValue);
-    event.target.blur?.();
+    requireSpinButtonInput(event).blur();
   }
 }
 
-function commitDraft() {
+function commitDraft(): void {
   if (props.disabled) return;
   const parsed = parseNumber(draftValue.value);
   updateValue(Number.isFinite(parsed) ? parsed : props.modelValue);
 }
 
-function stepBy(direction, multiplier = 1) {
+function stepBy(direction: number, multiplier = 1): void {
   if (props.disabled) return;
   const current = Number.isFinite(parseNumber(draftValue.value))
     ? parseNumber(draftValue.value)
@@ -150,12 +167,12 @@ function stepBy(direction, multiplier = 1) {
   updateValue(current + getSafeStep() * direction * multiplier);
 }
 
-function focusInput() {
+function focusInput(): void {
   if (props.disabled) return;
   inputRef.value?.focus?.({ preventScroll: true });
 }
 
-function updateValue(value) {
+function updateValue(value: number): void {
   const nextValue = normalizeValue(value);
   draftValue.value = formatValue(nextValue);
   if (nextValue !== props.modelValue) {
@@ -163,7 +180,7 @@ function updateValue(value) {
   }
 }
 
-function normalizeValue(value) {
+function normalizeValue(value: unknown): number {
   const fallback = Number.isFinite(props.min) ? props.min : 0;
   const number = Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamped = clamp(number, props.min, props.max);
@@ -174,33 +191,33 @@ function normalizeValue(value) {
   return clamp(Number(stepped.toFixed(precision)), props.min, props.max);
 }
 
-function formatValue(value) {
+function formatValue(value: unknown): string {
   const precision = getStepPrecision(getSafeStep());
   const normalized = normalizeValue(value);
   if (precision <= 0) return String(Math.round(normalized));
   return normalized.toFixed(precision).replace(/\.?0+$/, "");
 }
 
-function parseNumber(value) {
+function parseNumber(value: string | number): number {
   if (typeof value !== "string") return Number(value);
   const normalized = value.trim().replace(",", ".");
   if (!normalized) return Number.NaN;
   return Number(normalized);
 }
 
-function getSafeStep() {
+function getSafeStep(): number {
   return Number.isFinite(props.step) && props.step > 0 ? props.step : 1;
 }
 
-function getStepPrecision(step) {
+function getStepPrecision(step: number): number {
   const value = String(step);
   if (value.includes("e-")) {
     return Number(value.split("e-")[1]) || 0;
   }
-  return value.includes(".") ? value.split(".")[1].length : 0;
+  return value.includes(".") ? (value.split(".")[1]?.length ?? 0) : 0;
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   const minValue = Number.isFinite(min) ? min : Number.NEGATIVE_INFINITY;
   const maxValue = Number.isFinite(max) ? max : Number.POSITIVE_INFINITY;
   return Math.min(maxValue, Math.max(minValue, value));

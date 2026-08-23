@@ -17,12 +17,15 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
 import { launchpadIconUrls } from "../../assets/branding/launchpadIconUrls.js";
+import type { useSettingsPanelModel } from "../../composables/useSettingsPanelModel.js";
 import { useLocalization } from "../../i18n/localization.js";
 
-const props = defineProps({ model: { type: Object, required: true } });
+type AboutSettingsModel = ReturnType<typeof useSettingsPanelModel>["pages"]["about"];
+
+const props = defineProps<{ model: AboutSettingsModel }>();
 const { t } = useLocalization();
 const appIconUrl = computed(() => launchpadIconUrls[props.model.draftLaunchpadIconVariant.value]);
 </script>

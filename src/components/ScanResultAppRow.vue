@@ -15,7 +15,7 @@
       :aria-label="t('dialogs.scanResults.selectApp', { name: app.name })"
       :checked.prop="selected"
       @click.stop
-      @change.stop="emit('toggle', $event.target.checked)"
+      @change.stop="emit('toggle', readControlChecked($event))"
     />
     <span class="app-manager-icon" aria-hidden="true">
       <img v-if="iconSource" :src="iconSource" alt="" draggable="false" />
@@ -36,18 +36,30 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
 import { getIconSource } from "../domain/iconSource.js";
+import type { ReadonlyLaunchpadApp } from "../domain/launchpadLayout.js";
 import { useLocalization } from "../i18n/localization.js";
 
-const props = defineProps({
-  app: { type: Object, required: true },
-  matchedKeyword: { type: String, default: "" },
-  selected: { type: Boolean, required: true },
-  targetPath: { type: String, default: "" },
+const props = withDefaults(defineProps<{
+  app: ReadonlyLaunchpadApp;
+  matchedKeyword?: string;
+  selected: boolean;
+  targetPath?: string;
+}>(), {
+  matchedKeyword: "",
+  targetPath: "",
 });
-const emit = defineEmits(["toggle"]);
+const emit = defineEmits<{ toggle: [selected: boolean] }>();
 const { t } = useLocalization();
 const iconSource = computed(() => getIconSource(props.app));
+
+function readControlChecked(event: Event): boolean {
+  const target = event.currentTarget;
+  if (!target || !("checked" in target) || typeof target.checked !== "boolean") {
+    throw new TypeError("Scan result checkbox currentTarget must expose a boolean checked value");
+  }
+  return target.checked;
+}
 </script>

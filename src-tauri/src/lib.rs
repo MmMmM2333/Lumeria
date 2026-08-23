@@ -464,18 +464,26 @@ fn cache_custom_icon(app: AppHandle, data_url: String) -> Result<CachedCustomIco
 }
 
 #[tauri::command]
-fn launch_app(
-    app: AppHandle,
-    request: LaunchAppRequest,
-    state: State<'_, AppState>,
-) -> Result<(), LaunchFailurePayload> {
-    launch_app_inner(&app, request, state).map_err(|error| error.payload())
+async fn launch_app(app: AppHandle, request: LaunchAppRequest) -> Result<(), LaunchFailurePayload> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        launch_app_inner(&app, request, &state)
+    })
+    .await
+    .map_err(|error| {
+        LaunchFailure::new(
+            LaunchFailureKind::WindowsLaunchFailed,
+            format!("App launch worker failed: {error}"),
+        )
+        .payload()
+    })?;
+    result.map_err(|error| error.payload())
 }
 
 fn launch_app_inner(
     app_handle: &AppHandle,
     request: LaunchAppRequest,
-    state: State<'_, AppState>,
+    state: &AppState,
 ) -> Result<(), LaunchFailure> {
     let app_id = request.id.trim().to_string();
     if app_id.is_empty() {

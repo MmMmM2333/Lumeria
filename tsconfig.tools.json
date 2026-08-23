@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "checkJs": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "playwright.config.ts",
+    "playwright.webview.config.ts",
+    "scripts/**/*.ts",
+    "tests/browser/**/*.ts",
+    "vite.config.ts"
+  ]
+}

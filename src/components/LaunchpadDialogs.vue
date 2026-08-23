@@ -84,7 +84,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { setTheme } from "@fluentui/web-components";
 import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
@@ -94,6 +94,8 @@ import ErrorCircleIcon from "~icons/fluent/error-circle-20-regular";
 import InfoIcon from "~icons/fluent/info-20-regular";
 import WarningIcon from "~icons/fluent/warning-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import type { LaunchpadController } from "../composables/useLaunchpadController.js";
+import type { LaunchpadNoticeIntent } from "../composables/useLaunchpadNotices.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import { useLocalization } from "../i18n/localization.js";
 import AppIconChooserDialog from "./AppIconChooserDialog.vue";
@@ -101,17 +103,18 @@ import ManagedAppEditorDialog from "./ManagedAppEditorDialog.vue";
 import ScanResultDialog from "./ScanResultDialog.vue";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
-const props = defineProps({
-  state: { type: Object, required: true },
-});
+type LaunchpadDialogsState = LaunchpadController["dialogs"];
+type FocusableDialog = Readonly<{ focus: () => void }>;
+
+const props = defineProps<{ state: LaunchpadDialogsState }>();
 const { t } = useLocalization();
 
-const dialogThemeHostRef = ref(null);
-const scanResultDialogRef = ref(null);
-const managedAppEditorDialogRef = ref(null);
-const appIconChooserDialogRef = ref(null);
-const warningDialogOverlayRef = ref(null);
-const warningDialogRef = ref(null);
+const dialogThemeHostRef = ref<HTMLElement | null>(null);
+const scanResultDialogRef = ref<FocusableDialog | null>(null);
+const managedAppEditorDialogRef = ref<FocusableDialog | null>(null);
+const appIconChooserDialogRef = ref<FocusableDialog | null>(null);
+const warningDialogOverlayRef = ref<HTMLElement | null>(null);
+const warningDialogRef = ref<HTMLElement | null>(null);
 const warningDialogOverlayMotion = useGsapDomMotion(warningDialogOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveWarningDialogOverlayMotion,
@@ -120,7 +123,7 @@ const warningDialogMotion = useGsapDomMotion(warningDialogRef, {
   initial: { opacity: 0, scale: 0.96 },
   motion: resolveWarningDialogPanelMotion,
 });
-let themedDialogHost = null;
+let themedDialogHost: HTMLElement | null = null;
 
 const warningDialogIntent = computed(() => normalizeDialogIntent(props.state.warningDialog.value?.intent));
 const warningDialogIcon = computed(() => getNoticeIcon(warningDialogIntent.value));
@@ -174,11 +177,19 @@ watch(
   { flush: "post" }
 );
 
-function normalizeDialogIntent(intent) {
-  return ["success", "warning", "error", "info"].includes(intent) ? intent : "warning";
+function normalizeDialogIntent(intent: unknown): LaunchpadNoticeIntent {
+  switch (intent) {
+    case "success":
+    case "warning":
+    case "error":
+    case "info":
+      return intent;
+    default:
+      return "warning";
+  }
 }
 
-function getNoticeIcon(intent) {
+function getNoticeIcon(intent: unknown) {
   switch (normalizeDialogIntent(intent)) {
     case "success":
       return CheckmarkCircleIcon;

@@ -5,10 +5,21 @@
   </div>
 </template>
 
-<script setup>
-import { Container, Sprite, Texture, TilingSprite } from "pixi.js";
+<script setup lang="ts">
+import {
+  Container,
+  Sprite,
+  Texture,
+  TilingSprite,
+  type Application,
+  type Renderer,
+} from "pixi.js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { loadCachedBackgroundImageDataUrl } from "../../api/launchpadApi.js";
+import type { CSSProperties, PropType } from "vue";
+import {
+  loadCachedBackgroundImageDataUrl,
+  type BackgroundLayoutContext,
+} from "../../api/launchpadApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
@@ -20,51 +31,84 @@ import {
   resolveBackgroundImagePlacement,
   resolveCssBackgroundImagePlacement,
 } from "../../domain/backgroundImageLayout.js";
+import type { BackgroundImageLayout } from "../../domain/backgroundImageLayout.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
   BACKGROUND_EFFECT_BLUR,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
 } from "../../domain/backgroundSettings.js";
+import type { BackgroundEffect } from "../../domain/backgroundSettings.js";
+import type { AcrylicParameters } from "../../domain/layoutDocument.js";
 import {
   createBackgroundEffectPlan,
   resolveAcrylicBackgroundAlpha,
 } from "./background/acrylicBackgroundPlan.js";
 
+type PixelSize = Readonly<{
+  height: number;
+  width: number;
+}>;
+
+type BackgroundAcrylicParams = Partial<AcrylicParameters>;
+
+type DestroyPixiOptions = Readonly<{
+  deep?: boolean;
+}>;
+
 const props = defineProps({
   active: { type: Boolean, default: true },
-  backgroundAcrylicParams: { type: Object, default: () => ({}) },
-  backgroundEffect: { type: String, default: BACKGROUND_EFFECT_BLUR },
+  backgroundAcrylicParams: {
+    type: Object as PropType<BackgroundAcrylicParams>,
+    default: () => ({}),
+  },
+  backgroundEffect: {
+    type: String as PropType<BackgroundEffect>,
+    default: BACKGROUND_EFFECT_BLUR,
+  },
   backgroundBlurStrength: { type: Number, default: DEFAULT_BACKGROUND_BLUR_STRENGTH },
   backgroundImageOpacity: { type: Number, default: 46 },
-  backgroundImageLayout: { type: String, default: DEFAULT_BACKGROUND_IMAGE_LAYOUT },
-  backgroundImagePath: { type: String, default: null },
-  backgroundImagePixelSize: { type: Object, default: null },
-  backgroundImageUrl: { type: String, required: true },
-  backgroundLayoutContext: { type: Object, default: null },
-  backgroundViewportSize: { type: Object, default: () => ({ height: 1, width: 1 }) },
+  backgroundImageLayout: {
+    type: String as PropType<BackgroundImageLayout>,
+    default: DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+  },
+  backgroundImagePath: { type: String as PropType<string | null>, default: null },
+  backgroundImagePixelSize: { type: Object as PropType<PixelSize | null>, default: null },
+  backgroundImageUrl: { type: String as PropType<string | null>, default: null },
+  backgroundLayoutContext: {
+    type: Object as PropType<BackgroundLayoutContext | null>,
+    default: null,
+  },
+  backgroundViewportSize: {
+    type: Object as PropType<PixelSize>,
+    default: () => ({ height: 1, width: 1 }),
+  },
 });
-const emit = defineEmits(["ready"]);
+const emit = defineEmits<{
+  ready: [];
+}>();
 
 const acrylicDebugParams = useAcrylicDebugParams();
 const acrylicDebugOverrideEnabled = useAcrylicDebugOverrideEnabled();
 const kawaseDebugParams = useKawaseDebugParams();
 const kawaseDebugOverrideEnabled = useKawaseDebugOverrideEnabled();
-const hostRef = ref(null);
+const hostRef = ref<HTMLElement | null>(null);
 const isFallbackVisible = ref(true);
-let app = null;
-let sourceTexture = null;
-let sourceSprite = null;
-let sourceTilingSprite = null;
-let sourceContainer = null;
-let displaySprite = null;
-let effectPipeline = null;
-let resizeObserver = null;
+let app: Application<Renderer> | null = null;
+let sourceTexture: Texture | null = null;
+let sourceSprite: Sprite | null = null;
+let sourceTilingSprite: TilingSprite | null = null;
+let sourceContainer: Container | null = null;
+let displaySprite: Sprite | null = null;
+let effectPipeline: BackgroundEffectPipeline | null = null;
+let resizeObserver: ResizeObserver | null = null;
 let destroyed = false;
-let pendingAnimationFrame = null;
+let pendingAnimationFrame: number | null = null;
 let textureLoadGeneration = 0;
 
-const fallbackImageStyle = computed(() => ({
-  backgroundImage: `url(${JSON.stringify(props.backgroundImageUrl)})`,
+const fallbackImageStyle = computed<CSSProperties>(() => ({
+  backgroundImage: props.backgroundImageUrl
+    ? `url(${JSON.stringify(props.backgroundImageUrl)})`
+    : "none",
   ...resolveCssBackgroundImagePlacement(props.backgroundImageLayout, {
     imagePixelSize: props.backgroundImagePixelSize,
     layoutContext: props.backgroundLayoutContext,
@@ -74,7 +118,7 @@ const fallbackImageStyle = computed(() => ({
   opacity: resolveAcrylicBackgroundAlpha(props.backgroundImageOpacity),
 }));
 
-function getHostSize() {
+function getHostSize(): PixelSize {
   const rect = hostRef.value?.getBoundingClientRect?.();
   return {
     height: Math.max(1, Math.round(rect?.height || window.innerHeight || 1)),
@@ -82,7 +126,7 @@ function getHostSize() {
   };
 }
 
-function renderSourceToTexture(renderSize, hostSize) {
+function renderSourceToTexture(renderSize: PixelSize, hostSize: PixelSize): void {
   if (
     !app
     || !sourceTexture
@@ -112,7 +156,7 @@ function renderSourceToTexture(renderSize, hostSize) {
     sourceTilingSprite.position.set(layout.x, layout.y);
     sourceTilingSprite.setSize(layout.width, layout.height);
     sourceTilingSprite.tilePosition.set(layout.tileX || 0, layout.tileY || 0);
-    sourceTilingSprite.tileScale.set(layout.tileScaleX, layout.tileScaleY);
+    sourceTilingSprite.tileScale.set(layout.tileScaleX!, layout.tileScaleY!);
   } else {
     sourceTilingSprite.visible = false;
     sourceTilingSprite.texture = Texture.EMPTY;
@@ -125,7 +169,7 @@ function renderSourceToTexture(renderSize, hostSize) {
   app.renderer.render({ container: sourceContainer, target: effectPipeline.sourceRenderTexture, clear: true });
 }
 
-function renderBackgroundEffect() {
+function renderBackgroundEffect(): void {
   if (!props.active || !app || !effectPipeline || !sourceTexture || !hostRef.value) return;
   const hostSize = getHostSize();
   const effectPlan = createBackgroundEffectPlan({
@@ -150,27 +194,27 @@ function renderBackgroundEffect() {
 
   if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
     effectPipeline.renderAcrylicComposite(effectPlan.acrylic);
-    displaySprite.texture = effectPipeline.finalRenderTexture;
-    displaySprite.alpha = 1;
+    displaySprite!.texture = effectPipeline.finalRenderTexture!;
+    displaySprite!.alpha = 1;
   } else {
-    displaySprite.texture = effectPipeline.finalBlurTexture;
-    displaySprite.alpha = effectPlan.opacity;
+    displaySprite!.texture = effectPipeline.finalBlurTexture!;
+    displaySprite!.alpha = effectPlan.opacity;
   }
 
-  displaySprite.position.set(0, 0);
-  displaySprite.setSize(hostSize.width, hostSize.height);
+  displaySprite!.position.set(0, 0);
+  displaySprite!.setSize(hostSize.width, hostSize.height);
   app.renderer.render({ container: app.stage, clear: true });
   isFallbackVisible.value = false;
   emit("ready");
 }
 
-function clearPendingRender() {
+function clearPendingRender(): void {
   if (pendingAnimationFrame == null) return;
   window.cancelAnimationFrame(pendingAnimationFrame);
   pendingAnimationFrame = null;
 }
 
-function scheduleRender() {
+function scheduleRender(): void {
   if (!props.active || destroyed || pendingAnimationFrame != null) return;
   pendingAnimationFrame = window.requestAnimationFrame(() => {
     pendingAnimationFrame = null;
@@ -183,7 +227,7 @@ function scheduleRender() {
   });
 }
 
-async function resolveTextureSource(source) {
+async function resolveTextureSource(source: string): Promise<string> {
   if (!props.backgroundImagePath) return source;
   try {
     return await loadCachedBackgroundImageDataUrl(props.backgroundImagePath) || source;
@@ -193,7 +237,7 @@ async function resolveTextureSource(source) {
   }
 }
 
-async function loadBackgroundTexture(source) {
+async function loadBackgroundTexture(source: string | null | undefined): Promise<void> {
   const generation = ++textureLoadGeneration;
   if (!source) return;
   isFallbackVisible.value = true;
@@ -216,12 +260,12 @@ async function loadBackgroundTexture(source) {
   }
 }
 
-function handleResize() {
+function handleResize(): void {
   app?.resize?.();
   scheduleRender();
 }
 
-function destroyPixi(options = {}) {
+function destroyPixi(options: DestroyPixiOptions = {}): void {
   const deep = options.deep !== false;
   destroyed = true;
   textureLoadGeneration += 1;
@@ -236,7 +280,7 @@ function destroyPixi(options = {}) {
   destroyTexture(sourceTexture);
   sourceTexture = null;
   sourceContainer?.destroy?.({ children: true });
-  app?.stage?.removeChild(displaySprite);
+  app?.stage?.removeChild(displaySprite!);
   displaySprite?.destroy?.();
   sourceSprite = null;
   sourceTilingSprite = null;
@@ -251,9 +295,9 @@ function destroyPixi(options = {}) {
 
 onMounted(async () => {
   destroyed = false;
-  let nextApp = null;
+  let nextApp: Application<Renderer>;
   try {
-    nextApp = await createPixiApp(hostRef.value, {
+    nextApp = await createPixiApp(hostRef.value!, {
       autoStart: false,
       className: "pixi-background-canvas",
       preference: ["webgl"],
@@ -284,7 +328,7 @@ onMounted(async () => {
   });
   app.stage.addChild(displaySprite);
   resizeObserver = new ResizeObserver(handleResize);
-  resizeObserver.observe(hostRef.value);
+  resizeObserver.observe(hostRef.value!);
   window.addEventListener("resize", handleResize);
   await nextTick();
   if (props.active) {
@@ -294,7 +338,7 @@ onMounted(async () => {
 });
 
 watch(
-  () => [props.backgroundImagePath, props.backgroundImageUrl],
+  () => [props.backgroundImagePath, props.backgroundImageUrl] as const,
   ([, nextUrl]) => {
     if (props.active) void loadBackgroundTexture(nextUrl);
   }

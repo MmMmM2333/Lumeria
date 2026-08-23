@@ -41,8 +41,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { BackgroundLayoutContext } from "../api/launchpadApi.js";
+import type { BackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import {
   BACKGROUND_EFFECT_ACRYLIC_WEBGL,
@@ -54,6 +56,8 @@ import {
 import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
 } from "../domain/backgroundImageLayout.js";
+import type { BackgroundImageLayout } from "../domain/backgroundImageLayout.js";
+import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument.js";
 import {
   BackgroundEffectPreviewRenderer,
   backgroundEffectUsesPixi,
@@ -70,36 +74,45 @@ const DEFAULT_RENDER_HEIGHT = 540;
 const DEFAULT_PREVIEW_WIDTH = 320;
 const DEFAULT_PREVIEW_HEIGHT = 180;
 
-const props = defineProps({
-  active: { type: Boolean, default: true },
-  backgroundAcrylicParams: { type: Object, default: () => ({}) },
-  backgroundBaseColor: { type: String, required: true },
-  backgroundBaseOpacity: { type: Number, required: true },
-  backgroundBlurStrength: { type: Number, required: true },
-  backgroundDarkenColor: { type: String, required: true },
-  backgroundDarkenStrength: { type: Number, required: true },
-  backgroundEffect: { type: String, required: true },
-  backgroundImageLayout: { type: String, default: DEFAULT_BACKGROUND_IMAGE_LAYOUT },
-  backgroundImageOpacity: { type: Number, required: true },
-  backgroundImagePath: { type: String, default: null },
-  backgroundImagePixelSize: { type: Object, default: null },
-  backgroundImageUrl: { type: String, default: null },
-  backgroundLayoutContext: { type: Object, default: null },
-  emptyLabel: { type: String, default: "" },
+const props = withDefaults(defineProps<{
+  active?: boolean;
+  backgroundAcrylicParams?: Partial<AcrylicParameters>;
+  backgroundBaseColor: string;
+  backgroundBaseOpacity: number;
+  backgroundBlurStrength: number;
+  backgroundDarkenColor: string;
+  backgroundDarkenStrength: number;
+  backgroundEffect: LayoutSettings["backgroundEffect"];
+  backgroundImageLayout?: BackgroundImageLayout;
+  backgroundImageOpacity: number;
+  backgroundImagePath?: string | null;
+  backgroundImagePixelSize?: BackgroundImagePixelSize | null;
+  backgroundImageUrl?: string | null;
+  backgroundLayoutContext?: BackgroundLayoutContext | null;
+  emptyLabel?: string;
+}>(), {
+  active: true,
+  backgroundAcrylicParams: () => ({}),
+  backgroundImageLayout: DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+  backgroundImagePath: null,
+  backgroundImagePixelSize: null,
+  backgroundImageUrl: null,
+  backgroundLayoutContext: null,
+  emptyLabel: "",
 });
 
 const { t } = useLocalization();
 const resolvedEmptyLabel = computed(() => props.emptyLabel || t("preview.selectImageFirst"));
-const pixiHostRef = ref(null);
-const rootRef = ref(null);
+const pixiHostRef = ref<HTMLElement | null>(null);
+const rootRef = ref<HTMLElement | null>(null);
 const renderSize = ref({ height: DEFAULT_RENDER_HEIGHT, width: DEFAULT_RENDER_WIDTH });
 const previewSize = ref({ height: DEFAULT_PREVIEW_HEIGHT, width: DEFAULT_PREVIEW_WIDTH });
 const isPixiReady = ref(false);
 const kawaseDebugParams = useKawaseDebugParams();
 const kawaseDebugOverrideEnabled = useKawaseDebugOverrideEnabled();
-let previewRenderer = null;
+let previewRenderer: BackgroundEffectPreviewRenderer | null = null;
 let rendererGeneration = 0;
-let previewResizeObserver = null;
+let previewResizeObserver: ResizeObserver | null = null;
 let pixiTextureKey = "";
 let pendingRendererConfigKey = "";
 let renderedRendererConfigKey = "";
@@ -126,7 +139,7 @@ const previewStyle = computed(() => ({
   "--settings-background-preview-base-opacity": `${clampBackgroundBaseOpacity(props.backgroundBaseOpacity) / 100}`,
 }));
 
-function readRenderSize() {
+function readRenderSize(): void {
   if (typeof window === "undefined") return;
   const width = Math.round(window.innerWidth || DEFAULT_RENDER_WIDTH);
   const height = Math.round(window.innerHeight || DEFAULT_RENDER_HEIGHT);
@@ -143,7 +156,7 @@ function readRenderSize() {
   }
 }
 
-function makePixiTextureKey() {
+function makePixiTextureKey(): string {
   return `${props.backgroundImagePath || ""}|${props.backgroundImageUrl || ""}`;
 }
 
@@ -167,7 +180,7 @@ function getRendererConfig() {
   };
 }
 
-function makeRendererConfigKey(config) {
+function makeRendererConfigKey(config: ReturnType<typeof getRendererConfig>): string {
   return JSON.stringify({
     acrylicBrightness: config.backgroundAcrylicParams?.brightness,
     acrylicContrast: config.backgroundAcrylicParams?.contrast,
@@ -207,7 +220,7 @@ function makeRendererConfigKey(config) {
   });
 }
 
-function destroyPreviewRenderer() {
+function destroyPreviewRenderer(): void {
   rendererGeneration += 1;
   previewRenderer?.destroy();
   previewRenderer = null;
@@ -217,7 +230,7 @@ function destroyPreviewRenderer() {
   renderedRendererConfigKey = "";
 }
 
-async function ensurePreviewRenderer() {
+async function ensurePreviewRenderer(): Promise<void> {
   if (!usesPixiEffect.value) {
     destroyPreviewRenderer();
     return;
@@ -286,12 +299,12 @@ onBeforeUnmount(() => {
   }
 });
 
-function disconnectPreviewResizeObserver() {
+function disconnectPreviewResizeObserver(): void {
   previewResizeObserver?.disconnect?.();
   previewResizeObserver = null;
 }
 
-function observePreviewSize() {
+function observePreviewSize(): void {
   disconnectPreviewResizeObserver();
   const element = rootRef.value;
   if (!element || typeof ResizeObserver === "undefined") {

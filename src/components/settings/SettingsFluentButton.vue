@@ -12,8 +12,9 @@
   </fluent-button>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useAttrs } from "vue";
+import type { ButtonAppearance, ButtonShape, ButtonSize } from "@fluentui/web-components";
 
 defineOptions({ inheritAttrs: false });
 
@@ -25,23 +26,30 @@ const attrs = useAttrs();
 // styles and animate into the intended variant. This wrapper writes the
 // style-driving values as attributes directly, so Fluent matches the right
 // selector before the button becomes visible.
-const props = defineProps({
-  appearance: { type: String, default: null },
-  disabled: { type: Boolean, default: false },
-  fluentSlot: { type: String, default: null },
-  shape: { type: String, default: null },
-  size: { type: String, default: null },
-  tone: { type: String, default: null },
+const props = withDefaults(defineProps<{
+  appearance?: ButtonAppearance | null;
+  disabled?: boolean;
+  fluentSlot?: string | null;
+  shape?: ButtonShape | null;
+  size?: ButtonSize | null;
+  tone?: "danger" | null;
+}>(), {
+  appearance: null,
+  disabled: false,
+  fluentSlot: null,
+  shape: null,
+  size: null,
+  tone: null,
 });
 
-function buttonClass() {
+function buttonClass(): unknown[] {
   return [
     attrs.class,
     props.tone && `settings-fluent-button-${props.tone}`,
   ];
 }
 
-function forwardedAttrs() {
+function forwardedAttrs(): Record<string, unknown> {
   const { class: _class, ...restAttrs } = attrs;
   return restAttrs;
 }

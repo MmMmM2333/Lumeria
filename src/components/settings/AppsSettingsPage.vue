@@ -10,7 +10,7 @@
             :aria-label="t('settings.apps.excluded.search')"
             autocomplete="off"
             :value.prop="excludedAppsSearchQuery"
-            @input="setExcludedAppsSearchQuery($event.target.value)"
+            @input="setExcludedAppsSearchQuery(readControlValue($event))"
           >
             <SearchIcon slot="start" class="app-manager-search-icon" />
           </fluent-text-input>
@@ -50,10 +50,10 @@
               :aria-label="t('settings.apps.excluded.select', { name: getExcludedAppName(app) })"
               :checked.prop="isExcludedAppSelected(key)"
               @click.stop
-              @change.stop="toggleExcludedAppSelection(key, $event.target.checked)"
+              @change.stop="toggleExcludedAppSelection(key, readControlChecked($event))"
             />
             <span class="app-manager-icon">
-              <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
+              <img v-if="getIconSource(app)" :src="getIconSource(app) || undefined" alt="" draggable="false" />
               <span v-else>{{ getExcludedAppGlyph(app) }}</span>
             </span>
             <span class="app-manager-details">
@@ -91,7 +91,7 @@
             :aria-label="t('settings.apps.manager.search')"
             autocomplete="off"
             :value.prop="state.appManagerSearchQuery.value"
-            @input="state.appManagerSearchQuery.value = $event.target.value"
+            @input="state.appManagerSearchQuery.value = readControlValue($event)"
           >
             <SearchIcon slot="start" class="app-manager-search-icon" />
           </fluent-text-input>
@@ -147,7 +147,7 @@
           <div v-else class="app-manager-virtual-inner" :style="{ height: `${appManagerVirtualTotalSize}px` }">
             <div
               v-for="{ app, virtualRow } in appManagerVirtualRows"
-              :key="virtualRow.key"
+              :key="String(virtualRow.key)"
               :class="['app-manager-item', state.appManagerSelectedIds.value.includes(app.id) && 'app-manager-item-selected']"
               role="listitem"
               :aria-posinset="virtualRow.index + 1"
@@ -158,10 +158,10 @@
                 :name="`managedAppSelection-${app.id}`"
                 :aria-label="t('settings.apps.manager.select', { name: app.name })"
                 :checked.prop="state.appManagerSelectedIds.value.includes(app.id)"
-                @change="state.toggleManagedAppSelection(app.id, $event.target.checked)"
+                @change="state.toggleManagedAppSelection(app.id, readControlChecked($event))"
               />
               <span class="app-manager-icon">
-                <img v-if="getIconSource(app)" :src="getIconSource(app)" alt="" draggable="false" />
+                <img v-if="getIconSource(app)" :src="getIconSource(app) || undefined" alt="" draggable="false" />
                 <span v-else>{{ app.emoji }}</span>
               </span>
               <span class="app-manager-details">
@@ -222,7 +222,7 @@
             <fluent-switch
               :checked.prop="root.enabled"
               :aria-label="t('settings.apps.sources.enable', { name: root.label })"
-              @change="state.toggleScanRootEnabled(root.id, $event.target.checked)"
+              @change="state.toggleScanRootEnabled(root.id, readControlChecked($event))"
             />
             <span class="scan-root-details">
               <fluent-text-input
@@ -232,7 +232,7 @@
                 :value.prop="root.label"
                 :aria-label="t('settings.apps.sources.label', { name: root.label })"
                 autocomplete="off"
-                @change="state.changeScanRootLabel(root.id, $event.target.value)"
+                @change="state.changeScanRootLabel(root.id, readControlValue($event))"
               />
               <span class="scan-root-path-row">
                 <fluent-text-input
@@ -243,7 +243,7 @@
                   :aria-label="t('settings.apps.sources.path', { name: root.label })"
                   autocomplete="off"
                   :disabled="root.type === 'windowsAppCatalog'"
-                  @change="state.changeScanRootPath(root.id, $event.target.value)"
+                  @change="state.changeScanRootPath(root.id, readControlValue($event))"
                 />
               </span>
               <span v-if="root.type === 'windowsAppCatalog'" class="settings-field-hint scan-root-meta">
@@ -317,7 +317,7 @@
                       :aria-label="t('settings.apps.filters.keywordAdd')"
                       autocomplete="off"
                       :value.prop="state.newScanKeyword.value"
-                      @input="state.newScanKeyword.value = $event.target.value"
+                      @input="state.newScanKeyword.value = readControlValue($event)"
                       @keydown.enter.prevent="state.addScanKeywordBlacklistItem"
                     />
                     <SettingsFluentButton appearance="outline" type="button" @click="state.addScanKeywordBlacklistItem">{{ t("common.actions.add") }}</SettingsFluentButton>
@@ -423,7 +423,7 @@
               <fluent-switch
                 :checked.prop="state.showMissingLaunchTargetBadge.value"
                 :aria-label="t('settings.apps.overview.showMissingTarget')"
-                @change="state.toggleMissingLaunchTargetBadge($event.target.checked)"
+                @change="state.toggleMissingLaunchTargetBadge(readControlChecked($event))"
               />
             </span>
           </div>
@@ -433,9 +433,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { useVirtualizer } from "@tanstack/vue-virtual";
+import type { VirtualItem } from "@tanstack/vue-virtual";
 import AddIcon from "~icons/fluent/add-20-regular";
 import ArrowCounterclockwiseIcon from "~icons/fluent/arrow-counterclockwise-20-regular";
 import AppsListDetailIcon from "~icons/fluent/apps-list-detail-24-regular";
@@ -452,12 +453,14 @@ import MoreHorizontalIcon from "~icons/fluent/more-horizontal-20-regular";
 import SearchIcon from "~icons/fluent/search-20-regular";
 
 import { getIconSource } from "../../domain/iconSource.js";
+import type { LaunchpadApp } from "../../domain/launchpadLayout.js";
+import type { useSettingsPanelModel } from "../../composables/useSettingsPanelModel.js";
 import { useLocalization } from "../../i18n/localization.js";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 
-const props = defineProps({
-  model: { type: Object, required: true },
-});
+type AppsSettingsModel = ReturnType<typeof useSettingsPanelModel>["pages"]["apps"];
+
+const props = defineProps<{ model: AppsSettingsModel }>();
 
 const state = props.model;
 const { t } = useLocalization();
@@ -492,9 +495,9 @@ const APP_MANAGER_ROW_HEIGHT = 64;
 const APP_MANAGER_ROW_GAP = 6;
 const APP_MANAGER_OVERSCAN = 6;
 
-const appManagerListRef = ref(null);
-const keywordFiltersSectionRef = ref(null);
-const keywordInputRef = ref(null);
+const appManagerListRef = ref<HTMLElement | null>(null);
+const keywordFiltersSectionRef = ref<HTMLElement | null>(null);
+const keywordInputRef = ref<HTMLElement | null>(null);
 
 const appManagerVirtualizer = useVirtualizer({
   get count() {
@@ -507,19 +510,42 @@ const appManagerVirtualizer = useVirtualizer({
   getItemKey: (index) => state.filteredManagedApps.value[index]?.id ?? index,
 });
 
-const appManagerVirtualRows = computed(() =>
-  appManagerVirtualizer.value
-    .getVirtualItems()
-    .map((virtualRow) => ({ app: state.filteredManagedApps.value[virtualRow.index], virtualRow }))
-    .filter(({ app }) => Boolean(app)),
-);
+type AppManagerVirtualRow = Readonly<{
+  app: LaunchpadApp;
+  virtualRow: VirtualItem;
+}>;
+
+const appManagerVirtualRows = computed<AppManagerVirtualRow[]>(() => {
+  const rows: AppManagerVirtualRow[] = [];
+  for (const virtualRow of appManagerVirtualizer.value.getVirtualItems()) {
+    const app = state.filteredManagedApps.value[virtualRow.index];
+    if (app) rows.push({ app, virtualRow });
+  }
+  return rows;
+});
 
 const appManagerVirtualTotalSize = computed(() => appManagerVirtualizer.value.getTotalSize());
 
-function getAppManagerVirtualRowStyle(virtualRow) {
+function getAppManagerVirtualRowStyle(virtualRow: VirtualItem): Readonly<{ transform: string }> {
   return {
     transform: `translateY(${virtualRow.start}px)`,
   };
+}
+
+function readControlValue(event: Event): string {
+  const target = event.currentTarget;
+  if (!target || !("value" in target) || typeof target.value !== "string") {
+    throw new TypeError("Apps settings control currentTarget must expose a string value");
+  }
+  return target.value;
+}
+
+function readControlChecked(event: Event): boolean {
+  const target = event.currentTarget;
+  if (!target || !("checked" in target) || typeof target.checked !== "boolean") {
+    throw new TypeError("Apps settings control currentTarget must expose a boolean checked value");
+  }
+  return target.checked;
 }
 
 watch(

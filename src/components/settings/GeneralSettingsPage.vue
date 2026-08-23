@@ -26,7 +26,7 @@
               :checked.prop="model.draftLaunchAtLogin.value"
               :disabled.prop="model.isApplyingSettingsConfig.value || model.isRefreshingLaunchAtLogin.value || !model.canConfigureLaunchAtLogin.value"
               :aria-label="t('settings.general.startup.title')"
-              @change="model.actions.setLaunchAtLogin($event.target.checked)"
+              @change="model.actions.setLaunchAtLogin(readControlChecked($event))"
             />
           </span>
         </div>
@@ -91,7 +91,7 @@
               class="settings-language-dropdown"
               appearance="outline"
               :disabled.prop="model.isApplyingSettingsConfig.value"
-              @change="model.actions.setLocalePreference($event.currentTarget.value)"
+              @change="model.actions.setLocalePreference(readControlValue($event))"
             >
               <fluent-listbox class="settings-language-listbox" role="listbox">
                 <fluent-option
@@ -151,7 +151,7 @@
                   >
                     <img
                       class="settings-launchpad-icon-preview"
-                      :src="launchpadIconPreviewUrls[option.value]"
+                      :src="launchpadIconPreviewUrls[normalizeLaunchpadIconVariant(option.value)]"
                       alt=""
                       draggable="false"
                     />
@@ -196,7 +196,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
@@ -206,16 +206,20 @@ import PowerIcon from "~icons/fluent/power-24-regular";
 import RocketIcon from "~icons/fluent/rocket-24-regular";
 import WindowDevToolsIcon from "~icons/fluent/window-dev-tools-24-regular";
 import { launchpadIconUrls as launchpadIconPreviewUrls } from "../../assets/branding/launchpadIconUrls.js";
+import type { useSettingsPanelModel } from "../../composables/useSettingsPanelModel.js";
+import { normalizeLaunchpadIconVariant } from "../../domain/launchpadIconVariant.js";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 import { useLocalization } from "../../i18n/localization.js";
 
-const props = defineProps({ model: { type: Object, required: true } });
+type GeneralSettingsModel = ReturnType<typeof useSettingsPanelModel>["pages"]["general"];
+
+const props = defineProps<{ model: GeneralSettingsModel }>();
 const model = props.model;
 const localization = useLocalization();
 const { availableLocales, t } = localization;
-const languageDropdownRef = ref(null);
+const languageDropdownRef = ref<HTMLElement | null>(null);
 const isLaunchpadIconExpanded = ref(false);
-let languageDropdownControlObserver = null;
+let languageDropdownControlObserver: MutationObserver | null = null;
 const languageOptions = computed(() => [
   { value: "system", label: t("settings.general.language.system") },
   ...availableLocales.map((locale) => ({ value: locale.locale, label: locale.displayName })),
@@ -242,10 +246,26 @@ onBeforeUnmount(() => {
   languageDropdownControlObserver?.disconnect();
 });
 
-function labelLanguageDropdownControl(dropdown) {
+function labelLanguageDropdownControl(dropdown: HTMLElement): boolean {
   const control = dropdown.querySelector("[slot='control']");
   if (!control) return false;
   control.setAttribute("aria-labelledby", "settings-language-select-label");
   return true;
+}
+
+function readControlValue(event: Event): string {
+  const target = event.currentTarget;
+  if (!target || !("value" in target) || typeof target.value !== "string") {
+    throw new TypeError("General settings control currentTarget must expose a string value");
+  }
+  return target.value;
+}
+
+function readControlChecked(event: Event): boolean {
+  const target = event.currentTarget;
+  if (!target || !("checked" in target) || typeof target.checked !== "boolean") {
+    throw new TypeError("General settings control currentTarget must expose a boolean checked value");
+  }
+  return target.checked;
 }
 </script>

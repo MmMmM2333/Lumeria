@@ -7,7 +7,7 @@
     :style="state.launchGhostStyle.value"
   >
     <div class="app-launch-ghost-box">
-      <img v-if="getIconSource(state.launchGhost.value.app)" class="app-launch-ghost-image" :src="getIconSource(state.launchGhost.value.app)" alt="" draggable="false" />
+      <img v-if="launchGhostIconSource" class="app-launch-ghost-image" :src="launchGhostIconSource" alt="" draggable="false" />
       <span v-else class="app-launch-ghost-emoji">{{ state.launchGhost.value.app.emoji }}</span>
     </div>
   </div>
@@ -98,10 +98,11 @@
 
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { setTheme } from "@fluentui/web-components";
 import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { CSSProperties, Ref } from "vue";
 import ArrowSortIcon from "~icons/fluent/arrow-sort-20-regular";
 import DeleteIcon from "~icons/fluent/delete-20-regular";
 import DeleteDismissIcon from "~icons/fluent/delete-dismiss-20-regular";
@@ -114,17 +115,54 @@ import ScanObjectIcon from "~icons/fluent/scan-object-20-regular";
 import SelectAllOnIcon from "~icons/fluent/select-all-on-20-regular";
 import SettingsIcon from "~icons/fluent/settings-20-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import { getIconSource } from "../domain/iconSource.js";
+import type { ReadonlyLaunchpadItem } from "../domain/launchpadLayout.js";
+import type { LaunchSource } from "../domain/input/launchpadPointerTarget.js";
 import { useLocalization } from "../i18n/localization.js";
 import { clampIconContextMenuPosition } from "./iconContextMenuGeometry.js";
+import type {
+  IconContextMenuActionName,
+  IconContextMenuActionPayload,
+  IconContextMenuPointerEvent,
+  IconContextMenuSurfaceCapabilities,
+  LaunchpadOverlaysExpose,
+} from "./iconContextMenuGeometry.js";
 
-const props = defineProps({
-  state: { type: Object, required: true },
-});
+type LaunchpadOverlaysState = LaunchpadController["overlays"];
+type ContextMenuBase = Readonly<{
+  anchorX: number;
+  anchorY: number;
+  positioned: boolean;
+  x: number;
+  y: number;
+}>;
+type IconContextMenu = ContextMenuBase & Readonly<{
+  item: ReadonlyLaunchpadItem;
+  kind: "icon";
+  source: LaunchSource;
+}>;
+type SurfaceContextMenu = ContextMenuBase & Readonly<{
+  capabilities: Required<IconContextMenuSurfaceCapabilities>;
+  kind: "surface";
+}>;
+type FolderSurfaceContextMenu = ContextMenuBase & Readonly<{
+  folderId: string;
+  kind: "folder-surface";
+}>;
+type ContextMenu = IconContextMenu | SurfaceContextMenu | FolderSurfaceContextMenu;
 
-const emit = defineEmits(["context-menu-action", "context-menu-request"]);
+const props = defineProps<{ state: LaunchpadOverlaysState }>();
+
+const emit = defineEmits<{
+  "context-menu-action": [payload: IconContextMenuActionPayload];
+  "context-menu-request": [event: IconContextMenuPointerEvent];
+}>();
 const { t } = useLocalization();
-const launchGhostRef = ref(null);
+const launchGhostIconSource = computed(() => (
+  getIconSource(props.state.launchGhost.value?.app) || undefined
+));
+const launchGhostRef = ref<HTMLElement | null>(null);
 useGsapDomMotion(launchGhostRef, {
   initial: { opacity: 1, scale: 1 },
   motion: () => ({
@@ -134,12 +172,12 @@ useGsapDomMotion(launchGhostRef, {
     ease: "power2.out",
   }),
 });
-const contextMenu = ref(null);
-const contextMenuRef = ref(null);
-const contextMenuThemeHostRef = ref(null);
+const contextMenu = ref<ContextMenu | null>(null);
+const contextMenuRef = ref<HTMLElement | null>(null);
+const contextMenuThemeHostRef = ref<HTMLElement | null>(null);
 let contextMenuRequestId = 0;
-let themedContextMenuHost = null;
-const contextMenuStyle = computed(() => {
+let themedContextMenuHost: HTMLElement | null = null;
+const contextMenuStyle = computed<CSSProperties>(() => {
   if (!contextMenu.value) return {};
   return {
     left: `${contextMenu.value.positioned ? contextMenu.value.x : contextMenu.value.anchorX}px`,
@@ -154,9 +192,9 @@ const contextMenuAriaLabel = computed(() => {
   return t("launchpad.contextMenu.label", { name: contextMenu.value.item.name });
 });
 
-async function positionContextMenu(requestId) {
+async function positionContextMenu(requestId: number): Promise<void> {
   await nextTick();
-  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
   const menu = contextMenu.value;
   const element = contextMenuRef.value;
   if (!menu || requestId !== contextMenuRequestId || !element) return;
@@ -175,10 +213,14 @@ async function positionContextMenu(requestId) {
     positioned: true,
   };
   await nextTick();
-  contextMenuRef.value?.querySelector("fluent-menu-item")?.focus({ preventScroll: true });
+  contextMenuRef.value?.querySelector<HTMLElement>("fluent-menu-item")?.focus({ preventScroll: true });
 }
 
-function openIconContextMenu(event, item, source) {
+function openIconContextMenu(
+  event: IconContextMenuPointerEvent,
+  item: ReadonlyLaunchpadItem,
+  source: LaunchSource,
+): boolean {
   if (!item || (item.type !== "app" && item.type !== "folder")) return false;
   contextMenuRequestId += 1;
   const requestId = contextMenuRequestId;
@@ -196,7 +238,10 @@ function openIconContextMenu(event, item, source) {
   return true;
 }
 
-function openSurfaceContextMenu(event, capabilities = {}) {
+function openSurfaceContextMenu(
+  event: IconContextMenuPointerEvent,
+  capabilities: IconContextMenuSurfaceCapabilities = {},
+): boolean {
   contextMenuRequestId += 1;
   const requestId = contextMenuRequestId;
   contextMenu.value = {
@@ -215,7 +260,10 @@ function openSurfaceContextMenu(event, capabilities = {}) {
   return true;
 }
 
-function openFolderSurfaceContextMenu(event, folderId) {
+function openFolderSurfaceContextMenu(
+  event: IconContextMenuPointerEvent,
+  folderId: string,
+): boolean {
   if (!folderId) return false;
   contextMenuRequestId += 1;
   const requestId = contextMenuRequestId;
@@ -232,43 +280,65 @@ function openFolderSurfaceContextMenu(event, folderId) {
   return true;
 }
 
-function closeContextMenu() {
+function closeContextMenu(): boolean {
   if (!contextMenu.value) return false;
   contextMenuRequestId += 1;
   contextMenu.value = null;
   return true;
 }
 
-function handleContextMenuLayerPointerDown(event) {
+function handleContextMenuLayerPointerDown(event: PointerEvent): void {
   if (event?.button === 0) closeContextMenu();
 }
 
-function requestContextMenuAtPointer(event) {
+function requestContextMenuAtPointer(event: MouseEvent): void {
   emit("context-menu-request", event);
 }
 
-function runContextMenuAction(action) {
+function runContextMenuAction(action: IconContextMenuActionName): void {
   const menu = contextMenu.value;
   if (!menu) return;
   closeContextMenu();
+  if (menu.kind === "icon") {
+    emit("context-menu-action", {
+      action,
+      folderId: null,
+      item: menu.item,
+      kind: "icon",
+      source: menu.source,
+    });
+    return;
+  }
+  if (menu.kind === "folder-surface") {
+    emit("context-menu-action", {
+      action,
+      folderId: menu.folderId,
+      item: null,
+      kind: "folder-surface",
+      source: null,
+    });
+    return;
+  }
   emit("context-menu-action", {
     action,
-    folderId: menu.folderId || null,
-    item: menu.item || null,
-    kind: menu.kind,
-    source: menu.source || null,
+    folderId: null,
+    item: null,
+    kind: "surface",
+    source: null,
   });
 }
 
-function resolveMaybeRef(value) {
+function resolveMaybeRef(
+  value: boolean | Readonly<Ref<boolean>> | undefined,
+): boolean | undefined {
   return value && typeof value === "object" && "value" in value ? value.value : value;
 }
 
-function isSurfaceScanAvailable(menu) {
+function isSurfaceScanAvailable(menu: SurfaceContextMenu): boolean {
   return Boolean(resolveMaybeRef(menu?.capabilities?.canScan));
 }
 
-function isSurfaceScanRunning(menu) {
+function isSurfaceScanRunning(menu: SurfaceContextMenu): boolean {
   return Boolean(resolveMaybeRef(menu?.capabilities?.isScanning));
 }
 
@@ -292,15 +362,17 @@ onBeforeUnmount(() => {
   themedContextMenuHost = null;
 });
 
-function resolveLaunchGhostDuration() {
+function resolveLaunchGhostDuration(): number {
   const duration = Number(props.state.appLaunchGhostTransition?.duration);
   return Number.isFinite(duration) && duration >= 0 ? duration : 0.42;
 }
 
-defineExpose({
+const overlaysExpose = {
   closeContextMenu,
   openFolderSurfaceContextMenu,
   openIconContextMenu,
   openSurfaceContextMenu,
-});
+} satisfies LaunchpadOverlaysExpose;
+
+defineExpose(overlaysExpose);
 </script>

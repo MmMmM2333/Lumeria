@@ -9,19 +9,27 @@
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
 
-const props = defineProps({
-  max: { type: [Number, String], default: 100 },
-  min: { type: [Number, String], default: 0 },
-  step: { type: [Number, String], default: 1 },
-  value: { type: [Number, String], default: 0 },
+type NumericValue = number | string;
+type FluentSliderElement = HTMLElement & { valueTextFormatter: (value: string) => string };
+
+const props = withDefaults(defineProps<{
+  max?: NumericValue;
+  min?: NumericValue;
+  step?: NumericValue;
+  value?: NumericValue;
+}>(), {
+  max: 100,
+  min: 0,
+  step: 1,
+  value: 0,
 });
 
-const emit = defineEmits(["change"]);
+const emit = defineEmits<{ change: [value: string] }>();
 
-const sliderRef = ref(null);
+const sliderRef = ref<FluentSliderElement | null>(null);
 const numericMin = computed(() => toFiniteNumber(props.min, 0));
 const numericMax = computed(() => Math.max(numericMin.value, toFiniteNumber(props.max, 100)));
 const numericStep = computed(() => {
@@ -45,41 +53,45 @@ watchEffect(() => {
   sliderRef.value.valueTextFormatter = formatUnitValue;
 });
 
-function handleSliderChange(event) {
-  emit("change", valueFromUnit(event?.target?.value));
+function handleSliderChange(event: Event): void {
+  const target = event.currentTarget;
+  if (!target || !("value" in target) || typeof target.value !== "string") {
+    throw new TypeError("Settings slider currentTarget must expose a string value");
+  }
+  emit("change", valueFromUnit(target.value));
 }
 
-function toSliderUnit(value) {
+function toSliderUnit(value: unknown): number {
   const number = toFiniteNumber(value, numericMin.value);
   const unit = Math.round((number - numericMin.value) / numericStep.value);
   return clamp(unit, 0, sliderMaxUnit.value);
 }
 
-function valueFromUnit(value) {
+function valueFromUnit(value: unknown): string {
   const unit = clamp(Math.round(toFiniteNumber(value, 0)), 0, sliderMaxUnit.value);
   const nextValue = numericMin.value + unit * numericStep.value;
   return formatNumber(nextValue);
 }
 
-function formatUnitValue(value) {
+function formatUnitValue(value: string): string {
   return valueFromUnit(value);
 }
 
-function formatNumber(value) {
+function formatNumber(value: number): string {
   const rounded = Number(value.toFixed(decimalPlaces.value));
   return String(rounded);
 }
 
-function toFiniteNumber(value, fallback) {
+function toFiniteNumber(value: unknown, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getDecimalPlaces(value) {
+function getDecimalPlaces(value: NumericValue): number {
   const text = String(value ?? "");
   if (!text.includes(".")) return 0;
   return text.split(".")[1]?.replace(/0+$/, "").length || 0;

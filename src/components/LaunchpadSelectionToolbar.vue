@@ -125,7 +125,7 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { setTheme } from "@fluentui/web-components";
 import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
 import { onBeforeUnmount, ref, watch } from "vue";
@@ -138,22 +138,38 @@ import SelectAllOnIcon from "~icons/fluent/select-all-on-20-regular";
 import SubtractSquareIcon from "~icons/fluent/subtract-square-20-regular";
 import { useLocalization } from "../i18n/localization.js";
 
-const props = defineProps({
-  canCreateFolder: { type: Boolean, default: false },
-  canExcludeFromScan: { type: Boolean, default: false },
-  cancelActive: { type: Boolean, default: false },
-  cancelArmed: { type: Boolean, default: false },
-  disabled: { type: Boolean, default: false },
-  hiddenCount: { type: Number, default: 0 },
-  resolvedSettingsTheme: { type: String, default: "dark" },
-  selectedCount: { type: Number, default: 0 },
+const props = withDefaults(defineProps<{
+  canCreateFolder?: boolean;
+  canExcludeFromScan?: boolean;
+  cancelActive?: boolean;
+  cancelArmed?: boolean;
+  disabled?: boolean;
+  hiddenCount?: number;
+  resolvedSettingsTheme?: "dark" | "light";
+  selectedCount?: number;
+}>(), {
+  canCreateFolder: false,
+  canExcludeFromScan: false,
+  cancelActive: false,
+  cancelArmed: false,
+  disabled: false,
+  hiddenCount: 0,
+  resolvedSettingsTheme: "dark",
+  selectedCount: 0,
 });
 
-defineEmits(["clear-selection", "close", "create-folder", "exclude", "remove", "select-scope"]);
+defineEmits<{
+  "clear-selection": [];
+  close: [];
+  "create-folder": [];
+  exclude: [];
+  remove: [];
+  "select-scope": [];
+}>();
 
 const { t } = useLocalization();
-const rootRef = ref(null);
-let themedRoot = null;
+const rootRef = ref<HTMLElement | null>(null);
+let themedRoot: HTMLElement | null = null;
 
 watch([rootRef, () => props.resolvedSettingsTheme], ([root, theme]) => {
   if (themedRoot && themedRoot !== root) setTheme(null, themedRoot);

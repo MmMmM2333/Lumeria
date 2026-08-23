@@ -17,8 +17,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { BackgroundLayoutContext } from "../api/launchpadApi.js";
+import type { BackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import {
   clampBackgroundBaseOpacity,
   clampBackgroundDarkenStrength,
@@ -34,35 +36,52 @@ import {
   normalizeBackgroundImageLayout,
   resolveBackgroundImagePlacement,
 } from "../domain/backgroundImageLayout.js";
+import type { BackgroundImageLayout, ImageLayout } from "../domain/backgroundImageLayout.js";
 import { useLocalization } from "../i18n/localization.js";
 
 const PREVIEW_SOURCE_CACHE_LIMIT = 4;
 const PREVIEW_SOURCE_MAX_SIDE = 1440;
 const FILL_OVERSCAN_SCALE = 1.02;
-const previewSourceCache = new Map();
+type PreviewSource = Readonly<{
+  drawable: HTMLCanvasElement | HTMLImageElement;
+  height: number;
+  width: number;
+}>;
+type PreviewSize = Readonly<{ height: number; width: number }>;
 
-const props = defineProps({
-  ariaLabel: { type: String, default: "" },
-  backgroundBaseColor: { type: String, required: true },
-  backgroundBaseOpacity: { type: Number, required: true },
-  backgroundDarkenColor: { type: String, default: "#1c1c1c" },
-  backgroundDarkenStrength: { type: Number, default: 0 },
-  backgroundImageLayout: { type: String, default: DEFAULT_BACKGROUND_IMAGE_LAYOUT },
-  backgroundImageOpacity: { type: Number, required: true },
-  backgroundImagePixelSize: { type: Object, default: null },
-  backgroundImageUrl: { type: String, default: null },
-  backgroundLayoutContext: { type: Object, default: null },
-  emptyLabel: { type: String, default: "" },
+const previewSourceCache = new Map<string, PreviewSource>();
+
+const props = withDefaults(defineProps<{
+  ariaLabel?: string;
+  backgroundBaseColor: string;
+  backgroundBaseOpacity: number;
+  backgroundDarkenColor?: string;
+  backgroundDarkenStrength?: number;
+  backgroundImageLayout?: BackgroundImageLayout;
+  backgroundImageOpacity: number;
+  backgroundImagePixelSize?: BackgroundImagePixelSize | null;
+  backgroundImageUrl?: string | null;
+  backgroundLayoutContext?: BackgroundLayoutContext | null;
+  emptyLabel?: string;
+}>(), {
+  ariaLabel: "",
+  backgroundDarkenColor: "#1c1c1c",
+  backgroundDarkenStrength: 0,
+  backgroundImageLayout: DEFAULT_BACKGROUND_IMAGE_LAYOUT,
+  backgroundImagePixelSize: null,
+  backgroundImageUrl: null,
+  backgroundLayoutContext: null,
+  emptyLabel: "",
 });
 
 const { t } = useLocalization();
 const resolvedAriaLabel = computed(() => props.ariaLabel || t("preview.image"));
 const resolvedEmptyLabel = computed(() => props.emptyLabel || t("preview.selectImageFirst"));
-const canvasRef = ref(null);
-const rootRef = ref(null);
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const rootRef = ref<HTMLElement | null>(null);
 const hasImage = computed(() => Boolean(props.backgroundImageUrl));
-let resizeObserver = null;
-let renderFrame = null;
+let resizeObserver: ResizeObserver | null = null;
+let renderFrame: number | null = null;
 let renderGeneration = 0;
 
 const previewStyle = computed(() => ({
@@ -72,17 +91,17 @@ const previewStyle = computed(() => ({
   "--settings-background-preview-darken-opacity": `${hasImage.value ? clampBackgroundDarkenStrength(props.backgroundDarkenStrength) / 100 : 0}`,
 }));
 
-function toPositiveInteger(value, fallback = 1) {
+function toPositiveInteger(value: unknown, fallback = 1): number {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.max(1, Math.round(number)) : fallback;
 }
 
-function readDevicePixelRatio() {
+function readDevicePixelRatio(): number {
   const scale = Number(window.devicePixelRatio);
   return Number.isFinite(scale) && scale > 0 ? Math.min(3, Math.max(1, scale)) : 1;
 }
 
-function readElementSize() {
+function readElementSize(): PreviewSize {
   const element = rootRef.value;
   return {
     height: toPositiveInteger(element?.offsetHeight || element?.clientHeight || 180),
@@ -90,7 +109,7 @@ function readElementSize() {
   };
 }
 
-function readRenderTargetSize(previewWidth, previewHeight) {
+function readRenderTargetSize(previewWidth: number, previewHeight: number): PreviewSize {
   if (typeof window === "undefined") {
     return { height: previewHeight, width: previewWidth };
   }
@@ -100,29 +119,34 @@ function readRenderTargetSize(previewWidth, previewHeight) {
   };
 }
 
-function getSourceWidth(source) {
-  return toPositiveInteger(source?.naturalWidth || source?.width);
+function getSourceWidth(source: HTMLCanvasElement | HTMLImageElement): number {
+  return toPositiveInteger("naturalWidth" in source ? source.naturalWidth : source.width);
 }
 
-function getSourceHeight(source) {
-  return toPositiveInteger(source?.naturalHeight || source?.height);
+function getSourceHeight(source: HTMLCanvasElement | HTMLImageElement): number {
+  return toPositiveInteger("naturalHeight" in source ? source.naturalHeight : source.height);
 }
 
-function drawImageSmoothed(context, image, width, height) {
+function drawImageSmoothed(
+  context: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+): void {
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.clearRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 }
 
-function createCanvas(width, height) {
+function createCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = toPositiveInteger(width);
   canvas.height = toPositiveInteger(height);
   return canvas;
 }
 
-function createIntermediateCanvas(image) {
+function createIntermediateCanvas(image: HTMLImageElement): HTMLCanvasElement | HTMLImageElement {
   const sourceWidth = getSourceWidth(image);
   const sourceHeight = getSourceHeight(image);
   const longestSide = Math.max(sourceWidth, sourceHeight);
@@ -131,7 +155,7 @@ function createIntermediateCanvas(image) {
   const scale = PREVIEW_SOURCE_MAX_SIDE / longestSide;
   const targetWidth = toPositiveInteger(sourceWidth * scale);
   const targetHeight = toPositiveInteger(sourceHeight * scale);
-  let source = image;
+  let source: HTMLCanvasElement | HTMLImageElement = image;
   let currentWidth = sourceWidth;
   let currentHeight = sourceHeight;
 
@@ -154,8 +178,8 @@ function createIntermediateCanvas(image) {
   return output;
 }
 
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     let settled = false;
     const resolveImage = async () => {
@@ -176,13 +200,13 @@ function loadImage(url) {
   });
 }
 
-async function loadPreviewSource(url) {
+async function loadPreviewSource(url: string | null): Promise<PreviewSource | null> {
   if (!url) return null;
-  if (previewSourceCache.has(url)) {
-    const value = previewSourceCache.get(url);
+  const cachedValue = previewSourceCache.get(url);
+  if (cachedValue) {
     previewSourceCache.delete(url);
-    previewSourceCache.set(url, value);
-    return value;
+    previewSourceCache.set(url, cachedValue);
+    return cachedValue;
   }
 
   const image = await loadImage(url);
@@ -193,12 +217,18 @@ async function loadPreviewSource(url) {
   };
   previewSourceCache.set(url, value);
   while (previewSourceCache.size > PREVIEW_SOURCE_CACHE_LIMIT) {
-    previewSourceCache.delete(previewSourceCache.keys().next().value);
+    const oldestKey = previewSourceCache.keys().next().value;
+    if (oldestKey !== undefined) previewSourceCache.delete(oldestKey);
   }
   return value;
 }
 
-function applyFillOverscan(layout, previewWidth, previewHeight, imageLayout) {
+function applyFillOverscan(
+  layout: ImageLayout,
+  previewWidth: number,
+  previewHeight: number,
+  imageLayout: BackgroundImageLayout,
+): ImageLayout {
   if (imageLayout !== BACKGROUND_IMAGE_LAYOUT_FILL || layout.tile) return layout;
   const centerX = previewWidth / 2;
   const centerY = previewHeight / 2;
@@ -211,13 +241,19 @@ function applyFillOverscan(layout, previewWidth, previewHeight, imageLayout) {
   };
 }
 
-function normalizeTileStart(offset, size) {
+function normalizeTileStart(offset: number, size: number): number {
   if (!Number.isFinite(offset) || !Number.isFinite(size) || size <= 0) return 0;
   const remainder = offset % size;
   return remainder > 0 ? remainder - size : remainder;
 }
 
-function drawTiledImage(context, source, layout, previewWidth, previewHeight) {
+function drawTiledImage(
+  context: CanvasRenderingContext2D,
+  source: PreviewSource,
+  layout: ImageLayout,
+  previewWidth: number,
+  previewHeight: number,
+): void {
   const tileWidth = Math.max(1, layout.tileWidth || source.width);
   const tileHeight = Math.max(1, layout.tileHeight || source.height);
   const startX = normalizeTileStart(layout.tileX || 0, tileWidth);
@@ -229,7 +265,11 @@ function drawTiledImage(context, source, layout, previewWidth, previewHeight) {
   }
 }
 
-function drawPlacedImage(context, source, layout) {
+function drawPlacedImage(
+  context: CanvasRenderingContext2D,
+  source: PreviewSource,
+  layout: ImageLayout,
+): void {
   context.drawImage(
     source.drawable,
     layout.x || 0,
@@ -239,7 +279,11 @@ function drawPlacedImage(context, source, layout) {
   );
 }
 
-function resolvePreviewLayout(source, previewWidth, previewHeight) {
+function resolvePreviewLayout(
+  source: PreviewSource,
+  previewWidth: number,
+  previewHeight: number,
+): ImageLayout {
   const imageLayout = normalizeBackgroundImageLayout(props.backgroundImageLayout);
   const usesRenderTargetPlacement = (
     imageLayout === BACKGROUND_IMAGE_LAYOUT_CENTER
@@ -264,14 +308,14 @@ function resolvePreviewLayout(source, previewWidth, previewHeight) {
   return applyFillOverscan(layout, previewWidth, previewHeight, imageLayout);
 }
 
-function clearCanvas() {
+function clearCanvas(): void {
   const canvas = canvasRef.value;
   const context = canvas?.getContext?.("2d");
   if (!canvas || !context) return;
   context.clearRect(0, 0, canvas.width || 1, canvas.height || 1);
 }
 
-async function renderCanvas(generation) {
+async function renderCanvas(generation: number): Promise<void> {
   const canvas = canvasRef.value;
   if (!canvas || !props.backgroundImageUrl) {
     clearCanvas();
@@ -302,7 +346,7 @@ async function renderCanvas(generation) {
   context.globalAlpha = 1;
 }
 
-function scheduleRender() {
+function scheduleRender(): void {
   renderGeneration += 1;
   if (renderFrame != null) return;
   renderFrame = window.requestAnimationFrame(() => {
@@ -311,7 +355,7 @@ function scheduleRender() {
   });
 }
 
-function observeSize() {
+function observeSize(): void {
   resizeObserver?.disconnect?.();
   const element = rootRef.value;
   if (!element || typeof ResizeObserver === "undefined") {
