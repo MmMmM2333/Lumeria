@@ -481,6 +481,46 @@ export function runLaunchpadInputGesturesTests() {
 
   {
     const { calls, eventTarget, gestures } = createHarness({ pageWidth: 1344 });
+    for (const timeStamp of [0, 100, 299, 300]) {
+      eventTarget.setNow(timeStamp);
+      gestures.handleLaunchpadWheel({
+        ctrlKey: false,
+        deltaMode: 0,
+        deltaX: 0,
+        deltaY: 100,
+        metaKey: false,
+        momentum: false,
+        preventDefault() {},
+        stopPropagation() {},
+        timeStamp,
+      });
+    }
+    const committedSettleToken = gestures.pageTrackScrub.value?.settleToken;
+    eventTarget.setNow(520);
+    gestures.handleLaunchpadWheel({
+      ctrlKey: false,
+      deltaMode: 0,
+      deltaX: 0,
+      deltaY: 100,
+      metaKey: false,
+      momentum: false,
+      preventDefault() {},
+      stopPropagation() {},
+      timeStamp: 520,
+    });
+
+    assert(
+      calls.pageIndexes.join(",") === "1,2" &&
+        gestures.pageTrackScrub.value?.fromIndex === 1 &&
+        gestures.pageTrackScrub.value?.toIndex === 2 &&
+        gestures.pageTrackScrub.value?.settleToken === committedSettleToken,
+      "continuing a coarse wheel burst at the last page should not replace the committed settle"
+    );
+    gestures.disposeInputGestures();
+  }
+
+  {
+    const { calls, eventTarget, gestures } = createHarness({ pageWidth: 1344 });
     gestures.handleLaunchpadWheel({
       ctrlKey: false,
       deltaMode: 0,

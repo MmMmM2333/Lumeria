@@ -1470,6 +1470,8 @@
           "excludedTitle": "已从扫描中排除",
           "excludedOne": "“{name}”已移除，后续扫描将跳过此应用。可在设置的“已排除的应用”中将其移出排除列表。",
           "excludedMany": "已移除并排除 {count} 个应用。可在设置的“已排除的应用”中将这些应用移出排除列表。",
+          "scanStartedTitle": "正在扫描应用",
+          "scanStartedMessage": "扫描完成后将显示结果。",
           "scanFailedTitle": "无法扫描应用",
           "scanFailedMessage": "Lumeria 无法扫描当前应用来源。",
           "scanFailedSuggestion": "请检查扫描来源是否仍可访问，然后重试。"

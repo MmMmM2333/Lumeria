@@ -630,8 +630,8 @@ export function runLaunchpadGestureEngineTests() {
   });
   assert(lineWheel.presentation?.progress === 0.08, "line-mode wheel deltas should be normalized to pixels before peeking");
 
-  const edgeEngine = createLaunchpadGestureEngine();
-  const edgePeek = edgeEngine.dispatch({
+  const discreteEdgeEngine = createLaunchpadGestureEngine();
+  const discreteEdgeStep = discreteEdgeEngine.dispatch({
     type: "wheel",
     time: 0,
     deltaMode: 0,
@@ -639,9 +639,45 @@ export function runLaunchpadGestureEngineTests() {
     deltaY: 0,
     viewport: { scope: "desktop", pageIndex: 0, pageCount: 3, pageWidth: 400 },
   });
-  assert(edgePeek.presentation?.edge === true, "outward movement on the first page should be marked as an edge route");
-  assert(edgePeek.presentation?.progress > 0 && edgePeek.presentation?.progress < 0.12, "edge peek should apply bounded rubber-band resistance");
-  assert(edgePeek.commands.length === 0, "an outward discrete wheel step at the edge must not commit a page");
+  assert(
+    discreteEdgeStep.presentation === null && discreteEdgeStep.commands.length === 0,
+    "an outward discrete wheel step at the edge should remain visually inert"
+  );
+
+  const continuousEdgeEngine = createLaunchpadGestureEngine();
+  continuousEdgeEngine.dispatch({
+    type: "wheel",
+    time: 0,
+    deltaMode: 0,
+    deltaX: -30,
+    deltaY: 0,
+    momentum: false,
+    viewport: { scope: "desktop", pageIndex: 0, pageCount: 3, pageWidth: 400 },
+  });
+  const continuousEdgePeek = continuousEdgeEngine.dispatch({
+    type: "wheel",
+    time: 20,
+    deltaMode: 0,
+    deltaX: -30,
+    deltaY: 0,
+    momentum: false,
+    viewport: { scope: "desktop", pageIndex: 0, pageCount: 3, pageWidth: 400 },
+  });
+  const continuousEdgeSettle = continuousEdgeEngine.dispatch({
+    type: "deadline",
+    kind: "wheelEnd",
+    time: 160,
+  });
+  assert(
+    continuousEdgePeek.presentation?.edge === true &&
+      continuousEdgePeek.presentation.progress > 0 &&
+      continuousEdgePeek.presentation.progress < 0.12,
+    "continuous outward wheel movement should preserve the bounded edge peek"
+  );
+  assert(
+    continuousEdgeSettle.presentation?.targetProgress === 0 && continuousEdgeSettle.commands.length === 0,
+    "continuous edge movement should settle back without committing a page"
+  );
 
   const flickEngine = createLaunchpadGestureEngine();
   dispatch(flickEngine, "pointerDown", { time: 0, x: 300 });

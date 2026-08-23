@@ -80,6 +80,9 @@ export type LaunchpadAppsNotice = Readonly<{
   message: string;
   title: string;
 }>;
+type RescanManagedAppsOptions = Readonly<{
+  announceStart?: boolean;
+}>;
 export type LaunchpadAppsPersistenceFragment = Readonly<{
   hiddenAppIds?: unknown;
   scanRoots?: unknown;
@@ -1095,10 +1098,16 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
     return excludeManagedAppsFromScan(appManagerSelectedIds.value.map((id) => ({ id })));
   }
 
-  async function rescanManagedApps(): Promise<void> {
+  async function rescanManagedApps(scanOptions: RescanManagedAppsOptions = {}): Promise<void> {
     if (!options.shouldUseNativeCatalog() || isScanningApps.value) return;
     isScanningApps.value = true;
     try {
+      if (scanOptions.announceStart === true) {
+        showAppActionNotice({
+          title: t("settings.apps.operations.scanStartedTitle"),
+          message: t("settings.apps.operations.scanStartedMessage"),
+        });
+      }
       const enabledRoots = normalizeScanRoots(scanRoots.value).filter((root) => root.enabled);
       const scanFilters = {
         keywordBlacklist: normalizeScanKeywordBlacklist(scanKeywordBlacklist.value),

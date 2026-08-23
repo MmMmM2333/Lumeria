@@ -1470,6 +1470,8 @@
           "excludedTitle": "Excluded from scans",
           "excludedOne": "“{name}” was removed and will be skipped by future scans. You can restore it from Excluded apps in Settings.",
           "excludedMany": "{count} apps were removed and excluded. You can restore them from Excluded apps in Settings.",
+          "scanStartedTitle": "Scanning apps",
+          "scanStartedMessage": "The scan results will appear when scanning finishes.",
           "scanFailedTitle": "Could not scan apps",
           "scanFailedMessage": "Lumeria could not scan the current app sources.",
           "scanFailedSuggestion": "Check that the scan sources are still accessible, then try again."

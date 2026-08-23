@@ -271,7 +271,7 @@ export async function runLaunchpadAppsTests() {
   assert(getCustomIconCanvasSize(512, 256) === 256, "large non-square custom icons should be capped at the high-DPI size");
 
   {
-    const { apps } = createManagedAppRemovalHarness([[]], 0);
+    const { apps, transientNotices } = createManagedAppRemovalHarness([[]], 0);
     assert(
       apps.nativeIntegration.captureScanRequest().filters.keywordBlacklist.join(",") === "卸载,uninstall",
       "a first-run scan should exclude uninstall entries by default"
@@ -280,6 +280,11 @@ export async function runLaunchpadAppsTests() {
     assert(
       apps.nativeIntegration.captureScanRequest().filters.keywordBlacklist.length === 0,
       "an explicitly empty saved keyword list should keep keyword exclusions disabled"
+    );
+    await apps.rescanManagedApps({ announceStart: true });
+    assert(
+      transientNotices.length === 0,
+      "a rejected scan should not announce that scanning started"
     );
   }
 
@@ -606,6 +611,7 @@ export async function runLaunchpadAppsTests() {
   }, async () => {
     const pages = shallowRef<LaunchpadPages>([[]]);
     const warningDialogs: LaunchpadAppsDialogConfig[] = [];
+    const transientNotices: LaunchpadAppsNotice[] = [];
     const launchCriticalDirtyIds: string[] = [];
     let openedScanKeywordSettingsCount = 0;
     let canceledInputGestureCount = 0;
@@ -647,6 +653,7 @@ export async function runLaunchpadAppsTests() {
       renderedFolder: ref(null),
       schedulePageGridMetrics: () => {},
       focusedIcon,
+      showTransientNotice: (notice) => transientNotices.push(notice),
       shouldUseNativeCatalog: () => true,
     });
     apps.persistence.restore({
@@ -700,7 +707,14 @@ export async function runLaunchpadAppsTests() {
     apps.editorModel.actions.cancel();
     setAllScanRootsEnabled(true);
 
-    await apps.rescanManagedApps();
+    await apps.rescanManagedApps({ announceStart: true });
+    assert(
+      transientNotices.length === 1 &&
+        transientNotices[0]?.title === "正在扫描应用" &&
+        transientNotices[0]?.message === "扫描完成后将显示结果。" &&
+        transientNotices[0]?.intent === "info",
+      "a context-menu scan should announce that scanning started"
+    );
     assert(
       apps.scanResultModel.stats.value?.keywordExcludedApps === 2,
       "scan results should expose keyword exclusion counts"
@@ -738,6 +752,10 @@ export async function runLaunchpadAppsTests() {
     assert(hiddenAppIds.value.includes("win-app-store"), "confirming a partial scan selection should keep unselected catalog apps hidden after restart");
 
     await apps.rescanManagedApps();
+    assert(
+      transientNotices.length === 1,
+      "a settings scan should rely on its inline progress state instead of duplicating the start toast"
+    );
     apps.scanResultModel.actions.addSelected();
 
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");

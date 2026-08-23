@@ -444,23 +444,27 @@ export function createLaunchpadGestureEngine(
     session.clearPresentationAt = time + 720;
     session.nextRepeatAt = time + repeatDelayMs;
     const scrub = makeWheelPresentation(session);
-    const targetProgress = scrub.edge ? 0 : 1;
-    const pageIndex = targetProgress === 1 ? scrub.toIndex : scrub.fromIndex;
+    if (scrub.edge) {
+      return {
+        handled: true,
+        presentation: null,
+        commands: [],
+        deadline: { kind: "wheelEnd", at: time + policy.wheelDiscreteIdleMs },
+      };
+    }
     const presentation: LaunchpadPagePresentation = {
       ...scrub,
       phase: "settle",
       settle: true,
       settleToken: `wheel:${++settleSequence}`,
-      targetProgress,
+      targetProgress: 1,
       velocity: 0,
     };
     session.presentation = presentation;
     return {
       handled: true,
       presentation,
-      commands: pageIndex === scrub.fromIndex
-        ? []
-        : [{ type: "commitPage", scope: scrub.scope, pageIndex }],
+      commands: [{ type: "commitPage", scope: scrub.scope, pageIndex: scrub.toIndex }],
       deadline: { kind: "wheelEnd", at: time + policy.wheelDiscreteIdleMs },
     };
   }

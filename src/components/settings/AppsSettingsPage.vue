@@ -100,7 +100,7 @@
               appearance="outline"
               type="button"
               :disabled="!state.canScanManagedApps.value || state.isScanningApps.value"
-              @click="state.rescanManagedApps"
+              @click="state.rescanManagedApps()"
             >
               <ArrowSyncIcon slot="start" class="settings-command-icon" />
               {{ state.isScanningApps.value ? t("settings.apps.manager.scanning") : t("settings.apps.manager.scanApps") }}
@@ -389,7 +389,7 @@
                 appearance="outline"
                 type="button"
                 :disabled="!state.canScanManagedApps.value || state.isScanningApps.value"
-                @click="state.rescanManagedApps"
+                @click="state.rescanManagedApps()"
               >
                 {{ state.isScanningApps.value ? t("settings.apps.manager.scanning") : t("settings.apps.overview.scan") }}
               </SettingsFluentButton>

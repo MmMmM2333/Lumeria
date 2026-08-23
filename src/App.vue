@@ -1606,7 +1606,7 @@ function handleContextMenuAction({
   if (kind === "surface") {
     if (action === "batch-manage") enterBatchSelection();
     if (action === "compact-pages") confirmForceFillAllPages();
-    if (action === "scan-apps") void rescanManagedApps();
+    if (action === "scan-apps") void rescanManagedApps({ announceStart: true });
     if (action === "open-settings") requestOpenSettingsPanel();
     return;
   }
