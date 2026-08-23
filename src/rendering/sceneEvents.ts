@@ -164,7 +164,7 @@ export type IconPointerdownSceneEvent = Readonly<{
   pointer: PointerSnapshot;
   control: SceneEventControl;
   item: SceneEventDataObject;
-  source: SceneEventDataObject | null;
+  source: SceneEventDataObject;
 }>;
 export type RemoveAppSceneEvent = Readonly<{ type: "remove-app"; itemId: string }>;
 export type ResetAppIconSceneEvent = Readonly<{ type: "reset-app-icon"; itemId: string }>;
@@ -506,7 +506,7 @@ export function makeIconPointerdownEvent(
     pointer: makePointerSnapshot(event),
     control: makeEventControl(event),
     item: snapshotObjectData(item, "item"),
-    source: source == null ? null : snapshotObjectData(source, "source"),
+    source: snapshotObjectData(source, "source"),
   });
 }
 
@@ -611,7 +611,7 @@ export function assertSceneEvent(event: unknown): SceneEvent {
       assertPointerSnapshot(sceneEvent.pointer, "icon-pointerdown.pointer");
       assertEventControl(sceneEvent.control, "icon-pointerdown.control");
       requireObject(sceneEvent.item, "icon-pointerdown.item");
-      if (sceneEvent.source !== null) requireObject(sceneEvent.source, "icon-pointerdown.source");
+      requireObject(sceneEvent.source, "icon-pointerdown.source");
       break;
     case "surface-pointerdown":
       assertPointerSnapshot(sceneEvent.pointer, "surface-pointerdown.pointer");

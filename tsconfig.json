@@ -17,7 +17,7 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2022",
-    "types": ["vite/client"],
+    "types": ["vite/client", "unplugin-icons/types/vue"],
     "useDefineForClassFields": true,
     "verbatimModuleSyntax": true
   },

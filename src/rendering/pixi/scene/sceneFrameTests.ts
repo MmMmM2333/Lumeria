@@ -235,6 +235,22 @@ export function runSceneFrameTests(): void {
   assert(Object.isFrozen(event) && Object.isFrozen(event.pointer), "scene events should be immutable");
   assert(!Object.prototype.hasOwnProperty.call(event, "event"), "scene events should not expose raw renderer events");
 
+  let rejectedMissingIconSource = false;
+  try {
+    makeIconPointerdownEvent({ type: "pointerdown" }, { id: "app-1" }, null);
+  } catch (error) {
+    rejectedMissingIconSource = error instanceof TypeError;
+  }
+  assert(rejectedMissingIconSource, "interactive icon pointerdown events should require a launch source");
+
+  let rejectedInvalidIconSource = false;
+  try {
+    assertSceneEvent({ ...event, source: null });
+  } catch (error) {
+    rejectedInvalidIconSource = error instanceof TypeError;
+  }
+  assert(rejectedInvalidIconSource, "scene-event validation should reject a null icon launch source");
+
   const boundedEvent = makeIconPointerdownEvent(
     {
       currentTarget: {

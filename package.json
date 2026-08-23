@@ -20,7 +20,7 @@
     "build": "vite build",
     "typecheck": "npm run typecheck:app && npm run typecheck:frontier && npm run typecheck:tools",
     "typecheck:app": "vue-tsc --noEmit -p tsconfig.json",
-    "typecheck:frontier": "tsc --noEmit -p tsconfig.strict-frontier.json",
+    "typecheck:frontier": "vue-tsc --noEmit -p tsconfig.strict-frontier.json",
     "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

@@ -111,25 +111,28 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import { useLocalization } from "../i18n/localization.js";
 import ScanResultAppRow from "./ScanResultAppRow.vue";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
-const props = defineProps({ model: { type: Object, required: true } });
+type ScanResultModel = LaunchpadController["dialogs"]["scanResultModel"];
+
+const props = defineProps<{ model: ScanResultModel }>();
 const { t } = useLocalization();
-const dialogRef = ref(null);
-const isSelected = (appId) => props.model.selectedIds.value.includes(appId);
+const dialogRef = ref<HTMLElement | null>(null);
+const isSelected = (appId: string): boolean => props.model.selectedIds.value.includes(appId);
 const keywordExcludedTotal = computed(() => Number(props.model.stats.value?.keywordExcludedApps) || 0);
 const hiddenKeywordExclusionCount = computed(() => Math.max(
   0,
   keywordExcludedTotal.value - props.model.keywordExcludedApps.value.length,
 ));
 
-function focus() {
+function focus(): void {
   focusModalElement(dialogRef);
 }
 

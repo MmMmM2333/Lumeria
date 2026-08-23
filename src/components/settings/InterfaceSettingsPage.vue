@@ -99,7 +99,7 @@
                     :disabled.attr="state.draftWindowMode.value !== c.WINDOW_MODE_WINDOWED ? '' : null"
                     name="showCustomTitlebar"
                     :aria-label="t('settings.interface.window.titlebar')"
-                    @change="state.setDraftShowCustomTitlebar($event.target.checked)"
+                    @change="state.setDraftShowCustomTitlebar(readControlChecked($event))"
                   />
                 </label>
               </div>
@@ -202,7 +202,7 @@
                       !item.available && 'settings-window-effect-preview-disabled'
                     )"
                     :disabled="!item.available"
-                    @click="c.selectWindowEffectPreview(item.material, item.appearance)"
+                    @click="c.selectWindowEffectPreview(normalizeWindowEffectMaterial(item.material), normalizeWindowEffectAppearance(item.appearance))"
                   >
                     <span class="settings-window-effect-preview-scene" aria-hidden="true">
                       <span class="settings-window-effect-preview-icons" />
@@ -253,7 +253,7 @@
                   type="color"
                   :aria-label="t('settings.interface.background.base.title')"
                   autocomplete="off"
-                  @input="state.setDraftBackgroundBaseColor($event.target.value)"
+                  @input="state.setDraftBackgroundBaseColor(readInputValue($event))"
                 />
               </span>
               <span class="settings-color-value">{{ state.draftBackgroundBaseColor.value }}</span>
@@ -416,7 +416,7 @@
                   :background-image-opacity="state.draftBackgroundImageOpacity.value"
                   :background-image-pixel-size="c.draftBackgroundImagePixelSize.value"
                   :background-image-url="c.hasDraftBackgroundImagePreview.value ? state.draftBackgroundImageUrl.value : null"
-                  :background-layout-context="backgroundLayoutContext"
+                  :background-layout-context="state.backgroundLayoutContext.value"
                   :empty-label="c.backgroundLayerPreviewLabel.value"
                 />
               </div>
@@ -505,7 +505,7 @@
                         type="color"
                         :aria-label="t('settings.interface.background.effect.backgroundDimColor')"
                         autocomplete="off"
-                        @input="state.setDraftBackgroundDarkenColor($event.target.value)"
+                        @input="state.setDraftBackgroundDarkenColor(readInputValue($event))"
                       />
                     </span>
                     <span class="settings-color-value">{{ state.draftBackgroundDarkenColor.value }}</span>
@@ -594,7 +594,7 @@
                             type="color"
                             :aria-label="t('settings.interface.background.effect.acrylicTint')"
                             autocomplete="off"
-                            @input="c.setActiveDraftBackgroundAcrylicParam('tintColor', $event.target.value)"
+                            @input="c.setActiveDraftBackgroundAcrylicParam('tintColor', readInputValue($event))"
                           />
                         </span>
                         <span class="settings-color-value">{{ c.activeAcrylicTintColorHex.value }}</span>
@@ -673,7 +673,7 @@
                   :background-image-path="state.draftBackgroundImagePath.value"
                   :background-image-pixel-size="c.draftBackgroundImagePixelSize.value"
                   :background-image-url="c.hasDraftBackgroundImagePreview.value ? state.draftBackgroundImageUrl.value : null"
-                  :background-layout-context="backgroundLayoutContext"
+                  :background-layout-context="state.backgroundLayoutContext.value"
                   :empty-label="c.backgroundEffectPreviewLabel.value"
                 />
               </div>
@@ -700,7 +700,7 @@
             <span class="settings-grid-layout-control" :aria-label="t('settings.interface.layout.desktop')">
               <SettingsSpinButton
                 v-model="state.draftRows.value"
-                :aria-label="t('settings.interface.layout.desktopRows')"
+                :ariaLabel="t('settings.interface.layout.desktopRows')"
                 :decrease-label="t('settings.interface.layout.desktopRowsDecrease')"
                 :increase-label="t('settings.interface.layout.desktopRowsIncrease')"
                 name="desktopRows"
@@ -710,7 +710,7 @@
               <span class="settings-grid-layout-separator">x</span>
               <SettingsSpinButton
                 v-model="state.draftCols.value"
-                :aria-label="t('settings.interface.layout.desktopCols')"
+                :ariaLabel="t('settings.interface.layout.desktopCols')"
                 :decrease-label="t('settings.interface.layout.desktopColsDecrease')"
                 :increase-label="t('settings.interface.layout.desktopColsIncrease')"
                 name="desktopCols"
@@ -730,7 +730,7 @@
             <span class="settings-grid-layout-control" :aria-label="t('settings.interface.layout.folder')">
               <SettingsSpinButton
                 v-model="state.draftFolderRows.value"
-                :aria-label="t('settings.interface.layout.folderRows')"
+                :ariaLabel="t('settings.interface.layout.folderRows')"
                 :decrease-label="t('settings.interface.layout.folderRowsDecrease')"
                 :increase-label="t('settings.interface.layout.folderRowsIncrease')"
                 name="folderRows"
@@ -740,7 +740,7 @@
               <span class="settings-grid-layout-separator">x</span>
               <SettingsSpinButton
                 v-model="state.draftFolderCols.value"
-                :aria-label="t('settings.interface.layout.folderCols')"
+                :ariaLabel="t('settings.interface.layout.folderCols')"
                 :decrease-label="t('settings.interface.layout.folderColsDecrease')"
                 :increase-label="t('settings.interface.layout.folderColsIncrease')"
                 name="folderCols"
@@ -759,7 +759,7 @@
           <span class="settings-list-control">
             <SettingsSpinButton
               v-model="state.draftIconSize.value"
-              :aria-label="t('settings.interface.layout.iconSize')"
+              :ariaLabel="t('settings.interface.layout.iconSize')"
               :decrease-label="t('settings.interface.layout.iconSizeDecrease')"
               :increase-label="t('settings.interface.layout.iconSizeIncrease')"
               name="iconSize"
@@ -798,7 +798,7 @@
               <SettingsSpinButton
                 v-if="state.draftFolderIconSizeMode.value === 'custom'"
                 v-model="state.draftFolderIconSize.value"
-                :aria-label="t('settings.interface.layout.folderIconSize')"
+                :ariaLabel="t('settings.interface.layout.folderIconSize')"
                 :decrease-label="t('settings.interface.layout.folderIconSizeDecrease')"
                 :increase-label="t('settings.interface.layout.folderIconSizeIncrease')"
                 name="folderIconSize"
@@ -822,7 +822,7 @@
               :checked.prop="state.draftIsTextlessMode.value"
               name="textlessMode"
               :aria-label="t('settings.interface.layout.textless')"
-              @change="state.draftIsTextlessMode.value = $event.target.checked"
+              @change="state.draftIsTextlessMode.value = readControlChecked($event)"
             />
           </span>
         </div>
@@ -885,7 +885,7 @@
                     :checked.prop="state.draftFullscreenOverscanEnabled.value"
                     name="fullscreenOverscanEnabled"
                     :aria-label="t('settings.interface.advanced.overscan')"
-                    @change="state.setDraftFullscreenOverscanEnabled($event.target.checked)"
+                    @change="state.setDraftFullscreenOverscanEnabled(readControlChecked($event))"
                   />
                 </label>
               </div>
@@ -897,7 +897,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
 import BlurIcon from "~icons/fluent/blur-24-regular";
 import ChevronDownIcon from "~icons/fluent/chevron-down-20-regular";
@@ -912,16 +912,20 @@ import BackgroundImagePreviewCanvas from "../BackgroundImagePreviewCanvas.vue";
 import SettingsFluentButton from "./SettingsFluentButton.vue";
 import SettingsSlider from "./SettingsSlider.vue";
 import SettingsSpinButton from "./SettingsSpinButton.vue";
+import type { useSettingsPanelModel } from "../../composables/useSettingsPanelModel.js";
+import {
+  normalizeWindowEffectAppearance,
+  normalizeWindowEffectMaterial,
+} from "../../composables/useLaunchpadSettingsConfig.js";
 import { useLocalization } from "../../i18n/localization.js";
 
-const props = defineProps({
-  model: { type: Object, required: true },
-});
+type InterfaceSettingsModel = ReturnType<typeof useSettingsPanelModel>["pages"]["interface"];
+
+const props = defineProps<{ model: InterfaceSettingsModel }>();
 
 const state = props.model;
 const { t } = useLocalization();
 const c = props.model;
-const backgroundLayoutContext = props.model.backgroundLayoutContext;
 const {
   backgroundEffectSummary,
   backgroundLayerSummary,
@@ -932,4 +936,19 @@ const isWindowMaterialExpanded = ref(false);
 const isBackgroundLayerExpanded = ref(false);
 const isBackgroundEffectExpanded = ref(false);
 const isAdvancedExpanded = ref(false);
+
+function readInputValue(event: Event): string {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("Interface settings input event currentTarget must be an input element");
+  }
+  return event.currentTarget.value;
+}
+
+function readControlChecked(event: Event): boolean {
+  const target = event.currentTarget;
+  if (!target || !("checked" in target) || typeof target.checked !== "boolean") {
+    throw new TypeError("Interface settings control currentTarget must expose a boolean checked value");
+  }
+  return target.checked;
+}
 </script>

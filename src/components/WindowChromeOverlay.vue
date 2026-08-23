@@ -38,7 +38,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import DismissIcon from "~icons/fluent/dismiss-24-regular";
 import MaximizeIcon from "~icons/fluent/maximize-24-regular";
 import RestoreIcon from "~icons/fluent/square-multiple-24-regular";
@@ -52,19 +52,17 @@ import {
   startWindowResize,
   toggleWindowMaximize,
 } from "../api/windowChromeApi.js";
+import type { WindowResizeDirection } from "../api/windowChromeApi.js";
 import { useLocalization } from "../i18n/localization.js";
 
-const props = defineProps({
-  active: {
-    type: Boolean,
-    default: false,
-  },
-  showTitlebar: {
-    type: Boolean,
-    default: true,
-  },
+const props = withDefaults(defineProps<{
+  active?: boolean;
+  showTitlebar?: boolean;
+}>(), {
+  active: false,
+  showTitlebar: true,
 });
-const emit = defineEmits(["request-close"]);
+const emit = defineEmits<{ "request-close": [] }>();
 
 const resizeHandles = Object.freeze([
   { className: "north", direction: "North" },
@@ -75,36 +73,36 @@ const resizeHandles = Object.freeze([
   { className: "north-east", direction: "NorthEast" },
   { className: "south-west", direction: "SouthWest" },
   { className: "south-east", direction: "SouthEast" },
-]);
+] satisfies readonly Readonly<{ className: string; direction: WindowResizeDirection }>[]);
 
 const isWindowMaximizedState = ref(false);
 const { t } = useLocalization();
 const maximizeButtonLabel = computed(() => (
   isWindowMaximizedState.value ? t("window.chrome.restore") : t("window.chrome.maximize")
 ));
-let windowMaximizedRefreshFrame = null;
+let windowMaximizedRefreshFrame: number | null = null;
 let windowMaximizedRefreshRequest = 0;
 
-function isPrimaryPointer(event) {
+function isPrimaryPointer(event: PointerEvent): boolean {
   return event.isPrimary !== false && event.button === 0;
 }
 
-function handleWindowChromeError(action, error) {
+function handleWindowChromeError(action: string, error: unknown): void {
   console.error(`Failed to ${action} Lumeria window`, error);
 }
 
-function handleDragPointerDown(event) {
+function handleDragPointerDown(event: PointerEvent): void {
   if (!isPrimaryPointer(event)) return;
   event.preventDefault();
   if (event.detail > 1) return;
   startWindowDrag().catch((error) => handleWindowChromeError("drag", error));
 }
 
-function handleMinimizeClick() {
+function handleMinimizeClick(): void {
   minimizeWindow().catch((error) => handleWindowChromeError("minimize", error));
 }
 
-async function toggleMaximizeAndRefresh() {
+async function toggleMaximizeAndRefresh(): Promise<void> {
   const didToggle = await toggleWindowMaximize();
   if (!didToggle) return;
   emitWindowChromeStateChange({ reason: "maximize-toggle" });
@@ -112,26 +110,26 @@ async function toggleMaximizeAndRefresh() {
   emitWindowChromeStateChange({ reason: "maximize-state-refresh" });
 }
 
-function handleMaximizeClick() {
+function handleMaximizeClick(): void {
   toggleMaximizeAndRefresh().catch((error) => handleWindowChromeError("maximize", error));
 }
 
-function handleDragAreaDoubleClick(event) {
+function handleDragAreaDoubleClick(event: MouseEvent): void {
   event.preventDefault();
   toggleMaximizeAndRefresh().catch((error) => handleWindowChromeError("maximize", error));
 }
 
-function handleCloseClick() {
+function handleCloseClick(): void {
   emit("request-close");
 }
 
-function handleResizePointerDown(event, direction) {
+function handleResizePointerDown(event: PointerEvent, direction: WindowResizeDirection): void {
   if (!isPrimaryPointer(event)) return;
   event.preventDefault();
   startWindowResize(direction).catch((error) => handleWindowChromeError("resize", error));
 }
 
-async function refreshWindowMaximized() {
+async function refreshWindowMaximized(): Promise<void> {
   const request = ++windowMaximizedRefreshRequest;
   const nextIsMaximized = await isWindowMaximized();
   if (request === windowMaximizedRefreshRequest) {
@@ -139,7 +137,7 @@ async function refreshWindowMaximized() {
   }
 }
 
-function scheduleWindowMaximizedRefresh() {
+function scheduleWindowMaximizedRefresh(): void {
   if (!props.active) return;
   if (typeof window === "undefined") {
     refreshWindowMaximized().catch((error) => handleWindowChromeError("read maximize state", error));

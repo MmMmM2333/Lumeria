@@ -29,6 +29,12 @@ export {
   spring,
   tween,
 } from "./pixi/animation/motionRuntime.js";
+export type {
+  MotionDebugConfig,
+  MotionDebugCounters,
+  MotionDebugReport,
+  MotionRuntime,
+} from "./pixi/animation/motionRuntime.js";
 export {
   killMotionOf,
   lanePreset,
@@ -58,4 +64,10 @@ export {
   readNumber,
   readPositiveNumber,
   resolveRecordLabel,
+} from "./pixi/animation/motionTraceShared.js";
+export type {
+  MotionDebugSummary,
+  MotionTraceRange,
+  MotionTraceRecord,
+  MotionTrackRecord,
 } from "./pixi/animation/motionTraceShared.js";

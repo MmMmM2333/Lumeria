@@ -224,9 +224,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { Container, Graphics } from "pixi.js";
+import type { Application } from "pixi.js";
 import { useLocalization } from "../i18n/localization.js";
 import { buildMotionWarningRows } from "../components/backgroundDebug/motionDebugPanelModel.js";
 import { createPixiApp, createPixiText } from "../rendering/motionLabRendererAdapter.js";
@@ -266,35 +267,86 @@ import {
   runMotionLabScenario,
 } from "./motionLabScenarios.js";
 import "./motionLab.css";
+import type { DiagnosticHub } from "../diagnostics/diagnosticHub.js";
+import type { MotionLabDiagnosticPort } from "../diagnostics/motionLabDiagnosticAdapter.js";
+import type { DiagnosticTranslate } from "../components/backgroundDebug/motionReplayViewerModel.js";
+import type {
+  MotionDebugReport,
+  MotionRuntime,
+} from "../rendering/motionPort.js";
+import type {
+  MotionLabFocusedDebugData,
+  MotionLabReportInput,
+  MotionLabRunSnapshot,
+} from "./motionLabModel.js";
+import type {
+  MotionLabAssertionResult,
+  MotionLabScenarioContext,
+  MotionLabScenarioId,
+  MotionLabScene,
+} from "./motionLabScenarios.js";
+import type { MotionLabParams, MotionLabParamsInput } from "./motionLabParams.js";
+import type * as MotionPort from "../rendering/motionPort.js";
 
 const { t } = useLocalization();
 
-const pixiHostRef = ref(null);
-const selectedScenarioId = ref(MOTION_LAB_SCENARIOS[0]?.id || "folder-open");
-const previewStatusKey = ref("motionLab.values.ready");
+const labTranslate: DiagnosticTranslate = (key, params) => {
+  const values: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(params || {})) {
+    values[name] = typeof value === "string" || typeof value === "number" ? value : String(value ?? "");
+  }
+  return t(key, values);
+};
+
+type RuntimeReplayTrace = ReturnType<typeof MotionPort.createMotionReplayTrace>;
+type NumericMotionLabParamKey = Exclude<keyof MotionLabParams, "ease" | "interruptPolicy">;
+interface RangeParameterControl {
+  digits?: number;
+  key: NumericMotionLabParamKey;
+  labelKey: string;
+  max: number;
+  min: number;
+  step: number;
+  suffix?: string;
+  type: "range";
+}
+interface SelectParameterControl {
+  key: "ease" | "interruptPolicy";
+  labelKey: string;
+  options: readonly string[];
+  type: "select";
+}
+type ParameterControl = RangeParameterControl | SelectParameterControl;
+interface ParameterGroup { controls: readonly ParameterControl[]; titleKey: string }
+interface MotionLabSceneWithStage extends MotionLabScene { stage: Container }
+interface RecordRunOptions { replaceCurrent?: boolean }
+
+const pixiHostRef = ref<HTMLElement | null>(null);
+const selectedScenarioId = ref<MotionLabScenarioId>(MOTION_LAB_SCENARIOS[0]?.id || "folder-open");
+const previewStatusKey = ref<string>("motionLab.values.ready");
 const previewStatus = computed(() => t(previewStatusKey.value));
-const motionSnapshot = ref(makeEmptyReport());
-const motionReport = ref(makeEmptyReport());
-const replayTrace = ref(null);
+const motionSnapshot = ref<MotionLabReportInput>(makeEmptyReport());
+const motionReport = ref<MotionDebugReport>(makeEmptyReport());
+const replayTrace = ref<RuntimeReplayTrace | null>(null);
 const replayTraceJson = ref("");
-const assertionResults = ref([]);
+const assertionResults = ref<MotionLabAssertionResult[]>([]);
 const copiedReport = ref(false);
 const copiedTrace = ref(false);
 const copiedCompare = ref(false);
 const copiedDiff = ref(false);
 const copiedFocused = ref(false);
-const currentRunSnapshot = ref(null);
-const previousRunSnapshot = ref(null);
-const savedBaselineSnapshot = ref(null);
-const compareBaselineSnapshot = ref(null);
-const compareCurrentSnapshot = ref(null);
-const lastReplayTrace = ref(null);
-const traceDiffBaseline = ref(null);
-const traceDiffCurrent = ref(null);
-const motionParams = reactive({ ...DEFAULT_MOTION_LAB_PARAMS });
-const compareMode = ref("last");
+const currentRunSnapshot = ref<MotionLabRunSnapshot | null>(null);
+const previousRunSnapshot = ref<MotionLabRunSnapshot | null>(null);
+const savedBaselineSnapshot = ref<MotionLabRunSnapshot | null>(null);
+const compareBaselineSnapshot = ref<MotionLabRunSnapshot | null>(null);
+const compareCurrentSnapshot = ref<MotionLabRunSnapshot | null>(null);
+const lastReplayTrace = ref<RuntimeReplayTrace | null>(null);
+const traceDiffBaseline = ref<RuntimeReplayTrace | null>(null);
+const traceDiffCurrent = ref<RuntimeReplayTrace | null>(null);
+const motionParams = reactive<MotionLabParams>({ ...DEFAULT_MOTION_LAB_PARAMS });
+const compareMode = ref<"baseline" | "last">("last");
 
-const parameterGroups = Object.freeze([
+const parameterGroups: readonly ParameterGroup[] = Object.freeze([
   {
     titleKey: "motionLab.parameterGroups.spring",
     controls: [
@@ -345,12 +397,12 @@ const parameterGroups = Object.freeze([
   },
 ]);
 
-const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value, t));
+const scenarioRows = computed(() => buildMotionLabScenarioRows(MOTION_LAB_SCENARIOS, selectedScenarioId.value, labTranslate));
 const selectedScenario = computed(() => getMotionLabScenario(selectedScenarioId.value));
 const selectedScenarioLabel = computed(() => selectedScenario.value?.labelKey
   ? t(selectedScenario.value.labelKey)
   : (selectedScenario.value?.label || t("motionLab.values.scenario")));
-const paramPresetRows = computed(() => buildMotionLabParamPresetRows(motionParams, t));
+const paramPresetRows = computed(() => buildMotionLabParamPresetRows(motionParams, labTranslate));
 const activeParamPresetLabel = computed(() => {
   const selectedRow = paramPresetRows.value.find((row) => row.selected);
   return selectedRow?.label || t("debug.motion.values.custom");
@@ -359,17 +411,17 @@ const overviewReport = computed(() => ({
   ...motionSnapshot.value,
   history: motionReport.value.history || {},
 }));
-const overviewRows = computed(() => buildMotionLabOverviewRows(overviewReport.value, replayTrace.value, t));
-const warningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6, t));
-const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value, t));
+const overviewRows = computed(() => buildMotionLabOverviewRows(overviewReport.value, replayTrace.value, labTranslate));
+const warningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6, labTranslate));
+const assertionRows = computed(() => buildMotionLabAssertionRows(assertionResults.value, labTranslate));
 const timelineRows = computed(() => buildMotionLabTimelineRows(motionReport.value));
 const curveRows = computed(() => buildMotionLabCurveRows(motionReport.value));
 const canSaveBaseline = computed(() => Boolean(currentRunSnapshot.value));
 const canCopyFocused = computed(() => Boolean(currentRunSnapshot.value && assertionResults.value.length));
 const canCompareLast = computed(() => Boolean(currentRunSnapshot.value && previousRunSnapshot.value));
 const canCompareBaseline = computed(() => Boolean(currentRunSnapshot.value && savedBaselineSnapshot.value));
-const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value, t));
-const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value, 14, t));
+const compareRows = computed(() => buildMotionLabCompareRows(compareCurrentSnapshot.value, compareBaselineSnapshot.value, labTranslate));
+const traceDiffRows = computed(() => buildMotionLabTraceDiffRows(traceDiffCurrent.value, traceDiffBaseline.value, 14, labTranslate));
 const reportCopyLabel = computed(() => t(copiedReport.value ? "motionLab.actions.copiedReport" : "motionLab.actions.copyReport"));
 const focusedCopyLabel = computed(() => t(copiedFocused.value ? "motionLab.actions.copiedFocused" : "motionLab.actions.copyFocused"));
 const traceCopyLabel = computed(() => t(copiedTrace.value ? "motionLab.actions.copiedTrace" : "motionLab.actions.copyTrace"));
@@ -392,26 +444,26 @@ const compareStatusRows = computed(() => [
   { label: t("motionLab.fields.current"), value: formatRunSnapshotLabel(compareCurrentSnapshot.value), wide: true },
 ]);
 
-let pixiApp = null;
-let runtime = null;
-let scene = null;
-let snapshotTimer = null;
-let diagnosticGlobalInstallation = null;
-let diagnosticHub = null;
+let pixiApp: Application | null = null;
+let runtime: MotionRuntime | null = null;
+let scene: MotionLabSceneWithStage | null = null;
+let snapshotTimer: number | null = null;
+let diagnosticGlobalInstallation: ReturnType<typeof installDiagnosticHubGlobal> = null;
+let diagnosticHub: DiagnosticHub | null = null;
 let destroyed = false;
-let copyReportTimer = null;
-let copyTraceTimer = null;
-let copyCompareTimer = null;
-let copyDiffTimer = null;
-let copyFocusedTimer = null;
+let copyReportTimer: number | null = null;
+let copyTraceTimer: number | null = null;
+let copyCompareTimer: number | null = null;
+let copyDiffTimer: number | null = null;
+let copyFocusedTimer: number | null = null;
 
-function getMotionParams() {
+function getMotionParams(): MotionLabParams {
   const normalized = normalizeMotionLabParams(motionParams);
   Object.assign(motionParams, normalized);
   return normalized;
 }
 
-function formatParamOutput(control) {
+function formatParamOutput(control: ParameterControl): string {
   const value = motionParams[control.key];
   if (control.type === "select") return String(value);
   const number = Number(value);
@@ -420,7 +472,7 @@ function formatParamOutput(control) {
   return `${formatted}${control.suffix || ""}`;
 }
 
-function formatRunSnapshotLabel(snapshot = null) {
+function formatRunSnapshotLabel(snapshot: MotionLabRunSnapshot | null = null): string {
   if (!snapshot) return t("debug.common.none");
   const scenario = getMotionLabScenario(snapshot.scenario?.id);
   const scenarioLabel = scenario?.id === snapshot.scenario?.id && scenario.labelKey
@@ -432,17 +484,54 @@ function formatRunSnapshotLabel(snapshot = null) {
   return t("motionLab.counts.snapshot", { failed: failCount, passed: passCount, scenario: scenarioLabel });
 }
 
-function makeEmptyReport() {
+function makeEmptyReport(): MotionDebugReport {
   return {
-    config: { enabled: false },
+    animations: [],
+    config: {
+      enabled: false,
+      maxEvents: 0,
+      maxSamples: 0,
+      overlayEnabled: false,
+      recordFilter: null,
+      recordHistory: false,
+      recordWindowMs: 0,
+      sampleHz: 0,
+      timeScale: 1,
+    },
+    counters: {
+      activeChannels: 0,
+      activeTargets: 0,
+      afterFrameFlushes: 0,
+      canceled: 0,
+      canceledByReason: {},
+      completed: 0,
+      frames: 0,
+      released: 0,
+      started: 0,
+      writes: 0,
+      writesLastFrame: 0,
+    },
     curveStats: [],
     history: { events: [], samples: [] },
-    summary: {},
+    runtime: { activeAnimationCount: 0, frames: 0, timeMs: 0 },
+    summary: {
+      activeAnimationCount: 0,
+      activeChannelCount: 0,
+      activeTargetCount: 0,
+      byDriver: {},
+      byLane: {},
+      byLaneKey: {},
+      byProp: {},
+      byTargetId: {},
+      warningCount: 0,
+    },
+    targets: [],
+    version: 1,
     warnings: [],
   };
 }
 
-function makeText(text, size = 13) {
+function makeText(text: string, size = 13) {
   return createPixiText({
     style: {
       fill: 0xffffff,
@@ -454,33 +543,33 @@ function makeText(text, size = 13) {
   });
 }
 
-function makeIcon(label, color) {
+function makeIcon(label: string, color: number): Container {
   const icon = new Container();
-  icon.tile = new Graphics()
+  const tile = new Graphics()
     .roundRect(-34, -34, 68, 68, 15)
     .fill({ alpha: 0.92, color })
     .roundRect(-27, -27, 54, 54, 12)
     .fill({ alpha: 0.18, color: 0xffffff });
-  icon.label = makeText(label, 12);
-  icon.label.anchor.set(0.5, 0);
-  icon.label.y = 43;
-  icon.addChild(icon.tile);
-  icon.addChild(icon.label);
+  const labelText = makeText(label, 12);
+  labelText.anchor.set(0.5, 0);
+  labelText.y = 43;
+  icon.addChild(tile);
+  icon.addChild(labelText);
   return icon;
 }
 
-function makePanel() {
+function makePanel(): Container {
   const panel = new Container();
-  panel.background = new Graphics()
+  const background = new Graphics()
     .roundRect(-96, -70, 192, 140, 28)
     .fill({ alpha: 0.26, color: 0xffffff })
     .roundRect(-72, -42, 144, 84, 20)
     .fill({ alpha: 0.34, color: 0x2dd4bf });
-  panel.addChild(panel.background);
+  panel.addChild(background);
   return panel;
 }
 
-function makeHoverTarget(color) {
+function makeHoverTarget(color: number): Graphics {
   const target = new Graphics()
     .roundRect(-44, -44, 88, 88, 18)
     .fill({ alpha: 0.16, color })
@@ -490,7 +579,7 @@ function makeHoverTarget(color) {
   return target;
 }
 
-function makeMassIcon(index) {
+function makeMassIcon(index: number): Graphics {
   const hue = index % 3 === 0 ? 0x38bdf8 : index % 3 === 1 ? 0xa3e635 : 0xf472b6;
   return new Graphics()
     .roundRect(-8, -8, 16, 16, 4)
@@ -499,44 +588,45 @@ function makeMassIcon(index) {
 
 function describeSceneTargets() {
   if (!runtime || !scene) return;
-  runtime.describeTarget(scene.pageTrack, {
+  const mountedRuntime = runtime;
+  mountedRuntime.describeTarget(scene.pageTrack, {
     kind: "MotionLabPageTrack",
     label: "pageTrack",
     overlayTarget: scene.pageTrack,
     sourceLabel: "motionLab.pageTrack",
   });
-  runtime.describeTarget(scene.folderPanel, {
+  mountedRuntime.describeTarget(scene.folderPanel, {
     kind: "MotionLabPanel",
     label: "folderPanel",
     overlayTarget: scene.folderPanel,
     sourceLabel: "motionLab.folder.panel",
   });
-  runtime.describeTarget(scene.dragGhost, {
+  mountedRuntime.describeTarget(scene.dragGhost, {
     kind: "MotionLabGhost",
     label: "dragGhost",
     overlayTarget: scene.dragGhost,
     sourceLabel: "motionLab.drag.ghost",
   });
-  runtime.describeTarget(scene.folderPageTrack, {
+  mountedRuntime.describeTarget(scene.folderPageTrack, {
     kind: "MotionLabFolderPageTrack",
     label: "folderPageTrack",
     overlayTarget: scene.folderPageTrack,
     sourceLabel: "motionLab.folder.pageTrack",
   });
-  runtime.describeTarget(scene.folderHover, {
+  mountedRuntime.describeTarget(scene.folderHover, {
     kind: "MotionLabHover",
     label: "folderHover",
     overlayTarget: scene.folderHover,
     sourceLabel: "motionLab.folder.hover",
   });
-  runtime.describeTarget(scene.createHover, {
+  mountedRuntime.describeTarget(scene.createHover, {
     kind: "MotionLabCreateHover",
     label: "createHover",
     overlayTarget: scene.createHover,
     sourceLabel: "motionLab.appFolderCreate.hover",
   });
   scene.icons.forEach((icon, index) => {
-    runtime.describeTarget(icon, {
+    mountedRuntime.describeTarget(icon, {
       kind: "MotionLabIcon",
       label: `icon ${index + 1}`,
       overlayTarget: icon,
@@ -544,7 +634,7 @@ function describeSceneTargets() {
     });
   });
   scene.massIcons.forEach((icon, index) => {
-    runtime.describeTarget(icon, {
+    mountedRuntime.describeTarget(icon, {
       kind: "MotionLabMassIcon",
       label: `mass icon ${index + 1}`,
       overlayTarget: icon,
@@ -553,7 +643,7 @@ function describeSceneTargets() {
   });
 }
 
-function createScene(app) {
+function createScene(app: Application): MotionLabSceneWithStage {
   const stage = new Container();
   const guide = new Graphics()
     .roundRect(28, 24, 704, 392, 18)
@@ -666,7 +756,7 @@ function setSceneDefaults() {
   });
 }
 
-function cancelSceneMotion(reason = "motion-lab-reset") {
+function cancelSceneMotion(reason = "motion-lab-reset"): void {
   if (!runtime || !scene) return;
   for (const target of [
     scene.pageTrack,
@@ -687,7 +777,7 @@ function cancelSceneMotion(reason = "motion-lab-reset") {
   }
 }
 
-function refreshMotionSnapshot() {
+function refreshMotionSnapshot(): void {
   if (!runtime) {
     motionSnapshot.value = makeEmptyReport();
     return;
@@ -701,7 +791,7 @@ function refreshMotionSnapshot() {
   };
 }
 
-function refreshMotionHistoryReport(_reason = "manual") {
+function refreshMotionHistoryReport(_reason = "manual"): void {
   if (!runtime) {
     motionReport.value = makeEmptyReport();
     refreshMotionSnapshot();
@@ -729,13 +819,14 @@ function resetLabScene() {
   refreshMotionSnapshot();
 }
 
-function wait(ms) {
+function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
 }
 
-function makeScenarioContext() {
+function makeScenarioContext(): MotionLabScenarioContext | null {
+  if (!runtime || !scene) return null;
   return {
     motionParams: getMotionParams(),
     refreshReport: refreshMotionHistoryReport,
@@ -745,9 +836,13 @@ function makeScenarioContext() {
   };
 }
 
-function updateScenarioAssertions(reason = "scenario-assertions") {
+function updateScenarioAssertions(reason = "scenario-assertions"): MotionLabAssertionResult[] {
   refreshMotionHistoryReport(reason);
   const context = makeScenarioContext();
+  if (!context) {
+    assertionResults.value = [];
+    return assertionResults.value;
+  }
   context.report = motionReport.value;
   assertionResults.value = evaluateMotionLabScenarioAssertions(selectedScenario.value, context);
   return assertionResults.value;
@@ -757,7 +852,9 @@ async function runSelectedScenario() {
   if (!runtime || !scene) return;
   resetLabScene();
   previewStatusKey.value = "motionLab.values.running";
-  runMotionLabScenario(selectedScenarioId.value, makeScenarioContext());
+  const context = makeScenarioContext();
+  if (!context) return;
+  runMotionLabScenario(selectedScenarioId.value, context);
   refreshMotionSnapshot();
   await wait(selectedScenario.value?.assertAfterMs ?? 760);
   const assertions = updateScenarioAssertions();
@@ -767,12 +864,12 @@ async function runSelectedScenario() {
   recordRunSnapshot();
 }
 
-function selectScenario(id) {
-  selectedScenarioId.value = getMotionLabScenario(id)?.id || MOTION_LAB_SCENARIOS[0].id;
+function selectScenario(id: unknown): void {
+  selectedScenarioId.value = getMotionLabScenario(id)?.id || MOTION_LAB_SCENARIOS[0]!.id;
   resetLabScene();
 }
 
-function applyParamPreset(id) {
+function applyParamPreset(id: unknown): MotionLabParams {
   Object.assign(motionParams, applyMotionLabParamPreset(motionParams, id));
   resetLabScene();
   return getMotionParams();
@@ -796,7 +893,7 @@ const { createMotionReplayTrace } = await import("../rendering/motionPort.js");
   return trace;
 }
 
-async function copyText(text) {
+async function copyText(text: string): Promise<boolean> {
   if (!text || typeof navigator === "undefined") return false;
   await navigator.clipboard?.writeText?.(text);
   return true;
@@ -838,7 +935,7 @@ async function copyReplayTrace() {
   }, 1200);
 }
 
-function createFocusedExportPayload(presentation = "structured") {
+function createFocusedExportPayload(presentation: "structured" | "json" | "markdown" = "structured") {
   if (!currentRunSnapshot.value) return null;
   updateScenarioAssertions();
   const currentSnapshot = makeRunSnapshot(replayTrace.value);
@@ -856,7 +953,7 @@ function createFocusedExportPayload(presentation = "structured") {
   }, { presentation });
 }
 
-function makeRunSnapshot(trace = replayTrace.value) {
+function makeRunSnapshot(trace: RuntimeReplayTrace | null = replayTrace.value): MotionLabRunSnapshot {
   return createMotionLabRunSnapshot({
     assertions: assertionResults.value,
     params: getMotionParams(),
@@ -866,7 +963,10 @@ function makeRunSnapshot(trace = replayTrace.value) {
   });
 }
 
-function recordRunSnapshot(trace = replayTrace.value, options = {}) {
+function recordRunSnapshot(
+  trace: RuntimeReplayTrace | null = replayTrace.value,
+  options: RecordRunOptions = {},
+): MotionLabRunSnapshot {
   const snapshot = makeRunSnapshot(trace);
   if (options.replaceCurrent && currentRunSnapshot.value) {
     currentRunSnapshot.value = snapshot;
@@ -904,7 +1004,7 @@ function compareBaselineRun() {
   return compareRows.value;
 }
 
-function createCompareExportPayload(mode = compareMode.value) {
+function createCompareExportPayload(mode: "baseline" | "last" = compareMode.value) {
   const rows = mode === "baseline" ? compareBaselineRun() : compareLastRun();
   if (!rows || rows.length === 0) return null;
   return mode === "baseline"
@@ -927,7 +1027,7 @@ async function copyCompareExport() {
 
 async function copyFocusedExport() {
   const payload = createFocusedExportPayload("markdown");
-  if (!payload) return;
+  if (!payload || payload.presentation !== "markdown") return;
   const ok = await copyText(payload.content);
   if (!ok) return;
   copiedFocused.value = true;
@@ -966,12 +1066,12 @@ function createMotionLabStatus() {
   };
 }
 
-function createMotionLabDiagnosticsPort() {
+function createMotionLabDiagnosticsPort(): MotionLabDiagnosticPort {
   return Object.freeze({
     applyPreset: applyParamPreset,
     captureReplay: captureReplayTrace,
-    compare: (mode) => createCompareExportPayload(mode),
-    exportData: (format) => {
+    compare: (mode: "baseline" | "last") => createCompareExportPayload(mode),
+    exportData: (format: "compare" | "focused" | "report" | "trace" | "trace-diff") => {
       if (format === "focused") return createFocusedExportPayload();
       if (format === "compare") return createCompareExportPayload();
       if (format === "trace-diff") return createMotionLabTraceDiffExport(traceDiffCurrent.value, traceDiffBaseline.value);
@@ -994,7 +1094,7 @@ function createMotionLabDiagnosticsPort() {
       resetLabScene();
       return createMotionLabStatus();
     },
-    runScenario: async (scenarioId) => {
+    runScenario: async (scenarioId: string | null) => {
       if (scenarioId) selectScenario(scenarioId);
       await runSelectedScenario();
       return {
@@ -1010,12 +1110,12 @@ function createMotionLabDiagnosticsPort() {
         ? createMotionLabBaselineCompareExport(currentRunSnapshot.value, savedBaselineSnapshot.value)
         : null;
     },
-    selectScenario: (scenarioId) => {
+    selectScenario: (scenarioId: string) => {
       selectScenario(scenarioId);
       return { scenarioId: selectedScenarioId.value, status: createMotionLabStatus() };
     },
     status: createMotionLabStatus,
-    updateParams: (patch) => {
+    updateParams: (patch: MotionLabParamsInput) => {
       Object.assign(motionParams, normalizeMotionLabParams({ ...motionParams, ...patch }));
       return getMotionParams();
     },
@@ -1061,7 +1161,9 @@ const { createMotionRuntimeDebugAdapter } = await import("../rendering/motionPor
   const mountedRuntime = createMotionRuntime();
   runtime = mountedRuntime;
   configureRuntime();
-  const nextPixiApp = await createPixiApp(pixiHostRef.value, {
+  const pixiHost = pixiHostRef.value;
+  if (!pixiHost) return;
+  const nextPixiApp = await createPixiApp(pixiHost, {
     autoStart: true,
     className: "motion-lab-canvas",
   });

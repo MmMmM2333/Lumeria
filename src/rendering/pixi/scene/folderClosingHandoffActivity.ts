@@ -19,13 +19,13 @@ interface FolderPixiActivityUpdate {
 }
 
 interface FolderSourceGhostSession {
-  folderId: string;
+  folderId: string | null;
   status: string;
 }
 
 interface FolderSourceGhostedIdsOptions {
   folderOpenIconGhostSession?: FolderSourceGhostSession | null;
-  folderOpenPreviewFrameGhostedIds?: readonly string[] | null;
+  folderOpenPreviewFrameGhostedIds?: Iterable<string> | null;
   folderPixiInternalActivity?: boolean;
   folderPixiInternalActivityFolderId?: string | null;
   isFolderAppLaunchClosing?: boolean;

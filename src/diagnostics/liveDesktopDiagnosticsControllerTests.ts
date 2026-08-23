@@ -1,6 +1,9 @@
 import { readonly } from "vue";
 import { createLiveDesktopDebugSettingsStore } from "./liveDesktopDebugSettings.js";
-import { createLiveDesktopDiagnosticsController } from "./liveDesktopDiagnosticsController.js";
+import {
+  createLiveDesktopDiagnosticsController,
+  requireLiveDesktopDiagnosticsState,
+} from "./liveDesktopDiagnosticsController.js";
 import { DiagnosticError } from "./diagnosticError.js";
 import type { LiveDesktopRuntimeSnapshot } from "./liveDesktopDiagnosticsController.js";
 import type { LiveDesktopRuntimeApplyRequest } from "./liveDesktopDiagnosticsController.js";
@@ -44,6 +47,21 @@ export async function runLiveDesktopDiagnosticsControllerTests() {
   });
 
   const initial = controller.getState();
+  const decodedInitial = requireLiveDesktopDiagnosticsState(initial);
+  assert(decodedInitial.desired.revision === 0, "state decoder should preserve a fully validated controller state");
+  let malformedStateError: unknown = null;
+  try {
+    requireLiveDesktopDiagnosticsState({
+      ...initial,
+      desired: {
+        ...initial.desired,
+        values: { ...initial.desired.values, skipBlankFrames: "yes" },
+      },
+    });
+  } catch (error) {
+    malformedStateError = error;
+  }
+  assert(malformedStateError instanceof DiagnosticError || malformedStateError instanceof TypeError, "state decoder should reject malformed nested settings");
   assert(initial.schema === "lumeria-live-desktop-diagnostics-state/v1", "controller state should expose a stable schema");
   assert(initial.consistency.status === "unverified", "persisted startup settings must not be mislabeled as applied");
   assert(initial.applied.confirmedKeys.length === 0, "initial applied state should state its lack of confirmation");

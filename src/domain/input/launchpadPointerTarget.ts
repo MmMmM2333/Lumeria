@@ -1,7 +1,6 @@
-export type LaunchpadItem = Readonly<{
-  id: string;
-  type: "app" | "folder";
-}> & Readonly<Record<string, unknown>>;
+import type { ReadonlyLaunchpadItem } from "../launchpadLayout.js";
+
+export type LaunchpadItem = ReadonlyLaunchpadItem;
 
 export type LaunchpadBoundsMeta = Readonly<{
   area?: string | null;

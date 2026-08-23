@@ -73,7 +73,7 @@ const props = defineProps({
   },
   backgroundImagePath: { type: String as PropType<string | null>, default: null },
   backgroundImagePixelSize: { type: Object as PropType<PixelSize | null>, default: null },
-  backgroundImageUrl: { type: String, required: true },
+  backgroundImageUrl: { type: String as PropType<string | null>, default: null },
   backgroundLayoutContext: {
     type: Object as PropType<BackgroundLayoutContext | null>,
     default: null,
@@ -106,7 +106,9 @@ let pendingAnimationFrame: number | null = null;
 let textureLoadGeneration = 0;
 
 const fallbackImageStyle = computed<CSSProperties>(() => ({
-  backgroundImage: `url(${JSON.stringify(props.backgroundImageUrl)})`,
+  backgroundImage: props.backgroundImageUrl
+    ? `url(${JSON.stringify(props.backgroundImageUrl)})`
+    : "none",
   ...resolveCssBackgroundImagePlacement(props.backgroundImageLayout, {
     imagePixelSize: props.backgroundImagePixelSize,
     layoutContext: props.backgroundLayoutContext,

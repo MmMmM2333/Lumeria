@@ -47,7 +47,7 @@ export type LaunchpadBatchDragPayload = LaunchpadDragBatchPayload;
 
 export type LaunchpadGesturePointerTarget = Readonly<{
   addEventListener?: (type: string, listener: LaunchpadGestureEventListener) => void;
-  closest?: (selector: string) => Element | null;
+  closest?: (selector: string) => unknown | null;
   hasPointerCapture?: (pointerId: number) => boolean;
   releasePointerCapture?: (pointerId: number) => void;
   removeEventListener?: (type: string, listener: LaunchpadGestureEventListener) => void;
@@ -63,7 +63,7 @@ export type LaunchpadGesturePointerEvent = LaunchpadDragPointerEvent & Readonly<
   deltaY?: number | undefined;
   folderOriginBounds?: CapturedFolderOriginBounds | null | undefined;
   metaKey?: boolean | undefined;
-  momentum?: boolean | undefined;
+  momentum?: boolean | null | undefined;
   target?: LaunchpadGesturePointerTarget | null | undefined;
 }>;
 
@@ -315,7 +315,7 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
       viewport: getViewport(scope),
     };
     if (event.pointerId !== undefined) input.pointerId = event.pointerId;
-    if (event.buttons !== undefined) input.buttons = event.buttons;
+    if (event.buttons != null) input.buttons = event.buttons;
     if (event.isPrimary !== undefined) input.isPrimary = event.isPrimary;
     return input;
   }

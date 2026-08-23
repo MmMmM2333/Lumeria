@@ -37,7 +37,7 @@
           <div class="icon-chooser-section-header"><h3>{{ t("dialogs.iconChooser.local") }}</h3></div>
           <label class="settings-secondary-button icon-chooser-upload-button">
             {{ t("common.actions.selectImage") }}
-            <input name="customIconFile" type="file" accept="image/*" :aria-label="t('dialogs.iconChooser.chooseFromDisk')" autocomplete="off" @change="model.actions.upload" />
+            <input name="customIconFile" type="file" accept="image/*" :aria-label="t('dialogs.iconChooser.chooseFromDisk')" autocomplete="off" @change="handleUpload" />
           </label>
         </section>
       </div>
@@ -45,19 +45,31 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import { useLocalization } from "../i18n/localization.js";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
-const props = defineProps({ model: { type: Object, required: true } });
-const { t } = useLocalization();
-const dialogRef = ref(null);
+type IconChooserModel = LaunchpadController["dialogs"]["iconChooserModel"];
 
-function focus() {
+const props = defineProps<{ model: IconChooserModel }>();
+const { t } = useLocalization();
+const dialogRef = ref<HTMLElement | null>(null);
+
+function focus(): void {
   focusModalElement(dialogRef);
+}
+
+function handleUpload(event: Event): void {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("App icon upload event currentTarget must be an input element");
+  }
+  props.model.actions.upload({
+    target: event.currentTarget,
+  });
 }
 
 defineExpose({ focus });

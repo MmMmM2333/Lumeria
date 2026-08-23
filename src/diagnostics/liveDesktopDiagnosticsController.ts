@@ -181,6 +181,177 @@ function normalizeRuntimeStatus(status: unknown): LiveDesktopRuntimeSnapshot | n
   };
 }
 
+function requireSettingNames(value: unknown, label: string): readonly LiveDesktopDebugSettingName[] {
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
+  return value.map((entry, index) => {
+    const name = SETTING_NAMES.find((candidate) => candidate === entry);
+    if (!name) throw new TypeError(`${label}[${index}] must be a supported setting name`);
+    return name;
+  });
+}
+
+function requireSettings(
+  value: unknown,
+  label: string,
+  complete: true,
+): LiveDesktopDebugSettings;
+function requireSettings(
+  value: unknown,
+  label: string,
+  complete: false,
+): Partial<LiveDesktopDebugSettings>;
+function requireSettings(
+  value: unknown,
+  label: string,
+  complete: boolean,
+): LiveDesktopDebugSettings | Partial<LiveDesktopDebugSettings> {
+  const settings = validateLiveDesktopDebugSettingsPatch(value);
+  if (!complete) return settings;
+  const missingNames = SETTING_NAMES.filter((name) => !Object.hasOwn(settings, name));
+  if (missingNames.length) {
+    throw new TypeError(`${label} is missing settings: ${missingNames.join(", ")}`);
+  }
+  return {
+    compositorKeeper: settings.compositorKeeper === true,
+    cssFallbackEffects: settings.cssFallbackEffects === true,
+    debugFrameSourceOverride: settings.debugFrameSourceOverride ?? null,
+    disableMouseRelay: settings.disableMouseRelay === true,
+    forceDwmFlush: settings.forceDwmFlush === true,
+    skipBlankFrames: settings.skipBlankFrames === true,
+  };
+}
+
+function requireFailure(value: unknown, label: string): LiveDesktopDiagnosticsFailure | null {
+  if (value == null) return null;
+  const failure = isRecord(value) ? value : null;
+  if (!failure) throw new TypeError(`${label} must be an object or null`);
+  if (
+    typeof failure.at !== "string"
+    || typeof failure.code !== "string"
+    || typeof failure.message !== "string"
+    || (failure.stage !== "apply"
+      && failure.stage !== "notify"
+      && failure.stage !== "persist"
+      && failure.stage !== "read"
+      && failure.stage !== "refresh")
+  ) {
+    throw new TypeError(`${label} has an invalid failure envelope`);
+  }
+  if (
+    failure.nextActions != null
+    && (!Array.isArray(failure.nextActions) || failure.nextActions.some((entry) => typeof entry !== "string"))
+  ) {
+    throw new TypeError(`${label}.nextActions must be an array of strings`);
+  }
+  return {
+    at: failure.at,
+    code: failure.code,
+    ...(Object.hasOwn(failure, "details") ? { details: clonePlain(failure.details) } : {}),
+    message: failure.message,
+    ...(Array.isArray(failure.nextActions) ? { nextActions: [...failure.nextActions] } : {}),
+    stage: failure.stage,
+  };
+}
+
+function requireSettingsIssues(value: unknown): readonly LiveDesktopDebugSettingsIssue[] {
+  if (!Array.isArray(value)) throw new TypeError("Live Desktop diagnostics persisted.issues must be an array");
+  return value.map((entry, index) => {
+    const issue = isRecord(entry) ? entry : null;
+    const name = SETTING_NAMES.find((candidate) => candidate === issue?.name);
+    if (
+      !issue
+      || issue.code !== "live-desktop-settings-read-failed"
+      || !name
+      || typeof issue.message !== "string"
+      || typeof issue.storageKey !== "string"
+      || typeof issue.technicalDetail !== "string"
+    ) {
+      throw new TypeError(`Live Desktop diagnostics persisted.issues[${index}] is invalid`);
+    }
+    return {
+      code: issue.code,
+      message: issue.message,
+      name,
+      storageKey: issue.storageKey,
+      technicalDetail: issue.technicalDetail,
+    };
+  });
+}
+
+export function requireLiveDesktopDiagnosticsState(value: unknown): LiveDesktopDiagnosticsState {
+  const state = isRecord(value) ? value : null;
+  if (!state || state.schema !== LIVE_DESKTOP_DIAGNOSTICS_STATE_SCHEMA) {
+    throw new TypeError("Live Desktop diagnostics state has an invalid schema");
+  }
+  if (
+    state.phase !== "applying"
+    && state.phase !== "disposed"
+    && state.phase !== "failed"
+    && state.phase !== "persisting"
+    && state.phase !== "ready"
+    && state.phase !== "refreshing"
+  ) {
+    throw new TypeError("Live Desktop diagnostics state has an invalid phase");
+  }
+  const desired = isRecord(state.desired) ? state.desired : null;
+  const applied = isRecord(state.applied) ? state.applied : null;
+  const persisted = isRecord(state.persisted) ? state.persisted : null;
+  const consistency = isRecord(state.consistency) ? state.consistency : null;
+  if (!desired || !applied || !persisted || !consistency) {
+    throw new TypeError("Live Desktop diagnostics state is missing a state section");
+  }
+  if (!Number.isSafeInteger(desired.revision) || Number(desired.revision) < 0 || typeof desired.updatedAt !== "string") {
+    throw new TypeError("Live Desktop diagnostics desired state has an invalid revision or timestamp");
+  }
+  if (
+    (applied.updatedAt !== null && typeof applied.updatedAt !== "string")
+    || (applied.verification !== "frontend-event-dispatched"
+      && applied.verification !== "runtime-accepted"
+      && applied.verification !== "unknown")
+  ) {
+    throw new TypeError("Live Desktop diagnostics applied state has invalid metadata");
+  }
+  if (typeof persisted.updatedAt !== "string") {
+    throw new TypeError("Live Desktop diagnostics persisted state has an invalid timestamp");
+  }
+  if (
+    consistency.status !== "consistent"
+    && consistency.status !== "drifted"
+    && consistency.status !== "unverified"
+  ) {
+    throw new TypeError("Live Desktop diagnostics consistency has an invalid status");
+  }
+  return {
+    applied: {
+      confirmedKeys: requireSettingNames(applied.confirmedKeys, "Live Desktop diagnostics applied.confirmedKeys"),
+      updatedAt: applied.updatedAt,
+      values: requireSettings(applied.values, "Live Desktop diagnostics applied.values", false),
+      verification: applied.verification,
+    },
+    consistency: {
+      desiredVsApplied: requireSettingNames(consistency.desiredVsApplied, "Live Desktop diagnostics consistency.desiredVsApplied"),
+      desiredVsPersisted: requireSettingNames(consistency.desiredVsPersisted, "Live Desktop diagnostics consistency.desiredVsPersisted"),
+      status: consistency.status,
+      unconfirmedAppliedKeys: requireSettingNames(consistency.unconfirmedAppliedKeys, "Live Desktop diagnostics consistency.unconfirmedAppliedKeys"),
+    },
+    desired: {
+      revision: Number(desired.revision),
+      updatedAt: desired.updatedAt,
+      values: requireSettings(desired.values, "Live Desktop diagnostics desired.values", true),
+    },
+    lastFailure: requireFailure(state.lastFailure, "Live Desktop diagnostics lastFailure"),
+    lastRefreshFailure: requireFailure(state.lastRefreshFailure, "Live Desktop diagnostics lastRefreshFailure"),
+    persisted: {
+      issues: requireSettingsIssues(persisted.issues),
+      updatedAt: persisted.updatedAt,
+      values: requireSettings(persisted.values, "Live Desktop diagnostics persisted.values", true),
+    },
+    phase: state.phase,
+    runtimeStatus: normalizeRuntimeStatus(state.runtimeStatus),
+    schema: LIVE_DESKTOP_DIAGNOSTICS_STATE_SCHEMA,
+  };
+}
+
 function runtimeConfirmedSettings(status: LiveDesktopRuntimeSnapshot | null): boolean {
   return status?.active === true && status?.phase === "running";
 }

@@ -227,7 +227,7 @@
       </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useLocalization } from "../../i18n/localization.js";
 import { useMotionDebugWorkspaceRegion } from "./motionDebugWorkspaceContext.js";
 

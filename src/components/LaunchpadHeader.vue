@@ -1,7 +1,7 @@
 <template>
-  <header :ref="(node) => bindRef(domRefs.headerRef, node)" class="launchpad-header">
+  <header :ref="(node) => bindElementRef(domRefs.headerRef, node)" class="launchpad-header">
     <div
-      :ref="(node) => bindRef(domRefs.searchRef, node)"
+      :ref="(node) => bindElementRef(domRefs.searchRef, node)"
       :class="cx(
         'search-pill',
         isSearchMode && 'search-pill-active',
@@ -17,7 +17,7 @@
           <span class="search-pill-input-slot">
             <span class="search-pill-placeholder" aria-hidden="true">{{ searchPlaceholder }}</span>
             <input
-              :ref="(node) => bindRef(domRefs.searchInputRef, node)"
+              :ref="(node) => bindInputRef(domRefs.searchInputRef, node)"
               id="launchpad-search"
               class="search-input"
               :value="searchQuery"
@@ -28,7 +28,7 @@
               :placeholder="searchPlaceholder"
               :aria-label="t('launchpad.search.label')"
               spellcheck="false"
-              @input="$emit('search-input', $event)"
+              @input="handleSearchInput"
               @focus="handleSearchFocus"
               @blur="handleSearchBlur"
               @pointerdown.stop
@@ -48,37 +48,72 @@
   </header>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from "vue";
+import type { ComponentPublicInstance, Ref } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { SearchIcon, SettingsIcon } from "./Icons.js";
+import type { LaunchpadSearchInputEvent } from "../composables/useLaunchpadSearch.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { useLocalization } from "../i18n/localization.js";
 
-const props = defineProps({
-  dragDisabled: { type: Boolean, default: false },
-  domRefs: { type: Object, required: true },
-  isSearchMode: { type: Boolean, default: false },
-  searchQuery: { type: String, default: "" },
+type HeaderDomRefs = Readonly<{
+  headerRef: Ref<HTMLElement | null>;
+  searchInputRef: Ref<HTMLInputElement | null>;
+  searchRef: Ref<HTMLElement | null>;
+}>;
+
+const props = withDefaults(defineProps<{
+  dragDisabled?: boolean;
+  domRefs: HeaderDomRefs;
+  isSearchMode?: boolean;
+  searchQuery?: string;
+}>(), {
+  dragDisabled: false,
+  isSearchMode: false,
+  searchQuery: "",
 });
 
-const emit = defineEmits(["search-input", "search-focus", "search-blur", "clear-search", "open-settings"]);
+const emit = defineEmits<{
+  "clear-search": [];
+  "open-settings": [event: MouseEvent];
+  "search-blur": [];
+  "search-focus": [];
+  "search-input": [event: LaunchpadSearchInputEvent];
+}>();
 const { t } = useLocalization();
 
 const isSearchInputFocused = ref(false);
 const hasSearchQuery = computed(() => props.searchQuery.trim().length > 0);
 const searchPlaceholder = computed(() => t("launchpad.search.placeholder"));
 
-function bindRef(target, node) {
-  if (target && typeof target === "object" && "value" in target) target.value = node;
+function bindElementRef(
+  target: Ref<HTMLElement | null>,
+  node: Element | ComponentPublicInstance | null,
+): void {
+  target.value = node instanceof HTMLElement ? node : null;
 }
 
-function handleSearchFocus() {
+function bindInputRef(
+  target: Ref<HTMLInputElement | null>,
+  node: Element | ComponentPublicInstance | null,
+): void {
+  target.value = node instanceof HTMLInputElement ? node : null;
+}
+
+function handleSearchInput(event: Event): void {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("Launchpad search input event currentTarget must be an input element");
+  }
+  emit("search-input", { target: event.currentTarget });
+}
+
+function handleSearchFocus(): void {
   isSearchInputFocused.value = true;
   emit("search-focus");
 }
 
-function handleSearchBlur() {
+function handleSearchBlur(): void {
   isSearchInputFocused.value = false;
   emit("search-blur");
 }

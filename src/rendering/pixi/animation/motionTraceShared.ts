@@ -67,7 +67,7 @@ interface MotionTrackStats extends MotionTraceRecord {
   retargetCount?: number;
 }
 
-interface MotionTrackAggregate {
+interface MotionTrackAggregate extends MotionTraceRecord {
   driver: string;
   eventCount: number;
   key: string;

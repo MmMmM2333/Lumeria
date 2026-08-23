@@ -48,11 +48,11 @@ void frame.activePageIndex;
 const unknownFrameField: DesktopSceneFrameInput = { legacyPageIndex: 0 };
 void unknownFrameField;
 
-const invalidFrameValue: DesktopSceneFrameInput = {
-  // @ts-expect-error SceneFrame fields have explicit value contracts.
+// Composition-root values enter as unknown and are validated by makeDesktopSceneFrame.
+const untrustedFrameValue: DesktopSceneFrameInput = {
   activePageIndex: "0",
 };
-void invalidFrameValue;
+void untrustedFrameValue;
 
 const pageTrackScrubFrame = {
   pageTrackScrub: {
@@ -65,9 +65,8 @@ const pageTrackScrubFrame = {
 } satisfies DesktopSceneFrameInput;
 void pageTrackScrubFrame;
 
-const invalidPageTrackScrubFrame: DesktopSceneFrameInput = {
+const untrustedPageTrackScrubFrame: DesktopSceneFrameInput = {
   pageTrackScrub: {
-    // @ts-expect-error Gesture edge state is a boolean marker, not a string label.
     edge: "false",
     fromIndex: 0,
     progress: 0.5,
@@ -75,7 +74,7 @@ const invalidPageTrackScrubFrame: DesktopSceneFrameInput = {
     toIndex: 1,
   },
 };
-void invalidPageTrackScrubFrame;
+void untrustedPageTrackScrubFrame;
 
 const activityEvent = {
   type: "internal-activity",

@@ -51,7 +51,7 @@
         type="checkbox"
         :checked="liveDesktopDisableMouseRelay"
         :disabled="isLiveDesktopActionBusy"
-        @change="setLiveDesktopDisableMouseRelay($event.target.checked)"
+        @change="setLiveDesktopDisableMouseRelay(readChecked($event))"
       >
       <span>{{ t("debug.liveDesktop.settings.disableMouseRelay") }}</span>
     </label>
@@ -62,7 +62,7 @@
         type="checkbox"
         :checked="liveDesktopCompositorKeeper"
         :disabled="isLiveDesktopActionBusy"
-        @change="setLiveDesktopCompositorKeeper($event.target.checked)"
+        @change="setLiveDesktopCompositorKeeper(readChecked($event))"
       >
       <span>{{ t("debug.liveDesktop.settings.compositorKeeper") }}</span>
     </label>
@@ -73,7 +73,7 @@
         type="checkbox"
         :checked="liveDesktopCssFallbackEffects"
         :disabled="isLiveDesktopActionBusy"
-        @change="setLiveDesktopCssFallbackEffects($event.target.checked)"
+        @change="setLiveDesktopCssFallbackEffects(readChecked($event))"
       >
       <span>{{ t("debug.liveDesktop.settings.cssFallbackEffects") }}</span>
     </label>
@@ -84,7 +84,7 @@
         type="checkbox"
         :checked="liveDesktopSkipBlankFrames"
         :disabled="isLiveDesktopActionBusy"
-        @change="setLiveDesktopSkipBlankFrames($event.target.checked)"
+        @change="setLiveDesktopSkipBlankFrames(readChecked($event))"
       >
       <span>{{ t("debug.liveDesktop.settings.skipBlankFrames") }}</span>
     </label>
@@ -95,7 +95,7 @@
         type="checkbox"
         :checked="liveDesktopForceDwmFlush"
         :disabled="isLiveDesktopActionBusy"
-        @change="setLiveDesktopForceDwmFlush($event.target.checked)"
+        @change="setLiveDesktopForceDwmFlush(readChecked($event))"
       >
       <span>{{ t("debug.liveDesktop.settings.forceDwmFlush") }}</span>
     </label>
@@ -130,8 +130,8 @@
         :key="windowInfo.hwnd"
         class="background-debug-window-card"
       >
-        <strong>{{ formatWindowTitle(windowInfo, t) }}</strong>
-        <span>{{ formatWindowMeta(windowInfo, t) }}</span>
+        <strong>{{ formatWindowTitle(windowInfo, liveDesktopTranslate) }}</strong>
+        <span>{{ formatWindowMeta(windowInfo, liveDesktopTranslate) }}</span>
         <span>{{ formatWindowRect(windowInfo.rect) }}</span>
       </article>
       <article v-if="liveDesktopCandidateWindows.length === 0" class="background-debug-window-card">
@@ -163,8 +163,9 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import type { Ref } from "vue";
 import { diagnosticClient } from "../../diagnostics/diagnosticClient.js";
 import { useLocalization } from "../../i18n/localization.js";
 import { formatDiagnosticActionError } from "./diagnosticUiError.js";
@@ -184,20 +185,35 @@ import {
   formatWindowTitle,
   normalizeLiveDesktopStatus,
 } from "./liveDesktopDiagnostics.js";
+import type { LiveDesktopRates, LiveDesktopTranslate } from "./liveDesktopDiagnostics.js";
+import type {
+  LiveDesktopDebugSettingName,
+  LiveDesktopDebugSettingsPatch,
+} from "../../diagnostics/liveDesktopDebugSettings.js";
+import { requireLiveDesktopDiagnosticsState } from "../../diagnostics/liveDesktopDiagnosticsController.js";
+import type { LiveDesktopDiagnosticsState } from "../../diagnostics/liveDesktopDiagnosticsController.js";
 
-const props = defineProps({
-  active: {
-    type: Boolean,
-    default: false,
-  },
-  support: {
-    type: Object,
-    default: null,
-  },
+const props = withDefaults(defineProps<{
+  active?: boolean;
+  support?: Readonly<Record<string, unknown>> | null;
+}>(), {
+  active: false,
+  support: null,
 });
 const { t } = useLocalization();
 
-const SETTING_LABEL_KEYS = Object.freeze({
+type ProtocolLabels = Readonly<Record<string, string>>;
+interface LiveDesktopRateSample {
+  copyErrors: number;
+  frameArrivedDroppedSignals: number;
+  frameArrivedEvents: number;
+  frameTimeouts: number;
+  framesCopied: number;
+  measuredAt: number;
+}
+interface LiveDesktopActionBehavior { errorState?: Ref<string> }
+
+const SETTING_LABEL_KEYS: Readonly<Record<LiveDesktopDebugSettingName, string>> = Object.freeze({
   compositorKeeper: "debug.liveDesktop.settings.compositorKeeper",
   cssFallbackEffects: "debug.liveDesktop.settings.cssFallbackEffects",
   debugFrameSourceOverride: "debug.liveDesktop.settings.debugFrameSourceOverride",
@@ -205,7 +221,7 @@ const SETTING_LABEL_KEYS = Object.freeze({
   forceDwmFlush: "debug.liveDesktop.settings.forceDwmFlush",
   skipBlankFrames: "debug.liveDesktop.settings.skipBlankFramesShort",
 });
-const PHASE_LABEL_KEYS = Object.freeze({
+const PHASE_LABEL_KEYS: ProtocolLabels = Object.freeze({
   applying: "debug.liveDesktop.phase.applying",
   failed: "debug.liveDesktop.phase.failed",
   persisting: "debug.liveDesktop.phase.persisting",
@@ -215,12 +231,12 @@ const PHASE_LABEL_KEYS = Object.freeze({
   stopped: "debug.liveDesktop.phase.stopped",
   unknown: "debug.liveDesktop.phase.unknown",
 });
-const CONSISTENCY_LABEL_KEYS = Object.freeze({
+const CONSISTENCY_LABEL_KEYS: ProtocolLabels = Object.freeze({
   consistent: "debug.liveDesktop.consistency.consistent",
   drifted: "debug.liveDesktop.consistency.drifted",
   unverified: "debug.liveDesktop.consistency.unverified",
 });
-const VERIFICATION_LABEL_KEYS = Object.freeze({
+const VERIFICATION_LABEL_KEYS: ProtocolLabels = Object.freeze({
   "frontend-event-dispatched": "debug.liveDesktop.verification.frontend-event-dispatched",
   "runtime-accepted": "debug.liveDesktop.verification.runtime-accepted",
   unknown: "debug.liveDesktop.verification.unknown",
@@ -231,11 +247,11 @@ const isCopyingDiagnostics = ref(false);
 const isLiveDesktopActionBusy = ref(false);
 const liveDesktopActionError = ref("");
 const liveDesktopPollError = ref("");
-const liveDesktopDiagnosticState = ref(null);
+const liveDesktopDiagnosticState = ref<LiveDesktopDiagnosticsState | null>(null);
 const liveDesktopRates = ref(makeEmptyRates());
-let copyStateTimer = null;
-let liveDesktopRateSample = null;
-let runtimePollTimer = null;
+let copyStateTimer: number | null = null;
+let liveDesktopRateSample: LiveDesktopRateSample | null = null;
+let runtimePollTimer: number | null = null;
 
 const liveDesktopDesiredSettings = computed(() => (
   liveDesktopDiagnosticState.value?.desired?.values || DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS
@@ -249,12 +265,27 @@ const liveDesktopForceDwmFlush = computed(() => liveDesktopDesiredSettings.value
 const liveDesktopStatus = computed(() => normalizeLiveDesktopStatus(liveDesktopDiagnosticState.value?.runtimeStatus));
 const diagnosticsCopyButtonLabel = computed(() => t(hasCopiedDiagnostics.value ? "debug.common.copied" : "debug.liveDesktop.actions.copyDiagnosticsJson"));
 
-function formatProtocolValue(value, labels) {
+const liveDesktopTranslate: LiveDesktopTranslate = (key, params) => {
+  const values: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(params || {})) {
+    values[name] = typeof value === "string" || typeof value === "number" ? value : String(value ?? "");
+  }
+  return t(key, values);
+};
+
+function readChecked(event: Event): boolean {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("Live desktop checkbox event currentTarget must be an input element");
+  }
+  return event.currentTarget.checked;
+}
+
+function formatProtocolValue(value: unknown, labels: ProtocolLabels): string {
   const code = String(value || "unknown");
   return `${labels[code] ? t(labels[code]) : code} (${code})`;
 }
 
-function formatSettingNames(names = []) {
+function formatSettingNames(names: readonly LiveDesktopDebugSettingName[] = []): string {
   return names
     .map((name) => `${SETTING_LABEL_KEYS[name] ? t(SETTING_LABEL_KEYS[name]) : name} (${name})`)
     .join(t("debug.common.listSeparator")) || t("debug.common.none");
@@ -313,8 +344,8 @@ const liveDesktopDiagnosticsRows = computed(() => {
     { label: t("debug.liveDesktop.fields.copyErrors"), value: formatCount(diagnostics.copyErrors) },
     { label: t("debug.liveDesktop.fields.commitErrors"), value: formatCount(diagnostics.commitErrors) },
     { label: t("debug.liveDesktop.fields.shaderFallbacks"), value: formatCount(diagnostics.shaderCopyFallbacks) },
-    { label: t("debug.liveDesktop.fields.rates"), value: formatLiveDesktopRates(liveDesktopRates.value, t), wide: true },
-    { label: t("debug.liveDesktop.fields.frameArrived"), value: formatFrameArrived(diagnostics, t), wide: true },
+    { label: t("debug.liveDesktop.fields.rates"), value: formatLiveDesktopRates(liveDesktopRates.value, liveDesktopTranslate), wide: true },
+    { label: t("debug.liveDesktop.fields.frameArrived"), value: formatFrameArrived(diagnostics, liveDesktopTranslate), wide: true },
     {
       label: t("debug.liveDesktop.fields.frameCopyTiming"),
       value: formatFrameTiming(
@@ -322,7 +353,7 @@ const liveDesktopDiagnosticsRows = computed(() => {
         diagnostics.frameCopyMicrosTotal,
         diagnostics.lastFrameCopyMicros,
         diagnostics.maxFrameCopyMicros,
-        t,
+        liveDesktopTranslate,
       ),
       wide: true,
     },
@@ -333,7 +364,7 @@ const liveDesktopDiagnosticsRows = computed(() => {
         diagnostics.frameCommitMicrosTotal,
         diagnostics.lastFrameCommitMicros,
         diagnostics.maxFrameCommitMicros,
-        t,
+        liveDesktopTranslate,
       ),
       wide: true,
     },
@@ -349,8 +380,8 @@ const liveDesktopDiagnosticsRows = computed(() => {
       }),
       wide: true,
     },
-    { label: t("debug.liveDesktop.fields.pixelProbe"), value: formatPixelProbe(diagnostics, t), wide: true },
-    { label: t("debug.liveDesktop.fields.lastFrame"), value: formatLastFrame(diagnostics, t), wide: true },
+    { label: t("debug.liveDesktop.fields.pixelProbe"), value: formatPixelProbe(diagnostics, liveDesktopTranslate), wide: true },
+    { label: t("debug.liveDesktop.fields.lastFrame"), value: formatLastFrame(diagnostics, liveDesktopTranslate), wide: true },
     ...(diagnostics.lastAbandonedRendererReason
       ? [{ label: t("debug.liveDesktop.fields.lastAbandonedReason"), value: diagnostics.lastAbandonedRendererReason, wide: true }]
       : []),
@@ -362,11 +393,11 @@ const liveDesktopDiagnosticsRows = computed(() => {
 
 const liveDesktopLastError = computed(() => liveDesktopActionError.value
   || (liveDesktopDiagnosticState.value?.lastFailure
-    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateChange"), liveDesktopDiagnosticState.value.lastFailure, t)
+    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateChange"), liveDesktopDiagnosticState.value.lastFailure, liveDesktopTranslate)
     : "")
   || liveDesktopPollError.value
   || (liveDesktopDiagnosticState.value?.lastRefreshFailure
-    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateRefresh"), liveDesktopDiagnosticState.value.lastRefreshFailure, t)
+    ? formatDiagnosticActionError(t("debug.liveDesktop.actions.stateRefresh"), liveDesktopDiagnosticState.value.lastRefreshFailure, liveDesktopTranslate)
     : "")
   || liveDesktopStatus.value.diagnostics.lastError);
 const liveDesktopWindowDiagnostics = computed(() => liveDesktopStatus.value.windowDiagnostics);
@@ -380,7 +411,7 @@ const liveDesktopWindowRows = computed(() => {
   ];
 });
 
-function makeEmptyRates() {
+function makeEmptyRates(): LiveDesktopRates {
   return {
     arrivedPerSecond: 0,
     copyErrorsPerSecond: 0,
@@ -423,53 +454,57 @@ function updateLiveDesktopRates() {
   };
 }
 
-async function runLiveDesktopDiagnosticAction(operation, params = {}, actionLabel = operation, behavior = {}) {
+async function runLiveDesktopDiagnosticAction(
+  operation: string,
+  params: Readonly<Record<string, unknown>> = {},
+  actionLabel = operation,
+  behavior: LiveDesktopActionBehavior = {},
+): Promise<LiveDesktopDiagnosticsState | null> {
   if (isLiveDesktopActionBusy.value) return null;
   const errorState = behavior.errorState || liveDesktopActionError;
   isLiveDesktopActionBusy.value = true;
   try {
-    const state = await diagnosticClient.invoke("live-desktop", operation, params);
-    if (!state || state.schema !== "lumeria-live-desktop-diagnostics-state/v1") {
-      throw new Error(t("debug.liveDesktop.errors.invalidState"));
-    }
+    const state = requireLiveDesktopDiagnosticsState(
+      await diagnosticClient.invoke("live-desktop", operation, params),
+    );
     liveDesktopDiagnosticState.value = state;
     errorState.value = "";
     updateLiveDesktopRates();
     return state;
   } catch (error) {
-    errorState.value = formatDiagnosticActionError(actionLabel, error, t);
+    errorState.value = formatDiagnosticActionError(actionLabel, error, liveDesktopTranslate);
     return null;
   } finally {
     isLiveDesktopActionBusy.value = false;
   }
 }
 
-function updateLiveDesktopDiagnosticSettings(patch) {
+function updateLiveDesktopDiagnosticSettings(patch: LiveDesktopDebugSettingsPatch) {
   liveDesktopRateSample = null;
   return runLiveDesktopDiagnosticAction("settings.update", { patch }, t("debug.liveDesktop.actions.updateSettings"));
 }
 
-function setLiveDesktopDisableMouseRelay(disabled) {
+function setLiveDesktopDisableMouseRelay(disabled: boolean) {
   return updateLiveDesktopDiagnosticSettings({ disableMouseRelay: Boolean(disabled) });
 }
 
-function setLiveDesktopCompositorKeeper(enabled) {
+function setLiveDesktopCompositorKeeper(enabled: boolean) {
   return updateLiveDesktopDiagnosticSettings({ compositorKeeper: Boolean(enabled) });
 }
 
-function setLiveDesktopCssFallbackEffects(enabled) {
+function setLiveDesktopCssFallbackEffects(enabled: boolean) {
   return updateLiveDesktopDiagnosticSettings({ cssFallbackEffects: Boolean(enabled) });
 }
 
-function setLiveDesktopSkipBlankFrames(enabled) {
+function setLiveDesktopSkipBlankFrames(enabled: boolean) {
   return updateLiveDesktopDiagnosticSettings({ skipBlankFrames: Boolean(enabled) });
 }
 
-function setLiveDesktopForceDwmFlush(enabled) {
+function setLiveDesktopForceDwmFlush(enabled: boolean) {
   return updateLiveDesktopDiagnosticSettings({ forceDwmFlush: Boolean(enabled) });
 }
 
-function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride) {
+function setLiveDesktopDebugFrameSourceOverride(frameSourceOverride: unknown) {
   return updateLiveDesktopDiagnosticSettings({
     debugFrameSourceOverride: frameSourceOverride === LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
       ? LIVE_DESKTOP_FRAME_SOURCE_TEST_PATTERN
@@ -499,7 +534,9 @@ async function copyDiagnostics() {
   isCopyingDiagnostics.value = true;
   try {
     if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
-    const diagnosticsState = await diagnosticClient.invoke("live-desktop", "state.read");
+    const diagnosticsState = requireLiveDesktopDiagnosticsState(
+      await diagnosticClient.invoke("live-desktop", "state.read"),
+    );
     const bundle = {
       capturedAt: new Date().toISOString(),
       diagnosticsState,
@@ -511,7 +548,7 @@ async function copyDiagnostics() {
     liveDesktopActionError.value = "";
     markDiagnosticsCopied();
   } catch (error) {
-    liveDesktopActionError.value = formatDiagnosticActionError(t("debug.liveDesktop.actions.copyDiagnostics"), error, t);
+    liveDesktopActionError.value = formatDiagnosticActionError(t("debug.liveDesktop.actions.copyDiagnostics"), error, liveDesktopTranslate);
   } finally {
     isCopyingDiagnostics.value = false;
   }

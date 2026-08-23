@@ -312,7 +312,7 @@ type RequiredCapabilityName =
   | "windowEffectsSupport";
 
 export type SettingsPanelCapabilities = Readonly<
-  Partial<Pick<SettingsPanelCapabilitySource, RoutedCapabilityName>>
+  Required<Pick<SettingsPanelCapabilitySource, RoutedCapabilityName>>
   & Pick<SettingsPanelCapabilitySource, RequiredCapabilityName>
   & Pick<
     SettingsPanelCapabilitySource,

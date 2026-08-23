@@ -237,7 +237,9 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
   const canScanManagedApps = computed(() => options.shouldUseNativeCatalog() && scanRoots.value.some((root) => root.enabled));
   const canEditManagedAppArgs = computed(() => !isEditingAppUserModelId.value && canUseLaunchArgsForTarget(editorTarget.value));
 
-  function getLaunchTargetPath(app: Pick<LaunchpadApp, "launchTarget"> | null | undefined): string {
+  function getLaunchTargetPath(
+    app: Pick<ReadonlyLaunchpadApp, "launchTarget"> | null | undefined,
+  ): string {
     const target = app?.launchTarget;
     if (target?.kind === "appUserModelId") {
       return target.appUserModelId || "";
@@ -733,7 +735,7 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
     }
   }
 
-  function openEditManagedApp(app: LaunchpadApp | null | undefined): void {
+  function openEditManagedApp(app: ReadonlyLaunchpadApp | null | undefined): void {
     if (!app || options.isDragActive()) return;
     closeManagedAppEditor();
     editorSession.value = {
@@ -1021,11 +1023,15 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
     return removeManagedAppsFromLaunchpad(appManagerSelectedIds.value);
   }
 
-  function canExcludeManagedAppFromScan(app: LaunchpadApp): boolean {
+  function canExcludeManagedAppFromScan(
+    app: Pick<ReadonlyLaunchpadApp, "id" | "origin">,
+  ): boolean {
     return canExcludeAppFromScan(app);
   }
 
-  function excludeManagedAppsFromScan(apps: readonly Pick<LaunchpadApp, "id">[]): boolean {
+  function excludeManagedAppsFromScan(
+    apps: readonly Pick<ReadonlyLaunchpadApp, "id">[],
+  ): boolean {
     if (options.isDragActive()) return false;
     const requestedApps = Array.from(new Map((apps || [])
       .filter((app) => app?.id)
@@ -1081,7 +1087,7 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
     return true;
   }
 
-  function excludeManagedAppFromScan(app: LaunchpadApp): boolean {
+  function excludeManagedAppFromScan(app: ReadonlyLaunchpadApp): boolean {
     return excludeManagedAppsFromScan([app]);
   }
 

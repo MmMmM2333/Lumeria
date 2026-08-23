@@ -10,6 +10,7 @@ export {
   ICON_BOUNDS_VARIANT,
   createIconBoundsRegistry,
 } from "./pixi/geometry/iconBoundsRegistry.js";
+export type { IconBoundsRect } from "./pixi/geometry/iconBoundsRegistry.js";
 export { stageLayoutRecordToClientRect } from "./pixi/geometry/stageCoordinates.js";
 export { prefersReducedMotion } from "./pixi/animation/motionPreferences.js";
 export { motionSprings } from "./pixi/animation/motionPresets.js";

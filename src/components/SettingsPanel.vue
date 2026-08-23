@@ -6,7 +6,7 @@
     :class="cx('settings-overlay', !isOpen && 'settings-overlay-closing')"
     @contextmenu.self.stop.prevent
     @wheel.stop
-    @pointerdown.self.stop.left="shell.actions.close"
+    @pointerdown.self.stop.left="closeSettingsPanel"
   >
     <section
       ref="settingsPanelRef"
@@ -90,7 +90,10 @@
         <div class="settings-main">
           <div ref="settingsContentRef" class="settings-content">
             <Transition :name="routeTransitionName" mode="out-in" @before-enter="resetSettingsContentScroll">
-              <component :is="activePageComponent" :key="routeKey" :model="activePageModel" />
+              <GeneralSettingsPage v-if="activeTab === 'general'" :key="routeKey" :model="model.pages.general" />
+              <InterfaceSettingsPage v-else-if="activeTab === 'interface'" :key="routeKey" :model="model.pages.interface" />
+              <AppsSettingsPage v-else-if="activeTab === 'apps'" :key="routeKey" :model="model.pages.apps" />
+              <AboutSettingsPage v-else :key="routeKey" :model="model.pages.about" />
             </Transition>
           </div>
 
@@ -104,7 +107,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { setTheme } from "@fluentui/web-components";
 import { webDarkTheme, webLightTheme } from "@fluentui/tokens";
@@ -118,6 +121,7 @@ import PaintBrushIcon from "~icons/fluent/paint-brush-24-regular";
 import SettingsRegularIcon from "~icons/fluent/settings-24-regular";
 import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import type { useSettingsPanelModel } from "../composables/useSettingsPanelModel.js";
 import { cx } from "../domain/launchpadLayout.js";
 import { useLocalization } from "../i18n/localization.js";
 import AboutSettingsPage from "./settings/AboutSettingsPage.vue";
@@ -126,11 +130,13 @@ import GeneralSettingsPage from "./settings/GeneralSettingsPage.vue";
 import InterfaceSettingsPage from "./settings/InterfaceSettingsPage.vue";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
-const props = defineProps({ model: { type: Object, required: true } });
+type SettingsPanelModel = ReturnType<typeof useSettingsPanelModel>;
+type FluentMenuElement = HTMLElement & Readonly<{ closeMenu?: () => void }>;
+
+const props = defineProps<{ model: SettingsPanelModel }>();
 const { t } = useLocalization();
 const shell = props.model.shell;
 const {
-  activePageModel,
   activeRoute,
   activeTab,
   canApply,
@@ -149,10 +155,10 @@ const SETTINGS_PANEL_OPEN_DURATION = 0.34;
 const SETTINGS_PANEL_OPEN_EASE = "power3.out";
 const SETTINGS_PANEL_CLOSE_DURATION = 0.22;
 const SETTINGS_PANEL_CLOSE_EASE = "power2.inOut";
-const settingsOverlayRef = ref(null);
-const settingsPanelRef = ref(null);
-const settingsContentRef = ref(null);
-let themedSettingsPanel = null;
+const settingsOverlayRef = ref<HTMLElement | null>(null);
+const settingsPanelRef = ref<HTMLElement | null>(null);
+const settingsContentRef = ref<HTMLElement | null>(null);
+let themedSettingsPanel: HTMLElement | null = null;
 const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveSettingsOverlayMotion,
@@ -168,14 +174,6 @@ const tabIcons = Object.freeze({
   about: InfoIcon,
 });
 const settingsTabs = computed(() => shell.tabs.value.map((tab) => ({ ...tab, icon: tabIcons[tab.id] })));
-const pageComponents = Object.freeze({
-  general: GeneralSettingsPage,
-  interface: InterfaceSettingsPage,
-  apps: AppsSettingsPage,
-  about: AboutSettingsPage,
-});
-const activePageComponent = computed(() => pageComponents[activeTab.value] || GeneralSettingsPage);
-
 watch(isOpen, async (open) => {
   if (!open) return;
   await nextTick();
@@ -198,11 +196,11 @@ onBeforeUnmount(() => {
   themedSettingsPanel = null;
 });
 
-function resetSettingsContentScroll() {
+function resetSettingsContentScroll(): void {
   if (settingsContentRef.value) settingsContentRef.value.scrollTop = 0;
 }
 
-function handleSettingsPanelKeydown(event) {
+function handleSettingsPanelKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented) return;
   if (event.key === "Escape" && closeOpenFluentPopup()) {
     event.preventDefault();
@@ -212,26 +210,30 @@ function handleSettingsPanelKeydown(event) {
   handleModalKeydown(event, settingsPanelRef, shell.actions.close);
 }
 
-function handleSettingsPanelWindowKeydown(event) {
+function closeSettingsPanel(): void {
+  shell.actions.close();
+}
+
+function handleSettingsPanelWindowKeydown(event: KeyboardEvent): void {
   if (!isOpen.value || event.key !== "Escape" || !closeOpenFluentPopup()) return;
   event.preventDefault();
   event.stopPropagation();
 }
 
-function closeOpenFluentPopup() {
-  const listboxes = Array.from(settingsPanelRef.value?.querySelectorAll?.("fluent-listbox") || []);
+function closeOpenFluentPopup(): boolean {
+  const listboxes = Array.from(settingsPanelRef.value?.querySelectorAll<HTMLElement>("fluent-listbox") || []);
   const openListbox = listboxes.find((listbox) => listbox.matches(":popover-open"));
   if (openListbox) {
     openListbox.hidePopover?.();
-    openListbox.closest("fluent-dropdown")?.focus?.({ preventScroll: true });
+    openListbox.closest<HTMLElement>("fluent-dropdown")?.focus({ preventScroll: true });
     return true;
   }
 
-  const menus = Array.from(settingsPanelRef.value?.querySelectorAll?.("fluent-menu") || []);
+  const menus = Array.from(settingsPanelRef.value?.querySelectorAll<FluentMenuElement>("fluent-menu") || []);
   const openMenu = menus.find((menu) => menu.querySelector("[slot='trigger']")?.getAttribute("aria-expanded") === "true");
   if (!openMenu) return false;
   openMenu.closeMenu?.();
-  openMenu.querySelector("[slot='trigger']")?.focus?.({ preventScroll: true });
+  openMenu.querySelector<HTMLElement>("[slot='trigger']")?.focus({ preventScroll: true });
   return true;
 }
 

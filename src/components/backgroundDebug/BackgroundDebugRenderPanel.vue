@@ -149,7 +149,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { diagnosticClient } from "../../diagnostics/diagnosticClient.js";
 import { useLocalization } from "../../i18n/localization.js";
@@ -163,30 +163,38 @@ import {
   RENDER_PROBE_PIXELS_PHASE_DIFF,
   RENDER_PROBE_TARGET_ALL,
   getRenderProbeTargetOptions,
+  requireRenderProbeSummary,
   resolveRenderProbeDisplaySession,
 } from "./renderProbePanelModel.js";
+import type {
+  RenderProbeSummary,
+  RenderProbeTranslate,
+} from "./renderProbePanelModel.js";
 
-const props = defineProps({
-  active: {
-    type: Boolean,
-    default: false,
-  },
-});
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: false });
 const { resolvedLocale, t } = useLocalization();
+
+const renderProbeTranslate: RenderProbeTranslate = (key, params) => {
+  const values: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(params || {})) {
+    values[name] = typeof value === "string" || typeof value === "number" ? value : String(value ?? "");
+  }
+  return t(key, values);
+};
 
 const hasCopiedRenderJson = ref(false);
 const isActionBusy = ref(false);
 const isRefreshing = ref(false);
-const lastUpdatedAt = ref(null);
+const lastUpdatedAt = ref<number | null>(null);
 const renderProbeActionError = ref("");
 const renderProbeAutoFreeze = ref(true);
-const renderProbePixels = ref(RENDER_PROBE_PIXELS_OFF);
+const renderProbePixels = ref<string>(RENDER_PROBE_PIXELS_OFF);
 const renderProbeRefreshError = ref("");
-const renderProbeSummary = ref(null);
-const renderProbeTargetKind = ref(RENDER_PROBE_TARGET_ALL);
+const renderProbeSummary = ref<RenderProbeSummary | null>(null);
+const renderProbeTargetKind = ref<string>(RENDER_PROBE_TARGET_ALL);
 const renderProbeTargetValue = ref("");
-let copyStateTimer = null;
-let runtimePollTimer = null;
+let copyStateTimer: number | null = null;
+let runtimePollTimer: number | null = null;
 
 const renderProbeError = computed(() => renderProbeActionError.value || renderProbeRefreshError.value);
 const renderProbeReady = computed(() => Boolean(renderProbeSummary.value));
@@ -194,15 +202,15 @@ const renderProbeCanArm = computed(() => (
   renderProbeTargetKind.value === RENDER_PROBE_TARGET_ALL
   || Boolean(renderProbeTargetValue.value.trim())
 ));
-const renderProbeTargetOptions = computed(() => getRenderProbeTargetOptions(t));
+const renderProbeTargetOptions = computed(() => getRenderProbeTargetOptions(renderProbeTranslate));
 const renderProbeTargetInputLabel = computed(() => (
   renderProbeTargetOptions.value.find((option) => option.value === renderProbeTargetKind.value)?.label
   || t("debug.render.target.value")
 ));
 const renderProbeDisplaySession = computed(() => resolveRenderProbeDisplaySession(renderProbeSummary.value));
-const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value, t));
-const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value, t));
-const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value, t));
+const renderProbeStatusRows = computed(() => buildRenderProbeStatusRows(renderProbeSummary.value, renderProbeTranslate));
+const renderProbePhaseRows = computed(() => buildRenderProbePhaseRows(renderProbeDisplaySession.value, renderProbeTranslate));
+const renderProbeCandidateRows = computed(() => buildRenderProbeCandidateRows(renderProbeDisplaySession.value, renderProbeTranslate));
 const renderProbePixelComparison = computed(() => renderProbeDisplaySession.value?.pixelComparison || null);
 const renderProbeCopyButtonLabel = computed(() => t(hasCopiedRenderJson.value ? "debug.common.copied" : "debug.common.copyJson"));
 const pixelComparisonSummary = computed(() => {
@@ -230,19 +238,19 @@ async function refreshRenderProbeSummary() {
   if (isRefreshing.value) return;
   isRefreshing.value = true;
   try {
-    const summary = await diagnosticClient.invoke("render", "report.summary");
-    if (!summary || typeof summary !== "object") throw new Error(t("debug.render.errors.invalidSummary"));
-    renderProbeSummary.value = summary;
+    renderProbeSummary.value = requireRenderProbeSummary(
+      await diagnosticClient.invoke("render", "report.summary"),
+    );
     renderProbeRefreshError.value = "";
     lastUpdatedAt.value = Date.now();
   } catch (error) {
-    renderProbeRefreshError.value = formatDiagnosticActionError(t("debug.common.refresh"), error, t);
+    renderProbeRefreshError.value = formatDiagnosticActionError(t("debug.common.refresh"), error, renderProbeTranslate);
   } finally {
     isRefreshing.value = false;
   }
 }
 
-async function runRenderProbeAction(action, operation, params = {}) {
+async function runRenderProbeAction(action: string, operation: string, params: Readonly<Record<string, unknown>> = {}): Promise<void> {
   if (isActionBusy.value) return;
   isActionBusy.value = true;
   try {
@@ -250,7 +258,7 @@ async function runRenderProbeAction(action, operation, params = {}) {
     renderProbeActionError.value = "";
     await refreshRenderProbeSummary();
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError(action, error, t);
+    renderProbeActionError.value = formatDiagnosticActionError(action, error, renderProbeTranslate);
   } finally {
     isActionBusy.value = false;
   }
@@ -291,11 +299,11 @@ async function copyRenderProbeJson() {
     markCopied();
     renderProbeActionError.value = "";
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.copy"), error, t);
+    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.copy"), error, renderProbeTranslate);
   }
 }
 
-function downloadText(content, filename, mediaType = "text/plain") {
+function downloadText(content: string, filename: string, mediaType = "text/plain"): void {
   if (
     typeof document === "undefined"
     || typeof URL === "undefined"
@@ -319,7 +327,7 @@ async function downloadRenderProbeJson() {
     downloadText(content, `lumeria-render-trace-${Date.now()}.json`, "application/json");
     renderProbeActionError.value = "";
   } catch (error) {
-    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.download"), error, t);
+    renderProbeActionError.value = formatDiagnosticActionError(t("debug.render.actions.download"), error, renderProbeTranslate);
   }
 }
 

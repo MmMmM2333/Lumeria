@@ -117,7 +117,7 @@
             name="acrylicDebugOverride"
             type="checkbox"
             :checked="isOverrideEnabled"
-            @change="setAcrylicDebugOverrideEnabled($event.target.checked)"
+            @change="setAcrylicOverrideFromEvent"
           >
           <span>{{ t("debug.acrylic.override") }}</span>
         </label>
@@ -156,7 +156,7 @@
               name="kawaseDebugOverride"
               type="checkbox"
               :checked="isKawaseOverrideEnabled"
-              @change="setKawaseOverrideEnabled($event.target.checked)"
+              @change="setKawaseOverrideFromEvent"
             >
             <span>{{ t("debug.acrylic.overrideRadiusPass") }}</span>
           </label>
@@ -224,7 +224,7 @@
             name="desktopLayoutDebugOverride"
             type="checkbox"
             :checked="layoutParams.enabled"
-            @change="setLayoutDebugEnabled($event.target.checked)"
+            @change="setLayoutDebugEnabledFromEvent"
           >
           <span>{{ t("debug.layout.override") }}</span>
         </label>
@@ -234,7 +234,7 @@
             name="desktopDragHitZonesDebug"
             type="checkbox"
             :checked="layoutParams.dragHitZonesEnabled"
-            @change="setDragHitZonesDebugEnabled($event.target.checked)"
+            @change="setDragHitZonesDebugEnabledFromEvent"
           >
           <span>{{ t("debug.layout.showDragHitZones") }}</span>
         </label>
@@ -355,7 +355,7 @@
             type="checkbox"
             :checked="motionRuntimeDebugEnabled"
             :disabled="motionReplayCaptureActive"
-            @change="setMotionRuntimeDebugEnabled($event.target.checked)"
+            @change="setMotionRuntimeDebugEnabledFromEvent"
           >
           <span>{{ t("debug.motion.settings.enableDiagnostics") }}</span>
         </label>
@@ -366,7 +366,7 @@
             type="checkbox"
             :checked="motionRecordEnabled"
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
-            @change="setMotionRecordEnabled($event.target.checked)"
+            @change="setMotionRecordEnabledFromEvent"
           >
           <span>{{ t("debug.motion.settings.recordHistory") }}</span>
         </label>
@@ -377,7 +377,7 @@
             type="checkbox"
             :checked="motionOverlayEnabled"
             :disabled="motionReplayCaptureActive || !motionRuntimeDebugEnabled"
-            @change="setMotionOverlayEnabled($event.target.checked)"
+            @change="setMotionOverlayEnabledFromEvent"
           >
           <span>{{ t("debug.motion.settings.showOverlay") }}</span>
         </label>
@@ -490,7 +490,7 @@
               type="button"
               class="background-debug-button"
               :disabled="!motionReplayCaptureActive"
-              @click="stopMotionReplayCapture"
+              @click="stopMotionReplayCapture()"
             >
               {{ t("debug.motion.actions.stopCapture") }}
             </button>
@@ -636,8 +636,9 @@
   </aside>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
+import type { Ref } from "vue";
 import { useLocalization } from "../i18n/localization.js";
 import BackgroundDebugLiveDesktopPanel from "./backgroundDebug/BackgroundDebugLiveDesktopPanel.vue";
 import BackgroundDebugMotionInspector from "./backgroundDebug/BackgroundDebugMotionInspector.vue";
@@ -714,16 +715,34 @@ import {
   normalizeMotionFilterPreset,
   normalizeMotionCustomSeconds,
   normalizeMotionTimeScale,
+  requireMotionDebugReportInput,
+  requireMotionDiagnosticDescription,
+  requireMotionDiagnosticSnapshot,
+  requireMotionReplayCaptureStatus,
+  requireMotionRuntimeDebugConfig,
   resolveMotionRecordWindowMs,
+} from "./backgroundDebug/motionDebugPanelModel.js";
+import type {
+  MotionDebugReportInput,
+  MotionReplayCaptureTraceInput,
+  MotionReplayCaptureStatusInput,
 } from "./backgroundDebug/motionDebugPanelModel.js";
 import {
   assertMotionReplayImportSize,
   MOTION_REPLAY_IMPORT_MAX_BYTES,
 } from "./backgroundDebug/motionReplayViewerModel.js";
+import type {
+  DiagnosticTranslate,
+  MotionReplayStepDirection,
+} from "./backgroundDebug/motionReplayViewerModel.js";
 import {
   addMotionReplayBookmark,
   MOTION_REPLAY_BOOKMARK_LIMIT,
   removeMotionReplayBookmark,
+} from "./backgroundDebug/motionReplayBookmarkModel.js";
+import type {
+  MotionReplayBookmark,
+  MotionReplayBookmarkInput,
 } from "./backgroundDebug/motionReplayBookmarkModel.js";
 import {
   estimateMotionCaptureProfileSize,
@@ -731,16 +750,33 @@ import {
   MOTION_CAPTURE_ALLOWED_PROPS,
   MOTION_CAPTURE_DEFAULT_SAMPLE_HZ,
 } from "./backgroundDebug/motionCaptureProfileModel.js";
+import type {
+  MotionCaptureAllowedProp,
+  MotionCaptureProfile,
+  MotionCaptureTargetFilters,
+} from "./backgroundDebug/motionCaptureProfileModel.js";
 import {
   MOTION_FOCUSED_DEBUG_SCHEMA,
 } from "./backgroundDebug/motionFocusedDebugExportModel.js";
+import type { MotionFocusedDebugExportOptions } from "./backgroundDebug/motionFocusedDebugExportModel.js";
 import {
   MOTION_TRACK_CHART_DISPLAY_NORMALIZED,
   MOTION_TRACK_CHART_DISPLAY_RAW,
   MOTION_TRACK_CHART_SERIES_KEYS,
   normalizeMotionTrackChartSeriesVisibility,
 } from "./backgroundDebug/motionTrackChartModel.js";
+import type {
+  MotionTrackChartDisplayMode,
+  MotionTrackChartModel,
+  MotionTrackChartSeriesKey,
+  MotionTrackChartWindow,
+} from "./backgroundDebug/motionTrackChartModel.js";
 import { motionDiagnosticSession } from "../diagnostics/motionDiagnosticSession.js";
+import type {
+  MotionReplayDocument,
+  MotionReplayOverlayRowsView,
+} from "../diagnostics/motionReplayDocument.js";
+import type { MotionReplayAnalysisFinding } from "../diagnostics/motionReplayAnalyzer.js";
 import {
   buildMotionDebugWorkspaceCaptureProfile,
   closeMotionDebugWorkspace,
@@ -762,9 +798,17 @@ import {
   toggleMotionDebugWorkspaceCaptureProp,
   toggleMotionDebugWorkspacePin,
 } from "./backgroundDebug/motionDebugWorkspaceModel.js";
+import type {
+  MotionDebugWorkspaceMode,
+  MotionDebugWorkspaceSession,
+} from "./backgroundDebug/motionDebugWorkspaceModel.js";
 import { normalizeMotionReplayCaptureSeconds } from "../rendering/motionPort.js";
-import { diagnosticClient } from "../diagnostics/diagnosticClient.js";
+import type { MotionDebugConfig, MotionTraceRecord } from "../rendering/motionPort.js";
+import { diagnosticClient, isDiagnosticArtifactDelivery } from "../diagnostics/diagnosticClient.js";
+import type { DiagnosticArtifactDelivery } from "../diagnostics/diagnosticProtocol.js";
 import { formatDiagnosticActionError } from "./backgroundDebug/diagnosticUiError.js";
+import type { DesktopLayoutDebugParams, DesktopLayoutDebugParamsInput } from "./backgroundDebug/desktopLayoutDebugSettings.js";
+import type { BlurKernel } from "../domain/backgroundEffectPlan.js";
 
 const DEBUG_PANEL_DOCK_STORAGE_KEY = "lumeriaBackgroundDebugPanelDock";
 const consumeDiagnosticArtifactText = diagnosticClient.consumeArtifactText;
@@ -775,30 +819,98 @@ const readDiagnosticArtifactJsonText = diagnosticClient.readArtifactJsonText;
 const readDiagnosticArtifactValue = diagnosticClient.readArtifactValue;
 const releaseDiagnosticArtifact = diagnosticClient.releaseArtifact;
 
-const props = defineProps({
-  desktopLayoutDebugParams: {
-    type: Object,
-    default: () => ({ ...DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS }),
-  },
-  dialogState: {
-    type: Object,
-    default: null,
-  },
-  resetDesktopLayoutDebugParams: {
-    type: Function,
-    default: null,
-  },
-  state: {
-    type: Object,
-    default: null,
-  },
-  updateDesktopLayoutDebugParams: {
-    type: Function,
-    default: null,
-  },
-});
+interface ValueRef<T> { value: T }
+interface DebugStatusDialogInput extends Readonly<Record<string, unknown>> {
+  cancelText?: string;
+  confirmText: string;
+  intent: string;
+  label?: string;
+  message: string;
+  suggestion?: string;
+  title: string;
+}
+interface DebugDialogState {
+  closeTransientNotice?: () => void;
+  closeWarningDialog?: () => void;
+  openWarningDialog?: (input: DebugStatusDialogInput) => void;
+  showLayoutLoadFailed?: (input: Readonly<Record<string, unknown>>) => void;
+  showLayoutLoadRecovered?: () => void;
+  showLayoutSaveFailed?: (input: Readonly<Record<string, unknown>>) => void;
+  showLayoutSaveRecovered?: () => void;
+  transientNotice?: ValueRef<{ title?: string } | null>;
+}
+interface BackgroundDebugState {
+  draftBackgroundAcrylicBlurStrength?: ValueRef<unknown>;
+  draftBackgroundBlurStrength?: ValueRef<unknown>;
+  draftBackgroundEffect?: ValueRef<unknown>;
+  liveDesktopBackgroundSupport?: ValueRef<Readonly<Record<string, unknown>> | null>;
+  syncLiveDesktopBackgroundRuntime?: () => unknown;
+}
+interface BackgroundDebugPanelProps {
+  desktopLayoutDebugParams?: DesktopLayoutDebugParams;
+  dialogState?: DebugDialogState | null;
+  resetDesktopLayoutDebugParams?: (() => void) | null;
+  state?: BackgroundDebugState | null;
+  updateDesktopLayoutDebugParams?: ((patch: DesktopLayoutDebugParamsInput) => void) | null;
+}
+interface MotionWorkspaceDockResizeState {
+  pointerId: number;
+  startClientX: number;
+  startWidthPx: number;
+  target: Element;
+}
+interface StatusRow { label: string; value: string; wide?: boolean }
+interface ReplayDocumentUseOptions { updateImportText?: boolean }
+interface ReplayTimeOptions { pause?: boolean }
+interface ReplayCaptureStopOptions { restore?: boolean }
+interface LiveDesktopSyncOptions { delay?: number }
+interface MotionTargetDisplayInput {
+  kind?: string;
+  label?: string;
+  layer?: string;
+  sourceLabel?: string;
+  targetId?: unknown;
+}
+interface MotionTrackDisplayInput extends MotionTargetDisplayInput {
+  lane?: string;
+  laneKey?: string;
+  prop?: string;
+  timeMs?: unknown;
+}
+type DebugPanelDock = "left" | "right";
+type DebugPanelTab = "acrylic" | "layout" | "liveDesktop" | "motion" | "notice" | "render";
+type AcrylicDebugParams = ReturnType<typeof useAcrylicDebugParams>;
+type AcrylicNumberKey = Exclude<keyof AcrylicDebugParams, "tintColor">;
+type KawaseDebugParams = ReturnType<typeof useKawaseDebugParams>;
+type KawaseNumberKey = Exclude<keyof KawaseDebugParams, "kernel">;
+type LayoutNumberKey = Exclude<keyof DesktopLayoutDebugParams, "dragHitZonesEnabled" | "enabled">;
+type MotionLayerTreeRow = ReturnType<typeof buildMotionLayerTreeRows>[number];
+type MotionCurveChartGroup = ReturnType<typeof buildMotionCurveChartGroups>[number];
+type MotionReplayOverlayRow = MotionReplayOverlayRowsView[number];
+type MotionTrackChartTrack = MotionTrackChartModel["tracks"][number];
+type MotionTrackChartMarker = MotionTrackChartTrack["eventMarkers"][number];
+type MotionCaptureTargetFilterKey = keyof MotionCaptureTargetFilters;
+type ClipboardTimerName = "acrylic" | "motionFocused" | "motionFull" | "motionReplayInterval" | "motionReplayTrace" | "motionSummary";
+interface NumberSlider<Key extends PropertyKey> {
+  digits: number;
+  key: Key;
+  labelKey: string;
+  max: number;
+  min: number;
+  step: number;
+}
+
+const props = defineProps<BackgroundDebugPanelProps>();
 
 const { n, resolvedLocale, t } = useLocalization();
+
+const diagnosticTranslate: DiagnosticTranslate = (key, values) => {
+  const params: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(values || {})) {
+    params[name] = typeof value === "string" || typeof value === "number" ? value : String(value ?? "");
+  }
+  return t(key, params);
+};
 
 const params = useAcrylicDebugParams();
 const isOverrideEnabled = useAcrylicDebugOverrideEnabled();
@@ -806,8 +918,8 @@ const kawaseParams = useKawaseDebugParams();
 const isKawaseOverrideEnabled = useKawaseDebugOverrideEnabled();
 const layoutParams = computed(() => props.desktopLayoutDebugParams || DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS);
 const isCollapsed = ref(true);
-const debugPanelDock = ref(readDebugPanelDock());
-const activePanel = ref("acrylic");
+const debugPanelDock = ref<DebugPanelDock>(readDebugPanelDock());
+const activePanel = ref<DebugPanelTab>("acrylic");
 const canDebugLiveDesktop = computed(() => isLiveDesktopExperimentEnabled());
 const canDebugMotion = computed(() => Boolean(import.meta.env.DEV));
 const canDebugRender = computed(() => Boolean(import.meta.env.DEV));
@@ -836,21 +948,21 @@ const motionCustomSeconds = ref(30);
 const motionTimeScale = ref(1);
 const motionFilterPreset = ref("all");
 const motionFilterQuery = ref("");
-const motionSnapshot = ref({});
-const motionReport = ref({});
+const motionSnapshot = ref<MotionDebugReportInput>({});
+const motionReport = ref<MotionDebugReportInput>({});
 const motionActionError = ref("");
 const motionRefreshError = ref("");
 const motionReplayCaptureSeconds = ref(30);
-const motionReplayCaptureStatus = ref({
+const motionReplayCaptureStatus = ref<MotionReplayCaptureStatusInput>({
   active: false,
   captureProfile: null,
   sampleHz: 60,
   seconds: 30,
   startedAt: null,
 });
-const motionReplayCaptureArtifact = ref(null);
-const motionReplayCaptureSummary = ref(null);
-const motionReplayDocument = ref(null);
+const motionReplayCaptureArtifact = ref<DiagnosticArtifactDelivery | null>(null);
+const motionReplayCaptureSummary = ref<MotionReplayCaptureTraceInput | null>(null);
+const motionReplayDocument = ref<MotionReplayDocument | null>(null);
 const motionReplayImportText = ref("");
 const motionReplayImportError = ref("");
 const motionReplayCurrentTimeMs = ref(0);
@@ -858,24 +970,24 @@ const motionReplayFilterQuery = ref("");
 const motionReplayPlaying = ref(false);
 const motionReplayIntervalStartMs = ref(0);
 const motionReplayIntervalEndMs = ref(0);
-const motionReplayBookmarks = ref([]);
-const motionTrackChartDisplayMode = ref(MOTION_TRACK_CHART_DISPLAY_RAW);
+const motionReplayBookmarks = ref<MotionReplayBookmark[]>([]);
+const motionTrackChartDisplayMode = ref<MotionTrackChartDisplayMode>(MOTION_TRACK_CHART_DISPLAY_RAW);
 const motionTrackChartSeriesVisibility = ref(normalizeMotionTrackChartSeriesVisibility());
-const motionTrackChartBrushAnchorMs = ref(null);
-const motionTrackChartBrushPointerId = ref(null);
-const motionTrackChartZoomStartMs = ref(null);
-const motionTrackChartZoomEndMs = ref(null);
-const motionWorkspaceDockResize = ref(null);
-const motionWorkspaceSession = ref(createMotionDebugWorkspaceSession({
+const motionTrackChartBrushAnchorMs = ref<number | null>(null);
+const motionTrackChartBrushPointerId = ref<number | null>(null);
+const motionTrackChartZoomStartMs = ref<number | null>(null);
+const motionTrackChartZoomEndMs = ref<number | null>(null);
+const motionWorkspaceDockResize = ref<MotionWorkspaceDockResizeState | null>(null);
+const motionWorkspaceSession = ref<MotionDebugWorkspaceSession>(createMotionDebugWorkspaceSession({
   viewportWidth: typeof window === "undefined" ? undefined : window.innerWidth,
 }));
-const noticeDebugRows = computed(() => [
+const noticeDebugRows = computed<StatusRow[]>(() => [
   {
     label: t("debug.notice.transient"),
     value: props.dialogState?.transientNotice?.value?.title || t("debug.common.none"),
   },
 ]);
-const statusDialogDebugSamples = computed(() => [
+const statusDialogDebugSamples = computed<DebugStatusDialogInput[]>(() => [
   {
     intent: "warning",
     label: t("debug.notice.dialogs.actions.warning"),
@@ -907,16 +1019,16 @@ const statusDialogDebugSamples = computed(() => [
     confirmText: t("notices.acknowledge"),
   },
 ]);
-let acrylicCopyStateTimer = null;
-let motionFocusedCopyStateTimer = null;
-let motionFullCopyStateTimer = null;
-let motionRuntimePollTimer = null;
-let motionReplayIntervalCopyStateTimer = null;
+let acrylicCopyStateTimer: number | null = null;
+let motionFocusedCopyStateTimer: number | null = null;
+let motionFullCopyStateTimer: number | null = null;
+let motionRuntimePollTimer: number | null = null;
+let motionReplayIntervalCopyStateTimer: number | null = null;
 let motionReplayPlaybackLastTime = 0;
-let motionReplayPlaybackTimer = null;
-let motionReplayTraceCopyStateTimer = null;
-let motionSummaryCopyStateTimer = null;
-let kawaseLiveDesktopSyncTimer = null;
+let motionReplayPlaybackTimer: number | null = null;
+let motionReplayTraceCopyStateTimer: number | null = null;
+let motionSummaryCopyStateTimer: number | null = null;
+let kawaseLiveDesktopSyncTimer: number | null = null;
 
 const motionCaptureProfiles = getMotionCaptureProfiles();
 const motionCaptureAllowedProps = MOTION_CAPTURE_ALLOWED_PROPS;
@@ -940,13 +1052,13 @@ const sliders = [
   { key: "tintStrength", labelKey: "debug.acrylic.fields.tintStrength", min: 0, max: 0.6, step: 0.01, digits: 2 },
   { key: "noise", labelKey: "debug.acrylic.fields.noise", min: 0, max: 0.06, step: 0.001, digits: 3 },
   { key: "seed", labelKey: "debug.acrylic.fields.seed", min: 0, max: 100, step: 0.01, digits: 2 },
-];
+] as const satisfies readonly NumberSlider<AcrylicNumberKey>[];
 const layoutSliders = [
   { key: "hostMaxHeightPx", labelKey: "debug.layout.fields.hostMaxHeight", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostMaxHeightPx.max, step: 10, digits: 0 },
   { key: "hostHeightOffsetPx", labelKey: "debug.layout.fields.hostHeightOffset", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.hostHeightOffsetPx.max, step: 4, digits: 0 },
   { key: "mainPaddingYPx", labelKey: "debug.layout.fields.mainPaddingY", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.mainPaddingYPx.max, step: 1, digits: 0 },
   { key: "gridPaddingTopPx", labelKey: "debug.layout.fields.gridPaddingTop", min: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.min, max: DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS.gridPaddingTopPx.max, step: 1, digits: 0 },
-];
+] as const satisfies readonly NumberSlider<LayoutNumberKey>[];
 const kawaseSliders = [
   {
     key: "passCount",
@@ -964,7 +1076,7 @@ const kawaseSliders = [
     step: 0.01,
     digits: 2,
   },
-];
+] as const satisfies readonly NumberSlider<KawaseNumberKey>[];
 const gaussianSliders = [
   {
     key: "gaussianRadiusPx",
@@ -974,7 +1086,7 @@ const gaussianSliders = [
     step: 0.25,
     digits: 2,
   },
-];
+] as const satisfies readonly NumberSlider<KawaseNumberKey>[];
 const autoBlurKernelSliders = [
   {
     key: "testStrength",
@@ -1017,7 +1129,7 @@ const autoBlurKernelSliders = [
     digits: 2,
   },
   ...kawaseSliders,
-];
+] as const satisfies readonly NumberSlider<KawaseNumberKey>[];
 
 const tintHex = computed(() => rgbArrayToHex(params.tintColor));
 const activeBlurKernelSliders = computed(() => (
@@ -1093,20 +1205,20 @@ const layoutDebugRows = computed(() => {
     { label: t("debug.layout.fields.gridTop"), value: `${Number(params.gridPaddingTopPx).toFixed(0)}px`, wide: true },
   ];
 });
-const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value, t));
+const motionOverviewRows = computed(() => buildMotionOverviewRows(motionSnapshot.value, diagnosticTranslate));
 const motionAnimationRows = computed(() => buildMotionAnimationRows(motionSnapshot.value));
-const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value, 6, t));
-const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6, t));
+const motionCancelReasonRows = computed(() => buildMotionCancelReasonRows(motionSnapshot.value, 6, diagnosticTranslate));
+const motionWarningRows = computed(() => buildMotionWarningRows(motionSnapshot.value, 6, diagnosticTranslate));
 const motionWindowSeconds = computed(() => resolveMotionRecordWindowMs(motionWindowPreset.value, motionCustomSeconds.value) / 1000);
 const motionFilters = computed(() => ({
   preset: motionFilterPreset.value,
   query: motionFilterQuery.value,
 }));
-const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value, t));
-const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value, undefined, t));
+const motionFilterSummary = computed(() => buildMotionFilterSummary(motionSnapshot.value, motionFilters.value, diagnosticTranslate));
+const motionLayerTreeRows = computed(() => buildMotionLayerTreeRows(motionSnapshot.value, motionFilters.value, undefined, diagnosticTranslate));
 const motionPropertyRows = computed(() => buildMotionPropertyRows(motionSnapshot.value, motionFilters.value));
 const motionTimelineGroups = computed(() => buildMotionTimelineGroups(motionReport.value, motionFilters.value));
-const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value, { t }));
+const motionCurveChartGroups = computed(() => buildMotionCurveChartGroups(motionReport.value, motionFilters.value, { t: diagnosticTranslate }));
 const motionCaptureProfile = computed(() => buildMotionDebugWorkspaceCaptureProfile(motionWorkspaceSession.value));
 const motionReplayCaptureEstimate = computed(() => estimateMotionCaptureProfileSize(
   motionSnapshot.value,
@@ -1123,7 +1235,7 @@ const motionReplayCaptureRows = computed(() => buildMotionReplayCaptureRows(
     actualBytes: motionReplayCaptureArtifact.value?.artifact?.byteLength || 0,
     estimate: motionReplayCaptureEstimate.value,
     profile: motionCaptureProfile.value,
-    t,
+    t: diagnosticTranslate,
   }
 ));
 const motionCaptureSelectedPropCount = computed(() => motionCaptureProfile.value.propAllowlist.length);
@@ -1159,7 +1271,7 @@ const motionReplayFilters = computed(() => ({
 const motionReplayOverviewRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("overview", {
     locale: resolvedLocale.value,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : [
@@ -1170,7 +1282,7 @@ const motionReplayFilterSummary = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("filter-summary", {
     filters: motionReplayFilters.value,
     locale: resolvedLocale.value,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : { query: "", text: t("debug.motion.counts.propertiesEvents", { events: 0, properties: 0 }) });
@@ -1178,7 +1290,7 @@ const motionReplayFrameRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("frame-rows", {
     filters: motionReplayFilters.value,
     locale: resolvedLocale.value,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
@@ -1186,7 +1298,7 @@ const motionReplayEventRows = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("event-rows", {
     filters: motionReplayFilters.value,
     locale: resolvedLocale.value,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
@@ -1194,7 +1306,7 @@ const motionReplayCurveGroups = computed(() => motionReplayDocument.value
   ? motionReplayDocument.value.getView("curve-groups", {
     filters: motionReplayFilters.value,
     locale: resolvedLocale.value,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
@@ -1204,7 +1316,7 @@ const motionReplayOverlayRows = computed(() => motionReplayDocument.value
     locale: resolvedLocale.value,
     selectedTarget: motionWorkspaceSession.value.selectedTarget,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
-    t,
+    t: diagnosticTranslate,
     timeMs: motionReplayCurrentTimeMs.value,
   })
   : []);
@@ -1229,7 +1341,7 @@ const motionTrackChartModel = computed(() => motionReplayDocument.value
     locale: resolvedLocale.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
     seriesVisibility: motionTrackChartSeriesVisibility.value,
-    t,
+    t: diagnosticTranslate,
     zoomWindow: motionTrackChartZoomWindow.value,
   })
   : null);
@@ -1314,7 +1426,7 @@ const motionInspectorModel = computed(() => motionReplayDocument.value
     selectedTarget: motionWorkspaceSession.value.selectedTarget,
     selectedTimeMs: motionWorkspaceSelectedTimeMs.value,
     selectedTrack: motionWorkspaceSession.value.selectedTrack,
-    t,
+    t: diagnosticTranslate,
   })
   : null);
 const motionInspectorStatusRows = computed(() => {
@@ -1374,32 +1486,75 @@ const motionFocusedDebugScopeRows = computed(() => [
   },
 ]);
 
-function formatValue(value, digits) {
+function requireInputElement(event: Event): HTMLInputElement {
+  if (event.currentTarget instanceof HTMLInputElement) return event.currentTarget;
+  throw new TypeError("Background debug control event currentTarget must be an input element");
+}
+
+function requireEventCurrentElement(event: Event, label: string): Element {
+  if (event.currentTarget instanceof Element) return event.currentTarget;
+  throw new TypeError(`${label} event currentTarget must be an element`);
+}
+
+function requireEventTargetElement(event: Event, label: string): Element {
+  if (event.target instanceof Element) return event.target;
+  throw new TypeError(`${label} event target must be an element`);
+}
+
+function setAcrylicOverrideFromEvent(event: Event): void {
+  setAcrylicDebugOverrideEnabled(requireInputElement(event).checked);
+}
+
+function setKawaseOverrideFromEvent(event: Event): void {
+  setKawaseOverrideEnabled(requireInputElement(event).checked);
+}
+
+function setLayoutDebugEnabledFromEvent(event: Event): void {
+  setLayoutDebugEnabled(requireInputElement(event).checked);
+}
+
+function setDragHitZonesDebugEnabledFromEvent(event: Event): void {
+  setDragHitZonesDebugEnabled(requireInputElement(event).checked);
+}
+
+function setMotionRuntimeDebugEnabledFromEvent(event: Event): void {
+  setMotionRuntimeDebugEnabled(requireInputElement(event).checked);
+}
+
+function setMotionRecordEnabledFromEvent(event: Event): void {
+  setMotionRecordEnabled(requireInputElement(event).checked);
+}
+
+function setMotionOverlayEnabledFromEvent(event: Event): void {
+  setMotionOverlayEnabled(requireInputElement(event).checked);
+}
+
+function formatValue(value: unknown, digits: number): string {
   return Number(value).toFixed(digits);
 }
 
-function formatDebugCount(value) {
+function formatDebugCount(value: unknown): string {
   const count = Math.max(0, Math.floor(Number(value) || 0));
   return n(count, "decimal");
 }
 
-function formatMotionChartStat(value) {
+function formatMotionChartStat(value: unknown): string {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(2) : "-";
 }
 
-function formatMotionReplayTime(value) {
+function formatMotionReplayTime(value: unknown): string {
   const number = Number(value);
   return Number.isFinite(number) ? `${number.toFixed(0)}ms` : "-";
 }
 
-function formatMotionTrackChartValue(value) {
+function formatMotionTrackChartValue(value: unknown): string {
   const number = Number(value);
   if (!Number.isFinite(number)) return "-";
   return number.toFixed(2);
 }
 
-function clampMotionTrackChartValue(value, min, max) {
+function clampMotionTrackChartValue(value: unknown, min: unknown, max: unknown): number {
   const number = Number(value);
   const lower = Number.isFinite(Number(min)) ? Number(min) : 0;
   const upper = Math.max(lower, Number.isFinite(Number(max)) ? Number(max) : lower);
@@ -1407,7 +1562,7 @@ function clampMotionTrackChartValue(value, min, max) {
   return Math.min(upper, Math.max(lower, number));
 }
 
-function getMotionTrackChartTimePercent(timeMs, zoomWindow = motionTrackChartZoomWindow.value) {
+function getMotionTrackChartTimePercent(timeMs: unknown, zoomWindow: MotionTrackChartWindow = motionTrackChartZoomWindow.value): number {
   const startMs = Number(zoomWindow?.startMs) || 0;
   const endMs = Number(zoomWindow?.endMs) || startMs;
   const span = endMs - startMs;
@@ -1415,47 +1570,48 @@ function getMotionTrackChartTimePercent(timeMs, zoomWindow = motionTrackChartZoo
   return clampMotionTrackChartValue(((Number(timeMs) - startMs) / span) * 100, 0, 100);
 }
 
-function readMotionTrackChartPointerTime(event) {
+function readMotionTrackChartPointerTime(event: PointerEvent): number | null {
+  const target = requireEventCurrentElement(event, "Motion chart pointer");
   const chart = motionTrackChartModel.value;
-  const target = event.currentTarget;
-  const rect = target?.getBoundingClientRect?.();
-  if (!chart || !rect || rect.width <= 0) return null;
+  const rect = target.getBoundingClientRect();
+  if (!chart || rect.width <= 0) return null;
   const ratio = clampMotionTrackChartValue((event.clientX - rect.left) / rect.width, 0, 1);
   const zoom = chart.zoomWindow;
   return zoom.startMs + ratio * (zoom.endMs - zoom.startMs);
 }
 
-function captureMotionTrackChartPointer(target, pointerId) {
+function captureMotionTrackChartPointer(target: Element, pointerId: number): void {
   try {
-    target?.setPointerCapture?.(pointerId);
-  } catch {
-    // Synthetic pointer events in tests may not have a browser-owned pointer id.
+    target.setPointerCapture(pointerId);
+  } catch (error) {
+    console.debug("Motion chart pointer capture was unavailable", error);
   }
 }
 
-function releaseMotionTrackChartPointer(target, pointerId) {
+function releaseMotionTrackChartPointer(target: Element, pointerId: number): void {
   try {
-    target?.releasePointerCapture?.(pointerId);
-  } catch {
-    // The pointer may already be released by the browser.
+    target.releasePointerCapture(pointerId);
+  } catch (error) {
+    console.debug("Motion chart pointer capture was already released", error);
   }
 }
 
-function getMotionWorkspaceViewportWidth() {
+function getMotionWorkspaceViewportWidth(): number | undefined {
   return typeof window === "undefined" ? undefined : window.innerWidth;
 }
 
-function isMotionWorkspaceEditableTarget(target) {
-  return Boolean(target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])"));
+function isMotionWorkspaceEditableTarget(target: EventTarget | null): boolean {
+  return Boolean(target instanceof Element
+    && target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])"));
 }
 
-function resizeMotionWorkspaceDockTo(widthPx) {
+function resizeMotionWorkspaceDockTo(widthPx: unknown): void {
   motionWorkspaceSession.value = resizeMotionDebugWorkspaceDock(motionWorkspaceSession.value, widthPx, {
     viewportWidth: getMotionWorkspaceViewportWidth(),
   });
 }
 
-function stepMotionWorkspaceDockWidth(direction, event = {}) {
+function stepMotionWorkspaceDockWidth(direction: number, event: Pick<KeyboardEvent, "shiftKey">): void {
   const step = event.shiftKey ? MOTION_WORKSPACE_DOCK_RESIZE_FAST_STEP_PX : MOTION_WORKSPACE_DOCK_RESIZE_STEP_PX;
   motionWorkspaceSession.value = resizeMotionDebugWorkspaceDockByDelta(
     motionWorkspaceSession.value,
@@ -1464,43 +1620,44 @@ function stepMotionWorkspaceDockWidth(direction, event = {}) {
   );
 }
 
-function releaseMotionWorkspaceDockResizePointer() {
+function releaseMotionWorkspaceDockResizePointer(): void {
   const state = motionWorkspaceDockResize.value;
   if (!state) return;
   try {
-    state.target?.releasePointerCapture?.(state.pointerId);
-  } catch {
-    // The pointer may already be released by the browser.
+    state.target.releasePointerCapture(state.pointerId);
+  } catch (error) {
+    console.debug("Motion workspace resize pointer was already released", error);
   }
 }
 
-function removeMotionWorkspaceDockResizeListeners() {
+function removeMotionWorkspaceDockResizeListeners(): void {
   if (typeof window === "undefined") return;
   window.removeEventListener("pointermove", updateMotionWorkspaceDockResize);
   window.removeEventListener("pointerup", endMotionWorkspaceDockResize);
   window.removeEventListener("pointercancel", cancelMotionWorkspaceDockResize);
 }
 
-function clearMotionWorkspaceDockResize() {
+function clearMotionWorkspaceDockResize(): void {
   releaseMotionWorkspaceDockResizePointer();
   removeMotionWorkspaceDockResizeListeners();
   motionWorkspaceDockResize.value = null;
 }
 
-function startMotionWorkspaceDockResize(event) {
+function startMotionWorkspaceDockResize(event: PointerEvent): void {
   if (motionWorkspaceFullscreen.value || event.button !== 0) return;
   event.preventDefault();
   clearMotionWorkspaceDockResize();
+  const target = requireEventCurrentElement(event, "Motion workspace resize");
   try {
-    event.currentTarget?.setPointerCapture?.(event.pointerId);
-  } catch {
-    // Synthetic pointer events in tests may not have a browser-owned pointer id.
+    target.setPointerCapture(event.pointerId);
+  } catch (error) {
+    console.debug("Motion workspace resize pointer capture was unavailable", error);
   }
   motionWorkspaceDockResize.value = {
     pointerId: event.pointerId,
     startClientX: Number(event.clientX) || 0,
     startWidthPx: motionWorkspaceSession.value.dockWidthPx,
-    target: event.currentTarget,
+    target,
   };
   if (typeof window === "undefined") return;
   window.addEventListener("pointermove", updateMotionWorkspaceDockResize);
@@ -1508,7 +1665,7 @@ function startMotionWorkspaceDockResize(event) {
   window.addEventListener("pointercancel", cancelMotionWorkspaceDockResize);
 }
 
-function updateMotionWorkspaceDockResize(event) {
+function updateMotionWorkspaceDockResize(event: PointerEvent): void {
   const state = motionWorkspaceDockResize.value;
   if (!state || event.pointerId !== state.pointerId) return;
   const clientX = Number(event.clientX);
@@ -1517,20 +1674,20 @@ function updateMotionWorkspaceDockResize(event) {
   resizeMotionWorkspaceDockTo(state.startWidthPx + state.startClientX - clientX);
 }
 
-function endMotionWorkspaceDockResize(event) {
+function endMotionWorkspaceDockResize(event: PointerEvent): void {
   const state = motionWorkspaceDockResize.value;
   if (!state || event.pointerId !== state.pointerId) return;
   updateMotionWorkspaceDockResize(event);
   clearMotionWorkspaceDockResize();
 }
 
-function cancelMotionWorkspaceDockResize(event) {
+function cancelMotionWorkspaceDockResize(event: PointerEvent): void {
   const state = motionWorkspaceDockResize.value;
   if (!state || event.pointerId !== state.pointerId) return;
   clearMotionWorkspaceDockResize();
 }
 
-function handleMotionWorkspaceResizeHandleKeydown(event) {
+function handleMotionWorkspaceResizeHandleKeydown(event: KeyboardEvent): void {
   if (motionWorkspaceFullscreen.value) return;
   if (event.key === "ArrowLeft") {
     event.preventDefault();
@@ -1547,7 +1704,7 @@ function handleMotionWorkspaceResizeHandleKeydown(event) {
   }
 }
 
-function handleMotionWorkspaceGlobalKeydown(event) {
+function handleMotionWorkspaceGlobalKeydown(event: KeyboardEvent): void {
   if (event.defaultPrevented || event.key !== "Escape" || !motionWorkspaceOpen.value) return;
   if (isMotionWorkspaceEditableTarget(event.target)) return;
   event.preventDefault();
@@ -1558,21 +1715,21 @@ function handleMotionWorkspaceGlobalKeydown(event) {
   }
 }
 
-function formatMotionWorkspaceTarget(target) {
+function formatMotionWorkspaceTarget(target: MotionTargetDisplayInput | null): string {
   if (!target) return t("debug.common.none");
   return target.label
     || target.sourceLabel
     || target.layer
     || target.kind
-    || t("debug.motion.values.targetWithId", { id: target.targetId ?? "-" });
+    || t("debug.motion.values.targetWithId", { id: target.targetId == null ? "-" : String(target.targetId) });
 }
 
-function formatMotionWorkspaceTrack(track) {
+function formatMotionWorkspaceTrack(track: MotionTrackDisplayInput | null): string {
   if (!track) return t("debug.common.none");
   return `${track.prop || t("debug.motion.values.unknownProperty")} / ${track.lane || "base"}`;
 }
 
-function formatMotionFocusedDebugSelectionLabel() {
+function formatMotionFocusedDebugSelectionLabel(): string {
   const targetLabel = motionWorkspaceSelectedTargetLabel.value;
   const trackLabel = motionWorkspaceSelectedTrackLabel.value;
   const none = t("debug.common.none");
@@ -1581,7 +1738,7 @@ function formatMotionFocusedDebugSelectionLabel() {
   return `${targetLabel} / ${trackLabel}`;
 }
 
-function formatMotionReplayBookmarkMeta(bookmark = {}) {
+function formatMotionReplayBookmarkMeta(bookmark: MotionReplayBookmark): string {
   const parts = [
     `${formatMotionReplayTime(bookmark.startMs)}..${formatMotionReplayTime(bookmark.endMs)}`,
   ];
@@ -1593,12 +1750,12 @@ function formatMotionReplayBookmarkMeta(bookmark = {}) {
   return parts.join(" / ");
 }
 
-function formatMotionCaptureFilterList(values = []) {
-  return (Array.isArray(values) ? values : []).join(", ");
+function formatMotionCaptureFilterList(values: readonly string[] = []): string {
+  return values.join(", ");
 }
 
-function formatMotionCaptureTargetFilterSummary(filters = {}) {
-  const parts = [];
+function formatMotionCaptureTargetFilterSummary(filters: Partial<MotionCaptureTargetFilters> = {}): string {
+  const parts: string[] = [];
   if (filters.layers?.length) parts.push(t("debug.motion.counts.filterLayers", { count: filters.layers.length }));
   if (filters.kinds?.length) parts.push(t("debug.motion.counts.filterKinds", { count: filters.kinds.length }));
   if (filters.sourceLabels?.length) parts.push(t("debug.motion.counts.filterSources", { count: filters.sourceLabels.length }));
@@ -1606,14 +1763,14 @@ function formatMotionCaptureTargetFilterSummary(filters = {}) {
   return parts.length ? parts.join(" / ") : t("debug.common.all");
 }
 
-function parseMotionCaptureFilterList(value) {
+function parseMotionCaptureFilterList(value: unknown): string[] {
   return String(value ?? "")
     .split(/[,\n;]/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 }
 
-function getMotionWorkspaceTargetKey(target) {
+function getMotionWorkspaceTargetKey(target: MotionTargetDisplayInput | null): string | null {
   if (!target) return null;
   if (target.targetId != null) return `id:${target.targetId}`;
   if (target.sourceLabel) return `source:${target.sourceLabel}`;
@@ -1621,19 +1778,19 @@ function getMotionWorkspaceTargetKey(target) {
   return null;
 }
 
-function isSameMotionWorkspaceTarget(a, b) {
+function isSameMotionWorkspaceTarget(a: MotionTargetDisplayInput | null, b: MotionTargetDisplayInput | null): boolean {
   const keyA = getMotionWorkspaceTargetKey(a);
   const keyB = getMotionWorkspaceTargetKey(b);
   if (keyA || keyB) return keyA === keyB;
   return Boolean(a?.layer && b?.layer && a.layer === b.layer);
 }
 
-function isMotionWorkspaceLayerSelected(row) {
+function isMotionWorkspaceLayerSelected(row: MotionLayerTreeRow): boolean {
   const target = motionWorkspaceSession.value.selectedTarget;
   return Boolean(target && target.kind === "layer" && target.layer === row.layer);
 }
 
-function isMotionWorkspaceTrackSelected(row) {
+function isMotionWorkspaceTrackSelected(row: MotionTrackDisplayInput): boolean {
   const track = motionWorkspaceSession.value.selectedTrack;
   if (!track) return false;
   return isSameMotionWorkspaceTarget(track, row)
@@ -1642,41 +1799,41 @@ function isMotionWorkspaceTrackSelected(row) {
     && track.laneKey === row.laneKey;
 }
 
-function isMotionWorkspaceTimelineEventSelected(event) {
+function isMotionWorkspaceTimelineEventSelected(event: MotionTrackDisplayInput): boolean {
   return isMotionWorkspaceTrackSelected(event)
     && Math.round(motionWorkspaceSession.value.selectedTimeMs) === Math.round(Number(event.timeMs) || 0);
 }
 
-function formatMotionCaptureProfileLabel(profile = {}) {
+function formatMotionCaptureProfileLabel(profile: MotionCaptureProfile): string {
   return profile.labelKey ? t(profile.labelKey) : (profile.label || profile.id || t("debug.common.none"));
 }
 
-function formatBlurKernelLabel(kernel) {
+function formatBlurKernelLabel(kernel: BlurKernel): string {
   if (kernel === BLUR_KERNEL_GAUSSIAN) return t("debug.acrylic.kernel.gaussian");
   if (kernel === BLUR_KERNEL_DUAL_KAWASE) return t("debug.acrylic.kernel.dualKawase");
   return t("debug.acrylic.kernel.auto");
 }
 
-function formatEffectLabel(effect) {
+function formatEffectLabel(effect: string): string {
   if (effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
   if (effect === BACKGROUND_EFFECT_BLUR) return "blur";
   return effect;
 }
 
-function syncMotionControlsFromConfig(config = {}) {
+function syncMotionControlsFromConfig(config: Partial<MotionDebugConfig> = {}): void {
   motionRuntimeDebugEnabled.value = Boolean(config.enabled);
   motionOverlayEnabled.value = Boolean(config.enabled && config.overlayEnabled);
   motionRecordEnabled.value = Boolean(config.enabled && config.recordHistory);
   motionTimeScale.value = normalizeMotionTimeScale(config.timeScale);
 }
 
-function recordMotionActionError(actionKey, error, technicalLabel) {
-  motionActionError.value = formatDiagnosticActionError(t(actionKey), error, t);
+function recordMotionActionError(actionKey: string, error: unknown, technicalLabel: string): void {
+  motionActionError.value = formatDiagnosticActionError(t(actionKey), error, diagnosticTranslate);
   console.warn(technicalLabel, error);
 }
 
-function recordMotionRefreshError(actionKey, error, technicalLabel) {
-  motionRefreshError.value = formatDiagnosticActionError(t(actionKey), error, t);
+function recordMotionRefreshError(actionKey: string, error: unknown, technicalLabel: string): void {
+  motionRefreshError.value = formatDiagnosticActionError(t(actionKey), error, diagnosticTranslate);
   console.warn(technicalLabel, error);
 }
 
@@ -1685,10 +1842,10 @@ async function refreshMotionSnapshot() {
   try {
     const currentConfig = motionSnapshot.value?.config || {};
     const includeDebugDetails = Boolean(currentConfig.enabled || motionRuntimeDebugEnabled.value);
-    const snapshot = await invokeDiagnosticTool("motion", "runtime.snapshot", {
+    const snapshot = requireMotionDiagnosticSnapshot(await invokeDiagnosticTool("motion", "runtime.snapshot", {
       includeChannels: includeDebugDetails,
       includeTargets: includeDebugDetails,
-    });
+    }));
     motionSnapshot.value = snapshot;
     if (snapshot?.capture) motionReplayCaptureStatus.value = snapshot.capture;
     syncMotionControlsFromConfig(snapshot?.config);
@@ -1715,7 +1872,7 @@ async function refreshMotionHistoryReport(_reason = "manual") {
       includeHistory: true,
       includeTargets: true,
     });
-    motionReport.value = await consumeDiagnosticArtifactValue(delivery);
+    motionReport.value = requireMotionDebugReportInput(await consumeDiagnosticArtifactValue(delivery));
     await refreshMotionSnapshot();
   } catch (error) {
     recordMotionRefreshError("debug.motion.actions.refreshHistory", error, "Failed to refresh motion diagnostic history");
@@ -1739,7 +1896,7 @@ async function applyMotionRuntimeDebugConfig() {
   motionCustomSeconds.value = normalizeMotionCustomSeconds(motionCustomSeconds.value);
   motionTimeScale.value = config.timeScale;
   try {
-    const applied = await invokeDiagnosticTool("motion", "runtime.configure", config);
+    const applied = requireMotionRuntimeDebugConfig(await invokeDiagnosticTool("motion", "runtime.configure", config));
     syncMotionControlsFromConfig(applied);
     motionActionError.value = "";
     await refreshMotionSnapshot();
@@ -1755,12 +1912,12 @@ async function disableMotionRuntimeDebug() {
   motionOverlayEnabled.value = false;
   if (motionTimeScale.value !== 1) motionTimeScale.value = 1;
   try {
-    const config = await invokeDiagnosticTool("motion", "runtime.configure", {
+    const config = requireMotionRuntimeDebugConfig(await invokeDiagnosticTool("motion", "runtime.configure", {
       enabled: false,
       overlayEnabled: false,
       recordHistory: false,
       timeScale: 1,
-    });
+    }));
     syncMotionControlsFromConfig(config);
     motionActionError.value = "";
     await refreshMotionSnapshot();
@@ -1770,7 +1927,7 @@ async function disableMotionRuntimeDebug() {
   }
 }
 
-function setMotionRuntimeDebugEnabled(enabled) {
+function setMotionRuntimeDebugEnabled(enabled: boolean): void {
   motionRuntimeDebugEnabled.value = Boolean(enabled);
   if (!motionRuntimeDebugEnabled.value) {
     disableMotionRuntimeDebug();
@@ -1780,53 +1937,53 @@ function setMotionRuntimeDebugEnabled(enabled) {
   restartMotionRuntimePoller();
 }
 
-function setMotionRecordEnabled(enabled) {
+function setMotionRecordEnabled(enabled: boolean): void {
   if (!motionRuntimeDebugEnabled.value) return;
   motionRecordEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
 
-function setMotionOverlayEnabled(enabled) {
+function setMotionOverlayEnabled(enabled: boolean): void {
   if (!motionRuntimeDebugEnabled.value) return;
   motionOverlayEnabled.value = Boolean(enabled);
   applyMotionRuntimeDebugConfig();
 }
 
-function setMotionWindowPreset(preset) {
+function setMotionWindowPreset(preset: string): void {
   motionWindowPreset.value = MOTION_RECORD_WINDOW_PRESETS.some((entry) => entry.value === preset)
     ? preset
     : "30000";
   applyMotionRuntimeDebugConfig();
 }
 
-function syncMotionWorkspaceFilters() {
+function syncMotionWorkspaceFilters(): void {
   motionWorkspaceSession.value = setMotionDebugWorkspaceFilters(motionWorkspaceSession.value, {
     preset: motionFilterPreset.value,
     query: motionFilterQuery.value,
   });
 }
 
-function setMotionFilterPreset(preset) {
+function setMotionFilterPreset(preset: string): void {
   motionFilterPreset.value = normalizeMotionFilterPreset(preset);
   syncMotionWorkspaceFilters();
 }
 
-function updateMotionFilterQuery(event) {
-  motionFilterQuery.value = event.target.value;
+function updateMotionFilterQuery(event: Event): void {
+  motionFilterQuery.value = requireInputElement(event).value;
   syncMotionWorkspaceFilters();
 }
 
-function updateMotionCustomSeconds(event) {
-  motionCustomSeconds.value = normalizeMotionCustomSeconds(event.target.value);
+function updateMotionCustomSeconds(event: Event): void {
+  motionCustomSeconds.value = normalizeMotionCustomSeconds(requireInputElement(event).value);
   applyMotionRuntimeDebugConfig();
 }
 
-function updateMotionTimeScale(event) {
-  motionTimeScale.value = normalizeMotionTimeScale(event.target.value);
+function updateMotionTimeScale(event: Event): void {
+  motionTimeScale.value = normalizeMotionTimeScale(requireInputElement(event).value);
   applyMotionRuntimeDebugConfig();
 }
 
-function openMotionWorkspace(mode = motionWorkspaceSession.value.mode || MOTION_DEBUG_WORKSPACE_MODE_DOCK) {
+function openMotionWorkspace(mode: MotionDebugWorkspaceMode = motionWorkspaceSession.value.mode || MOTION_DEBUG_WORKSPACE_MODE_DOCK): void {
   if (!canDebugMotion.value) return;
   const wasOpen = motionWorkspaceSession.value.isOpen;
   isCollapsed.value = false;
@@ -1838,7 +1995,7 @@ function openMotionWorkspace(mode = motionWorkspaceSession.value.mode || MOTION_
   if (!wasOpen) refreshMotionHistoryReport("open-workspace");
 }
 
-function selectMotionWorkspaceLayer(row) {
+function selectMotionWorkspaceLayer(row: MotionLayerTreeRow): void {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, {
     kind: "layer",
@@ -1847,12 +2004,12 @@ function selectMotionWorkspaceLayer(row) {
   });
 }
 
-function selectMotionWorkspaceTrack(row) {
+function selectMotionWorkspaceTrack(row: unknown): void {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, row);
 }
 
-function selectMotionWorkspaceReplayOverlay(row) {
+function selectMotionWorkspaceReplayOverlay(row: MotionReplayOverlayRow): void {
   if (!row) return;
   openMotionWorkspace();
   if (row.primaryTrack) {
@@ -1863,8 +2020,9 @@ function selectMotionWorkspaceReplayOverlay(row) {
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, motionReplayCurrentTimeMs.value);
 }
 
-function selectMotionWorkspacePropertyByEvent(event) {
-  const rowElement = event.target?.closest?.("[data-motion-property-index]");
+function selectMotionWorkspacePropertyByEvent(event: Event): void {
+  const rowElement = requireEventTargetElement(event, "Motion workspace property selection")
+    .closest<HTMLElement>("[data-motion-property-index]");
   if (!rowElement) return;
   const index = Number(rowElement.dataset.motionPropertyIndex);
   const row = motionPropertyRows.value[index];
@@ -1872,38 +2030,38 @@ function selectMotionWorkspacePropertyByEvent(event) {
   selectMotionWorkspaceTrack(row);
 }
 
-function selectMotionWorkspaceTimelineEvent(event) {
+function selectMotionWorkspaceTimelineEvent(event: MotionTrackDisplayInput & { timeMs: unknown }): void {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, event);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, event.timeMs);
 }
 
-function selectMotionWorkspaceCurve(group) {
+function selectMotionWorkspaceCurve(group: MotionCurveChartGroup): void {
   openMotionWorkspace();
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTrack(motionWorkspaceSession.value, group);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, group.latestTimeMs);
 }
 
-function setMotionTrackChartDisplayMode(mode) {
+function setMotionTrackChartDisplayMode(mode: MotionTrackChartDisplayMode): void {
   motionTrackChartDisplayMode.value = mode === MOTION_TRACK_CHART_DISPLAY_NORMALIZED
     ? MOTION_TRACK_CHART_DISPLAY_NORMALIZED
     : MOTION_TRACK_CHART_DISPLAY_RAW;
 }
 
-function toggleMotionTrackChartSeries(key, event) {
+function toggleMotionTrackChartSeries(key: MotionTrackChartSeriesKey, event: Event): void {
   motionTrackChartSeriesVisibility.value = normalizeMotionTrackChartSeriesVisibility({
     ...motionTrackChartSeriesVisibility.value,
-    [key]: event.target.checked,
+    [key]: requireInputElement(event).checked,
   });
 }
 
-function setMotionTrackChartSelectedTime(timeMs) {
+function setMotionTrackChartSelectedTime(timeMs: unknown): void {
   if (!motionReplayDocument.value) return;
   const normalizedTime = motionReplayDocument.value.getView("time.normalize", { timeMs });
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
 }
 
-function setMotionTrackChartBrushInterval(startMs, endMs) {
+function setMotionTrackChartBrushInterval(startMs: unknown, endMs: unknown): void {
   if (!motionReplayDocument.value) return;
   const start = normalizeMotionReplayIntervalTime(startMs);
   const end = normalizeMotionReplayIntervalTime(endMs);
@@ -1911,7 +2069,7 @@ function setMotionTrackChartBrushInterval(startMs, endMs) {
   motionReplayIntervalEndMs.value = Math.max(start, end);
 }
 
-function updateMotionTrackChartPointer(event) {
+function updateMotionTrackChartPointer(event: PointerEvent): void {
   const timeMs = readMotionTrackChartPointerTime(event);
   if (timeMs == null) return;
   setMotionTrackChartSelectedTime(timeMs);
@@ -1920,39 +2078,42 @@ function updateMotionTrackChartPointer(event) {
   }
 }
 
-function startMotionTrackChartBrush(event) {
+function startMotionTrackChartBrush(event: PointerEvent): void {
   if (!motionReplayDocument.value || event.button !== 0) return;
   const timeMs = readMotionTrackChartPointerTime(event);
   if (timeMs == null) return;
   stopMotionReplayPlayback();
   event.preventDefault();
-  captureMotionTrackChartPointer(event.currentTarget, event.pointerId);
+  captureMotionTrackChartPointer(requireEventCurrentElement(event, "Motion chart brush start"), event.pointerId);
   motionTrackChartBrushPointerId.value = event.pointerId;
   motionTrackChartBrushAnchorMs.value = timeMs;
   setMotionTrackChartSelectedTime(timeMs);
   setMotionTrackChartBrushInterval(timeMs, timeMs);
 }
 
-function endMotionTrackChartBrush(event) {
+function endMotionTrackChartBrush(event: PointerEvent): void {
   if (motionTrackChartBrushPointerId.value !== event.pointerId) return;
   const timeMs = readMotionTrackChartPointerTime(event);
   if (timeMs != null && motionTrackChartBrushAnchorMs.value != null) {
     setMotionTrackChartSelectedTime(timeMs);
     setMotionTrackChartBrushInterval(motionTrackChartBrushAnchorMs.value, timeMs);
   }
-  releaseMotionTrackChartPointer(event.currentTarget, event.pointerId);
+  releaseMotionTrackChartPointer(requireEventCurrentElement(event, "Motion chart brush end"), event.pointerId);
   motionTrackChartBrushPointerId.value = null;
   motionTrackChartBrushAnchorMs.value = null;
 }
 
-function cancelMotionTrackChartBrush(event) {
+function cancelMotionTrackChartBrush(event: PointerEvent): void {
   if (motionTrackChartBrushPointerId.value == null) return;
-  releaseMotionTrackChartPointer(event.currentTarget, motionTrackChartBrushPointerId.value);
+  releaseMotionTrackChartPointer(
+    requireEventCurrentElement(event, "Motion chart brush cancellation"),
+    motionTrackChartBrushPointerId.value,
+  );
   motionTrackChartBrushPointerId.value = null;
   motionTrackChartBrushAnchorMs.value = null;
 }
 
-function setMotionTrackChartZoomWindow(startMs, endMs) {
+function setMotionTrackChartZoomWindow(startMs: unknown, endMs: unknown): void {
   if (!motionReplayDocument.value) return;
   const zoom = motionReplayDocument.value.getView("track-chart.zoom", { endMs, startMs });
   motionTrackChartZoomStartMs.value = zoom.startMs;
@@ -1964,20 +2125,20 @@ function setMotionTrackChartZoomWindow(startMs, endMs) {
   ));
 }
 
-function updateMotionTrackChartZoomStart(event) {
-  setMotionTrackChartZoomWindow(event.target.value, motionTrackChartZoomWindow.value.endMs);
+function updateMotionTrackChartZoomStart(event: Event): void {
+  setMotionTrackChartZoomWindow(requireInputElement(event).value, motionTrackChartZoomWindow.value.endMs);
 }
 
-function updateMotionTrackChartZoomEnd(event) {
-  setMotionTrackChartZoomWindow(motionTrackChartZoomWindow.value.startMs, event.target.value);
+function updateMotionTrackChartZoomEnd(event: Event): void {
+  setMotionTrackChartZoomWindow(motionTrackChartZoomWindow.value.startMs, requireInputElement(event).value);
 }
 
-function resetMotionTrackChartZoom() {
+function resetMotionTrackChartZoom(): void {
   motionTrackChartZoomStartMs.value = null;
   motionTrackChartZoomEndMs.value = null;
 }
 
-function ensureMotionTrackChartTimeVisible(timeMs) {
+function ensureMotionTrackChartTimeVisible(timeMs: unknown): void {
   if (!motionReplayDocument.value || !motionTrackChartZoomActive.value) return;
   const zoom = motionTrackChartZoomWindow.value;
   const time = Number(timeMs);
@@ -1985,25 +2146,25 @@ function ensureMotionTrackChartTimeVisible(timeMs) {
   if (time < zoom.startMs || time > zoom.endMs) resetMotionTrackChartZoom();
 }
 
-function zoomMotionTrackChartToInterval() {
+function zoomMotionTrackChartToInterval(): void {
   if (!motionTrackChartIntervalActive.value) return;
   setMotionTrackChartZoomWindow(motionReplayIntervalStartMs.value, motionReplayIntervalEndMs.value);
 }
 
-function selectMotionTrackChartTrack(track) {
+function selectMotionTrackChartTrack(track: MotionTrackChartTrack): void {
   selectMotionWorkspaceTrack(track);
   if (track.current) {
     motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, track.current.timeMs);
   }
 }
 
-function selectMotionTrackChartEvent(track, marker) {
+function selectMotionTrackChartEvent(track: MotionTrackChartTrack, marker: MotionTrackChartMarker): void {
   selectMotionWorkspaceTrack(track);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, marker.timeMs);
   setMotionReplayCurrentTime(marker.timeMs, { pause: true });
 }
 
-function jumpMotionReplayFinding(finding = {}) {
+function jumpMotionReplayFinding(finding: MotionReplayAnalysisFinding): void {
   const location = finding.location;
   if (!motionReplayDocument.value || !location) return;
   if (location.track) selectMotionWorkspaceTrack(location.track);
@@ -2011,12 +2172,12 @@ function jumpMotionReplayFinding(finding = {}) {
   setMotionReplayCurrentTime(location.timeMs, { pause: true });
 }
 
-function clearMotionWorkspaceSelection() {
+function clearMotionWorkspaceSelection(): void {
   motionWorkspaceSession.value = selectMotionDebugWorkspaceTarget(motionWorkspaceSession.value, null);
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, 0);
 }
 
-function toggleMotionWorkspaceSelectedPin() {
+function toggleMotionWorkspaceSelectedPin(): void {
   if (!motionWorkspaceSession.value.selectedTarget) return;
   motionWorkspaceSession.value = toggleMotionDebugWorkspacePin(
     motionWorkspaceSession.value,
@@ -2024,12 +2185,12 @@ function toggleMotionWorkspaceSelectedPin() {
   );
 }
 
-function closeMotionWorkspace() {
+function closeMotionWorkspace(): void {
   clearMotionWorkspaceDockResize();
   motionWorkspaceSession.value = closeMotionDebugWorkspace(motionWorkspaceSession.value);
 }
 
-function setMotionWorkspaceMode(mode) {
+function setMotionWorkspaceMode(mode: MotionDebugWorkspaceMode): void {
   if (mode === MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN) {
     clearMotionWorkspaceDockResize();
   }
@@ -2043,28 +2204,28 @@ function setMotionWorkspaceMode(mode) {
   }
 }
 
-function updateMotionWorkspaceDockWidth(event) {
-  resizeMotionWorkspaceDockTo(event.target.value);
+function updateMotionWorkspaceDockWidth(event: Event): void {
+  resizeMotionWorkspaceDockTo(requireInputElement(event).value);
 }
 
-function updateMotionWorkspaceCaptureProfile(event) {
+function updateMotionWorkspaceCaptureProfile(event: Event): void {
   motionWorkspaceSession.value = setMotionDebugWorkspaceCaptureProfile(
     motionWorkspaceSession.value,
-    event.target.value,
+    requireInputElement(event).value,
   );
 }
 
-function toggleMotionWorkspaceCaptureProp(prop, event) {
+function toggleMotionWorkspaceCaptureProp(prop: MotionCaptureAllowedProp, event: Event): void {
   motionWorkspaceSession.value = toggleMotionDebugWorkspaceCaptureProp(
     motionWorkspaceSession.value,
     prop,
-    event.target.checked,
+    requireInputElement(event).checked,
   );
 }
 
-function updateMotionWorkspaceCaptureTargetFilter(key, event) {
+function updateMotionWorkspaceCaptureTargetFilter(key: MotionCaptureTargetFilterKey, event: Event): void {
   const currentFilters = motionWorkspaceSession.value.captureTargetFilters;
-  const value = event.target.value;
+  const value = requireInputElement(event).value;
   motionWorkspaceSession.value = setMotionDebugWorkspaceCaptureTargetFilters(motionWorkspaceSession.value, {
     ...currentFilters,
     [key]: key === "sourceQuery" ? value : parseMotionCaptureFilterList(value),
@@ -2084,13 +2245,13 @@ async function clearMotionDebugHistory() {
   }
 }
 
-function updateMotionReplayCaptureSeconds(event) {
-  motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(event.target.value);
+function updateMotionReplayCaptureSeconds(event: Event): void {
+  motionReplayCaptureSeconds.value = normalizeMotionReplayCaptureSeconds(requireInputElement(event).value);
 }
 
 async function syncMotionControlsFromRuntimeConfig() {
   try {
-    const description = await describeDiagnosticTool("motion");
+    const description = requireMotionDiagnosticDescription(await describeDiagnosticTool("motion"));
     syncMotionControlsFromConfig(description.status?.config);
     if (description.status?.capture) motionReplayCaptureStatus.value = description.status.capture;
     motionRefreshError.value = "";
@@ -2106,10 +2267,10 @@ async function startMotionReplayCapture() {
     await releaseMotionReplayCaptureArtifact();
     motionReplayCaptureSummary.value = null;
     hasCopiedMotionReplayTrace.value = false;
-    motionReplayCaptureStatus.value = await invokeDiagnosticTool("motion", "replay.capture.start", {
+    motionReplayCaptureStatus.value = requireMotionReplayCaptureStatus(await invokeDiagnosticTool("motion", "replay.capture.start", {
       captureProfile: motionCaptureProfile.value,
       seconds: motionReplayCaptureSeconds.value,
-    });
+    }));
     motionActionError.value = "";
     await syncMotionControlsFromRuntimeConfig();
     await refreshMotionSnapshot();
@@ -2120,12 +2281,15 @@ async function startMotionReplayCapture() {
   }
 }
 
-async function stopMotionReplayCapture(options = {}) {
+async function stopMotionReplayCapture(options: ReplayCaptureStopOptions = {}): Promise<DiagnosticArtifactDelivery | null> {
   if (!canDebugMotion.value || !motionReplayCaptureActive.value) return null;
   try {
     const delivery = await invokeDiagnosticTool("motion", "replay.capture.stop", {
       restore: options.restore !== false,
     });
+    if (!isDiagnosticArtifactDelivery(delivery)) {
+      throw new TypeError("Motion replay capture stop did not return an artifact delivery");
+    }
     motionReplayCaptureArtifact.value = delivery;
     const capturedDocument = motionDiagnosticSession.getDocument();
     if (!capturedDocument) throw new Error(t("debug.motion.errors.captureDocumentMissing"));
@@ -2147,18 +2311,18 @@ async function stopMotionReplayCapture(options = {}) {
   }
 }
 
-function syncMotionReplayIntervalToRange(document) {
-  const range = document?.timeRange() || { max: 0, min: 0 };
+function syncMotionReplayIntervalToRange(document: MotionReplayDocument): void {
+  const range = document.timeRange();
   motionReplayIntervalStartMs.value = Number(range.min) || 0;
   motionReplayIntervalEndMs.value = Number(range.max) || 0;
 }
 
-function normalizeMotionReplayIntervalTime(timeMs) {
+function normalizeMotionReplayIntervalTime(timeMs: unknown): number {
   if (!motionReplayDocument.value) return 0;
   return Math.round(motionReplayDocument.value.getView("time.normalize", { timeMs }));
 }
 
-function setMotionReplayCurrentTime(timeMs, options = {}) {
+function setMotionReplayCurrentTime(timeMs: unknown, options: ReplayTimeOptions = {}): void {
   if (!motionReplayDocument.value) return;
   if (options.pause) stopMotionReplayPlayback();
   const normalizedTime = motionReplayDocument.value.getView("time.normalize", { timeMs });
@@ -2166,7 +2330,7 @@ function setMotionReplayCurrentTime(timeMs, options = {}) {
   motionWorkspaceSession.value = setMotionDebugWorkspaceTime(motionWorkspaceSession.value, normalizedTime);
 }
 
-function useMotionReplayDocument(document, json = "", options = {}) {
+function useMotionReplayDocument(document: MotionReplayDocument, json = "", options: ReplayDocumentUseOptions = {}): void {
   motionReplayDocument.value = document;
   if (options.updateImportText) {
     motionReplayImportText.value = json || document.export({ format: "json" }).content;
@@ -2182,7 +2346,7 @@ function useMotionReplayDocument(document, json = "", options = {}) {
   stopMotionReplayPlayback();
 }
 
-function loadMotionReplayTrace(trace, json = "", options = {}) {
+function loadMotionReplayTrace(trace: unknown, json = "", options: ReplayDocumentUseOptions = {}): void {
   if (!canDebugMotion.value) return;
   try {
     useMotionReplayDocument(motionDiagnosticSession.load(trace), json, options);
@@ -2191,7 +2355,7 @@ function loadMotionReplayTrace(trace, json = "", options = {}) {
   }
 }
 
-function loadMotionReplayJson(json, options = {}) {
+function loadMotionReplayJson(json: string, options: ReplayDocumentUseOptions = {}): void {
   if (!canDebugMotion.value) return;
   try {
     useMotionReplayDocument(
@@ -2221,7 +2385,7 @@ async function releaseMotionReplayCaptureArtifact() {
   if (motionReplayCaptureArtifact.value === delivery) motionReplayCaptureArtifact.value = null;
 }
 
-function clearMotionReplayViewer() {
+function clearMotionReplayViewer(): void {
   stopMotionReplayPlayback();
   motionDiagnosticSession.close();
   motionReplayDocument.value = null;
@@ -2236,8 +2400,8 @@ function clearMotionReplayViewer() {
   resetMotionTrackChartZoom();
 }
 
-function updateMotionReplayImportText(event) {
-  motionReplayImportText.value = event.target.value;
+function updateMotionReplayImportText(event: Event): void {
+  motionReplayImportText.value = requireInputElement(event).value;
   if (motionReplayImportError.value) motionReplayImportError.value = "";
 }
 
@@ -2245,8 +2409,9 @@ function loadMotionReplayImportText() {
   loadMotionReplayJson(motionReplayImportText.value, { updateImportText: true });
 }
 
-async function importMotionReplayFile(event) {
-  const file = event.target.files?.[0];
+async function importMotionReplayFile(event: Event): Promise<void> {
+  const input = requireInputElement(event);
+  const file = input.files?.[0];
   if (!file) return;
   try {
     assertMotionReplayImportSize(file.size);
@@ -2255,15 +2420,15 @@ async function importMotionReplayFile(event) {
   } catch (error) {
     motionReplayImportError.value = error instanceof Error ? error.message : String(error);
   } finally {
-    event.target.value = "";
+    input.value = "";
   }
 }
 
-function updateMotionReplayCurrentTime(event) {
-  setMotionReplayCurrentTime(event.target.value, { pause: true });
+function updateMotionReplayCurrentTime(event: Event): void {
+  setMotionReplayCurrentTime(requireInputElement(event).value, { pause: true });
 }
 
-function stepMotionReplayFrame(direction) {
+function stepMotionReplayFrame(direction: MotionReplayStepDirection): void {
   if (!motionReplayDocument.value) return;
   const timeMs = motionReplayDocument.value.getView("step.frame", {
     direction,
@@ -2272,7 +2437,7 @@ function stepMotionReplayFrame(direction) {
   setMotionReplayCurrentTime(timeMs, { pause: true });
 }
 
-function stepMotionReplayEvent(direction) {
+function stepMotionReplayEvent(direction: MotionReplayStepDirection): void {
   if (!motionReplayDocument.value) return;
   const event = motionReplayDocument.value.getView("step.event", {
     direction,
@@ -2284,21 +2449,21 @@ function stepMotionReplayEvent(direction) {
   setMotionReplayCurrentTime(event.timeMs, { pause: true });
 }
 
-function updateMotionReplayFilterQuery(event) {
-  motionReplayFilterQuery.value = event.target.value;
+function updateMotionReplayFilterQuery(event: Event): void {
+  motionReplayFilterQuery.value = requireInputElement(event).value;
 }
 
-function updateMotionReplayIntervalStart(event) {
+function updateMotionReplayIntervalStart(event: Event): void {
   if (!motionReplayDocument.value) return;
-  motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(event.target.value);
+  motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(requireInputElement(event).value);
 }
 
-function updateMotionReplayIntervalEnd(event) {
+function updateMotionReplayIntervalEnd(event: Event): void {
   if (!motionReplayDocument.value) return;
-  motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(event.target.value);
+  motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(requireInputElement(event).value);
 }
 
-function buildMotionReplayBookmarkInput() {
+function buildMotionReplayBookmarkInput(): MotionReplayBookmarkInput {
   const selectedTrack = motionWorkspaceSession.value.selectedTrack;
   return {
     endMs: motionReplayIntervalEndMs.value,
@@ -2309,20 +2474,21 @@ function buildMotionReplayBookmarkInput() {
   };
 }
 
-function saveMotionReplayBookmark() {
-  if (!motionReplayDocument.value || !motionReplayBookmarkCanSave.value) return;
+function saveMotionReplayBookmark(): void {
+  const document = motionReplayDocument.value;
+  if (!document || !motionReplayBookmarkCanSave.value) return;
   motionReplayBookmarks.value = addMotionReplayBookmark(
     motionReplayBookmarks.value,
     buildMotionReplayBookmarkInput(),
     {
       createdAt: new Date().toISOString(),
-      normalizeTime: (timeMs) => motionReplayDocument.value.getView("time.normalize", { timeMs }),
+      normalizeTime: (timeMs) => document.getView("time.normalize", { timeMs }),
     },
   );
 }
 
-function applyMotionReplayBookmark(bookmark = {}) {
-  if (!motionReplayDocument.value || !bookmark) return;
+function applyMotionReplayBookmark(bookmark: MotionReplayBookmark): void {
+  if (!motionReplayDocument.value) return;
   stopMotionReplayPlayback();
   motionReplayIntervalStartMs.value = normalizeMotionReplayIntervalTime(bookmark.startMs);
   motionReplayIntervalEndMs.value = normalizeMotionReplayIntervalTime(bookmark.endMs);
@@ -2335,22 +2501,22 @@ function applyMotionReplayBookmark(bookmark = {}) {
   setMotionReplayCurrentTime(motionReplayIntervalStartMs.value, { pause: true });
 }
 
-function deleteMotionReplayBookmark(bookmark = {}) {
+function deleteMotionReplayBookmark(bookmark: MotionReplayBookmark): void {
   motionReplayBookmarks.value = removeMotionReplayBookmark(motionReplayBookmarks.value, bookmark.id);
 }
 
-function clearMotionReplayBookmarks() {
+function clearMotionReplayBookmarks(): void {
   motionReplayBookmarks.value = [];
 }
 
-function stopMotionReplayPlayback() {
+function stopMotionReplayPlayback(): void {
   if (motionReplayPlaybackTimer != null) window.clearInterval(motionReplayPlaybackTimer);
   motionReplayPlaybackTimer = null;
   motionReplayPlaybackLastTime = 0;
   motionReplayPlaying.value = false;
 }
 
-function startMotionReplayPlayback() {
+function startMotionReplayPlayback(): void {
   if (!motionReplayDocument.value || motionReplayPlaying.value) return;
   const range = motionReplayDocument.value.timeRange();
   if (motionReplayCurrentTimeMs.value >= range.max) {
@@ -2377,43 +2543,44 @@ function startMotionReplayPlayback() {
   }, 33);
 }
 
-function toggleMotionReplayPlayback() {
+function toggleMotionReplayPlayback(): void {
   if (motionReplayPlaying.value) stopMotionReplayPlayback();
   else startMotionReplayPlayback();
 }
 
-function normalizeDebugPanelDock(value) {
+function normalizeDebugPanelDock(value: unknown): DebugPanelDock {
   return value === "left" ? "left" : "right";
 }
 
-function readDebugPanelDock() {
+function readDebugPanelDock(): DebugPanelDock {
   if (typeof window === "undefined") return "right";
   try {
     return normalizeDebugPanelDock(window.localStorage.getItem(DEBUG_PANEL_DOCK_STORAGE_KEY));
-  } catch {
+  } catch (error) {
+    console.debug("Background debug panel dock preference was unavailable", error);
     return "right";
   }
 }
 
-function persistDebugPanelDock(dock) {
+function persistDebugPanelDock(dock: DebugPanelDock): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(DEBUG_PANEL_DOCK_STORAGE_KEY, normalizeDebugPanelDock(dock));
-  } catch {
-    // The debug panel should still work when storage is unavailable.
+  } catch (error) {
+    console.debug("Background debug panel dock preference could not be persisted", error);
   }
 }
 
-function setDebugPanelDock(dock) {
+function setDebugPanelDock(dock: DebugPanelDock): void {
   debugPanelDock.value = normalizeDebugPanelDock(dock);
   persistDebugPanelDock(debugPanelDock.value);
 }
 
-function updateNumber(key, event) {
-  updateAcrylicDebugParams({ [key]: Number(event.target.value) });
+function updateNumber(key: AcrylicNumberKey, event: Event): void {
+  updateAcrylicDebugParams({ [key]: Number(requireInputElement(event).value) });
 }
 
-function syncLiveDesktopDebugEffects(options = {}) {
+function syncLiveDesktopDebugEffects(options: LiveDesktopSyncOptions = {}): void {
   if (!canDebugLiveDesktop.value) return;
   const delay = Number.isFinite(Number(options.delay)) ? Number(options.delay) : 80;
   if (kawaseLiveDesktopSyncTimer != null) window.clearTimeout(kawaseLiveDesktopSyncTimer);
@@ -2428,38 +2595,38 @@ function syncLiveDesktopDebugEffects(options = {}) {
   }, delay);
 }
 
-function setKawaseOverrideEnabled(enabled) {
+function setKawaseOverrideEnabled(enabled: boolean): void {
   setKawaseDebugOverrideEnabled(enabled);
   syncLiveDesktopDebugEffects({ delay: 0 });
 }
 
-function setBlurKernel(kernel) {
+function setBlurKernel(kernel: BlurKernel): void {
   updateKawaseDebugParams({ kernel });
   syncLiveDesktopDebugEffects({ delay: 0 });
 }
 
-function updateKawaseNumber(key, event) {
-  updateKawaseDebugParams({ [key]: Number(event.target.value) });
+function updateKawaseNumber(key: KawaseNumberKey, event: Event): void {
+  updateKawaseDebugParams({ [key]: Number(requireInputElement(event).value) });
   syncLiveDesktopDebugEffects();
 }
 
-function setLayoutDebugEnabled(enabled) {
+function setLayoutDebugEnabled(enabled: boolean): void {
   props.updateDesktopLayoutDebugParams?.({ enabled });
 }
 
-function setDragHitZonesDebugEnabled(dragHitZonesEnabled) {
+function setDragHitZonesDebugEnabled(dragHitZonesEnabled: boolean): void {
   props.updateDesktopLayoutDebugParams?.({ dragHitZonesEnabled });
 }
 
-function updateLayoutNumber(key, event) {
-  props.updateDesktopLayoutDebugParams?.({ [key]: Number(event.target.value) });
+function updateLayoutNumber(key: LayoutNumberKey, event: Event): void {
+  props.updateDesktopLayoutDebugParams?.({ [key]: Number(requireInputElement(event).value) });
 }
 
-function resetLayoutDebugParams() {
+function resetLayoutDebugParams(): void {
   props.resetDesktopLayoutDebugParams?.();
 }
 
-function showDebugStatusDialog(sample) {
+function showDebugStatusDialog(sample: DebugStatusDialogInput): void {
   props.dialogState?.openWarningDialog?.({
     title: sample.title,
     message: sample.message,
@@ -2470,7 +2637,7 @@ function showDebugStatusDialog(sample) {
   });
 }
 
-function showDebugLayoutSaveFailed() {
+function showDebugLayoutSaveFailed(): void {
   props.dialogState?.showLayoutSaveFailed?.({
     error: new Error("EACCES: permission denied, open C:/Users/233/AppData/Roaming/com.lumeria.app/layout.json"),
     retryCount: 3,
@@ -2478,11 +2645,11 @@ function showDebugLayoutSaveFailed() {
   });
 }
 
-function showDebugLayoutSaveRecovered() {
+function showDebugLayoutSaveRecovered(): void {
   props.dialogState?.showLayoutSaveRecovered?.();
 }
 
-function showDebugLayoutLoadFailed() {
+function showDebugLayoutLoadFailed(): void {
   props.dialogState?.showLayoutLoadFailed?.({
     error: new Error("Unexpected token at position 128 while parsing layout.json"),
     retryCount: 2,
@@ -2490,32 +2657,32 @@ function showDebugLayoutLoadFailed() {
   });
 }
 
-function showDebugLayoutLoadRecovered() {
+function showDebugLayoutLoadRecovered(): void {
   props.dialogState?.showLayoutLoadRecovered?.();
 }
 
-function showDebugNoticeStack() {
+function showDebugNoticeStack(): void {
   showDebugLayoutSaveFailed();
 }
 
-function clearDebugNotices() {
+function clearDebugNotices(): void {
   props.dialogState?.closeWarningDialog?.();
   props.dialogState?.closeTransientNotice?.();
 }
 
-function resetBackgroundDebugParams() {
+function resetBackgroundDebugParams(): void {
   resetAcrylicDebugParams();
   resetKawaseDebugParams();
   syncLiveDesktopDebugEffects({ delay: 0 });
 }
 
-function updateTintColor(event) {
+function updateTintColor(event: Event): void {
   updateAcrylicDebugParams({
-    tintColor: hexToRgbArray(event.target.value, params.tintColor),
+    tintColor: hexToRgbArray(requireInputElement(event).value, params.tintColor),
   });
 }
 
-function copyToClipboard(text, copiedRef, timerName) {
+function copyToClipboard(text: string, copiedRef: Ref<boolean>, timerName: ClipboardTimerName): Promise<void> {
   if (!navigator.clipboard?.writeText) throw new Error("Clipboard API is unavailable");
   return navigator.clipboard.writeText(text).then(() => {
     copiedRef.value = true;
@@ -2579,7 +2746,7 @@ async function copyParams() {
   }
 }
 
-async function copyMotionReport(mode) {
+async function copyMotionReport(mode: "full" | "summary"): Promise<void> {
   if (!canDebugMotion.value) return;
   try {
     const delivery = await invokeDiagnosticTool("motion", "report.generate", {
@@ -2603,7 +2770,7 @@ async function copyMotionReport(mode) {
   }
 }
 
-function buildMotionFocusedDebugExportOptions(bookmark = null) {
+function buildMotionFocusedDebugExportOptions(bookmark: MotionReplayBookmark | null = null): MotionFocusedDebugExportOptions {
   const selectedTrack = bookmark?.track || motionWorkspaceSession.value.selectedTrack;
   const selection = bookmark?.selection || motionWorkspaceSession.value.selectedTarget;
   const filters = bookmark?.filters || motionReplayFilters.value;
@@ -2616,13 +2783,13 @@ function buildMotionFocusedDebugExportOptions(bookmark = null) {
     captureProfile: motionCaptureProfile.value,
     filters,
     interval,
-    selection,
-    track: selectedTrack,
+    ...(selection ? { selection: { ...selection } } : {}),
+    ...(selectedTrack ? { track: { ...selectedTrack } } : {}),
     visibleTracks,
   };
 }
 
-async function copyMotionFocusedDebugExport(bookmark = null) {
+async function copyMotionFocusedDebugExport(bookmark: MotionReplayBookmark | null = null): Promise<void> {
   if (!canDebugMotion.value || !motionReplayDocument.value) return;
   try {
     const focused = motionReplayDocument.value.export({
@@ -2630,6 +2797,9 @@ async function copyMotionFocusedDebugExport(bookmark = null) {
       format: "focused",
       presentation: "markdown",
     });
+    if (focused.presentation !== "markdown") {
+      throw new TypeError("Focused Motion debug export did not return Markdown presentation");
+    }
     await copyToClipboard(
       focused.content,
       hasCopiedMotionFocused,
@@ -2666,6 +2836,9 @@ async function copyMotionReplayInterval() {
       presentation: "json",
       startMs: motionReplayIntervalStartMs.value,
     });
+    if (interval.presentation !== "json") {
+      throw new TypeError("Motion replay interval export did not return JSON presentation");
+    }
     await copyToClipboard(
       interval.content,
       hasCopiedMotionReplayInterval,

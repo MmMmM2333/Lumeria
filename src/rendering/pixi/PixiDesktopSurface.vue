@@ -47,7 +47,7 @@
 <script setup lang="ts">
 import type { Application } from "pixi.js";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
-import type { StyleValue } from "vue";
+import type { CSSProperties } from "vue";
 import { WINDOW_CHROME_STATE_CHANGE_EVENT } from "../../api/windowChromeApi.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { getTextRenderResolution } from "./geometry/stageCoordinates.js";
@@ -265,7 +265,7 @@ function emitAppLaunchCloseFrameCommitted(sessionId: number): void {
 function emitContextMenuRequest(event: unknown): void { publishSceneEvent(makeContextMenuRequestEvent(event)); }
 function emitDesktopFocus(): void { publishSceneEvent(makeDesktopFocusEvent()); }
 function emitGroupReleaseComplete(payload: unknown): void { publishSceneEvent(makeGroupReleaseCompleteEvent(payload)); }
-function emitIconPointerdown(event: unknown, item: unknown, source: unknown): void {
+function emitIconPointerdown(event: unknown, item: SceneItem, source: SceneDataRecord): void {
   publishSceneEvent(makeIconPointerdownEvent(event, item, source));
 }
 function emitInternalActivity(active: boolean, folderId: string | null): void {
@@ -350,17 +350,19 @@ const isSingleStageDragPreviewActive = computed(() => Boolean(
   interactionFrame.value.groupDragState?.key
 ));
 
-const singleStageFolderNameInputStyle = computed<StyleValue>(() => {
+const singleStageFolderNameInputStyle = computed<CSSProperties>(() => {
   const folderId = sceneRuntime.value.folderOverlayState?.renderedFolder?.value?.id ?? null;
   const frame = isSingleStageFolderTitleFrameCurrent(singleStageFolderTitleFrame.value, folderId)
     ? singleStageFolderTitleFrame.value
     : null;
-  return makeSingleStageFolderNameInputStyle({
-    controlsVisible: shouldRenderSingleStageFolderDomControls.value,
-    frame,
-    isClosing: isSingleStageFolderClosing.value,
-    isInputDisabled: isSingleStageFolderInputDisabled.value,
-  }) as unknown as StyleValue;
+  return {
+    ...makeSingleStageFolderNameInputStyle({
+      controlsVisible: shouldRenderSingleStageFolderDomControls.value,
+      frame,
+      isClosing: isSingleStageFolderClosing.value,
+      isInputDisabled: isSingleStageFolderInputDisabled.value,
+    }),
+  };
 });
 
 const singleStageFolderName = computed(() => String(
@@ -368,7 +370,14 @@ const singleStageFolderName = computed(() => String(
 ));
 
 function blurInputTarget(event: Event): void {
-  (event.target as HTMLInputElement).blur();
+  requireFolderNameInput(event).blur();
+}
+
+function requireFolderNameInput(event: Event): HTMLInputElement {
+  if (!(event.currentTarget instanceof HTMLInputElement)) {
+    throw new TypeError("Folder name event currentTarget must be an input element");
+  }
+  return event.currentTarget;
 }
 
 function shouldShowSingleStageFolderPageDots(): boolean {
@@ -382,26 +391,26 @@ function shouldShowSingleStageFolderPageDots(): boolean {
 }
 
 function handleSingleStageFolderNameInput(event: Event): void {
+  const input = requireFolderNameInput(event);
   const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
-  const input = event.target as HTMLInputElement | null;
-  const nextName = String(input?.value || "").slice(0, 32);
+  const nextName = input.value.slice(0, 32);
   if (!nextName) return;
   state.renameFolder(folder.id, nextName);
 }
 
 function restoreSingleStageEmptyFolderName(event: Event): void {
+  const input = requireFolderNameInput(event);
   const state = sceneRuntime.value.folderOverlayState;
   const folder = state?.renderedFolder?.value;
   if (!folder) return;
-  const input = event.target as HTMLInputElement | null;
-  if (input?.value) {
+  if (input.value) {
     singleStageFolderNameBeforeEdit.value = input.value;
     return;
   }
   const fallback = singleStageFolderNameBeforeEdit.value || folder.name || t("launchpad.newFolder");
-  if (input) input.value = fallback;
+  input.value = fallback;
   state.renameFolder(folder.id, fallback);
 }
 
@@ -1106,7 +1115,9 @@ function handleIconAction(
   item: SceneItem | null,
   source: SceneDataRecord | null,
 ): void {
+  if (!item) throw new TypeError("Icon actions require an item");
   if (action === "pointerdown") {
+    if (!source) throw new TypeError("Interactive icon pointerdown requires a launch source");
     if (import.meta.env.DEV) renderProbe?.notePointerDown?.({
       event: event as RenderProbePointerInput["event"],
       item,
@@ -1114,9 +1125,9 @@ function handleIconAction(
     });
     emitIconPointerdown(event, item, source);
   }
-  if (action === "remove") emitRemoveApp(item!.id);
-  if (action === "choose-icon") emitChooseAppIcon(item!.id);
-  if (action === "reset-icon") emitResetAppIcon(item!.id);
+  if (action === "remove") emitRemoveApp(item.id);
+  if (action === "choose-icon") emitChooseAppIcon(item.id);
+  if (action === "reset-icon") emitResetAppIcon(item.id);
   requestRender(`icon-${action || "action"}`);
 }
 

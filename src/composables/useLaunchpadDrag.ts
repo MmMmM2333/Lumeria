@@ -123,12 +123,12 @@ export type LaunchpadDragVisualState = Readonly<{
 }>;
 
 export type LaunchpadDragEventTarget = Readonly<{
-  getBoundingClientRect?: () => Pick<Rect, "height" | "left" | "top" | "width">;
+  getBoundingClientRect?: () => Pick<Rect, "height" | "left" | "top" | "width"> | null;
 }>;
 
 export type LaunchpadDragPointerEvent = Readonly<{
   button?: number | undefined;
-  buttons?: number | undefined;
+  buttons?: number | null | undefined;
   cancelSource?: string | null | undefined;
   clientX?: number | undefined;
   clientY?: number | undefined;

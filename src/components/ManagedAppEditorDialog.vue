@@ -46,7 +46,7 @@
             :aria-label="t('dialogs.appEditor.name')"
             autocomplete="off"
             :value.prop="model.name.value"
-            @input="model.name.value = $event.target.value"
+            @input="model.name.value = readControlValue($event)"
           />
         </label>
         <label class="app-edit-field">
@@ -59,7 +59,7 @@
               autocomplete="off"
               :value.prop="model.target.value"
               :disabled="model.targetReadOnly.value"
-              @input="model.target.value = $event.target.value"
+              @input="model.target.value = readControlValue($event)"
             />
             <SettingsFluentButton appearance="outline" type="button" :disabled="!model.canBrowseTarget.value" @click="model.actions.browseTarget">
               {{ model.isBrowsingTarget.value ? t("dialogs.appEditor.choosing") : t("common.actions.browse") }}
@@ -74,7 +74,7 @@
             :aria-label="t('dialogs.appEditor.args')"
             autocomplete="off"
             :value.prop="model.args.value"
-            @input="model.args.value = $event.target.value"
+            @input="model.args.value = readControlValue($event)"
           />
         </label>
       </div>
@@ -87,17 +87,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from "vue";
 import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import { getDefaultIconSource, getIconSource } from "../domain/iconSource.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
+import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import { useLocalization } from "../i18n/localization.js";
 import SettingsFluentButton from "./settings/SettingsFluentButton.vue";
 
-const props = defineProps({ model: { type: Object, required: true } });
+type ManagedAppEditorModel = LaunchpadController["dialogs"]["editorModel"];
+
+const props = defineProps<{ model: ManagedAppEditorModel }>();
 const { t } = useLocalization();
-const dialogRef = ref(null);
+const dialogRef = ref<HTMLElement | null>(null);
 const isEditing = computed(() => props.model.mode.value === "edit");
 const iconSource = computed(() => {
   if (props.model.iconDataUrl.value) return props.model.iconDataUrl.value;
@@ -106,7 +109,15 @@ const iconSource = computed(() => {
   return getIconSource(props.model.app.value);
 });
 
-function focus() {
+function readControlValue(event: Event): string {
+  const target = event.currentTarget;
+  if (!target || !("value" in target) || typeof target.value !== "string") {
+    throw new TypeError("Managed app editor control currentTarget must expose a string value");
+  }
+  return target.value;
+}
+
+function focus(): void {
   focusModalElement(dialogRef);
 }
 

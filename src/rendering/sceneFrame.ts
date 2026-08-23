@@ -181,7 +181,16 @@ export type CompleteDesktopSceneFrame = Readonly<{
   diagnostics: CompleteFrameGroup<FrameFields["diagnostics"]>;
 }>;
 
-export type DesktopSceneFrameInput = Partial<DesktopSceneFrameValues>;
+/**
+ * Untrusted composition-root values accepted by the scene snapshot decoder.
+ *
+ * Domain records deliberately do not need to expose ContractRecord's index
+ * signature. Each published value is detached first and then validated against
+ * its field contract before makeDesktopSceneFrame returns it.
+ */
+export type DesktopSceneFrameInput = Partial<{
+  [Field in keyof DesktopSceneFrameValues]: unknown;
+}>;
 
 const FRAME_GROUPS = Object.freeze(Object.keys(FRAME_FIELDS) as FrameGroupName[]);
 
@@ -333,13 +342,13 @@ const FIELD_VALIDATORS = {
 function makeFrameGroup<Fields extends readonly FrameFieldName[]>(
   input: DesktopSceneFrameInput,
   fields: Fields,
-): FrameGroup<Fields> {
+): Readonly<Record<string, unknown>> {
   return Object.freeze(Object.fromEntries(
     fields.map((field) => [
       field,
       snapshotContractValue(input[field], `DesktopSceneFrame.${field}`),
     ])
-  )) as FrameGroup<Fields>;
+  ));
 }
 
 export function makeDesktopSceneFrame(input: DesktopSceneFrameInput = {}): DesktopSceneFrame {
@@ -389,9 +398,8 @@ export function assertCompleteDesktopSceneFrame(
 ): asserts frame is CompleteDesktopSceneFrame {
   assertDesktopSceneFrame(frame);
   for (const group of FRAME_GROUPS) {
-    const groupFrame = frame[group] as unknown as Readonly<Record<FrameFieldName, unknown>>;
     for (const field of FRAME_FIELDS[group]) {
-      if (groupFrame[field] === undefined) {
+      if (Reflect.get(frame[group], field) === undefined) {
         throw new TypeError(`DesktopSceneFrame.${group}.${field} must be published by the surface composition root`);
       }
     }

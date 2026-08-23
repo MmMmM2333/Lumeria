@@ -212,6 +212,16 @@
         "runWindowChromeApiTests"
       ]
     },
+    "src/App.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/application/errorMessage.ts": {
+      "types": [],
+      "values": [
+        "readErrorMessage"
+      ]
+    },
     "src/application/launchpadDocumentCoordinator.ts": {
       "types": [],
       "values": [
@@ -224,17 +234,538 @@
         "runLaunchpadDocumentCoordinatorTests"
       ]
     },
-    "src/application/errorMessage.ts": {
-      "types": [],
-      "values": [
-        "readErrorMessage"
-      ]
-    },
     "src/assets/branding/launchpadIconUrls.ts": {
       "types": [],
       "values": [
         "launchpadIconUrls"
       ]
+    },
+    "src/components/AppIconChooserDialog.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/BackgroundDebugMotionInspector.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/backgroundDebug/desktopLayoutDebugSettings.ts": {
+      "types": [
+        "DesktopLayoutDebugParams",
+        "DesktopLayoutDebugParamsInput"
+      ],
+      "values": [
+        "DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS",
+        "DESKTOP_LAYOUT_DEBUG_PARAM_LIMITS",
+        "DESKTOP_LAYOUT_DEBUG_STORAGE_KEY",
+        "normalizeDesktopLayoutDebugParams",
+        "resetDesktopLayoutDebugParams",
+        "resolveDesktopDragHitDebugOptions",
+        "resolveDesktopGridDebugOptions",
+        "resolveDesktopLayoutDebugStyle",
+        "updateDesktopLayoutDebugParams",
+        "useDesktopLayoutDebugParams"
+      ]
+    },
+    "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.ts": {
+      "types": [],
+      "values": [
+        "runDesktopLayoutDebugSettingsTests"
+      ]
+    },
+    "src/components/backgroundDebug/diagnosticUiError.ts": {
+      "types": [
+        "DiagnosticUiTranslate"
+      ],
+      "values": [
+        "formatDiagnosticActionError"
+      ]
+    },
+    "src/components/backgroundDebug/diagnosticUiErrorTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticUiErrorTests"
+      ]
+    },
+    "src/components/backgroundDebug/liveDesktopDiagnostics.ts": {
+      "types": [
+        "LiveDesktopDiagnostics",
+        "LiveDesktopRates",
+        "LiveDesktopStatus",
+        "LiveDesktopTranslate",
+        "LiveDesktopWindowDiagnostics",
+        "LiveDesktopWindowInfo",
+        "LiveDesktopWindowRect"
+      ],
+      "values": [
+        "DEFAULT_LIVE_DESKTOP_STATUS",
+        "formatCount",
+        "formatFrameArrived",
+        "formatFrameTiming",
+        "formatLastFrame",
+        "formatLiveDesktopRates",
+        "formatMicrosAsMillis",
+        "formatPixelProbe",
+        "formatWindowMeta",
+        "formatWindowRect",
+        "formatWindowTitle",
+        "normalizeCount",
+        "normalizeLiveDesktopStatus",
+        "normalizeLiveDesktopWindowDiagnostics",
+        "normalizeLiveDesktopWindowInfo",
+        "normalizeLiveDesktopWindowRect",
+        "normalizeSignedInteger"
+      ]
+    },
+    "src/components/backgroundDebug/liveDesktopDiagnosticsTests.ts": {
+      "types": [],
+      "values": [
+        "runLiveDesktopDiagnosticsTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionCaptureProfileModel.ts": {
+      "types": [
+        "MotionCaptureAllowedProp",
+        "MotionCaptureProfile",
+        "MotionCaptureProfileDefinition",
+        "MotionCaptureProfileInput",
+        "MotionCaptureProfileLike",
+        "MotionCaptureTargetFilters",
+        "MotionCaptureTargetFiltersInput"
+      ],
+      "values": [
+        "MOTION_CAPTURE_ALLOWED_PROPS",
+        "MOTION_CAPTURE_DEFAULT_DURATION_MS",
+        "MOTION_CAPTURE_DEFAULT_SAMPLE_HZ",
+        "MOTION_CAPTURE_PROFILE_ALPHA_FOCUS",
+        "MOTION_CAPTURE_PROFILE_CUSTOM",
+        "MOTION_CAPTURE_PROFILE_DEFAULT_VISUAL",
+        "MOTION_CAPTURE_PROFILE_DEFINITIONS",
+        "MOTION_CAPTURE_PROFILE_INTERRUPTION_FOCUS",
+        "MOTION_CAPTURE_PROFILE_TRANSFORM_FOCUS",
+        "estimateMotionCaptureProfileSize",
+        "filterMotionCaptureRecords",
+        "formatMotionCaptureEstimateBytes",
+        "getMotionCaptureProfileDefinition",
+        "getMotionCaptureProfiles",
+        "matchesMotionCaptureProfileRecord",
+        "normalizeMotionCaptureProfile",
+        "normalizeMotionCapturePropAllowlist",
+        "normalizeMotionCaptureTargetFilters"
+      ]
+    },
+    "src/components/backgroundDebug/motionCaptureProfileModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionCaptureProfileModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugPanelModel.ts": {
+      "types": [
+        "MotionDebugFilters",
+        "MotionDebugReportInput",
+        "MotionDiagnosticDescription",
+        "MotionDiagnosticSnapshot",
+        "MotionReplayCaptureStatusInput",
+        "MotionReplayCaptureTraceInput",
+        "MotionRuntimeDebugConfigInput"
+      ],
+      "values": [
+        "MOTION_FILTER_PRESETS",
+        "MOTION_RECORD_WINDOW_CUSTOM",
+        "MOTION_RECORD_WINDOW_PRESETS",
+        "buildMotionAnimationRows",
+        "buildMotionCancelReasonRows",
+        "buildMotionCurveChartGroups",
+        "buildMotionFilterSummary",
+        "buildMotionLayerTreeRows",
+        "buildMotionOverviewRows",
+        "buildMotionPropertyRows",
+        "buildMotionReplayCaptureRows",
+        "buildMotionRuntimeDebugConfig",
+        "buildMotionTimelineGroups",
+        "buildMotionWarningRows",
+        "formatMotionNumber",
+        "normalizeMotionCustomSeconds",
+        "normalizeMotionFilterPreset",
+        "normalizeMotionTimeScale",
+        "requireMotionDebugReportInput",
+        "requireMotionDiagnosticDescription",
+        "requireMotionDiagnosticSnapshot",
+        "requireMotionReplayCaptureStatus",
+        "requireMotionRuntimeDebugConfig",
+        "resolveMotionRecordWindowMs"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugPanelModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDebugPanelModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugWorkspaceContext.ts": {
+      "types": [
+        "MotionDebugWorkspaceContext",
+        "MotionDebugWorkspaceDetailRow",
+        "MotionDebugWorkspaceInspectorRegion",
+        "MotionDebugWorkspaceRegionMap",
+        "MotionDebugWorkspaceRegionName",
+        "MotionDebugWorkspaceStatusRow",
+        "MotionDebugWorkspaceTargetsRegion",
+        "MotionDebugWorkspaceTimelineEventInput",
+        "MotionDebugWorkspaceTimelineRegion",
+        "MotionDebugWorkspaceTrackDisplayInput"
+      ],
+      "values": [
+        "MOTION_DEBUG_WORKSPACE_CONTEXT_KEY",
+        "MOTION_DEBUG_WORKSPACE_REGIONS",
+        "createMotionDebugWorkspaceContext",
+        "useMotionDebugWorkspaceRegion"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugWorkspaceContextTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDebugWorkspaceContextTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugWorkspaceModel.ts": {
+      "types": [
+        "MotionDebugPinnedTarget",
+        "MotionDebugTargetRef",
+        "MotionDebugTrackRef",
+        "MotionDebugWorkspaceFilters",
+        "MotionDebugWorkspaceMode",
+        "MotionDebugWorkspaceOpenOptions",
+        "MotionDebugWorkspaceSession",
+        "MotionDebugWorkspaceSessionInput",
+        "MotionDebugWorkspaceViewportOptions"
+      ],
+      "values": [
+        "MOTION_DEBUG_DEFAULT_PROFILE_ID",
+        "MOTION_DEBUG_QUICK_PANEL_CONTROLS",
+        "MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_DEFAULT",
+        "MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MAX",
+        "MOTION_DEBUG_WORKSPACE_DOCK_WIDTH_MIN",
+        "MOTION_DEBUG_WORKSPACE_MODE_DOCK",
+        "MOTION_DEBUG_WORKSPACE_MODE_FULLSCREEN",
+        "MOTION_DEBUG_WORKSPACE_REGIONS",
+        "buildMotionDebugWorkspaceCaptureProfile",
+        "closeMotionDebugWorkspace",
+        "createMotionDebugWorkspaceSession",
+        "isMotionDebugQuickPanelControl",
+        "isMotionDebugWorkspaceSection",
+        "normalizeMotionDebugWorkspaceDockWidth",
+        "openMotionDebugWorkspace",
+        "resizeMotionDebugWorkspaceDock",
+        "resizeMotionDebugWorkspaceDockByDelta",
+        "selectMotionDebugWorkspaceTarget",
+        "selectMotionDebugWorkspaceTrack",
+        "setMotionDebugWorkspaceCaptureProfile",
+        "setMotionDebugWorkspaceCaptureTargetFilters",
+        "setMotionDebugWorkspaceFilters",
+        "setMotionDebugWorkspaceMode",
+        "setMotionDebugWorkspaceTime",
+        "toggleMotionDebugWorkspaceCaptureProp",
+        "toggleMotionDebugWorkspaceFullscreen",
+        "toggleMotionDebugWorkspacePin"
+      ]
+    },
+    "src/components/backgroundDebug/motionDebugWorkspaceModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDebugWorkspaceModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionFocusedDebugExportModel.ts": {
+      "types": [
+        "MotionFocusedDebugExportData",
+        "MotionFocusedDebugExportOptions",
+        "MotionFocusedSelection"
+      ],
+      "values": [
+        "MOTION_FOCUSED_DEBUG_SCHEMA",
+        "createMotionFocusedDebugExport",
+        "formatMotionFocusedDebugMarkdown"
+      ]
+    },
+    "src/components/backgroundDebug/motionFocusedDebugExportModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionFocusedDebugExportModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionInspectorModel.ts": {
+      "types": [
+        "MotionInspectorEventRow",
+        "MotionInspectorModel",
+        "MotionInspectorOptions",
+        "MotionInspectorValueRow",
+        "MotionInspectorWarningRow",
+        "MotionInspectorWhyRow"
+      ],
+      "values": [
+        "buildMotionInspectorModel"
+      ]
+    },
+    "src/components/backgroundDebug/motionInspectorModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionInspectorModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionReplayBookmarkModel.ts": {
+      "types": [
+        "MotionReplayBookmark",
+        "MotionReplayBookmarkInput",
+        "MotionReplayBookmarkOptions"
+      ],
+      "values": [
+        "MOTION_REPLAY_BOOKMARK_LIMIT",
+        "addMotionReplayBookmark",
+        "createMotionReplayBookmark",
+        "normalizeMotionReplayBookmarks",
+        "removeMotionReplayBookmark"
+      ]
+    },
+    "src/components/backgroundDebug/motionReplayBookmarkModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionReplayBookmarkModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionReplayViewerModel.ts": {
+      "types": [
+        "DiagnosticTranslate",
+        "MotionReplayFilters",
+        "MotionReplayFrame",
+        "MotionReplayFrameInput",
+        "MotionReplayIntervalExportOptions",
+        "MotionReplayOverlayOptions",
+        "MotionReplaySelectionRef",
+        "MotionReplayStepDirection",
+        "MotionReplayTimeRange",
+        "MotionReplayTimeRangeInput",
+        "MotionReplayTimeline",
+        "MotionReplayTimelineInput",
+        "MotionReplayTrace",
+        "MotionReplayTraceInput",
+        "MotionReplayTraceSummaryInput"
+      ],
+      "values": [
+        "MOTION_REPLAY_IMPORT_MAX_BYTES",
+        "MOTION_REPLAY_INTERVAL_SCHEMA",
+        "assertMotionReplayImportSize",
+        "buildMotionReplayCurveGroups",
+        "buildMotionReplayEventRows",
+        "buildMotionReplayFilterSummary",
+        "buildMotionReplayFrameRows",
+        "buildMotionReplayOverlayRows",
+        "buildMotionReplayOverviewRows",
+        "createMotionReplayIntervalExport",
+        "findMotionReplayEventStep",
+        "findMotionReplayEventStepTime",
+        "findMotionReplayFrame",
+        "findMotionReplayFrameStepTime",
+        "getMotionReplayTimeRange",
+        "normalizeMotionReplayTime",
+        "normalizeMotionReplayTrace",
+        "parseMotionReplayTraceJson"
+      ]
+    },
+    "src/components/backgroundDebug/motionReplayViewerModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionReplayViewerModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/motionTrackChartModel.ts": {
+      "types": [
+        "MotionTrackChartDisplayMode",
+        "MotionTrackChartModel",
+        "MotionTrackChartOptions",
+        "MotionTrackChartPoint",
+        "MotionTrackChartSeries",
+        "MotionTrackChartSeriesKey",
+        "MotionTrackChartSeriesVisibility",
+        "MotionTrackChartWindow"
+      ],
+      "values": [
+        "MOTION_TRACK_CHART_DEFAULT_POINT_LIMIT",
+        "MOTION_TRACK_CHART_DEFAULT_TRACK_LIMIT",
+        "MOTION_TRACK_CHART_DISPLAY_NORMALIZED",
+        "MOTION_TRACK_CHART_DISPLAY_RAW",
+        "MOTION_TRACK_CHART_SERIES_KEYS",
+        "buildMotionTrackChartModel",
+        "createMotionTrackChartProjector",
+        "normalizeMotionTrackChartSeriesVisibility",
+        "normalizeMotionTrackChartZoomWindow"
+      ]
+    },
+    "src/components/backgroundDebug/motionTrackChartModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionTrackChartModelTests"
+      ]
+    },
+    "src/components/backgroundDebug/renderProbePanelModel.ts": {
+      "types": [
+        "RenderProbeArmForm",
+        "RenderProbeCandidate",
+        "RenderProbeCapture",
+        "RenderProbeFramebuffer",
+        "RenderProbePixelComparison",
+        "RenderProbeSession",
+        "RenderProbeSummary",
+        "RenderProbeTranslate"
+      ],
+      "values": [
+        "RENDER_PROBE_PIXELS_OFF",
+        "RENDER_PROBE_PIXELS_PHASE_DIFF",
+        "RENDER_PROBE_TARGET_ALL",
+        "RENDER_PROBE_TARGET_OPTIONS",
+        "buildRenderProbeArmConfig",
+        "buildRenderProbeCandidateRows",
+        "buildRenderProbePhaseRows",
+        "buildRenderProbeStatusRows",
+        "formatRenderProbeTarget",
+        "getRenderProbeTargetOptions",
+        "requireRenderProbeSummary",
+        "resolveRenderProbeDisplaySession"
+      ]
+    },
+    "src/components/backgroundDebug/renderProbePanelModelTests.ts": {
+      "types": [],
+      "values": [
+        "runRenderProbePanelModelTests"
+      ]
+    },
+    "src/components/BackgroundDebugPanel.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/BackgroundEffectPreview.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/BackgroundImagePreviewCanvas.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/iconContextMenuGeometry.ts": {
+      "types": [
+        "IconContextMenuActionName",
+        "IconContextMenuActionPayload",
+        "IconContextMenuPointerEvent",
+        "IconContextMenuPosition",
+        "IconContextMenuPositionOptions",
+        "IconContextMenuSurfaceCapabilities",
+        "LaunchpadOverlaysExpose"
+      ],
+      "values": [
+        "ICON_CONTEXT_MENU_VIEWPORT_MARGIN",
+        "clampIconContextMenuPosition"
+      ]
+    },
+    "src/components/iconContextMenuGeometryTests.ts": {
+      "types": [],
+      "values": [
+        "runIconContextMenuGeometryTests"
+      ]
+    },
+    "src/components/Icons.ts": {
+      "types": [],
+      "values": [
+        "ChevronDownIcon",
+        "ChevronLeftIcon",
+        "ChevronRightIcon",
+        "ChevronUpIcon",
+        "SearchIcon",
+        "SettingsIcon"
+      ]
+    },
+    "src/components/LaunchpadChromeFrame.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/LaunchpadDialogs.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/LaunchpadHeader.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/LaunchpadOverlays.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/LaunchpadSelectionToolbar.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/ManagedAppEditorDialog.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/ScanResultAppRow.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/ScanResultDialog.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/AboutSettingsPage.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/AppsSettingsPage.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/GeneralSettingsPage.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/InterfaceSettingsPage.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/SettingsFluentButton.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/SettingsSlider.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/settings/SettingsSpinButton.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/SettingsPanel.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/components/WindowChromeOverlay.vue": {
+      "types": [],
+      "values": []
     },
     "src/composables/launchpadConstants.ts": {
       "types": [],
@@ -1007,6 +1538,55 @@
         "runSettingsPanelModelTests"
       ]
     },
+    "src/diagnostics/diagnosticAnalysisFormatter.ts": {
+      "types": [
+        "DiagnosticAnalysis",
+        "DiagnosticAnalysisFinding",
+        "DiagnosticAnalysisFormatOptions",
+        "DiagnosticAnalysisMetric"
+      ],
+      "values": [
+        "DIAGNOSTIC_FORMATTED_ANALYSIS_SCHEMA",
+        "formatDiagnosticAnalysis"
+      ]
+    },
+    "src/diagnostics/diagnosticAnalysisFormatterTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticAnalysisFormatterTests"
+      ]
+    },
+    "src/diagnostics/diagnosticArtifactStore.ts": {
+      "types": [],
+      "values": [
+        "DIAGNOSTIC_ARTIFACT_PAGE_SCHEMA",
+        "DIAGNOSTIC_ARTIFACT_REFERENCE_SCHEMA",
+        "createDiagnosticArtifactStore"
+      ]
+    },
+    "src/diagnostics/diagnosticArtifactStoreTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticArtifactStoreTests"
+      ]
+    },
+    "src/diagnostics/diagnosticClient.ts": {
+      "types": [
+        "DiagnosticArtifactReadOptions",
+        "DiagnosticClient"
+      ],
+      "values": [
+        "createDiagnosticClient",
+        "diagnosticClient",
+        "isDiagnosticArtifactDelivery"
+      ]
+    },
+    "src/diagnostics/diagnosticClientTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticClientTests"
+      ]
+    },
     "src/diagnostics/diagnosticError.ts": {
       "types": [
         "DiagnosticError"
@@ -1017,11 +1597,86 @@
         "unsupportedDiagnosticOperation"
       ]
     },
+    "src/diagnostics/diagnosticGlobal.ts": {
+      "types": [
+        "DiagnosticHubGlobalFacade"
+      ],
+      "values": [
+        "DIAGNOSTIC_API_SCHEMA",
+        "DIAGNOSTIC_GLOBAL_KEY",
+        "installDiagnosticHubGlobal"
+      ]
+    },
+    "src/diagnostics/diagnosticGlobalTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticGlobalTests"
+      ]
+    },
+    "src/diagnostics/diagnosticHub.ts": {
+      "types": [
+        "DiagnosticHub"
+      ],
+      "values": [
+        "DIAGNOSTIC_ARTIFACT_DELIVERY_SCHEMA",
+        "DIAGNOSTIC_RESULT_SCHEMA",
+        "createDiagnosticHub"
+      ]
+    },
+    "src/diagnostics/diagnosticHubTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticHubTests"
+      ]
+    },
+    "src/diagnostics/diagnosticMessages.ts": {
+      "types": [],
+      "values": [
+        "DEFAULT_DIAGNOSTIC_LOCALE",
+        "hasDiagnosticMessage",
+        "localizeDiagnosticDescriptor",
+        "translateDiagnosticMessage"
+      ]
+    },
+    "src/diagnostics/diagnosticMessagesTests.ts": {
+      "types": [],
+      "values": [
+        "runDiagnosticMessagesTests"
+      ]
+    },
     "src/diagnostics/diagnosticPresentation.ts": {
       "types": [],
       "values": [
         "DIAGNOSTIC_PRESENTATIONS",
         "createDiagnosticPresentation"
+      ]
+    },
+    "src/diagnostics/diagnosticProtocol.ts": {
+      "types": [
+        "DiagnosticAdapter",
+        "DiagnosticArtifactDelivery",
+        "DiagnosticArtifactPage",
+        "DiagnosticArtifactPageInfo",
+        "DiagnosticArtifactPath",
+        "DiagnosticArtifactQueryRequest",
+        "DiagnosticArtifactReference",
+        "DiagnosticArtifactRepresentation",
+        "DiagnosticArtifactSource",
+        "DiagnosticArtifactStore",
+        "DiagnosticErrorPayload",
+        "DiagnosticInvocationContext",
+        "DiagnosticOperationDescriptor",
+        "DiagnosticParams",
+        "DiagnosticResult",
+        "DiagnosticResultSize",
+        "DiagnosticToolDescriptor",
+        "DiagnosticValueSummary"
+      ],
+      "values": [
+        "DIAGNOSTIC_ARTIFACT_DELIVERY_SCHEMA",
+        "DIAGNOSTIC_ARTIFACT_PAGE_SCHEMA",
+        "DIAGNOSTIC_ARTIFACT_REFERENCE_SCHEMA",
+        "DIAGNOSTIC_RESULT_SCHEMA"
       ]
     },
     "src/diagnostics/liveDesktopDebugSettings.ts": {
@@ -1085,13 +1740,130 @@
       ],
       "values": [
         "LIVE_DESKTOP_DIAGNOSTICS_STATE_SCHEMA",
-        "createLiveDesktopDiagnosticsController"
+        "createLiveDesktopDiagnosticsController",
+        "requireLiveDesktopDiagnosticsState"
       ]
     },
     "src/diagnostics/liveDesktopDiagnosticsControllerTests.ts": {
       "types": [],
       "values": [
         "runLiveDesktopDiagnosticsControllerTests"
+      ]
+    },
+    "src/diagnostics/motionDiagnosticAdapter.ts": {
+      "types": [
+        "MotionDiagnosticAdapter"
+      ],
+      "values": [
+        "createMotionDiagnosticAdapter"
+      ]
+    },
+    "src/diagnostics/motionDiagnosticAdapterTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDiagnosticAdapterTests"
+      ]
+    },
+    "src/diagnostics/motionDiagnosticSession.ts": {
+      "types": [
+        "MotionDiagnosticLoadOptions",
+        "MotionDiagnosticSession",
+        "MotionDiagnosticSessionState",
+        "MotionDiagnosticSessionStatus"
+      ],
+      "values": [
+        "createMotionDiagnosticSession",
+        "motionDiagnosticSession"
+      ]
+    },
+    "src/diagnostics/motionDiagnosticSessionTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionDiagnosticSessionTests"
+      ]
+    },
+    "src/diagnostics/motionLabDiagnosticAdapter.ts": {
+      "types": [
+        "MotionLabDiagnosticAdapter",
+        "MotionLabDiagnosticPort"
+      ],
+      "values": [
+        "createMotionLabDiagnosticAdapter"
+      ]
+    },
+    "src/diagnostics/motionLabDiagnosticAdapterTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionLabDiagnosticAdapterTests"
+      ]
+    },
+    "src/diagnostics/motionReplayAnalyzer.ts": {
+      "types": [
+        "MotionReplayAnalysis",
+        "MotionReplayAnalysisFinding",
+        "MotionReplayAnalysisOptions",
+        "MotionReplayDataQuality"
+      ],
+      "values": [
+        "MOTION_REPLAY_ANALYSIS_SCHEMA",
+        "MOTION_REPLAY_FINDING_CODES",
+        "analyzeMotionReplayTrace"
+      ]
+    },
+    "src/diagnostics/motionReplayAnalyzerTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionReplayAnalyzerTests"
+      ]
+    },
+    "src/diagnostics/motionReplayDocument.ts": {
+      "types": [
+        "MotionReplayCurveGroupsView",
+        "MotionReplayDocument",
+        "MotionReplayDocumentAnalyzeOptions",
+        "MotionReplayDocumentExportFormat",
+        "MotionReplayDocumentExportOptions",
+        "MotionReplayDocumentOptions",
+        "MotionReplayDocumentSummary",
+        "MotionReplayDocumentView",
+        "MotionReplayDocumentViewOptions",
+        "MotionReplayEventRowsView",
+        "MotionReplayFilterSummaryView",
+        "MotionReplayFocusedExport",
+        "MotionReplayFormattedAnalysis",
+        "MotionReplayFrameRowsView",
+        "MotionReplayIntervalExport",
+        "MotionReplayJsonExport",
+        "MotionReplayOverlayRowsView",
+        "MotionReplayOverviewView"
+      ],
+      "values": [
+        "MOTION_REPLAY_ANALYSIS_SCHEMA",
+        "MOTION_REPLAY_DOCUMENT_SCHEMA",
+        "MOTION_REPLAY_DOCUMENT_VIEWS",
+        "MOTION_REPLAY_EXPORT_FORMATS",
+        "createMotionReplayDocument"
+      ]
+    },
+    "src/diagnostics/motionReplayDocumentTests.ts": {
+      "types": [],
+      "values": [
+        "makeMotionReplayDocumentTestTrace",
+        "runMotionReplayDocumentTests"
+      ]
+    },
+    "src/diagnostics/renderDiagnosticAdapter.ts": {
+      "types": [
+        "RenderDiagnosticAdapter"
+      ],
+      "values": [
+        "createRenderDiagnosticAdapter"
+      ]
+    },
+    "src/diagnostics/renderDiagnosticAdapterTests.ts": {
+      "types": [],
+      "values": [
+        "runRenderDiagnosticAdapterTests"
       ]
     },
     "src/diagnostics/runtimePerformanceMetrics.ts": {
@@ -1103,6 +1875,12 @@
       "values": [
         "createRuntimePerformanceMetrics",
         "runtimePerformanceMetrics"
+      ]
+    },
+    "src/diagnostics/runtimePerformanceMetricsTests.ts": {
+      "types": [],
+      "values": [
+        "runRuntimePerformanceMetricsTests"
       ]
     },
     "src/diagnostics/sceneDiagnosticAdapter.ts": {
@@ -1768,6 +2546,10 @@
         "runLocalizationTests"
       ]
     },
+    "src/main.ts": {
+      "types": [],
+      "values": []
+    },
     "src/mocks/appSeeds.ts": {
       "types": [
         "AppSeed",
@@ -1777,6 +2559,103 @@
       ],
       "values": [
         "appSeeds"
+      ]
+    },
+    "src/motionLab/MotionLabApp.vue": {
+      "types": [],
+      "values": []
+    },
+    "src/motionLab/motionLabGate.ts": {
+      "types": [],
+      "values": [
+        "MOTION_LAB_QUERY_PARAM",
+        "shouldMountMotionLab"
+      ]
+    },
+    "src/motionLab/motionLabModel.ts": {
+      "types": [
+        "MotionLabFocusedDebugData",
+        "MotionLabMetricRow",
+        "MotionLabReportInput",
+        "MotionLabRunSnapshot",
+        "MotionLabRunSummary",
+        "MotionLabTraceInput"
+      ],
+      "values": [
+        "DEFAULT_MOTION_LAB_PARAMS",
+        "MOTION_LAB_COMPARE_SCHEMA",
+        "MOTION_LAB_EASE_OPTIONS",
+        "MOTION_LAB_FOCUSED_DEBUG_SCHEMA",
+        "MOTION_LAB_INTERRUPT_OPTIONS",
+        "MOTION_LAB_PARAM_PRESETS",
+        "MOTION_LAB_PARAM_PRESET_IDS",
+        "MOTION_LAB_QUERY_PARAM",
+        "MOTION_LAB_SCENARIOS",
+        "MOTION_LAB_TRACE_DIFF_SCHEMA",
+        "applyMotionLabParamPreset",
+        "buildMotionLabAssertionRows",
+        "buildMotionLabCompareRows",
+        "buildMotionLabCurveRows",
+        "buildMotionLabOverviewRows",
+        "buildMotionLabParamPresetRows",
+        "buildMotionLabScenarioRows",
+        "buildMotionLabTimelineRows",
+        "buildMotionLabTraceDiffRows",
+        "createMotionLabBaselineCompareExport",
+        "createMotionLabCompareExport",
+        "createMotionLabFocusedExport",
+        "createMotionLabRunSnapshot",
+        "createMotionLabTraceDiffExport",
+        "formatMotionLabFocusedDebugMarkdown",
+        "getMotionLabParamPreset",
+        "normalizeMotionLabParams",
+        "resolveMotionLabParamPresetId",
+        "shouldMountMotionLab"
+      ]
+    },
+    "src/motionLab/motionLabModelTests.ts": {
+      "types": [],
+      "values": [
+        "runMotionLabModelTests"
+      ]
+    },
+    "src/motionLab/motionLabParams.ts": {
+      "types": [
+        "MotionLabEase",
+        "MotionLabInterruptPolicy",
+        "MotionLabParamPreset",
+        "MotionLabParams",
+        "MotionLabParamsInput"
+      ],
+      "values": [
+        "DEFAULT_MOTION_LAB_PARAMS",
+        "MOTION_LAB_EASE_OPTIONS",
+        "MOTION_LAB_INTERRUPT_OPTIONS",
+        "MOTION_LAB_NUMERIC_PARAM_RANGES",
+        "MOTION_LAB_PARAM_PRESETS",
+        "MOTION_LAB_PARAM_PRESET_IDS",
+        "applyMotionLabParamPreset",
+        "buildMotionLabParamPresetRows",
+        "getMotionLabParamPreset",
+        "normalizeMotionLabParams",
+        "resolveMotionLabParamPresetId"
+      ]
+    },
+    "src/motionLab/motionLabScenarios.ts": {
+      "types": [
+        "MotionLabAssertionResult",
+        "MotionLabScenario",
+        "MotionLabScenarioAssertion",
+        "MotionLabScenarioContext",
+        "MotionLabScenarioId",
+        "MotionLabScene"
+      ],
+      "values": [
+        "MOTION_LAB_SCENARIOS",
+        "MOTION_LAB_SCENARIO_IDS",
+        "evaluateMotionLabScenarioAssertions",
+        "getMotionLabScenario",
+        "runMotionLabScenario"
       ]
     },
     "src/platform/applicationCatalogDefaults.ts": {
@@ -1913,7 +2792,8 @@
         "GroupTransferRuntimeActor",
         "GroupTransferRuntimeEntry",
         "GroupTransferRuntimeReleaseEntry",
-        "GroupTransferRuntimeSourceEntry"
+        "GroupTransferRuntimeSourceEntry",
+        "IconBoundsRect"
       ],
       "values": [
         "ICON_BOUNDS_KIND",
@@ -1952,7 +2832,16 @@
       ]
     },
     "src/rendering/motionPort.ts": {
-      "types": [],
+      "types": [
+        "MotionDebugConfig",
+        "MotionDebugCounters",
+        "MotionDebugReport",
+        "MotionDebugSummary",
+        "MotionRuntime",
+        "MotionTraceRange",
+        "MotionTraceRecord",
+        "MotionTrackRecord"
+      ],
       "values": [
         "MOTION_REPLAY_CAPTURE_DEFAULT_SECONDS",
         "MOTION_REPLAY_CAPTURE_MAX_SECONDS",
@@ -4171,6 +5060,16 @@
       "values": [
         "runSceneRuntimeTests"
       ]
+    },
+    "src/testing/launchpadE2eProbe.ts": {
+      "types": [
+        "LaunchpadE2EProbeOptions",
+        "LaunchpadE2ESnapshotState"
+      ],
+      "values": [
+        "LAUNCHPAD_E2E_PROBE_NAME",
+        "installLaunchpadE2eProbe"
+      ]
     }
   },
   "callerBaselines": {
@@ -4178,6 +5077,8 @@
       "src/App.vue",
       "src/api/launchpadApiTests.ts",
       "src/api/windowChromeApi.ts",
+      "src/components/BackgroundEffectPreview.vue",
+      "src/components/BackgroundImagePreviewCanvas.vue",
       "src/composables/useLaunchpadApps.ts",
       "src/composables/useLaunchpadAppsTests.ts",
       "src/composables/useLaunchpadController.ts",
@@ -4213,6 +5114,14 @@
     "src/api/windowChromeApiTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
+    "src/App.vue": [
+      "src/main.ts"
+    ],
+    "src/application/errorMessage.ts": [
+      "src/composables/useLaunchpadApps.ts",
+      "src/composables/useLaunchpadNotices.ts",
+      "src/composables/useLaunchpadSettings.ts"
+    ],
     "src/application/launchpadDocumentCoordinator.ts": [
       "src/application/launchpadDocumentCoordinatorTests.ts",
       "src/composables/useLaunchpadController.ts",
@@ -4221,14 +5130,234 @@
     "src/application/launchpadDocumentCoordinatorTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
-    "src/application/errorMessage.ts": [
-      "src/composables/useLaunchpadApps.ts",
-      "src/composables/useLaunchpadNotices.ts",
-      "src/composables/useLaunchpadSettings.ts"
-    ],
     "src/assets/branding/launchpadIconUrls.ts": [
       "src/components/settings/AboutSettingsPage.vue",
       "src/components/settings/GeneralSettingsPage.vue"
+    ],
+    "src/components/AppIconChooserDialog.vue": [
+      "src/components/LaunchpadDialogs.vue"
+    ],
+    "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue": [
+      "src/components/BackgroundDebugPanel.vue"
+    ],
+    "src/components/backgroundDebug/BackgroundDebugMotionInspector.vue": [
+      "src/components/BackgroundDebugPanel.vue"
+    ],
+    "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue": [
+      "src/components/BackgroundDebugPanel.vue"
+    ],
+    "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue": [
+      "src/components/BackgroundDebugPanel.vue"
+    ],
+    "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue": [
+      "src/components/BackgroundDebugPanel.vue"
+    ],
+    "src/components/backgroundDebug/desktopLayoutDebugSettings.ts": [
+      "src/App.vue",
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.ts"
+    ],
+    "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/diagnosticUiError.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
+      "src/components/backgroundDebug/diagnosticUiErrorTests.ts"
+    ],
+    "src/components/backgroundDebug/diagnosticUiErrorTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/liveDesktopDiagnostics.ts": [
+      "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
+      "src/components/backgroundDebug/liveDesktopDiagnosticsTests.ts"
+    ],
+    "src/components/backgroundDebug/liveDesktopDiagnosticsTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionCaptureProfileModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionCaptureProfileModelTests.ts",
+      "src/components/backgroundDebug/motionDebugPanelModel.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceModel.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceModelTests.ts",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.ts"
+    ],
+    "src/components/backgroundDebug/motionCaptureProfileModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionDebugPanelModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/motionLab/MotionLabApp.vue"
+    ],
+    "src/components/backgroundDebug/motionDebugPanelModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionDebugWorkspaceContext.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionInspector.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue",
+      "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue",
+      "src/components/backgroundDebug/motionDebugWorkspaceContextTests.ts"
+    ],
+    "src/components/backgroundDebug/motionDebugWorkspaceContextTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionDebugWorkspaceModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceModelTests.ts",
+      "src/components/backgroundDebug/motionInspectorModel.ts",
+      "src/components/backgroundDebug/motionReplayBookmarkModel.ts"
+    ],
+    "src/components/backgroundDebug/motionDebugWorkspaceModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionFocusedDebugExportModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionFocusedDebugExportModelTests.ts",
+      "src/diagnostics/motionReplayDocument.ts"
+    ],
+    "src/components/backgroundDebug/motionFocusedDebugExportModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionInspectorModel.ts": [
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionInspectorModelTests.ts",
+      "src/diagnostics/motionReplayDocument.ts"
+    ],
+    "src/components/backgroundDebug/motionInspectorModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionReplayBookmarkModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.ts",
+      "src/components/backgroundDebug/motionReplayBookmarkModelTests.ts"
+    ],
+    "src/components/backgroundDebug/motionReplayBookmarkModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionReplayViewerModel.ts": [
+      "scripts/benchmarkMotionDiagnostics.mjs",
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugPanelModel.ts",
+      "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.ts",
+      "src/components/backgroundDebug/motionFocusedDebugExportModelTests.ts",
+      "src/components/backgroundDebug/motionInspectorModel.ts",
+      "src/components/backgroundDebug/motionInspectorModelTests.ts",
+      "src/components/backgroundDebug/motionReplayViewerModelTests.ts",
+      "src/components/backgroundDebug/motionTrackChartModel.ts",
+      "src/diagnostics/motionDiagnosticSession.ts",
+      "src/diagnostics/motionReplayAnalyzer.ts",
+      "src/diagnostics/motionReplayDocument.ts",
+      "src/motionLab/MotionLabApp.vue",
+      "src/motionLab/motionLabModel.ts",
+      "src/motionLab/motionLabModelTests.ts"
+    ],
+    "src/components/backgroundDebug/motionReplayViewerModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/motionTrackChartModel.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/components/backgroundDebug/motionTrackChartModelTests.ts",
+      "src/diagnostics/motionReplayDocument.ts"
+    ],
+    "src/components/backgroundDebug/motionTrackChartModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/backgroundDebug/renderProbePanelModel.ts": [
+      "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
+      "src/components/backgroundDebug/renderProbePanelModelTests.ts"
+    ],
+    "src/components/backgroundDebug/renderProbePanelModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/BackgroundDebugPanel.vue": [
+      "src/App.vue"
+    ],
+    "src/components/BackgroundEffectPreview.vue": [
+      "src/components/settings/InterfaceSettingsPage.vue"
+    ],
+    "src/components/BackgroundImagePreviewCanvas.vue": [
+      "src/components/BackgroundEffectPreview.vue",
+      "src/components/settings/InterfaceSettingsPage.vue"
+    ],
+    "src/components/iconContextMenuGeometry.ts": [
+      "src/App.vue",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/iconContextMenuGeometryTests.ts"
+    ],
+    "src/components/iconContextMenuGeometryTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/components/Icons.ts": [
+      "src/components/LaunchpadHeader.vue"
+    ],
+    "src/components/LaunchpadChromeFrame.vue": [
+      "src/App.vue"
+    ],
+    "src/components/LaunchpadDialogs.vue": [
+      "src/App.vue"
+    ],
+    "src/components/LaunchpadHeader.vue": [
+      "src/components/LaunchpadChromeFrame.vue"
+    ],
+    "src/components/LaunchpadOverlays.vue": [
+      "src/App.vue"
+    ],
+    "src/components/LaunchpadSelectionToolbar.vue": [
+      "src/App.vue"
+    ],
+    "src/components/ManagedAppEditorDialog.vue": [
+      "src/components/LaunchpadDialogs.vue"
+    ],
+    "src/components/ScanResultAppRow.vue": [
+      "src/components/ScanResultDialog.vue"
+    ],
+    "src/components/ScanResultDialog.vue": [
+      "src/components/LaunchpadDialogs.vue"
+    ],
+    "src/components/settings/AboutSettingsPage.vue": [
+      "src/components/SettingsPanel.vue"
+    ],
+    "src/components/settings/AppsSettingsPage.vue": [
+      "src/components/SettingsPanel.vue"
+    ],
+    "src/components/settings/GeneralSettingsPage.vue": [
+      "src/components/SettingsPanel.vue"
+    ],
+    "src/components/settings/InterfaceSettingsPage.vue": [
+      "src/components/SettingsPanel.vue"
+    ],
+    "src/components/settings/SettingsFluentButton.vue": [
+      "src/components/AppIconChooserDialog.vue",
+      "src/components/LaunchpadDialogs.vue",
+      "src/components/ManagedAppEditorDialog.vue",
+      "src/components/ScanResultDialog.vue",
+      "src/components/SettingsPanel.vue",
+      "src/components/settings/AppsSettingsPage.vue",
+      "src/components/settings/GeneralSettingsPage.vue",
+      "src/components/settings/InterfaceSettingsPage.vue"
+    ],
+    "src/components/settings/SettingsSlider.vue": [
+      "src/components/settings/InterfaceSettingsPage.vue"
+    ],
+    "src/components/settings/SettingsSpinButton.vue": [
+      "src/components/settings/InterfaceSettingsPage.vue"
+    ],
+    "src/components/SettingsPanel.vue": [
+      "src/App.vue"
+    ],
+    "src/components/WindowChromeOverlay.vue": [
+      "src/App.vue"
     ],
     "src/composables/launchpadConstants.ts": [
       "src/composables/launchpadMotion.ts",
@@ -4269,6 +5398,8 @@
     ],
     "src/composables/useBackgroundImagePixelSize.ts": [
       "src/App.vue",
+      "src/components/BackgroundEffectPreview.vue",
+      "src/components/BackgroundImagePreviewCanvas.vue",
       "src/composables/useSettingsPanelModel.ts"
     ],
     "src/composables/useFolderLayoutStyles.ts": [
@@ -4322,12 +5453,18 @@
     ],
     "src/composables/useLaunchpadController.ts": [
       "src/App.vue",
+      "src/components/AppIconChooserDialog.vue",
+      "src/components/LaunchpadDialogs.vue",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/ManagedAppEditorDialog.vue",
+      "src/components/ScanResultDialog.vue",
       "src/composables/useLaunchpadControllerTests.ts"
     ],
     "src/composables/useLaunchpadControllerTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/composables/useLaunchpadDrag.ts": [
+      "src/App.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadDragTests.ts",
       "src/composables/useLaunchpadInputGestures.ts"
@@ -4351,6 +5488,7 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/composables/useLaunchpadInputGestures.ts": [
+      "src/App.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadInputGesturesTests.ts"
     ],
@@ -4400,6 +5538,8 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/composables/useLaunchpadNotices.ts": [
+      "src/App.vue",
+      "src/components/LaunchpadDialogs.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadNative.ts",
       "src/composables/useLaunchpadNativeTests.ts",
@@ -4425,6 +5565,8 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/composables/useLaunchpadSearch.ts": [
+      "src/components/LaunchpadChromeFrame.vue",
+      "src/components/LaunchpadHeader.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadSearchTests.ts"
     ],
@@ -4450,6 +5592,7 @@
       "src/components/BackgroundDebugPanel.vue",
       "src/components/BackgroundEffectPreview.vue",
       "src/components/BackgroundImagePreviewCanvas.vue",
+      "src/components/settings/InterfaceSettingsPage.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadNative.ts",
       "src/composables/useLaunchpadNativeTests.ts",
@@ -4534,20 +5677,54 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/composables/useSettingsPanelModel.ts": [
+      "src/components/SettingsPanel.vue",
+      "src/components/settings/AboutSettingsPage.vue",
+      "src/components/settings/AppsSettingsPage.vue",
+      "src/components/settings/GeneralSettingsPage.vue",
+      "src/components/settings/InterfaceSettingsPage.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useSettingsPanelModelTests.ts"
     ],
     "src/composables/useSettingsPanelModelTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
+    "src/diagnostics/diagnosticAnalysisFormatter.ts": [
+      "src/diagnostics/diagnosticAnalysisFormatterTests.ts",
+      "src/diagnostics/motionReplayAnalyzer.ts",
+      "src/diagnostics/motionReplayDocument.ts"
+    ],
+    "src/diagnostics/diagnosticAnalysisFormatterTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/diagnosticArtifactStore.ts": [
+      "scripts/benchmarkMotionDiagnostics.mjs",
+      "src/diagnostics/diagnosticArtifactStoreTests.ts",
+      "src/diagnostics/diagnosticHubTests.ts",
+      "src/motionLab/MotionLabApp.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/diagnosticArtifactStoreTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/diagnosticClient.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
+      "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
+      "src/diagnostics/diagnosticClientTests.ts"
+    ],
+    "src/diagnostics/diagnosticClientTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
     "src/diagnostics/diagnosticError.ts": [
-      "src/components/backgroundDebug/motionReplayViewerModel.js",
-      "src/diagnostics/diagnosticAnalysisFormatter.js",
-      "src/diagnostics/diagnosticArtifactStore.js",
-      "src/diagnostics/diagnosticClient.js",
-      "src/diagnostics/diagnosticHub.js",
-      "src/diagnostics/diagnosticHubTests.js",
-      "src/diagnostics/diagnosticMessages.js",
+      "src/components/backgroundDebug/motionReplayViewerModel.ts",
+      "src/diagnostics/diagnosticAnalysisFormatter.ts",
+      "src/diagnostics/diagnosticArtifactStore.ts",
+      "src/diagnostics/diagnosticArtifactStoreTests.ts",
+      "src/diagnostics/diagnosticClient.ts",
+      "src/diagnostics/diagnosticClientTests.ts",
+      "src/diagnostics/diagnosticHub.ts",
+      "src/diagnostics/diagnosticHubTests.ts",
+      "src/diagnostics/diagnosticMessages.ts",
       "src/diagnostics/diagnosticPresentation.ts",
       "src/diagnostics/liveDesktopDebugSettings.ts",
       "src/diagnostics/liveDesktopDebugSettingsTests.ts",
@@ -4555,21 +5732,61 @@
       "src/diagnostics/liveDesktopDiagnosticAdapterTests.ts",
       "src/diagnostics/liveDesktopDiagnosticsController.ts",
       "src/diagnostics/liveDesktopDiagnosticsControllerTests.ts",
-      "src/diagnostics/motionDiagnosticAdapter.js",
-      "src/diagnostics/motionDiagnosticSession.js",
-      "src/diagnostics/motionLabDiagnosticAdapter.js",
-      "src/diagnostics/motionReplayDocument.js",
-      "src/diagnostics/renderDiagnosticAdapter.js",
+      "src/diagnostics/motionDiagnosticAdapter.ts",
+      "src/diagnostics/motionDiagnosticAdapterTests.ts",
+      "src/diagnostics/motionDiagnosticSession.ts",
+      "src/diagnostics/motionDiagnosticSessionTests.ts",
+      "src/diagnostics/motionLabDiagnosticAdapter.ts",
+      "src/diagnostics/motionLabDiagnosticAdapterTests.ts",
+      "src/diagnostics/motionReplayDocument.ts",
+      "src/diagnostics/motionReplayDocumentTests.ts",
+      "src/diagnostics/renderDiagnosticAdapter.ts",
+      "src/diagnostics/renderDiagnosticAdapterTests.ts",
       "src/diagnostics/sceneDiagnosticAdapter.ts",
       "src/diagnostics/sceneDiagnosticsState.ts",
       "src/diagnostics/sceneDiagnosticsStateTests.ts",
       "src/rendering/pixi/animation/motionDebugReport.ts"
     ],
+    "src/diagnostics/diagnosticGlobal.ts": [
+      "src/diagnostics/diagnosticGlobalTests.ts",
+      "src/motionLab/MotionLabApp.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/diagnosticGlobalTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/diagnosticHub.ts": [
+      "src/diagnostics/diagnosticHubTests.ts",
+      "src/motionLab/MotionLabApp.vue",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/diagnosticHubTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/diagnosticMessages.ts": [
+      "src/diagnostics/diagnosticAnalysisFormatter.ts",
+      "src/diagnostics/diagnosticHub.ts",
+      "src/diagnostics/diagnosticMessagesTests.ts",
+      "src/diagnostics/motionReplayAnalyzer.ts"
+    ],
+    "src/diagnostics/diagnosticMessagesTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
     "src/diagnostics/diagnosticPresentation.ts": [
-      "src/components/backgroundDebug/motionFocusedDebugExportModel.js",
-      "src/components/backgroundDebug/motionReplayViewerModel.js",
-      "src/motionLab/motionLabModel.js",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.ts",
+      "src/components/backgroundDebug/motionReplayViewerModel.ts",
+      "src/motionLab/motionLabModel.ts",
       "src/rendering/pixi/animation/motionDebugReport.ts"
+    ],
+    "src/diagnostics/diagnosticProtocol.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/diagnostics/diagnosticArtifactStore.ts",
+      "src/diagnostics/diagnosticClient.ts",
+      "src/diagnostics/diagnosticHub.ts",
+      "src/diagnostics/diagnosticMessages.ts",
+      "src/diagnostics/motionDiagnosticAdapter.ts",
+      "src/diagnostics/motionLabDiagnosticAdapter.ts",
+      "src/diagnostics/renderDiagnosticAdapter.ts"
     ],
     "src/diagnostics/liveDesktopDebugSettings.ts": [
       "src/App.vue",
@@ -4592,6 +5809,7 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/diagnostics/liveDesktopDiagnosticsController.ts": [
+      "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
       "src/diagnostics/liveDesktopDiagnosticAdapter.ts",
       "src/diagnostics/liveDesktopDiagnosticsControllerTests.ts",
       "src/rendering/pixi/PixiDesktopSurface.vue"
@@ -4599,12 +5817,67 @@
     "src/diagnostics/liveDesktopDiagnosticsControllerTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
+    "src/diagnostics/motionDiagnosticAdapter.ts": [
+      "src/diagnostics/motionDiagnosticAdapterTests.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/motionDiagnosticAdapterTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/motionDiagnosticSession.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/diagnostics/motionDiagnosticAdapter.ts",
+      "src/diagnostics/motionDiagnosticSessionTests.ts"
+    ],
+    "src/diagnostics/motionDiagnosticSessionTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/motionLabDiagnosticAdapter.ts": [
+      "src/diagnostics/motionLabDiagnosticAdapterTests.ts",
+      "src/motionLab/MotionLabApp.vue"
+    ],
+    "src/diagnostics/motionLabDiagnosticAdapterTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/motionReplayAnalyzer.ts": [
+      "src/components/BackgroundDebugPanel.vue",
+      "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+      "src/diagnostics/motionReplayAnalyzerTests.ts",
+      "src/diagnostics/motionReplayDocument.ts",
+      "src/diagnostics/motionReplayDocumentTests.ts"
+    ],
+    "src/diagnostics/motionReplayAnalyzerTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/motionReplayDocument.ts": [
+      "scripts/benchmarkMotionDiagnostics.mjs",
+      "src/components/BackgroundDebugPanel.vue",
+      "src/diagnostics/motionDiagnosticAdapter.ts",
+      "src/diagnostics/motionDiagnosticSession.ts",
+      "src/diagnostics/motionReplayDocumentTests.ts",
+      "src/motionLab/motionLabModel.ts"
+    ],
+    "src/diagnostics/motionReplayDocumentTests.ts": [
+      "src/diagnostics/motionDiagnosticSessionTests.ts",
+      "src/diagnostics/motionReplayAnalyzerTests.ts",
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/diagnostics/renderDiagnosticAdapter.ts": [
+      "src/diagnostics/renderDiagnosticAdapterTests.ts",
+      "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/renderDiagnosticAdapterTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
     "src/diagnostics/runtimePerformanceMetrics.ts": [
       "src/App.vue",
       "src/composables/useLaunchpadNative.ts",
       "src/composables/useLaunchpadSearch.ts",
-      "src/diagnostics/runtimePerformanceMetricsTests.js",
+      "src/diagnostics/runtimePerformanceMetricsTests.ts",
       "src/rendering/pixi/PixiDesktopSurface.vue"
+    ],
+    "src/diagnostics/runtimePerformanceMetricsTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/diagnostics/sceneDiagnosticAdapter.ts": [
       "src/diagnostics/sceneDiagnosticAdapterTests.ts",
@@ -4789,6 +6062,8 @@
     ],
     "src/domain/input/launchpadPointerTarget.ts": [
       "src/App.vue",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/iconContextMenuGeometry.ts",
       "src/composables/useLaunchpadInputGestures.ts",
       "src/composables/useLaunchpadInputGesturesTests.ts",
       "src/domain/input/launchpadPointerTargetTests.ts"
@@ -4801,9 +6076,10 @@
       "src/rendering/pixi/scene/folderOverlayRenderPlan.ts"
     ],
     "src/domain/launchContext.ts": [
+      "src/App.vue",
       "src/composables/useLaunchpadController.ts",
       "src/domain/launchContextTests.ts",
-      "src/main.js"
+      "src/main.ts"
     ],
     "src/domain/launchContextTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -4831,6 +6107,7 @@
     ],
     "src/domain/launchpadIconVariant.ts": [
       "src/assets/branding/launchpadIconUrls.ts",
+      "src/components/settings/GeneralSettingsPage.vue",
       "src/composables/useLaunchpadNativeTests.ts",
       "src/composables/useLaunchpadSettings.ts",
       "src/composables/useLaunchpadSettingsTests.ts",
@@ -4843,10 +6120,15 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/domain/launchpadLayout.ts": [
+      "src/App.vue",
       "src/application/launchpadDocumentCoordinator.ts",
       "src/components/LaunchpadChromeFrame.vue",
       "src/components/LaunchpadHeader.vue",
+      "src/components/LaunchpadOverlays.vue",
+      "src/components/ScanResultAppRow.vue",
       "src/components/SettingsPanel.vue",
+      "src/components/iconContextMenuGeometry.ts",
+      "src/components/settings/AppsSettingsPage.vue",
       "src/composables/useFolderLayoutStyles.ts",
       "src/composables/useFolderMotionGeometry.ts",
       "src/composables/useFolderOpenIconGhosts.ts",
@@ -4884,13 +6166,15 @@
       "src/domain/backgroundSettings.ts",
       "src/domain/groupTransferPlanner.ts",
       "src/domain/groupTransferSourceCapture.ts",
+      "src/domain/input/launchpadPointerTarget.ts",
       "src/domain/launchpadClone.ts",
       "src/domain/launchpadData.ts",
       "src/domain/launchpadDataTests.ts",
       "src/domain/launchpadLayoutTests.ts",
       "src/domain/layoutConfiguration.ts",
       "src/domain/runLaunchpadLayoutTests.ts",
-      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts"
+      "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
+      "src/testing/launchpadE2eProbe.ts"
     ],
     "src/domain/launchpadLayoutTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -4911,6 +6195,7 @@
       "src/api/launchpadApi.ts",
       "src/application/launchpadDocumentCoordinator.ts",
       "src/application/launchpadDocumentCoordinatorTests.ts",
+      "src/components/BackgroundEffectPreview.vue",
       "src/composables/useLaunchpadApps.ts",
       "src/composables/useLaunchpadAppsTests.ts",
       "src/composables/useLaunchpadNative.ts",
@@ -4950,16 +6235,16 @@
     ],
     "src/domain/runLaunchpadLayoutTests.ts": [],
     "src/fluent/registerFluentComponents.ts": [
-      "src/main.js"
+      "src/main.ts"
     ],
     "src/i18n/catalogs.ts": [
       "scripts/checkI18n.mjs",
-      "src/components/backgroundDebug/motionDebugPanelModelTests.js",
-      "src/diagnostics/diagnosticMessages.js",
+      "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
+      "src/diagnostics/diagnosticMessages.ts",
       "src/i18n/catalogTests.ts",
       "src/i18n/localization.ts",
-      "src/main.js",
-      "src/motionLab/motionLabModelTests.js"
+      "src/main.ts",
+      "src/motionLab/motionLabModelTests.ts"
     ],
     "src/i18n/catalogTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -4969,13 +6254,13 @@
       "src/composables/useLaunchpadSettings.ts",
       "src/composables/useLaunchpadSettingsTests.ts",
       "src/composables/useSettingsPanelModelTests.ts",
-      "src/diagnostics/diagnosticMessages.js",
+      "src/diagnostics/diagnosticMessages.ts",
       "src/domain/launchpadData.ts",
       "src/i18n/catalogs.ts",
       "src/i18n/localeTests.ts",
       "src/i18n/localization.ts",
       "src/i18n/localizationTests.ts",
-      "src/main.js",
+      "src/main.ts",
       "src/platform/localeRuntime.ts"
     ],
     "src/i18n/localeTests.ts": [
@@ -5003,9 +6288,9 @@
       "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue",
       "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue",
       "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
-      "src/components/backgroundDebug/diagnosticUiErrorTests.js",
-      "src/components/backgroundDebug/liveDesktopDiagnosticsTests.js",
-      "src/components/backgroundDebug/renderProbePanelModelTests.js",
+      "src/components/backgroundDebug/diagnosticUiErrorTests.ts",
+      "src/components/backgroundDebug/liveDesktopDiagnosticsTests.ts",
+      "src/components/backgroundDebug/renderProbePanelModelTests.ts",
       "src/components/settings/AboutSettingsPage.vue",
       "src/components/settings/AppsSettingsPage.vue",
       "src/components/settings/GeneralSettingsPage.vue",
@@ -5028,15 +6313,42 @@
       "src/composables/useSettingsPanelModel.ts",
       "src/composables/useSettingsPanelModelTests.ts",
       "src/i18n/localizationTests.ts",
-      "src/main.js",
+      "src/main.ts",
       "src/motionLab/MotionLabApp.vue",
       "src/rendering/pixi/PixiDesktopSurface.vue"
     ],
     "src/i18n/localizationTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
+    "src/main.ts": [],
     "src/mocks/appSeeds.ts": [
       "src/composables/useLaunchpadLayout.ts"
+    ],
+    "src/motionLab/MotionLabApp.vue": [
+      "src/main.ts"
+    ],
+    "src/motionLab/motionLabGate.ts": [
+      "src/main.ts",
+      "src/motionLab/motionLabModel.ts"
+    ],
+    "src/motionLab/motionLabModel.ts": [
+      "src/motionLab/MotionLabApp.vue",
+      "src/motionLab/motionLabModelTests.ts"
+    ],
+    "src/motionLab/motionLabModelTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/motionLab/motionLabParams.ts": [
+      "src/diagnostics/motionLabDiagnosticAdapter.ts",
+      "src/motionLab/MotionLabApp.vue",
+      "src/motionLab/motionLabModel.ts",
+      "src/motionLab/motionLabModelTests.ts",
+      "src/motionLab/motionLabScenarios.ts"
+    ],
+    "src/motionLab/motionLabScenarios.ts": [
+      "src/motionLab/MotionLabApp.vue",
+      "src/motionLab/motionLabModel.ts",
+      "src/motionLab/motionLabModelTests.ts"
     ],
     "src/platform/applicationCatalogDefaults.ts": [
       "src/composables/useLaunchpadApps.ts",
@@ -5053,7 +6365,7 @@
       "src/composables/useMainWindowRuntime.ts",
       "src/composables/useMainWindowRuntimeTests.ts",
       "src/composables/useSettingsPanelModel.ts",
-      "src/main.js",
+      "src/main.ts",
       "src/rendering/runtimeContracts.typeTests.ts"
     ],
     "src/platform/localeRuntime.ts": [
@@ -5094,27 +6406,33 @@
       "src/composables/useLaunchpadFolderFlow.ts",
       "src/composables/useLaunchpadIconActivation.ts",
       "src/composables/useLaunchpadInputGestures.ts",
-      "src/rendering/runtimeContracts.typeTests.ts"
+      "src/rendering/runtimeContracts.typeTests.ts",
+      "src/testing/launchpadE2eProbe.ts"
     ],
     "src/rendering/diagnosticPort.ts": [
-      "src/diagnostics/diagnosticClient.js",
-      "src/diagnostics/diagnosticGlobal.js"
+      "src/diagnostics/diagnosticClient.ts",
+      "src/diagnostics/diagnosticGlobal.ts"
     ],
     "src/rendering/motionLabRendererAdapter.ts": [
       "src/motionLab/MotionLabApp.vue"
     ],
     "src/rendering/motionPort.ts": [
       "src/components/BackgroundDebugPanel.vue",
-      "src/components/backgroundDebug/motionCaptureProfileModel.js",
-      "src/components/backgroundDebug/motionDebugPanelModel.js",
-      "src/components/backgroundDebug/motionFocusedDebugExportModel.js",
-      "src/components/backgroundDebug/motionInspectorModel.js",
-      "src/components/backgroundDebug/motionReplayViewerModel.js",
-      "src/components/backgroundDebug/motionTrackChartModel.js",
-      "src/diagnostics/motionDiagnosticAdapter.js",
-      "src/diagnostics/motionReplayAnalyzer.js",
+      "src/components/backgroundDebug/motionCaptureProfileModel.ts",
+      "src/components/backgroundDebug/motionCaptureProfileModelTests.ts",
+      "src/components/backgroundDebug/motionDebugPanelModel.ts",
+      "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
+      "src/components/backgroundDebug/motionFocusedDebugExportModel.ts",
+      "src/components/backgroundDebug/motionInspectorModel.ts",
+      "src/components/backgroundDebug/motionReplayViewerModel.ts",
+      "src/components/backgroundDebug/motionTrackChartModel.ts",
+      "src/diagnostics/motionDiagnosticAdapter.ts",
+      "src/diagnostics/motionReplayAnalyzer.ts",
+      "src/diagnostics/motionReplayDocument.ts",
       "src/motionLab/MotionLabApp.vue",
-      "src/motionLab/motionLabScenarios.js"
+      "src/motionLab/motionLabModel.ts",
+      "src/motionLab/motionLabModelTests.ts",
+      "src/motionLab/motionLabScenarios.ts"
     ],
     "src/rendering/pixi/animation/motionCleanup.ts": [
       "src/rendering/pixi/animation/motionCleanupTests.ts",
@@ -5188,7 +6506,7 @@
     ],
     "src/rendering/pixi/animation/motionRuntime.ts": [
       "src/domain/runLaunchpadLayoutTests.ts",
-      "src/motionLab/motionLabModelTests.js",
+      "src/motionLab/motionLabModelTests.ts",
       "src/rendering/motionPort.ts",
       "src/rendering/pixi/PixiDesktopSurface.vue",
       "src/rendering/pixi/animation/motionCleanupTests.ts",
@@ -5377,7 +6695,7 @@
       "src/rendering/pixi/PixiDesktopSurface.vue"
     ],
     "src/rendering/pixi/debugNamespace.ts": [
-      "src/diagnostics/diagnosticGlobalTests.js",
+      "src/diagnostics/diagnosticGlobalTests.ts",
       "src/rendering/diagnosticPort.ts"
     ],
     "src/rendering/pixi/desktopPresentationLoop.ts": [
@@ -6197,6 +7515,9 @@
     ],
     "src/rendering/sceneRuntimeTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
+    ],
+    "src/testing/launchpadE2eProbe.ts": [
+      "src/App.vue"
     ]
   },
   "scanRoots": [
@@ -6221,9 +7542,38 @@
     "src/api/liveDesktopContract.ts",
     "src/api/windowChromeApi.ts",
     "src/api/windowChromeApiTests.ts",
-    "src/application/launchpadDocumentCoordinator.ts",
     "src/application/errorMessage.ts",
+    "src/application/launchpadDocumentCoordinator.ts",
     "src/assets/branding/launchpadIconUrls.ts",
+    "src/components/Icons.ts",
+    "src/components/backgroundDebug/desktopLayoutDebugSettings.ts",
+    "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.ts",
+    "src/components/backgroundDebug/diagnosticUiError.ts",
+    "src/components/backgroundDebug/diagnosticUiErrorTests.ts",
+    "src/components/backgroundDebug/liveDesktopDiagnostics.ts",
+    "src/components/backgroundDebug/liveDesktopDiagnosticsTests.ts",
+    "src/components/backgroundDebug/motionCaptureProfileModel.ts",
+    "src/components/backgroundDebug/motionCaptureProfileModelTests.ts",
+    "src/components/backgroundDebug/motionDebugPanelModel.ts",
+    "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
+    "src/components/backgroundDebug/motionDebugWorkspaceContext.ts",
+    "src/components/backgroundDebug/motionDebugWorkspaceContextTests.ts",
+    "src/components/backgroundDebug/motionDebugWorkspaceModel.ts",
+    "src/components/backgroundDebug/motionDebugWorkspaceModelTests.ts",
+    "src/components/backgroundDebug/motionFocusedDebugExportModel.ts",
+    "src/components/backgroundDebug/motionFocusedDebugExportModelTests.ts",
+    "src/components/backgroundDebug/motionInspectorModel.ts",
+    "src/components/backgroundDebug/motionInspectorModelTests.ts",
+    "src/components/backgroundDebug/motionReplayBookmarkModel.ts",
+    "src/components/backgroundDebug/motionReplayBookmarkModelTests.ts",
+    "src/components/backgroundDebug/motionReplayViewerModel.ts",
+    "src/components/backgroundDebug/motionReplayViewerModelTests.ts",
+    "src/components/backgroundDebug/motionTrackChartModel.ts",
+    "src/components/backgroundDebug/motionTrackChartModelTests.ts",
+    "src/components/backgroundDebug/renderProbePanelModel.ts",
+    "src/components/backgroundDebug/renderProbePanelModelTests.ts",
+    "src/components/iconContextMenuGeometry.ts",
+    "src/components/iconContextMenuGeometryTests.ts",
     "src/composables/launchpadConstants.ts",
     "src/composables/launchpadMotion.ts",
     "src/composables/mainWindowTransition.ts",
@@ -6291,15 +7641,41 @@
     "src/composables/useSettingsPanelFlowTests.ts",
     "src/composables/useSettingsPanelModel.ts",
     "src/composables/useSettingsPanelModelTests.ts",
+    "src/diagnostics/diagnosticAnalysisFormatter.ts",
+    "src/diagnostics/diagnosticAnalysisFormatterTests.ts",
+    "src/diagnostics/diagnosticArtifactStore.ts",
+    "src/diagnostics/diagnosticArtifactStoreTests.ts",
+    "src/diagnostics/diagnosticClient.ts",
+    "src/diagnostics/diagnosticClientTests.ts",
     "src/diagnostics/diagnosticError.ts",
+    "src/diagnostics/diagnosticGlobal.ts",
+    "src/diagnostics/diagnosticGlobalTests.ts",
+    "src/diagnostics/diagnosticHub.ts",
+    "src/diagnostics/diagnosticHubTests.ts",
+    "src/diagnostics/diagnosticMessages.ts",
+    "src/diagnostics/diagnosticMessagesTests.ts",
     "src/diagnostics/diagnosticPresentation.ts",
+    "src/diagnostics/diagnosticProtocol.ts",
     "src/diagnostics/liveDesktopDebugSettings.ts",
     "src/diagnostics/liveDesktopDebugSettingsTests.ts",
     "src/diagnostics/liveDesktopDiagnosticAdapter.ts",
     "src/diagnostics/liveDesktopDiagnosticAdapterTests.ts",
     "src/diagnostics/liveDesktopDiagnosticsController.ts",
     "src/diagnostics/liveDesktopDiagnosticsControllerTests.ts",
+    "src/diagnostics/motionDiagnosticAdapter.ts",
+    "src/diagnostics/motionDiagnosticAdapterTests.ts",
+    "src/diagnostics/motionDiagnosticSession.ts",
+    "src/diagnostics/motionDiagnosticSessionTests.ts",
+    "src/diagnostics/motionLabDiagnosticAdapter.ts",
+    "src/diagnostics/motionLabDiagnosticAdapterTests.ts",
+    "src/diagnostics/motionReplayAnalyzer.ts",
+    "src/diagnostics/motionReplayAnalyzerTests.ts",
+    "src/diagnostics/motionReplayDocument.ts",
+    "src/diagnostics/motionReplayDocumentTests.ts",
+    "src/diagnostics/renderDiagnosticAdapter.ts",
+    "src/diagnostics/renderDiagnosticAdapterTests.ts",
     "src/diagnostics/runtimePerformanceMetrics.ts",
+    "src/diagnostics/runtimePerformanceMetricsTests.ts",
     "src/diagnostics/sceneDiagnosticAdapter.ts",
     "src/diagnostics/sceneDiagnosticAdapterTests.ts",
     "src/diagnostics/sceneDiagnosticsState.ts",
@@ -6357,7 +7733,13 @@
     "src/i18n/localeTests.ts",
     "src/i18n/localization.ts",
     "src/i18n/localizationTests.ts",
+    "src/main.ts",
     "src/mocks/appSeeds.ts",
+    "src/motionLab/motionLabGate.ts",
+    "src/motionLab/motionLabModel.ts",
+    "src/motionLab/motionLabModelTests.ts",
+    "src/motionLab/motionLabParams.ts",
+    "src/motionLab/motionLabScenarios.ts",
     "src/platform/applicationCatalogDefaults.ts",
     "src/platform/launchpadPorts.ts",
     "src/platform/localeRuntime.ts",
@@ -6564,15 +7946,10 @@
     "src/rendering/sceneEvents.ts",
     "src/rendering/sceneFrame.ts",
     "src/rendering/sceneRuntime.ts",
-    "src/rendering/sceneRuntimeTests.ts"
+    "src/rendering/sceneRuntimeTests.ts",
+    "src/testing/launchpadE2eProbe.ts"
   ],
-  "allowedTsToJsEdges": [
-    "src/rendering/pixi/PixiDesktopSurface.vue -> src/diagnostics/diagnosticArtifactStore.js",
-    "src/rendering/pixi/PixiDesktopSurface.vue -> src/diagnostics/diagnosticGlobal.js",
-    "src/rendering/pixi/PixiDesktopSurface.vue -> src/diagnostics/diagnosticHub.js",
-    "src/rendering/pixi/PixiDesktopSurface.vue -> src/diagnostics/motionDiagnosticAdapter.js",
-    "src/rendering/pixi/PixiDesktopSurface.vue -> src/diagnostics/renderDiagnosticAdapter.js"
-  ],
+  "allowedTsToJsEdges": [],
   "retiredSources": [
     "src/api/launchpadApi.js",
     "src/api/launchpadApiTests.js",
@@ -6581,6 +7958,35 @@
     "src/application/launchpadDocumentCoordinator.js",
     "src/application/launchpadDocumentCoordinatorTests.js",
     "src/assets/branding/launchpadIconUrls.js",
+    "src/components/Icons.js",
+    "src/components/backgroundDebug/desktopLayoutDebugSettings.js",
+    "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.js",
+    "src/components/backgroundDebug/diagnosticUiError.js",
+    "src/components/backgroundDebug/diagnosticUiErrorTests.js",
+    "src/components/backgroundDebug/liveDesktopDiagnostics.js",
+    "src/components/backgroundDebug/liveDesktopDiagnosticsTests.js",
+    "src/components/backgroundDebug/motionCaptureProfileModel.js",
+    "src/components/backgroundDebug/motionCaptureProfileModelTests.js",
+    "src/components/backgroundDebug/motionDebugPanelModel.js",
+    "src/components/backgroundDebug/motionDebugPanelModelTests.js",
+    "src/components/backgroundDebug/motionDebugWorkspaceContext.js",
+    "src/components/backgroundDebug/motionDebugWorkspaceContextTests.js",
+    "src/components/backgroundDebug/motionDebugWorkspaceModel.js",
+    "src/components/backgroundDebug/motionDebugWorkspaceModelTests.js",
+    "src/components/backgroundDebug/motionFocusedDebugExportModel.js",
+    "src/components/backgroundDebug/motionFocusedDebugExportModelTests.js",
+    "src/components/backgroundDebug/motionInspectorModel.js",
+    "src/components/backgroundDebug/motionInspectorModelTests.js",
+    "src/components/backgroundDebug/motionReplayBookmarkModel.js",
+    "src/components/backgroundDebug/motionReplayBookmarkModelTests.js",
+    "src/components/backgroundDebug/motionReplayViewerModel.js",
+    "src/components/backgroundDebug/motionReplayViewerModelTests.js",
+    "src/components/backgroundDebug/motionTrackChartModel.js",
+    "src/components/backgroundDebug/motionTrackChartModelTests.js",
+    "src/components/backgroundDebug/renderProbePanelModel.js",
+    "src/components/backgroundDebug/renderProbePanelModelTests.js",
+    "src/components/iconContextMenuGeometry.js",
+    "src/components/iconContextMenuGeometryTests.js",
     "src/composables/launchpadConstants.js",
     "src/composables/launchpadMotion.js",
     "src/composables/mainWindowTransition.js",
@@ -6650,15 +8056,41 @@
     "src/composables/useSettingsPanelFlowTests.js",
     "src/composables/useSettingsPanelModel.js",
     "src/composables/useSettingsPanelModelTests.js",
+    "src/diagnostics/diagnosticAnalysisFormatter.js",
+    "src/diagnostics/diagnosticAnalysisFormatterTests.js",
+    "src/diagnostics/diagnosticArtifactStore.js",
+    "src/diagnostics/diagnosticArtifactStoreTests.js",
+    "src/diagnostics/diagnosticClient.js",
+    "src/diagnostics/diagnosticClientTests.js",
     "src/diagnostics/diagnosticError.js",
+    "src/diagnostics/diagnosticGlobal.js",
+    "src/diagnostics/diagnosticGlobalTests.js",
+    "src/diagnostics/diagnosticHub.js",
+    "src/diagnostics/diagnosticHubTests.js",
+    "src/diagnostics/diagnosticMessages.js",
+    "src/diagnostics/diagnosticMessagesTests.js",
     "src/diagnostics/diagnosticPresentation.js",
+    "src/diagnostics/diagnosticProtocol.js",
     "src/diagnostics/liveDesktopDebugSettings.js",
     "src/diagnostics/liveDesktopDebugSettingsTests.js",
     "src/diagnostics/liveDesktopDiagnosticAdapter.js",
     "src/diagnostics/liveDesktopDiagnosticAdapterTests.js",
     "src/diagnostics/liveDesktopDiagnosticsController.js",
     "src/diagnostics/liveDesktopDiagnosticsControllerTests.js",
+    "src/diagnostics/motionDiagnosticAdapter.js",
+    "src/diagnostics/motionDiagnosticAdapterTests.js",
+    "src/diagnostics/motionDiagnosticSession.js",
+    "src/diagnostics/motionDiagnosticSessionTests.js",
+    "src/diagnostics/motionLabDiagnosticAdapter.js",
+    "src/diagnostics/motionLabDiagnosticAdapterTests.js",
+    "src/diagnostics/motionReplayAnalyzer.js",
+    "src/diagnostics/motionReplayAnalyzerTests.js",
+    "src/diagnostics/motionReplayDocument.js",
+    "src/diagnostics/motionReplayDocumentTests.js",
+    "src/diagnostics/renderDiagnosticAdapter.js",
+    "src/diagnostics/renderDiagnosticAdapterTests.js",
     "src/diagnostics/runtimePerformanceMetrics.js",
+    "src/diagnostics/runtimePerformanceMetricsTests.js",
     "src/diagnostics/sceneDiagnosticAdapter.js",
     "src/diagnostics/sceneDiagnosticAdapterTests.js",
     "src/diagnostics/sceneDiagnosticsState.js",
@@ -6715,7 +8147,13 @@
     "src/i18n/localeTests.js",
     "src/i18n/localization.js",
     "src/i18n/localizationTests.js",
+    "src/main.js",
     "src/mocks/appSeeds.js",
+    "src/motionLab/motionLabGate.js",
+    "src/motionLab/motionLabModel.js",
+    "src/motionLab/motionLabModelTests.js",
+    "src/motionLab/motionLabParams.js",
+    "src/motionLab/motionLabScenarios.js",
     "src/platform/applicationCatalogDefaults.js",
     "src/platform/launchpadPorts.js",
     "src/platform/localeRuntime.js",
@@ -6923,7 +8361,8 @@
     "src/rendering/sceneEvents.js",
     "src/rendering/sceneFrame.js",
     "src/rendering/sceneRuntime.js",
-    "src/rendering/sceneRuntimeTests.js"
+    "src/rendering/sceneRuntimeTests.js",
+    "src/testing/launchpadE2eProbe.js"
   ],
   "testRunners": [
     {
