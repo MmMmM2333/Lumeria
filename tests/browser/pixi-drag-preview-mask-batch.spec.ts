@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { PixiRegressionPixel } from "./fixtures/pixi-drag-preview-mask-batch.fixture.js";
 
 test("inactive drag-preview folder mask cannot corrupt later sprite pixels", async ({ page }) => {
   await page.goto("/tests/browser/fixtures/pixi-drag-preview-mask-batch.html");
@@ -13,7 +14,9 @@ test("inactive drag-preview folder mask cannot corrupt later sprite pixels", asy
     firstMotionCorruptions: result.motionCorruptions.slice(0, 12),
     maskAttachedInApp: result.maskAttachedInApp,
     motionCorruptionCount: result.motionCorruptions.length,
-    offsetCollisions: result.sentinelOffsets.filter((entry) => staleAttributeStarts.has(entry.attributeStart)),
+    offsetCollisions: result.sentinelOffsets.filter((entry) => (
+      entry.attributeStart !== null && staleAttributeStarts.has(entry.attributeStart)
+    )),
     rendererInfo: result.rendererInfo,
     transitionCycles: result.transitionCycles,
     warmCorruptionCount: result.warmCorruptions.length,
@@ -33,10 +36,13 @@ test("group-drag folder actors remain visible until they cross the rounded panel
   await page.waitForFunction(() => window.pixiDragPreviewMaskBatchFixtureReady === true);
 
   const result = await page.evaluate(() => window.runGroupDragFolderClipRegression());
-  const background = [0x11, 0x18, 0x27, 0xff];
-  const actor = [0xf4, 0x3f, 0x5e, 0xff];
-  const distance = (actual, expected) => Math.max(
-    ...actual.map((channel, index) => Math.abs(channel - expected[index]))
+  const background: PixiRegressionPixel = [0x11, 0x18, 0x27, 0xff];
+  const actor: PixiRegressionPixel = [0xf4, 0x3f, 0x5e, 0xff];
+  const distance = (actual: PixiRegressionPixel, expected: PixiRegressionPixel) => Math.max(
+    Math.abs(actual[0] - expected[0]),
+    Math.abs(actual[1] - expected[1]),
+    Math.abs(actual[2] - expected[2]),
+    Math.abs(actual[3] - expected[3]),
   );
   const diagnostics = JSON.stringify(result, null, 2);
 

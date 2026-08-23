@@ -1,8 +1,26 @@
 import { expect, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+
+interface ContextMenuAppElement extends Element {
+  readonly __vue_app__?: Readonly<{
+    _instance?: Readonly<{
+      setupState?: Readonly<{
+        desktopMainRef?: Readonly<{ getBoundingClientRect(): DOMRect }>;
+        folderPanelRef?: Readonly<{ getBoundingClientRect(): DOMRect }>;
+      }>;
+    }>;
+  }>;
+}
+
+declare global {
+  interface Window {
+    __contextMenuWheelProbe: number;
+  }
+}
 
 test.use({ locale: "zh-CN" });
 
-async function rightClickSingleSearchResult(page, itemName = "Safari") {
+async function rightClickSingleSearchResult(page: Page, itemName = "Safari") {
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   await expect(canvas).toBeVisible();
   const bounds = await canvas.boundingBox();
@@ -29,7 +47,7 @@ async function rightClickSingleSearchResult(page, itemName = "Safari") {
   throw new Error(`Could not open the ${itemName} context menu from the single-result grid`);
 }
 
-async function rightClickFolderTarget(page, folderName = "Productivity Suite") {
+async function rightClickFolderTarget(page: Page, folderName = "Productivity Suite") {
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   await expect(canvas).toBeVisible();
   const bounds = await canvas.boundingBox();
@@ -81,12 +99,12 @@ async function rightClickFolderTarget(page, folderName = "Productivity Suite") {
   throw new Error(`Could not open the ${folderName} context menu from the first page grid`);
 }
 
-async function rightClickFolder(page, folderName = "Productivity Suite") {
+async function rightClickFolder(page: Page, folderName = "Productivity Suite") {
   const { menu } = await rightClickFolderTarget(page, folderName);
   return menu;
 }
 
-async function rightClickFolderChild(page) {
+async function rightClickFolderChild(page: Page) {
   const folderMenu = await rightClickFolder(page);
   await folderMenu.getByRole("menuitem", { name: "打开", exact: true }).click();
   await expect(page.locator("input.pixi-folder-name-input")).toBeVisible();
@@ -110,7 +128,7 @@ async function rightClickFolderChild(page) {
   throw new Error("Could not open a child icon context menu inside Productivity Suite");
 }
 
-async function rightClickFolderBlank(page) {
+async function rightClickFolderBlank(page: Page) {
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error("Pixi launchpad canvas has no visible bounds");
@@ -127,7 +145,7 @@ async function rightClickFolderBlank(page) {
   throw new Error("Could not open the folder-scoped menu from blank panel space");
 }
 
-async function getDesktopSurfacePoint(page) {
+async function getDesktopSurfacePoint(page: Page) {
   const desktopMain = page.locator(".desktop-main");
   await expect(desktopMain).toBeVisible();
   const mainBounds = await desktopMain.boundingBox();
@@ -138,9 +156,9 @@ async function getDesktopSurfacePoint(page) {
   };
 }
 
-async function getFolderOutsidePoint(page) {
+async function getFolderOutsidePoint(page: Page) {
   return page.evaluate(() => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = document.querySelector<ContextMenuAppElement>("#app")?.__vue_app__?._instance?.setupState;
     const main = state?.desktopMainRef?.getBoundingClientRect?.();
     const panel = state?.folderPanelRef?.getBoundingClientRect?.();
     if (!main || !panel) throw new Error("Open-folder context menu test requires live main and panel bounds");
@@ -160,7 +178,7 @@ async function getFolderOutsidePoint(page) {
   });
 }
 
-async function rightClickDesktopSurface(page) {
+async function rightClickDesktopSurface(page: Page) {
   const point = await getDesktopSurfacePoint(page);
   await page.mouse.click(point.x, point.y, { button: "right" });
   const menu = page.getByRole("menu", { name: "启动台菜单", exact: true });
@@ -168,7 +186,7 @@ async function rightClickDesktopSurface(page) {
   return menu;
 }
 
-async function applySettingsTheme(page, themeName) {
+async function applySettingsTheme(page: Page, themeName: string) {
   await page.getByRole("button", { name: "打开设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await expect(dialog).toBeVisible();
@@ -180,12 +198,12 @@ async function applySettingsTheme(page, themeName) {
   await expect(dialog).toBeHidden();
 }
 
-async function readContextMenuTheme(menu) {
+async function readContextMenuTheme(menu: Locator) {
   return menu.evaluate((element) => {
     const layer = element.closest(".icon-context-menu-layer");
     const firstItem = element.querySelector("fluent-menu-item");
     const dangerItem = element.querySelector(".icon-context-menu-item-danger");
-    if (!layer || !firstItem || !dangerItem) {
+    if (!(layer instanceof HTMLElement) || !firstItem || !dangerItem) {
       throw new Error("Context menu theme probe is missing its layer or menu items");
     }
     const menuStyle = getComputedStyle(element);
@@ -209,11 +227,13 @@ async function readContextMenuTheme(menu) {
   });
 }
 
-async function readSurfaceContextMenuTheme(menu) {
+async function readSurfaceContextMenuTheme(menu: Locator) {
   return menu.evaluate((element) => {
     const layer = element.closest(".icon-context-menu-layer");
     const firstItem = element.querySelector("fluent-menu-item");
-    if (!layer || !firstItem) throw new Error("Surface context menu theme probe is missing its layer or item");
+    if (!(layer instanceof HTMLElement) || !firstItem) {
+      throw new Error("Surface context menu theme probe is missing its layer or item");
+    }
     const menuStyle = getComputedStyle(element);
     const firstItemStyle = getComputedStyle(firstItem);
     return {
@@ -229,7 +249,7 @@ async function readSurfaceContextMenuTheme(menu) {
 }
 
 test("editing an app from its context menu opens the edit dialog", async ({ page }) => {
-  const pageErrors = [];
+  const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));
 
   await page.goto("/");
@@ -420,6 +440,7 @@ test("folder icon, blank panel, and outside context menus keep their scopes sepa
   await page.goto("/");
   const { menu: iconMenu, point: iconPoint } = await rightClickFolderChild(page);
   const label = await iconMenu.getAttribute("aria-label");
+  if (label === null) throw new Error("Folder child context menu is missing its aria-label");
 
   await page.mouse.click(iconPoint.x, iconPoint.y, { button: "right" });
   await expect(iconMenu).toHaveAttribute("aria-label", label);
@@ -532,7 +553,7 @@ test("launchpad chrome routes background context menus while preserving buttons 
   await expect(page.locator(".launchpad-header")).toBeVisible();
   await expect(page.locator(".page-dots")).toBeVisible();
 
-  async function dispatchContextMenu(selector) {
+  async function dispatchContextMenu(selector: string) {
     return page.locator(selector).first().evaluate((element) => {
       const rect = element.getBoundingClientRect();
       const event = new MouseEvent("contextmenu", {

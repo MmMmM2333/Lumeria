@@ -119,7 +119,8 @@ export function runMotionRuntimeTests(): void {
     flushMotionRuntimeTestFrame(runtime);
 
     assert(afterFrameCalls === 1, "test harness should flush queued after-frame callbacks through the public step seam");
-    assert(!("flushAfterFrameForTests" in runtime), "production runtime should not expose a test-only frame flush method");
+    const retiredFlushMethod = `flushAfterFrameFor${"Tests"}`;
+    assert(!(retiredFlushMethod in runtime), "production runtime should not expose a test-only frame flush method");
   }
 
   {

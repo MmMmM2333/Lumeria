@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
-async function sampleSearchAnimation(page, frameCount = 16) {
+async function sampleSearchAnimation(page: Page, frameCount = 16) {
   return page.evaluate(async (count) => {
     const frames = [];
     for (let index = 0; index < count; index += 1) {
@@ -27,6 +28,7 @@ test.describe("localized launchpad search placeholder", () => {
     await expect(search).toHaveAttribute("placeholder", "Search");
 
     const centered = await search.evaluate((input) => {
+      if (!(input instanceof HTMLInputElement)) throw new Error("Searchbox must be an input element");
       const content = input.closest(".search-pill-content");
       const icon = content?.querySelector(".hint-icon");
       if (!content || !icon) throw new Error("Search placeholder layout is incomplete");
@@ -59,12 +61,16 @@ test.describe("localized launchpad search placeholder", () => {
     await search.click();
     await expect(search).toBeFocused();
     await expect.poll(async () => search.evaluate((input) => (
-      input.closest(".search-pill-content")?.getBoundingClientRect().width || 0
+      input instanceof HTMLInputElement
+        ? input.closest(".search-pill-content")?.getBoundingClientRect().width || 0
+        : 0
     ))).toBeGreaterThan(250);
 
     const focusedIconLeft = await search.evaluate((input) => (
-      input.closest(".search-pill-content")?.querySelector(".hint-icon")?.getBoundingClientRect().left
+      input instanceof HTMLInputElement
+        ? input.closest(".search-pill-content")?.querySelector(".hint-icon")?.getBoundingClientRect().left
         ?? Number.NaN
+        : Number.NaN
     ));
     await page.locator(".pixi-launchpad-canvas").click({ position: { x: 12, y: 12 } });
     const blurFrames = await sampleSearchAnimation(page);
@@ -72,6 +78,7 @@ test.describe("localized launchpad search placeholder", () => {
     const upperBound = Math.max(focusedIconLeft, centered.iconLeft) - 2;
     expect(blurFrames.some((frame) => frame.iconLeft > lowerBound && frame.iconLeft < upperBound)).toBe(true);
     await expect.poll(async () => search.evaluate((input, centeredIconLeft) => {
+      if (!(input instanceof HTMLInputElement)) return Number.POSITIVE_INFINITY;
       const icon = input.closest(".search-pill-content")?.querySelector(".hint-icon");
       return icon ? Math.abs(icon.getBoundingClientRect().left - centeredIconLeft) : Number.POSITIVE_INFINITY;
     }, centered.iconLeft)).toBeLessThanOrEqual(1);

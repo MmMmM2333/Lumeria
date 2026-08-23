@@ -1,11 +1,97 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import type { LaunchpadGroupDragState } from "../../src/composables/useLaunchpadDrag.js";
+import type { IconBoundsRegistry } from "../../src/rendering/pixi/geometry/iconBoundsRegistry.js";
+import type { DesktopLayer } from "../../src/rendering/pixi/scene/DesktopLayer.js";
+
+interface MultiSelectApp {
+  readonly id: string;
+  readonly type: "app";
+}
+
+interface MultiSelectFolder {
+  readonly childPages: (MultiSelectItem | null | undefined)[][];
+  readonly id: string;
+  readonly type: "folder";
+}
+
+type MultiSelectItem = MultiSelectApp | MultiSelectFolder;
+
+interface MultiSelectManagedApp {
+  readonly id: string;
+  origin?: string;
+}
+
+interface MultiSelectSetupState {
+  readonly activePages: MultiSelectItem[][];
+  readonly batchSelectedIds: Set<string>;
+  readonly groupDragState: LaunchpadGroupDragState | null;
+  readonly iconBoundsRegistry: IconBoundsRegistry;
+  readonly settingsPanelState: Readonly<{
+    managedApps: Readonly<{ value: MultiSelectManagedApp[] }>;
+    scanAppBlacklist: Readonly<{ value: readonly Readonly<{ catalogId: string }>[] }>;
+  }>;
+  activePageIndex: number;
+  isBatchSelectionActive: boolean;
+  isBatchSelectionFrozen: boolean;
+  isEditMode: boolean;
+  isSearchMode: boolean;
+  openFolderId: string | null;
+  searchQuery: string;
+  enterBatchSelection(item?: MultiSelectItem): void;
+  selectCurrentBatchScope(): void;
+}
+
+interface MultiSelectComponentInstance {
+  readonly setupState?: Readonly<{ layer?: DesktopLayer }>;
+  readonly subTree?: MultiSelectVNode;
+  readonly type?: Readonly<{ __name?: string; name?: string }>;
+}
+
+interface MultiSelectVNode {
+  readonly children?: MultiSelectVNode[];
+  readonly component?: MultiSelectComponentInstance | null;
+}
+
+interface MultiSelectRootInstance {
+  readonly setupState: MultiSelectSetupState;
+  readonly subTree?: MultiSelectVNode;
+}
+
+interface MultiSelectAppElement extends Element {
+  readonly __vue_app__?: Readonly<{ _instance?: MultiSelectRootInstance }>;
+}
+
+interface MultiSelectTestBridge {
+  getInstance(): MultiSelectRootInstance;
+  getState(): MultiSelectSetupState;
+}
+
+declare global {
+  interface Window {
+    __LUMERIA_MULTI_SELECT_TEST__: MultiSelectTestBridge;
+  }
+}
 
 test.use({ locale: "zh-CN" });
 
-async function waitForFixture(page) {
+async function waitForFixture(page: Page) {
+  await page.addInitScript(() => {
+    const getInstance = (): MultiSelectRootInstance => {
+      const instance = document.querySelector<MultiSelectAppElement>("#app")
+        ?.__vue_app__?._instance;
+      if (!instance) throw new Error("Launchpad multi-select fixture instance is unavailable");
+      return instance;
+    };
+    window.__LUMERIA_MULTI_SELECT_TEST__ = {
+      getInstance,
+      getState: () => getInstance().setupState,
+    };
+  });
   await page.goto("/?fixture=multi-select");
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = document.querySelector<MultiSelectAppElement>("#app")
+      ?.__vue_app__?._instance?.setupState;
     return document.querySelector('[data-launchpad-fixture="multi-select"]') &&
       state?.activePages?.length === 3 &&
       state.activePages[0]?.length === 35;
@@ -13,9 +99,9 @@ async function waitForFixture(page) {
   await waitForIconBounds(page, "app-0-safari");
 }
 
-async function waitForIconBounds(page, id) {
+async function waitForIconBounds(page: Page, id: string) {
   await page.waitForFunction((iconId) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     const location = state?.activePages
       ?.flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
       .find((entry) => entry.item.id === iconId);
@@ -27,10 +113,14 @@ async function waitForIconBounds(page, id) {
   }, id);
 }
 
-async function dispatchIconPointer(page, id, options = {}) {
+async function dispatchIconPointer(
+  page: Page,
+  id: string,
+  options: Readonly<{ pointerId?: number; type?: "click" | "contextmenu" }> = {},
+) {
   await waitForIconBounds(page, id);
   return page.evaluate(({ iconId, pointerId, type }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     const location = state.activePages
       .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
       .find((entry) => entry.item.id === iconId);
@@ -44,6 +134,7 @@ async function dispatchIconPointer(page, id, options = {}) {
     const clientX = (bounds.left + bounds.right) / 2;
     const clientY = (bounds.top + bounds.bottom) / 2;
     const target = document.elementFromPoint(clientX, clientY);
+    if (!target) throw new Error(`Missing pointer target for fixture icon: ${iconId}`);
     const init = {
       bubbles: true,
       button: 0,
@@ -74,14 +165,14 @@ async function dispatchIconPointer(page, id, options = {}) {
   });
 }
 
-async function dispatchSurfaceContextMenu(page) {
+async function dispatchSurfaceContextMenu(page: Page) {
   return page.evaluate(() => {
     const host = document.querySelector(".pixi-desktop-host");
     const main = document.querySelector("main.desktop-main");
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     if (!host || !main) throw new Error("Missing desktop surface host");
     const rect = main.getBoundingClientRect();
-    const candidates = [
+    const candidates: readonly (readonly [number, number])[] = [
       [0.94, 0.92],
       [0.88, 0.88],
       [0.94, 0.76],
@@ -113,9 +204,9 @@ async function dispatchSurfaceContextMenu(page) {
   });
 }
 
-async function readManagementState(page) {
+async function readManagementState(page: Page) {
   return page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     return {
       batch: state.isBatchSelectionActive,
       edit: state.isEditMode,
@@ -143,7 +234,7 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
 
   await page.keyboard.press("q");
   expect(await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     const event = new KeyboardEvent("keydown", {
       bubbles: true,
       cancelable: true,
@@ -172,20 +263,22 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
   await waitForIconBounds(page, "app-2-photos");
 
   const result = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-    const getBounds = (id) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+    const getBounds = (id: string) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id,
       pageIndex: 0,
     });
     const leadBounds = getBounds("app-0-safari");
     const targetBounds = getBounds("app-2-photos");
+    if (!leadBounds || !targetBounds) throw new Error("Missing group-drop fixture bounds");
     const leadX = (leadBounds.left + leadBounds.right) / 2;
     const leadY = (leadBounds.top + leadBounds.bottom) / 2;
     const targetX = (targetBounds.left + targetBounds.right) / 2;
     const targetY = (targetBounds.top + targetBounds.bottom) / 2;
     const target = document.elementFromPoint(leadX, leadY);
+    if (!target) throw new Error("Missing group-drop pointer target");
     const init = {
       bubbles: true,
       button: 0,
@@ -230,17 +323,18 @@ test("surface batch entry and app-on-app group drop stay atomic", async ({ page 
     }
     const folder = state.activePages
       .flat()
-      .find((item) => item.type === "folder" &&
-        item.childPages.flat().some((child) => child.id === "app-2-photos"));
+      .find((item): item is MultiSelectFolder => item.type === "folder" &&
+        item.childPages.flat().some((child) => child?.id === "app-2-photos"));
     const allIds = state.activePages.flatMap((items) => items.flatMap((item) => [
       item.id,
-      ...(item.type === "folder" ? item.childPages.flat() : []).map((child) => child.id),
+      ...(item.type === "folder" ? item.childPages.flat() : [])
+        .flatMap((child) => child ? [child.id] : []),
     ]));
     return {
       batch: state.isBatchSelectionActive,
       beforeRelease,
       duplicateIds: [...new Set(allIds.filter((id, index) => allIds.indexOf(id) !== index))],
-      folderChildren: folder?.childPages?.flat().map((child) => child.id) || [],
+      folderChildren: folder?.childPages.flat().flatMap((child) => child ? [child.id] : []) || [],
       groupEnded: state.groupDragState == null,
       openFolderId: state.openFolderId,
       selectedIds: [...state.batchSelectedIds],
@@ -273,7 +367,7 @@ test("selection toolbar has one exit, clears in place, and guards scan exclusion
   await waitForFixture(page);
   await page.setViewportSize({ width: 900, height: 620 });
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     state.enterBatchSelection();
   });
 
@@ -317,7 +411,7 @@ test("selection toolbar has one exit, clears in place, and guards scan exclusion
 test("eligible batch apps can be removed and excluded from future scans", async ({ page }) => {
   await waitForFixture(page);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     for (const id of ["app-0-safari", "app-1-mail"]) {
       const app = state.settingsPanelState.managedApps.value.find((candidate) => candidate.id === id);
       if (!app) throw new Error(`Missing managed fixture app: ${id}`);
@@ -339,7 +433,7 @@ test("eligible batch apps can be removed and excluded from future scans", async 
   await expect.poll(async () => (await readManagementState(page)).batch).toBe(false);
   await expect.poll(async () => (await readManagementState(page)).pageSizes).toEqual([33, 35, 28]);
   const blacklist = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     return state.settingsPanelState.scanAppBlacklist.value.map((entry) => entry.catalogId).sort();
   });
   expect(blacklist).toEqual(["app-0-safari", "app-1-mail"]);
@@ -348,26 +442,28 @@ test("eligible batch apps can be removed and excluded from future scans", async 
 test("top cancel zone and Escape return a batch drag without changing layout", async ({ page }) => {
   await waitForFixture(page);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
     state.enterBatchSelection();
   });
   await dispatchIconPointer(page, "app-0-safari", { pointerId: 71 });
   await dispatchIconPointer(page, "app-1-mail", { pointerId: 72 });
 
   const zoneResult = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
     const before = JSON.stringify(state.activePages);
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id: "app-0-safari",
       pageIndex: 0,
     });
+    if (!bounds) throw new Error("Missing batch cancel-zone source bounds");
     const start = {
       x: (bounds.left + bounds.right) / 2,
       y: (bounds.top + bounds.bottom) / 2,
     };
     const target = document.elementFromPoint(start.x, start.y);
+    if (!target) throw new Error("Missing batch cancel-zone pointer target");
     const init = {
       bubbles: true,
       button: 0,
@@ -444,19 +540,21 @@ test("top cancel zone and Escape return a batch drag without changing layout", a
   });
 
   const escapeResult = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
     const before = JSON.stringify(state.activePages);
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id: "app-0-safari",
       pageIndex: 0,
     });
+    if (!bounds) throw new Error("Missing batch Escape source bounds");
     const start = {
       x: (bounds.left + bounds.right) / 2,
       y: (bounds.top + bounds.bottom) / 2,
     };
     const target = document.elementFromPoint(start.x, start.y);
+    if (!target) throw new Error("Missing batch Escape pointer target");
     const init = {
       bubbles: true,
       button: 0,
@@ -596,22 +694,26 @@ test("reduced motion rejects an invalid group drop without stagger", async ({ pa
   await page.emulateMedia({ reducedMotion: "reduce" });
   await waitForFixture(page);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    state.enterBatchSelection(state.activePages[0][0]);
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
+    const source = state.activePages[0]?.[0];
+    if (!source) throw new Error("Missing reduced-motion batch source");
+    state.enterBatchSelection(source);
   });
   await dispatchIconPointer(page, "app-1-mail", { pointerId: 61 });
 
   const result = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+    const state = window.__LUMERIA_MULTI_SELECT_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id: "app-0-safari",
       pageIndex: 0,
     });
+    if (!bounds) throw new Error("Missing reduced-motion source bounds");
     const clientX = (bounds.left + bounds.right) / 2;
     const clientY = (bounds.top + bounds.bottom) / 2;
     const target = document.elementFromPoint(clientX, clientY);
+    if (!target) throw new Error("Missing reduced-motion pointer target");
     const init = {
       bubbles: true,
       button: 0,
@@ -675,12 +777,12 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
   await waitForFixture(page);
 
   const result = await page.evaluate(async () => {
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const root = window.__LUMERIA_MULTI_SELECT_TEST__.getInstance();
     const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
+    const seen = new Set<MultiSelectComponentInstance>();
+    const findDesktopLayer = (vnode: MultiSelectVNode | null | undefined): DesktopLayer | null => {
       if (!vnode) return null;
       const instance = vnode.component;
       if (instance && !seen.has(instance)) {
@@ -700,6 +802,7 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     };
     const layer = findDesktopLayer(root?.subTree);
     if (!state || !layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const groupDragLayer = layer.groupDragLayer;
 
     state.enterBatchSelection();
     await frame();
@@ -707,16 +810,19 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     await frame();
     const selectedIds = [...state.batchSelectedIds];
     const leadId = selectedIds[0];
+    if (!leadId) throw new Error("Missing responsive batch lead icon");
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id: leadId,
       pageIndex: 0,
     });
+    if (!bounds) throw new Error("Missing responsive batch lead bounds");
     const start = {
       x: (bounds.left + bounds.right) / 2,
       y: (bounds.top + bounds.bottom) / 2,
     };
     const target = document.elementFromPoint(start.x, start.y);
+    if (!target) throw new Error("Missing responsive batch pointer target");
     const init = {
       bubbles: true,
       button: 0,
@@ -730,7 +836,7 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
     };
     target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
     await wait(540);
-    const dragIconSize = layer.groupDragLayer.nodes[0]?.iconSize || 0;
+    const dragIconSize = groupDragLayer.nodes[0]?.iconSize || 0;
     const invalidPoint = { x: -80, y: -80 };
     window.dispatchEvent(new PointerEvent("pointermove", {
       ...init,
@@ -746,27 +852,32 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       clientY: invalidPoint.y,
     }));
 
-    const readWorldIconSize = (node) => {
-      const visual = node?.visualWrap || node;
+    type ReleaseNode = (typeof groupDragLayer.nodes)[number];
+    type LiveNode = NonNullable<ReturnType<typeof layer.findIconNodeByItemId>>;
+    type VisualNode = ReleaseNode | LiveNode;
+    type Point = Readonly<{ x: number; y: number }>;
+    const readWorldIconSize = (node: VisualNode | null) => {
+      if (!node) return null;
+      const visual = node.visualWrap || node;
       const matrix = visual?.worldTransform;
       if (!matrix) return null;
       return Number(node.iconSize) * Math.hypot(Number(matrix.a), Number(matrix.b));
     };
-    const readVisualCenter = (node) => {
+    const readVisualCenter = (node: VisualNode) => {
       const visual = node?.visualWrap || node;
-      const center = layer.groupDragLayer.toLocal({ x: 0, y: 0 }, visual);
+      const center = groupDragLayer.toLocal({ x: 0, y: 0 }, visual);
       return { x: center.x, y: center.y };
     };
-    const pointDistance = (left, right) => Math.hypot(left.x - right.x, left.y - right.y);
-    let lastReleaseWorldSize = null;
-    let lastReleaseScale = null;
+    const pointDistance = (left: Point, right: Point) => Math.hypot(left.x - right.x, left.y - right.y);
+    let lastReleaseWorldSize: number | null = null;
+    let lastReleaseScale: number | null = null;
     let releaseEntryCount = 0;
-    let releaseIds = [];
-    const reachedTargetIds = new Set();
-    const ownershipRegressions = [];
-    const ownershipVisibilityFlashes = [];
-    const settledActorReappearances = [];
-    const firstHandoffLabelAlphaById = new Map();
+    let releaseIds: string[] = [];
+    const reachedTargetIds = new Set<string>();
+    const ownershipRegressions: { delta: number; id: string }[] = [];
+    const ownershipVisibilityFlashes: string[] = [];
+    const settledActorReappearances: string[] = [];
+    const firstHandoffLabelAlphaById = new Map<string, number>();
     let sawPartialLabelAlpha = false;
     const deadline = performance.now() + 5_000;
     while (state.groupDragState && performance.now() < deadline) {
@@ -774,9 +885,9 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       const group = state.groupDragState;
       if (!group) break;
       releaseEntryCount = Math.max(releaseEntryCount, group.entries?.length || 0);
-      releaseIds = group.entries?.map((entry) => entry.item?.id).filter(Boolean) || releaseIds;
+      releaseIds = group.entries?.flatMap((entry) => entry.item?.id ? [entry.item.id] : []) || releaseIds;
       group.entries?.forEach((entry, entryIndex) => {
-        const releaseGhost = layer.groupDragLayer.nodes[entryIndex];
+        const releaseGhost = groupDragLayer.nodes[entryIndex];
         const liveTarget = layer.findIconNodeByItemId(entry.item?.id);
         if (!releaseGhost || !liveTarget) return;
         const isOwned = layer.visualOwnership.hasOwner(`item:${entry.item.id}`);
@@ -798,7 +909,7 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
         }
       });
       const index = group.entries?.findIndex((entry) => entry.item?.id === leadId) ?? -1;
-      const releaseNode = index >= 0 ? layer.groupDragLayer.nodes[index] : null;
+      const releaseNode = index >= 0 ? groupDragLayer.nodes[index] : null;
       if (releaseNode?.visible) {
         lastReleaseWorldSize = readWorldIconSize(releaseNode);
         lastReleaseScale = releaseNode.scale.x;
@@ -815,8 +926,11 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       sawPartialLabelAlpha ||= labelAlpha > 0 && labelAlpha < 1;
     }
     const handoffCenterMaxDelta = Math.max(...releaseIds.map((id, index) => {
-      const releaseGhost = layer.groupDragLayer.nodes[index];
+      const releaseGhost = groupDragLayer.nodes[index];
       const liveTarget = layer.findIconNodeByItemId(id);
+      if (!releaseGhost || !liveTarget) {
+        throw new Error(`Missing responsive handoff pair: ${id}`);
+      }
       return pointDistance(readVisualCenter(releaseGhost), readVisualCenter(liveTarget));
     }));
     const readLabelAlphas = () => releaseIds.map(
@@ -829,6 +943,10 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       finalLabelAlphas = readLabelAlphas();
       sawPartialLabelAlpha ||= finalLabelAlphas.some((alpha) => alpha > 0 && alpha < 1);
     }
+    const liveWorldSize = readWorldIconSize(liveNode);
+    if (lastReleaseScale === null || lastReleaseWorldSize === null || liveWorldSize === null) {
+      throw new Error("Responsive release did not expose a complete handoff pose");
+    }
     return {
       dragIconSize,
       finalLabelAlphaMin: Math.min(...finalLabelAlphas),
@@ -839,7 +957,7 @@ test("responsive full-page return keeps the visual pose continuous and fades lab
       lastReleaseScale,
       lastReleaseWorldSize,
       liveIconSize: liveNode?.iconSize || 0,
-      liveWorldSize: readWorldIconSize(liveNode),
+      liveWorldSize,
       ownershipRegressions,
       ownershipVisibilityFlashes: [...new Set(ownershipVisibilityFlashes)],
       releaseEntryCount,

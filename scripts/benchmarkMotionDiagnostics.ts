@@ -1,14 +1,54 @@
 import { normalizeMotionReplayTrace } from "../src/components/backgroundDebug/motionReplayViewerModel.js";
+import type { MotionReplaySelectionRef } from "../src/components/backgroundDebug/motionReplayViewerModel.js";
 import { createDiagnosticArtifactStore } from "../src/diagnostics/diagnosticArtifactStore.js";
 import { createMotionReplayDocument } from "../src/diagnostics/motionReplayDocument.js";
+import type {
+  DiagnosticArtifactPage,
+  DiagnosticArtifactReference,
+} from "../src/diagnostics/diagnosticProtocol.js";
+
+type BenchmarkDurationSeconds = number | null;
+type UnknownRecord = Record<string, unknown>;
+
+interface BenchmarkConfig {
+  durations: BenchmarkDurationSeconds[];
+  sampleHz: number;
+  trackCount: number;
+}
+
+interface BenchmarkTrack extends MotionReplaySelectionRef {
+  driver: "spring" | "tween";
+  key: string;
+  lane: "base";
+  laneKey: string;
+  layer: "desktop" | "folder";
+  prop: string;
+  sourceLabel: string;
+  targetId: number;
+}
+
+interface OperationMeasurement<Sample> {
+  durationMsMedian: number;
+  heapDeltaBytesMedian: number;
+  iterations: number;
+  sample: Sample | null;
+}
+
+interface RetainedOperationMeasurement<Output, Sample> {
+  measurement: OperationMeasurement<Sample>;
+  output: Output;
+}
 
 const TRACE_SCHEMA = "pixi-motion-replay-trace/v1";
 const DEFAULT_DURATIONS_SECONDS = [30, 300];
 const DEFAULT_TRACK_COUNT = 8;
 const DEFAULT_SAMPLE_HZ = 60;
 const ITERATIONS = 3;
+const BENCHMARK_PROPS: readonly string[] = Object.freeze(["x", "y", "alpha", "scale"]);
 
-function readPositiveInteger(value, fallback, label) {
+function readPositiveInteger(value: unknown, fallback: number, label: string): number;
+function readPositiveInteger(value: unknown, fallback: null, label: string): number | null;
+function readPositiveInteger(value: unknown, fallback: number | null, label: string): number | null {
   if (value == null || value === "") return fallback;
   const number = Number(value);
   if (!Number.isInteger(number) || number <= 0) {
@@ -17,12 +57,15 @@ function readPositiveInteger(value, fallback, label) {
   return number;
 }
 
-function readArgs(argv) {
-  const values = new Map();
+function readArgs(argv: readonly string[]): BenchmarkConfig {
+  const values = new Map<string, string>();
   for (const argument of argv) {
     const match = /^--([^=]+)=(.*)$/.exec(argument);
     if (!match) throw new TypeError(`Unsupported argument: ${argument}`);
-    values.set(match[1], match[2]);
+    const key = match[1];
+    const value = match[2];
+    if (key === undefined || value === undefined) throw new TypeError(`Unsupported argument: ${argument}`);
+    values.set(key, value);
   }
   const durations = String(values.get("durations") || DEFAULT_DURATIONS_SECONDS.join(","))
     .split(",")
@@ -34,9 +77,9 @@ function readArgs(argv) {
   };
 }
 
-function makeTrack(index) {
-  const props = ["x", "y", "alpha", "scale"];
-  const prop = props[index % props.length];
+function makeTrack(index: number): BenchmarkTrack {
+  const prop = BENCHMARK_PROPS[index % BENCHMARK_PROPS.length];
+  if (prop === undefined) throw new RangeError("Benchmark motion property lookup failed");
   const targetId = index + 1;
   return {
     driver: index % 2 === 0 ? "spring" : "tween",
@@ -50,9 +93,10 @@ function makeTrack(index) {
   };
 }
 
-function makeSyntheticTrace(durationSeconds, trackCount, sampleHz) {
+function makeSyntheticTrace(durationSeconds: BenchmarkDurationSeconds, trackCount: number, sampleHz: number) {
+  const durationValue = Number(durationSeconds);
   const tracks = Array.from({ length: trackCount }, (_value, index) => makeTrack(index));
-  const frameCount = durationSeconds * sampleHz;
+  const frameCount = durationValue * sampleHz;
   const frameIntervalMs = 1000 / sampleHz;
   const durationMs = frameCount > 1 ? (frameCount - 1) * frameIntervalMs : 0;
   const frames = Array.from({ length: frameCount }, (_value, frame) => {
@@ -75,7 +119,7 @@ function makeSyntheticTrace(durationSeconds, trackCount, sampleHz) {
           targetId: track.targetId,
           to: target,
           value: target * progress + Math.sin(phase) * (index + 1),
-          velocity: target / Math.max(1, durationSeconds) + Math.cos(phase) * 4,
+          velocity: target / Math.max(1, durationValue) + Math.cos(phase) * 4,
         };
       }),
     };
@@ -111,7 +155,7 @@ function makeSyntheticTrace(durationSeconds, trackCount, sampleHz) {
     },
   ]);
   return {
-    capture: { requestedDurationMs: durationSeconds * 1000, sampleHz },
+    capture: { requestedDurationMs: durationValue * 1000, sampleHz },
     generatedAt: "2026-08-02T00:00:00.000Z",
     mode: "property-accurate-visual-replay",
     schema: TRACE_SCHEMA,
@@ -141,25 +185,85 @@ function makeSyntheticTrace(durationSeconds, trackCount, sampleHz) {
   };
 }
 
-function median(values) {
+function isUnknownRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function requireRecord(value: unknown, label: string): UnknownRecord {
+  if (isUnknownRecord(value)) return value;
+  throw new TypeError(`${label} must be an object`);
+}
+
+function requireArray(value: unknown, label: string): readonly unknown[] {
+  if (Array.isArray(value)) return value;
+  throw new TypeError(`${label} must be an array`);
+}
+
+function summarizeTrace(value: unknown): Readonly<{ frameCount: number; trackCount: number }> {
+  const trace = requireRecord(value, "Benchmark trace");
+  const timeline = requireRecord(trace.timeline, "Benchmark trace timeline");
+  return {
+    frameCount: requireArray(timeline.frames, "Benchmark trace frames").length,
+    trackCount: requireArray(trace.tracks, "Benchmark trace tracks").length,
+  };
+}
+
+function cloneJson(value: unknown): unknown {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError("Benchmark trace has no JSON representation");
+  const parsed: unknown = JSON.parse(serialized);
+  return parsed;
+}
+
+function jsonByteLength(value: unknown): number {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new TypeError("Benchmark result has no JSON representation");
+  return Buffer.byteLength(serialized);
+}
+
+function summarizeArtifactCreation(
+  value: Readonly<{ reference: DiagnosticArtifactReference }>,
+): Readonly<{ artifactBytes: number | undefined; rootKind: string }> {
+  if (!value.reference.root) throw new TypeError("Benchmark artifact reference must include a root summary");
+  return {
+    artifactBytes: value.reference.byteLength,
+    rootKind: value.reference.root.kind,
+  };
+}
+
+function requireArtifactPageInfo(page: DiagnosticArtifactPage) {
+  if (!page.page) throw new TypeError("Benchmark artifact query must include page information");
+  return page.page;
+}
+
+function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  const value = sorted[Math.floor(sorted.length / 2)];
+  if (value === undefined) throw new TypeError("Median requires at least one value");
+  return value;
 }
 
-function collectGarbage() {
-  globalThis.gc();
-  globalThis.gc();
+function collectGarbage(): void {
+  const garbageCollector = globalThis.gc;
+  if (typeof garbageCollector !== "function") {
+    throw new Error("This benchmark requires Node --expose-gc so heap measurements are comparable");
+  }
+  garbageCollector();
+  garbageCollector();
 }
 
-function measureOperation(operation, summarize) {
-  const durationsMs = [];
-  const heapDeltasBytes = [];
-  let sample = null;
+function measureOperation<Output, Sample>(
+  operation: () => Output,
+  summarize: (output: Output) => Sample,
+): OperationMeasurement<Sample> {
+  const durationsMs: number[] = [];
+  const heapDeltasBytes: number[] = [];
+  let sample: Sample | null = null;
   for (let index = 0; index < ITERATIONS; index += 1) {
     collectGarbage();
     const heapBefore = process.memoryUsage().heapUsed;
     const startedAt = performance.now();
-    let output = operation();
+    let output: Output | null = operation();
     const durationMs = performance.now() - startedAt;
     const heapAfter = process.memoryUsage().heapUsed;
     sample = summarize(output);
@@ -176,7 +280,10 @@ function measureOperation(operation, summarize) {
   };
 }
 
-function measureRetainedOperation(operation, summarize) {
+function measureRetainedOperation<Output, Sample>(
+  operation: () => Output,
+  summarize: (output: Output) => Sample,
+): RetainedOperationMeasurement<Output, Sample> {
   collectGarbage();
   const heapBefore = process.memoryUsage().heapUsed;
   const startedAt = performance.now();
@@ -194,7 +301,7 @@ function measureRetainedOperation(operation, summarize) {
   };
 }
 
-function warmUp() {
+function warmUp(): void {
   const document = createMotionReplayDocument(makeSyntheticTrace(1, 2, 30));
   document.getView("curve-groups", { limit: 2, timeMs: 500 });
   document.getView("track-chart", { cursorTimeMs: 500, trackLimit: 2 });
@@ -202,15 +309,28 @@ function warmUp() {
   document.dispose();
 }
 
-function runScenario({ durationSeconds, sampleHz, trackCount }) {
-  let rawTrace = makeSyntheticTrace(durationSeconds, trackCount, sampleHz);
+function runScenario({
+  durationSeconds,
+  sampleHz,
+  trackCount,
+}: Readonly<{
+  durationSeconds: BenchmarkDurationSeconds;
+  sampleHz: number;
+  trackCount: number;
+}>) {
+  const durationValue = Number(durationSeconds);
+  let rawTrace: ReturnType<typeof makeSyntheticTrace> | null = makeSyntheticTrace(
+    durationSeconds,
+    trackCount,
+    sampleHz,
+  );
   const normalization = measureOperation(
     () => normalizeMotionReplayTrace(rawTrace),
-    (trace) => ({ frameCount: trace.timeline.frames.length, trackCount: trace.tracks.length }),
+    summarizeTrace,
   );
   const inlineClone = measureOperation(
-    () => JSON.parse(JSON.stringify(rawTrace)),
-    (trace) => ({ frameCount: trace.timeline.frames.length, trackCount: trace.tracks.length }),
+    () => cloneJson(rawTrace),
+    summarizeTrace,
   );
   const artifactCreateResult = measureRetainedOperation(
     () => {
@@ -223,26 +343,38 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
       });
       return { reference, store };
     },
-    ({ reference }) => ({ artifactBytes: reference.byteLength, rootKind: reference.root.kind }),
+    summarizeArtifactCreation,
   );
   const artifactCreate = artifactCreateResult.measurement;
   const artifactStore = artifactCreateResult.output.store;
   const artifactId = artifactCreateResult.output.reference.artifactId;
   const artifactRootManifest = measureOperation(
     () => artifactStore.query({ artifactId }),
-    (page) => ({ fieldCount: page.page.total, returned: page.page.returned }),
+    (page) => {
+      const pageInfo = requireArtifactPageInfo(page);
+      return { fieldCount: pageInfo.total, returned: pageInfo.returned };
+    },
   );
   const artifactJsonPage = measureOperation(
     () => artifactStore.query({ artifactId, limit: 65_536, representation: "json" }),
-    (page) => ({ hasMore: page.page.hasMore, returned: page.page.returned }),
+    (page) => {
+      const pageInfo = requireArtifactPageInfo(page);
+      return { hasMore: pageInfo.hasMore, returned: pageInfo.returned };
+    },
   );
   const artifactStructuredPageCold = measureRetainedOperation(
     () => artifactStore.query({ artifactId, limit: 20, path: ["timeline", "frames"] }),
-    (page) => ({ hasMore: page.page.hasMore, returned: page.page.returned }),
+    (page) => {
+      const pageInfo = requireArtifactPageInfo(page);
+      return { hasMore: pageInfo.hasMore, returned: pageInfo.returned };
+    },
   ).measurement;
   const artifactStructuredPageCacheHit = measureOperation(
     () => artifactStore.query({ artifactId, limit: 20, offset: 20, path: ["timeline", "frames"] }),
-    (page) => ({ hasMore: page.page.hasMore, returned: page.page.returned }),
+    (page) => {
+      const pageInfo = requireArtifactPageInfo(page);
+      return { hasMore: pageInfo.hasMore, returned: pageInfo.returned };
+    },
   );
   artifactStore.dispose();
   collectGarbage();
@@ -254,7 +386,7 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
   const document = documentLoadResult.output;
   rawTrace = null;
   collectGarbage();
-  const cursorTimeMs = durationSeconds * 500;
+  const cursorTimeMs = durationValue * 500;
   const analysisCold = measureRetainedOperation(
     () => document.analyze(),
     (analysis) => ({
@@ -326,13 +458,18 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
       format: "interval",
       presentation: "structured",
     }),
-    (output) => ({
-      hasContent: Object.hasOwn(output, "content"),
-      hasData: Object.hasOwn(output, "data"),
-      presentation: output.presentation,
-      serializedBytes: Buffer.byteLength(JSON.stringify(output)),
-      valueCount: output.data?.summary?.valueCount || 0,
-    }),
+    (output) => {
+      if (output.presentation !== "structured") {
+        throw new TypeError("Interval structured export returned the wrong presentation");
+      }
+      return {
+        hasContent: Object.hasOwn(output, "content"),
+        hasData: Object.hasOwn(output, "data"),
+        presentation: output.presentation,
+        serializedBytes: jsonByteLength(output),
+        valueCount: output.data.summary.valueCount || 0,
+      };
+    },
   ).measurement;
   const intervalJsonPresentation = measureRetainedOperation(
     () => document.export({
@@ -340,11 +477,16 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
       format: "interval",
       presentation: "json",
     }),
-    (output) => ({
-      contentBytes: Buffer.byteLength(output.content || ""),
-      hasData: Object.hasOwn(output, "data"),
-      presentation: output.presentation,
-    }),
+    (output) => {
+      if (output.presentation !== "json") {
+        throw new TypeError("Interval JSON export returned the wrong presentation");
+      }
+      return {
+        contentBytes: Buffer.byteLength(output.content || ""),
+        hasData: Object.hasOwn(output, "data"),
+        presentation: output.presentation,
+      };
+    },
   ).measurement;
   const focusedStructuredPresentation = measureRetainedOperation(
     () => document.export({
@@ -352,12 +494,17 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
       interval: focusedInterval,
       presentation: "structured",
     }),
-    (output) => ({
-      hasContent: Object.hasOwn(output, "content"),
-      hasData: Object.hasOwn(output, "data"),
-      presentation: output.presentation,
-      valueCount: output.data?.summary?.valueCount || 0,
-    }),
+    (output) => {
+      if (output.presentation !== "structured") {
+        throw new TypeError("Focused structured export returned the wrong presentation");
+      }
+      return {
+        hasContent: Object.hasOwn(output, "content"),
+        hasData: Object.hasOwn(output, "data"),
+        presentation: output.presentation,
+        valueCount: output.data.summary.valueCount || 0,
+      };
+    },
   ).measurement;
   const focusedMarkdownPresentation = measureRetainedOperation(
     () => document.export({
@@ -365,17 +512,22 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
       interval: focusedInterval,
       presentation: "markdown",
     }),
-    (output) => ({
-      contentLength: output.content?.length || 0,
-      hasData: Object.hasOwn(output, "data"),
-      presentation: output.presentation,
-    }),
+    (output) => {
+      if (output.presentation !== "markdown") {
+        throw new TypeError("Focused Markdown export returned the wrong presentation");
+      }
+      return {
+        contentLength: output.content.length || 0,
+        hasData: Object.hasOwn(output, "data"),
+        presentation: output.presentation,
+      };
+    },
   ).measurement;
   document.dispose();
   collectGarbage();
   return {
     durationSeconds,
-    frameCount: durationSeconds * sampleHz,
+    frameCount: durationValue * sampleHz,
     operations: {
       analysisCacheHit,
       analysisCold,
@@ -400,7 +552,7 @@ function runScenario({ durationSeconds, sampleHz, trackCount }) {
     },
     sampleHz,
     trackCount,
-    valueCount: durationSeconds * sampleHz * trackCount,
+    valueCount: durationValue * sampleHz * trackCount,
   };
 }
 

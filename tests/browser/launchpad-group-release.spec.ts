@@ -1,11 +1,316 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import type {
+  LaunchpadDragFolderHoverState,
+  LaunchpadGroupDragState,
+} from "../../src/composables/useLaunchpadDrag.js";
+import type {
+  LaunchpadFolder,
+  LaunchpadItem,
+  LaunchpadPages,
+} from "../../src/domain/launchpadLayout.js";
+import type {
+  IconBoundsRegistry,
+  IconBoundsVariant,
+} from "../../src/rendering/pixi/geometry/iconBoundsRegistry.js";
+import type { DesktopLayer } from "../../src/rendering/pixi/scene/DesktopLayer.js";
+
+type GroupReleaseItem = LaunchpadItem;
+type GroupReleaseFolder = LaunchpadFolder;
+type GroupReleasePages = LaunchpadPages;
+type GroupReleasePoint = Readonly<{ x: number; y: number }>;
+type GroupReleaseDragPointerType = "pointercancel" | "pointerdown" | "pointermove" | "pointerup";
+type GroupReleaseIconPointerOptions = Readonly<{
+  pointerId?: number;
+  type?: "click" | "contextmenu";
+}>;
+
+interface GroupReleaseRef<Value> {
+  value: Value;
+}
+
+interface GroupReleasePointerEvent {
+  readonly button: number;
+  readonly buttons: number;
+  readonly clientX: number;
+  readonly clientY: number;
+  readonly currentTarget: Readonly<{
+    getBoundingClientRect(): Readonly<{ height: number; left: number; top: number; width: number }>;
+  }>;
+  readonly dragVisualState?: Readonly<{
+    cellHeight: number;
+    cellWidth: number;
+    compact: boolean;
+    iconSize: number;
+    singleLineLabel: boolean;
+  }>;
+  readonly isPrimary: boolean;
+  readonly pointerId: number;
+  readonly pointerType: string;
+  preventDefault(): void;
+  stopImmediatePropagation?(): void;
+  stopPropagation(): void;
+  readonly type: string;
+}
+
+interface GroupReleaseFolderOverlay {
+  readonly folderPageIndex: GroupReleaseRef<number>;
+  readonly folderPageTurnRequest: GroupReleaseRef<unknown>;
+  readonly folderViewportRef: GroupReleaseRef<HTMLElement | null>;
+  readonly visualFolderPageIndex: GroupReleaseRef<number>;
+  commitFolderPageIndex(pageIndex: number, options: Readonly<{ allowCreate: boolean }>): void;
+  handleIconPointerDown(
+    event: GroupReleasePointerEvent,
+    item: GroupReleaseItem,
+    source: Readonly<{ folderId: string; index: number; pageIndex: number; type: "folder" }>,
+  ): void;
+}
+
+interface GroupReleaseSettingsPanel {
+  readonly draftFolderCols: GroupReleaseRef<number>;
+  readonly draftFolderRows: GroupReleaseRef<number>;
+  applySettingsConfig(): Promise<
+    Readonly<{ ok: true }> | Readonly<{ error: unknown; ok: false }>
+  >;
+  changeDraftFolderCols(delta: number): void;
+  changeDraftFolderRows(delta: number): void;
+}
+
+interface GroupReleaseSetupState {
+  readonly activePages: GroupReleasePages;
+  readonly batchSelectedIds: Set<string>;
+  readonly dragFolderHoverState: LaunchpadDragFolderHoverState | null;
+  readonly folderOverlay: GroupReleaseFolderOverlay;
+  readonly folderPanelRef: HTMLElement | null;
+  readonly groupDragState: LaunchpadGroupDragState | null;
+  readonly iconBoundsRegistry: IconBoundsRegistry;
+  readonly renderedFolder: GroupReleaseItem | null;
+  readonly settingsPanel: GroupReleaseSettingsPanel;
+  readonly transientNotice: Readonly<{ message?: string }> | null;
+  activePageIndex: number;
+  dragFolderTargetId: string | null;
+  gridCols: number;
+  gridRows: number;
+  isBatchSelectionActive: boolean;
+  isFolderClosing: boolean;
+  isFolderLayerActive: boolean;
+  openFolderId: string | null;
+  clearBatchSelection(): void;
+  commitActivePageIndex(pageIndex: number): void;
+  commitOpenFolder(folderId: string | null): void;
+  createFolderFromBatchSelection(): void;
+  enterBatchSelection(item?: GroupReleaseItem): void;
+}
+
+interface GroupReleaseComponentInstance {
+  readonly setupState?: Readonly<{ layer?: DesktopLayer }>;
+  readonly subTree?: GroupReleaseVNode;
+  readonly type?: Readonly<{ __name?: string; name?: string }>;
+}
+
+interface GroupReleaseVNode {
+  readonly children?: GroupReleaseVNode[];
+  readonly component?: GroupReleaseComponentInstance | null;
+}
+
+interface GroupReleaseRootInstance {
+  readonly setupState: GroupReleaseSetupState;
+  readonly subTree?: GroupReleaseVNode;
+}
+
+interface GroupReleaseAppElement extends Element {
+  readonly __vue_app__?: Readonly<{
+    _instance?: GroupReleaseRootInstance;
+  }>;
+}
+
+interface GroupReleaseTestBridge {
+  getDesktopLayer(): DesktopLayer;
+  getFolder(id: string): GroupReleaseFolder;
+  getInstance(): GroupReleaseRootInstance;
+  getState(): GroupReleaseSetupState;
+}
+
+interface FolderDropFrameSample {
+  readonly fillVisible: boolean;
+  readonly strokeVisible: boolean;
+}
+
+interface FolderHandoffResult {
+  readonly firstVisibleTargetDeltaById: Readonly<Record<string, number>>;
+  readonly maxReturningTargetDelta: number;
+  readonly ownershipVisibilityViolationIds: string[];
+  readonly releaseOutcome: string | null;
+  readonly sawReturning: boolean;
+  readonly selectedIds: string[];
+}
+
+type GroupReleaseDiagnostic = Readonly<Record<
+  string,
+  boolean | null | number | string
+>>;
+
+interface ActorHandoffSnapshot {
+  readonly actorOrder: (string | undefined)[];
+  readonly centerDelta: number | null;
+  readonly orderedNodeMatches: boolean;
+  readonly sameNode: boolean;
+}
+
+interface CreatedFolderReleaseFrame {
+  readonly firstReleaseCenter: GroupReleasePoint;
+  readonly folderLayoutY: number | null;
+  readonly folderNodeY: number | null;
+  readonly hoverCenter: GroupReleasePoint;
+  readonly sampledFrame: number;
+}
+
+type CreatedFolderContinuityResult = CreatedFolderReleaseFrame & Readonly<{
+  actorHandoff: ActorHandoffSnapshot | null;
+  ownershipViolations: GroupReleaseDiagnostic[];
+}>;
+
+interface SingleIconHandoffResult {
+  readonly ghostLabelAlphaBeforeRelease: number;
+  readonly liveLabelFrameCount: number;
+  readonly minLiveLabelAlpha: number;
+  readonly releaseOutcome: string | null;
+  readonly releasePhase: string | null;
+}
+
+interface ToolbarReleaseEntryBase {
+  readonly actorKey: string | undefined;
+  readonly id: string;
+}
+
+type ToolbarReleaseEntrySnapshot =
+  | (ToolbarReleaseEntryBase & Readonly<{
+    mode: "created-folder";
+    slotIndex: number;
+  }>)
+  | (ToolbarReleaseEntryBase & Readonly<{
+    mode: "folder-center-absorb";
+    slotIndex: number | null;
+  }>);
+
+interface ToolbarFolderReleaseResult {
+  readonly actorMemberIds: string[];
+  readonly actorRoles: (string | undefined)[];
+  readonly aggregateMemberCount: number;
+  readonly anchorId: string;
+  readonly badgeVisible: boolean;
+  readonly beforeAnchorTarget: GroupReleasePoint | null;
+  readonly beforeFollowerTarget: GroupReleasePoint | null;
+  readonly folderId: string;
+  readonly folderNodeGhosted: boolean;
+  readonly folderShellVisible: boolean;
+  readonly folderTarget: GroupReleasePoint;
+  readonly followerTarget: GroupReleasePoint;
+  readonly groupEntries: (string | null)[];
+  readonly nodePoolSize: number;
+  readonly ownershipKeys: string[];
+  readonly releaseEntries: ToolbarReleaseEntrySnapshot[];
+  readonly semanticMemberIds: string[];
+  readonly suppressedPreviewChildIds: string[];
+}
+
+interface FullPageAcceptedRelease {
+  readonly actorMemberIds: string[];
+  readonly actorRoles: (string | undefined)[];
+  readonly aggregateMemberCount: number;
+  readonly folderId: string;
+  readonly groupIds: (string | null)[];
+  readonly nodePoolSize: number;
+  readonly ownershipKeys: string[];
+  readonly releaseIds: string[];
+  readonly releaseModes: string[];
+  readonly semanticMemberIds: string[];
+}
+
+interface FullPageReleaseResult extends FullPageAcceptedRelease {
+  readonly batch: boolean;
+  readonly childCount: number;
+  readonly durationMs: number;
+  readonly openFolderId: string | null;
+  readonly selectedIds: string[];
+  readonly visibleOwnedIds: string[];
+}
+
+function requireArrayEntry<Value>(
+  entries: readonly Value[],
+  index: number,
+  label: string,
+): Value {
+  const entry = entries[index];
+  if (entry === undefined) throw new Error(`${label} is missing entry ${index}`);
+  return entry;
+}
+
+declare global {
+  interface Window {
+    __folderDropFrameTrace?: {
+      active: boolean;
+      samples: FolderDropFrameSample[];
+    };
+    __LUMERIA_GROUP_RELEASE_TEST__: GroupReleaseTestBridge;
+  }
+}
 
 test.use({ locale: "zh-CN" });
 
-async function waitForFixture(page) {
+async function waitForFixture(page: Page) {
+  await page.addInitScript(() => {
+    const getInstance = (): GroupReleaseRootInstance => {
+      const instance = document.querySelector<GroupReleaseAppElement>("#app")
+        ?.__vue_app__?._instance;
+      if (!instance) throw new Error("Launchpad group-release fixture instance is unavailable");
+      return instance;
+    };
+    const getState = (): GroupReleaseSetupState => getInstance().setupState;
+    const getDesktopLayer = (): DesktopLayer => {
+      const seen = new Set<GroupReleaseComponentInstance>();
+      const findDesktopLayer = (
+        vnode: GroupReleaseVNode | null | undefined,
+      ): DesktopLayer | null => {
+        if (!vnode) return null;
+        const instance = vnode.component;
+        if (instance && !seen.has(instance)) {
+          seen.add(instance);
+          const name = instance.type?.name || instance.type?.__name;
+          if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
+          const nested = findDesktopLayer(instance.subTree);
+          if (nested) return nested;
+        }
+        if (Array.isArray(vnode.children)) {
+          for (const child of vnode.children) {
+            const nested = findDesktopLayer(child);
+            if (nested) return nested;
+          }
+        }
+        return null;
+      };
+      const layer = findDesktopLayer(getInstance().subTree);
+      if (!layer) throw new Error("Pixi desktop layer is unavailable");
+      return layer;
+    };
+    const getFolder = (id: string): GroupReleaseFolder => {
+      const folder = getState().activePages.flat().find((item): item is GroupReleaseFolder => (
+        item.type === "folder" && item.id === id
+      ));
+      if (!folder) throw new Error(`Launchpad group-release fixture folder is unavailable: ${id}`);
+      return folder;
+    };
+    window.__LUMERIA_GROUP_RELEASE_TEST__ = {
+      getDesktopLayer,
+      getFolder,
+      getInstance,
+      getState,
+    };
+  });
   await page.goto(`/?fixture=multi-select&group-release=${Date.now()}`);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = document.querySelector<GroupReleaseAppElement>("#app")
+      ?.__vue_app__?._instance?.setupState;
     return document.querySelector('[data-launchpad-fixture="multi-select"]') &&
       state?.activePages?.length === 3 &&
       state.activePages[0]?.length === 35;
@@ -13,9 +318,9 @@ async function waitForFixture(page) {
   await waitForIconBounds(page, "app-0-safari");
 }
 
-async function waitForIconBounds(page, id) {
+async function waitForIconBounds(page: Page, id: string) {
   await page.waitForFunction((iconId) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const location = state?.activePages
       ?.flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
       .find((entry) => entry.item.id === iconId);
@@ -27,30 +332,9 @@ async function waitForIconBounds(page, id) {
   }, id);
 }
 
-async function readFolderDropFrameState(page, folderId) {
+async function readFolderDropFrameState(page: Page, folderId: string) {
   return page.evaluate((targetFolderId) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer) throw new Error("Pixi desktop layer is unavailable");
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
     return {
       fillVisible: layer.folderDropFillLayer?.getFrame?.(targetFolderId)?.visible === true,
       planActive: layer.lastDesktopRenderPlan?.folderDropTarget?.targetId === targetFolderId,
@@ -59,35 +343,17 @@ async function readFolderDropFrameState(page, folderId) {
   }, folderId);
 }
 
-async function startFolderDropFrameTrace(page, folderId) {
+async function startFolderDropFrameTrace(page: Page, folderId: string) {
   await page.evaluate((targetFolderId) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const trace: { active: boolean; samples: FolderDropFrameSample[] } = {
+      active: true,
+      samples: [],
     };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer) throw new Error("Pixi desktop layer is unavailable");
-    const trace = { active: true, samples: [] };
     window.__folderDropFrameTrace = trace;
     const sample = () => {
       if (!trace.active) return;
-      const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+      const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
       const planActive = layer.lastDesktopRenderPlan?.folderDropTarget?.targetId === targetFolderId;
       if (state?.openFolderId === targetFolderId && !planActive) {
         trace.samples.push({
@@ -101,7 +367,7 @@ async function startFolderDropFrameTrace(page, folderId) {
   }, folderId);
 }
 
-async function stopFolderDropFrameTrace(page) {
+async function stopFolderDropFrameTrace(page: Page) {
   return page.evaluate(() => {
     const trace = window.__folderDropFrameTrace;
     if (!trace) throw new Error("Folder drop-frame trace was not started");
@@ -111,10 +377,14 @@ async function stopFolderDropFrameTrace(page) {
   });
 }
 
-async function dispatchIconPointer(page, id, options = {}) {
+async function dispatchIconPointer(
+  page: Page,
+  id: string,
+  options: GroupReleaseIconPointerOptions = {},
+) {
   await waitForIconBounds(page, id);
   return page.evaluate(({ iconId, pointerId, type }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const location = state.activePages
       .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
       .find((entry) => entry.item.id === iconId);
@@ -124,9 +394,11 @@ async function dispatchIconPointer(page, id, options = {}) {
       id: iconId,
       pageIndex: location.pageIndex,
     });
+    if (!bounds) throw new Error(`Missing rendered icon bounds: ${iconId}`);
     const clientX = (bounds.left + bounds.right) / 2;
     const clientY = (bounds.top + bounds.bottom) / 2;
     const target = document.elementFromPoint(clientX, clientY);
+    if (!target) throw new Error(`Icon pointer target is outside the viewport: ${iconId}`);
     const init = {
       bubbles: true,
       button: 0,
@@ -155,45 +427,45 @@ async function dispatchIconPointer(page, id, options = {}) {
   });
 }
 
-async function enterBatchSelectionOf(page, ids) {
+async function enterBatchSelectionOf(page: Page, ids: readonly string[]) {
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.enterBatchSelection();
   });
   await page.waitForTimeout(50);
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return Boolean(state.isBatchSelectionActive);
   })).toBe(true);
-  for (let index = 0; index < ids.length; index += 1) {
-    await dispatchIconPointer(page, ids[index], { pointerId: 41 + index });
+  for (const [index, id] of ids.entries()) {
+    await dispatchIconPointer(page, id, { pointerId: 41 + index });
   }
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return [...state.batchSelectedIds];
   })).toEqual(ids);
 }
 
-async function enterBatchSelection(page) {
+async function enterBatchSelection(page: Page) {
   await enterBatchSelectionOf(page, ["app-0-safari", "app-1-mail"]);
 }
 
-async function createSmallFolder(page) {
+async function createSmallFolder(page: Page) {
   await enterBatchSelection(page);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.createFolderFromBatchSelection();
   });
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.activePages.flat().some((item) => item.type === "folder" && item.childPages.flat().length === 2);
   });
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   }, null, { timeout: 4_000 });
   const result = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return {
       batch: state.isBatchSelectionActive,
       folderId: state.activePages.flat()
@@ -209,7 +481,7 @@ async function createSmallFolder(page) {
     selectedIds: [],
   });
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.clearBatchSelection();
     state.commitActivePageIndex(0);
   });
@@ -217,9 +489,9 @@ async function createSmallFolder(page) {
   return result.folderId;
 }
 
-async function readReleasePlan(page) {
+async function readReleasePlan(page: Page) {
   return page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const plan = state.groupDragState?.runtimePlan;
     return plan
       ? {
@@ -235,20 +507,27 @@ async function readReleasePlan(page) {
   });
 }
 
-async function dragIconToFolder(page, sourceId, folderId, pointerId) {
+async function dragIconToFolder(
+  page: Page,
+  sourceId: string,
+  folderId: string,
+  pointerId: number,
+) {
   await waitForIconBounds(page, sourceId);
   await waitForIconBounds(page, folderId);
   const points = await page.evaluate(({ sourceId: source, folderId: folder }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const center = (id) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const center = (id: string) => {
       const location = state.activePages
         .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
         .find((entry) => entry.item.id === id);
+      if (!location) throw new Error(`Missing icon location: ${id}`);
       const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "desktop",
         id,
         pageIndex: location.pageIndex,
       });
+      if (!bounds) throw new Error(`Missing rendered icon geometry: ${id}`);
       return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
     };
     return { source: center(source), folder: center(folder) };
@@ -322,18 +601,24 @@ async function dragIconToFolder(page, sourceId, folderId, pointerId) {
     }));
   }, { point: points.folder, pointerId });
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return Boolean(state.groupDragState?.runtimePlan);
   }, null, { timeout: 3_000 });
   const plan = await readReleasePlan(page);
+  if (!plan) throw new Error("Folder release completed without a runtime plan");
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   }, null, { timeout: 3_000 });
   return plan;
 }
 
-async function dispatchDragPointer(page, type, point, pointerId) {
+async function dispatchDragPointer(
+  page: Page,
+  type: GroupReleaseDragPointerType,
+  point: GroupReleasePoint,
+  pointerId: number,
+) {
   await page.evaluate(({ point, pointerId, type }) => {
     const target = type === "pointerdown"
       ? document.elementFromPoint(point.x, point.y)
@@ -354,18 +639,20 @@ async function dispatchDragPointer(page, type, point, pointerId) {
   }, { point, pointerId, type });
 }
 
-async function readDesktopIconCenter(page, id) {
+async function readDesktopIconCenter(page: Page, id: string) {
   await waitForIconBounds(page, id);
   return page.evaluate((iconId) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const location = state.activePages
       .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
       .find((entry) => entry.item.id === iconId);
+    if (!location) throw new Error(`Missing icon location: ${iconId}`);
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id: iconId,
       pageIndex: location.pageIndex,
     });
+    if (!bounds) throw new Error(`Missing rendered icon geometry: ${iconId}`);
     return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
   }, id);
 }
@@ -384,20 +671,25 @@ test("closed-folder releases use preview slots for the first nine and center abs
     "app-8-reminders",
     "app-9-facetime",
   ];
-  const plans = [];
-  for (let index = 0; index < sourceIds.length; index += 1) {
-    plans.push(await dragIconToFolder(page, sourceIds[index], folderId, 100 + index));
+  const plans: Awaited<ReturnType<typeof dragIconToFolder>>[] = [];
+  for (const [index, sourceId] of sourceIds.entries()) {
+    plans.push(await dragIconToFolder(page, sourceId, folderId, 100 + index));
   }
 
   expect(plans.slice(0, 6).every((plan) => plan.entries[0]?.mode === "folder-preview-slot")).toBe(true);
-  expect(plans[0].entries[0].target.slotIndex).toBe(2);
-  expect(plans[5].entries[0].target.slotIndex).toBe(7);
-  expect(plans[6].entries[0].mode).toBe("folder-preview-slot");
-  expect(plans[6].entries[0].target.slotIndex).toBe(8);
-  expect(plans[7].entries[0].mode).toBe("folder-center-absorb");
+  const firstEntry = requireArrayEntry(requireArrayEntry(plans, 0, "release plans").entries, 0, "first release plan");
+  const sixthEntry = requireArrayEntry(requireArrayEntry(plans, 5, "release plans").entries, 0, "sixth release plan");
+  const seventhEntry = requireArrayEntry(requireArrayEntry(plans, 6, "release plans").entries, 0, "seventh release plan");
+  const eighthEntry = requireArrayEntry(requireArrayEntry(plans, 7, "release plans").entries, 0, "eighth release plan");
+  expect(firstEntry.target.slotIndex).toBe(2);
+  expect(sixthEntry.target.slotIndex).toBe(7);
+  expect(seventhEntry.mode).toBe("folder-preview-slot");
+  expect(seventhEntry.target.slotIndex).toBe(8);
+  expect(eighthEntry.mode).toBe("folder-center-absorb");
   await expect.poll(async () => page.evaluate(({ folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return state.activePages.flat().find((item) => item.id === folderId)?.childPages?.flat().length || 0;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = state.activePages.flat().find((item) => item.id === folderId);
+    return folder?.type === "folder" ? folder.childPages.flat().length : 0;
   }, { folderId })).toBe(10);
 });
 
@@ -420,7 +712,7 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
   await dispatchDragPointer(page, "pointermove", folderPoint, pointerId);
 
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   }), { timeout: 4_000 }).toBe(folderId);
   await expect.poll(
@@ -431,7 +723,7 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
   expect(openingFrameSamples.length).toBeGreaterThan(0);
   expect(openingFrameSamples.every((sample) => !sample.fillVisible && !sample.strokeVisible)).toBe(true);
   const geometry = await page.evaluate(({ folderPoint }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const rect = state.folderPanelRef?.getBoundingClientRect?.();
     if (!rect) throw new Error("Auto-opened folder panel bounds are unavailable");
     return {
@@ -452,7 +744,7 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
   }, pointerId);
   await page.waitForTimeout(120);
   expect(await page.evaluate(({ folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId === folderId && state.isFolderClosing === false;
   }, { folderId })).toBe(true);
 
@@ -460,12 +752,12 @@ test("an auto-opened one-row folder waits for panel entry before closing and doe
   await page.waitForTimeout(100);
   await dispatchDragPointer(page, "pointermove", geometry.outside, pointerId);
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   })).toBeNull();
   await page.waitForTimeout(1_400);
   expect(await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return {
       active: state.isFolderLayerActive,
       openFolderId: state.openFolderId,
@@ -479,19 +771,21 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   test.setTimeout(30_000);
   await waitForFixture(page);
   const setup = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === "folder-creative-lab");
-    const childIds = folder?.childPages?.flat().slice(0, 2).map((item) => item.id) || [];
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder("folder-creative-lab");
+    const childIds = folder.childPages.flat()
+      .flatMap((item) => item ? [item.id] : [])
+      .slice(0, 2);
     if (childIds.length !== 2) throw new Error("Creative Lab needs two fixture children");
     state.commitOpenFolder(folder.id);
     return { childIds, folderId: folder.id };
   });
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   })).toBe(setup.folderId);
   await page.waitForFunction(({ childIds, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return childIds.every((id) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
@@ -501,21 +795,23 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   }, setup);
   await page.waitForTimeout(900);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.enterBatchSelection();
   });
   await page.waitForTimeout(50);
-  for (let index = 0; index < setup.childIds.length; index += 1) {
+  for (const [index, id] of setup.childIds.entries()) {
     await page.evaluate(({ folderId, id, pointerId }) => {
-      const state = document.querySelector("#app").__vue_app__._instance.setupState;
+      const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
       const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "folder",
         folderId,
         id,
         pageIndex: 0,
       });
+      if (!bounds) throw new Error(`Selected folder child bounds are unavailable: ${id}`);
       const point = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
       const target = document.elementFromPoint(point.x, point.y);
+      if (!target) throw new Error(`Selected folder child pointer target is unavailable: ${id}`);
       const init = {
         bubbles: true,
         button: 0,
@@ -529,23 +825,25 @@ test("a selected group can leave an open folder and commit onto the desktop", as
       };
       target.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
       target.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
-    }, { folderId: setup.folderId, id: setup.childIds[index], pointerId: 230 + index });
+    }, { folderId: setup.folderId, id, pointerId: 230 + index });
   }
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return [...state.batchSelectedIds];
   })).toEqual(setup.childIds);
 
   const drag = await page.evaluate(({ childIds, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const leadId = childIds[0];
+    if (!leadId) throw new Error("Open-folder desktop drag lead is unavailable");
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
-      id: childIds[0],
+      id: leadId,
       pageIndex: 0,
     });
     const panel = state.folderPanelRef?.getBoundingClientRect?.();
-    if (!panel) throw new Error("Open folder panel bounds are unavailable");
+    if (!bounds || !panel) throw new Error("Open folder drag geometry is unavailable");
     return {
       outside: {
         x: panel.left > 48 ? panel.left - 24 : panel.right + 24,
@@ -564,11 +862,11 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   await page.waitForTimeout(80);
   await dispatchDragPointer(page, "pointermove", drag.outside, pointerId);
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   })).toBeNull();
   await expect.poll(async () => page.evaluate(() => {
-    const group = document.querySelector("#app").__vue_app__._instance.setupState.groupDragState;
+    const group = window.__LUMERIA_GROUP_RELEASE_TEST__.getState().groupDragState;
     return {
       reason: group?.intentPlan?.reason || null,
       status: group?.intentPlan?.status || null,
@@ -577,15 +875,15 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   })).toEqual({ reason: null, status: "accepted", type: "desktop-slot" });
   await dispatchDragPointer(page, "pointerup", drag.outside, pointerId);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   }, null, { timeout: 5_000 });
 
   const result = await page.evaluate(({ childIds, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
     return {
-      folderChildren: folder?.childPages?.flat().map((item) => item.id) || [],
+      folderChildren: folder.childPages.flat().flatMap((item) => item ? [item.id] : []),
       openFolderId: state.openFolderId,
       topLevelIds: state.activePages.flat().map((item) => item.id),
     };
@@ -594,7 +892,7 @@ test("a selected group can leave an open folder and commit onto the desktop", as
   expect(result.topLevelIds).toEqual(expect.arrayContaining(setup.childIds));
   expect(result.folderChildren.filter((id) => setup.childIds.includes(id))).toEqual([]);
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.isFolderLayerActive;
   })).toBe(false);
 });
@@ -603,16 +901,16 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
   test.setTimeout(30_000);
   await waitForFixture(page);
   const setup = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === "folder-creative-lab");
-    const childId = folder?.childPages?.[2]?.[0]?.id;
-    if (!folder || !childId) throw new Error("Creative Lab needs a populated third page");
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder("folder-creative-lab");
+    const childId = folder.childPages[2]?.[0]?.id;
+    if (!childId) throw new Error("Creative Lab needs a populated third page");
     state.commitOpenFolder(folder.id);
     state.folderOverlay.commitFolderPageIndex(2, { allowCreate: false });
     return { childId, folderId: folder.id };
   });
   await page.waitForFunction(({ childId, folderId }) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.openFolderId === folderId && state.folderOverlay.folderPageIndex.value === 2 && Boolean(
       state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "folder",
@@ -625,7 +923,7 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
   await page.waitForTimeout(900);
 
   const points = await page.evaluate(({ childId, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
@@ -652,20 +950,20 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
   }, setup);
   const pointerId = 245;
   await page.evaluate((childId) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === "folder-creative-lab");
-    const child = folder?.childPages?.[2]?.find((item) => item.id === childId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder("folder-creative-lab");
+    const child = folder.childPages[2]?.find((item) => item?.id === childId);
     if (!child) throw new Error("Folder edge fixture selection item is unavailable");
     state.enterBatchSelection(child);
   }, setup.childId);
   await page.waitForFunction((childId) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.isBatchSelectionActive === true && state.batchSelectedIds.has(childId);
   }, setup.childId);
   await page.evaluate(({ childId, folderId, point, pointerId, sourceRect }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
-    const item = folder?.childPages?.[2]?.find((child) => child.id === childId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
+    const item = folder.childPages[2]?.find((child) => child?.id === childId);
     if (!item) throw new Error("Folder edge fixture drag item is unavailable");
     state.folderOverlay.handleIconPointerDown({
       button: 0,
@@ -697,13 +995,13 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
   }, { ...setup, point: points.source, pointerId, sourceRect: points.sourceRect });
   await page.waitForTimeout(700);
   await page.waitForFunction(() => Boolean(
-    document.querySelector("#app")?.__vue_app__?._instance?.setupState?.groupDragState
+    window.__LUMERIA_GROUP_RELEASE_TEST__.getState().groupDragState
   ), null, { timeout: 3_000 });
   await dispatchDragPointer(page, "pointermove", points.edge, pointerId);
   await page.waitForTimeout(350);
 
   expect(await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return {
       folderPageIndex: state.folderOverlay.folderPageIndex.value,
       request: state.folderOverlay.folderPageTurnRequest.value,
@@ -713,13 +1011,13 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
 
   await page.waitForTimeout(1_200);
   expect(await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.folderOverlay.folderPageIndex.value;
   })).toBe(3);
   await dispatchDragPointer(page, "pointermove", points.retreat, pointerId);
   await page.waitForTimeout(1_000);
   expect(await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return {
       folderPageIndex: state.folderOverlay.folderPageIndex.value,
       visualFolderPageIndex: state.folderOverlay.visualFolderPageIndex.value,
@@ -728,7 +1026,7 @@ test("a folder drag turns from the visible panel border and keeps a new page lat
 
   await dispatchDragPointer(page, "pointercancel", points.retreat, pointerId);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   });
 });
@@ -738,16 +1036,16 @@ test("a child dragged directly out of a one-row folder onto its source folder ca
   await waitForFixture(page);
   const folderId = await createSmallFolder(page);
   const setup = await page.evaluate((sourceFolderId) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === sourceFolderId);
-    const childId = folder?.childPages?.[0]?.[0]?.id;
-    if (!folder || !childId) throw new Error("One-row source folder needs a child");
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(sourceFolderId);
+    const childId = folder.childPages[0]?.[0]?.id;
+    if (!childId) throw new Error("One-row source folder needs a child");
     state.commitOpenFolder(folder.id);
     state.folderOverlay.commitFolderPageIndex(0, { allowCreate: false });
     return { childId, folderId: folder.id };
   }, folderId);
   await page.waitForFunction(({ childId, folderId }) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.openFolderId === folderId && Boolean(
       state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "folder",
@@ -759,7 +1057,7 @@ test("a child dragged directly out of a one-row folder onto its source folder ca
   }, setup);
   await page.waitForTimeout(900);
   const points = await page.evaluate(({ childId, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
@@ -786,18 +1084,18 @@ test("a child dragged directly out of a one-row folder onto its source folder ca
   await page.waitForTimeout(80);
   await dispatchDragPointer(page, "pointermove", points.exit, pointerId);
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   })).toBeNull();
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.isFolderLayerActive === false;
   }, null, { timeout: 3_000 });
   const folderPoint = await readDesktopIconCenter(page, setup.folderId);
   await dispatchDragPointer(page, "pointermove", folderPoint, pointerId);
 
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return {
       intentTarget: state.groupDragState?.intent?.folderId || null,
       intentType: state.groupDragState?.intent?.type || null,
@@ -809,13 +1107,13 @@ test("a child dragged directly out of a one-row folder onto its source folder ca
     targetId: setup.folderId,
   });
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId;
   }), { timeout: 3_000 }).toBe(setup.folderId);
 
   await dispatchDragPointer(page, "pointercancel", folderPoint, pointerId);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   });
 });
@@ -825,8 +1123,8 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
   await page.setViewportSize({ width: 1600, height: 900 });
   await waitForFixture(page);
   const setup = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const root = document.querySelector("#app").__vue_app__._instance;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const root = window.__LUMERIA_GROUP_RELEASE_TEST__.getInstance();
     const settings = root.setupState.settingsPanel;
     while (Number(settings.draftFolderRows.value) > 2) settings.changeDraftFolderRows(-1);
     while (Number(settings.draftFolderRows.value) < 2) settings.changeDraftFolderRows(1);
@@ -834,16 +1132,16 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     while (Number(settings.draftFolderCols.value) < 7) settings.changeDraftFolderCols(1);
     const outcome = await settings.applySettingsConfig();
     if (!outcome?.ok) throw outcome?.error || new Error("Unable to apply the 2x7 folder fixture");
-    const folder = state.activePages.flat().find((item) => item.id === "folder-creative-lab");
-    const firstId = folder?.childPages?.[0]?.[0]?.id;
-    const secondId = folder?.childPages?.[1]?.[0]?.id;
-    if (!folder || !firstId || !secondId) throw new Error("2x7 folder fixture needs two populated pages");
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder("folder-creative-lab");
+    const firstId = folder.childPages[0]?.[0]?.id;
+    const secondId = folder.childPages[1]?.[0]?.id;
+    if (!firstId || !secondId) throw new Error("2x7 folder fixture needs two populated pages");
     state.commitOpenFolder(folder.id);
     state.folderOverlay.commitFolderPageIndex(0, { allowCreate: false });
     return { firstId, folderId: folder.id, secondId };
   });
   await page.waitForFunction(({ firstId, folderId }) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.openFolderId === folderId && Boolean(
       state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "folder",
@@ -855,15 +1153,15 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
   }, setup);
   await page.waitForTimeout(900);
   await page.evaluate(({ firstId, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
-    const first = folder?.childPages?.[0]?.find((item) => item.id === firstId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
+    const first = folder.childPages[0]?.find((item) => item?.id === firstId);
     if (!first) throw new Error("First-page selection item is unavailable");
     state.enterBatchSelection(first);
     state.folderOverlay.commitFolderPageIndex(1, { allowCreate: false });
   }, setup);
   await page.waitForFunction(({ folderId, secondId }) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.folderOverlay?.folderPageIndex?.value === 1 && Boolean(
       state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "folder",
@@ -875,9 +1173,9 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
   }, setup);
   await page.waitForTimeout(700);
   const source = await page.evaluate(({ firstId, folderId, secondId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
-    const second = folder?.childPages?.[1]?.find((item) => item.id === secondId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
+    const second = folder.childPages[1]?.find((item) => item?.id === secondId);
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
@@ -891,9 +1189,9 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     };
   }, setup);
   await page.evaluate(({ folderId, point, rect, secondId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
-    const item = folder?.childPages?.[1]?.find((child) => child.id === secondId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
+    const item = folder.childPages[1]?.find((child) => child?.id === secondId);
     const nativeEvent = {
       button: 0,
       buttons: 1,
@@ -908,32 +1206,16 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
       stopPropagation() {},
       type: "pointerdown",
     };
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(document.querySelector("#app").__vue_app__._instance.subTree);
-    const node = layer?.singleStageFolderLayer?.iconNodes?.get(`${folderId}:${secondId}`);
-    if (!item || !node) throw new Error("Second-page Pixi icon node is unavailable");
-    layer.singleStageFolderLayer.handleIconAction(
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const folderLayer = layer.singleStageFolderLayer;
+    const node = folderLayer?.iconNodes?.get(`${folderId}:${secondId}`);
+    if (!item || !folderLayer || !node?.item || node.item.id !== item.id) {
+      throw new Error("Second-page Pixi icon node is unavailable");
+    }
+    folderLayer.handleIconAction(
       "pointerdown",
       nativeEvent,
-      item,
+      node.item,
       { folderId, index: 0, pageIndex: 1, type: "folder" },
       node
     );
@@ -951,14 +1233,14 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     }));
   }, { ...setup, ...source });
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return [...state.batchSelectedIds];
   })).toEqual([setup.firstId, setup.secondId]);
   const pointerId = 247;
   await page.evaluate(({ folderId, point, pointerId, rect, secondId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folder = state.activePages.flat().find((item) => item.id === folderId);
-    const item = folder?.childPages?.[1]?.find((child) => child.id === secondId);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
+    const item = folder.childPages[1]?.find((child) => child?.id === secondId);
     if (!item) throw new Error("Cross-page drag lead is unavailable");
     state.folderOverlay.handleIconPointerDown({
       button: 0,
@@ -987,47 +1269,27 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     y: source.point.y + 5,
   }, pointerId);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.groupDragState?.phase === "dragging";
   });
 
   const handoffPromise = page.evaluate(async ({ firstId, folderId, secondId }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    const folderLayer = layer?.singleStageFolderLayer;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const folderLayer = layer.singleStageFolderLayer;
     if (!folderLayer) throw new Error("Pixi folder layer is unavailable");
     const entries = [
       { id: firstId, key: `${folderId}:${firstId}` },
       { id: secondId, key: `${folderId}:${secondId}` },
     ];
-    return new Promise((resolve, reject) => {
+    return new Promise<FolderHandoffResult>((resolve, reject) => {
       let frames = 0;
       let settledFrames = 0;
       let sawReturning = false;
       let maxReturningTargetDelta = 0;
-      let releaseOutcome = null;
-      const firstVisibleTargetDeltaById = new Map();
-      const ownershipVisibilityViolationIds = new Set();
+      let releaseOutcome: string | null = null;
+      const firstVisibleTargetDeltaById = new Map<string, number>();
+      const ownershipVisibilityViolationIds = new Set<string>();
       const sample = () => {
         frames += 1;
         const group = state.groupDragState;
@@ -1094,8 +1356,13 @@ test("ESC cancellation of a 2x7 cross-page folder drag hands real icons off at s
     selectedIds: [setup.firstId, setup.secondId],
   });
   expect(handoff.maxReturningTargetDelta).toBeLessThanOrEqual(0.75);
-  expect(handoff.firstVisibleTargetDeltaById[setup.firstId]).toBeLessThanOrEqual(0.75);
-  expect(handoff.firstVisibleTargetDeltaById[setup.secondId]).toBeLessThanOrEqual(0.75);
+  const firstHandoffDelta = handoff.firstVisibleTargetDeltaById[setup.firstId];
+  const secondHandoffDelta = handoff.firstVisibleTargetDeltaById[setup.secondId];
+  if (firstHandoffDelta === undefined || secondHandoffDelta === undefined) {
+    throw new Error("2x7 ESC folder handoff target deltas are unavailable");
+  }
+  expect(firstHandoffDelta).toBeLessThanOrEqual(0.75);
+  expect(secondHandoffDelta).toBeLessThanOrEqual(0.75);
 });
 
 test("canceling a mixed desktop and folder-child drag restores the projected folder shell", async ({ page }) => {
@@ -1104,26 +1371,31 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
   await waitForFixture(page);
   await enterBatchSelectionOf(page, ["app-4-calendar", "app-5-maps"]);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.createFolderFromBatchSelection();
   });
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState && state.activePages[0]?.some((item) =>
       item.type === "folder" &&
-      item.childPages.flat().some((child) => child.id === "app-4-calendar") &&
-      item.childPages.flat().some((child) => child.id === "app-5-maps")
+      item.childPages.flat().some((child) => child?.id === "app-4-calendar") &&
+      item.childPages.flat().some((child) => child?.id === "app-5-maps")
     );
   }, null, { timeout: 5_000 });
   const setup = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const folderIndex = state.activePages[0].findIndex((item) =>
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const firstPage = state.activePages[0];
+    if (!firstPage) throw new Error("Mixed-source first page is unavailable");
+    const folderIndex = firstPage.findIndex((item) =>
       item.type === "folder" &&
-      item.childPages.flat().some((child) => child.id === "app-4-calendar") &&
-      item.childPages.flat().some((child) => child.id === "app-5-maps")
+      item.childPages.flat().some((child) => child?.id === "app-4-calendar") &&
+      item.childPages.flat().some((child) => child?.id === "app-5-maps")
     );
-    const folder = state.activePages[0][folderIndex];
-    return { folderId: folder?.id || null, folderIndex };
+    const folder = firstPage[folderIndex];
+    if (!folder || folder.type !== "folder") {
+      throw new Error("Mixed-source projected folder is unavailable");
+    }
+    return { folderId: folder.id, folderIndex };
   });
   expect(setup).toMatchObject({ folderIndex: 4 });
   expect(setup.folderId).toBeTruthy();
@@ -1131,11 +1403,11 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
   await dispatchIconPointer(page, "app-2-photos", { pointerId: 260 });
   await dispatchIconPointer(page, "app-3-music", { pointerId: 261 });
   await page.evaluate((folderId) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.commitOpenFolder(folderId);
   }, setup.folderId);
   await page.waitForFunction(({ childId, folderId }) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.openFolderId === folderId && Boolean(state.iconBoundsRegistry.getBounds(
       "launch",
       "rendered",
@@ -1144,15 +1416,17 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
   }, { childId: "app-4-calendar", folderId: setup.folderId });
   await page.waitForTimeout(900);
   await page.evaluate(({ childId, folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "folder",
       folderId,
       id: childId,
       pageIndex: 0,
     });
+    if (!bounds) throw new Error("Mixed-source folder child bounds are unavailable");
     const point = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
     const target = document.elementFromPoint(point.x, point.y);
+    if (!target) throw new Error("Mixed-source folder child pointer target is unavailable");
     const init = {
       bubbles: true,
       button: 0,
@@ -1168,20 +1442,20 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
     target.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
   }, { childId: "app-4-calendar", folderId: setup.folderId });
   await expect.poll(async () => page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return [...state.batchSelectedIds];
   })).toEqual(["app-2-photos", "app-3-music", "app-4-calendar"]);
   await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     state.commitOpenFolder(null);
   });
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state.openFolderId == null && state.isFolderLayerActive === false;
   }, null, { timeout: 5_000 });
   await waitForIconBounds(page, setup.folderId);
   await page.waitForFunction(({ childId, folderId }) => {
-    const registry = document.querySelector("#app")?.__vue_app__?._instance?.setupState?.iconBoundsRegistry;
+    const registry = window.__LUMERIA_GROUP_RELEASE_TEST__.getState().iconBoundsRegistry;
     const key = { childId, folderId, slotIndex: 0 };
     return Boolean(
       registry?.getBounds("previewChild", "stableStageLayout", key) &&
@@ -1191,25 +1465,35 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
   await page.waitForTimeout(300);
 
   const result = await page.evaluate(async ({ folderId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-    const pageBefore = JSON.stringify(state.activePages[0]);
-    const findFolderIndex = (pages = state.activePages) => pages[0]?.findIndex((item) => item.id === folderId) ?? -1;
-    const readDesktopCenter = (id, variant = "rendered") => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const firstPage = state.activePages[0];
+    if (!firstPage) throw new Error("Mixed-source first page is unavailable during drag");
+    const pageBefore = JSON.stringify(firstPage);
+    const findFolderIndex = (pages: LaunchpadPages = state.activePages): number => (
+      pages[0]?.findIndex((item) => item.id === folderId) ?? -1
+    );
+    const readDesktopCenter = (
+      id: string,
+      variant: IconBoundsVariant = "rendered",
+    ): GroupReleasePoint => {
       const location = state.activePages
         .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
         .find((entry) => entry.item.id === id);
+      if (!location) throw new Error(`Mixed-source desktop item is unavailable: ${id}`);
       const bounds = state.iconBoundsRegistry.getBounds("launch", variant, {
         area: "desktop",
         id,
         pageIndex: location.pageIndex,
       });
+      if (!bounds) throw new Error(`Mixed-source desktop bounds are unavailable: ${id}`);
       return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
     };
     const originalCenter = readDesktopCenter(folderId, "stableStageLayout");
     const source = readDesktopCenter("app-2-photos");
     const target = document.elementFromPoint(source.x, source.y);
+    if (!target) throw new Error("Mixed-source desktop pointer target is unavailable");
     const init = {
       bubbles: true,
       button: 0,
@@ -1233,9 +1517,15 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
 
     const cols = Math.max(1, Number(state.gridCols) || 1);
     const rows = Math.max(1, Number(state.gridRows) || 1);
-    const firstCenter = readDesktopCenter(state.activePages[0][0].id);
-    const secondCenter = readDesktopCenter(state.activePages[0][1].id);
-    const nextRowCenter = readDesktopCenter(state.activePages[0][cols].id);
+    const firstItem = firstPage[0];
+    const secondItem = firstPage[1];
+    const nextRowItem = firstPage[cols];
+    if (!firstItem || !secondItem || !nextRowItem) {
+      throw new Error("Mixed-source desktop grid anchors are unavailable");
+    }
+    const firstCenter = readDesktopCenter(firstItem.id);
+    const secondCenter = readDesktopCenter(secondItem.id);
+    const nextRowCenter = readDesktopCenter(nextRowItem.id);
     const cellWidth = secondCenter.x - firstCenter.x;
     const cellHeight = nextRowCenter.y - firstCenter.y;
     const pageRect = {
@@ -1248,7 +1538,7 @@ test("canceling a mixed desktop and folder-child drag restores the projected fol
     const candidateIndexes = [20, 27, 13, 10, 30, capacity - 2]
       .filter((index, position, items) => index > 4 && index < capacity && items.indexOf(index) === position);
     let projectedIndex = -1;
-    let projectedIntent = null;
+    let projectedIntent: string | null = null;
     for (const index of candidateIndexes) {
       const col = index % cols;
       const row = Math.floor(index / cols);
@@ -1343,16 +1633,18 @@ test("created-folder release keeps the hover frame center continuous on pointeru
   const targetId = "app-4-calendar";
   const pointerId = 240;
   const points = await page.evaluate(({ sourceId, targetId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const center = (id) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const center = (id: string): GroupReleasePoint => {
       const location = state.activePages
         .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
         .find((entry) => entry.item.id === id);
+      if (!location) throw new Error(`Desktop release item is unavailable: ${id}`);
       const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "desktop",
         id,
         pageIndex: location.pageIndex,
       });
+      if (!bounds) throw new Error(`Desktop release bounds are unavailable: ${id}`);
       return {
         x: bounds.left + bounds.width / 2,
         y: bounds.top + bounds.height / 2,
@@ -1363,6 +1655,7 @@ test("created-folder release keeps the hover frame center continuous on pointeru
 
   await page.evaluate(({ point, pointerId }) => {
     const target = document.elementFromPoint(point.x, point.y);
+    if (!target) throw new Error("Created-folder source pointer target is unavailable");
     target.dispatchEvent(new PointerEvent("pointerdown", {
       bubbles: true,
       button: 0,
@@ -1381,7 +1674,11 @@ test("created-folder release keeps the hover frame center continuous on pointeru
     x: points.source.x + (points.target.x - points.source.x) * 0.12,
     y: points.source.y + (points.target.y - points.source.y) * 0.12,
   };
-  for (const [point, delay] of [[intermediate, 80], [points.target, 160]]) {
+  const movements: readonly Readonly<{ delay: number; point: GroupReleasePoint }>[] = [
+    { delay: 80, point: intermediate },
+    { delay: 160, point: points.target },
+  ];
+  for (const { point, delay } of movements) {
     await page.evaluate(({ point, pointerId }) => {
       window.dispatchEvent(new PointerEvent("pointermove", {
         bubbles: true,
@@ -1399,53 +1696,39 @@ test("created-folder release keeps the hover frame center continuous on pointeru
     await page.waitForTimeout(delay);
   }
   await page.waitForFunction((targetId) => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.dragFolderHoverState?.targetId === targetId;
   }, targetId);
 
   const continuity = await page.evaluate(async ({ point, pointerId, sourceId, targetId }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    if (!groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
 
     const dragGroup = state.groupDragState;
-    const sourceEntryIndex = dragGroup?.entries?.findIndex((entry) => entry.item?.id === sourceId) ?? -1;
+    if (!dragGroup) throw new Error("Created-folder drag state is unavailable before release");
+    const sourceEntryIndex = dragGroup.entries.findIndex((entry) => entry.item?.id === sourceId);
     const sourceEntry = sourceEntryIndex >= 0 ? dragGroup.entries[sourceEntryIndex] : null;
     const sourceNodeBeforeRelease = sourceEntry?.continuityKey
-      ? layer.groupDragLayer.activeNodesByContinuityKey.get(sourceEntry.continuityKey)
+      ? groupDragLayer.activeNodesByContinuityKey.get(sourceEntry.continuityKey)
       : null;
     if (!sourceNodeBeforeRelease) throw new Error("Source actor node is not synchronized before release");
-    const sourceCenterBeforeRelease = sourceNodeBeforeRelease
-      ? layer.groupDragLayer.toLocal({ x: 0, y: 0 }, sourceNodeBeforeRelease.visualWrap)
-      : null;
-    let actorHandoff = null;
-    const originalGroupLayerUpdate = layer.groupDragLayer.update;
-    layer.groupDragLayer.update = function instrumentActorHandoff(nextState) {
+    const sourceCenterBeforeRelease = groupDragLayer.toLocal(
+      { x: 0, y: 0 },
+      sourceNodeBeforeRelease.visualWrap,
+    );
+    let actorHandoff: ActorHandoffSnapshot | null = null;
+    const originalGroupLayerUpdate = groupDragLayer.update;
+    groupDragLayer.update = function instrumentActorHandoff(nextState) {
       const result = originalGroupLayerUpdate.call(this, nextState);
       const nextGroup = nextState?.groupState;
       const releaseActorsReady = nextGroup?.phase === "releasing" &&
         this.activeNodesByContinuityKey.size === nextGroup.entries.length &&
-        nextGroup.entries.every((entry) => this.activeNodesByContinuityKey.has(entry.continuityKey));
+        nextGroup.entries.every((entry) => (
+          typeof entry.continuityKey === "string" &&
+          this.activeNodesByContinuityKey.has(entry.continuityKey)
+        ));
       if (!actorHandoff && releaseActorsReady) {
         const nextIndex = nextGroup.entries.findIndex((entry) => entry.actorKey === sourceEntry?.actorKey);
         const nextNode = sourceEntry?.continuityKey
@@ -1457,7 +1740,7 @@ test("created-folder release keeps the hover frame center continuous on pointeru
         actorHandoff = {
           actorOrder: nextGroup.entries.map((entry) => entry.actorKey),
           orderedNodeMatches: nextIndex >= 0 && this.nodes[nextIndex] === nextNode,
-          centerDelta: sourceCenterBeforeRelease && nextCenter
+          centerDelta: nextCenter
             ? Math.hypot(
               nextCenter.x - sourceCenterBeforeRelease.x,
               nextCenter.y - sourceCenterBeforeRelease.y
@@ -1471,9 +1754,11 @@ test("created-folder release keeps the hover frame center continuous on pointeru
     };
 
     const targetNode = layer.findIconNodeByItemId(targetId);
-    const hoverCenter = layer.groupDragLayer.toLocal(
+    const hoverVisual = targetNode?.folderCreateBackdrop || targetNode?.visualWrap || targetNode;
+    if (!hoverVisual) throw new Error("Created-folder hover visual is unavailable");
+    const hoverCenter = groupDragLayer.toLocal(
       { x: 0, y: 0 },
-      targetNode?.folderCreateBackdrop || targetNode?.visualWrap || targetNode
+      hoverVisual,
     );
 
     window.dispatchEvent(new PointerEvent("pointerup", {
@@ -1489,13 +1774,13 @@ test("created-folder release keeps the hover frame center continuous on pointeru
       view: window,
     }));
 
-    return new Promise((resolve, reject) => {
+    return new Promise<CreatedFolderContinuityResult>((resolve, reject) => {
       let frames = 0;
-      let firstReleaseFrame = null;
-      const ownershipViolations = [];
+      let firstReleaseFrame: CreatedFolderReleaseFrame | null = null;
+      const ownershipViolations: GroupReleaseDiagnostic[] = [];
       const sample = () => {
         frames += 1;
-        const frame = layer.groupDragLayer?.releaseController?.folderShellFrame;
+        const frame = groupDragLayer.releaseController?.folderShellFrame;
         const group = state.groupDragState;
         const folderId = group?.semanticPlan?.effects?.createdFolderId;
         if (frame?.visible && !firstReleaseFrame) {
@@ -1531,8 +1816,11 @@ test("created-folder release keeps the hover frame center continuous on pointeru
             const entryIndex = group.entries.findIndex((candidate) => (
               candidate.actorKey === entry.actorKey || candidate.item?.id === entry.id
             ));
-            const ghost = entryIndex >= 0 ? layer.groupDragLayer.nodes[entryIndex] : null;
-            const child = folderNode?.folderChildNodes?.[entry.target?.slotIndex];
+            const ghost = entryIndex >= 0 ? groupDragLayer.nodes[entryIndex] : null;
+            const slotIndex = entry.target?.slotIndex;
+            const child = typeof slotIndex === "number"
+              ? folderNode?.folderChildNodes?.[slotIndex]
+              : null;
             const ghostDrawable = ghost?.visible === true && ghost?.renderable !== false && Number(ghost.alpha) > 0.001;
             const childDrawable = folderLive && child?.visible === true && child?.renderable === true;
             if (Number(ghostDrawable) + Number(childDrawable) !== 1) {
@@ -1547,12 +1835,12 @@ test("created-folder release keeps the hover frame center continuous on pointeru
           }
         }
         if (firstReleaseFrame && !group) {
-          layer.groupDragLayer.update = originalGroupLayerUpdate;
+          groupDragLayer.update = originalGroupLayerUpdate;
           resolve({ ...firstReleaseFrame, actorHandoff, ownershipViolations });
           return;
         }
         if (frames >= 240) {
-          layer.groupDragLayer.update = originalGroupLayerUpdate;
+          groupDragLayer.update = originalGroupLayerUpdate;
           reject(new Error("created-folder release did not settle with continuous visual ownership"));
           return;
         }
@@ -1571,6 +1859,9 @@ test("created-folder release keeps the hover frame center continuous on pointeru
   expect(continuity.actorHandoff?.centerDelta).toBeLessThanOrEqual(0.5);
   expect(Math.abs(continuity.firstReleaseCenter.x - continuity.hoverCenter.x)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(continuity.firstReleaseCenter.y - continuity.hoverCenter.y)).toBeLessThanOrEqual(0.5);
+  if (continuity.folderNodeY === null || continuity.folderLayoutY === null) {
+    throw new Error("Created-folder release layout coordinates are unavailable");
+  }
   expect(Math.abs(continuity.folderNodeY - continuity.folderLayoutY)).toBeLessThanOrEqual(0.001);
   expect(continuity.ownershipViolations).toEqual([]);
 });
@@ -1589,37 +1880,19 @@ test("single-icon return keeps its already visible label opaque through handoff"
   await dispatchDragPointer(page, "pointermove", point, pointerId);
   await page.waitForTimeout(120);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app")?.__vue_app__?._instance?.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return state?.groupDragState?.phase === "dragging";
   });
 
   const handoff = await page.evaluate(async ({ iconId, point, pointerId }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    if (!groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
     const dragGroup = state.groupDragState;
+    if (!dragGroup) throw new Error("Single-icon drag state is unavailable before release");
     const ghostIndex = dragGroup.entries.findIndex((entry) => entry.item?.id === iconId);
-    const ghostNode = ghostIndex >= 0 ? layer.groupDragLayer.nodes[ghostIndex] : null;
+    const ghostNode = ghostIndex >= 0 ? groupDragLayer.nodes[ghostIndex] : null;
     const ghostLabelAlphaBeforeRelease = Number(ghostNode?.labelText?.alpha);
 
     window.dispatchEvent(new PointerEvent("pointerup", {
@@ -1635,13 +1908,13 @@ test("single-icon return keeps its already visible label opaque through handoff"
       view: window,
     }));
 
-    return new Promise((resolve, reject) => {
+    return new Promise<SingleIconHandoffResult>((resolve, reject) => {
       let frames = 0;
       let settledFrames = 0;
       let liveLabelFrameCount = 0;
       let minLiveLabelAlpha = 1;
-      let releaseOutcome = null;
-      let releasePhase = null;
+      let releaseOutcome: string | null = null;
+      let releasePhase: string | null = null;
       const sample = () => {
         frames += 1;
         const group = state.groupDragState;
@@ -1699,54 +1972,48 @@ test("long-distance desktop release keeps a stable slot and exactly one visual o
   await page.waitForTimeout(60);
 
   const result = await page.evaluate(async ({ iconId, neighborId, pointerId }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
-    const readCenter = (id) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    if (!groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const readCenter = (id: string): GroupReleasePoint => {
       const location = state.activePages
         .flatMap((items, pageIndex) => items.map((item) => ({ item, pageIndex })))
         .find((entry) => entry.item.id === id);
+      if (!location) throw new Error(`Long-distance release item is unavailable: ${id}`);
       const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "desktop",
         id,
         pageIndex: location.pageIndex,
       });
+      if (!bounds) throw new Error(`Long-distance release bounds are unavailable: ${id}`);
       return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
     };
     const cols = Math.max(1, Number(state.gridCols) || 1);
-    const first = readCenter(state.activePages[0][0].id);
-    const second = readCenter(state.activePages[0][1].id);
-    const nextRow = readCenter(state.activePages[0][cols].id);
+    const activePage = state.activePages[0];
+    if (!activePage) throw new Error("Long-distance release page is unavailable");
+    const firstItem = activePage[0];
+    const secondItem = activePage[1];
+    const nextRowItem = activePage[cols];
+    if (!firstItem || !secondItem || !nextRowItem) {
+      throw new Error("Long-distance release grid anchors are unavailable");
+    }
+    const first = readCenter(firstItem.id);
+    const second = readCenter(secondItem.id);
+    const nextRow = readCenter(nextRowItem.id);
     const cellWidth = second.x - first.x;
     const cellHeight = nextRow.y - first.y;
-    const targetIndex = Math.min(state.activePages[0].length - 2, cols * 4 + 2);
+    const targetIndex = Math.min(activePage.length - 2, cols * 4 + 2);
     const targetCol = targetIndex % cols;
     const targetRow = Math.floor(targetIndex / cols);
     const target = {
       x: first.x - cellWidth / 2 + (targetCol + 0.08) * cellWidth,
       y: first.y + targetRow * cellHeight,
     };
-    const pointerEvent = (type, buttons) => new PointerEvent(type, {
+    const pointerEvent = (
+      type: "pointermove" | "pointerup",
+      buttons: number,
+    ) => new PointerEvent(type, {
       bubbles: true,
       button: 0,
       buttons,
@@ -1758,7 +2025,12 @@ test("long-distance desktop release keeps a stable slot and exactly one visual o
       pointerType: "mouse",
       view: window,
     });
-    const isDrawable = (node, includeGhostState = false) => Boolean(
+    type DragNode = (typeof groupDragLayer.nodes)[number];
+    type LiveNode = NonNullable<ReturnType<typeof layer.findIconNodeByItemId>>;
+    const isDrawable = (
+      node: DragNode | LiveNode | null,
+      includeGhostState = false,
+    ): boolean => Boolean(
       node &&
       !node.destroyed &&
       node.visible === true &&
@@ -1766,7 +2038,7 @@ test("long-distance desktop release keeps a stable slot and exactly one visual o
       Number(node.alpha) > 0.001 &&
       (includeGhostState || node.state?.ghosted !== true)
     );
-    const violations = [];
+    const violations: GroupReleaseDiagnostic[] = [];
     let settledFrames = 0;
     let frames = 0;
 
@@ -1774,13 +2046,13 @@ test("long-distance desktop release keeps a stable slot and exactly one visual o
     window.dispatchEvent(pointerEvent("pointerup", 0));
 
     while (frames < 240 && settledFrames < 12) {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       frames += 1;
       const group = state.groupDragState;
       const entry = group?.entries?.find((candidate) => candidate.item?.id === iconId);
       const actor = (entry?.continuityKey
-        ? layer.groupDragLayer.activeNodesByContinuityKey.get(entry.continuityKey)
-        : null) || layer.groupDragLayer.nodes.find((node) => node?.item?.id === iconId) || null;
+        ? groupDragLayer.activeNodesByContinuityKey.get(entry.continuityKey)
+        : null) || groupDragLayer.nodes.find((node) => node?.item?.id === iconId) || null;
       const liveNode = layer.findIconNodeByItemId(iconId);
       const actorDrawable = isDrawable(actor, true);
       const liveDrawable = isDrawable(liveNode);
@@ -1800,8 +2072,10 @@ test("long-distance desktop release keeps a stable slot and exactly one visual o
     const sourceNode = layer.findIconNodeByItemId(iconId);
     const neighborNode = layer.findIconNodeByItemId(neighborId);
     const planEntry = layer.lastDesktopRenderPlan?.entries?.find((entry) => entry.item?.id === iconId);
+    const finalPage = state.activePages[0];
+    if (!finalPage) throw new Error("Long-distance release final page is unavailable");
     return {
-      finalIndex: state.activePages[0].findIndex((item) => item.id === iconId),
+      finalIndex: finalPage.findIndex((item) => item.id === iconId),
       finalTargetDelta: Math.hypot(
         Number(sourceNode?.position?.x) - Number(planEntry?.layoutTarget?.x),
         Number(sourceNode?.position?.y) - Number(planEntry?.layoutTarget?.y)
@@ -1825,14 +2099,22 @@ test("a first-cell app target wins over the overlapping desktop page-turn zone",
   test.setTimeout(30_000);
   await waitForFixture(page);
   const ids = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const apps = state.activePages[1].filter((item) => item.type === "app").slice(0, 2);
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const pageItems = state.activePages[1];
+    if (!pageItems) throw new Error("The second fixture page is unavailable");
+    const apps = pageItems.filter((item) => item.type === "app").slice(0, 2);
     if (apps.length !== 2) throw new Error("The second fixture page needs two app targets");
+    const targetApp = apps[0];
+    const sourceApp = apps[1];
+    if (!targetApp || !sourceApp) throw new Error("The second fixture app targets are unavailable");
     state.commitActivePageIndex(1);
-    return { sourceId: apps[1].id, targetId: apps[0].id };
+    return {
+      sourceId: sourceApp.id,
+      targetId: targetApp.id,
+    };
   });
   await expect.poll(async () => page.evaluate(() => (
-    document.querySelector("#app").__vue_app__._instance.setupState.activePageIndex
+    window.__LUMERIA_GROUP_RELEASE_TEST__.getState().activePageIndex
   ))).toBe(1);
   await page.waitForTimeout(500);
   const source = await readDesktopIconCenter(page, ids.sourceId);
@@ -1848,12 +2130,12 @@ test("a first-cell app target wins over the overlapping desktop page-turn zone",
   await dispatchDragPointer(page, "pointermove", target, pointerId);
 
   const linger = await page.evaluate(async ({ targetId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const pageIndexes = [];
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const pageIndexes: number[] = [];
     const deadline = performance.now() + 950;
     while (performance.now() < deadline) {
       pageIndexes.push(state.activePageIndex);
-      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
     return {
       intentTargetId: state.groupDragState?.intent?.targetAppId || null,
@@ -1871,15 +2153,15 @@ test("a first-cell app target wins over the overlapping desktop page-turn zone",
 
   await dispatchDragPointer(page, "pointerup", target, pointerId);
   await page.waitForFunction(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     return !state.groupDragState;
   }, null, { timeout: 5_000 });
   expect(await page.evaluate(({ sourceId, targetId }) => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
     const folder = state.activePages.flat().find((item) => (
       item.type === "folder" &&
-      item.childPages.flat().some((child) => child.id === sourceId) &&
-      item.childPages.flat().some((child) => child.id === targetId)
+      item.childPages.flat().some((child) => child?.id === sourceId) &&
+      item.childPages.flat().some((child) => child?.id === targetId)
     ));
     return { activePageIndex: state.activePageIndex, folderCreated: Boolean(folder) };
   }, ids)).toEqual({ activePageIndex: 1, folderCreated: true });
@@ -1894,22 +2176,27 @@ for (const viewport of [
     await page.setViewportSize({ height: viewport.height, width: viewport.width });
     await waitForFixture(page);
     const ids = await page.evaluate(() => {
-      const state = document.querySelector("#app").__vue_app__._instance.setupState;
-      const apps = state.activePages[1].filter((item) => item.type === "app");
+      const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+      const secondPage = state.activePages[1];
+      if (!secondPage) throw new Error("The second fixture page is unavailable");
+      const apps = secondPage.filter((item) => item.type === "app");
       if (apps.length < 5) throw new Error("The second fixture page needs five apps");
+      const firstApp = apps[0];
+      const sourceApp = apps[4];
+      if (!firstApp || !sourceApp) throw new Error("The first-slot fixture apps are unavailable");
       state.commitActivePageIndex(1);
-      return { firstId: apps[0].id, sourceId: apps[4].id };
+      return { firstId: firstApp.id, sourceId: sourceApp.id };
     });
     await expect.poll(async () => page.evaluate(() => (
-      document.querySelector("#app").__vue_app__._instance.setupState.activePageIndex
+      window.__LUMERIA_GROUP_RELEASE_TEST__.getState().activePageIndex
     ))).toBe(1);
     await page.waitForTimeout(500);
     await enterBatchSelectionOf(page, [ids.firstId, ids.sourceId]);
 
     const result = await page.evaluate(async ({ firstId, sourceId }) => {
-      const state = document.querySelector("#app").__vue_app__._instance.setupState;
-      const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-      const readBounds = (id) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
+      const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+      const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+      const readBounds = (id: string) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "desktop",
         id,
         pageIndex: 1,
@@ -1962,7 +2249,7 @@ for (const viewport of [
         navigationBoundary: mainRect.left + 92,
         pointer: group?.pointer || null,
       };
-      const pageIndexes = [state.activePageIndex];
+      const pageIndexes: number[] = [state.activePageIndex];
       window.dispatchEvent(new PointerEvent("pointerup", {
         ...init,
         buttons: 0,
@@ -1972,17 +2259,19 @@ for (const viewport of [
       const deadline = performance.now() + 5_000;
       while (state.groupDragState && performance.now() < deadline) {
         pageIndexes.push(state.activePageIndex);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
       pageIndexes.push(state.activePageIndex);
+      const secondPage = state.activePages[1];
+      if (!secondPage) throw new Error("The second fixture page disappeared after release");
       return {
         activePageIndex: state.activePageIndex,
         beforeRelease,
         firstCenter,
-        firstPageFirstId: state.activePages[0][0]?.id || null,
+        firstPageFirstId: state.activePages[0]?.[0]?.id || null,
         groupEnded: state.groupDragState == null,
         pageIndexes: [...new Set(pageIndexes)],
-        secondPageFirstIds: state.activePages[1].slice(0, 2).map((item) => item.id),
+        secondPageFirstIds: secondPage.slice(0, 2).map((item) => item.id),
         transientNotice: state.transientNotice?.message || null,
       };
     }, ids);
@@ -1991,6 +2280,9 @@ for (const viewport of [
       activePageIndex: 1,
       intent: { index: 0, pageIndex: 1, type: "desktop-slot" },
     });
+    if (!result.beforeRelease.center || !result.beforeRelease.pointer) {
+      throw new Error("First-slot release pose is unavailable before pointerup");
+    }
     expect(Math.abs(result.beforeRelease.center.x - result.firstCenter.x)).toBeLessThanOrEqual(0.1);
     expect(Math.abs(result.beforeRelease.center.y - result.firstCenter.y)).toBeLessThanOrEqual(0.1);
     expect(result.beforeRelease.pointer.x).toBeGreaterThan(result.beforeRelease.navigationBoundary);
@@ -2009,15 +2301,21 @@ test("the desktop navigation edge turns only after its full dwell", async ({ pag
   test.setTimeout(45_000);
   await page.setViewportSize({ height: 650, width: 960 });
 
-  const runEdgeScenario = async ({ cancel, dwellMs, pointerId }) => {
+  const runEdgeScenario = async ({
+    cancel,
+    dwellMs,
+    pointerId,
+  }: Readonly<{ cancel: boolean; dwellMs: number; pointerId: number }>) => {
     await waitForFixture(page);
     return page.evaluate(async ({ cancel: shouldCancel, dwellMs: dwell, pointerId: id }) => {
-      const state = document.querySelector("#app").__vue_app__._instance.setupState;
-      const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-      const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+      const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+      const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+      const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       state.commitActivePageIndex(1);
       await wait(500);
-      const source = state.activePages[1].find((item) => item.type === "app");
+      const secondPage = state.activePages[1];
+      const source = secondPage?.find((item) => item.type === "app");
+      if (!source) throw new Error("The desktop edge source is unavailable");
       const bounds = state.iconBoundsRegistry.getBounds("launch", "rendered", {
         area: "desktop",
         id: source.id,
@@ -2063,7 +2361,7 @@ test("the desktop navigation edge turns only after its full dwell", async ({ pag
         clientX: edgePoint.x,
         clientY: edgePoint.y,
       }));
-      const pageIndexes = [];
+      const pageIndexes: number[] = [];
       const dwellDeadline = performance.now() + dwell;
       while (performance.now() < dwellDeadline) {
         pageIndexes.push(state.activePageIndex);
@@ -2130,10 +2428,10 @@ test("an app target remains semantic after desktop edge navigation", async ({ pa
   await waitForFixture(page);
 
   const result = await page.evaluate(async () => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    const wait = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
-    const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
-    const readStableBounds = (id) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+    const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const readStableBounds = (id: string) => {
       const record = state.iconBoundsRegistry.getBounds("topLevel", "stableStageLayout", id);
       const stageRect = record?.meta?.stageRect;
       const stageWidth = Number(record?.meta?.stageWidth);
@@ -2148,11 +2446,14 @@ test("an app target remains semantic after desktop edge navigation", async ({ pa
         width: record.width * scaleX,
       };
     };
-    const firstPageTarget = state.activePages[0].find((item) => item.type === "app");
-    const secondPageSource = state.activePages[1].find((item) => item.type === "app");
+    const firstPageTarget = state.activePages[0]?.find((item) => item.type === "app");
+    const secondPageSource = state.activePages[1]?.find((item) => item.type === "app");
+    if (!firstPageTarget || !secondPageSource) {
+      throw new Error("Cross-page source or target app is unavailable");
+    }
     state.commitActivePageIndex(1);
     await wait(500);
-    const readBounds = (id, pageIndex) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
+    const readBounds = (id: string, pageIndex: number) => state.iconBoundsRegistry.getBounds("launch", "rendered", {
       area: "desktop",
       id,
       pageIndex,
@@ -2227,6 +2528,7 @@ test("an app target remains semantic after desktop edge navigation", async ({ pa
     activePageIndex: 0,
     intent: { type: "application" },
   });
+  if (!result.intent) throw new Error("Cross-page application intent is unavailable");
   expect(result.intent.targetAppId).toBe(result.targetId);
 });
 
@@ -2253,30 +2555,14 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
   await enterBatchSelectionOf(page, selectedIds);
 
   const release = await page.evaluate(async ({ followerId, selectedIds }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
-    const readTarget = (id) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    const releaseController = groupDragLayer?.releaseController;
+    if (!groupDragLayer || !releaseController) {
+      throw new Error("Pixi desktop group release controller is unavailable");
+    }
+    const readTarget = (id: string): GroupReleasePoint | null => {
       const target = layer.lastDesktopRenderPlan?.entries
         ?.find((entry) => entry.item?.id === id)?.layoutTarget;
       return target ? { x: target.x, y: target.y } : null;
@@ -2287,18 +2573,22 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
     const beforeFollowerTarget = readTarget(followerId);
     state.createFolderFromBatchSelection();
 
-    return new Promise((resolve, reject) => {
+    return new Promise<ToolbarFolderReleaseResult>((resolve, reject) => {
       let frames = 0;
       const sample = () => {
         frames += 1;
         const group = state.groupDragState;
         const releaseRenderReady = group?.phase === "releasing" &&
           group.runtimePlan &&
-          layer.groupDragLayer.activeKey === group.key &&
-          layer.groupDragLayer.activeNodesByContinuityKey.size === group.entries.length;
+          groupDragLayer.activeKey === group.key &&
+          groupDragLayer.activeNodesByContinuityKey.size === group.entries.length;
         if (releaseRenderReady) {
           const folderId = group.semanticPlan?.effects?.createdFolderId;
           const anchorId = group.intent?.anchorId;
+          if (!folderId || !anchorId) {
+            reject(new Error("Toolbar folder release lacks a folder or anchor id"));
+            return;
+          }
           const folderTarget = readTarget(folderId);
           const followerTarget = readTarget(followerId);
           if (!folderTarget || !followerTarget) {
@@ -2313,30 +2603,63 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
             ?.find((entry) => entry.item?.id === folderId);
           const folderNode = layer.findIconNodeByItemId(folderId);
           const bundleActor = actors.find((actor) => actor.role === "bundle");
+          const rawSuppressedIds = folderEntry?.nodeState?.suppressedFolderPreviewChildIds;
+          const suppressedValues: unknown[] = Array.isArray(rawSuppressedIds)
+            ? rawSuppressedIds
+            : [];
+          if (!suppressedValues.every((value) => typeof value === "string")) {
+            reject(new Error("Toolbar folder release exposed invalid suppressed child ids"));
+            return;
+          }
+          const suppressedPreviewChildIds = suppressedValues.flatMap((value) => (
+            typeof value === "string" ? [value] : []
+          ));
+          const releaseEntries: ToolbarReleaseEntrySnapshot[] = [];
+          for (const entry of group.runtimePlan.entries) {
+            if (entry.mode === "created-folder") {
+              const slotIndex = entry.target?.slotIndex;
+              if (typeof slotIndex !== "number") {
+                reject(new Error(`Toolbar created-folder entry lacks a slot: ${entry.id}`));
+                return;
+              }
+              releaseEntries.push({
+                actorKey: entry.actorKey,
+                id: entry.id,
+                mode: "created-folder",
+                slotIndex,
+              });
+              continue;
+            }
+            if (entry.mode !== "folder-center-absorb") {
+              reject(new Error(`Toolbar folder release exposed an unexpected mode: ${entry.mode}`));
+              return;
+            }
+            releaseEntries.push({
+              actorKey: entry.actorKey,
+              id: entry.id,
+              mode: "folder-center-absorb",
+              slotIndex: entry.target?.slotIndex ?? null,
+            });
+          }
           resolve({
             anchorId,
             actorMemberIds: actors.flatMap((actor) => actor.memberIds || []),
             actorRoles: actors.map((actor) => actor.role),
             aggregateMemberCount: bundleActor?.memberIds?.length || 0,
-            badgeVisible: layer.groupDragLayer.badge.visible,
+            badgeVisible: groupDragLayer.badge.visible,
             beforeAnchorTarget: beforeSelectedTargets[anchorId] || null,
             beforeFollowerTarget,
             folderId,
             folderNodeGhosted: folderNode?.state?.ghosted === true,
-            folderShellVisible: layer.groupDragLayer.releaseController.folderShellFrame?.visible === true,
+            folderShellVisible: releaseController.folderShellFrame?.visible === true,
             folderTarget,
             followerTarget,
             groupEntries: group.entries.map((entry) => entry.item?.id || null),
-            nodePoolSize: layer.groupDragLayer.nodes.length,
+            nodePoolSize: groupDragLayer.nodes.length,
             ownershipKeys: transferOwnership,
-            releaseEntries: group.runtimePlan.entries.map((entry) => ({
-              actorKey: entry.actorKey,
-              id: entry.id,
-              mode: entry.mode,
-              slotIndex: entry.target?.slotIndex ?? null,
-            })),
+            releaseEntries,
             semanticMemberIds: group.semanticPlan?.members?.map((member) => member.id) || [],
-            suppressedPreviewChildIds: folderEntry?.nodeState?.suppressedFolderPreviewChildIds || [],
+            suppressedPreviewChildIds,
           });
           return;
         }
@@ -2377,36 +2700,21 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
   expect(release.folderTarget).not.toEqual(release.beforeAnchorTarget);
   expect(release.followerTarget).not.toEqual(release.beforeFollowerTarget);
 
-  const settled = await page.evaluate(async ({ beforeFollowerTarget, folderId, followerId }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
+  const settled = await page.evaluate(async ({ folderId, followerId }) => {
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    const releaseController = groupDragLayer?.releaseController;
+    if (!groupDragLayer || !releaseController) {
+      throw new Error("Pixi toolbar folder release controller is unavailable while settling");
+    }
     const deadline = performance.now() + 5_000;
-    const ownershipViolations = [];
+    const ownershipViolations: GroupReleaseDiagnostic[] = [];
     while (performance.now() < deadline) {
       const group = state.groupDragState;
       if (group?.phase === "releasing") {
         const folderNode = layer.findIconNodeByItemId(folderId);
-        const shellFrame = layer.groupDragLayer.releaseController.folderShellFrame;
+        const shellFrame = releaseController.folderShellFrame;
         const shellOwned = layer.visualOwnership.hasOwner(`folderShell:${folderId}`);
         const shellVisible = shellFrame?.visible === true;
         const folderLive = folderNode?.visible === true && folderNode?.state?.ghosted !== true;
@@ -2418,8 +2726,11 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
           const entryIndex = group.entries.findIndex((candidate) => (
             candidate.actorKey === entry.actorKey || candidate.item?.id === entry.id
           ));
-          const ghost = entryIndex >= 0 ? layer.groupDragLayer.nodes[entryIndex] : null;
-          const child = folderNode?.folderChildNodes?.[entry.target?.slotIndex];
+          const ghost = entryIndex >= 0 ? groupDragLayer.nodes[entryIndex] : null;
+          const slotIndex = entry.target?.slotIndex;
+          const child = typeof slotIndex === "number"
+            ? folderNode?.folderChildNodes?.[slotIndex]
+            : null;
           const ghostDrawable = ghost?.visible === true && ghost?.renderable !== false && Number(ghost.alpha) > 0.001;
           const childDrawable = folderLive && child?.visible === true && child?.renderable === true;
           if (Number(ghostDrawable) + Number(childDrawable) !== 1) {
@@ -2427,20 +2738,20 @@ test("toolbar batch folder creation uses committed layout with bounded actors an
           }
         }
       }
-      const followerTarget = layer?.lastDesktopRenderPlan?.entries
+      const followerTarget = layer.lastDesktopRenderPlan?.entries
         ?.find((entry) => entry.item?.id === followerId)?.layoutTarget;
       if (!state.groupDragState && followerTarget) {
-        const folder = state.activePages.flat().find((item) => item.id === folderId);
+        const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(folderId);
         return {
           batch: state.isBatchSelectionActive,
-          childCount: folder?.childPages?.flat().length || 0,
+          childCount: folder.childPages.flat().filter((child) => child != null).length,
           followerTarget: { x: followerTarget.x, y: followerTarget.y },
           openFolderId: state.openFolderId,
           ownershipViolations,
           selectedIds: [...state.batchSelectedIds],
         };
       }
-      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     }
     throw new Error("toolbar folder transfer did not settle after release ownership ended");
   }, {
@@ -2463,8 +2774,10 @@ test("full current-page selection keeps complete ownership with a bounded folder
   test.setTimeout(90_000);
   await waitForFixture(page);
   const selectedIds = await page.evaluate(() => {
-    const state = document.querySelector("#app").__vue_app__._instance.setupState;
-    return state.activePages[0]
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const firstPage = state.activePages[0];
+    if (!firstPage) throw new Error("Full-page selection source page is unavailable");
+    return firstPage
       .filter((item) => item.type === "app")
       .map((item) => item.id);
   });
@@ -2472,54 +2785,40 @@ test("full current-page selection keeps complete ownership with a bounded folder
   await enterBatchSelectionOf(page, selectedIds);
 
   const result = await page.evaluate(async ({ selectedIds }) => {
-    const root = document.querySelector("#app")?.__vue_app__?._instance;
-    const state = root?.setupState;
-    const seen = new Set();
-    const findDesktopLayer = (vnode) => {
-      if (!vnode) return null;
-      const instance = vnode.component;
-      if (instance && !seen.has(instance)) {
-        seen.add(instance);
-        const name = instance.type?.name || instance.type?.__name;
-        if (name === "PixiDesktopSurface") return instance.setupState?.layer || null;
-        const nested = findDesktopLayer(instance.subTree);
-        if (nested) return nested;
-      }
-      if (Array.isArray(vnode.children)) {
-        for (const child of vnode.children) {
-          const nested = findDesktopLayer(child);
-          if (nested) return nested;
-        }
-      }
-      return null;
-    };
-    const layer = findDesktopLayer(root?.subTree);
-    if (!layer?.groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
+    const state = window.__LUMERIA_GROUP_RELEASE_TEST__.getState();
+    const layer = window.__LUMERIA_GROUP_RELEASE_TEST__.getDesktopLayer();
+    const groupDragLayer = layer.groupDragLayer;
+    if (!groupDragLayer) throw new Error("Pixi desktop group layer is unavailable");
 
     const startedAt = performance.now();
-    let accepted = null;
-    const visibleOwnedIds = new Set();
+    let accepted: FullPageAcceptedRelease | null = null;
+    const visibleOwnedIds = new Set<string>();
     state.createFolderFromBatchSelection();
 
-    return new Promise((resolve, reject) => {
+    return new Promise<FullPageReleaseResult>((resolve, reject) => {
       const deadline = performance.now() + 10_000;
       const sample = () => {
         const group = state.groupDragState;
         const releaseRenderReady = group?.phase === "releasing" &&
           group.runtimePlan &&
-          layer.groupDragLayer.activeKey === group.key &&
-          layer.groupDragLayer.activeNodesByContinuityKey.size === group.entries.length;
+          groupDragLayer.activeKey === group.key &&
+          groupDragLayer.activeNodesByContinuityKey.size === group.entries.length;
         if (releaseRenderReady) {
           if (!accepted) {
             const actors = group.presentationPlan?.actors || [];
             const bundleActor = actors.find((actor) => actor.role === "bundle");
+            const folderId = group.semanticPlan?.effects?.createdFolderId;
+            if (!folderId) {
+              reject(new Error("Full-page folder release lacks a created folder id"));
+              return;
+            }
             accepted = {
               actorMemberIds: actors.flatMap((actor) => actor.memberIds || []),
               actorRoles: actors.map((actor) => actor.role),
               aggregateMemberCount: bundleActor?.memberIds?.length || 0,
-              folderId: group.semanticPlan?.effects?.createdFolderId,
+              folderId,
               groupIds: group.entries.map((entry) => entry.item?.id || null),
-              nodePoolSize: layer.groupDragLayer.nodes.length,
+              nodePoolSize: groupDragLayer.nodes.length,
               ownershipKeys: layer.visualOwnership.snapshot()
                 .filter((entry) => entry.owner?.kind === "group-transfer")
                 .map((entry) => entry.key),
@@ -2534,11 +2833,11 @@ test("full current-page selection keeps complete ownership with a bounded folder
           }
         }
         if (accepted && !group) {
-          const folder = state.activePages.flat().find((item) => item.id === accepted.folderId);
+          const folder = window.__LUMERIA_GROUP_RELEASE_TEST__.getFolder(accepted.folderId);
           resolve({
             ...accepted,
             batch: state.isBatchSelectionActive,
-            childCount: folder?.childPages?.flat().length || 0,
+            childCount: folder.childPages.flat().filter((child) => child != null).length,
             durationMs: performance.now() - startedAt,
             openFolderId: state.openFolderId,
             selectedIds: [...state.batchSelectedIds],

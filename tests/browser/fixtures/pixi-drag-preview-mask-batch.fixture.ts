@@ -1,6 +1,15 @@
-import { Application, Container, Sprite, Texture } from "pixi.js";
-import { IconNode } from "/src/rendering/pixi/nodes/IconNode.js";
-import { GroupDragLayer } from "/src/rendering/pixi/scene/GroupDragLayer.js";
+import {
+  Application,
+  Container,
+  Sprite,
+  Texture,
+  WebGLRenderer,
+} from "pixi.js";
+import type { Graphics } from "pixi.js";
+import { IconNode } from "../../../src/rendering/pixi/nodes/IconNode.js";
+import type { IconNodeStateInput } from "../../../src/rendering/pixi/nodes/IconNode.js";
+import { GroupDragLayer } from "../../../src/rendering/pixi/scene/GroupDragLayer.js";
+import type { SceneDataRecord, SceneItem } from "../../../src/rendering/sceneFrame.js";
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -8,7 +17,7 @@ const BACKGROUND = 0x111827;
 const SENTINEL_SIZE = 18;
 const SENTINEL_COLUMNS = 16;
 const TRANSITION_CYCLES = 10;
-const SENTINEL_COLORS = [
+const SENTINEL_COLORS: readonly number[] = [
   0xf43f5e,
   0x22c55e,
   0x3b82f6,
@@ -19,11 +28,73 @@ const SENTINEL_COLORS = [
   0x84cc16,
 ];
 
-function rgb(color) {
+export type PixiRegressionPixel = readonly [number, number, number, number];
+
+export interface PixiRegressionBatchOffset {
+  readonly attributeStart: number;
+  readonly indexStart: number;
+}
+
+interface Sentinel {
+  readonly color: number;
+  readonly index: number;
+  readonly sprite: Sprite;
+}
+
+interface SentinelSet {
+  readonly layer: Container;
+  readonly sprites: Sentinel[];
+}
+
+export interface PixiRegressionSentinelOffset {
+  readonly attributeStart: number | null;
+  readonly index: number;
+  readonly indexStart: number | null;
+}
+
+export interface PixiRegressionPixelCorruption {
+  readonly actual: PixiRegressionPixel;
+  readonly expected: PixiRegressionPixel;
+  readonly index: number;
+  readonly phase: string;
+}
+
+export interface PixiDragPreviewMaskBatchRegressionResult {
+  readonly appMaskBatches: PixiRegressionBatchOffset[];
+  readonly appMaskVisible: boolean;
+  readonly baselineCorruptions: PixiRegressionPixelCorruption[];
+  readonly maskAttachedInApp: boolean;
+  readonly motionCorruptions: PixiRegressionPixelCorruption[];
+  readonly renderer: string;
+  readonly rendererInfo: string;
+  readonly sentinelOffsets: PixiRegressionSentinelOffset[];
+  readonly transitionCycles: number;
+  readonly warmCorruptions: PixiRegressionPixelCorruption[];
+  readonly warmMaskBatches: PixiRegressionBatchOffset[];
+}
+
+export interface GroupDragFolderClipRegressionResult {
+  readonly cornerOutside: PixiRegressionPixel;
+  readonly inside: PixiRegressionPixel;
+  readonly maskAttached: boolean;
+  readonly outside: PixiRegressionPixel;
+  readonly renderer: string;
+  readonly straightEdgeInside: PixiRegressionPixel;
+}
+
+declare global {
+  interface Window {
+    pixiDragPreviewMaskBatchFixtureReady: boolean;
+    runGroupDragFolderClipRegression: () => Promise<GroupDragFolderClipRegressionResult>;
+    runPixiDragPreviewMaskBatchRegression: () => Promise<PixiDragPreviewMaskBatchRegressionResult>;
+  }
+}
+
+function rgb(color: number): PixiRegressionPixel {
   return [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff, 0xff];
 }
 
-function colorDistance(actual, expected) {
+function colorDistance(actual: PixiRegressionPixel, expected: PixiRegressionPixel): number {
   return Math.max(
     Math.abs(actual[0] - expected[0]),
     Math.abs(actual[1] - expected[1]),
@@ -32,7 +103,8 @@ function colorDistance(actual, expected) {
   );
 }
 
-function makeIconState(item) {
+function makeIconState(item: SceneItem): IconNodeStateInput {
+  const source: SceneDataRecord = { index: 0, pageIndex: 0, type: "page" };
   return {
     cellHeight: 80,
     cellWidth: 80,
@@ -46,18 +118,24 @@ function makeIconState(item) {
     item,
     opening: false,
     preserveNodeScale: true,
-    source: { index: 0, pageIndex: 0, type: "page" },
+    source,
     stageHeight: HEIGHT,
     stageWidth: WIDTH,
     textless: true,
   };
 }
 
-function makeSentinels() {
+function readSentinelColor(index: number): number {
+  const color = SENTINEL_COLORS[index % SENTINEL_COLORS.length];
+  if (color === undefined) throw new RangeError(`No sentinel color for index ${index}`);
+  return color;
+}
+
+function makeSentinels(): SentinelSet {
   const layer = new Container();
-  const sprites = [];
+  const sprites: Sentinel[] = [];
   for (let index = 0; index < 64; index += 1) {
-    const color = SENTINEL_COLORS[index % SENTINEL_COLORS.length];
+    const color = readSentinelColor(index);
     const sprite = new Sprite(Texture.WHITE);
     sprite.anchor.set(0.5);
     sprite.tint = color;
@@ -74,15 +152,30 @@ function makeSentinels() {
   return { layer, sprites };
 }
 
-function readPixel(gl, x, y) {
+function readPixel(
+  gl: WebGLRenderingContext | WebGL2RenderingContext,
+  x: number,
+  y: number,
+): PixiRegressionPixel {
   const pixel = new Uint8Array(4);
   gl.readPixels(Math.round(x), HEIGHT - 1 - Math.round(y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-  return Array.from(pixel);
+  const red = pixel[0];
+  const green = pixel[1];
+  const blue = pixel[2];
+  const alpha = pixel[3];
+  if (red === undefined || green === undefined || blue === undefined || alpha === undefined) {
+    throw new RangeError("WebGL pixel read did not return four channels");
+  }
+  return [red, green, blue, alpha];
 }
 
-function readCorruptions(gl, sentinels, phase) {
+function readCorruptions(
+  gl: WebGLRenderingContext | WebGL2RenderingContext,
+  sentinels: readonly Sentinel[],
+  phase: string,
+): PixiRegressionPixelCorruption[] {
   gl.finish();
-  const corruptions = [];
+  const corruptions: PixiRegressionPixelCorruption[] = [];
   for (const sentinel of sentinels) {
     const actual = readPixel(gl, sentinel.sprite.x, sentinel.sprite.y);
     const expected = rgb(sentinel.color);
@@ -93,17 +186,20 @@ function readCorruptions(gl, sentinels, phase) {
   return corruptions;
 }
 
-function readMaskBatches(mask, renderer) {
-  const gpuData = mask?._gpuData?.[renderer.uid];
+function readMaskBatches(mask: Graphics, renderer: WebGLRenderer): PixiRegressionBatchOffset[] {
+  const gpuData = mask._gpuData[renderer.uid];
   return (gpuData?.batches || []).map((batch) => ({
     attributeStart: batch._attributeStart,
     indexStart: batch._indexStart,
   }));
 }
 
-function readSentinelOffsets(sentinels, renderer) {
+function readSentinelOffsets(
+  sentinels: readonly Sentinel[],
+  renderer: WebGLRenderer,
+): PixiRegressionSentinelOffset[] {
   return sentinels.map(({ index, sprite }) => {
-    const batchable = sprite?._gpuData?.[renderer.uid];
+    const batchable = sprite._gpuData[renderer.uid];
     return {
       attributeStart: batchable?._attributeStart ?? null,
       index,
@@ -112,7 +208,28 @@ function readSentinelOffsets(sentinels, renderer) {
   });
 }
 
-async function runRegression() {
+function requireWebGlRenderer(app: Application): WebGLRenderer {
+  const renderer = app.renderer;
+  if (!(renderer instanceof WebGLRenderer)) {
+    const rendererName = renderer.name;
+    app.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
+    throw new Error(`WebGL renderer required, received ${rendererName}`);
+  }
+  return renderer;
+}
+
+function readRendererInfo(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
+  const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+  const value: unknown = debugInfo
+    ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+    : gl.getParameter(gl.RENDERER);
+  if (typeof value !== "string") {
+    throw new TypeError("WebGL renderer information must be a string");
+  }
+  return value;
+}
+
+async function runRegression(): Promise<PixiDragPreviewMaskBatchRegressionResult> {
   const app = new Application();
   await app.init({
     antialias: false,
@@ -124,19 +241,11 @@ async function runRegression() {
     resolution: 1,
     width: WIDTH,
   });
-  document.body.replaceChildren(app.canvas);
-
-  const renderer = app.renderer;
-  if (renderer.name !== "webgl") {
-    app.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
-    throw new Error(`WebGL renderer required, received ${renderer.name}`);
-  }
+  const renderer = requireWebGlRenderer(app);
+  document.body.replaceChildren(renderer.canvas);
 
   const gl = renderer.gl;
-  const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
-  const rendererInfo = debugInfo
-    ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-    : gl.getParameter(gl.RENDERER);
+  const rendererInfo = readRendererInfo(gl);
 
   const previewNode = new IconNode({ onAction: () => {} });
   previewNode.position.set(120, 120);
@@ -144,26 +253,26 @@ async function runRegression() {
   app.stage.addChild(previewNode);
   app.stage.addChild(sentinelLayer);
 
-  const folderItem = {
+  const folderItem: SceneItem = {
     childPages: [[]],
     children: [],
     id: "folder-mask-prime",
     name: "Folder Mask Prime",
     type: "folder",
   };
-  const appItem = {
+  const appItem: SceneItem = {
     emoji: "E",
     id: "app-mask-trigger",
     name: "App Mask Trigger",
     type: "app",
   };
 
-  let appMaskBatches = [];
-  let appSentinelOffsets = [];
-  let warmMaskBatches = [];
-  const warmCorruptions = [];
-  const baselineCorruptions = [];
-  const motionCorruptions = [];
+  let appMaskBatches: PixiRegressionBatchOffset[] = [];
+  let appSentinelOffsets: PixiRegressionSentinelOffset[] = [];
+  let warmMaskBatches: PixiRegressionBatchOffset[] = [];
+  const warmCorruptions: PixiRegressionPixelCorruption[] = [];
+  const baselineCorruptions: PixiRegressionPixelCorruption[] = [];
+  const motionCorruptions: PixiRegressionPixelCorruption[] = [];
   for (let cycle = 0; cycle < TRANSITION_CYCLES; cycle += 1) {
     previewNode.setState(makeIconState(folderItem));
     renderer.render(app.stage);
@@ -186,7 +295,7 @@ async function runRegression() {
     }
   }
 
-  const result = {
+  const result: PixiDragPreviewMaskBatchRegressionResult = {
     appMaskBatches,
     appMaskVisible: previewNode.folderPreviewMask.visible,
     baselineCorruptions,
@@ -207,7 +316,7 @@ async function runRegression() {
   return result;
 }
 
-async function runGroupDragFolderClipRegression() {
+async function runGroupDragFolderClipRegression(): Promise<GroupDragFolderClipRegressionResult> {
   const app = new Application();
   await app.init({
     antialias: false,
@@ -219,13 +328,8 @@ async function runGroupDragFolderClipRegression() {
     resolution: 1,
     width: WIDTH,
   });
-  document.body.replaceChildren(app.canvas);
-
-  const renderer = app.renderer;
-  if (renderer.name !== "webgl") {
-    app.destroy({ removeView: true, releaseGlobalResources: true }, { children: true });
-    throw new Error(`WebGL renderer required, received ${renderer.name}`);
-  }
+  const renderer = requireWebGlRenderer(app);
+  document.body.replaceChildren(renderer.canvas);
 
   const panel = { height: 220, radius: 48, width: 300, x: 100, y: 80 };
   const layer = new GroupDragLayer({
@@ -250,7 +354,7 @@ async function runGroupDragFolderClipRegression() {
 
   const gl = renderer.gl;
   gl.finish();
-  const result = {
+  const result: GroupDragFolderClipRegressionResult = {
     cornerOutside: readPixel(gl, panel.x + 4, panel.y + 4),
     inside: readPixel(gl, panel.x + panel.width / 2, panel.y + panel.height / 2),
     maskAttached: layer.folderClipActorLayer.mask === layer.folderClipMask,

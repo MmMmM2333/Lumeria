@@ -2,6 +2,34 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import type { Page } from "playwright";
+
+interface PixelBounds {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+}
+
+interface RenderedSvg {
+  bounds: PixelBounds;
+  png: string | null;
+}
+
+interface EncodedSvg extends RenderedSvg {
+  png: string;
+}
+
+interface SquareCrop {
+  size: number;
+  x: number;
+  y: number;
+}
+
+interface BrandVariant {
+  readonly id: string;
+  readonly source: string;
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIRECTORY = path.join(ROOT, "src", "assets", "branding");
@@ -10,28 +38,36 @@ const SOURCE_SIZE = 1254;
 const ANALYSIS_SIZE = 4096;
 const ALPHA_THRESHOLD = 1;
 const OUTPUT_SIZES = Object.freeze([16, 20, 24, 32, 40, 48, 64, 96, 256]);
-const VARIANTS = Object.freeze([
+const VARIANTS: readonly BrandVariant[] = Object.freeze([
   Object.freeze({ id: "light", source: "lumeria-app-icon.svg" }),
   Object.freeze({ id: "dark", source: "lumeria-app-icon-dark.svg" }),
   Object.freeze({ id: "pastelLight", source: "lumeria-app-icon-pastel-grid.svg" }),
   Object.freeze({ id: "pastelDark", source: "lumeria-app-icon-dark-pastel-grid.svg" }),
 ]);
 
-function replaceSvgViewport(svg, width, height, viewBox) {
+function replaceSvgViewport(svg: string, width: number, height: number, viewBox: readonly number[]): string {
   return svg
     .replace(/\bwidth="[^"]+"/, `width="${width}"`)
     .replace(/\bheight="[^"]+"/, `height="${height}"`)
     .replace(/\bviewBox="[^"]+"/, `viewBox="${viewBox.join(" ")}"`);
 }
 
-async function renderSvg(page, svg, width, height, includePng = false) {
+function renderSvg(page: Page, svg: string, width: number, height: number, includePng: true): Promise<EncodedSvg>;
+function renderSvg(page: Page, svg: string, width: number, height: number, includePng?: false): Promise<RenderedSvg>;
+async function renderSvg(
+  page: Page,
+  svg: string,
+  width: number,
+  height: number,
+  includePng = false,
+): Promise<RenderedSvg> {
   return page.evaluate(async ({ source, outputWidth, outputHeight, shouldEncode }) => {
     const blobUrl = URL.createObjectURL(new Blob([source], { type: "image/svg+xml" }));
     try {
       const image = new Image();
       image.decoding = "sync";
-      await new Promise((resolve, reject) => {
-        image.onload = resolve;
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
         image.onerror = () => reject(new Error("Chromium could not decode a branding SVG"));
         image.src = blobUrl;
       });
@@ -40,6 +76,7 @@ async function renderSvg(page, svg, width, height, includePng = false) {
       canvas.width = outputWidth;
       canvas.height = outputHeight;
       const context = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
+      if (!context) throw new Error("Chromium could not create a 2D canvas context");
       context.clearRect(0, 0, outputWidth, outputHeight);
       context.drawImage(image, 0, 0, outputWidth, outputHeight);
       const pixels = context.getImageData(0, 0, outputWidth, outputHeight).data;
@@ -50,6 +87,7 @@ async function renderSvg(page, svg, width, height, includePng = false) {
       for (let y = 0; y < outputHeight; y += 1) {
         for (let x = 0; x < outputWidth; x += 1) {
           const alpha = pixels[(y * outputWidth + x) * 4 + 3];
+          if (alpha === undefined) throw new RangeError("Branding SVG pixel buffer ended unexpectedly");
           if (alpha < 1) continue;
           minX = Math.min(minX, x);
           minY = Math.min(minY, y);
@@ -58,9 +96,11 @@ async function renderSvg(page, svg, width, height, includePng = false) {
         }
       }
       if (maxX < minX || maxY < minY) throw new Error("Branding SVG rendered no visible pixels");
+      const png = shouldEncode ? canvas.toDataURL("image/png").split(",")[1] : null;
+      if (shouldEncode && png === undefined) throw new Error("Chromium returned an invalid PNG data URL");
       return {
         bounds: { minX, minY, maxX: maxX + 1, maxY: maxY + 1 },
-        png: shouldEncode ? canvas.toDataURL("image/png").split(",")[1] : null,
+        png: png ?? null,
       };
     } finally {
       URL.revokeObjectURL(blobUrl);
@@ -73,7 +113,7 @@ async function renderSvg(page, svg, width, height, includePng = false) {
   });
 }
 
-function makeSharedSquareCrop(bounds) {
+function makeSharedSquareCrop(bounds: PixelBounds): SquareCrop {
   const scale = SOURCE_SIZE / ANALYSIS_SIZE;
   const minX = Math.floor(bounds.minX * scale);
   const minY = Math.floor(bounds.minY * scale);
@@ -87,7 +127,7 @@ function makeSharedSquareCrop(bounds) {
   return { x, y, size };
 }
 
-async function main() {
+async function main(): Promise<void> {
   const sources = await Promise.all(VARIANTS.map(async (variant) => ({
     ...variant,
     svg: await readFile(path.join(SOURCE_DIRECTORY, variant.source), "utf8"),
@@ -104,7 +144,7 @@ async function main() {
         ANALYSIS_SIZE,
       )).bounds,
     })));
-    const unionBounds = analyzed.reduce((union, variant) => ({
+    const unionBounds = analyzed.reduce<PixelBounds>((union, variant) => ({
       minX: Math.min(union.minX, variant.bounds.minX),
       minY: Math.min(union.minY, variant.bounds.minY),
       maxX: Math.max(union.maxX, variant.bounds.maxX),

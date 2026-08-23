@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 test.use({ locale: "en-US" });
 
-async function openGeneralSettings(page) {
+async function openGeneralSettings(page: Page) {
   await page.getByRole("button", { name: "Open settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog).toBeVisible();
@@ -13,7 +14,7 @@ async function openGeneralSettings(page) {
   };
 }
 
-async function expectVisibleBrandIndicator(indicator) {
+async function expectVisibleBrandIndicator(indicator: Locator) {
   await expect(indicator).toBeVisible();
   const metrics = await indicator.evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -32,7 +33,7 @@ async function expectVisibleBrandIndicator(indicator) {
   expect(metrics.backgroundColor).toBe("rgb(75, 163, 246)");
 }
 
-async function getDropdownFocusVisual(dropdown) {
+async function getDropdownFocusVisual(dropdown: Locator) {
   return dropdown.evaluate((element) => {
     const control = element.shadowRoot?.querySelector(".control");
     if (!control) throw new Error("Fluent dropdown control is missing");
@@ -47,6 +48,13 @@ async function getDropdownFocusVisual(dropdown) {
       underlineScale: underlineStyle.scale,
     };
   });
+}
+
+function readDropdownValue(element: SVGElement | HTMLElement): string {
+  if (!("value" in element) || typeof element.value !== "string") {
+    throw new Error("Fluent language dropdown has no string value");
+  }
+  return element.value;
 }
 
 test("the language selector uses a Fluent dropdown with WinUI-style selection", async ({ page }) => {
@@ -95,7 +103,7 @@ test("the language selector uses a Fluent dropdown with WinUI-style selection", 
 
   await englishOption.click();
   await expect(listbox).toBeHidden();
-  await expect.poll(() => dropdown.evaluate((element) => element.value)).toBe("en-US");
+  await expect.poll(() => dropdown.evaluate(readDropdownValue)).toBe("en-US");
 
   await control.click();
   const englishIndicator = englishOption.locator("[slot='start']");
@@ -104,7 +112,7 @@ test("the language selector uses a Fluent dropdown with WinUI-style selection", 
 
   const chineseOption = dropdown.locator("fluent-option[value='zh-CN']");
   await chineseOption.click();
-  await expect.poll(() => dropdown.evaluate((element) => element.value)).toBe("zh-CN");
+  await expect.poll(() => dropdown.evaluate(readDropdownValue)).toBe("zh-CN");
   await dropdown.locator("[slot='control']").click();
   await expectVisibleBrandIndicator(chineseOption.locator("[slot='start']"));
   await expect(englishIndicator).toBeHidden();
@@ -112,7 +120,7 @@ test("the language selector uses a Fluent dropdown with WinUI-style selection", 
 
   await control.press("ArrowDown");
   await control.press("Enter");
-  await expect.poll(() => dropdown.evaluate((element) => element.value)).toBe("system");
+  await expect.poll(() => dropdown.evaluate(readDropdownValue)).toBe("system");
 
   await control.click();
   await expect(listbox).toBeVisible();
@@ -131,26 +139,26 @@ test("cancel restores the language draft and apply persists it", async ({ page }
   let settings = await openGeneralSettings(page);
   await settings.control.click();
   await settings.dropdown.getByRole("option", { name: "English" }).click();
-  await expect.poll(() => settings.dropdown.evaluate((element) => element.value)).toBe("en-US");
+  await expect.poll(() => settings.dropdown.evaluate(readDropdownValue)).toBe("en-US");
   await settings.dialog.locator(".settings-actions fluent-button").filter({ hasText: "Cancel" }).click();
   await expect(settings.dialog).toBeHidden();
 
   settings = await openGeneralSettings(page);
-  await expect.poll(() => settings.dropdown.evaluate((element) => element.value)).toBe("system");
+  await expect.poll(() => settings.dropdown.evaluate(readDropdownValue)).toBe("system");
   await settings.control.click();
   await settings.dropdown.getByRole("option", { name: "English" }).click();
   await settings.dialog.locator(".settings-actions fluent-button").filter({ hasText: "Apply" }).click();
   await expect(settings.dialog).toBeHidden();
 
   settings = await openGeneralSettings(page);
-  await expect.poll(() => settings.dropdown.evaluate((element) => element.value)).toBe("en-US");
+  await expect.poll(() => settings.dropdown.evaluate(readDropdownValue)).toBe("en-US");
   await settings.control.click();
   await settings.dropdown.getByRole("option", { name: "Use system language" }).click();
   await settings.dialog.locator(".settings-actions fluent-button").filter({ hasText: "Apply" }).click();
   await expect(settings.dialog).toBeHidden();
 
   settings = await openGeneralSettings(page);
-  await expect.poll(() => settings.dropdown.evaluate((element) => element.value)).toBe("system");
+  await expect.poll(() => settings.dropdown.evaluate(readDropdownValue)).toBe("system");
   await settings.control.press("Escape");
   await expect(settings.dialog).toBeHidden();
 });

@@ -1,20 +1,47 @@
 import { expect, test as base } from "@playwright/test";
+import type {
+  Browser,
+  ConsoleMessage,
+  Page,
+  PlaywrightTestArgs,
+  TestFixture,
+  TestInfo,
+} from "@playwright/test";
 
 const WEBVIEW_CDP_ENDPOINT = process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT || "";
 const WEBVIEW_BASE_URL = process.env.LUMERIA_WEBVIEW_BASE_URL || "";
 const isWebViewRun = Boolean(WEBVIEW_CDP_ENDPOINT);
 
-function describeError(error) {
+interface LaunchpadTestFixtures {
+  appPage: Page;
+}
+
+interface LaunchpadWorkerFixtures {
+  webviewBrowser: Browser | null;
+}
+
+interface PageDiagnosticsOptions {
+  readonly restoreUrl?: string;
+}
+
+function describeError(error: unknown): string {
   return error instanceof Error ? error.stack || error.message : String(error);
 }
 
-async function usePageWithDiagnostics(page, use, testInfo, options = {}) {
-  const consoleProblems = [];
-  const teardownProblems = [];
-  const onConsole = (message) => {
+async function usePageWithDiagnostics(
+  page: Page,
+  use: (page: Page) => Promise<void>,
+  testInfo: TestInfo,
+  options: PageDiagnosticsOptions = {},
+): Promise<void> {
+  const consoleProblems: string[] = [];
+  const teardownProblems: string[] = [];
+  const onConsole = (message: ConsoleMessage): void => {
     if (message.type() === "error") consoleProblems.push(`console.error: ${message.text()}`);
   };
-  const onPageError = (error) => consoleProblems.push(`pageerror: ${error.stack || error.message}`);
+  const onPageError = (error: Error): void => {
+    consoleProblems.push(`pageerror: ${error.stack || error.message}`);
+  };
   page.on("console", onConsole);
   page.on("pageerror", onPageError);
   try {
@@ -28,7 +55,7 @@ async function usePageWithDiagnostics(page, use, testInfo, options = {}) {
           body: await page.screenshot({ type: "png" }),
           contentType: "image/png",
         });
-      } catch (error) {
+      } catch (error: unknown) {
         testInfo.annotations.push({
           description: describeError(error),
           type: "webview2-screenshot-failed",
@@ -41,7 +68,7 @@ async function usePageWithDiagnostics(page, use, testInfo, options = {}) {
       } else {
         try {
           await page.mouse.up();
-        } catch (error) {
+        } catch (error: unknown) {
           teardownProblems.push(`Unable to release the WebView2 mouse: ${describeError(error)}`);
         }
         try {
@@ -52,7 +79,7 @@ async function usePageWithDiagnostics(page, use, testInfo, options = {}) {
           if (page.url() !== options.restoreUrl) {
             throw new Error(`restored URL is ${page.url()}`);
           }
-        } catch (error) {
+        } catch (error: unknown) {
           teardownProblems.push(`Unable to restore ${options.restoreUrl}: ${describeError(error)}`);
         }
       }
@@ -70,26 +97,42 @@ async function usePageWithDiagnostics(page, use, testInfo, options = {}) {
   }
 }
 
-const appPageFixture = isWebViewRun
-  ? async ({ webviewBrowser }, use, testInfo) => {
-    const pages = webviewBrowser.contexts().flatMap((context) => context.pages());
-    const preferredOrigin = WEBVIEW_BASE_URL ? new URL(WEBVIEW_BASE_URL).origin : null;
-    const page = pages.find((candidate) => (
-      preferredOrigin && candidate.url().startsWith(preferredOrigin)
-    )) || pages.find((candidate) => /^https?:\/\//.test(candidate.url()));
-    if (!page) {
-      throw new Error(`No HTTP page is exposed by ${WEBVIEW_CDP_ENDPOINT}: ${pages.map((entry) => entry.url()).join(", ")}`);
-    }
-    const restoreUrl = page.url();
-    await page.bringToFront();
-    await usePageWithDiagnostics(page, use, testInfo, { restoreUrl });
+const webViewAppPageFixture: TestFixture<Page, LaunchpadWorkerFixtures> = async (
+  { webviewBrowser },
+  use,
+  testInfo,
+): Promise<void> => {
+  if (!webviewBrowser) {
+    throw new Error(`WebView2 browser is not connected to ${WEBVIEW_CDP_ENDPOINT}`);
   }
-  : async ({ page }, use, testInfo) => {
-    await usePageWithDiagnostics(page, use, testInfo);
-  };
+  const pages = webviewBrowser.contexts().flatMap((context) => context.pages());
+  const preferredOrigin = WEBVIEW_BASE_URL ? new URL(WEBVIEW_BASE_URL).origin : null;
+  const page = pages.find((candidate) => (
+    preferredOrigin !== null && candidate.url().startsWith(preferredOrigin)
+  )) || pages.find((candidate) => /^https?:\/\//.test(candidate.url()));
+  if (!page) {
+    throw new Error(`No HTTP page is exposed by ${WEBVIEW_CDP_ENDPOINT}: ${pages.map((entry) => entry.url()).join(", ")}`);
+  }
+  const restoreUrl = page.url();
+  await page.bringToFront();
+  await usePageWithDiagnostics(page, use, testInfo, { restoreUrl });
+};
 
-export const test = base.extend({
-  webviewBrowser: [async ({ playwright }, use) => {
+const browserAppPageFixture: TestFixture<Page, Pick<PlaywrightTestArgs, "page">> = async (
+  { page },
+  use,
+  testInfo,
+): Promise<void> => {
+  await usePageWithDiagnostics(page, use, testInfo);
+};
+
+const appPageFixture: TestFixture<
+  Page,
+  LaunchpadWorkerFixtures & Pick<PlaywrightTestArgs, "page">
+> = isWebViewRun ? webViewAppPageFixture : browserAppPageFixture;
+
+export const test = base.extend<LaunchpadTestFixtures, LaunchpadWorkerFixtures>({
+  webviewBrowser: [async ({ playwright }, use): Promise<void> => {
     if (!isWebViewRun) {
       await use(null);
       return;

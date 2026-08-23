@@ -3,12 +3,14 @@
   "compilerOptions": {
     "allowJs": false,
     "checkJs": false,
-    "lib": ["ES2022"],
-    "types": ["node"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
   },
-  "files": [
-    "scripts/checkTypeScriptMigration.ts",
-    "scripts/checkTypeScriptMigrationTests.ts"
-  ],
-  "include": []
+  "include": [
+    "playwright.config.ts",
+    "playwright.webview.config.ts",
+    "scripts/**/*.ts",
+    "tests/browser/**/*.ts",
+    "vite.config.ts"
+  ]
 }

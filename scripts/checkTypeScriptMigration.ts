@@ -40,7 +40,25 @@ const STRICT_OPTION_NAMES = [
   "strictPropertyInitialization",
   "useUnknownInCatchVariables",
 ] as const satisfies readonly (keyof ts.CompilerOptions)[];
-const IGNORED_DIRECTORY_NAMES = new Set([".git", ".worktrees", "dist", "node_modules", "target"]);
+const IGNORED_DIRECTORY_NAMES = new Set([
+  ".agents",
+  ".claude",
+  ".codex-dev",
+  ".git",
+  ".idea",
+  ".vscode",
+  ".worktrees",
+  "dist",
+  "docs-agents",
+  "node_modules",
+  "playwright-report",
+  "src-tauri",
+  "target",
+  "test-results",
+]);
+const TYPE_DIRECTIVE_PREFIX = "@ts-";
+const FORBIDDEN_TYPE_DIRECTIVE_PATTERN = new RegExp(`${TYPE_DIRECTIVE_PREFIX}(?:ignore|nocheck)`);
+const EXPECT_ERROR_DIRECTIVE_PATTERN = new RegExp(`${TYPE_DIRECTIVE_PREFIX}expect-error`);
 
 export type MigrationTestRunner = Readonly<{
   root: string;
@@ -62,9 +80,10 @@ export type TypeScriptMigrationManifest = Readonly<{
   legacyClosureRoots: readonly string[];
   retiredSources: readonly string[];
   scanRoots: readonly string[];
-  strictConfig?: string;
+  strictConfigs: readonly string[];
   strictRoots: readonly string[];
   testRunners: readonly MigrationTestRunner[];
+  zeroDebt: boolean;
 }>;
 
 export type MigrationViolation = Readonly<{
@@ -839,67 +858,138 @@ function checkLegacyClosure(
   return actual;
 }
 
-function checkStrictConfig(
+function checkZeroDebt(
+  sources: ReadonlyMap<string, SourceFile>,
+  baselineLegacyPaths: readonly string[],
+  manifest: TypeScriptMigrationManifest,
+  violations: MigrationViolation[],
+): void {
+  if (!manifest.zeroDebt) return;
+  const retiredSources = new Set(manifest.retiredSources.map(normalizeRelativePath));
+  const strictRoots = new Set(manifest.strictRoots.map(normalizeRelativePath));
+  for (const sourceFile of sources.values()) {
+    if (isLegacySource(sourceFile.relativePath, sourceFile.source)) {
+      violations.push({
+        code: "zero-debt-legacy-source",
+        detail: "final TypeScript mode forbids every physical JavaScript source and untyped Vue SFC",
+        path: sourceFile.relativePath,
+      });
+    }
+    if (sourceFile.typed && !strictRoots.has(sourceFile.relativePath)) {
+      violations.push({
+        code: "zero-debt-missing-strict-root",
+        detail: "every first-party typed source must participate in the strict migration policy",
+        path: sourceFile.relativePath,
+      });
+    }
+  }
+  for (const rawPath of baselineLegacyPaths) {
+    const path = normalizeRelativePath(rawPath);
+    if (LEGACY_EXTENSIONS.has(extname(path).toLowerCase()) && !retiredSources.has(path)) {
+      violations.push({
+        code: "zero-debt-unretired-baseline",
+        detail: "every baseline JavaScript source must remain explicitly retired in final TypeScript mode",
+        path,
+      });
+    }
+  }
+  for (const edge of manifest.allowedTsToJsEdges) {
+    violations.push({
+      code: "zero-debt-allowlist",
+      detail: "final TypeScript mode forbids TS-to-JS compatibility allowlists",
+      path: normalizeRelativePath(edge),
+    });
+  }
+  for (const path of manifest.legacyClosure) {
+    violations.push({
+      code: "zero-debt-legacy-closure",
+      detail: "final TypeScript mode forbids a declared physical JavaScript dependency closure",
+      path: normalizeRelativePath(path),
+    });
+  }
+}
+
+function checkStrictConfigs(
   projectRoot: string,
   manifest: TypeScriptMigrationManifest,
   violations: MigrationViolation[],
 ): void {
-  if (!manifest.strictConfig) return;
-  const configPath = resolve(projectRoot, manifest.strictConfig);
-  if (!existsSync(configPath)) {
-    violations.push({
-      code: "missing-strict-config",
-      detail: "declared strict frontier tsconfig does not exist",
-      path: manifest.strictConfig,
-    });
+  if (manifest.strictConfigs.length === 0) {
+    if (manifest.zeroDebt) {
+      violations.push({
+        code: "missing-strict-config",
+        detail: "final TypeScript mode must declare the strict tsconfigs that compile every strict root",
+        path: "strictConfigs",
+      });
+    }
     return;
   }
-  const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    violations.push({ code: "strict-config-mismatch", detail: "strict config must be a JSON object", path: manifest.strictConfig });
-    return;
+
+  const compiledRoots = new Set<string>();
+  const declaredConfigs = new Set<string>();
+  for (const rawConfigPath of manifest.strictConfigs) {
+    const relativeConfigPath = normalizeRelativePath(rawConfigPath);
+    if (declaredConfigs.has(relativeConfigPath)) {
+      violations.push({
+        code: "strict-config-mismatch",
+        detail: "strict tsconfig declarations must be unique",
+        path: relativeConfigPath,
+      });
+      continue;
+    }
+    declaredConfigs.add(relativeConfigPath);
+    const configPath = resolve(projectRoot, relativeConfigPath);
+    if (!existsSync(configPath)) {
+      violations.push({
+        code: "missing-strict-config",
+        detail: "declared strict tsconfig does not exist",
+        path: relativeConfigPath,
+      });
+      continue;
+    }
+
+    const configReadResult = ts.readConfigFile(configPath, ts.sys.readFile);
+    const effectiveConfig = configReadResult.error
+      ? null
+      : ts.parseJsonConfigFileContent(
+        configReadResult.config,
+        ts.sys,
+        dirname(configPath),
+        undefined,
+        configPath,
+        undefined,
+        [{ extension: ".vue", isMixedContent: true, scriptKind: ts.ScriptKind.Deferred }],
+      );
+    const hasStrictCompilerOptions = Boolean(
+      effectiveConfig
+      && effectiveConfig.errors.length === 0
+      && effectiveConfig.options.allowJs !== true
+      && effectiveConfig.options.checkJs !== true
+      && effectiveConfig.options.strict === true
+      && STRICT_OPTION_NAMES.every((name) => effectiveConfig.options[name] !== false)
+    );
+    if (!effectiveConfig || !hasStrictCompilerOptions) {
+      violations.push({
+        code: "strict-config-mismatch",
+        detail: "strict tsconfig must parse successfully, enable strict mode, and keep JavaScript checking disabled",
+        path: relativeConfigPath,
+      });
+      continue;
+    }
+    for (const fileName of effectiveConfig.fileNames) {
+      compiledRoots.add(projectRelativePath(projectRoot, fileName));
+    }
   }
-  const compilerOptions = Reflect.get(parsed, "compilerOptions");
-  const extendsValue = Reflect.get(parsed, "extends");
-  const files = Reflect.get(parsed, "files");
-  const include = Reflect.get(parsed, "include");
-  const extendedPath = typeof extendsValue === "string"
-    ? resolve(dirname(configPath), extname(extendsValue) ? extendsValue : `${extendsValue}.json`)
-    : null;
-  const extendsMainConfig = extendedPath === resolve(projectRoot, "tsconfig.json");
-  const configReadResult = ts.readConfigFile(configPath, ts.sys.readFile);
-  const effectiveConfig = configReadResult.error
-    ? null
-    : ts.parseJsonConfigFileContent(configReadResult.config, ts.sys, dirname(configPath), undefined, configPath);
-  const hasStrictCompilerOptions = Boolean(
-    compilerOptions
-    && typeof compilerOptions === "object"
-    && !Array.isArray(compilerOptions)
-    && Reflect.get(compilerOptions, "allowJs") === false
-    && Reflect.get(compilerOptions, "checkJs") === false,
-  ) && Boolean(
-    effectiveConfig
-    && effectiveConfig.errors.length === 0
-    && effectiveConfig.options.allowJs === false
-    && effectiveConfig.options.checkJs === false
-    && effectiveConfig.options.strict === true
-    && STRICT_OPTION_NAMES.every((name) => effectiveConfig.options[name] !== false)
-  );
-  const configFiles = Array.isArray(files) && files.every((entry) => typeof entry === "string")
-    ? files.map((entry) => projectRelativePath(projectRoot, resolve(dirname(configPath), entry))).sort()
-    : [];
-  const manifestRoots = manifest.strictRoots.map(normalizeRelativePath).sort();
-  const hasEmptyInclude = Array.isArray(include) && include.length === 0;
-  if (
-    !extendsMainConfig
-    || !hasStrictCompilerOptions
-    || !hasEmptyInclude
-    || JSON.stringify(configFiles) !== JSON.stringify(manifestRoots)
-  ) {
+
+  const actualRoots = [...compiledRoots].sort();
+  const expectedRoots = [...new Set(manifest.strictRoots.map(normalizeRelativePath))].sort();
+  if (JSON.stringify(actualRoots) !== JSON.stringify(expectedRoots)) {
+    const missingRoots = expectedRoots.filter((path) => !compiledRoots.has(path));
+    const unexpectedRoots = actualRoots.filter((path) => !expectedRoots.includes(path));
     violations.push({
-      code: "strict-config-mismatch",
-      detail: "strict config must disable JS, use include: [], and list exactly the manifest strictRoots",
-      path: manifest.strictConfig,
+      code: "strict-config-coverage-mismatch",
+      detail: `strict tsconfig coverage must exactly match strictRoots (missing: ${missingRoots.join(", ") || "none"}; unexpected: ${unexpectedRoots.join(", ") || "none"})`,
+      path: "strictConfigs",
     });
   }
 }
@@ -1050,8 +1140,8 @@ function checkSourcePolicies(
     const sourceFile = sources.get(path);
     if (!sourceFile) continue;
     const source = readSourceForImports(path, sourceFile.source);
-    const forbiddenDirective = /@ts-(?:ignore|nocheck)/.test(source)
-      || (!/\.typeTests\.ts$/.test(path) && /@ts-expect-error/.test(source));
+    const forbiddenDirective = FORBIDDEN_TYPE_DIRECTIVE_PATTERN.test(source)
+      || (!/\.typeTests\.ts$/.test(path) && EXPECT_ERROR_DIRECTIVE_PATTERN.test(source));
     if (forbiddenDirective) {
       violations.push({
         code: "forbidden-type-directive",
@@ -1111,7 +1201,7 @@ export function analyzeTypeScriptMigration(
     ?? readBaselineLegacyPaths(projectRoot, options.manifest.baselineCommit);
 
   checkDirectEntries(projectRoot, projectPaths, options.manifest, violations);
-  checkStrictConfig(projectRoot, options.manifest, violations);
+  checkStrictConfigs(projectRoot, options.manifest, violations);
   checkDuplicateSources(sources, violations);
   checkLegacySources(projectRoot, sources, baselineLegacyPaths, options.manifest, violations);
   checkRetiredReplacementBaselines(projectRoot, sources, options.manifest, violations);
@@ -1120,6 +1210,7 @@ export function analyzeTypeScriptMigration(
   const { physicalJsEdges, testRunnerEdges } = checkTsToJsEdges(sources, edges, options.manifest, violations);
   const strictClosure = checkStrictRoots(sources, edges, options.manifest, violations);
   const legacyClosure = checkLegacyClosure(sources, edges, options.manifest, violations);
+  checkZeroDebt(sources, baselineLegacyPaths, options.manifest, violations);
   checkSourcePolicies(sources, edges, strictClosure, violations);
   checkTestRegistration(projectRoot, sources, edges, options.manifest, violations);
 
@@ -1195,9 +1286,9 @@ function readManifest(path: string): TypeScriptMigrationManifest {
     }
     return Object.freeze({ root, runner });
   });
-  const strictConfig = Reflect.get(parsed, "strictConfig");
-  if (strictConfig !== undefined && typeof strictConfig !== "string") {
-    throw new TypeError("TypeScript migration manifest strictConfig must be a string when provided");
+  const zeroDebt = Reflect.get(parsed, "zeroDebt");
+  if (typeof zeroDebt !== "boolean") {
+    throw new TypeError("TypeScript migration manifest zeroDebt must be a boolean");
   }
   return Object.freeze({
     allowedTsToJsEdges: requireStringArray(Reflect.get(parsed, "allowedTsToJsEdges"), "allowedTsToJsEdges"),
@@ -1209,9 +1300,10 @@ function readManifest(path: string): TypeScriptMigrationManifest {
     legacyClosureRoots: requireStringArray(Reflect.get(parsed, "legacyClosureRoots"), "legacyClosureRoots"),
     retiredSources: requireStringArray(Reflect.get(parsed, "retiredSources"), "retiredSources"),
     scanRoots: requireStringArray(Reflect.get(parsed, "scanRoots"), "scanRoots"),
-    ...(typeof strictConfig === "string" ? { strictConfig } : {}),
+    strictConfigs: requireStringArray(Reflect.get(parsed, "strictConfigs"), "strictConfigs"),
     strictRoots: requireStringArray(Reflect.get(parsed, "strictRoots"), "strictRoots"),
     testRunners: Object.freeze(testRunners),
+    zeroDebt,
   });
 }
 

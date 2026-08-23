@@ -1,82 +1,32 @@
 {
   "baselineCommit": "f58b8f0c5e931306ab3e5000d60573b91cf1abf7",
-  "legacyClosureRoots": [
-    "src/api/launchpadApi.ts",
-    "src/api/liveDesktopContract.ts",
-    "src/api/windowChromeApi.ts",
-    "src/application/launchpadDocumentCoordinator.ts",
-    "src/assets/branding/launchpadIconUrls.ts",
-    "src/composables/mainWindowTransition.ts",
-    "src/diagnostics/runtimePerformanceMetrics.ts",
-    "src/domain/appearancePreference.ts",
-    "src/domain/applicationCatalog.ts",
-    "src/domain/backgroundAcrylicParams.ts",
-    "src/domain/backgroundEffectPlan.ts",
-    "src/domain/backgroundImageLayout.ts",
-    "src/domain/backgroundSettings.ts",
-    "src/domain/experimentalFeatures.ts",
-    "src/domain/groupTransferPlanner.ts",
-    "src/domain/groupTransferPresentation.ts",
-    "src/domain/groupTransferSession.ts",
-    "src/domain/groupTransferSourceCapture.ts",
-    "src/domain/iconFocus.ts",
-    "src/domain/iconSource.ts",
-    "src/domain/input/launchpadGestureEngine.ts",
-    "src/domain/input/launchpadGesturePolicy.ts",
-    "src/domain/input/launchpadPointerTarget.ts",
-    "src/domain/input/launchpadTargetPresentation.ts",
-    "src/domain/launchContext.ts",
-    "src/domain/launchpadData.ts",
-    "src/domain/launchpadGridDefaults.ts",
-    "src/domain/launchpadIconVariant.ts",
-    "src/domain/launchpadLayout.ts",
-    "src/domain/launchpadSearch.ts",
-    "src/domain/layoutConfiguration.ts",
-    "src/domain/layoutDocument.ts",
-    "src/domain/mainWindowShortcut.ts",
-    "src/fluent/registerFluentComponents.ts",
-    "src/i18n/catalogs.ts",
-    "src/i18n/locale.ts",
-    "src/i18n/localization.ts",
-    "src/mocks/appSeeds.ts",
-    "src/platform/applicationCatalogDefaults.ts",
-    "src/platform/launchpadPorts.ts",
-    "src/platform/localeRuntime.ts",
-    "src/platform/mainWindowShortcutInput.ts",
-    "src/rendering/backgroundDebugPort.ts",
-    "src/rendering/backgroundPort.ts",
-    "src/rendering/contractSnapshot.ts",
-    "src/rendering/desktopScenePort.ts",
-    "src/rendering/diagnosticPort.ts",
-    "src/rendering/motionLabRendererAdapter.ts",
-    "src/rendering/motionPort.ts",
-    "src/rendering/sceneEvents.ts",
-    "src/rendering/sceneFrame.ts",
-    "src/rendering/sceneRuntime.ts",
-    "src/rendering/pixi/desktopPresentationLoop.ts",
-    "src/rendering/pixi/folderLayerState.ts",
-    "src/rendering/pixi/renderInvalidation.ts",
-    "src/rendering/pixi/animation/motionPreferences.ts",
-    "src/rendering/pixi/animation/motionPresets.ts",
-    "src/rendering/pixi/animation/motionRuntime.ts",
-    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.dev.ts",
-    "src/rendering/pixi/animation/motionRuntimeDebugAdapter.ts",
-    "src/rendering/pixi/animation/motionTraceShared.ts",
-    "src/rendering/pixi/animation/motionTween.ts",
-    "src/rendering/pixi/assets/iconTextureRepository.ts",
-    "src/rendering/pixi/nodes/iconVisualState.ts",
-    "src/rendering/pixi/scene/desktopHandoffState.ts",
-    "src/rendering/pixi/scene/desktopLayerFrames.ts",
-    "src/rendering/pixi/scene/desktopRenderPlan.ts",
-    "src/rendering/pixi/scene/folderOpeningGeometrySnapshot.ts",
-    "src/rendering/pixi/scene/folderOverlayRenderPlan.ts",
-    "src/rendering/pixi/scene/folderOverlayTargets.ts",
-    "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts",
-    "src/rendering/pixi/scene/folderVisualSession.ts",
-    "src/rendering/pixi/scene/iconVisualSpec.ts"
-  ],
+  "legacyClosureRoots": [],
   "legacyClosure": [],
   "exportBaselines": {
+    "playwright.config.ts": {
+      "types": [],
+      "values": [
+        "default"
+      ]
+    },
+    "playwright.webview.config.ts": {
+      "types": [],
+      "values": [
+        "default"
+      ]
+    },
+    "scripts/benchmarkMotionDiagnostics.ts": {
+      "types": [],
+      "values": []
+    },
+    "scripts/checkI18n.ts": {
+      "types": [],
+      "values": []
+    },
+    "scripts/exportBrandIcons.ts": {
+      "types": [],
+      "values": []
+    },
     "src/api/launchpadApi.ts": {
       "types": [
         "AppIconChoice",
@@ -5070,9 +5020,66 @@
         "LAUNCHPAD_E2E_PROBE_NAME",
         "installLaunchpadE2eProbe"
       ]
+    },
+    "tests/browser/fixtures/launchpadMouseTest.ts": {
+      "types": [],
+      "values": [
+        "expect",
+        "test"
+      ]
+    },
+    "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts": {
+      "types": [
+        "GroupDragFolderClipRegressionResult",
+        "PixiDragPreviewMaskBatchRegressionResult",
+        "PixiRegressionBatchOffset",
+        "PixiRegressionPixel",
+        "PixiRegressionPixelCorruption",
+        "PixiRegressionSentinelOffset"
+      ],
+      "values": []
+    },
+    "tests/browser/i18n-search-placeholder.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/icon-context-menu-edit.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/launchpad-group-release.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/launchpad-multi-select-management.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/launchpad-provisional-folder-mouse.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/pixi-drag-preview-mask-batch.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "tests/browser/settings-language-dropdown.spec.ts": {
+      "types": [],
+      "values": []
+    },
+    "vite.config.ts": {
+      "types": [],
+      "values": [
+        "default"
+      ]
     }
   },
   "callerBaselines": {
+    "playwright.config.ts": [],
+    "playwright.webview.config.ts": [],
+    "scripts/benchmarkMotionDiagnostics.ts": [],
+    "scripts/checkI18n.ts": [],
+    "scripts/exportBrandIcons.ts": [],
     "src/api/launchpadApi.ts": [
       "src/App.vue",
       "src/api/launchpadApiTests.ts",
@@ -5243,7 +5250,7 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/components/backgroundDebug/motionReplayViewerModel.ts": [
-      "scripts/benchmarkMotionDiagnostics.mjs",
+      "scripts/benchmarkMotionDiagnostics.ts",
       "src/components/BackgroundDebugPanel.vue",
       "src/components/backgroundDebug/motionDebugPanelModel.ts",
       "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
@@ -5467,7 +5474,9 @@
       "src/App.vue",
       "src/composables/useLaunchpadController.ts",
       "src/composables/useLaunchpadDragTests.ts",
-      "src/composables/useLaunchpadInputGestures.ts"
+      "src/composables/useLaunchpadInputGestures.ts",
+      "tests/browser/launchpad-group-release.spec.ts",
+      "tests/browser/launchpad-multi-select-management.spec.ts"
     ],
     "src/composables/useLaunchpadDragTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -5697,7 +5706,7 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/diagnostics/diagnosticArtifactStore.ts": [
-      "scripts/benchmarkMotionDiagnostics.mjs",
+      "scripts/benchmarkMotionDiagnostics.ts",
       "src/diagnostics/diagnosticArtifactStoreTests.ts",
       "src/diagnostics/diagnosticHubTests.ts",
       "src/motionLab/MotionLabApp.vue",
@@ -5779,6 +5788,7 @@
       "src/rendering/pixi/animation/motionDebugReport.ts"
     ],
     "src/diagnostics/diagnosticProtocol.ts": [
+      "scripts/benchmarkMotionDiagnostics.ts",
       "src/components/BackgroundDebugPanel.vue",
       "src/diagnostics/diagnosticArtifactStore.ts",
       "src/diagnostics/diagnosticClient.ts",
@@ -5850,7 +5860,7 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/diagnostics/motionReplayDocument.ts": [
-      "scripts/benchmarkMotionDiagnostics.mjs",
+      "scripts/benchmarkMotionDiagnostics.ts",
       "src/components/BackgroundDebugPanel.vue",
       "src/diagnostics/motionDiagnosticAdapter.ts",
       "src/diagnostics/motionDiagnosticSession.ts",
@@ -6174,7 +6184,8 @@
       "src/domain/layoutConfiguration.ts",
       "src/domain/runLaunchpadLayoutTests.ts",
       "src/rendering/pixi/scene/folderOverlayTargetResolver.ts",
-      "src/testing/launchpadE2eProbe.ts"
+      "src/testing/launchpadE2eProbe.ts",
+      "tests/browser/launchpad-group-release.spec.ts"
     ],
     "src/domain/launchpadLayoutTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -6238,7 +6249,7 @@
       "src/main.ts"
     ],
     "src/i18n/catalogs.ts": [
-      "scripts/checkI18n.mjs",
+      "scripts/checkI18n.ts",
       "src/components/backgroundDebug/motionDebugPanelModelTests.ts",
       "src/diagnostics/diagnosticMessages.ts",
       "src/i18n/catalogTests.ts",
@@ -6820,7 +6831,9 @@
       "src/rendering/pixi/scene/singleStageDiagnosticsTests.ts",
       "src/rendering/pixi/scene/singleStagePlan.ts",
       "src/rendering/sceneRuntime.ts",
-      "src/rendering/sceneRuntimeTests.ts"
+      "src/rendering/sceneRuntimeTests.ts",
+      "tests/browser/launchpad-group-release.spec.ts",
+      "tests/browser/launchpad-multi-select-management.spec.ts"
     ],
     "src/rendering/pixi/geometry/iconBoundsRegistryTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -6988,7 +7001,7 @@
       "src/rendering/pixi/scene/DesktopLayer.ts",
       "src/rendering/pixi/scene/FolderOverlayLayer.ts",
       "src/rendering/pixi/scene/GroupDragLayer.ts",
-      "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.js"
+      "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts"
     ],
     "src/rendering/pixi/nodes/IconNodeTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -7088,7 +7101,9 @@
       "src/rendering/pixi/PixiDesktopSurface.vue",
       "src/rendering/pixi/renderDebugProbe.dev.ts",
       "src/rendering/pixi/scene/DesktopLayerTests.ts",
-      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts"
+      "src/rendering/pixi/scene/renderPlanContracts.typeTests.ts",
+      "tests/browser/launchpad-group-release.spec.ts",
+      "tests/browser/launchpad-multi-select-management.spec.ts"
     ],
     "src/rendering/pixi/scene/desktopLayerFrames.ts": [
       "src/rendering/pixi/PixiDesktopSurface.vue",
@@ -7357,7 +7372,7 @@
     "src/rendering/pixi/scene/GroupDragLayer.ts": [
       "src/rendering/pixi/scene/DesktopLayer.ts",
       "src/rendering/pixi/scene/GroupDragLayerTests.ts",
-      "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.js"
+      "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts"
     ],
     "src/rendering/pixi/scene/GroupDragLayerTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
@@ -7503,7 +7518,8 @@
       "src/rendering/pixi/scene/pageTrackMotion.ts",
       "src/rendering/pixi/scene/sceneFrameTests.ts",
       "src/rendering/sceneContracts.typeTests.ts",
-      "src/rendering/sceneRuntime.ts"
+      "src/rendering/sceneRuntime.ts",
+      "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts"
     ],
     "src/rendering/sceneRuntime.ts": [
       "src/App.vue",
@@ -7517,26 +7533,49 @@
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
     "src/testing/launchpadE2eProbe.ts": [
-      "src/App.vue"
-    ]
+      "src/App.vue",
+      "tests/browser/launchpad-provisional-folder-mouse.spec.ts"
+    ],
+    "tests/browser/fixtures/launchpadMouseTest.ts": [
+      "tests/browser/launchpad-provisional-folder-mouse.spec.ts"
+    ],
+    "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts": [
+      "tests/browser/pixi-drag-preview-mask-batch.spec.ts"
+    ],
+    "tests/browser/i18n-search-placeholder.spec.ts": [],
+    "tests/browser/icon-context-menu-edit.spec.ts": [],
+    "tests/browser/launchpad-group-release.spec.ts": [],
+    "tests/browser/launchpad-multi-select-management.spec.ts": [],
+    "tests/browser/launchpad-provisional-folder-mouse.spec.ts": [],
+    "tests/browser/pixi-drag-preview-mask-batch.spec.ts": [],
+    "tests/browser/settings-language-dropdown.spec.ts": [],
+    "vite.config.ts": []
   },
   "scanRoots": [
-    "src",
-    "scripts",
-    "tests"
+    "."
   ],
   "directEntries": [
     "index.html",
     "package.json",
-    "playwright.config.mjs",
-    "playwright.webview.config.mjs",
+    "playwright.config.ts",
+    "playwright.webview.config.ts",
     "tsconfig.json",
-    "tsconfig.strict-frontier.json",
     "tsconfig.tools.json",
-    "vite.config.js"
+    "vite.config.ts"
   ],
-  "strictConfig": "tsconfig.strict-frontier.json",
+  "strictConfigs": [
+    "tsconfig.json",
+    "tsconfig.tools.json"
+  ],
   "strictRoots": [
+    "playwright.config.ts",
+    "playwright.webview.config.ts",
+    "scripts/benchmarkMotionDiagnostics.ts",
+    "scripts/checkI18n.ts",
+    "scripts/checkTypeScriptMigration.ts",
+    "scripts/checkTypeScriptMigrationTests.ts",
+    "scripts/exportBrandIcons.ts",
+    "src/App.vue",
     "src/api/launchpadApi.ts",
     "src/api/launchpadApiTests.ts",
     "src/api/liveDesktopContract.ts",
@@ -7544,8 +7583,28 @@
     "src/api/windowChromeApiTests.ts",
     "src/application/errorMessage.ts",
     "src/application/launchpadDocumentCoordinator.ts",
+    "src/application/launchpadDocumentCoordinatorTests.ts",
     "src/assets/branding/launchpadIconUrls.ts",
+    "src/components/AppIconChooserDialog.vue",
+    "src/components/BackgroundDebugPanel.vue",
+    "src/components/BackgroundEffectPreview.vue",
+    "src/components/BackgroundImagePreviewCanvas.vue",
     "src/components/Icons.ts",
+    "src/components/LaunchpadChromeFrame.vue",
+    "src/components/LaunchpadDialogs.vue",
+    "src/components/LaunchpadHeader.vue",
+    "src/components/LaunchpadOverlays.vue",
+    "src/components/LaunchpadSelectionToolbar.vue",
+    "src/components/ManagedAppEditorDialog.vue",
+    "src/components/ScanResultAppRow.vue",
+    "src/components/ScanResultDialog.vue",
+    "src/components/SettingsPanel.vue",
+    "src/components/WindowChromeOverlay.vue",
+    "src/components/backgroundDebug/BackgroundDebugLiveDesktopPanel.vue",
+    "src/components/backgroundDebug/BackgroundDebugMotionInspector.vue",
+    "src/components/backgroundDebug/BackgroundDebugMotionTargets.vue",
+    "src/components/backgroundDebug/BackgroundDebugMotionTimeline.vue",
+    "src/components/backgroundDebug/BackgroundDebugRenderPanel.vue",
     "src/components/backgroundDebug/desktopLayoutDebugSettings.ts",
     "src/components/backgroundDebug/desktopLayoutDebugSettingsTests.ts",
     "src/components/backgroundDebug/diagnosticUiError.ts",
@@ -7574,6 +7633,13 @@
     "src/components/backgroundDebug/renderProbePanelModelTests.ts",
     "src/components/iconContextMenuGeometry.ts",
     "src/components/iconContextMenuGeometryTests.ts",
+    "src/components/settings/AboutSettingsPage.vue",
+    "src/components/settings/AppsSettingsPage.vue",
+    "src/components/settings/GeneralSettingsPage.vue",
+    "src/components/settings/InterfaceSettingsPage.vue",
+    "src/components/settings/SettingsFluentButton.vue",
+    "src/components/settings/SettingsSlider.vue",
+    "src/components/settings/SettingsSpinButton.vue",
     "src/composables/launchpadConstants.ts",
     "src/composables/launchpadMotion.ts",
     "src/composables/mainWindowTransition.ts",
@@ -7726,6 +7792,7 @@
     "src/domain/layoutDocumentTests.ts",
     "src/domain/mainWindowShortcut.ts",
     "src/domain/mainWindowShortcutTests.ts",
+    "src/domain/runLaunchpadLayoutTests.ts",
     "src/fluent/registerFluentComponents.ts",
     "src/i18n/catalogTests.ts",
     "src/i18n/catalogs.ts",
@@ -7735,6 +7802,7 @@
     "src/i18n/localizationTests.ts",
     "src/main.ts",
     "src/mocks/appSeeds.ts",
+    "src/motionLab/MotionLabApp.vue",
     "src/motionLab/motionLabGate.ts",
     "src/motionLab/motionLabModel.ts",
     "src/motionLab/motionLabModelTests.ts",
@@ -7753,6 +7821,8 @@
     "src/rendering/diagnosticPort.ts",
     "src/rendering/motionLabRendererAdapter.ts",
     "src/rendering/motionPort.ts",
+    "src/rendering/pixi/PixiBackgroundSurface.vue",
+    "src/rendering/pixi/PixiDesktopSurface.vue",
     "src/rendering/pixi/animation/motionCleanup.ts",
     "src/rendering/pixi/animation/motionCleanupTests.ts",
     "src/rendering/pixi/animation/motionDebugOverlay.ts",
@@ -7947,10 +8017,25 @@
     "src/rendering/sceneFrame.ts",
     "src/rendering/sceneRuntime.ts",
     "src/rendering/sceneRuntimeTests.ts",
-    "src/testing/launchpadE2eProbe.ts"
+    "src/testing/launchpadE2eProbe.ts",
+    "tests/browser/fixtures/launchpadMouseTest.ts",
+    "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts",
+    "tests/browser/i18n-search-placeholder.spec.ts",
+    "tests/browser/icon-context-menu-edit.spec.ts",
+    "tests/browser/launchpad-group-release.spec.ts",
+    "tests/browser/launchpad-multi-select-management.spec.ts",
+    "tests/browser/launchpad-provisional-folder-mouse.spec.ts",
+    "tests/browser/pixi-drag-preview-mask-batch.spec.ts",
+    "tests/browser/settings-language-dropdown.spec.ts",
+    "vite.config.ts"
   ],
   "allowedTsToJsEdges": [],
   "retiredSources": [
+    "playwright.config.mjs",
+    "playwright.webview.config.mjs",
+    "scripts/benchmarkMotionDiagnostics.mjs",
+    "scripts/checkI18n.mjs",
+    "scripts/exportBrandIcons.mjs",
     "src/api/launchpadApi.js",
     "src/api/launchpadApiTests.js",
     "src/api/windowChromeApi.js",
@@ -8362,12 +8447,23 @@
     "src/rendering/sceneFrame.js",
     "src/rendering/sceneRuntime.js",
     "src/rendering/sceneRuntimeTests.js",
-    "src/testing/launchpadE2eProbe.js"
+    "src/testing/launchpadE2eProbe.js",
+    "tests/browser/fixtures/launchpadMouseTest.mjs",
+    "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.js",
+    "tests/browser/i18n-search-placeholder.spec.mjs",
+    "tests/browser/icon-context-menu-edit.spec.mjs",
+    "tests/browser/launchpad-group-release.spec.mjs",
+    "tests/browser/launchpad-multi-select-management.spec.mjs",
+    "tests/browser/launchpad-provisional-folder-mouse.spec.mjs",
+    "tests/browser/pixi-drag-preview-mask-batch.spec.mjs",
+    "tests/browser/settings-language-dropdown.spec.mjs",
+    "vite.config.js"
   ],
   "testRunners": [
     {
       "root": "src",
       "runner": "src/domain/runLaunchpadLayoutTests.ts"
     }
-  ]
+  ],
+  "zeroDebt": true
 }

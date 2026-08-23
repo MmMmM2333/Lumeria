@@ -15,11 +15,11 @@ const allowedSourceText = new Map([
   ["src/domain/launchpadData.ts", new Set(["卸载"])],
 ]);
 
-function normalizePath(filePath) {
+function normalizePath(filePath: string): string {
   return path.relative(projectRoot, filePath).split(path.sep).join("/");
 }
 
-async function collectSourceFiles(directory, output = []) {
+async function collectSourceFiles(directory: string, output: string[] = []): Promise<string[]> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
@@ -35,7 +35,7 @@ async function collectSourceFiles(directory, output = []) {
   return output;
 }
 
-function flattenMessages(value, prefix = "", output = new Set()) {
+function flattenMessages(value: unknown, prefix = "", output = new Set<string>()): Set<string> {
   if (typeof value === "string") {
     output.add(prefix);
     return output;
@@ -47,24 +47,28 @@ function flattenMessages(value, prefix = "", output = new Set()) {
   return output;
 }
 
-function collectLiteralMessageKeys(source) {
-  const keys = new Set();
+function collectLiteralMessageKeys(source: string): Set<string> {
+  const keys = new Set<string>();
   const patterns = [
     /\bt\(\s*(["'])([A-Za-z0-9_.-]+)\1/g,
     /\b(?:ariaLabel|description|label|message|status|subtitle|title)Key\s*:\s*(["'])([A-Za-z0-9_.-]+)\1/g,
   ];
   for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) keys.add(match[2]);
+    for (const match of source.matchAll(pattern)) {
+      const key = match[2];
+      if (key === undefined) throw new TypeError(`Message-key pattern did not capture a key: ${match[0]}`);
+      keys.add(key);
+    }
   }
   return keys;
 }
 
-function lineNumberAt(source, index) {
+function lineNumberAt(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
 }
 
-async function inspectSource(files, catalogKeys) {
-  const issues = [];
+async function inspectSource(files: readonly string[], catalogKeys: ReadonlySet<string>): Promise<string[]> {
+  const issues: string[] = [];
   for (const filePath of files) {
     const source = await readFile(filePath, "utf8");
     const relativePath = normalizePath(filePath);

@@ -24,8 +24,10 @@ function makeManifest(overrides: Partial<TypeScriptMigrationManifest> = {}): Typ
     legacyClosureRoots: [],
     retiredSources: [],
     scanRoots: ["src"],
+    strictConfigs: [],
     strictRoots: [],
     testRunners: [],
+    zeroDebt: false,
     ...overrides,
   };
 }
@@ -184,6 +186,60 @@ function violationCodes(
     makeManifest(),
   );
   assert(codes.includes("new-legacy-source"), "new legacy source paths after the baseline must fail");
+}
+
+{
+  const codes = violationCodes(
+    { "src/legacy.js": "export const value = 1;\n" },
+    makeManifest({ zeroDebt: true }),
+    ["src/legacy.js"],
+  );
+  assert(codes.includes("zero-debt-legacy-source"), "final zero-debt mode must reject baseline JavaScript that still exists");
+  assert(codes.includes("zero-debt-unretired-baseline"), "final zero-debt mode must require every baseline JavaScript path to be retired");
+}
+
+{
+  const codes = violationCodes(
+    { "src/entry.ts": "export const value = 1;\n" },
+    makeManifest({ zeroDebt: true }),
+  );
+  assert(codes.includes("zero-debt-missing-strict-root"), "final zero-debt mode must put every typed source under strict policy");
+}
+
+{
+  const codes = violationCodes(
+    { "src/entry.ts": "export const value = 1;\n" },
+    makeManifest({
+      allowedTsToJsEdges: ["src/entry.ts -> src/legacy.js"],
+      legacyClosure: ["src/legacy.js"],
+      retiredSources: ["src/legacy.js"],
+      strictRoots: ["src/entry.ts"],
+      zeroDebt: true,
+    }),
+    ["src/legacy.js"],
+  );
+  assert(codes.includes("zero-debt-allowlist"), "final zero-debt mode must reject compatibility edge allowlists");
+  assert(codes.includes("zero-debt-legacy-closure"), "final zero-debt mode must reject legacy closure declarations");
+}
+
+{
+  const codes = violationCodes(
+    {
+      "src/entry.ts": "export const value = 1;\n",
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true },
+        include: ["src/**/*.ts"],
+      }),
+    },
+    makeManifest({
+      retiredSources: ["src/legacy.js"],
+      strictConfigs: ["tsconfig.json"],
+      strictRoots: ["src/entry.ts"],
+      zeroDebt: true,
+    }),
+    ["src/legacy.js"],
+  );
+  assert.deepEqual(codes, [], "final zero-debt mode must accept a fully typed and explicitly retired source set");
 }
 
 {
@@ -429,8 +485,9 @@ function violationCodes(
 }
 
 {
+  const ignoredDirective = `// @ts-${"ignore"}`;
   const codes = violationCodes(
-    { "src/entry.ts": "// @ts-ignore\nexport const value: number = 'wrong';\n" },
+    { "src/entry.ts": `${ignoredDirective}\nexport const value: number = 'wrong';\n` },
     makeManifest({ strictRoots: ["src/entry.ts"] }),
   );
   assert(codes.includes("forbidden-type-directive"), "strict sources must not suppress type checking");
@@ -449,59 +506,62 @@ function violationCodes(
     {
       "src/entry.ts": "export const value = 1;\n",
       "src/other.ts": "export const other = 1;\n",
-      "tsconfig.strict.json": JSON.stringify({
-        compilerOptions: { allowJs: false, checkJs: false },
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true },
         files: ["src/other.ts"],
-        include: [],
       }),
     },
     makeManifest({
-      directEntries: ["tsconfig.strict.json"],
-      strictConfig: "tsconfig.strict.json",
+      directEntries: ["tsconfig.json"],
+      strictConfigs: ["tsconfig.json"],
       strictRoots: ["src/entry.ts"],
     }),
   );
-  assert(codes.includes("strict-config-mismatch"), "strict tsconfig files must exactly match manifest strict roots");
+  assert(codes.includes("strict-config-coverage-mismatch"), "strict tsconfigs must exactly cover manifest strict roots");
 }
 
 {
   const codes = violationCodes(
     {
       "src/entry.ts": "export const value = 1;\n",
-      "tsconfig.strict.json": JSON.stringify({
-        compilerOptions: { allowJs: false, checkJs: false, strict: true },
-        files: ["src/entry.ts"],
-        include: [],
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: false },
+        include: ["src/**/*.ts"],
       }),
     },
     makeManifest({
-      directEntries: ["tsconfig.strict.json"],
-      strictConfig: "tsconfig.strict.json",
+      directEntries: ["tsconfig.json"],
+      strictConfigs: ["tsconfig.json"],
       strictRoots: ["src/entry.ts"],
     }),
   );
-  assert(codes.includes("strict-config-mismatch"), "strict frontier config must extend the main project config");
+  assert(codes.includes("strict-config-mismatch"), "declared strict configs must enable effective strict mode");
 }
 
 {
   const codes = violationCodes(
     {
       "src/entry.ts": "export const value = 1;\n",
-      "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true } }),
-      "tsconfig.strict.json": JSON.stringify({
+      "src/view.vue": "<script setup lang=\"ts\">const value = 1;</script>\n",
+      "scripts/tool.ts": "export const tool = 1;\n",
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: { strict: true },
+        include: ["src/**/*.ts", "src/**/*.vue"],
+      }),
+      "tsconfig.tools.json": JSON.stringify({
         extends: "./tsconfig.json",
-        compilerOptions: { allowJs: false, checkJs: false, noImplicitAny: false },
-        files: ["src/entry.ts"],
-        include: [],
+        include: ["scripts/**/*.ts"],
       }),
     },
     makeManifest({
-      directEntries: ["tsconfig.json", "tsconfig.strict.json"],
-      strictConfig: "tsconfig.strict.json",
-      strictRoots: ["src/entry.ts"],
+      directEntries: ["tsconfig.json", "tsconfig.tools.json"],
+      scanRoots: ["."],
+      strictConfigs: ["tsconfig.json", "tsconfig.tools.json"],
+      strictRoots: ["scripts/tool.ts", "src/entry.ts", "src/view.vue"],
+      zeroDebt: true,
     }),
   );
-  assert(codes.includes("strict-config-mismatch"), "strict frontier config must not disable individual strict-mode options");
+  assert.deepEqual(codes, [], "multiple strict configs must jointly cover every typed source");
 }
 
 {

@@ -1,8 +1,5 @@
 {
   "compilerOptions": {
-    "allowImportingTsExtensions": true,
-    "allowJs": true,
-    "checkJs": false,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
@@ -17,9 +14,9 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2022",
-    "types": ["vite/client", "unplugin-icons/types/vue"],
+    "types": ["node", "vite/client", "unplugin-icons/types/vue"],
     "useDefineForClassFields": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.js"]
+  "include": ["src/**/*.ts", "src/**/*.vue"]
 }
