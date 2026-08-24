@@ -1217,14 +1217,9 @@ body {
 }
 
 .folder-name-input.pixi-folder-name-input {
-  /* Opening opacity follows the Pixi frame directly, so it must not be interpolated a second time. */
+  /* Opacity follows the shared folder visibility progress and must not be interpolated a second time. */
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 180ms ease, background 160ms ease, box-shadow 160ms ease;
   will-change: opacity, transform, filter;
-}
-
-.folder-name-input.pixi-folder-name-input.is-closing {
-  /* Every close path has one stable opacity target and therefore shares the same fade. */
-  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 180ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .folder-page-dots {

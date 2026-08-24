@@ -27,7 +27,6 @@
         <input
           ref="folderNameInputRef"
           class="folder-name-input pixi-folder-name-input"
-          :class="{ 'is-closing': isSingleStageFolderClosing }"
           name="pixiSingleStageFolderName"
           :value="singleStageFolderName"
           :disabled="isSingleStageFolderInputDisabled"
@@ -358,8 +357,8 @@ const singleStageFolderNameInputStyle = computed<CSSProperties>(() => {
   return {
     ...makeSingleStageFolderNameInputStyle({
       controlsVisible: shouldRenderSingleStageFolderDomControls.value,
+      folderVisibilityProgress: sceneRuntime.value.folderOverlayState.folderOpenProgress?.value ?? 0,
       frame,
-      isClosing: isSingleStageFolderClosing.value,
       isInputDisabled: isSingleStageFolderInputDisabled.value,
     }),
   };

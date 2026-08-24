@@ -115,7 +115,11 @@ function makePointerEvent(
   };
 }
 
-type HarnessOptions = Readonly<{ batch?: boolean; pageWidth?: number }>;
+type HarnessOptions = Readonly<{
+  batch?: boolean;
+  cancelFolderOpening?: boolean;
+  pageWidth?: number;
+}>;
 
 function createHarness(options: HarnessOptions = {}) {
   const eventTarget = createEventTarget();
@@ -127,6 +131,8 @@ function createHarness(options: HarnessOptions = {}) {
     dragFinishes: [] as LaunchpadDragPointerEvent[],
     dragStarts: [] as LaunchpadDragPointerEvent[],
     dragUpdates: [] as LaunchpadDragPointerEvent[],
+    folderOpeningCancels: 0,
+    openFolders: [] as (string | null)[],
     openedApps: [] as string[],
     pageIndexes: [] as number[],
   };
@@ -138,7 +144,11 @@ function createHarness(options: HarnessOptions = {}) {
       calls.pageIndexes.push(pageIndex);
     },
     commitFolderPageIndex: () => {},
-    commitOpenFolder: () => {},
+    cancelFolderOpening: () => {
+      calls.folderOpeningCancels += 1;
+      return options.cancelFolderOpening === true;
+    },
+    commitOpenFolder: (folderId) => calls.openFolders.push(folderId),
     dragControls: {
       cancelDrag: (event = {}) => {
         calls.dragCancels.push(event);
@@ -179,6 +189,30 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 export function runLaunchpadInputGesturesTests() {
+  {
+    const { calls, gestures } = createHarness({ cancelFolderOpening: true });
+    gestures.handleFolderOverlayPointerDown();
+
+    assert(
+      calls.folderOpeningCancels === 1 && calls.openFolders.length === 0,
+      "an outside pointer close should cancel an in-flight opening before issuing a generic close",
+    );
+    gestures.disposeInputGestures();
+  }
+
+  {
+    const { calls, gestures } = createHarness();
+    gestures.handleFolderOverlayPointerDown();
+
+    assert(
+      calls.folderOpeningCancels === 1 &&
+        calls.openFolders.length === 1 &&
+        calls.openFolders[0] === null,
+      "an outside pointer close should fall through to the generic close when no opening is in flight",
+    );
+    gestures.disposeInputGestures();
+  }
+
   {
     const { calls, eventTarget, gestures } = createHarness({ batch: true });
     const source: LaunchSource = { type: "page", pageIndex: 0, index: 0 };

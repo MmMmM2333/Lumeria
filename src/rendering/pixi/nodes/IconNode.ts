@@ -108,6 +108,10 @@ export type IconNodeStateInput = Readonly<Partial<IconVisualState> & {
   source: SceneDataRecord | null;
 }>;
 
+type IconNodeStateUpdateOptions = Readonly<{
+  preserveRootPresentation?: boolean | undefined;
+}>;
+
 interface FlashOverlayOptions {
   readonly prepare?: (() => void) | undefined;
 }
@@ -490,7 +494,10 @@ export class IconNode extends Container {
     this.describeMotionTargets();
   }
 
-  setState(state: IconNodeStateInput): void {
+  setState(
+    state: IconNodeStateInput,
+    options: IconNodeStateUpdateOptions = {},
+  ): void {
     // Legacy callers and focused node tests intentionally provide partial frames.
     // Preserve the original one-frame ownership semantics: omitted fields clear
     // instead of inheriting from the previous frame; only draggable has a default.
@@ -523,8 +530,10 @@ export class IconNode extends Container {
     }
     this.describeMotionTargets(state);
     this.eventMode = state.interactive === false ? "none" : "static";
-    this.visible = !state.dragging && !state.ghosted;
-    this.alpha = state.opening ? 0 : 1;
+    if (!options.preserveRootPresentation) {
+      this.visible = !state.dragging && !state.ghosted;
+      this.alpha = state.opening ? 0 : 1;
+    }
     this.updateOpeningScale(state as IconVisualState);
     const suppressInteractionFeedback = Boolean(
       state.dragging || state.ghosted || state.opening || state.interactive === false

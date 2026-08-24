@@ -54,6 +54,12 @@ export type FolderGhostTarget = Readonly<{
   targetStageLayoutRect?: FolderOverlayRect | null;
 }>;
 
+export type FolderInterruptedOpeningSource = Readonly<{
+  alpha: number;
+  labelAlpha: number;
+  rect: FolderOverlayRect;
+}>;
+
 export type UsableFolderGhostTarget = FolderGhostTarget & (
   | Readonly<{
     sourceRect: FolderOverlayRect;
@@ -389,6 +395,7 @@ export type ClosingGhostTargetInput = Readonly<{
   iconBounds: FolderOverlayRect | null;
   iconSize: number;
   index: number;
+  interruptedOpeningSource?: FolderInterruptedOpeningSource | null | undefined;
   item: FolderOverlayItem;
   pageIndex?: number;
   previewSlotById: ReadonlyMap<string, number>;
@@ -402,6 +409,7 @@ export type ClosingGhostTarget = Readonly<{
   controllerGhostKey: string | null;
   iconSize: number;
   index: number;
+  interruptedOpeningSource?: FolderInterruptedOpeningSource | undefined;
   isThumbnailChild: boolean;
   item: FolderOverlayItem;
   pageIndex: number;
@@ -434,6 +442,15 @@ export function makeClosingGhostTarget(options: ClosingGhostTargetInput): Closin
     controllerGhostKey: options.controllerGhostKey ?? null,
     iconSize: options.iconSize,
     index: options.index,
+    ...(options.interruptedOpeningSource
+      ? {
+        interruptedOpeningSource: {
+          alpha: options.interruptedOpeningSource.alpha,
+          labelAlpha: options.interruptedOpeningSource.labelAlpha,
+          rect: { ...options.interruptedOpeningSource.rect },
+        },
+      }
+      : {}),
     isThumbnailChild,
     item: options.item,
     pageIndex: options.pageIndex ?? 0,

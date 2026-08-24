@@ -19,6 +19,7 @@ import { hasUsableFolderGhostTarget } from "./folderOverlayTargets.js";
 import type {
   ClosingPreviewSwapTarget,
   FolderGhostTarget,
+  FolderInterruptedOpeningSource,
   FolderOverlayItem,
   UsableFolderGhostTarget,
 } from "./folderOverlayTargets.js";
@@ -99,7 +100,10 @@ export interface FolderClosingGhost extends FolderClosingMotionNode {
   destroy(options?: object): void;
   getIconBounds(stageRect: StageOrigin): StageRect | null;
   removeFromParent?(): void;
-  setState(state: FolderGhostIconNodeState): void;
+  setState(
+    state: FolderGhostIconNodeState,
+    options?: Readonly<{ preserveRootPresentation?: boolean | undefined }>,
+  ): void;
 }
 
 export interface FolderClosingGhostLayer {
@@ -130,6 +134,7 @@ export type FolderClosingTarget = FolderGhostTarget & Readonly<{
   controllerGhostKey?: string | null | undefined;
   iconSize: number;
   index: number;
+  interruptedOpeningSource?: FolderInterruptedOpeningSource | undefined;
   isThumbnailChild?: boolean | undefined;
   item: FolderOverlayItem;
   pageIndex: number;
@@ -150,7 +155,6 @@ type UsableFolderClosingTarget = FolderClosingTarget & UsableFolderGhostTarget;
 export type FolderClosingControllerPlanOptions = Readonly<{
   handoffRect?: StageRect | null | undefined;
   handoffTarget?: Readonly<Record<string, unknown>> | null | undefined;
-  openingCancelRequest?: Readonly<{ folderId?: string | null | undefined }> | null | undefined;
   previewSwapTargets?: readonly ClosingPreviewSwapTarget[] | undefined;
 }>;
 
@@ -247,7 +251,6 @@ type ActiveClosingGhost = {
 type ActiveClosingFrameState = {
   folderId: string | null;
   makeOptions(state: FolderClosingState, thumb: ClosingThumbMetrics): FolderFrameGhostOptions;
-  openingCancelRequest: Readonly<{ folderId?: string | null | undefined }> | null;
   previewSwapStarted: boolean;
   previewSwapTargets: readonly ClosingPreviewSwapTarget[];
   targetKey: string;
@@ -263,6 +266,38 @@ function requireStageRect(value: unknown, path: string): StageRect {
     }
   }
   return value as StageRect;
+}
+
+function requireFiniteNumber(value: unknown, path: string): number {
+  if (!Number.isFinite(value)) throw new TypeError(`${path} must be a finite number`);
+  return Number(value);
+}
+
+function applyInterruptedOpeningSource(
+  target: FolderClosingTarget,
+): FolderClosingTarget {
+  const itemId = target?.item?.id || "unknown";
+  const source = target.interruptedOpeningSource;
+  if (!source || typeof source !== "object") {
+    throw new TypeError(`closing target ${itemId} interruptedOpeningSource must be an object`);
+  }
+  const sourceRect = requireStageRect(
+    source.rect,
+    `closing target ${itemId} interruptedOpeningSource.rect`,
+  );
+  return {
+    ...target,
+    sourceAlpha: requireFiniteNumber(
+      source.alpha,
+      `closing target ${itemId} interruptedOpeningSource.alpha`,
+    ),
+    sourceLabelAlpha: requireFiniteNumber(
+      source.labelAlpha,
+      `closing target ${itemId} interruptedOpeningSource.labelAlpha`,
+    ),
+    sourceRect,
+    sourceScale: Math.max(0.16, sourceRect.width / Math.max(1, target.iconSize)),
+  };
 }
 
 function publishLastFolderHandoffDebug(payload: Readonly<Record<string, unknown>>): void {
@@ -665,7 +700,6 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
   ): void {
     const {
       handoffRect = null,
-      openingCancelRequest = null,
       handoffTarget = null,
       previewSwapTargets = [],
     } = options;
@@ -685,7 +719,9 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
           sourceRect: released.sourceRect,
           sourceScale: released.sourceScale,
         }
-        : target;
+        : target.interruptedOpeningSource
+          ? applyInterruptedOpeningSource(target)
+          : target;
     });
     const openingRetirement = reporter.retireOpening();
     if (openingRetirement?.status === "stale") {
@@ -693,7 +729,8 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     }
     this.layer.acquireDesktopSourceOwnership(owner);
     const usableTargets = (closeTargets || []).filter(hasUsableFolderGhostTarget) as UsableFolderClosingTarget[];
-    const isRetargetedOpeningClose = releasedOpeningGhosts.size > 0;
+    const isOpeningCloseHandoff = releasedOpeningGhosts.size > 0 ||
+      closeTargets.some((target) => Boolean(target.interruptedOpeningSource));
     const frameDuration = motionPresets.folderClose!.duration! + CLOSING_FRAME_TAIL_DURATION;
     const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
     const thumb = getFolderThumbMetrics(folderRect.width);
@@ -706,7 +743,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     let closingPreviewSwapStarted = false;
     const startClosingPreviewSwapWhenReady = (frame: Readonly<{ progress?: number | undefined }>) => {
       const currentPreviewSwapTargets = this.activeFrameState?.previewSwapTargets || previewSwapTargets;
-      if (closingPreviewSwapStarted || isRetargetedOpeningClose || !currentPreviewSwapTargets?.length) return;
+      if (closingPreviewSwapStarted || isOpeningCloseHandoff || !currentPreviewSwapTargets?.length) return;
       if ((frame?.progress ?? 0) < previewTiming.progress) return;
       closingPreviewSwapStarted = true;
       if (this.activeFrameState) this.activeFrameState.previewSwapStarted = true;
@@ -760,7 +797,6 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     const frameOptions = makeFrameOptions(state, thumb);
     this.activeFrameState = {
       folderId,
-      openingCancelRequest: openingCancelRequest?.folderId === folderId ? openingCancelRequest : null,
       makeOptions: makeFrameOptions,
       previewSwapStarted: false,
       previewSwapTargets,
@@ -937,7 +973,10 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       }
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
-      ghost.setState?.(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
+      ghost.setState?.(
+        makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }),
+        { preserveRootPresentation: true },
+      );
       this.startGhostMotion(state, target, ghost, { animateAlpha: false });
       retargeted += 1;
       targetChanged = true;
@@ -1190,6 +1229,8 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       this.completedPreviewGhosts.push(ghost);
       return;
     }
+    reporter.deleteDetachedGhostMotion(ghost);
+    destroyDisplayObjectAfterFrame(ghost, { children: true });
   }
 
   completeFrameGhost(

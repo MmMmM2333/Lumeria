@@ -96,6 +96,18 @@ export async function runIconNodeTests(): Promise<void> {
       textless: false,
     };
     motionRuntime.reset();
+    node.alpha = 0.4;
+    node.visible = false;
+    node.setState(interactionNodeState, { preserveRootPresentation: true });
+    assert(
+      nearlyEqual(node.alpha, 0.4) && !readBooleanProperty(node, "visible"),
+      "motion-owned state updates should preserve the icon root alpha and visibility",
+    );
+    node.setState(interactionNodeState);
+    assert(
+      nearlyEqual(node.alpha, 1) && readBooleanProperty(node, "visible"),
+      "ordinary state updates should continue owning the icon root presentation",
+    );
     node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
 
     node.setState({

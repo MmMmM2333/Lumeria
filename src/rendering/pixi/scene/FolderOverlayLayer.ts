@@ -2000,6 +2000,7 @@ export class FolderOverlayLayer extends Container {
       stableIconSize,
       stableVisualSpec,
       state,
+      visualLayoutMetrics,
     } = context;
     const resizeLayoutSyncActive = this.isResizeLayoutSyncActive();
     const shouldSnapIconLayoutForResize = Boolean(
@@ -2013,6 +2014,12 @@ export class FolderOverlayLayer extends Container {
     const nextLayoutTargets = new Map<string, StagePoint>();
     const openingGhostTargets: GeneratedOpeningGhostTarget[] = [];
     const closingGhostTargets: GeneratedClosingGhostTarget[] = [];
+    const isInterruptedOpeningClose = state.folderOpeningCancelRequest?.folderId === folderId;
+    const openingSessionSnapshot = this.folderVisualSession.snapshot().opening;
+    const interruptedOpeningGeometrySnapshot = isInterruptedOpeningClose &&
+      openingSessionSnapshot?.folderId === folderId
+      ? openingSessionSnapshot.geometrySnapshot
+      : null;
     for (const entry of renderPlan.entries) {
       const { index, isInteractivePage, item, key, nodeState, pageIndex, stableTargetCenter, targetCenter, x, y } = entry;
       seen.add(key);
@@ -2119,12 +2126,49 @@ export class FolderOverlayLayer extends Container {
         });
       }
       if (entry.closingGhostInput) {
+        const interruptedOpeningTarget = isInterruptedOpeningClose
+          ? makeOpeningGhostTarget({
+            ...entry.closingGhostInput,
+            folderId,
+            folderRect: interruptedOpeningGeometrySnapshot?.source.folderRect || folderClientRect,
+            getPreviewChildRect: interruptedOpeningGeometrySnapshot
+              ? (sourceItem, previewSlotIndex) =>
+                getFolderOpeningPreviewChildRect(
+                  interruptedOpeningGeometrySnapshot,
+                  sourceItem,
+                  previewSlotIndex,
+                )
+              : getOpeningPreviewChildClientRect,
+            pageIndex,
+            rows: visualLayoutMetrics.rows,
+            targetCenterX: targetCenter.x,
+            targetCenterY: targetCenter.y,
+          })
+          : null;
+        const interruptedOpeningSource = interruptedOpeningTarget
+          ? (() => {
+            const sourceRect = interruptedOpeningTarget.sourceRect;
+            if (!sourceRect) {
+              throw new TypeError(
+                `interrupted opening close target ${item.id} requires a complete source rect`,
+              );
+            }
+            return {
+              alpha: interruptedOpeningTarget.isThumbnailChild ? 1 : 0,
+              labelAlpha: 0,
+              rect: sourceRect,
+            };
+          })()
+          : null;
         closingGhostTargets.push(makeClosingGhostTarget({
           ...entry.closingGhostInput,
           closeThumbRect,
           iconBounds,
-          stableFolderCloseTarget: this.stableFolderCloseTarget,
-        } as Parameters<typeof makeClosingGhostTarget>[0]));
+          ...(interruptedOpeningSource
+            ? { interruptedOpeningSource }
+            : {}),
+          stableFolderCloseTarget: this.stableFolderCloseTarget ?? null,
+        }));
       }
     }
 
@@ -2188,7 +2232,6 @@ export class FolderOverlayLayer extends Container {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       const closeOptions = {
         handoffRect: folderClientRect || closeIconRect,
-        openingCancelRequest: state.folderOpeningCancelRequest || null,
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
       };

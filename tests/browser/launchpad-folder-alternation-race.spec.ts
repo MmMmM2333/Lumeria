@@ -97,6 +97,11 @@ interface RaceSample {
   readonly folder: FolderStateSnapshot;
   readonly pixel: FramebufferPixelSnapshot;
   readonly time: number;
+  readonly title: Readonly<{
+    opacity: number;
+    top: number | null;
+    value: string;
+  }> | null;
   readonly visual: FolderVisualSnapshot;
 }
 
@@ -257,6 +262,8 @@ async function startRaceTrace(page: Page): Promise<void> {
         })
         : { available: false, captureDurationMs: 0, reason: "transition-active", slots: [] };
       const slot = framebuffer.slots?.[0] || null;
+      const titleInput = document.querySelector<HTMLInputElement>(".pixi-folder-name-input");
+      const titleStyle = titleInput ? getComputedStyle(titleInput) : null;
       trace.samples.push({
         folder,
         pixel: {
@@ -268,6 +275,15 @@ async function startRaceTrace(page: Page): Promise<void> {
           sample: Array.from(slot?.sample || []),
         },
         time: performance.now(),
+        title: titleInput && titleStyle
+          ? {
+            opacity: Number(titleStyle.opacity) || 0,
+            top: Number.isFinite(Number.parseFloat(titleStyle.top))
+              ? Number.parseFloat(titleStyle.top)
+              : null,
+            value: titleInput.value,
+          }
+          : null,
         visual,
       });
     };
@@ -397,8 +413,10 @@ async function traceFolderAlternation(
   timing: Readonly<{
     clickableToOpenMs: number;
     firstOpenToCloseMs: number;
-    secondOpenToCloseMs: number;
-  }>,
+  }> & (
+    | Readonly<{ secondOpenToCloseMs: number; secondRequestToCloseMs?: never }>
+    | Readonly<{ secondOpenToCloseMs?: never; secondRequestToCloseMs: number }>
+  ),
 ): Promise<readonly RaceSample[]> {
   let samples: readonly RaceSample[] = [];
   await startRaceTrace(page);
@@ -412,8 +430,23 @@ async function traceFolderAlternation(
     await page.waitForTimeout(timing.clickableToOpenMs);
     const secondPoint = await readCurrentFolderPoint(page, second.id);
     await page.mouse.click(secondPoint.x, secondPoint.y);
-    await waitForFolderFlowOpen(page, second.id);
-    await page.waitForTimeout(timing.secondOpenToCloseMs);
+    if (timing.secondRequestToCloseMs != null) {
+      await waitForFolderFlowOpen(page, second.id);
+      if (timing.secondRequestToCloseMs > 0) {
+        const requestAgeMs = await page.evaluate((folderId) => {
+          const trace = window.__LUMERIA_FOLDER_ALTERNATION_TRACE__;
+          const acceptedSample = trace?.samples.find((sample) => (
+            sample.folder.openFolderId === folderId || sample.folder.renderedFolderId === folderId
+          ));
+          if (!acceptedSample) throw new Error(`Folder ${folderId} request was not sampled by the render trace`);
+          return Math.max(0, performance.now() - acceptedSample.time);
+        }, second.id);
+        await page.waitForTimeout(Math.max(0, timing.secondRequestToCloseMs - requestAgeMs));
+      }
+    } else {
+      await waitForFolderFlowOpen(page, second.id);
+      await page.waitForTimeout(timing.secondOpenToCloseMs);
+    }
     await closeFolder(page);
     await waitForSettledClose(page);
     await page.waitForTimeout(500);
@@ -607,6 +640,53 @@ function findDetachedVisualDiscontinuities(
     }
   }
   return failures;
+}
+
+function findFirstClosingActorExpansion(
+  samples: readonly RaceSample[],
+  folderId: string,
+): Readonly<Record<string, unknown>> | null {
+  for (let index = 0; index < samples.length; index += 1) {
+    const current = samples[index];
+    if (!current || !current.folder.closing) continue;
+    const activeFolderIds = [
+      current.folder.renderedFolderId,
+      current.visual.overlay?.closingFolderId,
+      current.visual.overlay?.currentFolderId,
+    ];
+    if (!activeFolderIds.includes(folderId)) continue;
+    const closingActors = (current.visual.overlay?.debug?.closingGhosts || []).filter(isDisplayVisible);
+    if (!closingActors.length) continue;
+    const closingFrame = current.visual.overlay?.debug?.frameGhost?.display;
+    const closingFrameSize = Math.max(closingFrame?.width ?? 0, closingFrame?.height ?? 0);
+    if (!(closingFrameSize > 0)) {
+      return {
+        folderId,
+        kind: "first-closing-frame-size-was-not-sampled",
+        time: current.time,
+      };
+    }
+    const expansions = closingActors.reduce<Readonly<Record<string, unknown>>[]>((results, actor) => {
+      const actorSize = Math.max(actor.width ?? 0, actor.height ?? 0);
+      const actorFrameRatio = actorSize / closingFrameSize;
+      if (actorFrameRatio > 0.55) {
+        results.push({ actorFrameRatio, actorId: actor.itemId, actorSize, closingFrameSize });
+      }
+      return results;
+    }, []);
+    return expansions.length
+      ? {
+        expansions,
+        folderId,
+        kind: "first-closing-actor-outgrew-interrupted-frame",
+        time: current.time,
+      }
+      : null;
+  }
+  return {
+    folderId,
+    kind: "first-closing-actor-was-not-sampled",
+  };
 }
 
 test("rapidly alternating two folders never revives or cross-wires a stale folder visual @webview", async ({
@@ -843,4 +923,88 @@ test("rapidly alternating two folders never revives or cross-wires a stale folde
   }
 
   expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
+});
+
+test("closing a second folder at zero and 32ms after its accepted open request remains atomic @webview", async ({
+  appPage: page,
+}) => {
+  test.skip(
+    !process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT,
+    "The interrupted folder opening race requires the connected WebView2 compositor",
+  );
+  test.setTimeout(90_000);
+  await waitForFixture(page);
+  await waitForSettledClose(page);
+  const folders = await waitForVisibleFolders(page);
+  const firstFolder = folders[0];
+  const secondFolder = folders[1];
+  if (!firstFolder || !secondFolder) throw new Error("Two visible folders are required for the interrupted opening race");
+  const firstFolderContentIds = Array.from(await readFolderContentIds(page, firstFolder.id));
+  const firstNonThumbnailId = firstFolderContentIds[9];
+  if (!firstNonThumbnailId) throw new Error("The normal-close alpha regression requires at least ten folder children");
+
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const onPageError = (error: Error) => pageErrors.push(error.stack || error.message);
+  const onConsole = (message: { type(): string; text(): string }) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  };
+  page.on("pageerror", onPageError);
+  page.on("console", onConsole);
+  try {
+    for (const secondRequestToCloseMs of [0, 32] as const) {
+      const samples = await traceFolderAlternation(page, firstFolder, secondFolder, {
+        clickableToOpenMs: 0,
+        firstOpenToCloseMs: 600,
+        secondRequestToCloseMs,
+      });
+      if (secondRequestToCloseMs === 0) {
+        const extraGhostAlphas = samples.flatMap((sample) => {
+          if (sample.visual.overlay?.closingFolderId !== firstFolder.id) return [];
+          const ghost = (sample.visual.overlay?.debug?.closingGhosts || []).find((entry) => (
+            entry.itemId === firstNonThumbnailId
+          ));
+          return typeof ghost?.alpha === "number" ? [ghost.alpha] : [];
+        });
+        const alphaRebounds = extraGhostAlphas.slice(1).filter((alpha, index) => (
+          alpha > (extraGhostAlphas[index] ?? 0) + 0.03
+        ));
+        expect(extraGhostAlphas.length, "the normal close must sample its first non-thumbnail ghost").toBeGreaterThan(1);
+        expect(Math.min(...extraGhostAlphas), "the first non-thumbnail ghost should fade out before handoff").toBeLessThanOrEqual(0.01);
+        expect(alphaRebounds, "retargeting must not reset a fading non-thumbnail ghost to alpha 1").toEqual([]);
+      }
+      const secondClosingSamples = samples.filter((sample) => (
+        sample.folder.closing && [
+          sample.folder.renderedFolderId,
+          sample.visual.overlay?.closingFolderId,
+          sample.visual.overlay?.currentFolderId,
+        ].includes(secondFolder.id)
+      ));
+      expect(
+        secondClosingSamples.length,
+        `the ${secondRequestToCloseMs}ms trace must observe the accepted second-folder close`,
+      ).toBeGreaterThan(0);
+      const firstClosingActorExpansion = findFirstClosingActorExpansion(samples, secondFolder.id);
+      expect(
+        firstClosingActorExpansion,
+        JSON.stringify({ firstClosingActorExpansion, secondRequestToCloseMs }, null, 2),
+      ).toBeNull();
+
+      if (secondRequestToCloseMs === 32) {
+        const titleSamples = secondClosingSamples.flatMap((sample) => sample.title ? [sample.title] : []);
+        const titleOpacityIncreases = titleSamples.slice(1).filter((sample, index) => (
+          sample.opacity > (titleSamples[index]?.opacity ?? 0) + 0.03
+        ));
+        const titleTops = new Set(titleSamples.flatMap((sample) => sample.top == null ? [] : [sample.top]));
+        expect(Math.max(...titleSamples.map((sample) => sample.opacity)), "the interrupted title should start from a visible partial-open pose").toBeGreaterThan(0.05);
+        expect(titleOpacityIncreases, "the interrupted title opacity should close monotonically").toEqual([]);
+        expect(titleTops.size, "the interrupted title should continue following the closing frame").toBeGreaterThan(1);
+      }
+    }
+  } finally {
+    page.off("pageerror", onPageError);
+    page.off("console", onConsole);
+  }
+  expect(pageErrors, "the interrupted opening close should not raise page errors").toEqual([]);
+  expect(consoleErrors, "the interrupted opening close should not log console errors").toEqual([]);
 });

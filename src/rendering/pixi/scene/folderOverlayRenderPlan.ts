@@ -125,7 +125,7 @@ type FolderOpeningGhostPlanInput = Omit<
 
 type FolderClosingGhostPlanInput = Omit<
   ClosingGhostTargetInput,
-  "closeThumbRect" | "iconBounds" | "stableFolderCloseTarget"
+  "closeThumbRect" | "iconBounds" | "interruptedOpeningSource" | "stableFolderCloseTarget"
 >;
 
 export type FolderOverlayRenderEntry = Readonly<{

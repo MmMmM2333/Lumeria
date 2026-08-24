@@ -123,6 +123,7 @@ export type LaunchpadInputDragControls = Pick<
 export type LaunchpadInputGesturesOptions = Readonly<{
   activePageIndex?: Readonly<Ref<number>>;
   activePages?: Readonly<Ref<readonly (readonly unknown[])[]>>;
+  cancelFolderOpening?: () => boolean;
   commitActivePageIndex?: (pageIndex: number) => unknown;
   commitFolderPageIndex?: (pageIndex: number) => unknown;
   commitOpenFolder?: (
@@ -730,7 +731,8 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
 
   function handleFolderOverlayPointerDown(): void {
     cancelInputGesture({ cancelSource: "folder-overlay" });
-    if (!options.dragControls?.isDragActive?.()) options.commitOpenFolder?.(null);
+    if (options.dragControls?.isDragActive?.()) return;
+    if (!options.cancelFolderOpening?.()) options.commitOpenFolder?.(null);
   }
 
   function handleLaunchpadWheel(event: LaunchpadGesturePointerEvent): void {

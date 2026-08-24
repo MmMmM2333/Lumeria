@@ -727,6 +727,14 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     playFolderOpenIconGhosts(next, capturedGhosts);
   }
 
+  function cancelFolderOpeningFromInput(): boolean {
+    return cancelFolderOpeningFlow({ commit: commitOpenFolder });
+  }
+
+  function closeFolderFromInput(): void {
+    if (!cancelFolderOpeningFromInput()) commitOpenFolder(null);
+  }
+
   function discardProvisionalFolder(
     folderId: string,
     discardOptions: Omit<ProvisionalFolderRollbackRequest, "folderId">,
@@ -1759,7 +1767,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
       });
       return output?.handled === true;
     },
-    cancelFolderOpening: () => cancelFolderOpeningFlow({ commit: commitOpenFolder }),
+    cancelFolderOpening: cancelFolderOpeningFromInput,
     closeTopmostModal: closeTopmostModalFromKeyboard,
     clearBatchSelection,
     cancelAltEditMode,
@@ -1818,6 +1826,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
   } = useLaunchpadInputGestures({
     commitActivePageIndex,
     dragControls,
+    cancelFolderOpening: cancelFolderOpeningFromInput,
     commitOpenFolder,
     activePageIndex,
     activePages,
@@ -1831,7 +1840,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     handleSurfaceTap: (target) => {
       if (target?.kind !== "surface") return;
       if (target.action === "closeFolder") {
-        commitOpenFolder(null);
+        closeFolderFromInput();
         return;
       }
       if (target.action === "closeDesktop") {

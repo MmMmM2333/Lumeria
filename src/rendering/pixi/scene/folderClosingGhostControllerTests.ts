@@ -165,9 +165,13 @@ function makeGhost(id = "ghost"): TestGhost {
     removeFromParent() {
       this.parent?.removeChild?.(this);
     },
-    setState(state: FolderGhostIconNodeState) {
+    setState(
+      state: FolderGhostIconNodeState,
+      options: Readonly<{ preserveRootPresentation?: boolean | undefined }> = {},
+    ) {
       this.item = state.item ?? null;
       this.state = state;
+      if (!options.preserveRootPresentation) this.alpha = state.opening ? 0 : 1;
     },
   };
   return ghost;
@@ -383,6 +387,11 @@ function makeState(completed: string[] = []): FolderClosingState {
 }
 
 type TestTargetOverrides = Readonly<{
+  interruptedOpeningSource?: Readonly<{
+    alpha: number;
+    labelAlpha: number;
+    rect: StageRect;
+  }> | undefined;
   isThumbnailChild?: boolean | undefined;
   targetStageLayoutRect?: StageRect | undefined;
 }>;
@@ -396,6 +405,9 @@ function makeTarget(
     controllerGhostKey: `controller-${id}`,
     iconSize: 64,
     index,
+    ...(overrides.interruptedOpeningSource === undefined
+      ? {}
+      : { interruptedOpeningSource: overrides.interruptedOpeningSource }),
     item: { id, type: "app" },
     pageIndex: 0,
     sourceRect: { height: 32, left: 10, top: 20, width: 32 },
@@ -662,9 +674,43 @@ export function runFolderClosingGhostControllerTests() {
 
   {
     const harness = makeHarness();
+    const openingLease = harness.session.open({ folderId: "folder-1", targetKey: "target-a" });
+    const previewSourceRect = { height: 12, left: 42, top: 54, width: 12 };
+    const syntheticSourceRect = { height: 8, left: 60, top: 72, width: 8 };
+    presentClose(harness, [
+      makeTarget("app-1", 0, {
+        interruptedOpeningSource: {
+          alpha: 1,
+          labelAlpha: 0,
+          rect: previewSourceRect,
+        },
+        isThumbnailChild: true,
+      }),
+      makeTarget("app-2", 1, {
+        interruptedOpeningSource: {
+          alpha: 0,
+          labelAlpha: 0,
+          rect: syntheticSourceRect,
+        },
+        isThumbnailChild: false,
+      }),
+    ], makeState());
+
+    const [previewGhost, syntheticGhost] = harness.layer.closingGhostLayer.children;
+    assert(previewGhost?.position.x === 48, "an unpresented opening close should start its preview ghost at the captured desktop preview center");
+    assert(previewGhost?.scale.x === previewSourceRect.width / 64, "an unpresented opening close should preserve the captured desktop preview scale");
+    assert(previewGhost?.alpha === 1 && previewGhost.labelText?.alpha === 0, "an interrupted preview child should preserve its pre-opening visibility");
+    assert(syntheticGhost?.alpha === 0 && syntheticGhost.labelText?.alpha === 0, "an interrupted synthetic opening child should remain hidden at close startup");
+    assert(!openingLease.isCurrent(), "closing an unpresented opening lease should retire it after installing fallback poses");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeHarness();
     const lease = presentClose(harness, [makeTarget()]);
     const ghost = harness.layer.closingGhostLayer.children[0];
     assert(ghost, "retarget should preserve an installed closing ghost");
+    ghost.alpha = 0.4;
     const originalControl = harness.controller.activeGhostsByItemId.get("app-1")?.motionControl;
     lease.present({
       folderRect: { height: 80, left: 30, top: 40, width: 80 },
@@ -682,6 +728,7 @@ export function runFolderClosingGhostControllerTests() {
 
     const currentControl = harness.controller.activeGhostsByItemId.get("app-1")?.motionControl;
     assert(harness.layer.closingGhostLayer.children.length === 1 && harness.layer.closingGhostLayer.children[0] === ghost, "retarget should preserve the existing ghost object");
+    assert(ghost.alpha === 0.4, "retarget should preserve the closing motion owner's physical alpha");
     assert(originalControl?.released === true && currentControl !== originalControl, "retarget should release the old motion owner before binding a new one");
     assert(harness.calls.some((call) => hasCallType(call, "retarget-frame")), "retarget should update the active frame instead of creating a second frame");
     assert(lease.snapshot().handoffRect?.left === 44, "retarget geometry should replace the lease-owned handoff metadata");
@@ -714,7 +761,8 @@ export function runFolderClosingGhostControllerTests() {
         makeTarget("app-2", 1),
       ], makeState(completed));
       assert(lease.snapshot().ghostIds.length === 0, "synchronous reduced-motion completion should settle every registered ghost");
-  assert(harness.controller.snapshot().motionControlCount === 0, "synchronous completion must not leave stale controller motion controls");
+      assert(harness.layer.closingGhostLayer.children.length === 0, "completed non-thumbnail ghosts should leave the closing scene layer immediately");
+      assert(harness.controller.snapshot().motionControlCount === 0, "synchronous completion must not leave stale controller motion controls");
       assert(lease.snapshot().completedControllerKeys.join(",") === "controller-app-1,controller-app-2", "Session should retain the controller completion set independent of callback timing");
       runFrameArrive(harness.layer);
       harness.timerHost.runAllFrames();

@@ -4465,6 +4465,7 @@
         "ClosingPreviewSwapTarget",
         "FolderGhost",
         "FolderGhostTarget",
+        "FolderInterruptedOpeningSource",
         "FolderOverlayItem",
         "FolderOverlayRect",
         "FolderTargetCoordinateSpace",
@@ -4853,13 +4854,11 @@
       "types": [
         "SingleStageFolderNameInputStyle",
         "SingleStageFolderNameInputStyleOptions",
-        "SingleStageFolderTitleFrame",
-        "SingleStageFolderTitleOptions"
+        "SingleStageFolderTitleFrame"
       ],
       "values": [
         "SINGLE_STAGE_FOLDER_NAME_INPUT_WIDTH",
         "getSingleStageFolderTitleOpacity",
-        "getSingleStageFolderTitleOpenOpacity",
         "isSingleStageFolderTitleFrameCurrent",
         "makeSingleStageFolderNameInputStyle"
       ]

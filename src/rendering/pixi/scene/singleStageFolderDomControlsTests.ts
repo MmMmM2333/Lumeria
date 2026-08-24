@@ -1,5 +1,4 @@
 import {
-  getSingleStageFolderTitleOpenOpacity,
   getSingleStageFolderTitleOpacity,
   isSingleStageFolderTitleFrameCurrent,
   makeSingleStageFolderNameInputStyle,
@@ -17,31 +16,55 @@ export function runSingleStageFolderDomControlsTests() {
   const hiddenInput = makeSingleStageFolderNameInputStyle({ controlsVisible: false, frame });
   assert(hiddenInput.opacity === 0 && hiddenInput.pointerEvents === "none", "hidden controls should disable the name input");
 
-  const openingOpacity = getSingleStageFolderTitleOpenOpacity({ progress: 0.32 });
-  assert(nearlyEqual(openingOpacity, 0.5), "opening title opacity should ramp from the panel progress");
+  const openingOpacity = getSingleStageFolderTitleOpacity(0.32);
+  assert(nearlyEqual(openingOpacity, 0.32), "opening title opacity should follow the folder visibility progress");
 
-  const openingInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame: { ...frame, progress: 0.32 } });
+  const openingInput = makeSingleStageFolderNameInputStyle({
+    controlsVisible: true,
+    folderVisibilityProgress: 0.32,
+    frame: { ...frame, progress: 0.8 },
+  });
   assert(openingInput.left === "400px", "name input should stay centered over the panel frame");
   assert(openingInput.top === "216px", "name input should sit above the panel frame");
-  assert(nearlyEqual(openingInput.opacity, 0.5), "name input opacity should follow the title progress");
+  assert(nearlyEqual(openingInput.opacity, 0.32), "name input opacity should not depend on the geometry progress");
   assert(openingInput.pointerEvents === "none", "partially visible input should not receive pointer events");
   assert(openingInput.filter === "blur(2px)", "partially visible input should use the blur transition");
 
-  const readyInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame });
+  const readyInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, folderVisibilityProgress: 1, frame });
   assert(readyInput.opacity === 1, "fully open input should be opaque");
   assert(readyInput.pointerEvents === "auto", "fully open input should receive pointer events");
   assert(readyInput.filter === "blur(0px)", "fully open input should clear the blur");
 
-  const disabledInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame, isInputDisabled: true });
+  const disabledInput = makeSingleStageFolderNameInputStyle({
+    controlsVisible: true,
+    folderVisibilityProgress: 1,
+    frame,
+    isInputDisabled: true,
+  });
   assert(disabledInput.pointerEvents === "none", "disabled input should not receive pointer events");
 
-  const closingOpacity = getSingleStageFolderTitleOpacity({ progress: 0.14 }, { isClosing: true });
-  assert(closingOpacity === 0, "closing title should expose one stable CSS transition target");
+  const closingOpacity = getSingleStageFolderTitleOpacity(0.14);
+  assert(nearlyEqual(closingOpacity, 0.14), "closing title should keep following the folder visibility progress");
 
-  const closingInput = makeSingleStageFolderNameInputStyle({ controlsVisible: true, frame, isClosing: true });
+  const closingInput = makeSingleStageFolderNameInputStyle({
+    controlsVisible: true,
+    folderVisibilityProgress: 0.14,
+    frame,
+  });
   assert(
-    closingInput.opacity === 0 && closingInput.pointerEvents === "none",
-    "closing input should transition toward hidden without remaining interactive",
+    nearlyEqual(closingInput.opacity, 0.14) && closingInput.pointerEvents === "none",
+    "closing input should expose the in-flight opacity without remaining interactive",
+  );
+
+  const interruptedOpeningOpacities = [0.62, 0.4, 0.18, 0].map((folderVisibilityProgress) => (
+    makeSingleStageFolderNameInputStyle({ controlsVisible: true, folderVisibilityProgress, frame }).opacity
+  ));
+  assert(
+    interruptedOpeningOpacities.every((opacity, index) => (
+      nearlyEqual(opacity, [0.62, 0.4, 0.18, 0][index]!) &&
+      (index === 0 || opacity <= interruptedOpeningOpacities[index - 1]!)
+    )),
+    "interrupted opening should reverse the same title progress monotonically instead of snapping to a CSS target",
   );
 
 }

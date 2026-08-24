@@ -11,12 +11,9 @@ export interface SingleStageFolderTitleFrame {
   width: number;
 }
 
-export interface SingleStageFolderTitleOptions {
-  isClosing?: boolean;
-}
-
-export interface SingleStageFolderNameInputStyleOptions extends SingleStageFolderTitleOptions {
+export interface SingleStageFolderNameInputStyleOptions {
   controlsVisible?: boolean;
+  folderVisibilityProgress?: unknown;
   frame?: SingleStageFolderTitleFrame | null;
   isInputDisabled?: boolean;
   width?: number;
@@ -44,18 +41,10 @@ function clamp01(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
 
-export function getSingleStageFolderTitleOpenOpacity(
-  frame: Readonly<{ progress?: unknown }> | null | undefined,
-): number {
-  const progress = clamp01(frame?.progress ?? 1);
-  return clamp01((progress - 0.18) / 0.28);
-}
-
 export function getSingleStageFolderTitleOpacity(
-  frame: Readonly<{ progress?: unknown }> | null | undefined,
-  options: SingleStageFolderTitleOptions = {},
+  folderVisibilityProgress: unknown,
 ): number {
-  return options.isClosing ? 0 : getSingleStageFolderTitleOpenOpacity(frame);
+  return clamp01(folderVisibilityProgress);
 }
 
 export function makeSingleStageFolderNameInputStyle(
@@ -63,13 +52,13 @@ export function makeSingleStageFolderNameInputStyle(
 ): SingleStageFolderNameInputStyle {
   const {
     controlsVisible = false,
+    folderVisibilityProgress = 0,
     frame = null,
-    isClosing = false,
     isInputDisabled = false,
     width = SINGLE_STAGE_FOLDER_NAME_INPUT_WIDTH,
   } = options;
   if (!controlsVisible || !frame) return { opacity: 0, pointerEvents: "none" };
-  const opacity = getSingleStageFolderTitleOpacity(frame, { isClosing });
+  const opacity = getSingleStageFolderTitleOpacity(folderVisibilityProgress);
   const isInteractive = opacity >= 0.99 && !isInputDisabled;
   return {
     left: `${frame.left + frame.width / 2 - width / 2}px`,
