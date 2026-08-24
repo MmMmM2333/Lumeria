@@ -13,6 +13,11 @@ type DeepReadonly<T> = T extends (...args: never[]) => unknown
 
 type FunctionValue = (...args: never[]) => unknown;
 
+type LaunchpadE2ERenderTarget = {
+  canvas: HTMLCanvasElement;
+  render: (...args: unknown[]) => unknown;
+};
+
 type LaunchpadE2EDragState = Readonly<{
   folderTransit?: Readonly<{ folderId?: string | null }> | null;
   outcome?: string | null;
@@ -52,11 +57,13 @@ export type LaunchpadE2ESnapshotState = Readonly<{
 
 export type LaunchpadE2EProbeOptions = Readonly<{
   getIconBounds: (id: string) => IconBoundsRect | null;
+  getRenderTarget: () => unknown;
   getSnapshotState: () => LaunchpadE2ESnapshotState;
 }>;
 
 type LaunchpadE2EProbe = Readonly<{
   getIconBounds: (id: unknown) => Readonly<IconBoundsRect>;
+  getRenderTarget: () => LaunchpadE2ERenderTarget;
   snapshot: () => Readonly<Record<string, unknown>>;
   version: 1;
 }>;
@@ -89,6 +96,18 @@ function cloneBounds(bounds: IconBoundsRect | null, id: string): Readonly<IconBo
     top,
     width,
   });
+}
+
+function requireRenderTarget(value: unknown): LaunchpadE2ERenderTarget {
+  if (!value || typeof value !== "object") {
+    throw new Error("Launchpad E2E render target is unavailable");
+  }
+  const canvas = Reflect.get(value, "canvas");
+  const render = Reflect.get(value, "render");
+  if (!(canvas instanceof HTMLCanvasElement) || typeof render !== "function") {
+    throw new Error("Launchpad E2E render target is invalid");
+  }
+  return value as LaunchpadE2ERenderTarget;
 }
 
 function deepFreeze<T>(value: T, seen = new Set<object>()): DeepReadonly<T> {
@@ -174,6 +193,7 @@ export function installLaunchpadE2eProbe(
     throw new Error("Launchpad E2E probe requires a browser window");
   }
   const getIconBounds = requireFunction(options.getIconBounds, "Launchpad E2E getIconBounds");
+  const getRenderTarget = requireFunction(options.getRenderTarget, "Launchpad E2E getRenderTarget");
   const getSnapshotState = requireFunction(
     options.getSnapshotState,
     "Launchpad E2E getSnapshotState",
@@ -186,6 +206,9 @@ export function installLaunchpadE2eProbe(
       const iconId = String(id || "").trim();
       if (!iconId) throw new TypeError("Launchpad E2E icon id must be non-empty");
       return cloneBounds(getIconBounds(iconId), iconId);
+    },
+    getRenderTarget() {
+      return requireRenderTarget(getRenderTarget());
     },
     snapshot() {
       return makeSnapshot(getSnapshotState());

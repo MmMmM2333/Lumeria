@@ -5051,6 +5051,10 @@
       "types": [],
       "values": []
     },
+    "tests/browser/launchpad-folder-alternation-race.spec.ts": {
+      "types": [],
+      "values": []
+    },
     "tests/browser/launchpad-multi-select-management.spec.ts": {
       "types": [],
       "values": []
@@ -7534,9 +7538,11 @@
     ],
     "src/testing/launchpadE2eProbe.ts": [
       "src/App.vue",
+      "tests/browser/launchpad-folder-alternation-race.spec.ts",
       "tests/browser/launchpad-provisional-folder-mouse.spec.ts"
     ],
     "tests/browser/fixtures/launchpadMouseTest.ts": [
+      "tests/browser/launchpad-folder-alternation-race.spec.ts",
       "tests/browser/launchpad-provisional-folder-mouse.spec.ts"
     ],
     "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts": [
@@ -7544,6 +7550,7 @@
     ],
     "tests/browser/i18n-search-placeholder.spec.ts": [],
     "tests/browser/icon-context-menu-edit.spec.ts": [],
+    "tests/browser/launchpad-folder-alternation-race.spec.ts": [],
     "tests/browser/launchpad-group-release.spec.ts": [],
     "tests/browser/launchpad-multi-select-management.spec.ts": [],
     "tests/browser/launchpad-provisional-folder-mouse.spec.ts": [],
@@ -8022,6 +8029,7 @@
     "tests/browser/fixtures/pixi-drag-preview-mask-batch.fixture.ts",
     "tests/browser/i18n-search-placeholder.spec.ts",
     "tests/browser/icon-context-menu-edit.spec.ts",
+    "tests/browser/launchpad-folder-alternation-race.spec.ts",
     "tests/browser/launchpad-group-release.spec.ts",
     "tests/browser/launchpad-multi-select-management.spec.ts",
     "tests/browser/launchpad-provisional-folder-mouse.spec.ts",

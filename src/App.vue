@@ -454,6 +454,7 @@ if (import.meta.env.DEV) {
     if (launchpadE2eProbeDisposed || !isMultiSelectFixture) return;
     disposeLaunchpadE2eProbe = installLaunchpadE2eProbe({
       getIconBounds: getLaunchpadE2eIconBounds,
+      getRenderTarget: () => pixiDesktopSurfaceRef.value?.getLaunchpadE2eRenderTarget?.(),
       getSnapshotState: () => ({
         authoritativePages: chrome.activePages.value,
         drag: groupDragState.value,

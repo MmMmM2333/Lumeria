@@ -1505,6 +1505,10 @@ watchEffect(() => {
 onBeforeUnmount(destroyPixi);
 
 defineExpose(import.meta.env.DEV ? {
+  getLaunchpadE2eRenderTarget() {
+    if (!app) throw new Error("Launchpad E2E render target is unavailable");
+    return app;
+  },
   getLaunchpadE2eVisualSnapshot() {
     const folderCreateTargets = [];
     for (const node of layer?.iconNodes?.values?.() || []) {

@@ -35,6 +35,9 @@ function createFrameClock() {
     now() {
       return currentTime;
     },
+    setNow(timestamp: number) {
+      currentTime = timestamp;
+    },
     peekNextCallback() {
       const callback = callbacks.values().next().value as FrameCallback | undefined;
       assert(callback, "a frame callback should be pending");
@@ -130,6 +133,51 @@ export function runDesktopPresentationLoopTests() {
     clock.runNext(16);
     assert(motionSteps === 1, "pre-existing motion work should advance exactly once");
     assert(clock.getPendingCount() === 0, "the presentation loop should return to idle after pre-existing motion settles");
+    loop.dispose();
+  }
+
+  {
+    const clock = createFrameClock();
+    const existingMotionDeltas: number[] = [];
+    const closingMotionDeltas: number[] = [];
+    let closingMotionCreated = false;
+    const loop = createDesktopPresentationLoop({
+      canPresent: () => true,
+      commit: (frame) => {
+        if (frame.mode === "before-composite") closingMotionCreated = true;
+      },
+      frameClock: clock,
+      motionRuntime: createMotionRuntime({
+        active: () => true,
+        onStep: (deltaSeconds) => {
+          existingMotionDeltas.push(deltaSeconds);
+          if (closingMotionCreated) closingMotionDeltas.push(deltaSeconds);
+        },
+      }),
+      onResizeSettleFrame: () => {},
+      shouldRunHandoffFrame: () => false,
+    });
+
+    clock.runNext(100);
+    clock.runNext(116);
+    clock.setNow(131);
+    assert(
+      loop.flushBeforeComposite({ reason: "folder-close-commit" }),
+      "a mid-frame folder close should commit immediately",
+    );
+    assert(
+      Math.abs((existingMotionDeltas.at(-1) ?? -1) - 0.015) < 0.000001,
+      "the urgent commit should first advance motions that already existed since the previous RAF",
+    );
+    assert(
+      closingMotionDeltas.length === 0,
+      "the closing motion created by the urgent commit must not consume pre-commit time",
+    );
+    clock.runNext(132);
+    assert(
+      Math.abs((closingMotionDeltas.at(-1) ?? -1) - 0.001) < 0.000001,
+      "the first motion step after a mid-frame close must start at the urgent commit, not the previous RAF",
+    );
     loop.dispose();
   }
 
@@ -378,7 +426,7 @@ export function runDesktopPresentationLoopTests() {
     assert(commits.length === 1, "the urgent flush should commit exactly once");
     assert(commits[0]?.mode === "before-composite", "the urgent commit should identify its presentation mode");
     assert(commits[0]?.deltaSeconds === 0, "the urgent commit should not advance the motion time base");
-    assert(motionSteps === 0, "the urgent commit should never step motion");
+    assert(motionSteps === 0, "an urgent commit without a prior RAF baseline should not step motion");
     assert(commits[0]?.reasons.includes("desktop-update"), "urgent commit should consume already pending work");
     assert(commits[0]?.reasons.includes("folder-close-commit"), "urgent commit should include its closed reason");
     assert(nestedFlushRejected, "nested urgent commits should fail explicitly");

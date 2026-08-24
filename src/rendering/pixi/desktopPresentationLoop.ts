@@ -260,7 +260,28 @@ export function createDesktopPresentationLoop(
     if (disposed || !options.canPresent()) return false;
 
     invalidations.mark(request.reason);
-    const committed = commitPendingPresentation("before-composite", options.frameClock.now(), 0, 0);
+    const commitTime = options.frameClock.now();
+    const frameIntervalMs = lastFrameTime === null
+      ? 0
+      : Math.max(0, commitTime - lastFrameTime);
+    const deltaSeconds = frameIntervalMs / 1000;
+    // Bring motions that already existed at the previous RAF up to the urgent
+    // commit boundary before the structural commit creates the closing motion.
+    // The next RAF can then advance every motion from this same boundary without
+    // either skipping existing time or charging the new motion for old time.
+    let committed = false;
+    runningFrame = true;
+    try {
+      const hasFrameBaseline = lastFrameTime !== null;
+      lastFrameTime = commitTime;
+      if (hasFrameBaseline && deltaSeconds > 0) options.motionRuntime.step(deltaSeconds);
+      committed = commitPendingPresentation("before-composite", commitTime, 0, 0);
+    } catch (error) {
+      lastFrameTime = null;
+      throw error;
+    } finally {
+      runningFrame = false;
+    }
     if (shouldSchedule()) {
       scheduleIfNeeded();
     } else {

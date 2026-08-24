@@ -3914,6 +3914,26 @@ export class FolderOverlayLayer extends Container {
   }
 
   getVisualDebugSnapshot() {
+    const readDisplay = (node: Container | null | undefined) => {
+      const hasTransform = Boolean(node?.scale);
+      return {
+        alpha: roundDebugValue(node?.alpha),
+        childCount: node?.children?.length ?? null,
+        destroyed: node?.destroyed ?? null,
+        height: roundDebugValue(hasTransform ? node?.height : null),
+        itemId: (node as FolderGhostNode | null | undefined)?.item?.id || null,
+        renderable: node?.renderable ?? null,
+        scaleX: roundDebugValue(node?.scale?.x),
+        scaleY: roundDebugValue(node?.scale?.y),
+        visible: node?.visible ?? null,
+        width: roundDebugValue(hasTransform ? node?.width : null),
+        x: roundDebugValue(hasTransform ? node?.x : null),
+        y: roundDebugValue(hasTransform ? node?.y : null),
+      };
+    };
+    const readChildren = (container: Container | null | undefined) => (
+      Array.from(container?.children || []).map((child) => readDisplay(child as Container))
+    );
     const folderIconNodes = Array.from(this.iconNodes || []).map(([key, node]) => ({
       alpha: roundDebugValue(node?.alpha),
       id: node?.item?.id || null,
@@ -3925,6 +3945,7 @@ export class FolderOverlayLayer extends Container {
       y: roundDebugValue(node?.y),
     }));
     return {
+      closingGhosts: readChildren(this.closingGhostLayer),
       closingMirror: {
         baselineFolderId: this.closingDesktopPageTrackMirrorBaseline?.folderId || null,
         baselineLiveX: this.closingDesktopPageTrackMirrorBaseline
@@ -3946,11 +3967,32 @@ export class FolderOverlayLayer extends Container {
         pageTurnVisualSettle: this.pageTurnVisualSettle ? { ...this.pageTurnVisualSettle } : null,
         resizeLayoutSync: this.resizeLayoutSync ? { ...this.resizeLayoutSync } : null,
       },
+      frameGhost: {
+        display: readDisplay(this.frameGhost as unknown as Container),
+        folderId: this.frameGhostFolderId || null,
+        phase: this.frameGhostPhase || null,
+        presentation: cloneFramePresentation(this.frameGhostState),
+      },
+      layerDisplay: readDisplay(this),
+      openingGhosts: readChildren(this.openingGhostLayer),
       openingGeometry: makeOpeningGeometryDebugSnapshot(
         this.folderVisualSession.snapshot().opening,
         this.currentOpeningGeometrySnapshot || null,
         this.panel
       ),
+      panelDisplay: readDisplay(this.panel),
+      previewSwapGhosts: readChildren(this.closingPreviewSwapLayer),
+      detachedClosingVisuals: (this.detachedClosingVisuals || []).map((visual) => ({
+        children: readChildren(visual.container),
+        clearing: visual.clearing === true,
+        container: readDisplay(visual.container),
+        destroyed: visual.destroyed === true,
+        finishQueued: visual.finishQueued === true,
+        folderId: visual.folderId || null,
+        geometryComplete: visual.geometryComplete === true,
+        handoffCommitted: visual.handoffCommitted === true,
+        handoffReleased: visual.handoffReleased === true,
+      })),
     };
   }
 
