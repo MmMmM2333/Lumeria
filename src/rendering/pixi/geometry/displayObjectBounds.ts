@@ -1,6 +1,6 @@
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
-import { stageLayoutRectToClientRect } from "./stageCoordinates.js";
-import type { StagePoint, StageRect, StageVisualRect } from "./stageCoordinates.js";
+import { getStageScale, stageLayoutRectToClientRect } from "./stageCoordinates.js";
+import type { StageOrigin, StagePoint, StageRect, StageVisualRect } from "./stageCoordinates.js";
 
 interface TransformMatrixLike {
   apply(point: StagePoint): StagePoint;
@@ -11,12 +11,24 @@ interface DisplayObjectTransformSource {
   getGlobalTransform?: () => TransformMatrixLike | null;
 }
 
+interface DisplayObjectLocalTarget {
+  toLocal(point: StagePoint): StagePoint;
+}
+
 export interface MapDisplayObjectLocalRectOptions {
   allowGlobalFallback?: boolean;
   node?: DisplayObjectTransformSource | null;
   rect?: StageRect | null;
   stageHeight?: number;
   stageRect?: StageRect | null;
+  stageWidth?: number;
+}
+
+export interface MapClientRectToDisplayObjectLocalRectOptions {
+  node?: DisplayObjectLocalTarget | null;
+  rect?: StageRect | null;
+  stageHeight?: number;
+  stageRect?: StageOrigin | null;
   stageWidth?: number;
 }
 
@@ -60,6 +72,46 @@ export function getTransformedLocalRectBounds(
   const top = Math.min(...points.map((point) => safeNumber(point?.y)));
   const right = Math.max(...points.map((point) => safeNumber(point?.x)));
   const bottom = Math.max(...points.map((point) => safeNumber(point?.y)));
+  return {
+    height: bottom - top,
+    left,
+    top,
+    width: right - left,
+  };
+}
+
+export function mapClientRectToDisplayObjectLocalRect(
+  options: MapClientRectToDisplayObjectLocalRectOptions = {},
+): StageRect | null {
+  const {
+    node = null,
+    rect = null,
+    stageHeight = 1,
+    stageRect = null,
+    stageWidth = 1,
+  } = options;
+  if (!node?.toLocal || !rect) return null;
+  const source = normalizeRect(rect);
+  const { scaleX, scaleY } = getStageScale(stageRect, stageWidth, stageHeight);
+  const inverseScaleX = 1 / Math.max(0.000001, scaleX);
+  const inverseScaleY = 1 / Math.max(0.000001, scaleY);
+  const stageLeft = safeNumber(stageRect?.left);
+  const stageTop = safeNumber(stageRect?.top);
+  const toStagePoint = (x: number, y: number): StagePoint => ({
+    x: (x - stageLeft) * inverseScaleX,
+    y: (y - stageTop) * inverseScaleY,
+  });
+  const points = [
+    node.toLocal(toStagePoint(source.left, source.top)),
+    node.toLocal(toStagePoint(source.left + source.width, source.top)),
+    node.toLocal(toStagePoint(source.left, source.top + source.height)),
+    node.toLocal(toStagePoint(source.left + source.width, source.top + source.height)),
+  ];
+  if (!points.every((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y))) return null;
+  const left = Math.min(...points.map((point) => point.x));
+  const top = Math.min(...points.map((point) => point.y));
+  const right = Math.max(...points.map((point) => point.x));
+  const bottom = Math.max(...points.map((point) => point.y));
   return {
     height: bottom - top,
     left,

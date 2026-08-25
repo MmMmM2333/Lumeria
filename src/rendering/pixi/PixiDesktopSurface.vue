@@ -603,6 +603,11 @@ function createSingleStageFolderState(
         : []
     )
     : source.folderPages?.value;
+  const activeDesktopPage = viewportFrame.value.activePages?.[viewportFrame.value.activePageIndex] || [];
+  const desktopVisibleCount = activeDesktopPage.reduce(
+    (count, item) => count + (item ? 1 : 0),
+    0,
+  );
   return createFolderLayerState({
     callbacks: {
       acceptFolderOpenIconGhostSession: source.acceptFolderOpenIconGhostSession,
@@ -648,7 +653,14 @@ function createSingleStageFolderState(
     geometry: {
       canvasStageRect: metrics.rect,
       desktopFrame: renderGeometry.desktopFrame,
+      desktopGrid: {
+        cols: viewportFrame.value.gridCols,
+        isSearchMode: interactionFrame.value.isSearchMode,
+        rows: viewportFrame.value.gridRows,
+        visibleCount: desktopVisibleCount,
+      },
       desktopStageRect: renderGeometry.desktopStageRect,
+      deviceResolution: app?.renderer?.resolution || 1,
       singleStageDiagnostics: diagnosticsOptions.diagnostics === true,
     },
     stage: { rect: renderGeometry.stageRect },

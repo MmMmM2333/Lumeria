@@ -36,13 +36,7 @@ export interface FolderOverlayTargetFolder {
   id?: string | null;
 }
 
-interface DesktopPageTrackOffset {
-  liveX?: number | null;
-  targetX?: number | null;
-}
-
 interface ResolveFolderOverlayTargetsOptions {
-  desktopPageTrackOffset?: DesktopPageTrackOffset | null | undefined;
   folder?: FolderOverlayTargetFolder | null | undefined;
   folderOpeningOriginBounds?: CapturedFolderOriginBounds | null | undefined;
   folderPageSize?: number | undefined;
@@ -56,6 +50,12 @@ export interface ResolvedFolderOverlayTargets {
   capturedOriginBounds: CapturedFolderOriginBounds | null;
   closeTargetSource: string | null;
   coordinateSpace: typeof STAGE_COORDINATE_SPACES.CLIENT_VISUAL;
+  desktopIconSize: number | null;
+  desktopSlot: Readonly<{
+    area: string | null;
+    index: number;
+    pageIndex: number;
+  }> | null;
   folderClientRect: FolderOverlayRect | null;
   folderId: string | null;
   folderThumbClientRect: FolderOverlayRect | null;
@@ -67,10 +67,14 @@ export interface ResolvedFolderOverlayTargets {
   stableFolderCloseTarget: StableFolderCloseTarget | null;
 }
 
-interface LiveCloseTargetTrackingOptions {
-  desktopPageTrackOffset?: DesktopPageTrackOffset | null;
+interface RenderedCloseTargetTrackingOptions {
   folderId?: string | null;
   iconRect?: FolderOverlayRect | null;
+  previewChildRects?: readonly Readonly<{
+    childId: string;
+    rect: FolderOverlayRect | null;
+    slotIndex: number;
+  }>[];
   thumbRect?: FolderOverlayRect | null;
 }
 
@@ -101,26 +105,20 @@ function rectTrackingKey(rect: FolderOverlayRect | null | undefined): string {
   }).join(",");
 }
 
-function makeLiveCloseTargetTrackingKey(options: LiveCloseTargetTrackingOptions = {}): string {
+function makeRenderedCloseTargetTrackingKey(options: RenderedCloseTargetTrackingOptions = {}): string {
   const {
-    desktopPageTrackOffset = null,
     folderId = null,
     iconRect = null,
+    previewChildRects = [],
     thumbRect = null,
   } = options;
-  const liveX = Number.isFinite(Number(desktopPageTrackOffset?.liveX))
-    ? Math.round(Number(desktopPageTrackOffset?.liveX) * 1000) / 1000
-    : "null";
-  const targetX = Number.isFinite(Number(desktopPageTrackOffset?.targetX))
-    ? Math.round(Number(desktopPageTrackOffset?.targetX) * 1000) / 1000
-    : "null";
   return [
-    "live-close-target",
+    "rendered-close-target",
     folderId || "",
-    `liveX:${liveX}`,
-    `targetX:${targetX}`,
     `icon:${rectTrackingKey(iconRect)}`,
     `thumb:${rectTrackingKey(thumbRect)}`,
+    ...previewChildRects.map(({ childId, rect, slotIndex }) =>
+      `child:${childId}:${slotIndex}:${rectTrackingKey(rect)}`),
   ].join("|");
 }
 
@@ -128,7 +126,6 @@ export function resolveFolderOverlayTargets(
   options: ResolveFolderOverlayTargetsOptions = {}
 ): ResolvedFolderOverlayTargets {
   const {
-    desktopPageTrackOffset = null,
     folder,
     folderOpeningOriginBounds = null,
     folderPageSize,
@@ -144,6 +141,8 @@ export function resolveFolderOverlayTargets(
       capturedOriginBounds: null,
       closeTargetSource: null,
       coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+      desktopIconSize: null,
+      desktopSlot: null,
       folderClientRect: null,
       folderId: null,
       folderThumbClientRect: null,
@@ -157,10 +156,11 @@ export function resolveFolderOverlayTargets(
   const capturedOriginBounds = folderOpeningOriginBounds?.folderId === folderId
     ? folderOpeningOriginBounds
     : null;
-  const liveFolderClientRect = iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.RENDERED, folderId, {
+  const liveFolderRecord = iconBoundsRegistry.getRecord(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.RENDERED, folderId, {
     owner: "FolderOverlayLayer.open.folderRect",
     warnIfMissing: true,
   });
+  const liveFolderClientRect = liveFolderRecord;
   const liveFolderThumbClientRect = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId) || liveFolderClientRect;
   const shouldUseLiveOpeningBounds = Boolean(capturedOriginBounds && liveFolderClientRect);
   const folderClientRect = shouldUseLiveOpeningBounds
@@ -171,41 +171,73 @@ export function resolveFolderOverlayTargets(
     : capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
   const stableFolderStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
   const stableFolderThumbStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
-  const liveFolderTargetRect = isClosing
-    ? iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.LIVE_TARGET, folderId)
+  const renderedFolderTargetRect = isClosing ? liveFolderClientRect : null;
+  const renderedFolderThumbTargetRect = isClosing
+    ? liveFolderThumbClientRect || renderedFolderTargetRect
     : null;
-  const liveFolderThumbTargetRect = isClosing
-    ? iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.LIVE_TARGET, folderId) || liveFolderTargetRect
-    : null;
-  const liveCloseTrackingKey = liveFolderTargetRect
-    ? makeLiveCloseTargetTrackingKey({
-      desktopPageTrackOffset,
+  const renderedPreviewChildRects = isClosing
+    ? previewSlots.flatMap((item, slotIndex) => item?.id
+      ? [{
+        childId: item.id,
+        rect: iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, {
+          childId: item.id,
+          folderId,
+          slotIndex,
+        }),
+        slotIndex,
+      }]
+      : [])
+    : [];
+  const renderedCloseTrackingKey = renderedFolderTargetRect
+    ? makeRenderedCloseTargetTrackingKey({
       folderId,
-      iconRect: liveFolderTargetRect,
-      thumbRect: liveFolderThumbTargetRect,
+      iconRect: renderedFolderTargetRect,
+      previewChildRects: renderedPreviewChildRects,
+      thumbRect: renderedFolderThumbTargetRect,
     })
     : null;
-  const shouldUseLiveCloseTarget = Boolean(isClosing && liveFolderTargetRect);
-  const shouldRefreshLiveCloseTarget = Boolean(
-    shouldUseLiveCloseTarget &&
+  const shouldUseRenderedCloseTarget = Boolean(isClosing && renderedFolderTargetRect);
+  const shouldRefreshRenderedCloseTarget = Boolean(
+    shouldUseRenderedCloseTarget &&
     (!previousStableFolderCloseTarget ||
       previousStableFolderCloseTarget.folderId !== folderId ||
       previousStableFolderCloseTarget.coordinateSpace !== STAGE_COORDINATE_SPACES.CLIENT_VISUAL ||
-      previousStableFolderCloseTarget.trackingKey !== liveCloseTrackingKey)
+      previousStableFolderCloseTarget.trackingKey !== renderedCloseTrackingKey)
   );
   const shouldRefreshStableCloseTarget = Boolean(
-    !shouldUseLiveCloseTarget &&
+    !shouldUseRenderedCloseTarget &&
     stableFolderStageLayoutRecord &&
     (!previousStableFolderCloseTarget ||
       previousStableFolderCloseTarget.folderId !== folderId ||
       previousStableFolderCloseTarget.coordinateSpace !== STAGE_COORDINATE_SPACES.STAGE_LAYOUT ||
       (isClosing && !wasClosing))
   );
-  if (!shouldRefreshLiveCloseTarget && !shouldRefreshStableCloseTarget) {
+  const slotRecord = liveFolderRecord || stableFolderStageLayoutRecord;
+  const slotVisualSpec = slotRecord?.meta && typeof slotRecord.meta === "object"
+    ? Reflect.get(slotRecord.meta, "visualSpec")
+    : null;
+  const slotIconSize = slotVisualSpec && typeof slotVisualSpec === "object"
+    ? Number(Reflect.get(slotVisualSpec, "iconSize"))
+    : Number.NaN;
+  const desktopIconSize = Number.isFinite(slotIconSize) && slotIconSize > 0
+    ? slotIconSize
+    : null;
+  const slotIndex = Number(slotRecord?.meta?.index);
+  const slotPageIndex = Number(slotRecord?.meta?.pageIndex);
+  const desktopSlot = Number.isFinite(slotIndex)
+    ? {
+      area: slotRecord?.meta?.area || null,
+      index: Math.max(0, Math.trunc(slotIndex)),
+      pageIndex: Number.isFinite(slotPageIndex) ? Math.max(0, Math.trunc(slotPageIndex)) : 0,
+    }
+    : null;
+  if (!shouldRefreshRenderedCloseTarget && !shouldRefreshStableCloseTarget) {
     return {
       capturedOriginBounds,
       closeTargetSource: previousStableFolderCloseTarget?.source || null,
       coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+      desktopIconSize,
+      desktopSlot,
       folderClientRect,
       folderId,
       folderThumbClientRect,
@@ -226,18 +258,18 @@ export function resolveFolderOverlayTargets(
       stageWidth: stableFolderStageLayoutRecord.meta.stageWidth,
     }
     : null;
-  const stableFolderCloseTarget = shouldRefreshLiveCloseTarget
+  const stableFolderCloseTarget = shouldRefreshRenderedCloseTarget
     ? makeStableFolderCloseTarget({
       coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
       folderId,
       getStageLayoutPreviewChildRect: (item, previewSlotIndex) =>
-        iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.LIVE_TARGET, { childId: item.id, folderId, slotIndex: previewSlotIndex }),
-      iconRect: liveFolderTargetRect,
+        iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: item.id, folderId, slotIndex: previewSlotIndex }),
+      iconRect: renderedFolderTargetRect,
       previewSlots,
       projection: null,
-      source: isClosing && !wasClosing ? "live-final-close" : "live-target",
-      thumbRect: liveFolderThumbTargetRect || liveFolderTargetRect,
-      trackingKey: liveCloseTrackingKey,
+      source: isClosing && !wasClosing ? "rendered-final-close" : "rendered-target",
+      thumbRect: renderedFolderThumbTargetRect || renderedFolderTargetRect,
+      trackingKey: renderedCloseTrackingKey,
     })
     : makeStableFolderCloseTarget({
       folderId,
@@ -257,6 +289,8 @@ export function resolveFolderOverlayTargets(
     capturedOriginBounds,
     closeTargetSource: stableFolderCloseTarget?.source || null,
     coordinateSpace: STAGE_COORDINATE_SPACES.CLIENT_VISUAL,
+    desktopIconSize,
+    desktopSlot,
     folderClientRect,
     folderId,
     folderThumbClientRect,

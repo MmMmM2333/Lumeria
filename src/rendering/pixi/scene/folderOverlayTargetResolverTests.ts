@@ -47,14 +47,22 @@ export function runFolderOverlayTargetResolverTests() {
   const capturedThumbRect = { height: 70, left: 309, top: 329, width: 70 };
   const capturedChildRect = { height: 14, left: 316, top: 336, width: 14 };
   const liveChildRect = { height: 13, left: 116, top: 136, width: 13 };
+  const renderedCloseChildRect = { height: 16.55, left: 118, top: 138, width: 16.55 };
 
   const registry = createIconBoundsRegistry();
   registry.clearBounds();
-  registry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 0 }, liveIconRect, { area: "desktop", id: folder.id });
+  registry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 2 }, liveIconRect, {
+    area: "desktop",
+    id: folder.id,
+    index: 10,
+    pageIndex: 2,
+    visualSpec: { iconSize: 64 },
+  } as IconBoundsMeta & Readonly<{ visualSpec: Readonly<{ iconSize: number }> }>);
   registry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, liveThumbRect, { area: "desktop", id: folder.id });
   registry.registerBounds(K.TOP_LEVEL, V.STABLE_STAGE_LAYOUT, folder.id, targetIconStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
   registry.registerBounds(K.FOLDER_THUMB, V.STABLE_STAGE_LAYOUT, folder.id, targetThumbStageRect, projectedStageMeta({ area: "desktop", id: folder.id }));
   registry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: "app-b", folderId: folder.id, slotIndex: 1 }, liveChildRect);
+  registry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: "app-a", folderId: folder.id, slotIndex: 0 }, renderedCloseChildRect);
   registry.registerBounds(K.PREVIEW_CHILD, V.STABLE_STAGE_LAYOUT, { childId: "app-a", folderId: folder.id, slotIndex: 0 }, targetChildStageRect, projectedStageMeta({ area: "desktop", folderId: folder.id, id: "app-a" }));
   registry.registerBounds(K.TOP_LEVEL, V.LIVE_TARGET, folder.id, liveCloseIconRect, { area: "desktop", id: folder.id });
   registry.registerBounds(K.FOLDER_THUMB, V.LIVE_TARGET, folder.id, liveCloseThumbRect, { area: "desktop", id: folder.id });
@@ -76,6 +84,8 @@ export function runFolderOverlayTargetResolverTests() {
   });
 
   assert(resolved.coordinateSpace === "client-visual", "resolver should declare client visual coordinate output");
+  assert(resolved.desktopIconSize === 64, "resolver should expose the canonical desktop icon size independently of rendered press scale");
+  assert(resolved.desktopSlot?.index === 10 && resolved.desktopSlot.pageIndex === 2, "resolver should expose the rendered page-local desktop slot for trajectory direction");
   assert(resolved.folderClientRect, "the registered folder should resolve live client bounds");
   assert(resolved.folderThumbClientRect, "the registered folder should resolve live thumb bounds");
   assert(resolved.previewSlots[0], "the folder preview should expose its first item");
@@ -105,7 +115,6 @@ export function runFolderOverlayTargetResolverTests() {
   );
 
   const liveClosing = resolveFolderOverlayTargets({
-    desktopPageTrackOffset: { liveX: -120, targetX: -400 },
     folder,
     folderPageSize: 9,
     iconBoundsRegistry: registry,
@@ -113,20 +122,19 @@ export function runFolderOverlayTargetResolverTests() {
     previousStableFolderCloseTarget: resolved.stableFolderCloseTarget,
     wasClosing: false,
   });
-  assert(liveClosing.stableFolderCloseTarget, "live closing geometry should produce a close target");
-  assert(liveClosing.stableFolderCloseTarget.coordinateSpace === "client-visual", "closing should capture desktop live target in client-visual coordinates");
-  assert(liveClosing.stableFolderCloseTarget.source === "live-final-close", "closing should mark the first live close capture as final-close source");
+  assert(liveClosing.stableFolderCloseTarget, "rendered closing geometry should produce a close target");
+  assert(liveClosing.stableFolderCloseTarget.coordinateSpace === "client-visual", "closing should capture rendered desktop geometry in client-visual coordinates");
+  assert(liveClosing.stableFolderCloseTarget.source === "rendered-final-close", "closing should mark the first rendered close capture as final-close source");
   const projectedLiveTarget = projectFolderCloseTargetToClient(liveClosing.stableFolderCloseTarget);
-  assert(projectedLiveTarget, "a live close target should remain projectable");
-  assert(projectedLiveTarget.iconRect.left === liveCloseIconRect.left, "client-visual close target should not be projected a second time");
-  assert(projectedLiveTarget.thumbRect.left === liveCloseThumbRect.left, "client-visual close thumb target should stay in client coordinates");
+  assert(projectedLiveTarget, "a rendered close target should remain projectable");
+  assert(projectedLiveTarget.iconRect.left === liveIconRect.left, "closing should follow the currently rendered desktop icon instead of the pinned LIVE_TARGET");
+  assert(projectedLiveTarget.thumbRect.left === liveThumbRect.left, "closing should follow the currently rendered desktop thumb instead of the pinned LIVE_TARGET");
   assert(
-    projectedLiveTarget.previewChildRects.get("app-a:0")?.left === liveCloseChildRect.left,
-    "client-visual close target should retain live preview child coordinates"
+    projectedLiveTarget.previewChildRects.get("app-a:0")?.left === renderedCloseChildRect.left,
+    "closing should retain the currently rendered preview-child coordinates",
   );
 
   const reusedLiveClosing = resolveFolderOverlayTargets({
-    desktopPageTrackOffset: { liveX: -120, targetX: -400 },
     folder,
     folderPageSize: 9,
     iconBoundsRegistry: registry,
@@ -134,10 +142,22 @@ export function runFolderOverlayTargetResolverTests() {
     previousStableFolderCloseTarget: liveClosing.stableFolderCloseTarget,
     wasClosing: true,
   });
-  assert(reusedLiveClosing.stableFolderCloseTarget === liveClosing.stableFolderCloseTarget, "resolver should reuse an unchanged live close target");
+  assert(reusedLiveClosing.stableFolderCloseTarget === liveClosing.stableFolderCloseTarget, "desktop page offset metadata alone should not rebuild an unchanged rendered close target");
+
+  const movedRenderedIconRect = { height: 88, left: 96, top: 164, width: 88 };
+  const movedRenderedThumbRect = { height: 70, left: 105, top: 173, width: 70 };
+  const movedRenderedChildRect = { height: 17.1, left: 114, top: 182, width: 17.1 };
+  registry.registerBounds(K.LAUNCH, V.RENDERED, { area: "desktop", id: folder.id, pageIndex: 2 }, movedRenderedIconRect, {
+    area: "desktop",
+    id: folder.id,
+    index: 10,
+    pageIndex: 2,
+    visualSpec: { iconSize: 64 },
+  } as IconBoundsMeta & Readonly<{ visualSpec: Readonly<{ iconSize: number }> }>);
+  registry.registerBounds(K.FOLDER_THUMB, V.RENDERED, folder.id, movedRenderedThumbRect, { area: "desktop", id: folder.id });
+  registry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: "app-a", folderId: folder.id, slotIndex: 0 }, movedRenderedChildRect);
 
   const retargetedLiveClosing = resolveFolderOverlayTargets({
-    desktopPageTrackOffset: { liveX: -140, targetX: -400 },
     folder,
     folderPageSize: 9,
     iconBoundsRegistry: registry,
@@ -146,14 +166,16 @@ export function runFolderOverlayTargetResolverTests() {
     wasClosing: true,
   });
   assert(retargetedLiveClosing.stableFolderCloseTarget, "retargeting should keep a close target");
-  assert(retargetedLiveClosing.stableFolderCloseTarget !== liveClosing.stableFolderCloseTarget, "desktop offset changes should refresh the live close target");
-  assert(retargetedLiveClosing.stableFolderCloseTarget.source === "live-target", "same closing session live refresh should not claim a new final-close capture");
+  assert(retargetedLiveClosing.stableFolderCloseTarget !== liveClosing.stableFolderCloseTarget, "rendered world-geometry changes should refresh the close target");
+  assert(retargetedLiveClosing.stableFolderCloseTarget.source === "rendered-target", "same closing session rendered refresh should not claim a new final-close capture");
+  const projectedRetarget = projectFolderCloseTargetToClient(retargetedLiveClosing.stableFolderCloseTarget);
+  assert(projectedRetarget?.iconRect.left === movedRenderedIconRect.left, "refreshed close target should use the moved rendered desktop icon");
+  assert(projectedRetarget?.previewChildRects.get("app-a:0")?.left === movedRenderedChildRect.left, "refreshed close target should use the moved rendered preview child");
 
-  registry.clearBounds({ kind: K.TOP_LEVEL, variant: V.LIVE_TARGET });
-  registry.clearBounds({ kind: K.FOLDER_THUMB, variant: V.LIVE_TARGET });
-  registry.clearBounds({ kind: K.PREVIEW_CHILD, variant: V.LIVE_TARGET });
+  registry.clearBounds({ kind: K.TOP_LEVEL, variant: V.RENDERED });
+  registry.clearBounds({ kind: K.FOLDER_THUMB, variant: V.RENDERED });
+  registry.clearBounds({ kind: K.PREVIEW_CHILD, variant: V.RENDERED });
   const stableFallbackClosing = resolveFolderOverlayTargets({
-    desktopPageTrackOffset: { liveX: -160, targetX: -400 },
     folder,
     folderPageSize: 9,
     iconBoundsRegistry: registry,
@@ -162,7 +184,7 @@ export function runFolderOverlayTargetResolverTests() {
     wasClosing: true,
   });
   assert(stableFallbackClosing.stableFolderCloseTarget, "stable geometry should remain available as a fallback");
-  assert(stableFallbackClosing.stableFolderCloseTarget.coordinateSpace === "stage-layout", "missing live close target should fall back to the stable stage-layout target");
+  assert(stableFallbackClosing.stableFolderCloseTarget.coordinateSpace === "stage-layout", "missing rendered close target should fall back to the stable stage-layout target even when LIVE_TARGET exists");
   assert(stableFallbackClosing.stableFolderCloseTarget.source === "stable-target", "stable fallback during the same close should keep the stable target source");
 
   const reusedStableTarget: StableFolderCloseTarget = {

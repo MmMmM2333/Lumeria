@@ -9,8 +9,9 @@ import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import type { MotionPreset } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
 import type { MotionControl, MotionVars } from "../animation/motionTween.js";
-import { getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
+import { getDesktopGridMetrics, getFolderGridMetrics, getFolderPanelGeometry, getGridSlotRect, makeRect, parseRepeatCount, readPx } from "../geometry/gridGeometry.js";
 import type { GeometryRect, GridMetrics } from "../geometry/gridGeometry.js";
+import { mapClientRectToDisplayObjectLocalRect } from "../geometry/displayObjectBounds.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   clearFrameGhost as clearFrameGhostState,
@@ -19,11 +20,19 @@ import {
   enableClosingFrameMask as enableClosingFrameMaskState,
   ensureClosingFrameMaskState,
   getFrameRadius,
+  lerpColor,
   retargetFrameGhost as retargetFrameGhostState,
   startFrameGhost as startFrameGhostState,
+  updateFrameGhostTargetGeometry as updateFrameGhostTargetGeometryState,
 } from "./folderFrameGhost.js";
-import type { FolderFrameGhostOptions, FolderFramePresentation } from "./folderFrameGhost.js";
+import type {
+  FolderFrameGhostOptions,
+  FolderFramePresentation,
+  FolderFrameTransitionState,
+} from "./folderFrameGhost.js";
 import type { FolderFrameGhostLayer } from "./folderFrameGhost.js";
+import { createFolderTransitionTrajectory, makeFolderTransitionPlacement } from "./folderTransitionTrajectory.js";
+import type { FolderTransitionPlacement, FolderTransitionTrajectory } from "./folderTransitionTrajectory.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
 import type {
   FolderClosingGhost,
@@ -53,6 +62,7 @@ import type {
   FolderOpeningGhost,
   FolderOpeningControllerVisualPlan,
   FolderOpeningGhostControllerLayer,
+  FolderOpeningState,
   FolderOpeningTarget,
 } from "./folderOpeningGhostController.js";
 import { detachDisplayObject, destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
@@ -128,7 +138,7 @@ import {
 } from "./pageTrackMotion.js";
 import type { PageTrackMotionState } from "./pageTrackMotion.js";
 import { isLayoutTargetChanged } from "./desktopRenderPlan.js";
-import type { FolderOverlayFrame } from "../folderLayerState.js";
+import type { DesktopTransitionGrid, FolderOverlayFrame } from "../folderLayerState.js";
 import type { SceneDataRecord, SceneItem, ScenePageTrackScrub } from "../../sceneFrame.js";
 
 type FolderGeometry = ReturnType<typeof getFolderPanelGeometry>;
@@ -143,7 +153,6 @@ type OptionalPointerEvent = Readonly<{
   stopPropagation?: () => void;
 }>;
 type ResolveFolderOverlayOptions = NonNullable<Parameters<typeof resolveFolderOverlayTargets>[0]>;
-type ResolverDesktopPageTrackOffset = NonNullable<ResolveFolderOverlayOptions["desktopPageTrackOffset"]>;
 type ResolverFolder = NonNullable<ResolveFolderOverlayOptions["folder"]>;
 type GeneratedClosingGhostTarget = ReturnType<typeof makeClosingGhostTarget>;
 type GeneratedOpeningGhostTarget = ReturnType<typeof makeOpeningGhostTarget> & Readonly<{
@@ -159,6 +168,37 @@ type FolderOverlayCloseLease = FolderCloseLease<FolderClosingControllerVisualPla
 type MutableFramePresentation = {
   -readonly [Key in keyof FolderFramePresentation]: FolderFramePresentation[Key];
 };
+
+function inferFolderTransitionPlacement(
+  sourceClientRect: StageRect | null | undefined,
+  stageRect: StageRect,
+  desktopFrame: StageRect,
+  desktopGrid: DesktopTransitionGrid,
+): FolderTransitionPlacement | null {
+  const sourceRect = clientRectToStageVisualRect(sourceClientRect, stageRect);
+  if (!sourceRect) return null;
+  const metrics = getDesktopGridMetrics({
+    cols: desktopGrid.cols,
+    height: desktopFrame.height,
+    isSearchMode: desktopGrid.isSearchMode,
+    rows: desktopGrid.rows,
+    visibleCount: desktopGrid.visibleCount,
+    width: desktopFrame.width,
+  });
+  const centerX = sourceRect.left + sourceRect.width / 2 - desktopFrame.left;
+  const centerY = sourceRect.top + sourceRect.height / 2 - desktopFrame.top;
+  const columnStride = metrics.cellWidth + metrics.gapX;
+  const rowStride = metrics.cellHeight + metrics.gapY;
+  const col = Math.max(0, Math.min(
+    metrics.cols - 1,
+    Math.round((centerX - metrics.gridLeft - metrics.cellWidth / 2) / columnStride),
+  ));
+  const row = Math.max(0, Math.min(
+    metrics.rows - 1,
+    Math.round((centerY - metrics.gridTop - metrics.cellHeight / 2) / rowStride),
+  ));
+  return { col, cols: metrics.cols, row, rows: metrics.rows };
+}
 
 interface FolderOverlayDragSource extends SceneDataRecord {
   folderId?: string | null | undefined;
@@ -374,6 +414,8 @@ type FolderOverlayPreparation = FolderOverlayPreparedContext | Readonly<{
 interface FolderOverlayResolvedContext extends FolderOverlayPreparedContext {
   closeIconRect: FolderOverlayRect | null;
   closeThumbRect: FolderOverlayRect | null;
+  desktopIconSize: number | null;
+  framePlacement: FolderTransitionPlacement | null;
   folderClientRect: FolderOverlayRect | null;
   folderThumbClientRect: FolderOverlayRect | null;
   geometry: FolderGeometry;
@@ -503,6 +545,11 @@ type DetachedFrameTarget = Readonly<Record<string, unknown>> & Readonly<{
   strokeWidth?: unknown;
   top?: unknown;
   width?: unknown;
+}>;
+
+type DetachedFrameTransition = Readonly<{
+  progressState: { value: number };
+  trajectory: FolderTransitionTrajectory;
 }>;
 
 const PAGE_DOT_BLEND_DURATION = 0.08;
@@ -908,12 +955,50 @@ function makeCompletionTracker(onComplete: (() => void) | null | undefined): Com
   };
 }
 
+function makeDetachedFrameTransition(
+  frameState: MutableFramePresentation,
+  transition: FolderFrameTransitionState | null | undefined,
+  targetState: DetachedFrameTarget | null | undefined,
+): DetachedFrameTransition {
+  const readRectValue = (key: keyof StageRect): number => {
+    const value = Number(targetState?.[key]);
+    if (Number.isFinite(value)) return value;
+    const transitionValue = Number(transition?.desktopRect[key]);
+    return Number.isFinite(transitionValue) ? transitionValue : frameState[key];
+  };
+  const desktopRect = {
+    height: readRectValue("height"),
+    left: readRectValue("left"),
+    top: readRectValue("top"),
+    width: readRectValue("width"),
+  };
+  const panelRect = transition?.panelRect || {
+    height: frameState.height,
+    left: frameState.left,
+    top: frameState.top,
+    width: frameState.width,
+  };
+  if (!(desktopRect.width > 0) || !(desktopRect.height > 0) ||
+    !(panelRect.width > 0) || !(panelRect.height > 0)) {
+    throw new RangeError("detached frame transition requires positive desktop and panel geometry");
+  }
+  return {
+    progressState: { value: transition?.progressState.value ?? 1 },
+    trajectory: createFolderTransitionTrajectory({
+      desktopRect,
+      panelRect,
+      placement: transition?.placement,
+    }),
+  };
+}
+
 function animateDetachedFrame(
   graphics: Graphics | null | undefined,
   frameState: MutableFramePresentation | null | undefined,
   targetState: DetachedFrameTarget | null | undefined,
   tracker: CompletionTracker,
   visual: DetachedClosingVisual | null = null,
+  transition: DetachedFrameTransition,
 ): void {
   if (!graphics || !frameState) return;
   const frame = {
@@ -921,30 +1006,71 @@ function animateDetachedFrame(
     progress: frameState.progress ?? 0,
   };
   const target = targetState || frameState;
-  const duration = motionPresets.folderClose!.duration! + DETACHED_CLOSING_FRAME_TAIL_DURATION;
+  const startProgress = transition.progressState.value;
+  const rawStart = transition.trajectory.sample(startProgress);
+  const continuityOffset = {
+    height: frame.height - rawStart.height,
+    left: frame.left - rawStart.left,
+    top: frame.top - rawStart.top,
+    width: frame.width - rawStart.width,
+  };
+  const startStyle = {
+    fillAlpha: frame.fillAlpha,
+    fillColor: frame.fillColor,
+    radius: frame.radius,
+    strokeAlpha: frame.strokeAlpha,
+    strokeColor: frame.strokeColor,
+    strokeWidth: frame.strokeWidth,
+  };
+  const readTarget = (key: keyof typeof startStyle): number => {
+    const value = Number(target[key]);
+    return Number.isFinite(value) ? value : startStyle[key];
+  };
+  const targetStyle = {
+    fillAlpha: readTarget("fillAlpha"),
+    fillColor: readTarget("fillColor"),
+    radius: readTarget("radius"),
+    strokeAlpha: readTarget("strokeAlpha"),
+    strokeColor: readTarget("strokeColor"),
+    strokeWidth: readTarget("strokeWidth"),
+  };
   const finishGeometry = tracker.add();
-  const update = () => drawDetachedFrame(graphics, frame);
+  const update = () => {
+    const progress = transition.progressState.value;
+    const rawRect = transition.trajectory.sample(progress);
+    const continuityProgress = Math.abs(startProgress) < 0.0001
+      ? 0
+      : clamp01(progress / startProgress);
+    const styleProgress = Math.abs(startProgress) < 0.0001
+      ? 1
+      : clamp01((startProgress - progress) / startProgress);
+    frame.height = rawRect.height + continuityOffset.height * continuityProgress;
+    frame.left = rawRect.left + continuityOffset.left * continuityProgress;
+    frame.top = rawRect.top + continuityOffset.top * continuityProgress;
+    frame.width = rawRect.width + continuityOffset.width * continuityProgress;
+    frame.fillAlpha = startStyle.fillAlpha + (targetStyle.fillAlpha - startStyle.fillAlpha) * styleProgress;
+    frame.fillColor = lerpColor(startStyle.fillColor, targetStyle.fillColor, styleProgress);
+    frame.radius = startStyle.radius + (targetStyle.radius - startStyle.radius) * styleProgress;
+    frame.strokeAlpha = startStyle.strokeAlpha + (targetStyle.strokeAlpha - startStyle.strokeAlpha) * styleProgress;
+    frame.strokeColor = lerpColor(startStyle.strokeColor, targetStyle.strokeColor, styleProgress);
+    frame.strokeWidth = startStyle.strokeWidth + (targetStyle.strokeWidth - startStyle.strokeWidth) * styleProgress;
+    frame.progress = styleProgress;
+    drawDetachedFrame(graphics, frame);
+  };
   update();
-  const geometryControl = motion(frame)
-    .duration(duration)
-    .ease(motionPresets.folderClose!.ease!)
-    .overlay()
+  const geometryControl = motion(transition.progressState)
+    .layout()
+    .spring(motionSprings.handoff)
     .interrupt("retarget")
     .to({
-      fillAlpha: target.fillAlpha ?? frame.fillAlpha,
-      fillColor: target.fillColor ?? frame.fillColor,
-      height: target.height ?? frame.height,
-      left: target.left ?? frame.left,
-      progress: 1,
-      radius: target.radius ?? frame.radius,
-      strokeAlpha: target.strokeAlpha ?? frame.strokeAlpha,
-      strokeColor: target.strokeColor ?? frame.strokeColor,
-      strokeWidth: target.strokeWidth ?? frame.strokeWidth,
-      top: target.top ?? frame.top,
-      width: target.width ?? frame.width,
-      onComplete: finishGeometry,
       onCancel: finishGeometry,
+      onComplete: () => {
+        transition.progressState.value = 0;
+        update();
+        finishGeometry();
+      },
       onUpdate: update,
+      value: 0,
     })
     .start();
   addDetachedVisualMotionControl(visual, geometryControl);
@@ -1290,6 +1416,7 @@ export interface FolderOverlayLayer {
   frameGhostFolderId: string | null | undefined;
   frameGhostPhase: string | null | undefined;
   frameGhostState: MutableFramePresentation | null | undefined;
+  frameGhostTransitionState: FolderFrameTransitionState | null | undefined;
   frameGhostMotionControl: MotionControl | null | undefined;
   hitArea: ClosingPresentationHitArea | null;
   isClosing: boolean | undefined;
@@ -1732,8 +1859,6 @@ export class FolderOverlayLayer extends Container {
       this.resizeVisualGeometryFinalMode = null;
     }
     const overlayTargets = resolveFolderOverlayTargets({
-      desktopPageTrackOffset: state.desktopPageTrackOffset as
-        (FolderDesktopPageTrackOffset & ResolverDesktopPageTrackOffset) | null,
       folder: state.renderedFolder as FolderLayerFolder & ResolverFolder,
       folderOpeningOriginBounds: state.folderOpeningOriginBounds,
       folderPageSize: state.folderPageSize,
@@ -1743,7 +1868,24 @@ export class FolderOverlayLayer extends Container {
       wasClosing,
     });
     this.stableFolderCloseTarget = overlayTargets.stableFolderCloseTarget;
-    const { folderClientRect, folderThumbClientRect, getOpeningPreviewChildClientRect, previewSlots } = overlayTargets;
+    const {
+      desktopIconSize,
+      desktopSlot,
+      folderClientRect,
+      folderThumbClientRect,
+      getOpeningPreviewChildClientRect,
+      previewSlots,
+    } = overlayTargets;
+    const framePlacement = state.desktopGrid && state.desktopFrame
+      ? desktopSlot
+        ? makeFolderTransitionPlacement(desktopSlot.index, state.desktopGrid)
+        : inferFolderTransitionPlacement(
+          folderClientRect || folderThumbClientRect,
+          state.stageRect,
+          state.desktopFrame,
+          state.desktopGrid,
+        )
+      : null;
     this.drawPanel(geometry.panel);
     this.syncResizeFrameGhostShell(geometry, {
       isClosing,
@@ -1967,6 +2109,8 @@ export class FolderOverlayLayer extends Container {
       ...context,
       closeIconRect,
       closeThumbRect,
+      desktopIconSize,
+      framePlacement,
       folderClientRect,
       folderThumbClientRect,
       geometry,
@@ -2190,6 +2334,8 @@ export class FolderOverlayLayer extends Container {
       closeThumbRect,
       closingGhostTargets,
       closingPreviewSwapTargets,
+      desktopIconSize,
+      framePlacement,
       folderClientRect,
       folderId,
       folderThumbClientRect,
@@ -2215,6 +2361,7 @@ export class FolderOverlayLayer extends Container {
     )) {
       this.openingLease.present({
         options: {
+          framePlacement,
           frameSourceRect: folderThumbClientRect || folderClientRect,
           frameTargetRect: openingFrameTargetRect,
         },
@@ -2231,6 +2378,8 @@ export class FolderOverlayLayer extends Container {
     if (state.isFolderClosing && !closingVisualReleased) {
       const closeFrameRect = this.getPanelVisualRect(geometry.panel) || geometry.panel;
       const closeOptions = {
+        folderIconSize: desktopIconSize ?? undefined,
+        framePlacement,
         handoffRect: folderClientRect || closeIconRect,
         handoffTarget: this.stableFolderCloseTarget,
         previewSwapTargets: closingPreviewSwapTargets,
@@ -2530,12 +2679,22 @@ export class FolderOverlayLayer extends Container {
       options.resizeVisualGeometryFinalFrame
     );
     if (!shouldSync) return;
-    frame.height = panel.height;
-    frame.left = panel.left;
-    frame.radius = getFrameRadius(panel, frame.radius ?? 48);
-    frame.top = panel.top;
-    frame.width = panel.width;
-    this.drawFrameGhost(frame, { notifyTitleFrame: false });
+    const transition = this.frameGhostTransitionState;
+    const target = transition?.panelRect;
+    const alreadyTargetsPanel = Boolean(target &&
+      Math.abs(target.height - panel.height) <= 0.01 &&
+      Math.abs(target.left - panel.left) <= 0.01 &&
+      Math.abs(target.top - panel.top) <= 0.01 &&
+      Math.abs(target.width - panel.width) <= 0.01);
+    if (alreadyTargetsPanel) return;
+    this.updateFrameGhostTargetGeometry(panel, {
+      folderId: this.frameGhostFolderId,
+      frameGhostPhase: "opening",
+      notifyTitleFrame: false,
+      placement: transition?.placement,
+      preserveOnComplete: true,
+      toRadius: getFrameRadius(panel, transition?.panelStyle.radius ?? frame.radius ?? 48),
+    });
   }
 
   finishResizeLayoutSyncFrame(context: Partial<FolderOverlayResolvedContext> = {}): void {
@@ -2801,22 +2960,22 @@ export class FolderOverlayLayer extends Container {
     this.currentFolderId = null;
   }
 
-  getClosingFrameStartRect(
-    panelRect: StageRect,
-    folderId: string | null,
-  ): StageRect | MutableFramePresentation {
-    if (this.frameGhostFolderId !== folderId) return panelRect;
-    return cloneFramePresentation(this.frameGhostState) || panelRect;
-  }
-
   getClosingPresentationFrameRect(): MutableFramePresentation | null {
     return cloneMirroredFramePresentation(this);
   }
 
   getTransitionDebugSnapshot() {
+    const transition = this.frameGhostTransitionState;
     return {
       closingGhostCount: this.closingGhostLayer?.children?.length ?? null,
       framePresentation: cloneMirroredFramePresentation(this),
+      frameTransition: transition ? {
+        closingDirection: { ...transition.trajectory.desktopClosingDirection },
+        phaseFrom: transition.phaseFrom,
+        phaseTo: transition.phaseTo,
+        placement: transition.placement ? { ...transition.placement } : null,
+        progress: transition.progressState.value,
+      } : null,
       panelVisible: this.panel?.visible ?? null,
       pageTrackVisible: this.pageTrack?.visible ?? null,
     };
@@ -2987,6 +3146,13 @@ export class FolderOverlayLayer extends Container {
       ? addXOffsetToFrameState(this.frameGhostState, closingMirrorOffsetX)
       : null;
     const frameTarget = shouldKeepDetachedVisual ? closeSnapshot?.detachedFrameTarget || null : null;
+    const frameTransition = frameState
+      ? makeDetachedFrameTransition(
+        frameState,
+        this.frameGhostTransitionState,
+        frameTarget as DetachedFrameTarget | null,
+      )
+      : null;
     const closingGhosts = shouldKeepDetachedVisual
       ? this.closingGhostLayer.removeChildren()
       : [];
@@ -3039,7 +3205,7 @@ export class FolderOverlayLayer extends Container {
       this.nextDetachedClosingVisualToken += 1;
       visual.ownerToken = ownerToken;
       visual.desktopSourceKey = makeDesktopSourceVisualKey(closingFolderId);
-      if (frameState) {
+      if (frameState && frameTransition) {
         const frame = new Graphics();
         drawDetachedFrame(frame, frameState);
         container.addChild(frame);
@@ -3073,7 +3239,16 @@ export class FolderOverlayLayer extends Container {
       };
       const geometryTracker = makeCompletionTracker(finishAfterGeometry);
       const frame = frameState ? container.children[0] as Graphics : null;
-      if (frameState) animateDetachedFrame(frame, frameState, frameTarget, geometryTracker, detachedVisual);
+      if (frameState && frameTransition) {
+        animateDetachedFrame(
+          frame,
+          frameState,
+          frameTarget,
+          geometryTracker,
+          detachedVisual,
+          frameTransition,
+        );
+      }
       for (const ghost of closingGhosts) {
         animateDetachedClosingGhost(
           ghost,
@@ -3223,10 +3398,11 @@ export class FolderOverlayLayer extends Container {
     return released;
   }
 
-  clearFrameGhost(options: Parameters<typeof clearFrameGhostState>[1] = {}): void {
+  clearFrameGhost(options: Parameters<typeof clearFrameGhostState>[1] = {}): boolean {
     const wasOpeningFrame = this.frameGhostPhase === "opening";
-    clearFrameGhostState(this as FolderFrameGhostLayer, options);
-    if (wasOpeningFrame) this.openingGhosts?.clearFrameTarget?.();
+    const cleared = clearFrameGhostState(this as FolderFrameGhostLayer, options);
+    if (cleared && wasOpeningFrame) this.openingGhosts?.clearFrameTarget?.();
+    return cleared;
   }
 
   notifyTitleFrame(
@@ -3363,6 +3539,13 @@ export class FolderOverlayLayer extends Container {
 
   retargetFrameGhost(toRect: StageRect, options: FolderFrameGhostOptions = {}): boolean {
     return retargetFrameGhostState(this as FolderFrameGhostLayer, toRect, options);
+  }
+
+  updateFrameGhostTargetGeometry(
+    toRect: StageRect,
+    options: FolderFrameGhostOptions = {},
+  ): boolean {
+    return updateFrameGhostTargetGeometryState(this as FolderFrameGhostLayer, toRect, options);
   }
 
   refreshPageTrackMask(): void {
@@ -3610,6 +3793,23 @@ export class FolderOverlayLayer extends Container {
     this.pageMask = nextMask;
     this.pageTrack.mask = this.pageMask;
     previousMask?.destroy?.();
+  }
+
+  mapOpeningSourceRectToLocal(
+    state: Pick<FolderOpeningState, "height" | "stageRect" | "width">,
+    sourceRect: StageRect,
+  ): StageRect {
+    const localRect = mapClientRectToDisplayObjectLocalRect({
+      node: this.openingGhostLayer,
+      rect: sourceRect,
+      stageHeight: state.height,
+      stageRect: state.stageRect,
+      stageWidth: state.width,
+    });
+    if (!localRect) {
+      throw new TypeError("opening source rect could not be mapped into the ghost-layer coordinate space");
+    }
+    return localRect;
   }
 
   getOpeningGeometrySnapshot(
@@ -3989,6 +4189,7 @@ export class FolderOverlayLayer extends Container {
     }));
     return {
       closingGhosts: readChildren(this.closingGhostLayer),
+      closingGhostMotions: this.closingGhosts?.getMotionDebugSnapshot?.() || [],
       closingMirror: {
         baselineFolderId: this.closingDesktopPageTrackMirrorBaseline?.folderId || null,
         baselineLiveX: this.closingDesktopPageTrackMirrorBaseline
@@ -4015,6 +4216,15 @@ export class FolderOverlayLayer extends Container {
         folderId: this.frameGhostFolderId || null,
         phase: this.frameGhostPhase || null,
         presentation: cloneFramePresentation(this.frameGhostState),
+        transition: this.frameGhostTransitionState ? {
+          closingDirection: { ...this.frameGhostTransitionState.trajectory.desktopClosingDirection },
+          phaseFrom: roundDebugValue(this.frameGhostTransitionState.phaseFrom),
+          phaseTo: roundDebugValue(this.frameGhostTransitionState.phaseTo),
+          placement: this.frameGhostTransitionState.placement
+            ? { ...this.frameGhostTransitionState.placement }
+            : null,
+          progress: roundDebugValue(this.frameGhostTransitionState.progressState.value),
+        } : null,
       },
       layerDisplay: readDisplay(this),
       openingGhosts: readChildren(this.openingGhostLayer),

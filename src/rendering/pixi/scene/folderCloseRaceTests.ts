@@ -22,7 +22,17 @@ import type {
 import { FolderVisualSession } from "./folderVisualSession.js";
 import type { FolderCloseLease, FolderOpenLease } from "./folderVisualSession.js";
 import type { StageOrigin, StageRect } from "../geometry/stageCoordinates.js";
-import type { FolderFrameGhostOptions, FolderFramePresentation } from "./folderFrameGhost.js";
+import {
+  clearFrameGhost as clearFrameGhostState,
+  retargetFrameGhost as retargetFrameGhostState,
+  startFrameGhost as startFrameGhostState,
+} from "./folderFrameGhost.js";
+import type {
+  FolderFrameGhostLayer,
+  FolderFrameGhostOptions,
+  FolderFramePresentation,
+  FolderFrameTransitionState,
+} from "./folderFrameGhost.js";
 import type { FolderGhostIconNodeState } from "./folderGhostIconState.js";
 import {
   VisualOwnershipRegistry as FolderVisualOwnershipRegistry,
@@ -66,10 +76,33 @@ function isTestGhost(ghost: FolderOpeningGhost): ghost is TestGhost {
 
 type TestGhostLayer = {
   children: TestGhost[];
+  mask?: TestFrameGraphics | null;
   addChild(child: TestGhost): TestGhost;
   removeChild(child: TestGhost): TestGhost;
   removeChildren(): TestGhost[];
 };
+
+type TestFrameGraphics = {
+  alpha: number;
+  destroyed: boolean;
+  visible: boolean;
+  clear(): TestFrameGraphics;
+  fill(): TestFrameGraphics;
+  roundRect(left: number, top: number, width: number, height: number, radius: number): TestFrameGraphics;
+  stroke(): TestFrameGraphics;
+};
+
+function makeFrameGraphics(): TestFrameGraphics {
+  return {
+    alpha: 0,
+    destroyed: false,
+    visible: false,
+    clear() { return this; },
+    fill() { return this; },
+    roundRect() { return this; },
+    stroke() { return this; },
+  };
+}
 
 function makeTimerHost(): TestTimerHost {
   let nextId = 1;
@@ -228,7 +261,7 @@ type TestIconNode = {
   visible: boolean;
 };
 
-type RaceLayer = FolderOpeningGhostControllerLayer & FolderClosingGhostControllerLayer & {
+type RaceLayer = FolderOpeningGhostControllerLayer & FolderClosingGhostControllerLayer & FolderFrameGhostLayer & {
   activityChanges: TestActivityChange[];
   calls: string[];
   closingGhostLayer: TestGhostLayer;
@@ -236,7 +269,8 @@ type RaceLayer = FolderOpeningGhostControllerLayer & FolderClosingGhostControlle
   currentFolderId: string | null;
   readonly folderVisualSession: RaceVisualSession;
   frameGhostOptions: FolderFrameGhostOptions | null;
-  frameGhostState: Partial<FolderFramePresentation> | null;
+  frameGhostTransitionState: FolderFrameTransitionState | null;
+  frameGhostState: FolderFramePresentation | null;
   frameGhostTarget: StageRect | null;
   iconNodes: Map<string, TestIconNode>;
   readonly iconNode: TestIconNode;
@@ -294,9 +328,14 @@ function makeRaceHarness(): RaceHarness {
     calls,
     closingGhostLayer: closingLayer,
     currentFolderId: "folder-1",
-    frameGhost: { alpha: 0, visible: false },
+    closingFrameMask: makeFrameGraphics(),
+    frameGhost: makeFrameGraphics(),
+    frameGhostFolderId: null,
+    frameGhostMotionControl: null,
     frameGhostOptions: null,
+    frameGhostPhase: null,
     frameGhostState: null,
+    frameGhostTransitionState: null,
     frameGhostTarget: null,
     iconNodes: new Map<string, TestIconNode>([["app-1", iconNode]]),
     openingGhostLayer: openingLayer,
@@ -313,8 +352,9 @@ function makeRaceHarness(): RaceHarness {
       const key = makeDesktopSourceVisualKey(owner.folderId || this.currentFolderId);
       return key ? this.acquireVisualOwnership(key, owner) : false;
     },
-    clearFrameGhost() {
+    clearFrameGhost(options: Readonly<{ ownerToken?: unknown }> = {}) {
       calls.push("clear-frame");
+      return clearFrameGhostState(this as unknown as FolderFrameGhostLayer, options);
     },
     clearCurrentFolder() {
       this.currentFolderId = null;
@@ -324,13 +364,16 @@ function makeRaceHarness(): RaceHarness {
       closeTokenCounter += 1;
       return token;
     },
-    getClosingFrameStartRect(panelRect: StageRect) {
-      return panelRect;
-    },
     getTransitionDebugSnapshot() {
+      const transition = this.frameGhostTransitionState;
       return {
         closingGhostCount: this.closingGhostLayer.children.length,
         framePresentation: this.frameGhostState || null,
+        frameTransition: transition ? {
+          phaseFrom: transition.phaseFrom,
+          phaseTo: transition.phaseTo,
+          progress: transition.progressState.value,
+        } : null,
         panelVisible: this.panel.visible,
         pageTrackVisible: this.pageTrack.visible,
       };
@@ -356,6 +399,14 @@ function makeRaceHarness(): RaceHarness {
     },
     isOpeningGeometryTransitionActive() {
       return false;
+    },
+    mapOpeningSourceRectToLocal(state, sourceRect) {
+      return {
+        height: sourceRect.height,
+        left: sourceRect.left - state.stageRect.left,
+        top: sourceRect.top - state.stageRect.top,
+        width: sourceRect.width,
+      };
     },
     registerOpeningGhostBounds() {
       calls.push("register-opening-bounds");
@@ -423,17 +474,26 @@ function makeRaceHarness(): RaceHarness {
       toRect: StageRect,
       options: FolderFrameGhostOptions = {},
     ) {
-      this.frameGhostState = fromRect ? { ...fromRect, progress: 0 } : null;
       this.frameGhostOptions = options;
       this.frameGhostTarget = toRect;
-      this.frameGhost.visible = true;
+      startFrameGhostState(
+        this as unknown as FolderFrameGhostLayer,
+        fromRect,
+        toRect,
+        options,
+      );
       return true;
     },
     retargetFrameGhost(toRect: StageRect, options: FolderFrameGhostOptions = {}) {
       this.frameGhostTarget = toRect;
       this.frameGhostOptions = options;
-      return true;
+      return retargetFrameGhostState(
+        this as unknown as FolderFrameGhostLayer,
+        toRect,
+        options,
+      );
     },
+    notifyTitleFrame() {},
     get iconNode() {
       return iconNode;
     },
@@ -551,6 +611,33 @@ export function runFolderCloseRaceTests() {
   const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
     if (!condition) throw new Error(`[Folder close race test failed] ${message}`);
   };
+
+  {
+    motionRuntime.reset();
+    const harness = makeRaceHarness();
+    startOpening(harness, "open:physical-reversal");
+    motionRuntime.step(0.08);
+    const openingTransition = harness.layer.frameGhostTransitionState;
+    const openingProgress = openingTransition?.progressState.value ?? -1;
+    const openingPanelRect = openingTransition?.panelRect;
+    assert(openingProgress > 0 && openingProgress < 1, "the lifecycle fixture should interrupt a genuinely partial opening");
+
+    startClosing(harness);
+
+    const closingTransition = harness.layer.frameGhostTransitionState;
+    assert(
+      Math.abs((closingTransition?.progressState.value ?? -1) - openingProgress) < 0.0001,
+      "open-turn-close should preserve the physical trajectory progress instead of restarting close at the panel endpoint",
+    );
+    assert(
+      closingTransition?.panelRect.left === openingPanelRect?.left &&
+      closingTransition?.panelRect.top === openingPanelRect?.top &&
+      closingTransition?.panelRect.width === openingPanelRect?.width &&
+      closingTransition?.panelRect.height === openingPanelRect?.height,
+      "open-turn-close should keep the canonical full panel endpoint instead of replacing it with the partial presentation frame",
+    );
+    motionRuntime.reset();
+  }
 
   {
     const harness = makeRaceHarness();

@@ -734,7 +734,7 @@
         "DRAG_INTENT_IDLE_DELAY",
         "FOLDER_APP_LAUNCH_DURATION",
         "FOLDER_CLOSE_DURATION",
-        "FOLDER_CLOSE_GHOST_FALLBACK_DURATION",
+        "FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION",
         "FOLDER_DRAG_SORT_GATE_DURATION",
         "FOLDER_HOVER_STICKY_MARGIN",
         "FOLDER_PAGE_EDGE_MAX_SIZE",
@@ -3437,6 +3437,7 @@
     },
     "src/rendering/pixi/folderLayerState.ts": {
       "types": [
+        "DesktopTransitionGrid",
         "FolderLayerCallbacks",
         "FolderOverlayFrame",
         "FolderOverlayFrameInput"
@@ -3470,11 +3471,13 @@
     },
     "src/rendering/pixi/geometry/displayObjectBounds.ts": {
       "types": [
+        "MapClientRectToDisplayObjectLocalRectOptions",
         "MapDisplayObjectLocalRectOptions"
       ],
       "values": [
         "getCenteredLocalRect",
         "getTransformedLocalRectBounds",
+        "mapClientRectToDisplayObjectLocalRect",
         "mapDisplayObjectLocalRectToStageRect"
       ]
     },
@@ -4235,7 +4238,8 @@
         "FolderFrameGhostLayer",
         "FolderFrameGhostOptions",
         "FolderFrameGraphics",
-        "FolderFramePresentation"
+        "FolderFramePresentation",
+        "FolderFrameTransitionState"
       ],
       "values": [
         "clearClosingFrameMask",
@@ -4247,7 +4251,8 @@
         "getFrameRadius",
         "lerpColor",
         "retargetFrameGhost",
-        "startFrameGhost"
+        "startFrameGhost",
+        "updateFrameGhostTargetGeometry"
       ]
     },
     "src/rendering/pixi/scene/folderFrameGhostMath.ts": {
@@ -4261,6 +4266,23 @@
       "types": [],
       "values": [
         "runFolderFrameGhostTests"
+      ]
+    },
+    "src/rendering/pixi/scene/folderTransitionTrajectory.ts": {
+      "types": [
+        "FolderTransitionPlacement",
+        "FolderTransitionTrajectory",
+        "FolderTransitionTrajectoryInput"
+      ],
+      "values": [
+        "createFolderTransitionTrajectory",
+        "makeFolderTransitionPlacement"
+      ]
+    },
+    "src/rendering/pixi/scene/folderTransitionTrajectoryTests.ts": {
+      "types": [],
+      "values": [
+        "runFolderTransitionTrajectoryTests"
       ]
     },
     "src/rendering/pixi/scene/folderGhostIconState.ts": {
@@ -6549,6 +6571,7 @@
       "src/rendering/pixi/scene/GroupReleaseController.ts",
       "src/rendering/pixi/scene/GroupReleaseControllerTests.ts",
       "src/rendering/pixi/scene/folderCloseRaceTests.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.ts",
       "src/rendering/pixi/scene/folderClosingGhostControllerTests.ts",
       "src/rendering/pixi/scene/folderClosingPreviewSwapControllerTests.ts",
       "src/rendering/pixi/scene/folderFrameGhost.ts",
@@ -6765,6 +6788,7 @@
       "src/rendering/pixi/scene/folderPresentationPlan.ts",
       "src/rendering/pixi/scene/folderPreviewSwapMotion.ts",
       "src/rendering/pixi/scene/folderReleaseController.ts",
+      "src/rendering/pixi/scene/folderTransitionTrajectory.ts",
       "src/rendering/pixi/scene/iconVisualSpec.ts",
       "src/rendering/pixi/scene/singleStageDiagnostics.ts",
       "src/rendering/pixi/scene/singleStageFolderDomControls.ts"
@@ -6803,6 +6827,7 @@
       "src/rendering/pixi/animation/motionDebugOverlay.ts",
       "src/rendering/pixi/geometry/displayObjectBoundsTests.ts",
       "src/rendering/pixi/nodes/IconNode.ts",
+      "src/rendering/pixi/scene/FolderOverlayLayer.ts",
       "src/rendering/pixi/scene/iconSceneHelpers.ts"
     ],
     "src/rendering/pixi/geometry/displayObjectBoundsTests.ts": [
@@ -6904,6 +6929,7 @@
       "src/rendering/pixi/scene/folderPreviewSwapMotion.ts",
       "src/rendering/pixi/scene/folderReleaseController.ts",
       "src/rendering/pixi/scene/folderReleaseControllerTests.ts",
+      "src/rendering/pixi/scene/folderTransitionTrajectory.ts",
       "src/rendering/pixi/scene/iconSceneHelpers.ts",
       "src/rendering/pixi/scene/iconSceneHelpersTests.ts",
       "src/rendering/pixi/scene/singleStageDiagnosticsTests.ts",
@@ -7205,6 +7231,16 @@
     "src/rendering/pixi/scene/folderFrameGhostTests.ts": [
       "src/domain/runLaunchpadLayoutTests.ts"
     ],
+    "src/rendering/pixi/scene/folderTransitionTrajectory.ts": [
+      "src/rendering/pixi/scene/FolderOverlayLayer.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.ts",
+      "src/rendering/pixi/scene/folderFrameGhost.ts",
+      "src/rendering/pixi/scene/folderOpeningGhostController.ts",
+      "src/rendering/pixi/scene/folderTransitionTrajectoryTests.ts"
+    ],
+    "src/rendering/pixi/scene/folderTransitionTrajectoryTests.ts": [
+      "src/domain/runLaunchpadLayoutTests.ts"
+    ],
     "src/rendering/pixi/scene/folderGhostIconState.ts": [
       "src/rendering/pixi/scene/folderCloseRaceTests.ts",
       "src/rendering/pixi/scene/folderClosingGhostController.ts",
@@ -7341,7 +7377,8 @@
     ],
     "src/rendering/pixi/scene/folderReleaseVisual.ts": [
       "src/rendering/pixi/scene/GroupDragLayer.ts",
-      "src/rendering/pixi/scene/GroupReleaseController.ts"
+      "src/rendering/pixi/scene/GroupReleaseController.ts",
+      "src/rendering/pixi/scene/folderClosingGhostController.ts"
     ],
     "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts": [
       "src/rendering/pixi/scene/folderClosingGhostController.ts",
@@ -7990,6 +8027,8 @@
     "src/rendering/pixi/scene/folderPreviewSwapMotionTests.ts",
     "src/rendering/pixi/scene/folderReleaseController.ts",
     "src/rendering/pixi/scene/folderReleaseControllerTests.ts",
+    "src/rendering/pixi/scene/folderTransitionTrajectory.ts",
+    "src/rendering/pixi/scene/folderTransitionTrajectoryTests.ts",
     "src/rendering/pixi/scene/folderReleaseVisual.ts",
     "src/rendering/pixi/scene/folderVisualAdapterLifecycle.ts",
     "src/rendering/pixi/scene/folderVisualCommitQueue.ts",

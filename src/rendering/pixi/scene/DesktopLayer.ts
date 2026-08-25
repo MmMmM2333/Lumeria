@@ -1418,21 +1418,21 @@ export class DesktopLayer extends Container {
       state.provisionalFolderRollback,
     );
     const folderHandoffEntries = this.getFolderHandoffNodes();
-    const ownershipSourceGhostedIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
-    const handoffObservation = captureDesktopHandoffObservation(
+    const planningOwnershipSourceGhostedIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const planningHandoffObservation = captureDesktopHandoffObservation(
       this.singleStageFolderLayer,
       mergeFolderIdSets(
         state.folderClosingHandoffIds,
         state.folderSourceGhostedIds,
         state.groupTransferOwnedFolderShellIds,
-        ownershipSourceGhostedIds,
+        planningOwnershipSourceGhostedIds,
         new Set(folderHandoffEntries.keys())
       )
     );
     const effectiveFolderSourceGhostedIds = mergeFolderIdSets(
       state.folderSourceGhostedIds,
-      ownershipSourceGhostedIds,
-      handoffObservation.desktopSourceGhostedIds
+      planningOwnershipSourceGhostedIds,
+      planningHandoffObservation.desktopSourceGhostedIds
     );
     const pointerOnlyPlanSnapshot = makePointerOnlyPlanSnapshot(
       state,
@@ -1458,7 +1458,7 @@ export class DesktopLayer extends Container {
           folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
           folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
           folderHandoffEntries,
-          handoffObservation,
+          handoffObservation: planningHandoffObservation,
         }),
         revision: nextPlanRevision,
       } as DesktopRenderPlanWithRevision;
@@ -1630,13 +1630,22 @@ export class DesktopLayer extends Container {
       folderShellIds: state.groupTransferOwnedFolderShellIds || new Set(),
       itemIds: state.groupTransferOwnedItemIds || new Set(),
     });
+    const committedOwnershipSourceGhostedIds = getDesktopSourceGhostedIdsFromOwnership(this.visualOwnership);
+    const committedHandoffObservation = this.captureFolderHandoffObservation(
+      state,
+      mergeFolderIdSets(
+        state.groupTransferOwnedFolderShellIds,
+        committedOwnershipSourceGhostedIds,
+        new Set(this.getFolderHandoffNodes().keys())
+      )
+    );
     this.applyFolderSourceGhosting(state, {
-      handoffObservation,
-      visualOwnershipIds: ownershipSourceGhostedIds,
+      handoffObservation: committedHandoffObservation,
+      visualOwnershipIds: committedOwnershipSourceGhostedIds,
     });
     this.updateGroupDragLayer(state);
     this.updateDiagnostics(state);
-    const handoffReconciled = this.reconcileFolderHandoffs(state, handoffObservation);
+    const handoffReconciled = this.reconcileFolderHandoffs(state, committedHandoffObservation);
     return {
       fullPlanBuilds: shouldApplyDesktopPlan ? 1 : 0,
       handoffReconciliations: handoffReconciled ? 1 : 0,
@@ -2578,8 +2587,7 @@ export class DesktopLayer extends Container {
       }
       return;
     }
-    const labelFadeActive = node.folderHandoffLabelRevealInProgress === true &&
-      node.folderHandoffLabelFadeFrame != null;
+    const labelFadeActive = node.folderHandoffLabelRevealInProgress === true;
     const shouldReleaseLabel = !entry.labelRevealStarted ||
       (
         options.fadeLabel !== false &&
@@ -2749,7 +2757,6 @@ export class DesktopLayer extends Container {
         folderChildrenWrapScaleY: node.folderChildrenWrap?.scale ? Math.round((node.folderChildrenWrap.scale.y ?? 1) * 1000) / 1000 : null,
         folderChildrenWrapY: node.folderChildrenWrap ? Math.round((node.folderChildrenWrap.y || 0) * 1000) / 1000 : null,
         labelAlpha: node.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
-        labelFadeFrameActive: node.folderHandoffLabelFadeFrame != null,
         labelRenderable: node.labelText ? node.labelText.renderable : null,
         labelRevealInProgress: node.folderHandoffLabelRevealInProgress === true,
         labelVisible: node.labelText ? node.labelText.visible : null,
@@ -3072,7 +3079,6 @@ export class DesktopLayer extends Container {
       alpha: Math.round((node?.alpha ?? 0) * 1000) / 1000,
       eventMode: node?.eventMode ?? null,
       labelAlpha: node?.labelText ? Math.round((node.labelText.alpha ?? 0) * 1000) / 1000 : null,
-      labelFadeFrameActive: node?.folderHandoffLabelFadeFrame != null,
       labelRenderable: node?.labelText?.renderable ?? null,
       labelRevealInProgress: node?.folderHandoffLabelRevealInProgress === true,
       labelVisible: node?.labelText?.visible ?? null,

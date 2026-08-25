@@ -8,7 +8,6 @@ import type {
   FolderOpeningVisualAdapter,
   FolderOpeningVisualPlan,
   FolderVisualCancelOptions,
-  FolderVisualReportResult,
 } from "./folderVisualSession.js";
 
 type TestRecord = Readonly<Record<string, unknown>>;
@@ -32,7 +31,6 @@ type ClosingStartRecord = {
   plan: FolderClosingVisualPlan;
   reporter: FolderClosingPhaseReporter;
   retargets: FolderClosingVisualPlan[];
-  retireOpeningResult: FolderVisualReportResult | null;
   transferredGhost: TestGhost | null;
 };
 
@@ -164,10 +162,8 @@ function makeClosingAdapter() {
         plan,
         reporter,
         retargets: [],
-        retireOpeningResult: null,
         transferredGhost,
       };
-      if (record.transferredGhost) record.retireOpeningResult = reporter.retireOpening();
       starts.push(record);
       return {
         cancel(options: FolderVisualCancelOptions = {}) {
@@ -357,8 +353,7 @@ export async function runFolderVisualSessionTests() {
     const close = requireItem(closing.starts, 0, "closing start");
     const reporter = close.reporter;
     assert(close.transferredGhost?.item?.id === "app-a", "a closing adapter should transfer an opening ghost during start without exposing session identity");
-    assert(close.retireOpeningResult?.status === "accepted", "a closing adapter should retire the opening scope after capturing its ghosts");
-    assert(!openLease.isCurrent(), "presenting a close for the same folder should retire the opening lease after transfer");
+    assert(!openLease.isCurrent(), "the Session should retire the opening lease after the closing adapter captures its ghosts");
 
     assert(reporter.setGeometry({
       detachedTarget: { left: 1 },

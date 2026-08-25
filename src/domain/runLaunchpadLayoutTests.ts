@@ -124,6 +124,7 @@ import { runGroupTransferRuntimeAdapterTests } from "../rendering/pixi/scene/gro
 import { runGroupDragLayerTests } from "../rendering/pixi/scene/GroupDragLayerTests.js";
 import { runGroupReleaseControllerTests } from "../rendering/pixi/scene/GroupReleaseControllerTests.js";
 import { runFolderFrameGhostTests } from "../rendering/pixi/scene/folderFrameGhostTests.js";
+import { runFolderTransitionTrajectoryTests } from "../rendering/pixi/scene/folderTransitionTrajectoryTests.js";
 import { runFolderPresentationPlanTests } from "../rendering/pixi/scene/folderPresentationPlanTests.js";
 import { runFolderDropTargetLayerTests } from "../rendering/pixi/scene/FolderDropTargetLayerTests.js";
 import { runDesktopRenderPlanTests } from "../rendering/pixi/scene/desktopRenderPlanTests.js";
@@ -337,6 +338,7 @@ runDesktopIconSizingTests();
 runDesktopBoundsRegistrationTests();
 runDesktopBoundsTargetsTests();
 await runFolderFrameGhostTests();
+runFolderTransitionTrajectoryTests();
 runFolderGhostIconStateTests();
 runFolderIconGhostMotionTests();
 runFolderIconSizingTests();

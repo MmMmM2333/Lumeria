@@ -433,14 +433,23 @@ async function traceFolderAlternation(
     if (timing.secondRequestToCloseMs != null) {
       await waitForFolderFlowOpen(page, second.id);
       if (timing.secondRequestToCloseMs > 0) {
-        const requestAgeMs = await page.evaluate((folderId) => {
+        let requestAgeMs: number | null = null;
+        await expect.poll(async () => page.evaluate((folderId) => {
           const trace = window.__LUMERIA_FOLDER_ALTERNATION_TRACE__;
           const acceptedSample = trace?.samples.find((sample) => (
             sample.folder.openFolderId === folderId || sample.folder.renderedFolderId === folderId
           ));
-          if (!acceptedSample) throw new Error(`Folder ${folderId} request was not sampled by the render trace`);
-          return Math.max(0, performance.now() - acceptedSample.time);
-        }, second.id);
+          return acceptedSample ? Math.max(0, performance.now() - acceptedSample.time) : null;
+        }, second.id).then((value) => {
+          requestAgeMs = value;
+          return value !== null;
+        }), {
+          intervals: [0, 1, 2, 4, 8, 16],
+          timeout: 2_000,
+        }).toBe(true);
+        if (requestAgeMs === null) {
+          throw new Error(`Folder ${second.id} accepted render sample was unavailable after polling`);
+        }
         await page.waitForTimeout(Math.max(0, timing.secondRequestToCloseMs - requestAgeMs));
       }
     } else {
@@ -960,10 +969,14 @@ test("closing a second folder at zero and 32ms after its accepted open request r
       });
       if (secondRequestToCloseMs === 0) {
         const extraGhostAlphas = samples.flatMap((sample) => {
-          if (sample.visual.overlay?.closingFolderId !== firstFolder.id) return [];
-          const ghost = (sample.visual.overlay?.debug?.closingGhosts || []).find((entry) => (
-            entry.itemId === firstNonThumbnailId
-          ));
+          const overlay = sample.visual.overlay;
+          const activeGhost = overlay?.closingFolderId === firstFolder.id
+            ? (overlay.debug?.closingGhosts || []).find((entry) => entry.itemId === firstNonThumbnailId)
+            : null;
+          const detachedGhost = (overlay?.debug?.detachedClosingVisuals || []).find((visual) => (
+            visual.folderId === firstFolder.id && visual.destroyed !== true
+          ))?.children?.find((entry) => entry.itemId === firstNonThumbnailId);
+          const ghost = activeGhost || detachedGhost;
           return typeof ghost?.alpha === "number" ? [ghost.alpha] : [];
         });
         const alphaRebounds = extraGhostAlphas.slice(1).filter((alpha, index) => (

@@ -81,7 +81,6 @@ export type FolderClosingPhaseReporter = Readonly<{
   previewComplete(key: string): FolderVisualReportResult;
   previewStarted(key: string): FolderVisualReportResult;
   releaseOverlay(): FolderVisualReportResult;
-  retireOpening(): FolderVisualReportResult;
   setDetachedGhostMotion(ghost: object, motion: UnknownRecord): FolderVisualReportResult;
   setGeometry(geometry: FolderCloseGeometry): FolderVisualReportResult;
   snapshot(): FolderCloseSnapshot | null;
@@ -355,7 +354,6 @@ export function assertFolderClosingPhaseReporter(
     "previewComplete",
     "previewStarted",
     "releaseOverlay",
-    "retireOpening",
     "setDetachedGhostMotion",
     "setGeometry",
     "snapshot",
@@ -710,8 +708,6 @@ export class FolderVisualSession<
         assertFolderId(itemId, "FolderClosingPhaseReporter ghost itemId");
         if (!record.ghostIds.has(itemId)) return DUPLICATE;
         record.ghostIds.delete(itemId);
-        record.visualGhostIds.delete(itemId);
-        record.visualPendingKeys.delete(ghostVisualKey(itemId));
         record.overlayPendingKeys.delete(ghostCompleteKey(itemId));
         if (controllerKey && !record.completedControllerKeys.includes(controllerKey)) {
           record.completedControllerKeys.push(controllerKey);
@@ -769,10 +765,6 @@ export class FolderVisualSession<
         this.#record("ownership", "overlay-visual-release", record);
         this.#collectCloseEffects(record);
         return ACCEPTED;
-      },
-      retireOpening: () => {
-        if (!current()) return STALE;
-        return this.#retireOpeningForClose(record);
       },
       setDetachedGhostMotion: (ghost: object, motion: UnknownRecord) => {
         if (!current()) return STALE;

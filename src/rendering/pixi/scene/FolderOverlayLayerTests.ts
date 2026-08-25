@@ -1632,21 +1632,16 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     renderRequests.length = 0;
     const smallPageMask = layer.pageMask;
     const smallPanelClipMask = layer.panelClipMask;
-    layer.frameGhostState = {
-      fillAlpha: 0.26,
-      fillColor: 0xf7f8ff,
-      height: smallGeometry.panel.height,
-      left: smallGeometry.panel.left,
-      progress: 1,
-      radius: 48,
-      strokeAlpha: 0.24,
-      strokeColor: 0xffffff,
-      strokeWidth: 1,
-      top: smallGeometry.panel.top,
-      width: smallGeometry.panel.width,
-    };
-    layer.frameGhostPhase = "opening";
-    layer.frameGhost.visible = true;
+    layer.startFrameGhost(
+      { height: 64, left: 80, top: 90, width: 64 },
+      smallGeometry.panel,
+      {
+        folderId: "folder-resize",
+        frameGhostPhase: "opening",
+        preserveOnComplete: true,
+        snap: true,
+      },
+    );
     const largeState = makeFolderResizeState({ folderPageIndex: 1, height: 912, visualFolderPageIndex: 1, width: 1707 });
     const largeGeometry = layer.update(largeState)!;
     const largeCenter = getPanelCenter(largeGeometry);
@@ -1665,7 +1660,7 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     assert(!nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "resize should not snap pageTrack to the new page span immediately");
     assert(!nearlyEqual(layer.panel.x, largeCenter.x), "resize should not snap the panel x to the new geometry target immediately");
     assert(!nearlyEqual(layer.panel.y, largeCenter.y), "resize should not snap the panel y to the new geometry target immediately");
-    assert(nearlyEqual(layer.frameGhostState.height, smallGeometry.panel.height), "opening frame shell should begin resize from the previous visual panel height");
+    assert(nearlyEqual(layer.frameGhostState!.height, smallGeometry.panel.height), "opening frame shell should begin resize from the previous visual panel height");
     layer.update(largeState);
     assert(layer.resizeLayoutSync === null, "resize layout sync should end after the follow-up render consumes the stable layout");
     assert(layer.resizeVisualGeometryState !== null, "resize visual geometry should keep animating after the mask/layout sync settles");
@@ -1677,7 +1672,7 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     assert(nearlyEqual(layer.pageTrack.x, -largeGeometry.panel.width), "settled second-page resize should align pageTrack to the new page span");
     assert(nearlyEqual(layer.panel.x, largeCenter.x), "settled resize should align the panel x to the new geometry target");
     assert(nearlyEqual(layer.panel.y, largeCenter.y), "settled resize should align the panel y to the new geometry target");
-    assert(nearlyEqual(layer.frameGhostState.height, largeGeometry.panel.height), "opening frame shell should settle to the new visual panel height");
+    assert(nearlyEqual(layer.frameGhostState!.height, largeGeometry.panel.height), "opening frame shell should settle to the new visual panel height");
     for (const [key, target] of layer.folderIconLayoutTargets) {
       const node = layer.iconNodes.get(key);
       assert(node, `resize test setup should keep icon node ${key}`);
@@ -3269,7 +3264,10 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     for (let index = 0; index < 7; index += 1) motionRuntime.step(0.05);
     assert(releasedHandoffs.length === 0, "near-target detached frame should still wait before the geometry duration completes");
     motionRuntime.step(0.05);
-    assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame should release after the full geometry duration");
+    for (let index = 0; index < 52 && releasedHandoffs.length === 0; index += 1) {
+      motionRuntime.step(0.05);
+    }
+    assert(releasedHandoffs.join(",") === "folder-a", "near-target detached frame should release after the trajectory spring settles");
     assert(sourceGhostingCommits > 0 && sourceGhostingCommits < 2, "near-target detached frame handoff should publish one source ghosting commit");
     assert(!layer.getDesktopSourceGhostedIds().has("folder-a"), "near-target detached frame handoff should release desktop source ownership after geometry completes");
     assert(releaseDetachedChildCounts[0] === 1, "near-target detached frame should stay mounted until handoff release");

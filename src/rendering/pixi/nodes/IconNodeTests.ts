@@ -108,6 +108,30 @@ export async function runIconNodeTests(): Promise<void> {
       nearlyEqual(node.alpha, 1) && readBooleanProperty(node, "visible"),
       "ordinary state updates should continue owning the icon root presentation",
     );
+
+    assert(node.prepareFolderSlotReleaseVisual(16), "a closing app ghost should prepare a native folder-slot visual");
+    assert(
+      node.folderSlotReleaseEmoji.style.fontSize === 16 &&
+        node.folderSlotReleaseEmoji.style.lineHeight === 0 &&
+        node.folderSlotReleaseVisualTargetSize === 16,
+      "small folder-slot visuals should rasterize directly at the 16px thumbnail contract",
+    );
+    node.setFolderSlotReleaseVisualMix(0.25);
+    assert(
+      nearlyEqual(node.visualWrap.alpha, 0.75) && nearlyEqual(node.folderSlotReleaseVisual.alpha, 0.25),
+      "folder-slot handoff should use complementary alpha instead of brightening two fully visible rasters",
+    );
+    node.clearFolderSlotReleaseVisual();
+    node.setState({ ...interactionNodeState, iconSize: 128 });
+    assert(node.prepareFolderSlotReleaseVisual(32), "large folder icons should prepare the matching native preview size");
+    assert(
+      Number(node.folderSlotReleaseEmoji.style.fontSize) === 32 &&
+        node.folderSlotReleaseEmoji.style.lineHeight === 0 &&
+        Number(node.folderSlotReleaseVisualTargetSize) === 32,
+      "large folder-slot visuals should share the same native-raster contract without a special scale path",
+    );
+    node.clearFolderSlotReleaseVisual();
+    node.setState(interactionNodeState);
     node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
 
     node.setState({
@@ -441,6 +465,31 @@ export async function runIconNodeTests(): Promise<void> {
     node.setFolderHandoffSourceHidden(true);
     node.releaseFolderHandoffSource();
     assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 0), "default handoff source release should start the label fade from zero");
+    assert(
+      motionRuntime.hasActiveWork(),
+      "folder handoff label fade should keep the presentation loop active until the visible fade completes",
+    );
+    const delayedPresentationDeltas = [0.075, 0.033, 0.033, 0.033];
+    const delayedPresentationAlphas: number[] = [];
+    for (const delta of delayedPresentationDeltas) {
+      motionRuntime.step(delta);
+      delayedPresentationAlphas.push(node.labelText.alpha);
+    }
+    const perceptiblePresentationFrames = delayedPresentationAlphas.filter((alpha) => alpha >= 0.1 && alpha <= 0.9);
+    assert(
+      delayedPresentationAlphas[0]! > 0 && delayedPresentationAlphas[0]! <= 0.35,
+      `folder handoff label should not jump mostly opaque after a delayed first presentation frame, got ${delayedPresentationAlphas.join(",")}`,
+    );
+    assert(
+      perceptiblePresentationFrames.length >= 4 && node.folderHandoffLabelRevealInProgress === true,
+      `folder handoff label should preserve a perceptible mid-alpha fade across dropped frames, got ${delayedPresentationAlphas.join(",")}`,
+    );
+    motionRuntime.step(0.05);
+    motionRuntime.step(0.05);
+    assert(
+      nearlyEqual(node.labelText.alpha, 1) && !readBooleanProperty(node, "folderHandoffLabelRevealInProgress"),
+      "folder handoff label motion should finish once at fully visible alpha",
+    );
 
     motionRuntime.reset();
     node.labelText.visible = true;

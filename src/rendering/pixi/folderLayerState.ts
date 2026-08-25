@@ -84,6 +84,13 @@ type FolderLayerUiInput = Readonly<{
   showMissingLaunchTargetBadge?: boolean | undefined;
 }>;
 
+export type DesktopTransitionGrid = Readonly<{
+  cols: number;
+  isSearchMode: boolean;
+  rows: number;
+  visibleCount: number;
+}>;
+
 export type FolderOverlayFrameInput = Readonly<{
   callbacks: FolderLayerCallbacks;
   drag: Readonly<{
@@ -94,7 +101,9 @@ export type FolderOverlayFrameInput = Readonly<{
   geometry: Readonly<{
     canvasStageRect: RectLike;
     desktopFrame: RectLike;
+    desktopGrid: DesktopTransitionGrid;
     desktopStageRect: RectLike;
+    deviceResolution?: number;
     singleStageDiagnostics: boolean;
   }>;
   stage: Readonly<{ rect: RectLike }>;
@@ -108,8 +117,10 @@ export type FolderOverlayFrame = Readonly<{
   completeFolderOpenFrameGhost: FolderLayerCallbacks["completeFolderOpenFrameGhost"];
   completeFolderOpenIconGhost: FolderLayerCallbacks["completeFolderOpenIconGhost"];
   desktopFrame: RectLike;
+  desktopGrid: DesktopTransitionGrid;
   desktopPageTrackOffset: SceneDataRecord | null;
   desktopStageRect: RectLike;
+  deviceResolution: number;
   dragMeta: SceneDataRecord | null;
   focusedIcon: SceneFocusedIcon | null;
   folderCloseIconGhosts: readonly FolderGhost[];
@@ -199,8 +210,15 @@ export function createFolderLayerState(groups: FolderOverlayFrameInput): FolderO
     completeFolderOpenFrameGhost: callbacks.completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost: callbacks.completeFolderOpenIconGhost,
     desktopFrame: geometry.desktopFrame,
+    desktopGrid: Object.freeze({
+      cols: Math.max(1, Math.trunc(finiteNumber(geometry.desktopGrid.cols, 1))),
+      isSearchMode: geometry.desktopGrid.isSearchMode === true,
+      rows: Math.max(1, Math.trunc(finiteNumber(geometry.desktopGrid.rows, 1))),
+      visibleCount: Math.max(0, Math.trunc(finiteNumber(geometry.desktopGrid.visibleCount))),
+    }),
     desktopPageTrackOffset: folder.desktopPageTrackOffset || null,
     desktopStageRect: geometry.desktopStageRect,
+    deviceResolution: Math.max(0.01, finiteNumber(geometry.deviceResolution, 1)),
     dragMeta: drag.meta || null,
     focusedIcon: ui.focusedIcon || null,
     folderCloseIconGhosts,

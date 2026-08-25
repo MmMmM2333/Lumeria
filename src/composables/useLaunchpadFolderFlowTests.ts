@@ -11,7 +11,7 @@ import type { FolderMotionGeometry } from "./useFolderMotionGeometry.js";
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
-  FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
+  FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION,
   FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
@@ -491,7 +491,7 @@ export function runLaunchpadFolderFlowTests() {
     staleNormalCloseProgressAnimation.progress.value = staleNormalCloseProgressAnimation.target;
     staleNormalCloseProgressAnimation.onArrive?.();
     assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "stale normal close progress arrival should not finish an interrupted zoom-fade close");
-    timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
+    timers.runDelay(FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION);
     assert(interruptedClose.flow.isFolderZoomFadeClosing.value, "interrupted normal close should cancel the normal close fallback timer");
     assert(interruptedClose.flow.renderedFolder.value?.id === "folder-1", "normal close fallback should not clear the zoom-fading folder");
     interruptedClose.arriveFolderOpenProgress(0);
@@ -520,13 +520,25 @@ export function runLaunchpadFolderFlowTests() {
     assert(canceledCloseAfterFrame.flow.renderedFolder.value?.id === "folder-1", "canceled ghost handoff should keep the reopened folder rendered");
     assert(canceledCloseAfterFrame.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "reopening during close should retarget open progress to one");
 
-    const closeWithGhostFallback = createFolderFlow();
-    closeWithGhostFallback.flow.commitOpenFolder("folder-1");
-    closeWithGhostFallback.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
-    timers.runDelay(FOLDER_CLOSE_GHOST_FALLBACK_DURATION);
-    assert(closeWithGhostFallback.flow.isFolderClosing.value, "ghost handoff fallback should schedule cleanup on the next frame");
+    const closeWithDelayedHandoff = createFolderFlow();
+    closeWithDelayedHandoff.flow.commitOpenFolder("folder-1");
+    closeWithDelayedHandoff.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    timers.runDelay(FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION);
     timers.runAnimationFrames();
-    assert(!closeWithGhostFallback.flow.isFolderClosing.value, "ghost handoff fallback should clear folder closing state");
+    assert(
+      closeWithDelayedHandoff.flow.isFolderClosing.value,
+      "progress fallback must not finish a close before the visual handoff is ready",
+    );
+    closeWithDelayedHandoff.flow.finishFolderCloseAfterHandoffFrame();
+    assert(
+      closeWithDelayedHandoff.flow.isFolderClosing.value,
+      "a delayed visual handoff should preserve the closing frame until the next presentation frame",
+    );
+    timers.runAnimationFrames();
+    assert(
+      !closeWithDelayedHandoff.flow.isFolderClosing.value,
+      "a delayed visual handoff should finish after both close latches and one presentation frame",
+    );
 
     const launchClose = createFolderFlow();
     launchClose.flow.commitOpenFolder("folder-1");

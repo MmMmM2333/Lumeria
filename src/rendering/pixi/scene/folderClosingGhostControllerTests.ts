@@ -65,9 +65,18 @@ type TestPoint = Readonly<{
 }> & { x: number; y: number };
 
 type TestGhost = FolderClosingGhost & {
+  boundsOffsetX: number;
   children: TestGhost[];
+  commitFolderSlotReleaseVisual(): boolean;
+  folderSlotReleaseCommitted: boolean;
+  folderSlotReleaseMix: number;
+  folderSlotReleaseSourceAlpha: number;
+  folderSlotReleaseTargetAlpha: number;
+  folderSlotReleaseTargetSize: number | null;
   id: string;
   parent?: FolderClosingGhostLayer | null | undefined;
+  prepareFolderSlotReleaseVisual(targetIconSize: unknown): boolean;
+  setFolderSlotReleaseVisualMix(value: unknown): boolean;
   state?: FolderGhostIconNodeState | undefined;
 };
 
@@ -140,10 +149,16 @@ function makePoint(x = 0, y = x): TestPoint {
 function makeGhost(id = "ghost"): TestGhost {
   const ghost: TestGhost = {
     alpha: 1,
+    boundsOffsetX: 0,
     children: [],
     closingComplete: false,
     destroyed: false,
     eventMode: "static",
+    folderSlotReleaseCommitted: false,
+    folderSlotReleaseMix: 0,
+    folderSlotReleaseSourceAlpha: 1,
+    folderSlotReleaseTargetAlpha: 0,
+    folderSlotReleaseTargetSize: null,
     id,
     item: null,
     labelText: { alpha: 1, scale: makePoint(1), visible: true },
@@ -153,14 +168,27 @@ function makeGhost(id = "ghost"): TestGhost {
       this.destroyed = true;
     },
     getIconBounds(_stageRect: StageOrigin) {
-      const width = 32 * (Number(this.scale.x) || 1);
-      const height = 32 * (Number(this.scale.y) || 1);
+      const iconSize = Number(this.state?.iconSize) || 32;
+      const width = iconSize * (Number(this.scale.x) || 1);
+      const height = iconSize * (Number(this.scale.y) || 1);
+      const visualOffsetY = this.state?.textless === true
+        ? 0
+        : -14 * (Number(this.scale.y) || 1);
       return {
         height,
-        left: this.position.x - width / 2,
-        top: this.position.y - height / 2,
+        left: this.position.x - width / 2 + this.boundsOffsetX,
+        top: this.position.y + visualOffsetY - height / 2,
         width,
       };
+    },
+    commitFolderSlotReleaseVisual() {
+      this.folderSlotReleaseCommitted = true;
+      return this.setFolderSlotReleaseVisualMix(1);
+    },
+    prepareFolderSlotReleaseVisual(targetIconSize: unknown) {
+      this.folderSlotReleaseCommitted = false;
+      this.folderSlotReleaseTargetSize = Number(targetIconSize);
+      return this.setFolderSlotReleaseVisualMix(0);
     },
     removeFromParent() {
       this.parent?.removeChild?.(this);
@@ -173,7 +201,34 @@ function makeGhost(id = "ghost"): TestGhost {
       this.state = state;
       if (!options.preserveRootPresentation) this.alpha = state.opening ? 0 : 1;
     },
+    setFolderSlotReleaseVisualMix(value: unknown) {
+      const mix = Math.max(0, Math.min(1, Number(value) || 0));
+      this.folderSlotReleaseMix = mix;
+      this.folderSlotReleaseSourceAlpha = 1 - mix;
+      this.folderSlotReleaseTargetAlpha = mix;
+      return true;
+    },
   };
+  Object.defineProperties(ghost, {
+    x: {
+      configurable: true,
+      get() {
+        return this.position.x;
+      },
+      set(value: number) {
+        this.position.x = value;
+      },
+    },
+    y: {
+      configurable: true,
+      get() {
+        return this.position.y;
+      },
+      set(value: number) {
+        this.position.y = value;
+      },
+    },
+  });
   return ghost;
 }
 
@@ -298,9 +353,6 @@ function makeHarness(options: TestHarnessOptions = {}): TestHarness {
     enableClosingFrameMask() {
       calls.push("enable-mask");
     },
-    getClosingFrameStartRect(panelRect: StageRect) {
-      return panelRect;
-    },
     getCurrentFolderId() {
       return this.currentFolderId;
     },
@@ -375,6 +427,7 @@ function makeHarness(options: TestHarnessOptions = {}): TestHarness {
 function makeState(completed: string[] = []): FolderClosingState {
   return {
     completeFolderCloseIconGhost: (key) => completed.push(key),
+    deviceResolution: 1.25,
     folderPageIndex: 0,
     folderPageSize: 9,
     getFolderCloseIconGhostKey: (_itemId, index) => `close-${index}`,
@@ -482,6 +535,10 @@ function runFrameArrive(layer: TestLayer): void {
   const onArrive = layer.frameGhostOptions?.onArrive;
   if (!onArrive) throw new Error("closing frame test fixture is missing onArrive()");
   onArrive(makeFramePresentation());
+}
+
+function runClosingGhostRenderFrame(layer: TestLayer): void {
+  layer.closingGhostLayer.onRender?.();
 }
 
 function hasCallType(call: TestCall, type: string): boolean {
@@ -619,14 +676,65 @@ export function runFolderClosingGhostControllerTests() {
   {
     const harness = makeHarness();
     const target = makeTarget("app-1", 0, { isThumbnailChild: true });
-    const lease = presentClose(harness, [target]);
-    const ghost = harness.layer.closingGhostLayer.children[0];
+    const lease = presentClose(harness, [target], makeState(), {
+      adapterOptions: {
+        folderIconSize: 64,
+        handoffTarget: {
+          thumbRect: { height: 58.88, left: 10, top: 20, width: 58.88 },
+        },
+      },
+      folderRect: { height: 58.88, left: 10, top: 20, width: 58.88 },
+    });
+    const ghost = harness.layer.closingGhostLayer.children[0] as TestGhost | undefined;
     assert(ghost, "thumbnail close should install its ghost before visual arrival");
+    assert(ghost.folderSlotReleaseTargetSize === 16, "a 64px stable folder target should prepare its thumbnail ghost at the native 16px slot size");
 
     runFrameArrive(harness.layer);
     assert(!lease.snapshot().handoffReady, "a thumbnail child should keep handoff pending after frame arrival");
-    harness.controller.markClosingGhostVisuallyArrived(makeState(), target, ghost);
-    assert(lease.snapshot().handoffReady, "the visual-critical thumbnail arrival should unlock handoff");
+    let sawComplementaryCrossfade = false;
+    for (let frame = 0; frame < 40 && ghost.folderSlotReleaseMix <= 0; frame += 1) {
+      motionRuntime.step(0.025);
+    }
+    assert(ghost.folderSlotReleaseMix > 0 && ghost.folderSlotReleaseMix < 1, "thumbnail close should begin crossfading before arrival");
+    sawComplementaryCrossfade = true;
+    const mixBeforeRetarget = ghost.folderSlotReleaseMix;
+    lease.present({
+      folderRect: { height: 58.88, left: 12, top: 22, width: 58.88 },
+      options: {},
+      panelRect: { height: 360, left: 180, top: 200, width: 800 },
+      state: makeState(),
+      targets: [makeTarget("app-1", 0, {
+        isThumbnailChild: true,
+        targetStageLayoutRect: { height: 14.72, left: 102, top: 122, width: 14.72 },
+      })],
+    });
+    assert(ghost.folderSlotReleaseTargetSize === 16, "geometry retargets should not rebuild the session-owned native raster size");
+    assert(ghost.folderSlotReleaseMix >= mixBeforeRetarget, "geometry retargets should not rewind the visual handoff mix");
+    for (let frame = 0; frame < 80 && !ghost.folderSlotReleaseCommitted; frame += 1) {
+      motionRuntime.step(0.025);
+      if (ghost.folderSlotReleaseMix > 0 && ghost.folderSlotReleaseMix < 1) {
+        sawComplementaryCrossfade = true;
+        assert(
+          Math.abs(ghost.folderSlotReleaseSourceAlpha + ghost.folderSlotReleaseTargetAlpha - 1) < 0.0001,
+          "the source and native slot visual should use complementary alpha during geometry motion",
+        );
+      }
+    }
+    assert(sawComplementaryCrossfade, "thumbnail close should crossfade before geometry reaches its target");
+    assert(ghost.folderSlotReleaseCommitted, "thumbnail close should commit the native slot visual at geometric arrival");
+    assert(!lease.snapshot().handoffReady, "the native slot visual should remain visible until real rendered geometry is stable");
+    ghost.boundsOffsetX = 0.41;
+    runClosingGhostRenderFrame(harness.layer);
+    runClosingGhostRenderFrame(harness.layer);
+    motionRuntime.step(0);
+    assert(!lease.snapshot().handoffReady, "a 0.5125-device-pixel world-bounds error should keep handoff pending at DPR 1.25");
+    ghost.boundsOffsetX = 0;
+    runClosingGhostRenderFrame(harness.layer);
+    assert(!lease.snapshot().handoffReady, "one aligned render frame should not release the thumbnail owner");
+    runClosingGhostRenderFrame(harness.layer);
+    assert(!lease.snapshot().handoffReady, "two aligned render callbacks should still preserve the second rendered frame");
+    motionRuntime.step(0);
+    assert(lease.snapshot().handoffReady, "the aligned thumbnail should unlock handoff after two actual render frames flush");
     assert(harness.calls.includes("ready:folder-1"), "critical arrival should publish the handoff-ready callback once");
     harness.timerHost.runAllFrames();
     motionRuntime.reset();
@@ -712,6 +820,7 @@ export function runFolderClosingGhostControllerTests() {
     assert(ghost, "retarget should preserve an installed closing ghost");
     ghost.alpha = 0.4;
     const originalControl = harness.controller.activeGhostsByItemId.get("app-1")?.motionControl;
+    const xBeforeRetarget = ghost.position.x;
     lease.present({
       folderRect: { height: 80, left: 30, top: 40, width: 80 },
       options: {
@@ -729,7 +838,8 @@ export function runFolderClosingGhostControllerTests() {
     const currentControl = harness.controller.activeGhostsByItemId.get("app-1")?.motionControl;
     assert(harness.layer.closingGhostLayer.children.length === 1 && harness.layer.closingGhostLayer.children[0] === ghost, "retarget should preserve the existing ghost object");
     assert(ghost.alpha === 0.4, "retarget should preserve the closing motion owner's physical alpha");
-    assert(originalControl?.released === true && currentControl !== originalControl, "retarget should release the old motion owner before binding a new one");
+    assert(currentControl === originalControl && originalControl?.released === false, "moving close targets should retain one residual motion owner instead of restarting the spring");
+    assert(ghost.position.x === xBeforeRetarget + 124, "retarget should move the reference pose while preserving the ghost's current residual distance");
     assert(harness.calls.some((call) => hasCallType(call, "retarget-frame")), "retarget should update the active frame instead of creating a second frame");
     assert(lease.snapshot().handoffRect?.left === 44, "retarget geometry should replace the lease-owned handoff metadata");
     assert(lease.detachedGhostMotion(ghost)?.x === 230, "retarget should update detached motion through the reporter port");

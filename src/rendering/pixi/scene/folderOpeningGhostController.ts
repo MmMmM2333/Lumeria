@@ -3,7 +3,6 @@ import { killMotionOf, parallel, motion } from "../animation/motionTween.js";
 import type { MotionControl } from "../animation/motionTween.js";
 import { motionPresets } from "../animation/motionPresets.js";
 import type { MotionPreset } from "../animation/motionPresets.js";
-import { clientRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import type { StageOrigin, StageRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import {
@@ -30,6 +29,7 @@ import type {
   FolderVisualCancelOptions,
 } from "./folderVisualSession.js";
 import type { FolderFrameGhostOptions } from "./folderFrameGhost.js";
+import type { FolderTransitionPlacement } from "./folderTransitionTrajectory.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 
 const GHOST_REVEAL_FALLBACK_PADDING_MS: number = 140;
@@ -118,6 +118,7 @@ export type FolderOpeningTarget = FolderGhostTarget & Readonly<{
 type UsableFolderOpeningTarget = FolderOpeningTarget & UsableFolderGhostTarget;
 
 export type FolderOpeningControllerPlanOptions = Readonly<{
+  framePlacement?: FolderTransitionPlacement | null | undefined;
   frameSourceRect?: StageRect | null | undefined;
   frameTargetRect?: StageRect | null | undefined;
 }>;
@@ -134,10 +135,14 @@ export type FolderOpeningGhostControllerLayer = Readonly<{
   openingGhostLayer: FolderOpeningGhostLayer;
   panelMaterial: { alpha: number; visible: boolean };
   acquireDesktopSourceOwnership(owner: OpeningOwner): unknown;
-  clearFrameGhost(): void;
+  clearFrameGhost(options?: Readonly<{ ownerToken?: unknown }>): boolean | void;
   getCurrentFolderId(): string | null;
   hideIconNodesForTransition(itemId: string, owner: OpeningOwner): void;
   isOpeningGeometryTransitionActive?(): boolean;
+  mapOpeningSourceRectToLocal(
+    state: Pick<FolderOpeningState, "height" | "stageRect" | "width">,
+    sourceRect: StageRect,
+  ): StageRect;
   rebuildPageTrackMask(): unknown;
   refreshRegisteredIconBounds(): unknown;
   registerOpeningGhostBounds(
@@ -322,22 +327,32 @@ function roundFrameValue(value: unknown): number | "" {
   return Math.round(number * 100) / 100;
 }
 
-function makeOpeningFrameTargetKey(rect: StageRect | null | undefined = null): string {
+function makeOpeningFrameTargetKey(
+  rect: StageRect | null | undefined = null,
+  placement: FolderTransitionPlacement | null | undefined = null,
+): string {
   if (!rect) return "";
   return [
     roundFrameValue(rect.left),
     roundFrameValue(rect.top),
     roundFrameValue(rect.width),
     roundFrameValue(rect.height),
+    placement?.col ?? "",
+    placement?.cols ?? "",
+    placement?.row ?? "",
+    placement?.rows ?? "",
   ].join(":");
 }
 
 function startOpeningFrameGhost(
   layer: FolderOpeningGhostControllerLayer,
   state: FolderOpeningState,
+  ownerToken: unknown,
   options: FolderOpeningControllerPlanOptions = {},
 ): boolean {
-  const sourceRect = clientRectToStageVisualRect(options.frameSourceRect, state.stageRect);
+  const sourceRect = options.frameSourceRect
+    ? layer.mapOpeningSourceRectToLocal(state, options.frameSourceRect)
+    : null;
   const targetRect = options.frameTargetRect;
   if (!sourceRect || !targetRect) return false;
   const thumb = getFolderThumbMetrics(sourceRect.width);
@@ -349,6 +364,7 @@ function startOpeningFrameGhost(
     exclusivePanelMaterialHandoff: true,
     folderId,
     frameGhostPhase: "opening",
+    placement: options.framePlacement,
     fromFillAlpha: thumb.fillAlpha,
     fromFillColor: thumb.fillColor,
     fromRadius: thumb.radius,
@@ -356,6 +372,7 @@ function startOpeningFrameGhost(
     fromStrokeColor: thumb.strokeColor,
     fromStrokeWidth: thumb.strokeWidth,
     notifyTitleFrame: false,
+    ownerToken,
     toFillAlpha: 0.26,
     toFillColor: 0xf7f8ff,
     toRadius: 48,
@@ -629,7 +646,7 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
     this.ghostItemIds.clear();
     this.owner = null;
     this.layer.openingGhostBoundsRefreshers.clear();
-    this.layer.clearFrameGhost();
+    if (owner?.token != null) this.layer.clearFrameGhost({ ownerToken: owner.token });
     this.openingTargetKeysByItemId.clear();
     this.openingFrameTargetKey = null;
     this.settledOpeningGhostItemIds.clear();
@@ -740,9 +757,9 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
     }
 
     this.layer.acquireDesktopSourceOwnership(owner);
-    const startedFrameGhost = startOpeningFrameGhost(this.layer, state, options);
+    const startedFrameGhost = startOpeningFrameGhost(this.layer, state, owner.token, options);
     this.openingFrameTargetKey = startedFrameGhost
-      ? makeOpeningFrameTargetKey(options.frameTargetRect)
+      ? makeOpeningFrameTargetKey(options.frameTargetRect, options.framePlacement)
       : null;
     if (!startedFrameGhost) {
       this.layer.panelMaterial.visible = true;
@@ -773,6 +790,7 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
       const ghostMotion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: motionPresets.folderOpenGhost!.duration!,
+        sourceLocalRect: this.layer.mapOpeningSourceRectToLocal(state, target.sourceRect),
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
@@ -826,7 +844,7 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
     options: FolderOpeningControllerPlanOptions = {},
   ): boolean {
     const targetRect = options.frameTargetRect;
-    const targetKey = makeOpeningFrameTargetKey(targetRect);
+    const targetKey = makeOpeningFrameTargetKey(targetRect, options.framePlacement);
     if (!targetKey || !this.openingFrameTargetKey || this.openingFrameTargetKey === targetKey) return false;
     const folderId = state.renderedFolder?.id || this.layer.getCurrentFolderId() || null;
     const requestId = getOpeningFrameGhostRequestId(state);
@@ -835,6 +853,7 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
       ease: motionPresets.folderOpenGhost!.ease!,
       folderId,
       frameGhostPhase: "opening",
+      placement: options.framePlacement,
       notifyTitleFrame: false,
       preserveOnComplete: false,
       toFillAlpha: 0.26,
@@ -879,6 +898,7 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
       const ghostMotion = makeOpeningGhostMotion(target, {
         isTextlessMode: state.isTextlessMode,
         openDuration: motionPresets.folderOpenGhost!.duration!,
+        sourceLocalRect: this.layer.mapOpeningSourceRectToLocal(state, target.sourceRect),
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,

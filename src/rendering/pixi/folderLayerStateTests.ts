@@ -50,7 +50,9 @@ export function runFolderLayerStateTests() {
     geometry: {
       canvasStageRect: { height: 720, left: 0, top: 0, width: 1280 },
       desktopFrame: { height: 620, left: 0, top: 100, width: 1280 },
+      desktopGrid: { cols: 7, isSearchMode: false, rows: 5, visibleCount: 20 },
       desktopStageRect: { height: 620, left: 0, top: 100, width: 1280 },
+      deviceResolution: 1.25,
       singleStageDiagnostics: true,
     },
     stage: {
@@ -77,6 +79,9 @@ export function runFolderLayerStateTests() {
   assert(state.dragMeta?.active === true, "the shared drag ownership snapshot should be forwarded");
   assert(state.desktopPageTrackOffset !== null, "desktop page track offset should be present");
   assert(state.desktopPageTrackOffset.liveX === -120 && state.desktopPageTrackOffset.targetX === -400, "desktop page track offset should be forwarded");
+  assert(state.desktopGrid.cols === 7 && state.desktopGrid.rows === 5, "desktop transition grid dimensions should be forwarded");
+  assert(state.desktopGrid.visibleCount === 20 && !state.desktopGrid.isSearchMode, "desktop transition grid mode should be forwarded");
+  assert(state.deviceResolution === 1.25, "folder handoff geometry should receive the renderer resolution");
   assert(state.getFolderOpenIconGhostKey("app-a", 0) === "open-a", "open ghost lookup should use current open ghosts");
   assert(state.getFolderCloseIconGhostKey("app-b", 1) === "close-b", "close ghost lookup should use current close ghosts");
   assert(state.folderPageIndex === 2, "committed folder page index should be forwarded");
@@ -101,6 +106,7 @@ export function runFolderLayerStateTests() {
       geometry: {
         canvasStageRect: { height: 1, left: 0, top: 0, width: 1 },
         desktopFrame: { height: 1, left: 0, top: 0, width: 1 },
+        desktopGrid: { cols: 1, isSearchMode: false, rows: 1, visibleCount: 0 },
         desktopStageRect: { height: 1, left: 0, top: 0, width: 1 },
         singleStageDiagnostics: false,
       },

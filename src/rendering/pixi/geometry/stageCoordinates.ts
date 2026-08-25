@@ -71,7 +71,7 @@ export function getTextRenderResolution(devicePixelRatio = globalThis.devicePixe
   return Math.max(MIN_TEXT_RENDER_RESOLUTION, Math.max(1, safeNumber(devicePixelRatio, 1)));
 }
 
-export function getStageScale(stageRect: StageRect | null | undefined, stageWidth: number, stageHeight: number) {
+export function getStageScale(stageRect: StageOrigin | null | undefined, stageWidth: number, stageHeight: number) {
   const layoutWidth = Math.max(1, safeNumber(stageWidth, 1));
   const layoutHeight = Math.max(1, safeNumber(stageHeight, 1));
   const rectWidth = safeNumber(stageRect?.width, layoutWidth);

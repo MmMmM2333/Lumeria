@@ -15,7 +15,7 @@ import type {
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
-  FOLDER_CLOSE_GHOST_FALLBACK_DURATION,
+  FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION,
   FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
 } from "./launchpadConstants.js";
@@ -488,10 +488,12 @@ export function useLaunchpadFolderFlow(options: FolderFlowOptions) {
     animateFolderOpenProgress(0, "folder-close");
     clearFolderCloseTimer();
     folderCloseTimer = window.setTimeout(() => {
+      // This timer only recovers a missed progress arrival. Pixi exclusively
+      // owns the visual handoff latch so the overlay and desktop source cannot
+      // both be absent from the same presented frame.
       normalCloseProgressArrived = true;
-      normalCloseHandoffReady = true;
       maybeFinishNormalFolderClose();
-    }, commitOptions?.waitForCloseGhosts ? FOLDER_CLOSE_GHOST_FALLBACK_DURATION : FOLDER_CLOSE_DURATION);
+    }, commitOptions?.waitForCloseGhosts ? FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION : FOLDER_CLOSE_DURATION);
   }
 
   function cancelFolderOpening(cancelOptions: FolderOpeningCancelOptions = {}): boolean {

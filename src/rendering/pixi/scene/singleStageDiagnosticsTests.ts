@@ -94,6 +94,12 @@ export function runSingleStageDiagnosticsTests() {
   iconBoundsRegistry.registerBounds(K.TOP_LEVEL, V.STABLE_STAGE_LAYOUT, folder.id, iconRect, identityStageMeta({ area: "desktop", id: folder.id }));
   iconBoundsRegistry.registerBounds(K.FOLDER_THUMB, V.STABLE_STAGE_LAYOUT, folder.id, thumbRect, identityStageMeta({ area: "desktop", id: folder.id }));
   for (let index = 0; index < 9; index += 1) {
+    iconBoundsRegistry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: `app-${index}`, folderId: folder.id, slotIndex: index }, {
+      height: 16,
+      left: thumbRect.left + index,
+      top: thumbRect.top + index,
+      width: 16,
+    });
     iconBoundsRegistry.registerBounds(K.PREVIEW_CHILD, V.STABLE_STAGE_LAYOUT, { childId: `app-${index}`, folderId: folder.id, slotIndex: index }, {
       height: 16,
       left: thumbRect.left + index,
@@ -106,11 +112,11 @@ export function runSingleStageDiagnosticsTests() {
 
   const plan = makeSingleStageDiagnosticsPlan(state, { enabled: true, iconBoundsRegistry });
   assert(plan?.folderId === folder.id, "enabled diagnostics should create a plan for the rendered folder");
-  assert(plan.stableFolderCloseTarget?.source === "stable-final-close", "closing diagnostics should capture a stable final close target");
+  assert(plan.stableFolderCloseTarget?.source === "rendered-final-close", "closing diagnostics should capture the currently rendered final close target");
   assert(plan.previewRects.length === 9, "diagnostics should only draw the folder thumbnail preview slots");
   assert(plan.desktopFrame!.top === 93, "diagnostics plan should keep the desktop frame inside root stage");
   assert(plan.desktopStageRect!.top === 93, "diagnostics plan should keep the current desktop stage rect");
-  assert(plan.closeThumbRect!.left === thumbRect.left, "diagnostics should use the registered stable thumb target");
+  assert(plan.closeThumbRect!.left === thumbRect.left, "diagnostics should use the registered rendered thumb target");
   assert(plan.closeThumbLocalRect!.left === thumbRect.left - state.stageRect.left, "diagnostics should map thumb target into stage-local coordinates");
   assert(plan.closeIconLocalRect!.top === iconRect.top - state.stageRect.top, "diagnostics should map icon target into stage-local coordinates");
   assert(plan.stableCloseStageLayoutRect!.left === iconRect.left, "diagnostics should expose the stable close stage layout rect");

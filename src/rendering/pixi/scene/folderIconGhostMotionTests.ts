@@ -41,6 +41,41 @@ export function runFolderIconGhostMotionTests() {
   assert(opening.toX === 128 && opening.toY === 242, "opening motion should target the folder grid icon center");
   assert(nearlyEqual(opening.labelDelay, opening.delay + 0.29), "opening label delay should follow the open duration");
 
+  const smallThumbnailOpening = makeOpeningGhostMotion({
+    columnCount: 5,
+    iconSize: 128,
+    index: 0,
+    isThumbnailChild: true,
+    sourceRect: { height: 16.55, left: 30, top: 50, width: 16.55 },
+    targetStageLayoutRect: { height: 128, left: 100, top: 200, width: 128 },
+  }, {
+    isTextlessMode: false,
+    stageHeight: 800,
+    stageRect,
+    stageWidth: 1200,
+  });
+  assert(
+    nearlyEqual(smallThumbnailOpening.scale, 16.55 / 128),
+    "small thumbnail opening ghosts should start at the exact rendered preview-child size",
+  );
+  const smallSyntheticOpening = makeOpeningGhostMotion({
+    columnCount: 5,
+    iconSize: 128,
+    index: 9,
+    isThumbnailChild: false,
+    sourceRect: { height: 16.55, left: 30, top: 50, width: 16.55 },
+    targetStageLayoutRect: { height: 128, left: 100, top: 200, width: 128 },
+  }, {
+    isTextlessMode: false,
+    stageHeight: 800,
+    stageRect,
+    stageWidth: 1200,
+  });
+  assert(
+    nearlyEqual(smallSyntheticOpening.scale, 0.16),
+    "non-thumbnail synthetic opening ghosts should retain the minimum reveal scale",
+  );
+
   const collapsedReveal = getSyntheticOpeningGhostRevealState(0.2, 0.16);
   assert(collapsedReveal.alpha === 0, "synthetic ghosts should remain invisible while still near thumbnail scale");
   assert(collapsedReveal.labelAlpha === 0 && collapsedReveal.labelScale === 0.94, "synthetic labels should remain hidden with collapsed icons");
@@ -106,6 +141,41 @@ export function runFolderIconGhostMotionTests() {
   const completed = makeCompletedClosingPreviewMotion(closingTarget, { isTextlessMode: false, stageRect });
   assert(nearlyEqual(completed.scale, 0.25), "completed preview motion should scale to the thumbnail child size");
   assert(nearlyEqual(completed.x, closing.toX) && nearlyEqual(completed.y, closing.toY), "completed preview motion should match the closing target");
+
+  const smallThumbnailTarget = {
+    ...closingTarget,
+    iconSize: 128,
+    isThumbnailChild: true,
+    targetStageLayoutRect: { height: 16.55, left: 15, top: 25, width: 16.55 },
+  };
+  const smallThumbnailClosing = makeClosingGhostMotion(smallThumbnailTarget, {
+    isTextlessMode: false,
+    stageRect,
+  });
+  const smallThumbnailCompleted = makeCompletedClosingPreviewMotion(smallThumbnailTarget, {
+    isTextlessMode: false,
+    stageRect,
+  });
+  const exactSmallThumbnailScale = 16.55 / 128;
+  assert(
+    nearlyEqual(smallThumbnailClosing.scale, exactSmallThumbnailScale),
+    "small thumbnail ghosts should end at the exact rendered preview-child size",
+  );
+  assert(
+    nearlyEqual(smallThumbnailCompleted.scale, exactSmallThumbnailScale),
+    "completed small thumbnail ghosts should preserve the exact preview-child size",
+  );
+  const smallSyntheticClosing = makeClosingGhostMotion({
+    ...smallThumbnailTarget,
+    isThumbnailChild: false,
+  }, {
+    isTextlessMode: false,
+    stageRect,
+  });
+  assert(
+    nearlyEqual(smallSyntheticClosing.scale, 0.14),
+    "non-thumbnail synthetic ghosts should retain the minimum visible closing scale",
+  );
 
   const clientClosingTarget = {
     ...closingTarget,

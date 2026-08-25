@@ -40,6 +40,10 @@ export type FolderGhostMotionOptions = Readonly<{
   stageWidth?: number | undefined;
 }>;
 
+type FolderOpeningGhostMotionOptions = FolderGhostMotionOptions & Readonly<{
+  sourceLocalRect?: StageRect | null | undefined;
+}>;
+
 function clamp01(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value) || 0));
 }
@@ -124,9 +128,19 @@ function resolveTargetStageVisualRect(
   );
 }
 
+function getClosingGhostTargetScale(
+  target: FolderGhostMotionTarget,
+  targetRect: StageRect,
+): number {
+  const exactTargetScale = targetRect.width / Math.max(1, target.iconSize);
+  return target.isThumbnailChild
+    ? exactTargetScale
+    : Math.max(0.14, exactTargetScale);
+}
+
 export function makeOpeningGhostMotion(
   target: FolderOpeningGhostMotionTarget,
-  options: FolderGhostMotionOptions = {},
+  options: FolderOpeningGhostMotionOptions = {},
 ) {
   const {
     isTextlessMode = false,
@@ -135,10 +149,13 @@ export function makeOpeningGhostMotion(
     stageRect,
     stageWidth,
   } = options;
-  const sourceRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
+  const sourceRect = cloneRect(options.sourceLocalRect) ?? clientRectToStageVisualRect(target.sourceRect, stageRect);
   const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
-  const scale = Math.max(0.16, target.sourceRect.width / Math.max(1, target.iconSize));
+  const exactSourceScale = sourceRect.width / Math.max(1, target.iconSize);
+  const scale = target.isThumbnailChild
+    ? exactSourceScale
+    : Math.max(0.16, exactSourceScale);
   const fromX = sourceRect.left + sourceRect.width / 2;
   const fromY = sourceRect.top + sourceRect.height / 2 + labelOffset * scale;
   const toX = targetRect.left + targetRect.width / 2;
@@ -166,7 +183,7 @@ export function makeCompletedClosingPreviewMotion(
   const { isTextlessMode = false, stageHeight, stageRect, stageWidth } = options;
   const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
-  const scale = Math.max(0.14, targetRect.width / Math.max(1, target.iconSize));
+  const scale = getClosingGhostTargetScale(target, targetRect);
   return {
     scale,
     targetRect,
@@ -195,7 +212,7 @@ export function makeClosingGhostMotion(
   const sourceScaleX = sourcePose?.scaleX ?? sourceScale;
   const sourceScaleY = sourcePose?.scaleY ?? sourceScale;
   const sourceAlpha = target.sourceAlpha ?? 1;
-  const scale = Math.max(0.14, targetRect.width / Math.max(1, target.iconSize));
+  const scale = getClosingGhostTargetScale(target, targetRect);
   const fromX = sourcePose?.x ?? (sourceRect.left + sourceRect.width / 2);
   const fromY = sourcePose?.y ?? (sourceRect.top + sourceRect.height / 2 + labelOffset * sourceScale);
   const toX = targetRect.left + targetRect.width / 2;

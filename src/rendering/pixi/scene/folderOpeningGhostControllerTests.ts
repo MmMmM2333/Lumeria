@@ -170,8 +170,16 @@ type TestLayer = FolderOpeningGhostControllerLayer & {
   openingGeometryActive: boolean;
   readonly pageTrack: { visible: boolean };
   readonly visualOwnership: FolderVisualOwnershipRegistry;
+  openingSourceRectMapper(
+    state: Pick<FolderOpeningState, "height" | "stageRect" | "width">,
+    sourceRect: StageRect,
+  ): StageRect;
   acquireVisualOwnership(key: string, owner: OpeningOwner): unknown;
   getIconNodeVisualKey(node: TestIconNode, fallbackFolderId?: string | null): string | null;
+  mapOpeningSourceRectToLocal(
+    state: Pick<FolderOpeningState, "height" | "stageRect" | "width">,
+    sourceRect: StageRect,
+  ): StageRect;
 };
 
 type OpeningHarness = Readonly<{
@@ -230,6 +238,14 @@ function makeHarness(): OpeningHarness {
     openingGeometryActive: false,
     openingGhostBoundsRefreshers: new Map<string, () => unknown>(),
     openingGhostLayer,
+    openingSourceRectMapper(state, sourceRect) {
+      return {
+        height: sourceRect.height,
+        left: sourceRect.left - state.stageRect.left,
+        top: sourceRect.top - state.stageRect.top,
+        width: sourceRect.width,
+      };
+    },
     pageTrack: { visible: true },
     panelMaterial: { alpha: 0, visible: false },
     visualOwnership,
@@ -262,6 +278,9 @@ function makeHarness(): OpeningHarness {
     },
     isOpeningGeometryTransitionActive() {
       return layer.openingGeometryActive;
+    },
+    mapOpeningSourceRectToLocal(state, sourceRect) {
+      return layer.openingSourceRectMapper(state, sourceRect);
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
@@ -408,6 +427,41 @@ export function runFolderOpeningGhostControllerTests() {
   const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
     if (!condition) throw new Error(`[Folder opening ghost controller test failed] ${message}`);
   };
+
+  {
+    const harness = makeHarness();
+    const sourceRect = {
+      height: 17.874,
+      left: 738.29568,
+      top: 116.31168,
+      width: 17.874,
+    };
+    const localSourceRect = {
+      height: 16.55,
+      left: 740.496,
+      top: 139.696,
+      width: 16.55,
+    };
+    harness.layer.openingSourceRectMapper = () => localSourceRect;
+    const { lease } = presentOpen(harness, [makeTarget("app-1", 0, {
+      iconSize: 128,
+      isThumbnailChild: true,
+      sourceRect,
+      targetStageLayoutRect: { height: 128, left: 100, top: 200, width: 128 },
+    })]);
+    const ghost = requireArrayItem(harness.layer.openingGhostLayer.children, 0, "transform-corrected opening ghost");
+    const expectedScale = localSourceRect.width / 128;
+    assert(
+      Math.abs(ghost.scale.x - expectedScale) < 0.0001,
+      "opening thumbnails should derive their initial scale in the transformed ghost-layer coordinate space",
+    );
+    assert(
+      Math.abs(ghost.position.x - (localSourceRect.left + localSourceRect.width / 2)) < 0.0001,
+      "opening thumbnails should derive their initial x position in the ghost-layer coordinate space",
+    );
+    lease.cancel();
+    motionRuntime.reset();
+  }
 
   {
     const harness = makeHarness();

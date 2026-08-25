@@ -1,6 +1,7 @@
 import {
   getCenteredLocalRect,
   getTransformedLocalRectBounds,
+  mapClientRectToDisplayObjectLocalRect,
   mapDisplayObjectLocalRectToStageRect,
 } from "./displayObjectBounds.js";
 import type { StagePoint } from "./stageCoordinates.js";
@@ -29,6 +30,42 @@ export function runDisplayObjectBoundsTests() {
   assert(transformed, "a valid transform should produce bounds");
   assert(transformed.left === 0 && transformed.top === 8, "transformed bounds should use the minimum transformed corner");
   assert(transformed.width === 20 && transformed.height === 24, "transformed bounds should include all transformed corners");
+
+  const openingSource = mapClientRectToDisplayObjectLocalRect({
+    node: {
+      toLocal: ({ x, y }) => ({
+        x: (x - 768) / 1.08 + 768,
+        y: (y - 432) / 1.08 + 432,
+      }),
+    },
+    rect: { height: 17.874, left: 738.29568, top: 116.31168, width: 17.874 },
+    stageHeight: 864,
+    stageRect: { height: 864, left: 0, top: 0, width: 1536 },
+    stageWidth: 1536,
+  });
+  assert(openingSource, "a client rect should map through the inverse display-object transform");
+  assert(
+    Math.abs(openingSource.left - 740.496) < 0.0001 && Math.abs(openingSource.top - 139.696) < 0.0001,
+    "inverse mapping should remove the parent translation and pivoted scale",
+  );
+  assert(
+    Math.abs(openingSource.width - 16.55) < 0.0001 && Math.abs(openingSource.height - 16.55) < 0.0001,
+    "inverse mapping should remove the parent world scale from client dimensions",
+  );
+
+  const scaledClientSource = mapClientRectToDisplayObjectLocalRect({
+    node: { toLocal: ({ x, y }) => ({ x, y }) },
+    rect: { height: 60, left: 210, top: 220, width: 40 },
+    stageHeight: 800,
+    stageRect: { height: 1600, left: 10, top: 20, width: 2400 },
+    stageWidth: 1200,
+  });
+  assert(scaledClientSource, "client mapping should support a CSS-scaled stage");
+  assert(
+    scaledClientSource.left === 100 && scaledClientSource.top === 100 &&
+      scaledClientSource.width === 20 && scaledClientSource.height === 30,
+    "client mapping should invert the stage projection before the display-object transform",
+  );
 
   const mapped = mapDisplayObjectLocalRectToStageRect({
     node: {

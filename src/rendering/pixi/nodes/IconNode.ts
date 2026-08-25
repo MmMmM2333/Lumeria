@@ -343,7 +343,6 @@ export class IconNode extends Container {
   declare batchSelectionBadgeSig: string;
   declare state?: IconVisualState;
   declare folderSlotReleaseVisualTargetSize?: number | null;
-  declare folderHandoffLabelFadeFrame?: ReturnType<typeof globalThis.setTimeout> | null;
   declare folderHandoffLabelRevealInProgress?: boolean;
   declare folderHandoffSourceHidden?: boolean;
 
@@ -811,18 +810,25 @@ export class IconNode extends Container {
   }
 
   clearFolderSlotReleaseVisual(reason = "folder-slot-release-visual-clear"): void {
+    const wasActive = this.folderSlotReleaseVisual.visible;
     killMotionOf(this.folderSlotReleaseVisual, "alpha", { reason });
     this.folderSlotReleaseVisual.visible = false;
     this.folderSlotReleaseVisual.alpha = 0;
     this.folderSlotReleaseVisual.scale.set(1);
     this.folderSlotReleaseVisualTargetSize = null;
+    if (wasActive) this.visualWrap.alpha = 1;
+  }
+
+  setFolderSlotReleaseVisualMix(value: unknown): boolean {
+    if (!this.folderSlotReleaseVisual.visible) return false;
+    const mix = Math.max(0, Math.min(1, Number(value) || 0));
+    this.visualWrap.alpha = 1 - mix;
+    this.folderSlotReleaseVisual.alpha = mix;
+    return true;
   }
 
   commitFolderSlotReleaseVisual(): boolean {
-    if (!this.folderSlotReleaseVisual.visible) return false;
-    this.visualWrap.alpha = 0;
-    this.folderSlotReleaseVisual.alpha = 1;
-    return true;
+    return this.setFolderSlotReleaseVisualMix(1);
   }
 
   updateHitArea(state: IconVisualState): void {
@@ -1609,14 +1615,9 @@ export class IconNode extends Container {
   }
 
   cancelFolderHandoffLabelFade(): void {
-    if (this.folderHandoffLabelFadeFrame == null) return;
-    if (typeof globalThis.cancelAnimationFrame === "function") {
-      globalThis.cancelAnimationFrame(this.folderHandoffLabelFadeFrame as unknown as number);
-    }
-    if (typeof globalThis.clearTimeout === "function") {
-      globalThis.clearTimeout(this.folderHandoffLabelFadeFrame);
-    }
-    this.folderHandoffLabelFadeFrame = null;
+    if (!this.folderHandoffLabelRevealInProgress) return;
+    this.folderHandoffLabelRevealInProgress = false;
+    killMotionOf(this.labelText);
   }
 
   startFolderHandoffLabelFade(): void {
@@ -1626,43 +1627,22 @@ export class IconNode extends Container {
     this.labelText.renderable = true;
     this.labelText.alpha = 0;
     this.folderHandoffLabelRevealInProgress = true;
+    let finished = false;
     const finish = () => {
-      this.folderHandoffLabelFadeFrame = null;
+      if (finished) return;
+      finished = true;
       this.folderHandoffLabelRevealInProgress = false;
       if (!this.folderHandoffSourceHidden && this.labelText?.visible) {
         this.labelText.renderable = true;
         this.labelText.alpha = 1;
       }
     };
-    if (typeof globalThis.setTimeout !== "function") {
-      motion(this.labelText)
-        .preset("fade", { duration: 0.18 })
-        .overlay()
-        .interrupt("retarget")
-        .to({ alpha: 1, onCancel: finish, onComplete: finish })
-        .start();
-      return;
-    }
-    const startTime = globalThis.performance?.now?.() ?? Date.now();
-    const duration = 180;
-    const step = () => {
-      if (this.destroyed || this.folderHandoffSourceHidden || !this.labelText?.visible) {
-        this.folderHandoffLabelFadeFrame = null;
-        this.folderHandoffLabelRevealInProgress = false;
-        return;
-      }
-      const now = globalThis.performance?.now?.() ?? Date.now();
-      const elapsed = Math.max(0, (Number(now) || Date.now()) - startTime);
-      const progress = Math.min(1, elapsed / duration);
-      const eased = 1 - (1 - progress) * (1 - progress);
-      this.labelText.alpha = eased;
-      if (progress >= 1) {
-        finish();
-        return;
-      }
-      this.folderHandoffLabelFadeFrame = globalThis.setTimeout(step, 16);
-    };
-    this.folderHandoffLabelFadeFrame = globalThis.setTimeout(step, 16);
+    motion(this.labelText)
+      .preset("fade", { duration: 0.24, ease: "sine.inOut" })
+      .overlay()
+      .interrupt("retarget")
+      .to({ alpha: 1, onCancel: finish, onComplete: finish })
+      .start();
   }
 
   setFolderHandoffSourceHidden(hidden: unknown): void {
@@ -1673,7 +1653,6 @@ export class IconNode extends Container {
       this.labelText.renderable = !sourceHidden;
       if (sourceHidden) {
         this.finishLabelTransitionBlend();
-        this.folderHandoffLabelRevealInProgress = false;
         this.cancelFolderHandoffLabelFade();
         killMotionOf(this.labelText);
         this.labelText.alpha = 0;
@@ -1695,8 +1674,6 @@ export class IconNode extends Container {
     if (!this.labelText?.visible) return;
     this.labelText.renderable = true;
     if (options.fadeLabel === false) {
-      this.folderHandoffLabelRevealInProgress = false;
-      this.cancelFolderHandoffLabelFade();
       this.restoreLabelAfterGhost();
     } else {
       this.startFolderHandoffLabelFade();
@@ -1705,7 +1682,6 @@ export class IconNode extends Container {
 
   restoreLabelAfterGhost(): void {
     if (!this.labelText.visible) return;
-    this.folderHandoffLabelRevealInProgress = false;
     this.cancelFolderHandoffLabelFade();
     killMotionOf(this.labelText);
     this.labelText.alpha = 1;

@@ -44,7 +44,6 @@ interface TestNode {
   cursor: string;
   destroyed: boolean;
   eventMode: string;
-  folderHandoffLabelFadeFrame?: number | null;
   folderHandoffLabelRevealInProgress?: boolean;
   getFolderPreviewChildBounds?: (...args: unknown[]) => unknown;
   getFolderThumbBounds?: (...args: unknown[]) => unknown;
@@ -194,7 +193,6 @@ function makeNode(id: string): TestNode {
       this.labelText.renderable = !hidden;
       if (hidden) {
         this.folderHandoffLabelRevealInProgress = false;
-        this.folderHandoffLabelFadeFrame = null;
         this.labelText.alpha = 0;
       }
     },
@@ -209,7 +207,6 @@ function makeNode(id: string): TestNode {
     revealLabelAfterGhost() {
       this.labelRevealCount += 1;
       this.folderHandoffLabelRevealInProgress = true;
-      this.folderHandoffLabelFadeFrame = 1;
       this.labelText.alpha = 0;
       this.labelText.renderable = true;
       this.labelText.visible = true;
@@ -217,7 +214,6 @@ function makeNode(id: string): TestNode {
     restoreLabelAfterGhost() {
       this.labelRestoreCount += 1;
       this.folderHandoffLabelRevealInProgress = false;
-      this.folderHandoffLabelFadeFrame = null;
       this.labelText.alpha = 1;
       this.labelText.renderable = true;
       this.labelText.visible = true;
@@ -1186,8 +1182,8 @@ export async function runDesktopLayerTests() {
     layer.updateStructure(makeDesktopQuiescenceState(item));
 
     assert(
-      sessionSnapshotReads === 1 && overlayOwnershipReads === 1 && visualOwnershipReads === 1,
-      "one desktop structural frame should share a single handoff and ownership observation across planning, ghosting, and reconciliation",
+      sessionSnapshotReads === 2 && overlayOwnershipReads === 2 && visualOwnershipReads === 2,
+      "one desktop structural frame should use one planning observation and one post-overlay committed observation",
     );
   }
 
@@ -1917,6 +1913,57 @@ export async function runDesktopLayerTests() {
     layer.commitFolderSourceGhosting();
     assert((folderA.state.ghosted as boolean) === false, "update should cache raw source ghosting, not ownership-expanded source ghosting");
     assert(folderB.state.ghosted === true, "update should keep the raw Vue folder source ghosted after detached ownership release");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
+    const folder = { id: "folder-late-closing-owner", name: "Late Closing Owner", type: "folder" };
+    const pageTrack = makePageTrack([]);
+    const layer = makeLayer(DesktopLayer, pageTrack);
+    const node = prepareLayerForDesktopQuiescenceTest(layer, folder);
+    pageTrack.addChild(asTestDependency<ContainerChild>(node));
+    layer.folderDropFrameSuppressedIds = new Set();
+    layer.updateFolderDropTargetLayers = () => {};
+    layer.updateGroupDragLayer = () => {};
+    layer.updateDiagnostics = () => ({});
+    layer.visualOwnership = new FolderVisualOwnershipRegistry();
+    let preparedEntry: unknown = null;
+    layer.updateSingleStageFolderLayer = () => {
+      layer.singleStageFolderLayer.folderVisualSession = makeFolderVisualSession({
+        active: true,
+        folderId: folder.id,
+        ghostKeys: [`closing:${folder.id}`],
+      });
+      layer.singleStageFolderLayer.getDesktopSourceGhostedIds = () => new Set([folder.id]);
+      layer.ensureFolderHandoffNode(folder.id, node, { x: 12, y: 34 }, {
+        resetVisual: true,
+        revealLabel: false,
+      });
+      preparedEntry = layer.getFolderHandoffEntry(folder.id);
+      layer.visualOwnership.acquire(makeDesktopSourceVisualKey(folder.id), {
+        folderId: folder.id,
+        kind: "closing",
+        token: "late-closing-owner",
+      });
+    };
+
+    layer.updateStructure({
+      ...makeDesktopQuiescenceState(folder),
+      folderSourceGhostedIds: new Set([folder.id]),
+    });
+
+    assert(preparedEntry != null, "test setup should prepare the close handoff during the overlay update");
+    assert(
+      layer.getFolderHandoffEntry(folder.id) === preparedEntry,
+      "same-frame closing ownership should keep the newly prepared desktop handoff entry",
+    );
+    assert(
+      node.visualWrap.visible === false && node.__folderSourceGhostedByOwnership === true,
+      "fresh closing ownership should keep the real folder artwork hidden behind its closing substitute",
+    );
+    layer.visualOwnership.release(makeDesktopSourceVisualKey(folder.id), "late-closing-owner");
+    layer.clearFolderHandoffNode(folder.id);
     motionRuntime.reset();
   }
 
