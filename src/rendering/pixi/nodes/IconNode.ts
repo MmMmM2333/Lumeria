@@ -344,6 +344,7 @@ export class IconNode extends Container {
   declare state?: IconVisualState;
   declare folderSlotReleaseVisualTargetSize?: number | null;
   declare folderHandoffLabelRevealInProgress?: boolean;
+  declare folderHandoffLabelReleased?: boolean;
   declare folderHandoffSourceHidden?: boolean;
 
   constructor(options: IconNodeOptions = {}) {
@@ -1626,19 +1627,20 @@ export class IconNode extends Container {
     killMotionOf(this.labelText);
     this.labelText.renderable = true;
     this.labelText.alpha = 0;
+    this.folderHandoffLabelReleased = true;
     this.folderHandoffLabelRevealInProgress = true;
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
       this.folderHandoffLabelRevealInProgress = false;
-      if (!this.folderHandoffSourceHidden && this.labelText?.visible) {
+      if ((!this.folderHandoffSourceHidden || this.folderHandoffLabelReleased) && this.labelText?.visible) {
         this.labelText.renderable = true;
         this.labelText.alpha = 1;
       }
     };
     motion(this.labelText)
-      .preset("fade", { duration: 0.24, ease: "sine.inOut" })
+      .preset("fade", { duration: 0.24, ease: "linear" })
       .overlay()
       .interrupt("retarget")
       .to({ alpha: 1, onCancel: finish, onComplete: finish })
@@ -1652,6 +1654,7 @@ export class IconNode extends Container {
     if (this.labelText) {
       this.labelText.renderable = !sourceHidden;
       if (sourceHidden) {
+        this.folderHandoffLabelReleased = false;
         this.finishLabelTransitionBlend();
         this.cancelFolderHandoffLabelFade();
         killMotionOf(this.labelText);
@@ -1669,12 +1672,20 @@ export class IconNode extends Container {
     this.setFolderHandoffSourceHidden(hidden);
   }
 
+  releaseFolderHandoffLabel(): void {
+    if (!this.folderHandoffSourceHidden || this.folderHandoffLabelReleased || !this.labelText?.visible) return;
+    this.startFolderHandoffLabelFade();
+  }
+
   releaseFolderHandoffSource(options: ReleaseFolderHandoffOptions = {}): void {
+    const labelAlreadyReleased = this.folderHandoffLabelReleased === true;
     this.setFolderHandoffSourceHidden(false);
     if (!this.labelText?.visible) return;
     this.labelText.renderable = true;
     if (options.fadeLabel === false) {
       this.restoreLabelAfterGhost();
+    } else if (labelAlreadyReleased) {
+      this.folderHandoffLabelReleased = true;
     } else {
       this.startFolderHandoffLabelFade();
     }
@@ -1685,6 +1696,7 @@ export class IconNode extends Container {
     this.cancelFolderHandoffLabelFade();
     killMotionOf(this.labelText);
     this.labelText.alpha = 1;
+    this.folderHandoffLabelReleased = false;
   }
 
   renderEditButtons(state: IconVisualState): void {

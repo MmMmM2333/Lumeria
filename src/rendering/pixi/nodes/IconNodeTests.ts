@@ -463,22 +463,32 @@ export async function runIconNodeTests(): Promise<void> {
     node.releaseFolderHandoffSource({ fadeLabel: false });
     assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 1), "explicit handoff source release should be able to restore the label immediately");
     node.setFolderHandoffSourceHidden(true);
-    node.releaseFolderHandoffSource();
-    assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 0), "default handoff source release should start the label fade from zero");
+    node.releaseFolderHandoffLabel();
+    assert(node.visualWrap.visible === false, "perceptual arrival should keep the real folder artwork hidden until exact handoff");
+    assert(node.labelText.renderable === true && nearlyEqual(node.labelText.alpha, 0), "perceptual arrival should start the label fade from zero");
     assert(
       motionRuntime.hasActiveWork(),
       "folder handoff label fade should keep the presentation loop active until the visible fade completes",
     );
     const delayedPresentationDeltas = [0.075, 0.033, 0.033, 0.033];
     const delayedPresentationAlphas: number[] = [];
-    for (const delta of delayedPresentationDeltas) {
+    for (const [index, delta] of delayedPresentationDeltas.entries()) {
       motionRuntime.step(delta);
       delayedPresentationAlphas.push(node.labelText.alpha);
+      if (index === 0) {
+        const alphaAtExactHandoff = node.labelText.alpha;
+        node.releaseFolderHandoffSource();
+        assert((node.visualWrap.visible as boolean) === true, "exact handoff should reveal the real folder artwork");
+        assert(
+          nearlyEqual(node.labelText.alpha, alphaAtExactHandoff) && node.folderHandoffLabelRevealInProgress === true,
+          "exact handoff should preserve the early label fade instead of restarting it",
+        );
+      }
     }
     const perceptiblePresentationFrames = delayedPresentationAlphas.filter((alpha) => alpha >= 0.1 && alpha <= 0.9);
     assert(
-      delayedPresentationAlphas[0]! > 0 && delayedPresentationAlphas[0]! <= 0.35,
-      `folder handoff label should not jump mostly opaque after a delayed first presentation frame, got ${delayedPresentationAlphas.join(",")}`,
+      delayedPresentationAlphas[0]! >= 0.18 && delayedPresentationAlphas[0]! <= 0.35,
+      `folder handoff label should become perceptible early without jumping mostly opaque after a delayed first presentation frame, got ${delayedPresentationAlphas.join(",")}`,
     );
     assert(
       perceptiblePresentationFrames.length >= 4 && node.folderHandoffLabelRevealInProgress === true,
@@ -490,6 +500,18 @@ export async function runIconNodeTests(): Promise<void> {
       nearlyEqual(node.labelText.alpha, 1) && !readBooleanProperty(node, "folderHandoffLabelRevealInProgress"),
       "folder handoff label motion should finish once at fully visible alpha",
     );
+
+    node.setFolderHandoffSourceHidden(true);
+    node.releaseFolderHandoffLabel();
+    motionRuntime.step(0.05);
+    assert(node.labelText.alpha > 0, "a restarted handoff should begin its early label fade before cancellation");
+    node.setFolderHandoffSourceHidden(true);
+    assert(
+      (node.visualWrap.visible as boolean) === false && (node.labelText.renderable as boolean) === false && nearlyEqual(node.labelText.alpha, 0) &&
+      !readBooleanProperty(node, "folderHandoffLabelRevealInProgress"),
+      "canceling an early handoff label release should atomically restore the fully hidden source state",
+    );
+    node.releaseFolderHandoffSource({ fadeLabel: false });
 
     motionRuntime.reset();
     node.labelText.visible = true;

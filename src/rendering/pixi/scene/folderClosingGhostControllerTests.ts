@@ -418,6 +418,7 @@ function makeHarness(options: TestHarnessOptions = {}): TestHarness {
     closingAdapter: controller,
     onCloseHandoffChange: (active, folderId) => activityChanges.push({ active, folderId }),
     onClosingHandoffReady: (folderId) => calls.push(`ready:${folderId}`),
+    onClosingPresentationReady: (folderId) => calls.push(`presentation:${folderId}`),
     ownershipRevision: () => visualOwnership.getRevision(),
     ...(options.openingAdapter ? { openingAdapter: options.openingAdapter } : {}),
   });
@@ -691,6 +692,7 @@ export function runFolderClosingGhostControllerTests() {
 
     runFrameArrive(harness.layer);
     assert(!lease.snapshot().handoffReady, "a thumbnail child should keep handoff pending after frame arrival");
+    assert(!lease.snapshot().presentationReady, "a thumbnail child should keep presentation pending after frame arrival");
     let sawComplementaryCrossfade = false;
     for (let frame = 0; frame < 40 && ghost.folderSlotReleaseMix <= 0; frame += 1) {
       motionRuntime.step(0.025);
@@ -710,6 +712,12 @@ export function runFolderClosingGhostControllerTests() {
     });
     assert(ghost.folderSlotReleaseTargetSize === 16, "geometry retargets should not rebuild the session-owned native raster size");
     assert(ghost.folderSlotReleaseMix >= mixBeforeRetarget, "geometry retargets should not rewind the visual handoff mix");
+    for (let frame = 0; frame < 80 && !lease.snapshot().presentationReady; frame += 1) {
+      motionRuntime.step(0.025);
+    }
+    assert(lease.snapshot().presentationReady, "thumbnail motion arrival should release presentation without waiting for exact rendered geometry");
+    assert(harness.calls.includes("presentation:folder-1"), "perceptual arrival should publish the presentation-ready callback once");
+    assert(!lease.snapshot().handoffReady, "presentation readiness should keep the real folder artwork hidden until exact rendered geometry is stable");
     for (let frame = 0; frame < 80 && !ghost.folderSlotReleaseCommitted; frame += 1) {
       motionRuntime.step(0.025);
       if (ghost.folderSlotReleaseMix > 0 && ghost.folderSlotReleaseMix < 1) {

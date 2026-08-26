@@ -336,10 +336,12 @@ export async function runFolderVisualSessionTests() {
     const closing = makeClosingAdapter();
     const handoffChanges: Array<{ active: boolean; folderId: string | null }> = [];
     const readyFolders: Array<string | null> = [];
+    const presentationFolders: string[] = [];
     const session = new FolderVisualSession({
       closingAdapter: closing.adapter,
       onCloseHandoffChange: (active, folderId) => handoffChanges.push({ active, folderId }),
       onClosingHandoffReady: (folderId) => readyFolders.push(folderId),
+      onClosingPresentationReady: (folderId) => presentationFolders.push(folderId),
       openingAdapter: opening.adapter,
     });
     const openLease = session.open({ folderId: "folder-a", targetKey: "target-a" });
@@ -366,9 +368,15 @@ export async function runFolderVisualSessionTests() {
 
     assert(reporter.previewStarted("preview-a").status === "accepted", "preview participation should be registered by the phase reporter");
     reporter.frameVisualReady();
+    assert(presentationFolders.length === 0, "frame arrival should wait for every visual-critical thumbnail before releasing presentation");
+    assert(reporter.ghostArrived("app-a").status === "accepted", "perceptual ghost arrival should be accepted once");
+    assert(reporter.ghostArrived("app-a").status === "duplicate", "duplicate perceptual ghost arrival should be explicit");
+    assert(presentationFolders.join(",") === "folder-a", "frame and thumbnail arrival should release presentation before exact handoff");
+    assert(closeLease.snapshot().presentationReady, "the close snapshot should expose perceptual presentation readiness");
+    assert(close.handoffEvents.length === 0, "perceptual presentation readiness must not imply exact artwork handoff");
     reporter.ghostVisualReady("app-a");
     reporter.previewComplete("preview-a");
-    assert(close.handoffEvents.length === 1, "visual-critical settlement should emit one handoff-ready effect");
+    assert((close.handoffEvents.length as number) === 1, "visual-critical settlement should emit one handoff-ready effect");
     const handoffEvent = requireItem(close.handoffEvents, 0, "closing handoff event");
     assert(handoffEvent.controllerKeys.join(",") === "controller-a,controller-b", "the handoff effect should carry controller completions as readonly values");
     assert(close.overlaySettledCount === 0, "handoff readiness must not imply full overlay settlement");

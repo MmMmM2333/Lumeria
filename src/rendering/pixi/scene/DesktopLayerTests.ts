@@ -55,6 +55,7 @@ interface TestNode {
   labelRevealCount: number;
   labelText: { alpha: number; renderable: boolean; visible: boolean };
   parent: Container | null;
+  releaseFolderHandoffLabel(): void;
   position: TestPoint;
   releaseFolderHandoffSource(options?: Readonly<{ fadeLabel?: boolean }>): void;
   resetFolderPreviewAfterGhost(): void;
@@ -203,6 +204,9 @@ function makeNode(id: string): TestNode {
       this.setFolderHandoffSourceHidden(false);
       if (options.fadeLabel === false) this.restoreLabelAfterGhost();
       else this.revealLabelAfterGhost();
+    },
+    releaseFolderHandoffLabel() {
+      this.revealLabelAfterGhost();
     },
     revealLabelAfterGhost() {
       this.labelRevealCount += 1;
@@ -461,8 +465,33 @@ export async function runDesktopLayerTests() {
       iconBoundsRegistry,
       onFolderRenderRequest: (reason) => renderRequests.push(reason),
     });
+    const handoffPrepareCalls: Array<{
+      folderId: string | null;
+      resetVisual: boolean | undefined;
+    }> = [];
+    layer.startClosingFolderHandoffNow = (...args: unknown[]) => {
+      const [folderId, rawOptions] = args;
+      const options = typeof rawOptions === "object" && rawOptions !== null
+        ? rawOptions as Readonly<{ resetVisual?: boolean | undefined }>
+        : {};
+      handoffPrepareCalls.push({
+        folderId: typeof folderId === "string" ? folderId : null,
+        resetVisual: options.resetVisual,
+      });
+      return true;
+    };
     layer.singleStageFolderLayer.onRenderRequest("folder-resize-layout");
+    layer.singleStageFolderLayer.onClosingHandoffPrepare("folder-a", { preserveVisualState: true });
+    layer.singleStageFolderLayer.onClosingHandoffPrepare("folder-b");
     assert(renderRequests[0] === "folder-resize-layout", "folder overlay render requests should be forwarded to the desktop surface scheduler");
+    assert(
+      handoffPrepareCalls[0]?.folderId === "folder-a" && handoffPrepareCalls[0]?.resetVisual === false,
+      "detached closing continuation should retain an in-progress desktop handoff",
+    );
+    assert(
+      handoffPrepareCalls[1]?.folderId === "folder-b" && handoffPrepareCalls[1]?.resetVisual === true,
+      "the closing controller's initial prepare should still reset stale desktop handoff visuals",
+    );
     assert(
       layer.children.indexOf(layer.folderDropStrokeLayer) < layer.children.indexOf(layer.groupDragLayer as ContainerChild),
       "folder drop stroke should render below the dragged actor"
@@ -2495,13 +2524,21 @@ export async function runDesktopLayerTests() {
     assert(folder.visualWrap.visible === false, "ready handoff should keep the real folder artwork hidden under the overlay");
     assert(folder.labelRevealCount === 0, "ready handoff should keep the real folder label hidden while the overlay owns the transition");
     assert(folder.labelText.renderable === false && folder.labelText.alpha === 0, "ready handoff should park the folder label as non-renderable at a hidden alpha");
+
+    assert(layer.revealClosingFolderHandoffLabel("folder-1"), "visual arrival should release the closing folder label");
+    assert((folder.labelRevealCount as number) === 1, "visual arrival should start the folder label fade before full artwork handoff");
+    assert(folder.visualWrap.visible === false, "visual arrival should reveal only the label while the closing overlay still owns the folder artwork");
+    assert((folder.labelText.renderable as boolean) === true && folder.labelText.alpha === 0, "the early label fade should begin renderable at transparent alpha");
+
     folder.labelText.alpha = 0.4;
     assert(layer.startClosingFolderHandoffNow("folder-1"), "duplicate ready handoff should keep the existing handoff active");
-    assert(folder.labelRevealCount === 0, "duplicate ready handoff should not reveal the label");
-    assert(folder.labelText.renderable === false && folder.labelText.alpha === 0, "duplicate ready handoff should keep the label hidden until source release");
+    assert((folder.labelRevealCount as number) === 1, "duplicate handoff sync should not restart the early label fade");
+    assert(folder.visualWrap.visible === false, "duplicate handoff sync should keep artwork hidden until exact handoff");
+    assert((folder.labelText.renderable as boolean) === true && folder.labelText.alpha === 0.4, "duplicate handoff sync should preserve the in-progress label alpha");
     layer.releaseClosingFolderHandoffVisual("folder-1");
-    assert((folder.labelRevealCount as number) === 1, "visual release should start the folder label fade exactly once");
-    assert(folder.labelRestoreCount === 0 && (folder.labelText.renderable as boolean) === true && folder.labelText.alpha === 0, "visual release should hand the label to the fade path instead of restoring immediately");
+    assert((folder.labelRevealCount as number) === 1, "exact visual release should not restart the early folder label fade");
+    assert((folder.visualWrap.visible as boolean) === true, "exact visual release should restore the real folder artwork");
+    assert(folder.labelRestoreCount === 0 && (folder.labelText.renderable as boolean) === true && folder.labelText.alpha === 0.4, "exact visual release should preserve the in-progress label alpha");
   }
 
   {

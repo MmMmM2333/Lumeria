@@ -399,6 +399,7 @@ function animateClosingGhost(
   target: FolderClosingTarget,
   follower: ClosingGhostFollower,
   onUpdate: (() => void) | null,
+  onArrive: (() => void) | null,
   onComplete: (() => void) | null,
   options: Readonly<{
     animateAlpha?: boolean | undefined;
@@ -467,6 +468,9 @@ function animateClosingGhost(
   }
   return parallel(animations, {
     scheduler: options.scheduler,
+    onArrive: () => {
+      onArrive?.();
+    },
     onComplete: () => {
       onComplete?.();
     },
@@ -1075,6 +1079,8 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     const applyFollower = () => this.applyClosingGhostFollower(active);
     applyFollower();
     const motionControl = animateClosingGhost(ghost, ghostMotion, target, follower, applyFollower, () => {
+      reporter.ghostArrived(itemId);
+    }, () => {
       active.motionSettled = true;
       follower.position.x = 0;
       follower.position.y = 0;

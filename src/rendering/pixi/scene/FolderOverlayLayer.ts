@@ -369,13 +369,21 @@ interface FolderOverlayRenderCopy {
   newFolderName?: string | undefined;
 }
 
+interface ClosingHandoffPrepareOptions {
+  preserveVisualState?: boolean | undefined;
+}
+
 interface FolderOverlayLayerOptions {
   detachedClosingVisualLayer?: Container | undefined;
   iconBoundsRegistry: IconBoundsRegistry;
   isHandoffSourceVisible?: ((folderId: string | null) => boolean) | undefined;
   onClosingFolderPointerDown?: ((folderId: string | null, event: unknown) => void) | undefined;
-  onClosingHandoffPrepare?: ((folderId: string | null) => void) | undefined;
+  onClosingHandoffPrepare?: ((
+    folderId: string | null,
+    options?: ClosingHandoffPrepareOptions,
+  ) => void) | undefined;
   onClosingHandoffReady?: ((folderId: string) => void) | undefined;
+  onClosingPresentationReady?: ((folderId: string) => void) | undefined;
   onClosingHandoffVisualRelease?: ((folderId: string | null) => void) | undefined;
   onDesktopSourceGhostingChange?: (() => void) | undefined;
   onIconAction?: IconNodeActionHandler | undefined;
@@ -1355,8 +1363,12 @@ export interface FolderOverlayLayer {
   registeredBoundsDirty: boolean;
   registeredBoundsFlushQueued: boolean;
   onIconAction: IconNodeActionHandler;
-  onClosingHandoffPrepare: (folderId: string | null) => void;
+  onClosingHandoffPrepare: (
+    folderId: string | null,
+    options?: ClosingHandoffPrepareOptions,
+  ) => void;
   onClosingHandoffReady: (folderId: string) => void;
+  onClosingPresentationReady: (folderId: string) => void;
   closingVisualReleaseFolderId: string | null;
   onClosingHandoffVisualRelease: (folderId?: string | null) => void;
   isHandoffSourceVisible: (folderId: string | null) => boolean;
@@ -1465,6 +1477,7 @@ export class FolderOverlayLayer extends Container {
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
+    this.onClosingPresentationReady = options.onClosingPresentationReady || (() => { });
     this.closingVisualReleaseFolderId = null;
     const onClosingHandoffVisualRelease = options.onClosingHandoffVisualRelease || (() => { });
     this.onClosingHandoffVisualRelease = (folderId = null) => {
@@ -1513,6 +1526,7 @@ export class FolderOverlayLayer extends Container {
       closingAdapter: this.closingGhosts,
       onCloseHandoffChange: (active, folderId) => this.onInternalActivityChange?.(active, folderId),
       onClosingHandoffReady: (folderId) => this.onClosingHandoffReady?.(folderId),
+      onClosingPresentationReady: (folderId) => this.onClosingPresentationReady?.(folderId),
       openingAdapter: this.openingGhosts,
       ownershipRevision: () => this.visualOwnership.getRevision?.() ?? null,
     });
@@ -3171,7 +3185,11 @@ export class FolderOverlayLayer extends Container {
     }
     let detachedVisual: DetachedClosingVisual | null = null;
     if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length || waitForDesktopClose)) {
-      this.onClosingHandoffPrepare?.(closingFolderId);
+      // This is a continuation of the handoff already prepared by the live
+      // closing controller. Keep any label fade that reached its perceptual
+      // release point while transferring the remaining artwork to a detached
+      // visual for the next folder's opening.
+      this.onClosingHandoffPrepare?.(closingFolderId, { preserveVisualState: true });
       const container = new Container();
       container.eventMode = (frameState || closingGhosts.length || previewSwapGhosts.length) ? "static" : "none";
       container.interactiveChildren = false;

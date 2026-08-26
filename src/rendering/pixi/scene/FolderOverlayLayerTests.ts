@@ -3120,7 +3120,10 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     const layer = Object.create(FolderOverlayLayer.prototype);
     const detachedChildren: DetachedTestChild[] = [];
     let clearCount = 0;
-    const preparedHandoffs: string[] = [];
+    const preparedHandoffs: Array<{
+      folderId: string | null;
+      preserveVisualState: boolean;
+    }> = [];
     const releasedHandoffs: string[] = [];
     const releaseDetachedChildCounts: number[] = [];
     const closingGhost = new Container();
@@ -3138,7 +3141,16 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     layer.closingGhostLayer = { removeChildren: () => [closingGhost] };
     layer.closingPreviewSwapLayer = { removeChildren: () => [] };
     layer.closingGhosts = { clear: () => { clearCount += 1; } };
-    layer.onClosingHandoffPrepare = (folderId: string) => preparedHandoffs.push(folderId);
+    layer.onClosingHandoffPrepare = (...args: unknown[]) => {
+      const [folderId, options] = args;
+      preparedHandoffs.push({
+        folderId: typeof folderId === "string" ? folderId : null,
+        preserveVisualState:
+          typeof options === "object"
+          && options !== null
+          && (options as Record<string, unknown>).preserveVisualState === true,
+      });
+    };
     layer.onClosingHandoffVisualRelease = (folderId: string) => {
       releasedHandoffs.push(folderId);
       releaseDetachedChildCounts.push(detachedChildren.length);
@@ -3181,7 +3193,8 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
 
     layer.detachClosingPresentationForOpen("folder-b");
     assert(clearCount === 1, "detached animation should clear the live closing controller once");
-    assert(preparedHandoffs.join(",") === "folder-a", "detached animation should prepare the real folder handoff before it starts");
+    assert(preparedHandoffs[0]?.folderId === "folder-a", "detached animation should prepare the real folder handoff before it starts");
+    assert(preparedHandoffs[0]?.preserveVisualState === true, "detached continuation should preserve an in-progress desktop handoff instead of restarting its label fade");
     assert(layer.getDesktopSourceGhostedIds().has("folder-a"), "detached animation should hold the desktop source while it is running");
     assert(detachedChildren.length === 1, "detached animation should keep the visual mounted while it is running");
     for (let index = 0; index < 3; index += 1) motionRuntime.step(0.04);

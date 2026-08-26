@@ -4,6 +4,7 @@ import type { FolderOpeningGeometrySnapshot } from "./folderOpeningGeometrySnaps
 
 const FRAME_VISUAL_PENDING_KEY = "frame:visual";
 const FRAME_COMPLETE_PENDING_KEY = "frame:complete";
+const FRAME_PRESENTATION_PENDING_KEY = "frame:presentation";
 
 export type FolderVisualReportStatus = "accepted" | "duplicate" | "stale";
 
@@ -74,6 +75,7 @@ export type FolderClosingPhaseReporter = Readonly<{
   fail(error: unknown): FolderVisualReportResult;
   frameComplete(): FolderVisualReportResult;
   frameVisualReady(): FolderVisualReportResult;
+  ghostArrived(itemId: string): FolderVisualReportResult;
   ghostComplete(itemId: string, controllerKey?: string | null): FolderVisualReportResult;
   ghostVisualReady(itemId: string): FolderVisualReportResult;
   handoffStarted(): FolderVisualReportResult;
@@ -164,6 +166,8 @@ export type FolderCloseSnapshot = Readonly<{
   handoffTarget: Readonly<UnknownRecord> | null;
   overlaySettled: boolean;
   phase: "closing" | "handoff" | "settled";
+  presentationGhostIds: readonly string[];
+  presentationReady: boolean;
   previewKeys: readonly string[];
   visualGhostIds: readonly string[];
   visualReleased: boolean;
@@ -211,6 +215,7 @@ type SessionOptions<
   eventSink?: EventSink;
   onCloseHandoffChange?(active: boolean, folderId: string | null): void;
   onClosingHandoffReady?(folderId: string): void;
+  onClosingPresentationReady?(folderId: string): void;
   openingAdapter?: FolderOpeningVisualAdapter<OpeningPlan>;
   ownershipRevision?(): number | null;
 }>;
@@ -232,7 +237,7 @@ type OpenRecord<Plan extends FolderOpeningVisualPlan> = {
   targetKey: string;
 };
 
-type CloseEffect = "handoffReady" | "overlaySettled";
+type CloseEffect = "handoffReady" | "overlaySettled" | "presentationReady";
 
 type CloseRecord<Plan extends FolderClosingVisualPlan> = {
   adapterScope: FolderClosingAdapterScope<Plan> | null;
@@ -255,6 +260,9 @@ type CloseRecord<Plan extends FolderClosingVisualPlan> = {
   overlaySettled: boolean;
   owner: VisualOwner;
   phase: "closing" | "handoff" | "settled";
+  presentationGhostIds: Set<string>;
+  presentationPendingKeys: Set<string>;
+  presentationReady: boolean;
   previewKeys: Set<string>;
   reporter: FolderClosingPhaseReporter | null;
   settlementStarted: boolean;
@@ -347,6 +355,7 @@ export function assertFolderClosingPhaseReporter(
     "fail",
     "frameComplete",
     "frameVisualReady",
+    "ghostArrived",
     "ghostComplete",
     "ghostVisualReady",
     "handoffStarted",
@@ -386,6 +395,10 @@ function ghostVisualKey(itemId: string): string {
   return `ghost:visual:${itemId}`;
 }
 
+function ghostPresentationKey(itemId: string): string {
+  return `ghost:presentation:${itemId}`;
+}
+
 function ghostCompleteKey(itemId: string): string {
   return `ghost:complete:${itemId}`;
 }
@@ -410,6 +423,7 @@ export class FolderVisualSession<
   readonly #eventSink: EventSink;
   readonly #onCloseHandoffChange: SessionOptions<OpeningPlan, ClosingPlan>["onCloseHandoffChange"];
   readonly #onClosingHandoffReady: SessionOptions<OpeningPlan, ClosingPlan>["onClosingHandoffReady"];
+  readonly #onClosingPresentationReady: SessionOptions<OpeningPlan, ClosingPlan>["onClosingPresentationReady"];
   readonly #openingAdapter: FolderOpeningVisualAdapter<OpeningPlan> | null;
   readonly #ownershipRevision: SessionOptions<OpeningPlan, ClosingPlan>["ownershipRevision"];
   #close: CloseRecord<ClosingPlan> | null = null;
@@ -423,6 +437,7 @@ export class FolderVisualSession<
     this.#eventSink = options.eventSink || motionRuntime;
     this.#onCloseHandoffChange = options.onCloseHandoffChange;
     this.#onClosingHandoffReady = options.onClosingHandoffReady;
+    this.#onClosingPresentationReady = options.onClosingPresentationReady;
     this.#openingAdapter = options.openingAdapter || null;
     this.#ownershipRevision = options.ownershipRevision;
   }
@@ -513,6 +528,9 @@ export class FolderVisualSession<
         token: `folder-closing:${request.folderId}:${id}`,
       }),
       phase: "closing",
+      presentationGhostIds: new Set(),
+      presentationPendingKeys: new Set(),
+      presentationReady: false,
       previewKeys: new Set(),
       reporter: null,
       settlementStarted: false,
@@ -690,6 +708,7 @@ export class FolderVisualSession<
         if (record.frameComplete) return DUPLICATE;
         record.frameComplete = true;
         record.frameVisualComplete = true;
+        record.presentationPendingKeys.delete(FRAME_PRESENTATION_PENDING_KEY);
         record.visualPendingKeys.delete(FRAME_VISUAL_PENDING_KEY);
         record.overlayPendingKeys.delete(FRAME_COMPLETE_PENDING_KEY);
         this.#collectCloseEffects(record);
@@ -699,7 +718,17 @@ export class FolderVisualSession<
         if (!current()) return STALE;
         if (record.frameVisualComplete) return DUPLICATE;
         record.frameVisualComplete = true;
+        record.presentationPendingKeys.delete(FRAME_PRESENTATION_PENDING_KEY);
         record.visualPendingKeys.delete(FRAME_VISUAL_PENDING_KEY);
+        this.#collectCloseEffects(record);
+        return ACCEPTED;
+      },
+      ghostArrived: (itemId: string) => {
+        if (!current()) return STALE;
+        assertFolderId(itemId, "FolderClosingPhaseReporter arrived ghost itemId");
+        if (!record.presentationGhostIds.has(itemId)) return DUPLICATE;
+        record.presentationGhostIds.delete(itemId);
+        record.presentationPendingKeys.delete(ghostPresentationKey(itemId));
         this.#collectCloseEffects(record);
         return ACCEPTED;
       },
@@ -720,6 +749,8 @@ export class FolderVisualSession<
         assertFolderId(itemId, "FolderClosingPhaseReporter visual ghost itemId");
         if (!record.visualGhostIds.has(itemId)) return DUPLICATE;
         record.visualGhostIds.delete(itemId);
+        record.presentationGhostIds.delete(itemId);
+        record.presentationPendingKeys.delete(ghostPresentationKey(itemId));
         record.visualPendingKeys.delete(ghostVisualKey(itemId));
         this.#collectCloseEffects(record);
         return ACCEPTED;
@@ -758,6 +789,8 @@ export class FolderVisualSession<
         record.frameComplete = true;
         record.frameVisualComplete = true;
         record.ghostIds.clear();
+        record.presentationGhostIds.clear();
+        record.presentationPendingKeys.clear();
         record.previewKeys.clear();
         record.visualGhostIds.clear();
         record.visualPendingKeys.clear();
@@ -841,6 +874,7 @@ export class FolderVisualSession<
 
       const prepared = this.#closingAdapter.prepare(plan);
       record.settlementStarted = true;
+      record.presentationPendingKeys.add(FRAME_PRESENTATION_PENDING_KEY);
       record.visualPendingKeys.add(FRAME_VISUAL_PENDING_KEY);
       record.overlayPendingKeys.add(FRAME_COMPLETE_PENDING_KEY);
       for (const ghost of prepared.ghosts || []) {
@@ -849,6 +883,8 @@ export class FolderVisualSession<
         record.ghostIds.add(ghost.itemId);
         record.overlayPendingKeys.add(ghostCompleteKey(ghost.itemId));
         if (ghost.visualCritical) {
+          record.presentationGhostIds.add(ghost.itemId);
+          record.presentationPendingKeys.add(ghostPresentationKey(ghost.itemId));
           record.visualGhostIds.add(ghost.itemId);
           record.visualPendingKeys.add(ghostVisualKey(ghost.itemId));
         }
@@ -897,6 +933,14 @@ export class FolderVisualSession<
 
   #collectCloseEffects(record: CloseRecord<ClosingPlan>): void {
     if (!this.#isCurrentClose(record) || !record.settlementStarted) return;
+    if (!record.presentationReady && record.presentationPendingKeys.size === 0) {
+      record.presentationReady = true;
+      record.effectQueue.push("presentationReady");
+      this.#record("visibility", "presentation-ready", record, {
+        pendingPresentationCount: record.presentationPendingKeys.size,
+        pendingVisualCount: record.visualPendingKeys.size,
+      });
+    }
     if (!record.handoffReady && record.visualPendingKeys.size === 0) {
       record.handoffReady = true;
       record.effectQueue.push("handoffReady");
@@ -923,7 +967,9 @@ export class FolderVisualSession<
     try {
       while (record.effectQueue.length && this.#isCurrentClose(record)) {
         const effect = record.effectQueue.shift();
-        if (effect === "handoffReady") {
+        if (effect === "presentationReady") {
+          this.#onClosingPresentationReady?.(record.folderId);
+        } else if (effect === "handoffReady") {
           scope.onHandoffReady?.({ controllerKeys: freezeStrings(record.completedControllerKeys) });
         } else if (effect === "overlaySettled") {
           scope.onOverlaySettled?.();
@@ -1018,6 +1064,8 @@ export class FolderVisualSession<
       handoffTarget: record.handoffTarget,
       overlaySettled: record.overlaySettled,
       phase: record.phase,
+      presentationGhostIds: freezeStrings(record.presentationGhostIds),
+      presentationReady: record.presentationReady,
       previewKeys: freezeStrings(record.previewKeys),
       visualGhostIds: freezeStrings(record.visualGhostIds),
       visualReleased: record.visualReleased,

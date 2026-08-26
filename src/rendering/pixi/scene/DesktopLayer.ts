@@ -1148,8 +1148,12 @@ export class DesktopLayer extends Container {
       iconBoundsRegistry: this.iconBoundsRegistry,
       onDesktopSourceGhostingChange: () => this.onFolderRenderRequest("desktop-source-ownership-committed"),
       onClosingFolderPointerDown: (folderId: string | null, event: unknown) => this.onClosingFolderPointerDown(folderId, event),
-      onClosingHandoffPrepare: (folderId: string | null) => this.startClosingFolderHandoffNow(folderId, { resetVisual: true, revealLabel: false }),
+      onClosingHandoffPrepare: (folderId: string | null, prepareOptions = {}) => this.startClosingFolderHandoffNow(folderId, {
+        resetVisual: prepareOptions.preserveVisualState !== true,
+        revealLabel: false,
+      }),
       onClosingHandoffReady: (folderId: string) => this.startClosingFolderHandoffNow(folderId, { revealLabel: false }),
+      onClosingPresentationReady: (folderId: string) => this.revealClosingFolderHandoffLabel(folderId),
       onClosingHandoffVisualRelease: (folderId: string | null) => this.releaseClosingFolderHandoffVisual(folderId),
       // Authoritative "is this folder's real desktop icon currently visible". The
       // overlay/coordinator's own released flags can desync from the desktop handoff
@@ -2523,9 +2527,11 @@ export class DesktopLayer extends Container {
     }
     node.resetFolderPreviewAfterGhost?.();
     if (!entry.visualReleased) {
-      if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(true);
-      else node.setFolderHandoffVisualHidden?.(true);
-      entry.visualHidden = true;
+      if (!entry.visualHidden || !entry.labelRevealStarted) {
+        if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(true);
+        else node.setFolderHandoffVisualHidden?.(true);
+        entry.visualHidden = true;
+      }
     } else if (entry.visualHidden) {
       if (typeof node.setFolderHandoffSourceHidden === "function") node.setFolderHandoffSourceHidden(false);
       else node.setFolderHandoffVisualHidden?.(false);
@@ -2562,6 +2568,15 @@ export class DesktopLayer extends Container {
       suppressLabel: this.isProvisionalFolderRollbackActive(entry.folderId),
     });
     this.debugFolderHandoffRestore(entry, "desktop-restore-after");
+  }
+
+  revealClosingFolderHandoffLabel(folderId: string | null = null): boolean {
+    if (!folderId || this.isProvisionalFolderRollbackActive(folderId)) return false;
+    if (!this.startClosingFolderHandoffNow(folderId, { revealLabel: false })) return false;
+    const entry = this.getFolderHandoffEntry(folderId);
+    if (!entry || entry.suppressLabelReveal) return false;
+    this.revealFolderHandoffLabel(entry);
+    return entry.labelRevealStarted;
   }
 
   restoreFolderHandoffVisual(
@@ -2639,9 +2654,11 @@ export class DesktopLayer extends Container {
     options: RevealFolderHandoffOptions = {},
   ): void {
     const node = entry?.node;
-    if (!entry || entry.labelRevealStarted || !node || node.destroyed || !node.labelText?.visible) return;
+    if (!entry || entry.labelRevealStarted || entry.suppressLabelReveal || !node || node.destroyed || !node.labelText?.visible) return;
     entry.labelRevealStarted = true;
-    if (typeof node.releaseFolderHandoffSource === "function") {
+    if (!entry.visualReleased) {
+      node.releaseFolderHandoffLabel();
+    } else if (typeof node.releaseFolderHandoffSource === "function") {
       node.releaseFolderHandoffSource({ fadeLabel: options.animate !== false });
     } else if (options.animate === false && typeof node.restoreLabelAfterGhost === "function") node.restoreLabelAfterGhost();
     else if (typeof node.revealLabelAfterGhost === "function") node.revealLabelAfterGhost();
