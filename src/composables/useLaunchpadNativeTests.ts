@@ -1818,10 +1818,6 @@ export async function runLaunchpadNativeTests() {
         detail: "visibility updated",
       };
     }
-    if (command === "set_main_window_native_frame_enabled") {
-      assert(args.enabled === false, "close animation should disable the native window frame immediately");
-      return null;
-    }
     if (command === "begin_main_window_close") {
       assert(args.openSequence === 7, "close animation should invalidate the active open generation");
       return { accepted: true, generation: 8 };
@@ -1857,23 +1853,22 @@ export async function runLaunchpadNativeTests() {
     assert(calls.closeDesktop === 1, "custom window chrome close should enter the desktop close owner");
     assert(readCollectionLength(timers) === 1, "close animation should schedule one native hide timer");
     await flushMicrotasks(12);
-    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled", `close animation should invalidate reveal, hide the live desktop visual, and remove the native frame before the delayed hide; received ${closeAnimationCommands.join(",")}`);
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible", `close animation should let the accepted native close transaction own the surface and hide the live desktop visual before the delayed hide; received ${closeAnimationCommands.join(",")}`);
     assert(readCollectionLength(timers) === 2, "close animation should also schedule the live desktop idle stop");
     await takeTestTimer(timers)();
 
-    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled,hide_main_window", "close animation should hide the accepted generation before the live desktop idle stop expires");
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,hide_main_window", "close animation should hide the accepted generation before the live desktop idle stop expires");
     assert(readCollectionLength(timers) === 1, "close animation should leave one pending live desktop idle stop timer");
     assert(readRuntimePhase(options.liveDesktopRuntime.status) === "running", "close animation should keep live desktop running during the keep-alive window");
     await takeTestTimer(timers)();
     await flushMicrotasks(2);
 
-    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,set_main_window_native_frame_enabled,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
+    assert(closeAnimationCommands.join(",") === "begin_main_window_close,set_live_desktop_background_visible,hide_main_window,stop_live_desktop_background", "live desktop should stop after the close keep-alive window expires");
     assert(readRuntimePhase(options.liveDesktopRuntime.status) === "stopped", "idle stop should apply stopped live desktop status after hiding");
   }, {
     passBeginMainWindowCloseCommand: true,
     passHideMainWindowCommand: true,
     passLiveDesktopBackgroundSupport: true,
-    passWindowFrameCommand: true,
   });
 
   const cancelledHideCommands: string[] = [];
@@ -2072,48 +2067,6 @@ export async function runLaunchpadNativeTests() {
       return () => crossDisplayOpenEventHandlers.delete(eventName);
     },
     passRevealMainWindowCommand: true,
-  });
-
-  const serializedSurfaceCommands: string[] = [];
-  let releaseCloseEffects: (() => void) | undefined;
-  const blockedCloseEffects = new Promise<void>((resolve) => {
-    releaseCloseEffects = resolve;
-  });
-  await withMockTauri(async (command, args) => {
-    if (command === "set_main_window_effects_enabled") {
-      serializedSurfaceCommands.push(`effects:${args.enabled}`);
-      if (!args.enabled) return blockedCloseEffects;
-      return null;
-    }
-    if (command === "set_main_window_native_frame_enabled") {
-      serializedSurfaceCommands.push(`frame:${args.enabled}`);
-      return null;
-    }
-    throw new Error(`Unexpected invoke: ${command}`);
-  }, async () => {
-    const { options } = makeOptions();
-    const native = createNative(options);
-
-    const surfaceUpdates = [
-      native.setNativeWindowEffectsEnabled(false),
-      native.setNativeWindowFrameEnabled(false),
-      native.setNativeWindowFrameEnabled(true),
-      native.setNativeWindowEffectsEnabled(true),
-    ];
-    await flushMicrotasks(8);
-
-    assert(serializedSurfaceCommands.join(",") === "effects:false", "an in-flight close effect update should block every later native surface update");
-    if (!releaseCloseEffects) throw new Error("close effects release callback was not installed");
-    releaseCloseEffects();
-    await Promise.all(surfaceUpdates);
-
-    assert(
-      serializedSurfaceCommands.join(",") === "effects:false,frame:false,frame:true,effects:true",
-      `interrupted close updates should finish with the complete open surface state; received ${serializedSurfaceCommands.join(",")}`
-    );
-  }, {
-    passWindowEffectsCommand: true,
-    passWindowFrameCommand: true,
   });
 
   const settingsToggleEventHandlers = new Map<string, TestNativeEventHandler>();

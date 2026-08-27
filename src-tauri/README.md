@@ -22,6 +22,6 @@ Implemented commands:
 - `get_main_window_effects_support`: reports Windows build support for Acrylic, Mica, and Mica Alt.
 - `set_main_window_effects_enabled`: toggles and updates Acrylic/Mica/Mica Alt window effects during open/close transitions.
 - `set_main_window_mode`: switches the frameless main window between fullscreen and resizable windowed mode.
-- `set_main_window_native_frame_enabled`: toggles the native window frame so close animations do not show a stray shadow, border, or rounded corner.
+- `set_main_window_native_frame_enabled`: restores the native window frame during an accepted open; disabling it requires the matching open sequence and is normally owned atomically by `begin_main_window_close`.
 
 Directory scanning keeps `.lnk` and `.url` entries as shell-launched local shortcuts.

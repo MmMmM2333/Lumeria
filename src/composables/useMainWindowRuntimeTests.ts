@@ -66,8 +66,8 @@ function makePort(overrides: PortOverrides = {}) {
       if (overrides.effectsError) throw overrides.effectsError;
       return true;
     },
-    setFrameEnabled: async (enabled) => {
-      calls.push(["frame", enabled]);
+    setFrameEnabled: async (enabled, openSequence) => {
+      calls.push(["frame", enabled, openSequence]);
       return true;
     },
     setMode: async (mode, options) => {
@@ -107,9 +107,10 @@ export async function runMainWindowRuntimeTests() {
       material: WINDOW_EFFECT_MATERIAL_MICA_ALT,
       appearance: WINDOW_EFFECT_APPEARANCE_LIGHT,
     }),
-    runtime.setFrameEnabled(true),
+    runtime.setFrameEnabled(false, 17),
   ]);
   assert(calls[0]?.[0] === "effects" && calls[1]?.[0] === "frame", "surface updates should retain request order");
+  assert(calls[1]?.[2] === 17, "frame disable should carry the owning open sequence to the native adapter");
   const initialEffectOptions = calls[0]?.[3];
   assert(isRuntimeOptions(initialEffectOptions), "effect updates should include native options");
   assert(initialEffectOptions.material === WINDOW_EFFECT_MATERIAL_MICA_ALT, "effect updates should preserve supported materials");

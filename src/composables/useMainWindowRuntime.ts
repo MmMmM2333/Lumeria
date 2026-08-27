@@ -130,9 +130,14 @@ export function useMainWindowRuntime(options: MainWindowRuntimeOptions = {}) {
     );
   }
 
-  function setFrameEnabled(enabled: unknown) {
+  function setFrameEnabled(enabled: unknown, openSequence: unknown = null) {
     const requested = Boolean(enabled);
-    return transition.apply("frame", requested, port.setFrameEnabled, [requested]);
+    const sequence = !requested && typeof openSequence === "number"
+      && Number.isSafeInteger(openSequence)
+      && openSequence > 0
+      ? openSequence
+      : null;
+    return transition.apply("frame", requested, port.setFrameEnabled, [requested, sequence]);
   }
 
   function setMode(request: MainWindowModeRequest = {}) {

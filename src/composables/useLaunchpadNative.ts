@@ -1016,7 +1016,8 @@ export function useLaunchpadNative(options: LaunchpadNativeOptions) {
 
   function setNativeWindowFrameEnabled(enabled: boolean) {
     if (!platform.isAvailable()) return;
-    return mainWindowRuntime.setFrameEnabled(enabled).then((outcome) => {
+    const openSequence = enabled ? null : nativeWindowOpenSequence;
+    return mainWindowRuntime.setFrameEnabled(enabled, openSequence).then((outcome) => {
       if (!outcome.ok) console.error("Failed to update Lumeria native window frame", outcome.error);
       return outcome;
     });
@@ -1214,7 +1215,6 @@ export function useLaunchpadNative(options: LaunchpadNativeOptions) {
     nativeWindowHideTimer = null;
     const hideSequence = ++nativeWindowHideSequence;
     const closeTransition = beginNativeWindowClose();
-    setNativeWindowFrameEnabled(false);
     syncLiveDesktopBackgroundRuntime();
     nativeWindowHideTimer = window.setTimeout(async () => {
       if (hideSequence !== nativeWindowHideSequence) return;

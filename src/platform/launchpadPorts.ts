@@ -93,7 +93,7 @@ export type MainWindowPort = Readonly<{
       material?: LayoutSettings["windowEffectMaterial"];
     }>,
   ): Promise<boolean>;
-  setFrameEnabled(enabled: boolean): Promise<boolean>;
+  setFrameEnabled(enabled: boolean, openSequence?: number | null): Promise<boolean>;
   setMode(
     mode: LayoutSettings["windowMode"],
     options?: Readonly<{ fullscreenOverscanEnabled?: boolean }>,

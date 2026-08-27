@@ -77,8 +77,6 @@ export type LaunchpadLaunchFlowOptions = Readonly<{
   prepareNativeLaunch?: ((app: ReadonlyLaunchpadApp) => boolean | Promise<boolean>) | undefined;
   schedulePageGridMetrics(): void;
   searchInputRef: Readonly<Ref<{ blur?: () => void } | null>>;
-  setNativeWindowEffectsEnabled(enabled: boolean): unknown;
-  setNativeWindowFrameEnabled?: ((enabled: boolean) => unknown) | undefined;
   shouldValidateLaunchTarget?: (() => boolean) | undefined;
   showNativeLaunchError?: ((error: LaunchFailureReport) => unknown) | undefined;
   startFolderZoomFadeClose?: ((options: Readonly<{ reason: "app-launch" }>) => unknown) | undefined;
@@ -245,8 +243,6 @@ export function useLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions) {
     if (options.isDragActive()) return;
     options.cancelInputGesture();
     options.beginNativeWindowClose?.();
-    options.setNativeWindowEffectsEnabled(false);
-    options.setNativeWindowFrameEnabled?.(false);
     const shouldClearSearchAfterClose = Boolean(closeOptions?.clearSearch && options.isSearchMode());
     options.clearFocusedIcon();
     options.keyboardFocusArea.value = "desktop";

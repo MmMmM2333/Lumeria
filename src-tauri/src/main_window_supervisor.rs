@@ -188,6 +188,7 @@ struct MainWindowSupervisorState {
     pending_open: PendingOpen,
     pending_close_generation: Option<u64>,
     renderer_events_ready: bool,
+    renderer_startup_completed_once: bool,
     queued_activation: Option<MainWindowOpenRequest>,
     recovery_prompt_active: bool,
 }
@@ -224,9 +225,23 @@ impl MainWindowSupervisorState {
         pending_open: PendingOpen::Idle,
         pending_close_generation: None,
         renderer_events_ready: false,
+        renderer_startup_completed_once: false,
         queued_activation: None,
         recovery_prompt_active: false,
     };
+
+    fn begin_renderer_navigation(&mut self, was_visible: bool) -> bool {
+        if self.webview_health != WebviewHealth::Healthy || !self.renderer_startup_completed_once {
+            return false;
+        }
+        self.renderer_events_ready = false;
+        self.pending_open = PendingOpen::Idle;
+        self.pending_close_generation = None;
+        if was_visible && self.queued_activation.is_none() {
+            self.queued_activation = Some(MainWindowOpenRequest::default());
+        }
+        true
+    }
 
     fn request_activation(
         &mut self,
@@ -257,8 +272,13 @@ impl MainWindowSupervisorState {
             return StartupCompletionTransition::Ignore;
         }
         self.renderer_events_ready = true;
+        let is_first_renderer_startup = !self.renderer_startup_completed_once;
+        self.renderer_startup_completed_once = true;
         if let Some(request) = self.queued_activation.take() {
             return StartupCompletionTransition::Dispatch(request);
+        }
+        if !is_first_renderer_startup {
+            return StartupCompletionTransition::RemainHidden;
         }
         if launch_origin == LaunchOrigin::LoginStartup {
             StartupCompletionTransition::RemainHidden
@@ -873,6 +893,12 @@ struct MainWindowSurfaceState {
     effects_enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MainWindowClosePlan {
+    transition: MainWindowCloseTransition,
+    requested_surface: Option<MainWindowSurfaceState>,
+}
+
 impl MainWindowSurfaceState {
     const DEFAULT: Self = Self {
         revision: 0,
@@ -925,6 +951,67 @@ impl MainWindowMode {
 
 fn next_main_window_open_sequence() -> u64 {
     MAIN_WINDOW_OPEN_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+fn plan_main_window_close(
+    supervisor: &mut MainWindowSupervisorState,
+    current_sequence: u64,
+    requested_sequence: u64,
+    surface: MainWindowSurfaceState,
+) -> MainWindowClosePlan {
+    if current_sequence == 0 || requested_sequence == 0 || current_sequence != requested_sequence {
+        return MainWindowClosePlan {
+            transition: MainWindowCloseTransition {
+                accepted: false,
+                generation: current_sequence,
+            },
+            requested_surface: None,
+        };
+    }
+    let generation = current_sequence.wrapping_add(1);
+    if !supervisor.begin_close(requested_sequence, generation) {
+        return MainWindowClosePlan {
+            transition: MainWindowCloseTransition {
+                accepted: false,
+                generation: current_sequence,
+            },
+            requested_surface: None,
+        };
+    }
+    MainWindowClosePlan {
+        transition: MainWindowCloseTransition {
+            accepted: true,
+            generation,
+        },
+        requested_surface: Some(MainWindowSurfaceState {
+            revision: surface.revision.wrapping_add(1),
+            native_frame_enabled: false,
+            effects_enabled: false,
+        }),
+    }
+}
+
+fn renderer_navigation_surface_state(surface: MainWindowSurfaceState) -> MainWindowSurfaceState {
+    MainWindowSurfaceState {
+        revision: surface.revision.wrapping_add(1),
+        native_frame_enabled: true,
+        effects_enabled: true,
+    }
+}
+
+fn validate_main_window_disable_sequence(
+    current_sequence: u64,
+    requested_sequence: Option<u64>,
+) -> Result<bool, String> {
+    let Some(requested_sequence) = requested_sequence else {
+        return Err("Disabling the main-window surface requires an open sequence".to_string());
+    };
+    if requested_sequence == 0 {
+        return Err(
+            "Disabling the main-window surface requires a positive open sequence".to_string(),
+        );
+    }
+    Ok(requested_sequence == current_sequence)
 }
 
 fn prepare_main_window_surface_for_sequence(
@@ -1277,10 +1364,19 @@ pub(crate) fn set_main_window_mode(
 pub(crate) fn set_main_window_native_frame_enabled(
     app: &AppHandle,
     enabled: bool,
+    open_sequence: Option<u64>,
 ) -> Result<(), String> {
     let _transition = MAIN_WINDOW_TRANSITION_LOCK.lock().map_err(|_| {
         "Failed to lock the main-window transition before changing frame state".to_string()
     })?;
+    if !enabled
+        && !validate_main_window_disable_sequence(
+            MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed),
+            open_sequence,
+        )?
+    {
+        return Ok(());
+    }
     let state = current_main_window_surface_state()?;
     let requested = MainWindowSurfaceState {
         revision: state.revision.wrapping_add(1),
@@ -2509,12 +2605,15 @@ pub(crate) fn set_main_window_effects_enabled(
     let _transition = MAIN_WINDOW_TRANSITION_LOCK.lock().map_err(|_| {
         "Failed to lock the main-window transition before changing effects".to_string()
     })?;
+    if !enabled
+        && !validate_main_window_disable_sequence(
+            MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed),
+            open_sequence,
+        )?
+    {
+        return Ok(());
+    }
     if !enabled {
-        if open_sequence
-            .is_some_and(|sequence| sequence != MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed))
-        {
-            return Ok(());
-        }
         MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -2773,6 +2872,80 @@ pub(crate) fn complete_renderer_startup(
     Ok(())
 }
 
+pub(crate) fn begin_main_renderer_navigation(app: &AppHandle) {
+    let _transition = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
+        Ok(transition) => transition,
+        Err(_) => {
+            log::error!(
+                target: "main-window",
+                "Failed to lock the main-window transition before renderer navigation"
+            );
+            return;
+        }
+    };
+    let was_visible = app
+        .get_webview_window("main")
+        .and_then(|window| {
+            let visible = window.is_visible().ok()?;
+            let minimized = window.is_minimized().ok()?;
+            Some(visible && !minimized)
+        })
+        .unwrap_or(false);
+    let did_begin = match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
+        Ok(mut state) => state.begin_renderer_navigation(was_visible),
+        Err(_) => {
+            log::error!(
+                target: "main-window",
+                "Failed to lock main window supervisor state before renderer navigation"
+            );
+            false
+        }
+    };
+    if did_begin {
+        invalidate_current_main_window_open_sequence();
+        if was_visible {
+            hide_main_window_surface(app, true);
+        }
+        if let Err(error) = reset_main_window_surface_for_renderer_navigation(app) {
+            log::error!(
+                target: "main-window",
+                "Failed to restore the native surface before renderer navigation: {error}"
+            );
+            hide_main_window_surface(app, true);
+        }
+    }
+}
+
+fn reset_main_window_surface_for_renderer_navigation(app: &AppHandle) -> Result<(), String> {
+    let previous = current_main_window_surface_state()?;
+    let requested = renderer_navigation_surface_state(previous);
+    let mode = current_main_window_mode()?;
+    let window = app.get_webview_window("main");
+    MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let apply_result = apply_reentrant_state_transition(
+        &MAIN_WINDOW_SURFACE_STATE,
+        requested,
+        || "Failed to lock main window surface state before renderer navigation".to_string(),
+        |_| match window.as_ref() {
+            Some(window) => apply_main_window_native_surface_state(window, mode, requested),
+            None => Ok(()),
+        },
+    );
+    if let Err(error) = apply_result {
+        if let Some(window) = window.as_ref() {
+            if let Err(rollback_error) =
+                apply_main_window_native_surface_state(window, mode, previous)
+            {
+                return Err(format!(
+                    "{error}; additionally failed to restore the previous main-window surface: {rollback_error}"
+                ));
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn begin_supervised_open(app: &AppHandle) -> Option<u64> {
     let _transition = match MAIN_WINDOW_TRANSITION_LOCK.lock() {
         Ok(transition) => transition,
@@ -2942,33 +3115,62 @@ pub(crate) fn open_main_window(app: &AppHandle) {
 }
 
 pub(crate) fn begin_main_window_close(
+    app: &AppHandle,
     open_sequence: u64,
 ) -> Result<MainWindowCloseTransition, String> {
     let _transition = MAIN_WINDOW_TRANSITION_LOCK
         .lock()
         .map_err(|_| "Failed to lock the main-window transition before close".to_string())?;
     let current = MAIN_WINDOW_OPEN_SEQUENCE.load(Ordering::Relaxed);
-    if current != open_sequence {
-        return Ok(MainWindowCloseTransition {
-            accepted: false,
-            generation: current,
-        });
+    let surface = current_main_window_surface_state()?;
+    let mode = current_main_window_mode()?;
+    let window = app.get_webview_window("main");
+    let (plan, previous_supervisor) = {
+        let mut supervisor = MAIN_WINDOW_SUPERVISOR_STATE
+            .lock()
+            .map_err(|_| "Failed to lock main window supervisor state before close".to_string())?;
+        let previous = *supervisor;
+        (
+            plan_main_window_close(&mut supervisor, current, open_sequence, surface),
+            previous,
+        )
+    };
+    let Some(requested_surface) = plan.requested_surface else {
+        return Ok(plan.transition);
+    };
+
+    MAIN_WINDOW_EFFECT_DISABLE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let apply_result = apply_reentrant_state_transition(
+        &MAIN_WINDOW_SURFACE_STATE,
+        requested_surface,
+        || "Failed to lock main window surface state before close".to_string(),
+        |_| match window.as_ref() {
+            Some(window) => apply_main_window_native_surface_state(window, mode, requested_surface),
+            None => Ok(()),
+        },
+    );
+    if let Err(error) = apply_result {
+        let mut combined_error = error;
+        match MAIN_WINDOW_SUPERVISOR_STATE.lock() {
+            Ok(mut supervisor) => *supervisor = previous_supervisor,
+            Err(_) => combined_error.push_str(
+                "; additionally failed to restore main window supervisor state after close",
+            ),
+        }
+        if let Some(window) = window.as_ref() {
+            if let Err(rollback_error) =
+                apply_main_window_native_surface_state(window, mode, surface)
+            {
+                combined_error.push_str(&format!(
+                    "; additionally failed to restore the previous main-window surface: {rollback_error}"
+                ));
+            }
+        }
+        return Err(combined_error);
     }
-    let generation = current.wrapping_add(1);
-    let mut supervisor = MAIN_WINDOW_SUPERVISOR_STATE
-        .lock()
-        .map_err(|_| "Failed to lock main window supervisor state before close".to_string())?;
-    if !supervisor.begin_close(open_sequence, generation) {
-        return Ok(MainWindowCloseTransition {
-            accepted: false,
-            generation: current,
-        });
-    }
-    MAIN_WINDOW_OPEN_SEQUENCE.store(generation, Ordering::Relaxed);
-    Ok(MainWindowCloseTransition {
-        accepted: true,
-        generation,
-    })
+
+    MAIN_WINDOW_OPEN_SEQUENCE.store(plan.transition.generation, Ordering::Relaxed);
+    Ok(plan.transition)
 }
 
 pub(crate) fn hide_main_window(app: &AppHandle, generation: u64) -> Result<bool, String> {
@@ -3094,6 +3296,62 @@ mod tests {
     }
 
     #[test]
+    fn visible_renderer_navigation_replays_activation_after_the_new_startup_gate() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        );
+
+        supervisor.begin_renderer_navigation(true);
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        );
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Ignore
+        );
+    }
+
+    #[test]
+    fn hidden_renderer_navigation_does_not_reopen_a_manual_process() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        );
+
+        supervisor.begin_renderer_navigation(false);
+
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::RemainHidden
+        );
+    }
+
+    #[test]
+    fn renderer_navigation_revokes_the_previous_visibility_transactions() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        assert_eq!(
+            supervisor.complete_renderer_startup(LaunchOrigin::Manual),
+            StartupCompletionTransition::Dispatch(MainWindowOpenRequest::default())
+        );
+        assert!(supervisor.begin_open(17));
+        assert!(supervisor.confirm_renderer_ready(17));
+        assert!(supervisor.begin_close(17, 18));
+        assert!(supervisor.can_hide(18));
+
+        supervisor.begin_renderer_navigation(true);
+
+        assert!(!supervisor.can_hide(18));
+        assert_eq!(supervisor.pending_open, PendingOpen::Idle);
+    }
+
+    #[test]
     fn activation_before_renderer_startup_is_replayed_after_the_handshake() {
         let mut supervisor = MainWindowSupervisorState::DEFAULT;
         let request = MainWindowOpenRequest::default();
@@ -3188,6 +3446,68 @@ mod tests {
         assert!(supervisor.can_hide(18));
         supervisor.complete_hide(18);
         assert!(!supervisor.can_hide(18));
+    }
+
+    #[test]
+    fn close_plan_disables_the_surface_only_for_the_matching_open_generation() {
+        let mut supervisor = MainWindowSupervisorState::DEFAULT;
+        assert!(supervisor.begin_open(17));
+        assert!(supervisor.confirm_renderer_ready(17));
+        let surface = MainWindowSurfaceState::DEFAULT;
+
+        let stale = plan_main_window_close(&mut supervisor, 17, 16, surface);
+        assert_eq!(
+            stale.transition,
+            MainWindowCloseTransition {
+                accepted: false,
+                generation: 17,
+            }
+        );
+        assert_eq!(stale.requested_surface, None);
+
+        let accepted = plan_main_window_close(&mut supervisor, 17, 17, surface);
+        assert_eq!(
+            accepted.transition,
+            MainWindowCloseTransition {
+                accepted: true,
+                generation: 18,
+            }
+        );
+        assert_eq!(
+            accepted.requested_surface,
+            Some(MainWindowSurfaceState {
+                revision: 1,
+                native_frame_enabled: false,
+                effects_enabled: false,
+            })
+        );
+        assert!(supervisor.can_hide(18));
+    }
+
+    #[test]
+    fn renderer_navigation_restores_a_surface_left_disabled_by_close() {
+        let disabled = MainWindowSurfaceState {
+            revision: 12,
+            native_frame_enabled: false,
+            effects_enabled: false,
+        };
+
+        assert_eq!(
+            renderer_navigation_surface_state(disabled),
+            MainWindowSurfaceState {
+                revision: 13,
+                native_frame_enabled: true,
+                effects_enabled: true,
+            }
+        );
+    }
+
+    #[test]
+    fn surface_disable_requires_a_matching_positive_open_sequence() {
+        assert!(validate_main_window_disable_sequence(7, None).is_err());
+        assert!(validate_main_window_disable_sequence(7, Some(0)).is_err());
+        assert_eq!(validate_main_window_disable_sequence(7, Some(6)), Ok(false));
+        assert_eq!(validate_main_window_disable_sequence(7, Some(7)), Ok(true));
     }
 
     #[test]

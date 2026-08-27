@@ -64,6 +64,7 @@ use serde::{Deserialize, Serialize};
 use startup::{get_launch_context, LaunchContext};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    webview::PageLoadEvent,
     AppHandle, Emitter, Manager, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -518,9 +519,10 @@ fn launch_app_inner(
 
 #[tauri::command]
 fn begin_main_window_close(
+    app: AppHandle,
     open_sequence: u64,
 ) -> Result<main_window_supervisor::MainWindowCloseTransition, String> {
-    main_window_supervisor::begin_main_window_close(open_sequence)
+    main_window_supervisor::begin_main_window_close(&app, open_sequence)
 }
 
 #[tauri::command]
@@ -736,8 +738,12 @@ fn set_main_window_shortcut_capture_active(
 }
 
 #[tauri::command]
-fn set_main_window_native_frame_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
-    main_window_supervisor::set_main_window_native_frame_enabled(&app, enabled)
+fn set_main_window_native_frame_enabled(
+    app: AppHandle,
+    enabled: bool,
+    open_sequence: Option<u64>,
+) -> Result<(), String> {
+    main_window_supervisor::set_main_window_native_frame_enabled(&app, enabled, open_sequence)
 }
 
 #[tauri::command]
@@ -1265,6 +1271,11 @@ pub fn run() {
         .manage(launch_context)
         .manage(AppState::default())
         .setup(setup_app)
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" && payload.event() == PageLoadEvent::Started {
+                main_window_supervisor::begin_main_renderer_navigation(webview.app_handle());
+            }
+        })
         .on_menu_event(|app, event| {
             if event.id() == "show" {
                 open_main_window(app);

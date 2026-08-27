@@ -19,6 +19,7 @@ import {
   setAutostartEnabled,
   setLaunchpadApiBridgeForTests,
   setMainWindowMode,
+  setMainWindowNativeFrameEnabled,
 } from "./launchpadApi.js";
 
 export async function runLaunchpadApiTests() {
@@ -289,6 +290,21 @@ export async function runLaunchpadApiTests() {
     assert(await hideMainWindow(close.generation), "hide should return the native generation check result");
     assert(await revealMainWindow(17), "reveal should return whether the native generation was committed");
     assert(await setMainWindowMode("windowed", { fullscreenOverscanEnabled: false }) === "windowed", "window mode should return the applied native mode");
+    assert(await setMainWindowNativeFrameEnabled(false, 17), "native frame disable should cross the bridge with its owning open sequence");
+    const frameInvocation = invocations.at(-1);
+    assert(
+      frameInvocation?.command === "set_main_window_native_frame_enabled"
+        && frameInvocation.args?.enabled === false
+        && frameInvocation.args?.openSequence === 17,
+      "native frame disable should carry the matching open sequence",
+    );
+    let missingFrameSequenceError: unknown = null;
+    try {
+      await setMainWindowNativeFrameEnabled(false);
+    } catch (error) {
+      missingFrameSequenceError = error;
+    }
+    assert(missingFrameSequenceError instanceof TypeError, "native frame disable should reject a missing open sequence before IPC");
     assert(
       invocations.some(({ command, args }) => command === "hide_main_window" && args?.generation === 18),
       "hide should carry the accepted close generation across the bridge"

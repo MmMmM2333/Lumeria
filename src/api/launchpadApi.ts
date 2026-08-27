@@ -672,10 +672,16 @@ export async function setLaunchpadIconVariant(
   return result;
 }
 
-export async function setMainWindowNativeFrameEnabled(enabled: boolean): Promise<boolean> {
+export async function setMainWindowNativeFrameEnabled(
+  enabled: boolean,
+  openSequence: number | null = null,
+): Promise<boolean> {
   const invoke = getTauriInvoke();
   if (!invoke) return false;
-  await invoke("set_main_window_native_frame_enabled", { enabled: Boolean(enabled) });
+  await invoke("set_main_window_native_frame_enabled", {
+    enabled: Boolean(enabled),
+    openSequence: enabled ? null : requireMainWindowGeneration(openSequence, "openSequence"),
+  });
   return true;
 }
 

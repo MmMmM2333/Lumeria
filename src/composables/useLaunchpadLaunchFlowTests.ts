@@ -93,8 +93,6 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
     openLaunchErrorDialog: [] as Array<Readonly<{ message: string; suggestion: string; title: string }>>,
     schedulePageGridMetrics: 0,
     searchInputBlur: 0,
-    setNativeWindowEffectsEnabled: [] as boolean[],
-    setNativeWindowFrameEnabled: [] as boolean[],
     showNativeLaunchError: [] as LaunchFailureReport[],
     startFolderAppLaunchClose: 0,
     startFolderZoomFadeClose: [] as Array<Readonly<{ reason: "app-launch" }>>,
@@ -177,8 +175,6 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
       calls.schedulePageGridMetrics += 1;
     },
     searchInputRef,
-    setNativeWindowEffectsEnabled: (enabled) => calls.setNativeWindowEffectsEnabled.push(enabled),
-    setNativeWindowFrameEnabled: (enabled) => calls.setNativeWindowFrameEnabled.push(enabled),
     showNativeLaunchError: (error) => calls.showNativeLaunchError.push(error),
     shouldValidateLaunchTarget: () => Boolean(overrides.shouldValidateLaunchTarget),
     startFolderZoomFadeClose: (options) => {
@@ -224,8 +220,6 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(close.calls.beginNativeWindowClose === 1, "closing the desktop should invalidate the native reveal generation immediately");
     assert(close.calls.clearFocusedIcon === 1, "closing the desktop should clear selected icon");
     assert(close.calls.searchInputBlur === 1, "closing the desktop should blur search input");
-    assert(close.calls.setNativeWindowEffectsEnabled.join(",") === "false", "closing the desktop should disable native window effects");
-    assert(close.calls.setNativeWindowFrameEnabled.join(",") === "false", "closing the desktop should disable the native window frame");
     const loginStartup = createLaunchFlow({ initialDesktopOpen: false });
     assert(!loginStartup.flow.isDesktopOpen.value, "login startup should keep the desktop closed until activation");
     timers.runDelay(DESKTOP_CLOSE_DURATION);
@@ -273,7 +267,6 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(launch.calls.startFolderZoomFadeClose.length === 1, "folder app launches should start folder zoom-fade close");
     assert(launch.calls.startFolderZoomFadeClose[0]?.reason === "app-launch", "folder app launches should mark zoom-fade as app launch");
     assert(launch.calls.startFolderAppLaunchClose === 0, "folder app launches should not use the folder shrink-close path");
-    assert(launch.calls.setNativeWindowFrameEnabled.join(",") === "false", "app launch close animation should disable the native window frame");
     const launchCloseSessionId = launch.flow.appLaunchCloseSessionId.value;
     assert(typeof launchCloseSessionId === "number" && Number.isInteger(launchCloseSessionId), "app launch should publish a visual close session id");
     timers.runDelay(0);
