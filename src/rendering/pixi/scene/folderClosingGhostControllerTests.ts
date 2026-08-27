@@ -1,4 +1,5 @@
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { motion } from "../animation/motionTween.js";
 import {
   clearMotionPreferencesForTests,
   setReducedMotionForTests,
@@ -193,7 +194,7 @@ function makeGhost(id = "ghost"): TestGhost {
     removeFromParent() {
       this.parent?.removeChild?.(this);
     },
-    setState(
+  setState(
       state: FolderGhostIconNodeState,
       options: Readonly<{ preserveRootPresentation?: boolean | undefined }> = {},
     ) {
@@ -296,6 +297,10 @@ type TestLayer = FolderClosingGhostControllerLayer & {
     key: string | null,
     owner: Parameters<FolderClosingGhostControllerLayer["acquireDesktopSourceOwnership"]>[0],
   ): boolean;
+  mapClosingTargetRectToLocal(
+    state: Pick<FolderClosingState, "height" | "stageRect" | "width">,
+    rect: StageRect,
+  ): StageRect;
   rebuildPageTrackMask(): void;
 };
 
@@ -371,6 +376,9 @@ function makeHarness(options: TestHarnessOptions = {}): TestHarness {
     hidePageTrackForTransition() {
       this.pageTrack.visible = false;
     },
+    mapClosingTargetRectToLocal(_state, rect) {
+      return { ...rect };
+    },
     onClosingHandoffPrepare(folderId: string | null) {
       calls.push(`prepare:${folderId}`);
     },
@@ -379,6 +387,11 @@ function makeHarness(options: TestHarnessOptions = {}): TestHarness {
     },
     rebuildPageTrackMask() {
       calls.push("rebuild-mask");
+    },
+    restoreOpeningGhostPresentation(ghost) {
+      ghost.position.set(12, 34);
+      ghost.scale.set(0.75);
+      return true;
     },
     releaseTransitionOwnership(token, releaseOptions = {}) {
       visualOwnership.releaseByToken(token);
@@ -676,6 +689,44 @@ export function runFolderClosingGhostControllerTests() {
 
   {
     const harness = makeHarness();
+    harness.layer.mapClosingTargetRectToLocal = (_state, rect) => ({
+      height: rect.height / 2,
+      left: rect.left / 2,
+      top: rect.top / 2,
+      width: rect.width / 2,
+    });
+    const target: FolderClosingTarget = {
+      ...makeTarget("app-1", 0, { isThumbnailChild: true }),
+      sourceRect: { height: 40, left: 20, top: 30, width: 40 },
+      targetClientRect: { height: 20, left: 200, top: 240, width: 20 },
+      targetStageLayoutRect: null,
+    };
+    presentClose(harness, [target], makeState(), {
+      folderRect: { height: 72, left: 10, top: 20, width: 72 },
+    });
+    const ghost = harness.layer.closingGhostLayer.children[0];
+    const motionSnapshot = harness.controller.getMotionDebugSnapshot()[0];
+    assert(harness.layer.frameGhostTarget?.width === 36, "closing frame targets should be mapped into the live overlay coordinate space exactly once");
+    assert(harness.layer.frameGhostOptions?.toRadius === 14, "closing frame material geometry should derive from the mapped local shell size");
+    assert(motionSnapshot?.targetRect?.width === 10, "closing icon client targets should use the same mapped coordinate space as the frame");
+    assert(ghost?.position.x === 20 && ghost.position.y === 39, "closing icon sources should start from their mapped client-space pose");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeHarness();
+    const lease = presentClose(harness, [makeTarget("app-1", 0, { isThumbnailChild: true })]);
+    const ghost = harness.layer.closingGhostLayer.children[0];
+    assert(ghost, "remaining-duration coverage requires an active thumbnail ghost");
+    const initialDuration = Number(lease.detachedGhostMotion(ghost)?.duration);
+    motionRuntime.step(0.08);
+    const remainingDuration = Number(lease.detachedGhostMotion(ghost)?.duration);
+    assert(remainingDuration > 0 && remainingDuration < initialDuration, "detaching an interrupted close should continue only the remaining icon duration");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeHarness();
     const target = makeTarget("app-1", 0, { isThumbnailChild: true });
     const lease = presentClose(harness, [target], makeState(), {
       adapterOptions: {
@@ -780,9 +831,42 @@ export function runFolderClosingGhostControllerTests() {
     const harness = makeHarness({ openingAdapter });
     const openingLease = harness.session.open({ folderId: "folder-1", targetKey: "target-a" });
     openingLease.present({ state: {}, targets: [] });
+    motion(openingGhost)
+      .preset("handoff")
+      .handoff()
+      .to({ x: -100, y: -50 })
+      .start();
+    motion(openingGhost.scale)
+      .preset("handoff")
+      .handoff()
+      .to({ x: 2, y: 2 })
+      .start();
+    motionRuntime.step(0.05);
+    const openingPositionVelocity = Number(
+      Array.from(motionRuntime.getChannel(openingGhost, "x")?.base?.values?.() || [])[0]?.velocity,
+    );
+    const openingScaleVelocity = Number(
+      Array.from(motionRuntime.getChannel(openingGhost.scale, "x")?.base?.values?.() || [])[0]?.velocity,
+    );
     presentClose(harness);
 
     assert(harness.layer.closingGhostLayer.children[0] === openingGhost, "close should reuse the opening ghost through the reporter transfer port");
+    assert(
+      openingGhost.position.x === 12 && openingGhost.position.y === 34 && openingGhost.scale.x === 0.75,
+      "the closing owner should retain the restored opening pose without recomputing it from mixed coordinate spaces",
+    );
+    const activeClosingGhost = harness.controller.activeGhostsByItemId.get("app-1");
+    const closingPositionVelocity = Number(
+      Array.from(motionRuntime.getChannel(activeClosingGhost!.follower.position, "x")?.base?.values?.() || [])[0]?.velocity,
+    );
+    const closingScaleVelocity = Number(
+      Array.from(motionRuntime.getChannel(activeClosingGhost!.follower.scale, "x")?.base?.values?.() || [])[0]?.velocity,
+    );
+    assert(
+      openingPositionVelocity !== 0 && openingScaleVelocity !== 0 &&
+      closingPositionVelocity === 0 && closingScaleVelocity === 0,
+      "an interrupted opening should reset inherited icon velocity and reverse from the presented pose in sync with the frame shell",
+    );
     assert(openingRecords[0]?.taken && openingRecords[0].canceled, "Session should transfer the ghost first and then retire the opening scope");
     assert(!openingLease.isCurrent(), "the interrupted opening lease should become stale after transfer");
     motionRuntime.reset();

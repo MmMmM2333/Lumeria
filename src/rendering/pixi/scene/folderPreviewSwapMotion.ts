@@ -41,6 +41,7 @@ export type ClosingPreviewSwapPlan = Readonly<{
 }>;
 
 export type ClosingPreviewSwapPlanOptions = Readonly<{
+  mapClientRectToLocal?: ((rect: StageRect) => StageRect) | undefined;
   maskPadding?: number;
   stageHeight?: number;
   stageRect?: StageOrigin | null;
@@ -99,12 +100,13 @@ export function makeClosingPreviewSwapPlan(
   targets: readonly ClosingPreviewSwapTarget[],
   options: ClosingPreviewSwapPlanOptions = {},
 ): ClosingPreviewSwapPlan | null {
-  const { maskPadding = 2, stageHeight, stageRect = null, stageWidth } = options;
+  const { mapClientRectToLocal, maskPadding = 2, stageHeight, stageRect = null, stageWidth } = options;
   const localTargets: ClosingPreviewSwapLocalTarget[] = [];
   let bounds: PreviewSwapBounds | null = null;
   for (const target of targets || []) {
     const rect = target?.targetClientRect
-      ? clientRectToStageVisualRect(target.targetClientRect, stageRect)
+      ? mapClientRectToLocal?.(target.targetClientRect) ??
+        clientRectToStageVisualRect(target.targetClientRect, stageRect)
       : stageLayoutRectToStageVisualRect(
         stageRect as StageRect | null,
         stageWidth as number,

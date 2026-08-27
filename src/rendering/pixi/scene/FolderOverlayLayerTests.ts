@@ -238,7 +238,7 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     });
   }
   const { FolderOverlayLayer } = await import("./FolderOverlayLayer.js");
-  const { Container } = await import("pixi.js");
+  const { Container, Graphics, RenderLayer } = await import("pixi.js");
   const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
     if (!condition) throw new Error(`[Pixi folder overlay layer test failed] ${message}`);
   };
@@ -284,6 +284,13 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     assert(layer.panelContentLayer.mask === layer.panelClipMask, "folder panel content should be clipped by the rounded panel mask");
     assert(layer.openingGhostLayer.mask === layer.panelClipMask, "opening ghosts should be clipped by the rounded panel mask");
     assert(layer.pageTrack.mask === layer.pageMask, "folder page track should keep its page viewport mask");
+    const detachedClosingContentLayer = Reflect.get(layer, "detachedClosingContentLayer");
+    assert(detachedClosingContentLayer instanceof RenderLayer, "detached closing content should have an explicit render-order layer");
+    assert(
+      layer.children.indexOf(detachedClosingContentLayer) > layer.children.indexOf(layer.pageDotsLayer) &&
+      layer.children.indexOf(detachedClosingContentLayer) < layer.children.indexOf(layer.openingGhostLayer),
+      "detached closing content should render above the next shell but below the next folder's own ghosts",
+    );
 
     layer.panelContentLayer.mask = null;
     layer.openingGhostLayer.mask = null;
@@ -2605,6 +2612,104 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
 
   {
     motionRuntime.reset();
+    const root = new Container();
+    const detachedUnderlay = new Container();
+    detachedUnderlay.position.set(70, 45);
+    detachedUnderlay.scale.set(0.78);
+    const layer = new FolderOverlayLayer({
+      detachedClosingVisualLayer: detachedUnderlay,
+      iconBoundsRegistry: createIconBoundsRegistry(),
+    });
+    layer.position.set(18, 26);
+    layer.scale.set(1.22);
+    root.addChild(detachedUnderlay, layer);
+    const frameState = {
+      fillAlpha: 0.26,
+      fillColor: 0xf7f8ff,
+      height: 160,
+      left: 20,
+      progress: 0.4,
+      radius: 40,
+      strokeAlpha: 0.24,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 30,
+      width: 240,
+    };
+    layer.frameGhostState = { ...frameState };
+    layer.frameGhostFolderId = "folder-a";
+    layer.frameGhostPhase = "closing";
+    layer.frameGhostTransitionState = null;
+    layer.frameGhost.clear()
+      .roundRect(frameState.left, frameState.top, frameState.width, frameState.height, frameState.radius)
+      .fill({ color: frameState.fillColor, alpha: frameState.fillAlpha })
+      .stroke({ color: frameState.strokeColor, alpha: frameState.strokeAlpha, width: frameState.strokeWidth });
+    layer.frameGhost.visible = true;
+    const closingGhost = new Container();
+    closingGhost.position.set(210, 170);
+    closingGhost.scale.set(0.64);
+    layer.closingGhostLayer.addChild(closingGhost as never);
+    const beforeFrameBounds = layer.frameGhost.getBounds();
+    const beforeGhostOrigin = closingGhost.toGlobal({ x: 0, y: 0 });
+    const beforeGhostUnit = closingGhost.toGlobal({ x: 1, y: 0 });
+    attachClosingVisualSession(layer, {
+      detachedTarget: {
+        fillAlpha: 0.22,
+        fillColor: 0xffffff,
+        height: 64,
+        left: 140,
+        radius: 18,
+        strokeAlpha: 0.26,
+        strokeColor: 0xffffff,
+        strokeWidth: 1,
+        top: 170,
+        width: 64,
+      },
+      folderId: "folder-a",
+    });
+    layer.closingPhaseReporter.setDetachedGhostMotion(closingGhost, {
+      alpha: 1,
+      duration: 0.2,
+      scale: 0.2,
+      x: 172,
+      y: 202,
+    });
+    layer.commitFolderVisualPresentation();
+    closingGhost.position.set(310, 260);
+    closingGhost.scale.set(0.3);
+    layer.closingPhaseReporter.setDetachedGhostMotion(closingGhost, {
+      alpha: 1,
+      duration: 0.08,
+      scale: 0.2,
+      x: 172,
+      y: 202,
+    });
+
+    assert(layer.detachClosingPresentationForOpen("folder-b"), "cross-folder interruption should detach the active close presentation");
+    const visual = layer.detachedClosingVisuals[0];
+    const afterFrameBounds = visual?.frame?.getBounds();
+    const afterGhostOrigin = closingGhost.toGlobal({ x: 0, y: 0 });
+    const afterGhostUnit = closingGhost.toGlobal({ x: 1, y: 0 });
+    const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.001;
+    assert(afterFrameBounds &&
+      closeEnough(afterFrameBounds.x, beforeFrameBounds.x) &&
+      closeEnough(afterFrameBounds.y, beforeFrameBounds.y) &&
+      closeEnough(afterFrameBounds.width, beforeFrameBounds.width) &&
+      closeEnough(afterFrameBounds.height, beforeFrameBounds.height),
+    "detaching the shell between differently transformed parents should preserve its presented world geometry");
+    assert(closeEnough(afterGhostOrigin.x, beforeGhostOrigin.x) && closeEnough(afterGhostOrigin.y, beforeGhostOrigin.y) &&
+      closeEnough(afterGhostUnit.x - afterGhostOrigin.x, beforeGhostUnit.x - beforeGhostOrigin.x),
+    "detaching closing icons should restore the last rendered world pose instead of exposing an unpresented motion tick");
+    assert(closingGhost.parent === visual?.container, "detached icons should keep logical ownership under the desktop transform");
+    assert(layer.detachedClosingContentLayer.renderLayerChildren.includes(closingGhost), "detached icons should render above the next shell through the dedicated content layer");
+    assert(visual?.frame && !layer.detachedClosingContentLayer.renderLayerChildren.includes(visual.frame), "the previous shell should remain below the next shell instead of joining the content render layer");
+    layer.clearDetachedClosingVisualNow(visual, { reveal: false });
+    root.destroy({ children: true });
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
     const layer = Object.create(FolderOverlayLayer.prototype);
     layer.currentFolderId = "folder-1";
     attachOpeningVisualSession(layer, { begin: false });
@@ -3504,6 +3609,7 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     assert(visual?.motionControls?.size >= 1, "detached frame should retain geometry motion controls for cleanup");
     layer.clearDetachedClosingVisualNow(visual);
     assert(visual.destroyed === true && detachedChildren.length === 0, "immediate detached cleanup should destroy the visual");
+    assert(visual.frame === null && visual.content == null, "detached cleanup should clear explicit frame and render-layer content ownership");
     for (let index = 0; index < 6; index += 1) motionRuntime.step(0.05);
     assert(detachedChildren.length === 0, "stale detached frame callbacks should stay canceled after destruction");
     motionRuntime.reset();
@@ -3742,6 +3848,74 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     });
 
     assert(openingRetargetPlans.at(-1)?.options?.frameTargetRect === panel, "active opening frame shell should receive the latest panel geometry even after icon ghosts finish");
+  }
+
+  {
+    motionRuntime.reset();
+    const layer = Object.create(FolderOverlayLayer.prototype);
+    const detachedContainer = new Container();
+    const detachedFrame = new Graphics()
+      .roundRect(20, 30, 240, 160, 40)
+      .fill({ color: 0xf7f8ff, alpha: 0.26 });
+    const detachedContent = new Container();
+    detachedContainer.addChild(detachedFrame, detachedContent);
+    const detachedVisual = {
+      container: detachedContainer,
+      desktopCloseReleaseRequested: false,
+      folderId: "folder-a",
+      frame: detachedFrame,
+      geometryComplete: false,
+      releaseAfterDesktopClose: false,
+    };
+    layer.detachedClosingVisuals = [detachedVisual];
+    layer.frameGhost = new Graphics();
+    layer.panelMaterial = new Graphics();
+    layer.closingFrameMask = new Graphics();
+    layer.frameGhostFolderId = "folder-b";
+    layer.frameGhostMotionControl = null;
+    layer.frameGhostPhase = "opening";
+    layer.frameGhostState = {
+      fillAlpha: 0.24,
+      fillColor: 0xf7f8ff,
+      height: 260,
+      left: 160,
+      radius: 42,
+      strokeAlpha: 0.24,
+      strokeColor: 0xffffff,
+      strokeWidth: 1,
+      top: 100,
+      width: 520,
+    };
+    layer.frameGhostTransitionState = null;
+
+    layer.startFrameGhost(
+      { height: 260, left: 160, top: 100, width: 520 },
+      { height: 128, left: 580, top: 220, width: 128 },
+      {
+        folderId: "folder-b",
+        frameGhostPhase: "closing",
+        fromFillAlpha: 0.26,
+        fromRadius: 48,
+        fromStrokeAlpha: 0.24,
+        notifyTitleFrame: false,
+        preserveOnComplete: true,
+        toFillAlpha: 0.22,
+        toRadius: 32,
+        toStrokeAlpha: 0.26,
+      },
+    );
+
+    assert(detachedFrame.renderable === true && detachedFrame.alpha === 1, "folder B's close must preserve folder A's complete shell while both transitions overlap");
+    assert(detachedFrame.mask == null, "a new folder frame must not cut a rounded hole out of the previous folder shell");
+    assert(detachedContent.parent === detachedContainer && detachedContent.mask == null, "the previous folder content must remain mounted and unmasked during overlap");
+    assert(layer.detachedClosingVisuals[0] === detachedVisual, "overlap must preserve the detached handoff lifecycle");
+    layer.clearFrameGhost({ panelMaterialAlpha: 0 });
+    assert(detachedFrame.mask == null, "clearing folder B's frame must leave the previous shell unmasked");
+    detachedContainer.destroy({ children: true });
+    layer.frameGhost.destroy();
+    layer.panelMaterial.destroy();
+    layer.closingFrameMask.destroy();
+    motionRuntime.reset();
   }
 
   {

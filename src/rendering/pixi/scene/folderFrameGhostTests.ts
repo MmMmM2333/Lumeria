@@ -112,7 +112,7 @@ export async function runFolderFrameGhostTests() {
   }
 
   {
-    const { startFrameGhost } = await import("./folderFrameGhost.js");
+    const { commitFrameGhostPresentation, startFrameGhost } = await import("./folderFrameGhost.js");
     const { motionRuntime } = await import("../animation/motionRuntime.js");
     const makeGraphics = (): TestFrameGraphics => ({
       alpha: 0,
@@ -149,7 +149,14 @@ export async function runFolderFrameGhostTests() {
     });
     motionRuntime.step(0.08);
     const openingFrame = requireFrameState(layer);
+    const presentedOpeningFrame = { ...openingFrame };
+    commitFrameGhostPresentation(layer);
+    motionRuntime.step(0.08);
     const beforeClose = { ...openingFrame };
+    assert(
+      beforeClose.width > presentedOpeningFrame.width && beforeClose.radius > presentedOpeningFrame.radius,
+      "presentation-race fixture should advance the simulated opening shell beyond its last rendered frame",
+    );
     const beforeVelocity = motionRuntime.debugSnapshot({ includeChannels: true }).animations
       .find((animation) => animation.prop === "value")?.velocity || 0;
 
@@ -158,16 +165,28 @@ export async function runFolderFrameGhostTests() {
       frameGhostPhase: "closing",
       preserveOnComplete: true,
       springConfig: { damping: 3, mass: 1, stiffness: 90 },
+      toFillAlpha: 0.2,
+      toFillColor: 0x102030,
+      toRadius: 18,
+      toStrokeAlpha: 0.3,
+      toStrokeColor: 0x405060,
+      toStrokeWidth: 2,
     });
 
     assert(layer.frameGhostState === openingFrame, "cross-phase frame ghost retarget should reuse the active presentation object");
     assert(layer.frameGhostPhase === "closing", "cross-phase retarget should record the new frame ghost phase");
     const frameState = requireFrameState(layer);
-    assert(nearlyEqual(frameState.left, beforeClose.left) && nearlyEqual(frameState.top, beforeClose.top), "cross-phase retarget should preserve the current physical position on its first frame");
-    assert(nearlyEqual(frameState.width, beforeClose.width) && nearlyEqual(frameState.height, beforeClose.height), "cross-phase retarget should preserve the current physical size on its first frame");
-    const afterVelocity = motionRuntime.debugSnapshot({ includeChannels: true }).animations
-      .find((animation) => animation.prop === "value")?.velocity || 0;
-    assert(Math.abs(beforeVelocity) > 0.01 && Math.abs(afterVelocity) > 0.01, "cross-phase retarget should carry the active progress velocity into closing");
+    assert(nearlyEqual(frameState.left, presentedOpeningFrame.left) && nearlyEqual(frameState.top, presentedOpeningFrame.top), "cross-phase retarget should resume from the last rendered position rather than an unpresented simulation update");
+    assert(nearlyEqual(frameState.width, presentedOpeningFrame.width) && nearlyEqual(frameState.height, presentedOpeningFrame.height), "cross-phase retarget should resume from the last rendered size rather than jumping to an unpresented opening size");
+    assert(nearlyEqual(frameState.radius, presentedOpeningFrame.radius), "cross-phase retarget should preserve the last rendered corner radius while changing closing endpoints");
+    assert(nearlyEqual(frameState.fillAlpha, presentedOpeningFrame.fillAlpha) && nearlyEqual(frameState.strokeAlpha, presentedOpeningFrame.strokeAlpha), "cross-phase retarget should preserve the last rendered shell material while changing closing endpoints");
+    assert(frameState.fillColor === presentedOpeningFrame.fillColor && frameState.strokeColor === presentedOpeningFrame.strokeColor && nearlyEqual(frameState.strokeWidth, presentedOpeningFrame.strokeWidth), "cross-phase retarget should preserve the last rendered shell colors and stroke width while changing closing endpoints");
+    assert(Math.abs(beforeVelocity) > 0.01, "presentation-race fixture should carry outward opening velocity before reversal");
+    const closeStartProgress = layer.frameGhostTransitionState!.progressState.value;
+    motionRuntime.step(0.016);
+    assert(layer.frameGhostTransitionState!.progressState.value <= closeStartProgress, "cross-phase reversal must not spend another rendered frame moving outward before closing");
+    assert(frameState.width <= presentedOpeningFrame.width + 0.0001, "cross-phase reversal should not grow beyond the last rendered shell size after closing begins");
+    assert(frameState.radius <= presentedOpeningFrame.radius + 0.0001, "cross-phase reversal should not grow the corner radius after closing begins");
     layer.frameGhostMotionControl?.cancel?.();
     motionRuntime.reset();
   }

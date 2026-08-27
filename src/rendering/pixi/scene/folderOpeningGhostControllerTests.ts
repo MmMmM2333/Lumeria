@@ -301,8 +301,11 @@ function makeHarness(): OpeningHarness {
         }
       }
     },
-    removeOpeningGhost(ghost: FolderOpeningGhost) {
-      return openingGhostLayer.removeChild(ghost);
+    restoreOpeningGhostPresentation(ghost: FolderOpeningGhost) {
+      calls.push("restore-opening-presentation");
+      ghost.position.set(12, 34);
+      ghost.scale.set(0.75);
+      return true;
     },
     retargetFrameGhost(toRect: StageRect, options: FolderFrameGhostOptions) {
       frameRetargetCalls.push({ options, toRect });
@@ -575,6 +578,31 @@ export function runFolderOpeningGhostControllerTests() {
     assert(completed.join(",") === "controller-app-1", "reveal should complete the controller key once");
   assert((harness.layer.openingGhostLayer.children.length as number) === 0 && requireMapValue(harness.layer.iconNodes, "app-1", "revealed app icon").visible, "reveal should atomically replace substitutes with real icons");
     assert(!harness.visualOwnership.hasOwner(makeDesktopSourceVisualKey("folder-1")), "reveal should release desktop source ownership");
+    motionRuntime.reset();
+  }
+
+  {
+    const harness = makeHarness();
+    presentOpen(harness, [makeTarget()], makeState());
+    const openingGhost = requireArrayItem(
+      harness.layer.openingGhostLayer.children,
+      0,
+      "opening ghost awaiting a close transfer",
+    );
+
+    const releasedGhost = harness.controller.takeGhost("app-1");
+
+    assert(releasedGhost === openingGhost, "close transfer should release the existing opening ghost object");
+    assert(
+      openingGhost.position.x === 12 && openingGhost.position.y === 34 && openingGhost.scale.x === 0.75,
+      "close transfer should restore the opening ghost's last rendered presentation before measurement",
+    );
+    assert(
+      openingGhost.parent === harness.layer.openingGhostLayer &&
+      harness.layer.openingGhostLayer.children.includes(openingGhost),
+      "a released opening ghost must retain its rendered parent until the closing owner reparents it",
+    );
+    harness.layer.openingGhostLayer.removeChild(openingGhost);
     motionRuntime.reset();
   }
 

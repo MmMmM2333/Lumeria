@@ -150,6 +150,7 @@ export type FolderOpeningGhostControllerLayer = Readonly<{
     target: FolderOpeningTarget,
     ghost: FolderOpeningGhost,
   ): unknown;
+  restoreOpeningGhostPresentation(ghost: FolderOpeningGhost): boolean;
   releaseTransitionOwnership(
     token: string | undefined,
     options: Readonly<{
@@ -157,7 +158,6 @@ export type FolderOpeningGhostControllerLayer = Readonly<{
       reveal?: boolean | undefined;
     }>,
   ): unknown;
-  removeOpeningGhost(ghost: FolderOpeningGhost): unknown;
   retargetFrameGhost(rect: StageRect, options: FolderFrameGhostOptions): boolean;
   startFrameGhost(fromRect: StageRect, toRect: StageRect, options: FolderFrameGhostOptions): boolean;
 }>;
@@ -616,7 +616,11 @@ export class FolderOpeningGhostController implements FolderOpeningVisualAdapter<
     this.settledOpeningGhostItemIds.delete(itemId);
     this.openingTargetKeysByItemId.delete(itemId);
     this.layer.openingGhostBoundsRefreshers.delete(itemId);
-    this.layer.removeOpeningGhost(releasedGhost);
+    // Keep the last rendered parent until the closing controller installs the
+    // transferred ghost in its own layer.  getIconBounds() is client-space
+    // geometry; orphaning the node here would make that measurement lose the
+    // opening layer transform and turn the first closing pose into a jump.
+    this.layer.restoreOpeningGhostPresentation(releasedGhost);
     if (!this.ghostItemIds.size) this.clearRevealTimer();
     return releasedGhost;
   }

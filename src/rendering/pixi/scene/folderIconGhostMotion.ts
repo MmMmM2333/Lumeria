@@ -35,14 +35,14 @@ export type FolderGhostMotionOptions = Readonly<{
   closeDuration?: number | undefined;
   isTextlessMode?: boolean | undefined;
   openDuration?: number | undefined;
+  sourceLocalRect?: StageRect | null | undefined;
   stageHeight?: number | undefined;
   stageRect?: StageOrigin | undefined;
   stageWidth?: number | undefined;
+  targetLocalRect?: StageRect | null | undefined;
 }>;
 
-type FolderOpeningGhostMotionOptions = FolderGhostMotionOptions & Readonly<{
-  sourceLocalRect?: StageRect | null | undefined;
-}>;
+type FolderOpeningGhostMotionOptions = FolderGhostMotionOptions;
 
 function clamp01(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value) || 0));
@@ -104,13 +104,15 @@ function cloneRect(rect: StageRect | null | undefined): StageRect | null {
 
 function resolveTargetStageVisualRect(
   target: FolderGhostMotionTarget,
-  options: Pick<FolderGhostMotionOptions, "stageHeight" | "stageRect" | "stageWidth"> = {},
+  options: Pick<FolderGhostMotionOptions, "stageHeight" | "stageRect" | "stageWidth" | "targetLocalRect"> = {},
 ): StageRect {
   const {
     stageHeight,
     stageRect,
     stageWidth,
   } = options;
+  const targetLocalRect = cloneRect(options.targetLocalRect);
+  if (targetLocalRect) return targetLocalRect;
   if (target?.targetClientRect) return clientRectToStageVisualRect(target.targetClientRect, stageRect);
   const projectionStageRect = stageRect
     ? {
@@ -150,7 +152,12 @@ export function makeOpeningGhostMotion(
     stageWidth,
   } = options;
   const sourceRect = cloneRect(options.sourceLocalRect) ?? clientRectToStageVisualRect(target.sourceRect, stageRect);
-  const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
+  const targetRect = resolveTargetStageVisualRect(target, {
+    stageHeight,
+    stageRect,
+    stageWidth,
+    targetLocalRect: options.targetLocalRect,
+  });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const exactSourceScale = sourceRect.width / Math.max(1, target.iconSize);
   const scale = target.isThumbnailChild
@@ -181,7 +188,12 @@ export function makeCompletedClosingPreviewMotion(
   options: FolderGhostMotionOptions = {},
 ) {
   const { isTextlessMode = false, stageHeight, stageRect, stageWidth } = options;
-  const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
+  const targetRect = resolveTargetStageVisualRect(target, {
+    stageHeight,
+    stageRect,
+    stageWidth,
+    targetLocalRect: options.targetLocalRect,
+  });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const scale = getClosingGhostTargetScale(target, targetRect);
   return {
@@ -204,8 +216,13 @@ export function makeClosingGhostMotion(
     stageRect,
     stageWidth,
   } = options;
-  const sourceRect = clientRectToStageVisualRect(target.sourceRect, stageRect);
-  const targetRect = resolveTargetStageVisualRect(target, { stageHeight, stageRect, stageWidth });
+  const sourceRect = cloneRect(options.sourceLocalRect) ?? clientRectToStageVisualRect(target.sourceRect, stageRect);
+  const targetRect = resolveTargetStageVisualRect(target, {
+    stageHeight,
+    stageRect,
+    stageWidth,
+    targetLocalRect: options.targetLocalRect,
+  });
   const labelOffset = getIconNodeOffsetFromVisualCenter(isTextlessMode);
   const sourcePose = target.sourcePose || null;
   const sourceScale = sourcePose?.scaleX ?? target.sourceScale ?? 1;

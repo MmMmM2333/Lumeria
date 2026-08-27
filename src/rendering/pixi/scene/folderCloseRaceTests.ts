@@ -408,6 +408,14 @@ function makeRaceHarness(): RaceHarness {
         width: sourceRect.width,
       };
     },
+    mapClosingTargetRectToLocal(state, rect) {
+      return {
+        height: rect.height,
+        left: rect.left - state.stageRect.left,
+        top: rect.top - state.stageRect.top,
+        width: rect.width,
+      };
+    },
     registerOpeningGhostBounds() {
       calls.push("register-opening-bounds");
     },
@@ -437,10 +445,9 @@ function makeRaceHarness(): RaceHarness {
     refreshRegisteredIconBounds() {
       calls.push("refresh-bounds");
     },
-    removeOpeningGhost(ghost: FolderOpeningGhost) {
+    restoreOpeningGhostPresentation(ghost: FolderOpeningGhost) {
       if (!isTestGhost(ghost)) throw new TypeError("race fixture received a non-test opening ghost");
-      openingLayer.removeChild(ghost);
-      return ghost;
+      return true;
     },
     releaseTransitionOwnership(
       token: string | undefined,

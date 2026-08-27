@@ -90,6 +90,10 @@ export type FolderClosingPreviewSwapLayer = Readonly<{
   ensureClosingPreviewSwapLayer(
     containerFactory: () => FolderClosingPreviewSwapContainer,
   ): FolderClosingPreviewSwapContainer;
+  mapClosingTargetRectToLocal(
+    state: Pick<FolderClosingPreviewSwapState, "height" | "stageRect" | "width">,
+    rect: StageRect,
+  ): StageRect;
   removeClosingPreviewSwapChildren(): FolderClosingPreviewSwapDisplayObject[];
 }>;
 
@@ -191,6 +195,7 @@ export class FolderClosingPreviewSwapController<
     if (
       !layer ||
       typeof layer.ensureClosingPreviewSwapLayer !== "function" ||
+      typeof layer.mapClosingTargetRectToLocal !== "function" ||
       typeof layer.removeClosingPreviewSwapChildren !== "function"
     ) {
       throw new TypeError("FolderClosingPreviewSwapController requires a layer");
@@ -323,6 +328,7 @@ export class FolderClosingPreviewSwapController<
     if (!targets?.length || state.folderPageIndex <= 0) return;
 
     const plan = makeClosingPreviewSwapPlan(targets, {
+      mapClientRectToLocal: (rect) => this.layer.mapClosingTargetRectToLocal(state, rect),
       stageHeight: state.height,
       stageRect: state.stageRect,
       stageWidth: state.width,
@@ -427,6 +433,7 @@ export class FolderClosingPreviewSwapController<
     if (active.targetKey === targetKey) return false;
 
     const plan = makeClosingPreviewSwapPlan(targets, {
+      mapClientRectToLocal: (rect) => this.layer.mapClosingTargetRectToLocal(state, rect),
       stageHeight: state.height,
       stageRect: state.stageRect,
       stageWidth: state.width,

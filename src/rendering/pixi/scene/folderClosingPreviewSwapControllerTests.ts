@@ -122,6 +122,9 @@ function makeLayer(): TestLayer {
       }
       return layer.closingPreviewSwapLayer;
     },
+    mapClosingTargetRectToLocal(_state, rect) {
+      return { ...rect };
+    },
     removeClosingPreviewSwapChildren() {
       return layer.closingPreviewSwapLayer.removeChildren();
     },

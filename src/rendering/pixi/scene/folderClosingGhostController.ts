@@ -5,7 +5,7 @@ import type { MotionControl } from "../animation/motionTween.js";
 import { motionPresets, motionSprings } from "../animation/motionPresets.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
-import { clientRectToStageVisualRect, getStageScale, stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
+import { stageLayoutRectToStageVisualRect } from "../geometry/stageCoordinates.js";
 import type { StageOrigin, StageRect } from "../geometry/stageCoordinates.js";
 import { getFolderThumbMetrics } from "../nodes/folderThumbMetrics.js";
 import { getClosingPreviewTiming } from "./folderOverlayGeometry.js";
@@ -221,8 +221,13 @@ export type FolderClosingGhostControllerLayer = {
   getTransitionDebugSnapshot(): FolderClosingTransitionDebugSnapshot;
   hideIconNodesForTransition(itemId: string, owner: ClosingOwner): void;
   hidePageTrackForTransition(owner: ClosingOwner): void;
+  mapClosingTargetRectToLocal(
+    state: Pick<FolderClosingState, "height" | "stageRect" | "width">,
+    rect: StageRect,
+  ): StageRect;
   onClosingHandoffPrepare(folderId: string | null): void;
   onClosingHandoffVisualRelease(folderId: string | null): void;
+  restoreOpeningGhostPresentation(ghost: FolderClosingGhost): boolean;
   releaseTransitionOwnership(
     token: string,
     options: Readonly<{
@@ -310,6 +315,8 @@ function requireFiniteNumber(value: unknown, path: string): number {
 }
 
 function applyInterruptedOpeningSource(
+  layer: FolderClosingGhostControllerLayer,
+  state: FolderClosingState,
   target: FolderClosingTarget,
 ): FolderClosingTarget {
   const itemId = target?.item?.id || "unknown";
@@ -321,6 +328,7 @@ function applyInterruptedOpeningSource(
     source.rect,
     `closing target ${itemId} interruptedOpeningSource.rect`,
   );
+  const sourceLocalRect = layer.mapClosingTargetRectToLocal(state, sourceRect);
   return {
     ...target,
     sourceAlpha: requireFiniteNumber(
@@ -332,7 +340,7 @@ function applyInterruptedOpeningSource(
       `closing target ${itemId} interruptedOpeningSource.labelAlpha`,
     ),
     sourceRect,
-    sourceScale: Math.max(0.16, sourceRect.width / Math.max(1, target.iconSize)),
+    sourceScale: Math.max(0.16, sourceLocalRect.width / Math.max(1, target.iconSize)),
   };
 }
 
@@ -491,20 +499,34 @@ function makeClosingGhostTargetKey(target: FolderClosingTarget): string {
   ].join("|");
 }
 
+function makeClosingGhostLocalRects(
+  layer: FolderClosingGhostControllerLayer,
+  state: FolderClosingState,
+  target: UsableFolderClosingTarget,
+): Readonly<{
+  sourceLocalRect: StageRect;
+  targetLocalRect?: StageRect | undefined;
+}> {
+  const sourceLocalRect = layer.mapClosingTargetRectToLocal(state, target.sourceRect);
+  return target.targetClientRect
+    ? {
+      sourceLocalRect,
+      targetLocalRect: layer.mapClosingTargetRectToLocal(state, target.targetClientRect),
+    }
+    : { sourceLocalRect };
+}
+
 function makeDetachedCloseFrameTarget(
-  folderRect: StageRect,
-  stageRect: StageOrigin,
-): (StageRect & Readonly<{
+  closeFrameToRect: StageRect,
+  thumb: ClosingThumbMetrics,
+): StageRect & Readonly<{
   fillAlpha: number;
   fillColor: number;
   radius: number;
   strokeAlpha: number;
   strokeColor: number;
   strokeWidth: number;
-}>) | null {
-  const closeFrameToRect = clientRectToStageVisualRect(folderRect, stageRect);
-  if (!closeFrameToRect) return null;
-  const thumb = getFolderThumbMetrics(folderRect.width);
+}> {
   return {
     ...closeFrameToRect,
     fillAlpha: thumb.fillAlpha,
@@ -557,6 +579,7 @@ function canReuseOpeningGhostForClose(
 }
 
 function releaseOpeningGhostsForClosing(
+  layer: FolderClosingGhostControllerLayer,
   reporter: FolderClosingPhaseReporter,
   state: FolderClosingState,
   targets: readonly FolderClosingTarget[],
@@ -581,43 +604,19 @@ function releaseOpeningGhostsForClosing(
       sourceAlpha: ghost.alpha,
       sourceLabelAlpha: ghost.labelText?.alpha,
       sourceRect,
-      sourceScale: Math.max(0.14, sourceRect.width / Math.max(1, target.iconSize)),
+      sourceScale: Math.max(
+        0.14,
+        layer.mapClosingTargetRectToLocal(state, sourceRect).width / Math.max(1, target.iconSize),
+      ),
     });
   }
   return released;
 }
 
-function preserveReleasedGhostPhysicalPose(
-  ghost: FolderClosingGhost,
-  sourceRect: StageRect,
-  stageRect: StageOrigin,
-): FolderClosingTarget["sourcePose"] {
-  if (!ghost || !sourceRect || typeof ghost.getIconBounds !== "function") return null;
-  const previousScaleX = Math.max(0.0001, Number(ghost.scale?.x) || 1);
-  const previousScaleY = Math.max(0.0001, Number(ghost.scale?.y) || 1);
-  const currentRect = ghost.getIconBounds(stageRect);
-  if (!currentRect || !Number.isFinite(currentRect.width) || !Number.isFinite(currentRect.height)) return null;
-  const intrinsicWidth = currentRect.width / previousScaleX;
-  const intrinsicHeight = currentRect.height / previousScaleY;
-  if (!(intrinsicWidth > 0) || !(intrinsicHeight > 0)) return null;
-  const nextScaleX = sourceRect.width / intrinsicWidth;
-  const nextScaleY = sourceRect.height / intrinsicHeight;
-  if (!(nextScaleX > 0) || !(nextScaleY > 0)) return null;
-  ghost.scale.set(nextScaleX, nextScaleY);
-  const adjustedRect = ghost.getIconBounds(stageRect);
-  if (adjustedRect && ghost.position?.set) {
-    const sourceCenterX = sourceRect.left + sourceRect.width / 2;
-    const sourceCenterY = sourceRect.top + sourceRect.height / 2;
-    const adjustedCenterX = adjustedRect.left + adjustedRect.width / 2;
-    const adjustedCenterY = adjustedRect.top + adjustedRect.height / 2;
-    ghost.position.set(
-      (Number(ghost.position.x) || 0) + sourceCenterX - adjustedCenterX,
-      (Number(ghost.position.y) || 0) + sourceCenterY - adjustedCenterY
-    );
-  }
+function captureGhostRootPose(ghost: FolderClosingGhost): NonNullable<FolderClosingTarget["sourcePose"]> {
   return {
-    scaleX: nextScaleX,
-    scaleY: nextScaleY,
+    scaleX: Number(ghost.scale?.x) || 1,
+    scaleY: Number(ghost.scale?.y) || 1,
     x: Number(ghost.position?.x) || 0,
     y: Number(ghost.position?.y) || 0,
   };
@@ -840,7 +839,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     const owner = this.owner;
     if (!reporter || !owner) throw new Error("closing visual scope is not active");
     const folderId = state.renderedFolder?.id || this.layer.getCurrentFolderId() || null;
-    const releasedOpeningGhosts = releaseOpeningGhostsForClosing(reporter, state, targets);
+    const releasedOpeningGhosts = releaseOpeningGhostsForClosing(this.layer, reporter, state, targets);
     const closeFrameFromRect = panelRect;
     const closeTargets: FolderClosingTarget[] = (targets || []).map((target) => {
       const released = releasedOpeningGhosts.get(target?.item?.id);
@@ -853,7 +852,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
           sourceScale: released.sourceScale,
         }
         : target.interruptedOpeningSource
-          ? applyInterruptedOpeningSource(target)
+          ? applyInterruptedOpeningSource(this.layer, state, target)
           : target;
     });
     this.layer.acquireDesktopSourceOwnership(owner);
@@ -861,10 +860,10 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     const isOpeningCloseHandoff = releasedOpeningGhosts.size > 0 ||
       closeTargets.some((target) => Boolean(target.interruptedOpeningSource));
     const frameDuration = motionPresets.folderClose!.duration! + CLOSING_FRAME_TAIL_DURATION;
-    const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
-    const thumb = getFolderThumbMetrics(folderRect.width);
+    const closeFrameToRect = this.layer.mapClosingTargetRectToLocal(state, folderRect);
+    const thumb = getFolderThumbMetrics(closeFrameToRect.width);
     reporter.setGeometry({
-      detachedTarget: makeDetachedCloseFrameTarget(folderRect, state.stageRect) as unknown as Readonly<Record<string, unknown>> | null,
+      detachedTarget: makeDetachedCloseFrameTarget(closeFrameToRect, thumb) as unknown as Readonly<Record<string, unknown>>,
       rect: (handoffRect || folderRect) as unknown as Readonly<Record<string, unknown>>,
       target: handoffTarget || null,
     });
@@ -946,15 +945,20 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       ghost.eventMode = "none";
       ghost.stageRect = state.stageRect;
       ghost.isThumbnailChild = Boolean(target.isThumbnailChild);
-      ghost.setState(makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }));
+      ghost.setState(
+        makeFolderGhostIconNodeState({ sourceType: "folder-close-ghost", state, target }),
+        released ? { preserveRootPresentation: true } : undefined,
+      );
+      if (released) this.layer.restoreOpeningGhostPresentation(ghost);
       const sourcePose = released
-        ? preserveReleasedGhostPhysicalPose(ghost, released.sourceRect, state.stageRect)
+        ? captureGhostRootPose(ghost)
         : null;
       const motionTarget = sourcePose ? { ...target, sourcePose } : target;
       const ghostMotion = makeClosingGhostMotion(motionTarget, {
         alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
         closeDuration: motionPresets.folderClose!.duration!,
         isTextlessMode: state.isTextlessMode,
+        ...makeClosingGhostLocalRects(this.layer, state, motionTarget),
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
@@ -962,13 +966,6 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       ghost.position.set(ghostMotion.fromX, ghostMotion.fromY);
       ghost.scale.set(ghostMotion.sourceScaleX, ghostMotion.sourceScaleY);
       ghost.alpha = ghostMotion.sourceAlpha;
-      reporter.setDetachedGhostMotion(ghost, {
-        alpha: target.isThumbnailChild ? 1 : 0,
-        duration: motionPresets.folderClose!.duration!,
-        scale: ghostMotion.scale,
-        x: ghostMotion.toX,
-        y: ghostMotion.toY,
-      });
       if (ghost.labelText?.visible) {
         if (target.sourceLabelAlpha != null) ghost.labelText.alpha = target.sourceLabelAlpha;
         motion(ghost.labelText)
@@ -994,6 +991,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       this.startGhostMotion(state, motionTarget, ghost, {
         animateAlpha: true,
         folderSlotVisualSize: getClosingFolderSlotVisualSize(folderRect, options),
+        resetSourceVelocity: Boolean(released),
       });
     }
     this.layer.onClosingHandoffPrepare(folderId);
@@ -1006,6 +1004,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     options: Readonly<{
       animateAlpha?: boolean | undefined;
       folderSlotVisualSize?: number | undefined;
+      resetSourceVelocity?: boolean | undefined;
     }> = {},
   ): MotionControl | null {
     const itemId = target?.item?.id;
@@ -1015,22 +1014,27 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
       closeDuration: motionPresets.folderClose!.duration!,
       isTextlessMode: state.isTextlessMode,
+      ...makeClosingGhostLocalRects(this.layer, state, target),
       stageHeight: state.height,
       stageRect: state.stageRect,
       stageWidth: state.width,
     });
+    const velocityScale = options.resetSourceVelocity === true ? 0 : 1;
     const positionVelocity = {
-      x: getActiveMotionVelocity(ghost, "x"),
-      y: getActiveMotionVelocity(ghost, "y"),
+      x: getActiveMotionVelocity(ghost, "x") * velocityScale,
+      y: getActiveMotionVelocity(ghost, "y") * velocityScale,
     };
     const scaleVelocity = {
-      x: getActiveMotionVelocity(ghost.scale, "x"),
-      y: getActiveMotionVelocity(ghost.scale, "y"),
+      x: getActiveMotionVelocity(ghost.scale, "x") * velocityScale,
+      y: getActiveMotionVelocity(ghost.scale, "y") * velocityScale,
     };
+    const sourcePose = captureGhostRootPose(ghost);
     killAllMotion(ghost, {
       reason: "folder-close-moving-reference-transfer",
       recursive: false,
     });
+    ghost.position.set(sourcePose.x, sourcePose.y);
+    ghost.scale.set(sourcePose.scaleX, sourcePose.scaleY);
     let folderSlotVisualState: ClosingFolderSlotVisualState | null = null;
     if (target.isThumbnailChild) {
       folderSlotVisualState = {
@@ -1042,13 +1046,6 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     } else {
       ghost.clearFolderSlotReleaseVisual?.();
     }
-    reporter.setDetachedGhostMotion(ghost, {
-      alpha: target.isThumbnailChild ? 1 : 0,
-      duration: motionPresets.folderClose!.duration!,
-      scale: ghostMotion.scale,
-      x: ghostMotion.toX,
-      y: ghostMotion.toY,
-    });
     const follower: ClosingGhostFollower = {
       position: {
         x: ghost.position.x - ghostMotion.toX,
@@ -1149,6 +1146,16 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       targetMotion.scale + follower.scale.x,
       targetMotion.scale + follower.scale.y,
     );
+    this.activeReporter?.setDetachedGhostMotion(ghost, {
+      alpha: active.target.isThumbnailChild ? 1 : 0,
+      duration: Math.max(
+        0.01,
+        motionPresets.folderClose!.duration! * (1 - clamp01(follower.progress.value)),
+      ),
+      scale: targetMotion.scale,
+      x: targetMotion.toX,
+      y: targetMotion.toY,
+    });
     const folderSlotVisualState = active.folderSlotVisualState;
     if (!folderSlotVisualState) return;
     const nextMix = getClosingFolderSlotVisualMix(follower.progress.value);
@@ -1166,6 +1173,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       alphaHold: CLOSING_EXTRA_GHOST_ALPHA_HOLD,
       closeDuration: motionPresets.folderClose!.duration!,
       isTextlessMode: state.isTextlessMode,
+      ...makeClosingGhostLocalRects(this.layer, state, target),
       stageHeight: state.height,
       stageRect: state.stageRect,
       stageWidth: state.width,
@@ -1177,13 +1185,6 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     active.alignedRenderFrames = 0;
     active.alignmentGeneration += 1;
     active.completionScheduled = false;
-    reporter.setDetachedGhostMotion(active.ghost, {
-      alpha: target.isThumbnailChild ? 1 : 0,
-      duration: motionPresets.folderClose!.duration!,
-      scale: ghostMotion.scale,
-      x: ghostMotion.toX,
-      y: ghostMotion.toY,
-    });
     this.applyClosingGhostFollower(active);
   }
 
@@ -1200,14 +1201,14 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     if (!reporter || !folderId || !snapshot || snapshot.folderId !== folderId) return 0;
     if (snapshot.visualReleased || snapshot.overlaySettled) return 0;
 
+    const closeFrameToRect = this.layer.mapClosingTargetRectToLocal(state, folderRect);
+    const thumb = getFolderThumbMetrics(closeFrameToRect.width);
     reporter.setGeometry({
-      detachedTarget: makeDetachedCloseFrameTarget(folderRect, state.stageRect) as unknown as Readonly<Record<string, unknown>> | null,
+      detachedTarget: makeDetachedCloseFrameTarget(closeFrameToRect, thumb) as unknown as Readonly<Record<string, unknown>>,
       rect: (options.handoffRect || folderRect) as unknown as Readonly<Record<string, unknown>>,
       target: options.handoffTarget || null,
     });
 
-    const closeFrameToRect = clientRectToStageVisualRect(folderRect, state.stageRect);
-    const thumb = folderRect ? getFolderThumbMetrics(folderRect.width) : null;
     let retargeted = 0;
     let targetChanged = false;
     if (this.activeFrameState?.folderId === folderId &&
@@ -1392,9 +1393,12 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     ghost: FolderClosingGhost | null,
     phase: string,
   ) {
-    const actualRect = ghost?.getIconBounds?.(state.stageRect) || null;
+    const actualClientRect = ghost?.getIconBounds?.(state.stageRect) || null;
+    const actualRect = actualClientRect
+      ? this.layer.mapClosingTargetRectToLocal(state, actualClientRect)
+      : null;
     const targetRect = target?.targetClientRect
-      ? clientRectToStageVisualRect(target.targetClientRect, state.stageRect)
+      ? this.layer.mapClosingTargetRectToLocal(state, target.targetClientRect)
       : stageLayoutRectToStageVisualRect(
         state.stageRect as StageRect,
         state.width,
@@ -1496,6 +1500,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     if (target.isThumbnailChild && !ghost.destroyed) {
       const completedPreviewMotion = makeCompletedClosingPreviewMotion(target, {
         isTextlessMode: state.isTextlessMode,
+        ...makeClosingGhostLocalRects(this.layer, state, target),
         stageHeight: state.height,
         stageRect: state.stageRect,
         stageWidth: state.width,
@@ -1534,17 +1539,21 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
 
   isClosingGhostAligned(active: ActiveClosingGhost): boolean {
     if (!active.motionSettled || active.ghost.destroyed) return false;
-    const actualRect = active.ghost.getIconBounds(active.state.stageRect);
+    const actualClientRect = active.ghost.getIconBounds(active.state.stageRect);
+    const actualRect = actualClientRect
+      ? this.layer.mapClosingTargetRectToLocal(active.state, actualClientRect)
+      : null;
     const targetRect = active.targetMotion.targetRect;
     if (!actualRect || !targetRect) return false;
-    const stageScale = getStageScale(
-      active.state.stageRect as StageRect,
-      active.state.width,
-      active.state.height,
-    );
     const resolution = Math.max(0.01, Number(active.state.deviceResolution) || 1);
-    const scaleX = Math.max(0.0001, Number(stageScale.scaleX) || 1) * resolution;
-    const scaleY = Math.max(0.0001, Number(stageScale.scaleY) || 1) * resolution;
+    const localClientPixel = this.layer.mapClosingTargetRectToLocal(active.state, {
+      height: 1,
+      left: active.state.stageRect.left,
+      top: active.state.stageRect.top,
+      width: 1,
+    });
+    const scaleX = resolution / Math.max(0.0001, Math.abs(localClientPixel.width));
+    const scaleY = resolution / Math.max(0.0001, Math.abs(localClientPixel.height));
     const actualCenterX = actualRect.left + actualRect.width / 2;
     const actualCenterY = actualRect.top + actualRect.height / 2;
     const targetCenterX = targetRect.left + targetRect.width / 2;

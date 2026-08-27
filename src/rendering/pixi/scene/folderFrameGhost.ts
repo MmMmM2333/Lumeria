@@ -56,6 +56,19 @@ type FolderFrameEndpointStyle = Readonly<{
   strokeWidth: number;
 }>;
 
+type FolderFrameMaterialContinuity = Readonly<{
+  anchorProgress: number;
+  baseStyle: FolderFrameEndpointStyle;
+  style: FolderFrameEndpointStyle;
+}>;
+
+export type FolderFramePresentedSnapshot = Readonly<{
+  folderId: string | null;
+  frame: FolderFramePresentation;
+  phase: string | null;
+  transition: FolderFrameTransitionState;
+}>;
+
 export type FolderFrameTransitionState = {
   continuityOffset: Readonly<StageRect & { anchorProgress: number }> | null;
   desktopRect: StageRect;
@@ -69,6 +82,7 @@ export type FolderFrameTransitionState = {
   phaseTo: number;
   placement: FolderTransitionPlacement | null;
   progressState: { value: number };
+  materialContinuity: FolderFrameMaterialContinuity | null;
   trajectory: FolderTransitionTrajectory;
 };
 
@@ -121,6 +135,7 @@ export interface FolderFrameGhostLayer {
   frameGhostFolderId?: string | null | undefined;
   frameGhostMotionControl?: FolderFrameMotionControl | null | undefined;
   frameGhostPhase?: string | null | undefined;
+  frameGhostPresentedSnapshot?: FolderFramePresentedSnapshot | null | undefined;
   frameGhostState?: FolderFramePresentation | null | undefined;
   frameGhostTransitionState?: FolderFrameTransitionState | null | undefined;
   notifyTitleFrame?(rect: FolderFramePresentation, metadata?: Readonly<{ folderId?: string | null | undefined }>): void;
@@ -210,6 +225,46 @@ function cloneRect(rect: StageRect): StageRect {
   };
 }
 
+function cloneEndpointStyle(
+  style: Pick<FolderFramePresentation, "fillAlpha" | "fillColor" | "radius" | "strokeAlpha" | "strokeColor" | "strokeWidth">,
+): FolderFrameEndpointStyle {
+  return {
+    fillAlpha: style.fillAlpha,
+    fillColor: style.fillColor,
+    radius: style.radius,
+    strokeAlpha: style.strokeAlpha,
+    strokeColor: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+  };
+}
+
+function cloneFramePresentation(frame: FolderFramePresentation): FolderFramePresentation {
+  return {
+    ...cloneRect(frame),
+    ...cloneEndpointStyle(frame),
+    progress: frame.progress,
+  };
+}
+
+export function commitFrameGhostPresentation(
+  layer: FolderFrameGhostLayer,
+): FolderFramePresentedSnapshot | null {
+  const frame = layer?.frameGhostState;
+  const transition = layer?.frameGhostTransitionState;
+  if (!frame || !transition || layer.frameGhost.visible === false || !(layer.frameGhost.alpha > 0)) {
+    layer.frameGhostPresentedSnapshot = null;
+    return null;
+  }
+  const snapshot = {
+    folderId: layer.frameGhostFolderId || null,
+    frame: cloneFramePresentation(frame),
+    phase: layer.frameGhostPhase || null,
+    transition,
+  } satisfies FolderFramePresentedSnapshot;
+  layer.frameGhostPresentedSnapshot = snapshot;
+  return snapshot;
+}
+
 function makeEndpointStyle(
   rect: StageRect,
   options: FolderFrameGhostOptions,
@@ -241,15 +296,56 @@ function updateTransitionTrajectory(transition: FolderFrameTransitionState): voi
   });
 }
 
+function getContinuityProgress(
+  anchorProgress: number,
+  phaseTo: number,
+  physicalProgress: number,
+): number {
+  const denominator = phaseTo - anchorProgress;
+  return Math.abs(denominator) < 0.0001
+    ? 0
+    : clamp01((phaseTo - physicalProgress) / denominator);
+}
+
+function sampleTransitionBaseStyle(
+  transition: FolderFrameTransitionState,
+  physicalProgress = transition.progressState.value,
+): FolderFrameEndpointStyle {
+  const materialProgress = clamp01(physicalProgress);
+  return {
+    fillAlpha: lerp(transition.desktopStyle.fillAlpha, transition.panelStyle.fillAlpha, materialProgress),
+    fillColor: lerpColor(transition.desktopStyle.fillColor, transition.panelStyle.fillColor, materialProgress),
+    radius: lerp(transition.desktopStyle.radius, transition.panelStyle.radius, materialProgress),
+    strokeAlpha: lerp(transition.desktopStyle.strokeAlpha, transition.panelStyle.strokeAlpha, materialProgress),
+    strokeColor: lerpColor(transition.desktopStyle.strokeColor, transition.panelStyle.strokeColor, materialProgress),
+    strokeWidth: lerp(transition.desktopStyle.strokeWidth, transition.panelStyle.strokeWidth, materialProgress),
+  };
+}
+
+function applyColorContinuityOffset(
+  currentColor: number,
+  anchorBaseColor: number,
+  anchorColor: number,
+  progress: number,
+): number {
+  const readChannel = (color: number, shift: number) => (Math.round(color) >> shift) & 0xff;
+  const applyChannel = (shift: number) => Math.max(0, Math.min(255, Math.round(
+    readChannel(currentColor, shift) +
+    (readChannel(anchorColor, shift) - readChannel(anchorBaseColor, shift)) * progress,
+  )));
+  return (applyChannel(16) << 16) | (applyChannel(8) << 8) | applyChannel(0);
+}
+
 function sampleTransitionRect(transition: FolderFrameTransitionState): StageRect {
   const physicalProgress = transition.progressState.value;
   const rect = transition.trajectory.sample(physicalProgress);
   const offset = transition.continuityOffset;
   if (!offset) return rect;
-  const denominator = transition.phaseTo - offset.anchorProgress;
-  const continuityProgress = Math.abs(denominator) < 0.0001
-    ? 0
-    : clamp01((transition.phaseTo - physicalProgress) / denominator);
+  const continuityProgress = getContinuityProgress(
+    offset.anchorProgress,
+    transition.phaseTo,
+    physicalProgress,
+  );
   if (continuityProgress <= 0) {
     transition.continuityOffset = null;
     return rect;
@@ -266,9 +362,12 @@ function preserveCurrentFrameAcrossTrajectoryUpdate(
   frame: FolderFramePresentation,
   transition: FolderFrameTransitionState,
   update: () => void,
+  continuityAnchor: FolderFramePresentation = frame,
 ): void {
-  const currentRect = cloneRect(frame);
+  const currentRect = cloneRect(continuityAnchor);
+  const currentStyle = cloneEndpointStyle(continuityAnchor);
   transition.continuityOffset = null;
+  transition.materialContinuity = null;
   update();
   const nextRect = transition.trajectory.sample(transition.progressState.value);
   transition.continuityOffset = {
@@ -278,6 +377,11 @@ function preserveCurrentFrameAcrossTrajectoryUpdate(
     top: currentRect.top - nextRect.top,
     width: currentRect.width - nextRect.width,
   };
+  transition.materialContinuity = {
+    anchorProgress: transition.progressState.value,
+    baseStyle: sampleTransitionBaseStyle(transition),
+    style: currentStyle,
+  };
 }
 
 function sampleTransitionFrame(
@@ -286,18 +390,47 @@ function sampleTransitionFrame(
 ): void {
   const physicalProgress = transition.progressState.value;
   const rect = sampleTransitionRect(transition);
-  const materialProgress = clamp01(physicalProgress);
+  const baseStyle = sampleTransitionBaseStyle(transition, physicalProgress);
+  const materialContinuity = transition.materialContinuity;
+  const continuityProgress = materialContinuity
+    ? getContinuityProgress(materialContinuity.anchorProgress, transition.phaseTo, physicalProgress)
+    : 0;
+  const presentationStyle = materialContinuity && continuityProgress > 0
+    ? {
+      fillAlpha: clamp01(baseStyle.fillAlpha +
+        (materialContinuity.style.fillAlpha - materialContinuity.baseStyle.fillAlpha) * continuityProgress),
+      fillColor: applyColorContinuityOffset(
+        baseStyle.fillColor,
+        materialContinuity.baseStyle.fillColor,
+        materialContinuity.style.fillColor,
+        continuityProgress,
+      ),
+      radius: Math.max(0, baseStyle.radius +
+        (materialContinuity.style.radius - materialContinuity.baseStyle.radius) * continuityProgress),
+      strokeAlpha: clamp01(baseStyle.strokeAlpha +
+        (materialContinuity.style.strokeAlpha - materialContinuity.baseStyle.strokeAlpha) * continuityProgress),
+      strokeColor: applyColorContinuityOffset(
+        baseStyle.strokeColor,
+        materialContinuity.baseStyle.strokeColor,
+        materialContinuity.style.strokeColor,
+        continuityProgress,
+      ),
+      strokeWidth: Math.max(0, baseStyle.strokeWidth +
+        (materialContinuity.style.strokeWidth - materialContinuity.baseStyle.strokeWidth) * continuityProgress),
+    }
+    : baseStyle;
+  if (materialContinuity && continuityProgress <= 0) transition.materialContinuity = null;
   const phaseSpan = transition.phaseTo - transition.phaseFrom;
   frame.height = rect.height;
   frame.left = rect.left;
   frame.top = rect.top;
   frame.width = rect.width;
-  frame.fillAlpha = lerp(transition.desktopStyle.fillAlpha, transition.panelStyle.fillAlpha, materialProgress);
-  frame.fillColor = lerpColor(transition.desktopStyle.fillColor, transition.panelStyle.fillColor, materialProgress);
-  frame.radius = lerp(transition.desktopStyle.radius, transition.panelStyle.radius, materialProgress);
-  frame.strokeAlpha = lerp(transition.desktopStyle.strokeAlpha, transition.panelStyle.strokeAlpha, materialProgress);
-  frame.strokeColor = lerpColor(transition.desktopStyle.strokeColor, transition.panelStyle.strokeColor, materialProgress);
-  frame.strokeWidth = lerp(transition.desktopStyle.strokeWidth, transition.panelStyle.strokeWidth, materialProgress);
+  frame.fillAlpha = presentationStyle.fillAlpha;
+  frame.fillColor = presentationStyle.fillColor;
+  frame.radius = presentationStyle.radius;
+  frame.strokeAlpha = presentationStyle.strokeAlpha;
+  frame.strokeColor = presentationStyle.strokeColor;
+  frame.strokeWidth = presentationStyle.strokeWidth;
   frame.progress = Math.abs(phaseSpan) < 0.0001
     ? 1
     : clamp01((physicalProgress - transition.phaseFrom) / phaseSpan);
@@ -436,14 +569,6 @@ export function startFrameGhost(
   options: FolderFrameGhostOptions = {},
 ): void {
   if (!fromRect || !toRect) return;
-  releaseFrameGhostMotion(layer);
-  killMotionOf(layer.frameGhost);
-  killMotionOf(layer.panelMaterial);
-  const duration = options.duration ?? motionPresets.folderOpenGhost!.duration!;
-  const ease = options.ease ?? motionPresets.folderOpenGhost!.ease!;
-  const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
-  const fadeDuration = Math.max(0.01, duration * (1 - fadeStart));
-  const exclusivePanelMaterialHandoff = options.exclusivePanelMaterialHandoff === true;
   const phase = options.frameGhostPhase || null;
   const folderId = options.folderId || null;
   const isClosing = phase === "closing";
@@ -455,6 +580,15 @@ export function startFrameGhost(
   );
   const phaseChanged = Boolean(canReuseTransition && existingTransition?.phase !== phase);
   const preservePhysicalProgress = Boolean(canReuseTransition && phaseChanged);
+  if (phaseChanged) cancelFrameGhostMotion(layer);
+  else releaseFrameGhostMotion(layer);
+  killMotionOf(layer.frameGhost);
+  killMotionOf(layer.panelMaterial);
+  const duration = options.duration ?? motionPresets.folderOpenGhost!.duration!;
+  const ease = options.ease ?? motionPresets.folderOpenGhost!.ease!;
+  const fadeStart = Math.max(0, Math.min(0.95, options.fadeStart ?? 0.72));
+  const fadeDuration = Math.max(0.01, duration * (1 - fadeStart));
+  const exclusivePanelMaterialHandoff = options.exclusivePanelMaterialHandoff === true;
   layer.panelMaterial.visible = !exclusivePanelMaterialHandoff;
   layer.panelMaterial.alpha = exclusivePanelMaterialHandoff ? 0 : options.panelMaterialFromAlpha ?? 0;
   layer.frameGhost.visible = true;
@@ -487,6 +621,7 @@ export function startFrameGhost(
       phaseTo: isClosing ? 0 : 1,
       placement: options.placement || null,
       progressState: { value: initialProgress },
+      materialContinuity: null,
       trajectory: createFolderTransitionTrajectory({ desktopRect, panelRect, placement: options.placement }),
     };
   } else {
@@ -495,6 +630,7 @@ export function startFrameGhost(
       killMotionOf(transition.progressState);
       transition.progressState.value = isClosing ? 1 : 0;
       transition.continuityOffset = null;
+      transition.materialContinuity = null;
     }
     const updateEndpoints = () => {
       if (isClosing) {
@@ -514,7 +650,19 @@ export function startFrameGhost(
       updateTransitionTrajectory(transition);
     };
     if (preservePhysicalProgress) {
-      preserveCurrentFrameAcrossTrajectoryUpdate(frame, transition, updateEndpoints);
+      const presentedSnapshot = layer.frameGhostPresentedSnapshot;
+      const continuityAnchor = presentedSnapshot &&
+        presentedSnapshot.transition === transition &&
+        presentedSnapshot.folderId === folderId &&
+        presentedSnapshot.phase === transition.phase
+        ? presentedSnapshot.frame
+        : frame;
+      preserveCurrentFrameAcrossTrajectoryUpdate(
+        frame,
+        transition,
+        updateEndpoints,
+        continuityAnchor,
+      );
     } else {
       updateEndpoints();
     }

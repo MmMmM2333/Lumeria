@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle, Sprite } from "pixi.js";
+import { Container, Graphics, Matrix, Rectangle, RenderLayer, Sprite } from "pixi.js";
 import type { ContainerChild, FederatedPointerEvent, TextStyleFontWeight } from "pixi.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
@@ -15,6 +15,7 @@ import { mapClientRectToDisplayObjectLocalRect } from "../geometry/displayObject
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import {
   clearFrameGhost as clearFrameGhostState,
+  commitFrameGhostPresentation as commitFrameGhostPresentationState,
   drawClosingFrameMask as drawClosingFrameMaskState,
   drawFrameGhost as drawFrameGhostState,
   enableClosingFrameMask as enableClosingFrameMaskState,
@@ -27,6 +28,7 @@ import {
 } from "./folderFrameGhost.js";
 import type {
   FolderFrameGhostOptions,
+  FolderFramePresentedSnapshot,
   FolderFramePresentation,
   FolderFrameTransitionState,
 } from "./folderFrameGhost.js";
@@ -65,7 +67,7 @@ import type {
   FolderOpeningState,
   FolderOpeningTarget,
 } from "./folderOpeningGhostController.js";
-import { detachDisplayObject, destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
+import { destroyDisplayObjectAfterFrame } from "./displayObjectLifecycle.js";
 import {
   FolderVisualSession,
   makeFolderPanelTargetKey,
@@ -322,6 +324,39 @@ interface DetachedGhostMotion extends Readonly<Record<string, unknown>> {
   y?: unknown;
 }
 
+interface FolderContentPresentation {
+  alpha: number;
+  detachedMotion: DetachedGhostMotion | null;
+  folderSlotReleaseMix: number | null;
+  folderSlotReleaseVisible: boolean;
+  labelAlpha: number | null;
+  labelScaleX: number | null;
+  labelScaleY: number | null;
+  labelVisible: boolean | null;
+  pivotX: number;
+  pivotY: number;
+  renderable: boolean;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  skewX: number;
+  skewY: number;
+  visible: boolean;
+  x: number;
+  y: number;
+}
+
+interface ClosingContentPresentedSnapshot {
+  folderId: string;
+  lease: FolderOverlayCloseLease;
+  presentations: Map<Container, FolderContentPresentation>;
+}
+
+interface OpeningContentPresentedSnapshot {
+  folderId: string;
+  presentations: Map<Container, FolderContentPresentation>;
+}
+
 interface DetachedClosingVisual {
   clearing?: boolean | undefined;
   container: Container;
@@ -330,6 +365,8 @@ interface DetachedClosingVisual {
   destroyed?: boolean | undefined;
   finishQueued?: boolean | undefined;
   folderId: string | null;
+  content?: Container[] | null | undefined;
+  frame?: Graphics | null | undefined;
   geometryComplete: boolean;
   handoffCommitted?: boolean | undefined;
   handoffReleased?: boolean | undefined;
@@ -919,6 +956,200 @@ function addXOffsetToFrameState(
   };
 }
 
+function mapRectBetweenContainers(
+  rect: StageRect,
+  source: Container,
+  target: Container,
+): StageRect {
+  const points = [
+    target.toLocal({ x: rect.left, y: rect.top }, source),
+    target.toLocal({ x: rect.left + rect.width, y: rect.top }, source),
+    target.toLocal({ x: rect.left, y: rect.top + rect.height }, source),
+    target.toLocal({ x: rect.left + rect.width, y: rect.top + rect.height }, source),
+  ];
+  if (!points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) {
+    throw new TypeError("detached closing geometry could not be mapped between display-object spaces");
+  }
+  const left = Math.min(...points.map((point) => point.x));
+  const top = Math.min(...points.map((point) => point.y));
+  const right = Math.max(...points.map((point) => point.x));
+  const bottom = Math.max(...points.map((point) => point.y));
+  return { height: bottom - top, left, top, width: right - left };
+}
+
+function getScaleBetweenContainers(source: Container, target: Container): number {
+  const origin = target.toLocal({ x: 0, y: 0 }, source);
+  const xUnit = target.toLocal({ x: 1, y: 0 }, source);
+  const yUnit = target.toLocal({ x: 0, y: 1 }, source);
+  const scaleX = Math.hypot(xUnit.x - origin.x, xUnit.y - origin.y);
+  const scaleY = Math.hypot(yUnit.x - origin.x, yUnit.y - origin.y);
+  const scale = (scaleX + scaleY) / 2;
+  if (!Number.isFinite(scale) || !(scale > 0)) {
+    throw new TypeError("detached closing scale could not be mapped between display-object spaces");
+  }
+  return scale;
+}
+
+function reparentPreservingWorldTransform(child: Container, target: Container): void {
+  const origin = target.toLocal({ x: 0, y: 0 }, child);
+  const xUnit = target.toLocal({ x: 1, y: 0 }, child);
+  const yUnit = target.toLocal({ x: 0, y: 1 }, child);
+  const values = [origin.x, origin.y, xUnit.x, xUnit.y, yUnit.x, yUnit.y];
+  if (!values.every(Number.isFinite)) {
+    throw new TypeError("detached closing child transform could not be mapped into its new parent");
+  }
+  target.addChild(child);
+  child.setFromMatrix(new Matrix(
+    xUnit.x - origin.x,
+    xUnit.y - origin.y,
+    yUnit.x - origin.x,
+    yUnit.y - origin.y,
+    origin.x,
+    origin.y,
+  ));
+}
+
+function mapFramePresentationBetweenContainers(
+  frame: MutableFramePresentation,
+  source: Container,
+  target: Container,
+): MutableFramePresentation {
+  const rect = mapRectBetweenContainers(frame, source, target);
+  const scale = getScaleBetweenContainers(source, target);
+  return {
+    ...frame,
+    ...rect,
+    radius: frame.radius * scale,
+    strokeWidth: frame.strokeWidth * scale,
+  };
+}
+
+function mapDetachedFrameTargetBetweenContainers(
+  targetState: DetachedFrameTarget | null | undefined,
+  source: Container,
+  target: Container,
+): DetachedFrameTarget | null {
+  if (!targetState) return null;
+  const rect = {
+    height: Number(targetState.height),
+    left: Number(targetState.left),
+    top: Number(targetState.top),
+    width: Number(targetState.width),
+  };
+  if (!Object.values(rect).every(Number.isFinite)) {
+    throw new TypeError("detached closing frame target requires finite geometry");
+  }
+  const mapped = mapRectBetweenContainers(rect, source, target);
+  const scale = getScaleBetweenContainers(source, target);
+  const radius = Number(targetState.radius);
+  const strokeWidth = Number(targetState.strokeWidth);
+  return {
+    ...targetState,
+    ...mapped,
+    ...(Number.isFinite(radius) ? { radius: radius * scale } : {}),
+    ...(Number.isFinite(strokeWidth) ? { strokeWidth: strokeWidth * scale } : {}),
+  };
+}
+
+function mapFrameTransitionBetweenContainers(
+  transition: FolderFrameTransitionState | null | undefined,
+  source: Container,
+  target: Container,
+): FolderFrameTransitionState | null {
+  if (!transition) return null;
+  return {
+    ...transition,
+    desktopRect: mapRectBetweenContainers(transition.desktopRect, source, target),
+    panelRect: mapRectBetweenContainers(transition.panelRect, source, target),
+  };
+}
+
+function mapDetachedGhostMotionBetweenContainers(
+  detachedMotion: DetachedGhostMotion | null | undefined,
+  source: Container,
+  target: Container,
+): DetachedGhostMotion | null {
+  if (!detachedMotion) return null;
+  const x = Number(detachedMotion.x);
+  const y = Number(detachedMotion.y);
+  const scale = Number(detachedMotion.scale);
+  if (![x, y, scale].every(Number.isFinite)) return detachedMotion;
+  const point = target.toLocal({ x, y }, source);
+  return {
+    ...detachedMotion,
+    scale: scale * getScaleBetweenContainers(source, target),
+    x: point.x,
+    y: point.y,
+  };
+}
+
+function cloneDetachedGhostMotion(
+  motion: DetachedGhostMotion | null | undefined,
+): DetachedGhostMotion | null {
+  return motion ? { ...motion } : null;
+}
+
+function captureFolderContentPresentation(
+  node: Container,
+  detachedMotion: DetachedGhostMotion | null | undefined,
+): FolderContentPresentation {
+  const ghost = node as FolderGhostNode;
+  const label = ghost.labelText;
+  const slot = ghost.folderSlotReleaseVisual;
+  return {
+    alpha: node.alpha,
+    detachedMotion: cloneDetachedGhostMotion(detachedMotion),
+    folderSlotReleaseMix: slot?.visible ? clamp01(slot.alpha) : null,
+    folderSlotReleaseVisible: slot?.visible === true,
+    labelAlpha: label ? label.alpha : null,
+    labelScaleX: label ? label.scale.x : null,
+    labelScaleY: label ? label.scale.y : null,
+    labelVisible: label ? label.visible : null,
+    pivotX: node.pivot.x,
+    pivotY: node.pivot.y,
+    renderable: node.renderable,
+    rotation: node.rotation,
+    scaleX: node.scale.x,
+    scaleY: node.scale.y,
+    skewX: node.skew.x,
+    skewY: node.skew.y,
+    visible: node.visible,
+    x: node.position.x,
+    y: node.position.y,
+  };
+}
+
+function restoreFolderContentPresentation(
+  node: Container,
+  presentation: FolderContentPresentation,
+): void {
+  node.position.set(presentation.x, presentation.y);
+  node.scale.set(presentation.scaleX, presentation.scaleY);
+  node.pivot.set(presentation.pivotX, presentation.pivotY);
+  node.skew.set(presentation.skewX, presentation.skewY);
+  node.rotation = presentation.rotation;
+  node.alpha = presentation.alpha;
+  node.visible = presentation.visible;
+  node.renderable = presentation.renderable;
+
+  const ghost = node as FolderGhostNode;
+  const label = ghost.labelText;
+  if (label && presentation.labelAlpha != null &&
+    presentation.labelScaleX != null && presentation.labelScaleY != null) {
+    label.alpha = presentation.labelAlpha;
+    label.scale.set(presentation.labelScaleX, presentation.labelScaleY);
+    if (presentation.labelVisible != null) label.visible = presentation.labelVisible;
+  }
+  const slot = ghost.folderSlotReleaseVisual;
+  if (!slot) return;
+  if (!presentation.folderSlotReleaseVisible) {
+    ghost.clearFolderSlotReleaseVisual?.("restore-presented-closing-content");
+    return;
+  }
+  slot.visible = true;
+  ghost.setFolderSlotReleaseVisualMix?.(presentation.folderSlotReleaseMix ?? 0);
+}
+
 function addDetachedVisualMotionControl(
   visual: DetachedClosingVisual | null,
   control: MotionControl | null | undefined,
@@ -1352,6 +1583,7 @@ export interface FolderOverlayLayer {
   pageDotsLayer: Container<FolderPageDot>;
   openingGhostLayer: Container<FolderGhostNode>;
   closingGhostLayer: Container<FolderGhostNode>;
+  detachedClosingContentLayer: RenderLayer;
   closingPreviewSwapLayer: ClosingPreviewContainerNode;
   detachedClosingVisualLayer: Container;
   ownsDetachedClosingVisualLayer: boolean;
@@ -1427,6 +1659,9 @@ export interface FolderOverlayLayer {
   currentOpeningGeometrySnapshot: FolderOpeningGeometrySnapshot | null | undefined;
   frameGhostFolderId: string | null | undefined;
   frameGhostPhase: string | null | undefined;
+  frameGhostPresentedSnapshot: FolderFramePresentedSnapshot | null | undefined;
+  openingContentPresentedSnapshot: OpeningContentPresentedSnapshot | null | undefined;
+  closingContentPresentedSnapshot: ClosingContentPresentedSnapshot | null | undefined;
   frameGhostState: MutableFramePresentation | null | undefined;
   frameGhostTransitionState: FolderFrameTransitionState | null | undefined;
   frameGhostMotionControl: MotionControl | null | undefined;
@@ -1456,6 +1691,7 @@ export class FolderOverlayLayer extends Container {
     this.pageDotsLayer.alpha = 0;
     this.openingGhostLayer = new Container<FolderGhostNode>();
     this.closingGhostLayer = new Container<FolderGhostNode>();
+    this.detachedClosingContentLayer = new RenderLayer();
     this.closingPreviewSwapLayer = new Container() as ClosingPreviewContainerNode;
     this.detachedClosingVisualLayer = options.detachedClosingVisualLayer || new Container();
     this.ownsDetachedClosingVisualLayer = !options.detachedClosingVisualLayer;
@@ -1562,6 +1798,9 @@ export class FolderOverlayLayer extends Container {
     this.panelTitleOpening = false;
     this.panelTitleStartScaleX = 1;
     this.panelTitleStartScaleY = 1;
+    this.frameGhostPresentedSnapshot = null;
+    this.openingContentPresentedSnapshot = null;
+    this.closingContentPresentedSnapshot = null;
     this.addChild(this.frameGhost);
     this.addChild(this.closingFrameMask);
     if (this.ownsDetachedClosingVisualLayer) this.addChild(this.detachedClosingVisualLayer);
@@ -1573,6 +1812,7 @@ export class FolderOverlayLayer extends Container {
     this.panelContentLayer.addChild(this.pageTrack);
     this.panel.addChild(this.folderTitle);
     this.addChild(this.pageDotsLayer);
+    this.addChild(this.detachedClosingContentLayer);
     this.addChild(this.openingGhostLayer);
     this.addChild(this.closingGhostLayer);
     this.addChild(this.closingPreviewSwapLayer);
@@ -2758,8 +2998,10 @@ export class FolderOverlayLayer extends Container {
     } = options;
     this.openingLease?.cancel();
     this.openingLease = null;
+    this.openingContentPresentedSnapshot = null;
     this.closingLease?.cancel();
     this.closingLease = null;
+    this.closingContentPresentedSnapshot = null;
     this.cancelOpeningPanelReadyCheck();
     this.panelOpenTargetKey = null;
     this.panelAlphaTarget = null;
@@ -2919,8 +3161,15 @@ export class FolderOverlayLayer extends Container {
     });
   }
 
-  removeOpeningGhost(ghost: FolderIconNode): FolderIconNode | null {
-    return detachDisplayObject(ghost, this.openingGhostLayer) ? ghost : null;
+  restoreOpeningGhostPresentation(ghost: FolderClosingGhost | FolderOpeningGhost): boolean {
+    const snapshot = this.openingContentPresentedSnapshot;
+    const folderId = this.openingLease?.snapshot()?.folderId || null;
+    if (!snapshot || snapshot.folderId !== folderId) return false;
+    const node = ghost as unknown as Container;
+    const presentation = snapshot.presentations.get(node);
+    if (!presentation) return false;
+    restoreFolderContentPresentation(node, presentation);
+    return true;
   }
 
   clearPageDots(): void {
@@ -3042,6 +3291,10 @@ export class FolderOverlayLayer extends Container {
     if (!visual || visual.destroyed) return;
     visual.destroyed = true;
     cancelDetachedVisualMotionControls(visual);
+    const content = visual.content || [];
+    if (content.length) this.detachedClosingContentLayer?.detach?.(...content);
+    visual.content = null;
+    visual.frame = null;
     killAllMotion(visual.container, { reason: FOLDER_PANEL_DETACHED_CLOSE_REASON });
     if (visual.container?.parent) visual.container.parent.removeChild(visual.container);
     visual.container?.destroy?.({ children: true });
@@ -3156,42 +3409,58 @@ export class FolderOverlayLayer extends Container {
       closingFolderId && (waitForDesktopClose || closingFolderId !== nextFolderId) && !closingSourceAlreadyVisible
     );
     const closingMirrorOffsetX = shouldKeepDetachedVisual ? this.closingDesktopPageTrackMirrorX : 0;
-    const frameState = shouldKeepDetachedVisual
-      ? addXOffsetToFrameState(this.frameGhostState, closingMirrorOffsetX)
+    const presentedFrame = this.frameGhostPresentedSnapshot;
+    const canUsePresentedFrame = Boolean(
+      presentedFrame &&
+      presentedFrame.folderId === closingFolderId &&
+      presentedFrame.phase === "closing" &&
+      presentedFrame.transition === this.frameGhostTransitionState
+    );
+    const sourceFrameState = canUsePresentedFrame
+      ? presentedFrame!.frame
+      : this.frameGhostState;
+    const sourceFrameTransition = canUsePresentedFrame
+      ? presentedFrame!.transition
+      : this.frameGhostTransitionState;
+    const overlayFrameState = shouldKeepDetachedVisual
+      ? addXOffsetToFrameState(sourceFrameState, closingMirrorOffsetX)
       : null;
-    const frameTarget = shouldKeepDetachedVisual ? closeSnapshot?.detachedFrameTarget || null : null;
-    const frameTransition = frameState
-      ? makeDetachedFrameTransition(
-        frameState,
-        this.frameGhostTransitionState,
-        frameTarget as DetachedFrameTarget | null,
-      )
+    const sourceFrameTarget = shouldKeepDetachedVisual
+      ? (closeSnapshot?.detachedFrameTarget as DetachedFrameTarget | null) || null
       : null;
     const closingGhosts = shouldKeepDetachedVisual
-      ? this.closingGhostLayer.removeChildren()
+      ? Array.from(
+        this.closingGhostLayer?.children || this.closingGhostLayer?.removeChildren?.() || [],
+      ) as FolderGhostNode[]
       : [];
-    const detachedGhostMotions = new Map(closingGhosts.map((ghost) => [
-      ghost,
-      closingLease?.detachedGhostMotion(ghost) || null,
-    ]));
     const previewSwapGhosts = shouldKeepDetachedVisual
-      ? this.removeClosingPreviewSwapChildren()
+      ? Array.from(
+        this.closingPreviewSwapLayer?.children || this.removeClosingPreviewSwapChildren(),
+      ) as ClosingPreviewDisplayNode[]
       : [];
-    if (closingMirrorOffsetX && previewSwapGhosts.length) {
-      for (const ghost of previewSwapGhosts) {
-        if (!ghost || ghost.destroyed) continue;
-        ghost.x = (Number(ghost.x) || 0) + closingMirrorOffsetX;
+    const presentedContent = this.closingContentPresentedSnapshot;
+    const canUsePresentedContent = Boolean(
+      presentedContent &&
+      presentedContent.lease === closingLease &&
+      presentedContent.folderId === closingFolderId
+    );
+    const getPresentedContent = (node: Container): FolderContentPresentation | null =>
+      canUsePresentedContent ? presentedContent!.presentations.get(node) || null : null;
+    if (canUsePresentedContent) {
+      for (const node of [...closingGhosts, ...previewSwapGhosts] as Container[]) {
+        const presentation = getPresentedContent(node);
+        if (presentation) restoreFolderContentPresentation(node, presentation);
       }
     }
     let detachedVisual: DetachedClosingVisual | null = null;
-    if (shouldKeepDetachedVisual && (frameState || closingGhosts.length || previewSwapGhosts.length || waitForDesktopClose)) {
+    if (shouldKeepDetachedVisual && (overlayFrameState || closingGhosts.length || previewSwapGhosts.length || waitForDesktopClose)) {
       // This is a continuation of the handoff already prepared by the live
       // closing controller. Keep any label fade that reached its perceptual
       // release point while transferring the remaining artwork to a detached
       // visual for the next folder's opening.
       this.onClosingHandoffPrepare?.(closingFolderId, { preserveVisualState: true });
       const container = new Container();
-      container.eventMode = (frameState || closingGhosts.length || previewSwapGhosts.length) ? "static" : "none";
+      container.eventMode = (overlayFrameState || closingGhosts.length || previewSwapGhosts.length) ? "static" : "none";
       container.interactiveChildren = false;
       container.hitArea = {
         contains: (x, y) => {
@@ -3211,10 +3480,47 @@ export class FolderOverlayLayer extends Container {
         this.onClosingFolderPointerDown?.(closingFolderId, nativeEvent);
       });
       container.alpha = 1;
+      this.detachedClosingVisualLayer.addChild(container);
+      const canMapPresentationSpace = this instanceof Container && container.parent instanceof Container;
+      const frameState = overlayFrameState && canMapPresentationSpace
+        ? mapFramePresentationBetweenContainers(overlayFrameState, this, container)
+        : overlayFrameState;
+      const frameTargetSource = this.closingGhostLayer instanceof Container
+        ? this.closingGhostLayer
+        : this;
+      const frameTarget = sourceFrameTarget && canMapPresentationSpace
+        ? mapDetachedFrameTargetBetweenContainers(sourceFrameTarget, frameTargetSource, container)
+        : sourceFrameTarget;
+      const mappedFrameTransition = frameState && canMapPresentationSpace
+        ? mapFrameTransitionBetweenContainers(sourceFrameTransition, this, container)
+        : sourceFrameTransition;
+      const frameTransition = frameState
+        ? makeDetachedFrameTransition(frameState, mappedFrameTransition, frameTarget)
+        : null;
+      const detachedGhostMotions = new Map(closingGhosts.map((ghost) => [
+        ghost,
+        canMapPresentationSpace && this.closingGhostLayer instanceof Container
+          ? mapDetachedGhostMotionBetweenContainers(
+            getPresentedContent(ghost)?.detachedMotion ||
+              closingLease?.detachedGhostMotion(ghost) || null,
+            this.closingGhostLayer,
+            container,
+          )
+          : getPresentedContent(ghost)?.detachedMotion ||
+            closingLease?.detachedGhostMotion(ghost) || null,
+      ]));
+      if (closingMirrorOffsetX && previewSwapGhosts.length) {
+        for (const ghost of previewSwapGhosts) {
+          if (!ghost || ghost.destroyed) continue;
+          ghost.x = (Number(ghost.x) || 0) + closingMirrorOffsetX;
+        }
+      }
       const visual: DetachedClosingVisual = {
         container,
+        content: [],
         desktopCloseReleaseRequested: false,
         folderId: closingFolderId,
+        frame: null,
         geometryComplete: false,
         releaseAfterDesktopClose: waitForDesktopClose,
       };
@@ -3227,14 +3533,19 @@ export class FolderOverlayLayer extends Container {
         const frame = new Graphics();
         drawDetachedFrame(frame, frameState);
         container.addChild(frame);
+        visual.frame = frame;
       }
       for (const ghost of closingGhosts) {
-        container.addChild(ghost);
+        if (ghost.parent && canMapPresentationSpace) reparentPreservingWorldTransform(ghost, container);
+        else container.addChild(ghost);
       }
       for (const ghost of previewSwapGhosts) {
-        container.addChild(ghost);
+        if (ghost.parent && canMapPresentationSpace) reparentPreservingWorldTransform(ghost as Container, container);
+        else container.addChild(ghost as Container);
       }
-      this.detachedClosingVisualLayer.addChild(container);
+      const detachedContent = [...closingGhosts, ...previewSwapGhosts] as Container[];
+      visual.content = detachedContent;
+      if (detachedContent.length) this.detachedClosingContentLayer?.attach?.(...detachedContent);
       this.acquireVisualOwnership(visual.desktopSourceKey, {
         folderId: closingFolderId,
         kind: "detachedClosing",
@@ -3242,6 +3553,7 @@ export class FolderOverlayLayer extends Container {
       });
       this.detachedClosingVisuals.push(visual);
       this.pruneDetachedClosingVisuals();
+      this.closingContentPresentedSnapshot = null;
       closingLease?.cancel({ restorePageTrack: false, reveal: false });
       if (this.closingLease === closingLease) this.closingLease = null;
       this.resetClosingDesktopPageTrackMirror();
@@ -3256,7 +3568,7 @@ export class FolderOverlayLayer extends Container {
         });
       };
       const geometryTracker = makeCompletionTracker(finishAfterGeometry);
-      const frame = frameState ? container.children[0] as Graphics : null;
+      const frame = visual.frame;
       if (frameState && frameTransition) {
         animateDetachedFrame(
           frame,
@@ -3283,6 +3595,7 @@ export class FolderOverlayLayer extends Container {
     }
 
     closingLease?.cancel({ restorePageTrack: false, reveal: false });
+    this.closingContentPresentedSnapshot = null;
     if (this.closingLease === closingLease) this.closingLease = null;
     this.resetClosingDesktopPageTrackMirror();
     return false;
@@ -3421,6 +3734,54 @@ export class FolderOverlayLayer extends Container {
     const cleared = clearFrameGhostState(this as FolderFrameGhostLayer, options);
     if (cleared && wasOpeningFrame) this.openingGhosts?.clearFrameTarget?.();
     return cleared;
+  }
+
+  commitFrameGhostPresentation(): FolderFramePresentedSnapshot | null {
+    return commitFrameGhostPresentationState(this as FolderFrameGhostLayer);
+  }
+
+  commitFolderVisualPresentation(): FolderFramePresentedSnapshot | null {
+    const frame = this.commitFrameGhostPresentation();
+    const openingLease = this.openingLease;
+    const openingFolderId = openingLease?.snapshot()?.folderId || null;
+    if (openingLease && openingFolderId) {
+      const presentations = new Map<Container, FolderContentPresentation>();
+      for (const node of this.openingGhostLayer.children || []) {
+        presentations.set(node, captureFolderContentPresentation(node, null));
+      }
+      this.openingContentPresentedSnapshot = {
+        folderId: openingFolderId,
+        presentations,
+      };
+    } else {
+      this.openingContentPresentedSnapshot = null;
+    }
+
+    const closingLease = this.closingLease;
+    const closingFolderId = closingLease?.snapshot()?.folderId || null;
+    if (!closingLease || !closingFolderId) {
+      this.closingContentPresentedSnapshot = null;
+      return frame;
+    }
+    const presentations = new Map<Container, FolderContentPresentation>();
+    for (const node of this.closingGhostLayer.children || []) {
+      presentations.set(node, captureFolderContentPresentation(
+        node,
+        closingLease.detachedGhostMotion(node) as DetachedGhostMotion | null,
+      ));
+    }
+    for (const node of this.closingPreviewSwapLayer.children || []) {
+      presentations.set(
+        node as Container,
+        captureFolderContentPresentation(node as Container, null),
+      );
+    }
+    this.closingContentPresentedSnapshot = {
+      folderId: closingFolderId,
+      lease: closingLease,
+      presentations,
+    };
+    return frame;
   }
 
   notifyTitleFrame(
@@ -3826,6 +4187,23 @@ export class FolderOverlayLayer extends Container {
     });
     if (!localRect) {
       throw new TypeError("opening source rect could not be mapped into the ghost-layer coordinate space");
+    }
+    return localRect;
+  }
+
+  mapClosingTargetRectToLocal(
+    state: Pick<FolderClosingState, "height" | "stageRect" | "width">,
+    rect: StageRect,
+  ): StageRect {
+    const localRect = mapClientRectToDisplayObjectLocalRect({
+      node: this.closingGhostLayer,
+      rect,
+      stageHeight: state.height,
+      stageRect: state.stageRect,
+      stageWidth: state.width,
+    });
+    if (!localRect) {
+      throw new TypeError("closing target rect could not be mapped into the ghost-layer coordinate space");
     }
     return localRect;
   }
@@ -4260,6 +4638,8 @@ export class FolderOverlayLayer extends Container {
         destroyed: visual.destroyed === true,
         finishQueued: visual.finishQueued === true,
         folderId: visual.folderId || null,
+        content: (visual.content || []).map((child) => readDisplay(child)),
+        frame: visual.frame ? readDisplay(visual.frame as unknown as Container) : null,
         geometryComplete: visual.geometryComplete === true,
         handoffCommitted: visual.handoffCommitted === true,
         handoffReleased: visual.handoffReleased === true,

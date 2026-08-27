@@ -1057,6 +1057,7 @@ function commitDesktopPresentationFrame({
   const gpuStartedAt = nowMs();
   try {
     app?.render?.();
+    layer?.singleStageFolderLayer?.commitFolderVisualPresentation();
     runtimePerformanceMetrics.markOnce("scene.first-ready");
     if (result.didRender) {
       appLaunchCommitTracker.afterRender({
