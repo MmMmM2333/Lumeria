@@ -33,6 +33,11 @@ import type {
   FolderFrameTransitionState,
 } from "./folderFrameGhost.js";
 import type { FolderFrameGhostLayer } from "./folderFrameGhost.js";
+
+export type FolderVisualPresentationCommit = Readonly<{
+  closingFolderId: string | null;
+  frame: FolderFramePresentedSnapshot | null;
+}>;
 import { createFolderTransitionTrajectory, makeFolderTransitionPlacement } from "./folderTransitionTrajectory.js";
 import type { FolderTransitionPlacement, FolderTransitionTrajectory } from "./folderTransitionTrajectory.js";
 import { FolderClosingGhostController } from "./folderClosingGhostController.js";
@@ -3740,7 +3745,7 @@ export class FolderOverlayLayer extends Container {
     return commitFrameGhostPresentationState(this as FolderFrameGhostLayer);
   }
 
-  commitFolderVisualPresentation(): FolderFramePresentedSnapshot | null {
+  commitFolderVisualPresentation(): FolderVisualPresentationCommit {
     const frame = this.commitFrameGhostPresentation();
     const openingLease = this.openingLease;
     const openingFolderId = openingLease?.snapshot()?.folderId || null;
@@ -3758,10 +3763,14 @@ export class FolderOverlayLayer extends Container {
     }
 
     const closingLease = this.closingLease;
-    const closingFolderId = closingLease?.snapshot()?.folderId || null;
+    const closingSnapshot = closingLease?.snapshot() || null;
+    const closingFolderId = closingSnapshot?.folderId || null;
+    const presentedClosingFolderId = closingSnapshot?.activeVisuals === true
+      ? closingFolderId
+      : null;
     if (!closingLease || !closingFolderId) {
       this.closingContentPresentedSnapshot = null;
-      return frame;
+      return Object.freeze({ closingFolderId: null, frame });
     }
     const presentations = new Map<Container, FolderContentPresentation>();
     for (const node of this.closingGhostLayer.children || []) {
@@ -3781,7 +3790,7 @@ export class FolderOverlayLayer extends Container {
       lease: closingLease,
       presentations,
     };
-    return frame;
+    return Object.freeze({ closingFolderId: presentedClosingFolderId, frame });
   }
 
   notifyTitleFrame(

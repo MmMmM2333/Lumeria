@@ -36,6 +36,13 @@ export interface FolderOverlayTargetFolder {
   id?: string | null;
 }
 
+export interface FolderOpeningOriginFolder {
+  childPages?: readonly (readonly (
+    Readonly<{ id?: string | null }> | null | undefined
+  )[])[];
+  id?: string | null;
+}
+
 interface ResolveFolderOverlayTargetsOptions {
   folder?: FolderOverlayTargetFolder | null | undefined;
   folderOpeningOriginBounds?: CapturedFolderOriginBounds | null | undefined;
@@ -44,6 +51,13 @@ interface ResolveFolderOverlayTargetsOptions {
   isClosing?: boolean | undefined;
   previousStableFolderCloseTarget?: StableFolderCloseTarget | null | undefined;
   wasClosing?: boolean | undefined;
+}
+
+export interface CaptureFolderOpeningOriginBoundsOptions {
+  fallbackIconRect?: FolderOverlayRect | null | undefined;
+  folder?: FolderOpeningOriginFolder | null | undefined;
+  folderPageSize?: number | undefined;
+  iconBoundsRegistry: IconBoundsRegistry;
 }
 
 export interface ResolvedFolderOverlayTargets {
@@ -90,6 +104,82 @@ export function getCapturedPreviewChildRect(
 
 function projectStableRecordToClient(record: IconBoundsRecord | null): StageVisualRect | null {
   return stageLayoutRecordToClientRect(record);
+}
+
+function remapRenderedBoundsToStableFrame(
+  rendered: FolderOverlayRect,
+  liveTarget: FolderOverlayRect,
+  stableTarget: FolderOverlayRect,
+): FolderOverlayRect | null {
+  if (liveTarget.width <= 0 || liveTarget.height <= 0) return null;
+  const scaleX = stableTarget.width / liveTarget.width;
+  const scaleY = stableTarget.height / liveTarget.height;
+  if (![scaleX, scaleY].every(Number.isFinite)) return null;
+  return {
+    height: rendered.height * scaleY,
+    left: stableTarget.left + (rendered.left - liveTarget.left) * scaleX,
+    top: stableTarget.top + (rendered.top - liveTarget.top) * scaleY,
+    width: rendered.width * scaleX,
+  };
+}
+
+function getCanonicalClientBounds(
+  iconBoundsRegistry: IconBoundsRegistry,
+  kind: typeof BOUNDS_KIND.TOP_LEVEL | typeof BOUNDS_KIND.FOLDER_THUMB | typeof BOUNDS_KIND.PREVIEW_CHILD,
+  key: Parameters<IconBoundsRegistry["getBounds"]>[2],
+): FolderOverlayRect | null {
+  const stableTarget = projectStableRecordToClient(
+    iconBoundsRegistry.getRecord(kind, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, key),
+  );
+  const liveTarget = iconBoundsRegistry.getBounds(kind, BOUNDS_VARIANT.LIVE_TARGET, key);
+  const rendered = iconBoundsRegistry.getBounds(kind, BOUNDS_VARIANT.RENDERED, key);
+  if (stableTarget && liveTarget && rendered) {
+    return remapRenderedBoundsToStableFrame(rendered, liveTarget, stableTarget) || stableTarget;
+  }
+  return stableTarget || liveTarget || rendered;
+}
+
+export function captureFolderOpeningOriginBounds(
+  options: CaptureFolderOpeningOriginBoundsOptions,
+): CapturedFolderOriginBounds | null {
+  const {
+    fallbackIconRect = null,
+    folder,
+    folderPageSize,
+    iconBoundsRegistry,
+  } = options;
+  const folderId = folder?.id || null;
+  if (!folderId) return null;
+  const iconRect = getCanonicalClientBounds(
+    iconBoundsRegistry,
+    BOUNDS_KIND.TOP_LEVEL,
+    folderId,
+  ) || fallbackIconRect;
+  if (!iconRect) return null;
+  const thumbRect = getCanonicalClientBounds(
+    iconBoundsRegistry,
+    BOUNDS_KIND.FOLDER_THUMB,
+    folderId,
+  ) || iconRect;
+  const previewSlots = getFolderPreviewSlots<Readonly<{ id?: string | null }>>(
+    folder ?? [],
+    folderPageSize,
+  );
+  const previewChildRects = previewSlots.flatMap((item, slotIndex) => {
+    if (!item?.id) return [];
+    const rect = getCanonicalClientBounds(
+      iconBoundsRegistry,
+      BOUNDS_KIND.PREVIEW_CHILD,
+      { childId: item.id, folderId, slotIndex },
+    );
+    return rect ? [{ childId: item.id, rect, slotIndex }] : [];
+  });
+  return {
+    folderId,
+    iconRect,
+    previewChildRects,
+    thumbRect,
+  };
 }
 
 function rectTrackingKey(rect: FolderOverlayRect | null | undefined): string {
@@ -162,13 +252,17 @@ export function resolveFolderOverlayTargets(
   });
   const liveFolderClientRect = liveFolderRecord;
   const liveFolderThumbClientRect = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId) || liveFolderClientRect;
-  const shouldUseLiveOpeningBounds = Boolean(capturedOriginBounds && liveFolderClientRect);
-  const folderClientRect = shouldUseLiveOpeningBounds
-    ? liveFolderClientRect
-    : capturedOriginBounds?.iconRect || liveFolderClientRect;
-  const folderThumbClientRect = shouldUseLiveOpeningBounds
-    ? liveFolderThumbClientRect || liveFolderClientRect
-    : capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
+  const folderClientRect = capturedOriginBounds?.iconRect || liveFolderClientRect;
+  const folderThumbClientRect = capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;
+  const getOpeningPreviewChildClientRect = (
+    item: FolderOverlayItem | null | undefined,
+    previewSlotIndex: number,
+  ) => getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
+    iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, {
+      childId: item?.id,
+      folderId,
+      slotIndex: previewSlotIndex,
+    });
   const stableFolderStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.TOP_LEVEL, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
   const stableFolderThumbStageLayoutRecord = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.STABLE_STAGE_LAYOUT, folderId);
   const renderedFolderTargetRect = isClosing ? liveFolderClientRect : null;
@@ -241,11 +335,7 @@ export function resolveFolderOverlayTargets(
       folderClientRect,
       folderId,
       folderThumbClientRect,
-      getOpeningPreviewChildClientRect: (item, previewSlotIndex) => shouldUseLiveOpeningBounds
-        ? iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: item?.id, folderId, slotIndex: previewSlotIndex }) ||
-          getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex)
-        : getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
-          iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: item?.id, folderId, slotIndex: previewSlotIndex }),
+      getOpeningPreviewChildClientRect,
       previewSlots,
       stableFolderCloseTarget: previousStableFolderCloseTarget,
     };
@@ -294,11 +384,7 @@ export function resolveFolderOverlayTargets(
     folderClientRect,
     folderId,
     folderThumbClientRect,
-    getOpeningPreviewChildClientRect: (item, previewSlotIndex) => shouldUseLiveOpeningBounds
-      ? iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: item?.id, folderId, slotIndex: previewSlotIndex }) ||
-        getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex)
-      : getCapturedPreviewChildRect(capturedOriginBounds, item?.id, previewSlotIndex) ||
-        iconBoundsRegistry.getBounds(BOUNDS_KIND.PREVIEW_CHILD, BOUNDS_VARIANT.RENDERED, { childId: item?.id, folderId, slotIndex: previewSlotIndex }),
+    getOpeningPreviewChildClientRect,
     previewSlots,
     stableFolderCloseTarget,
   };

@@ -7,7 +7,10 @@ import type { IconBoundsMeta } from "../geometry/iconBoundsRegistry.js";
 import type { StageProjectionMeta } from "../geometry/stageCoordinates.js";
 import { projectFolderCloseTargetToClient } from "./folderOverlayTargets.js";
 import type { StableFolderCloseTarget } from "./folderOverlayTargets.js";
-import { resolveFolderOverlayTargets } from "./folderOverlayTargetResolver.js";
+import {
+  captureFolderOpeningOriginBounds,
+  resolveFolderOverlayTargets,
+} from "./folderOverlayTargetResolver.js";
 
 const K = ICON_BOUNDS_KIND;
 const V = ICON_BOUNDS_VARIANT;
@@ -68,6 +71,28 @@ export function runFolderOverlayTargetResolverTests() {
   registry.registerBounds(K.FOLDER_THUMB, V.LIVE_TARGET, folder.id, liveCloseThumbRect, { area: "desktop", id: folder.id });
   registry.registerBounds(K.PREVIEW_CHILD, V.LIVE_TARGET, { childId: "app-a", folderId: folder.id, slotIndex: 0 }, liveCloseChildRect, { area: "desktop", folderId: folder.id, id: "app-a" });
 
+  const pointerOrigin = captureFolderOpeningOriginBounds({
+    fallbackIconRect: liveIconRect,
+    folder,
+    folderPageSize: 9,
+    iconBoundsRegistry: registry,
+  });
+  assert(pointerOrigin, "a desktop folder hit should capture an opening origin");
+  const expectedIconWidth = liveIconRect.width * targetIconClientRect.width / liveCloseIconRect.width;
+  const expectedThumbWidth = liveThumbRect.width * targetThumbClientRect.width / liveCloseThumbRect.width;
+  const expectedChildWidth = renderedCloseChildRect.width * targetChildClientRect.width / liveCloseChildRect.width;
+  assert(
+    Math.abs(pointerOrigin.iconRect.width - expectedIconWidth) < 0.0001 &&
+      Math.abs(pointerOrigin.thumbRect.width - expectedThumbWidth) < 0.0001,
+    "opening-origin capture should remove the shared desktop transform while retaining the rendered icon pose",
+  );
+  assert(
+    Math.abs(
+      (pointerOrigin.previewChildRects.find((entry) => entry.childId === "app-a")?.rect.width || 0) - expectedChildWidth,
+    ) < 0.0001,
+    "opening-origin capture should normalize preview children through the same stable coordinate frame",
+  );
+
   const resolved = resolveFolderOverlayTargets({
     folder,
     folderOpeningOriginBounds: {
@@ -90,8 +115,8 @@ export function runFolderOverlayTargetResolverTests() {
   assert(resolved.folderThumbClientRect, "the registered folder should resolve live thumb bounds");
   assert(resolved.previewSlots[0], "the folder preview should expose its first item");
   assert(resolved.stableFolderCloseTarget, "stable registry geometry should produce a close target");
-  assert(resolved.folderClientRect.left === liveIconRect.left, "opening folder rect should prefer the current live desktop bounds when available");
-  assert(resolved.folderThumbClientRect.left === liveThumbRect.left, "opening thumb rect should prefer the current live desktop thumb bounds when available");
+  assert(resolved.folderClientRect.left === capturedIconRect.left, "opening folder rect should retain the pointer-time captured bounds when live geometry changes");
+  assert(resolved.folderThumbClientRect.left === capturedThumbRect.left, "opening thumb rect should retain the pointer-time captured thumb bounds when live geometry changes");
   assert(resolved.previewSlots[0].id === "app-a", "resolver should expose folder preview slots");
   assert(resolved.stableFolderCloseTarget.source === "stable-target", "stable target capture should describe its source");
   assert(resolved.stableFolderCloseTarget.coordinateSpace === "stage-layout", "stable close target should store stage layout coordinates");
@@ -110,8 +135,8 @@ export function runFolderOverlayTargetResolverTests() {
     "stable close target should retain registered stage layout preview child bounds"
   );
   assert(
-    resolved.getOpeningPreviewChildClientRect({ id: "app-b" }, 1)?.left === liveChildRect.left,
-    "opening preview lookup should prefer current live child bounds when live source bounds are available"
+    resolved.getOpeningPreviewChildClientRect({ id: "app-b" }, 1)?.left === capturedChildRect.left,
+    "opening preview lookup should retain the captured child bounds when live source bounds are available"
   );
 
   const liveClosing = resolveFolderOverlayTargets({

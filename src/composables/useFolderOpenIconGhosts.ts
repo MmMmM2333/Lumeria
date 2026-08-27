@@ -36,6 +36,12 @@ export type FolderOpenIconGhostSession = Readonly<{
   status: "accepted" | "frame-complete" | "staged";
 }>;
 
+export type FolderCloseIconGhostSession = Readonly<{
+  folderId: string | null;
+  requestId: number;
+  status: "presented" | "staged";
+}>;
+
 function makeFolderOpenIconGhostedKey(folderId: string | null | undefined, childId: string): string {
   return `${folderId || ""}:${childId || ""}`;
 }
@@ -107,6 +113,7 @@ export function useFolderOpenIconGhosts(options: FolderIconGhostOptions = {}) {
   const folderOpenIconGhostedKeys = shallowRef<Set<string>>(new Set());
   const folderOpenPreviewFrameGhostedIds = shallowRef<Set<string>>(new Set());
   const folderCloseIconGhosts = shallowRef<PublishedFolderIconGhost[]>([]);
+  const folderCloseIconGhostSession = shallowRef<FolderCloseIconGhostSession | null>(null);
   const folderCloseIconGhostedKeys = shallowRef<Set<string>>(new Set());
   const isFolderOpenFrameGhostPending = shallowRef(false);
   const isFolderOpenIconAnimationActive = computed(() => folderOpenIconGhostedKeys.value.size > 0);
@@ -139,6 +146,7 @@ export function useFolderOpenIconGhosts(options: FolderIconGhostOptions = {}) {
     folderCloseIconGhostRequestId += 1;
     completedFolderCloseIconGhostKeys.clear();
     folderCloseIconGhosts.value = [];
+    folderCloseIconGhostSession.value = null;
     folderCloseIconGhostedKeys.value = new Set();
   }
 
@@ -177,6 +185,17 @@ export function useFolderOpenIconGhosts(options: FolderIconGhostOptions = {}) {
     if (completedFolderCloseIconGhostKeys.size < folderCloseIconGhosts.value.length) return false;
 
     clearFolderCloseIconGhosts();
+    return true;
+  }
+
+  function commitFolderCloseIconGhostPresentation(folderId: string | null, requestId: number): boolean {
+    const session = folderCloseIconGhostSession.value;
+    if (!session || session.status !== "staged") return false;
+    if (session.folderId !== (folderId || null) || session.requestId !== requestId) return false;
+    folderCloseIconGhostSession.value = {
+      ...session,
+      status: "presented",
+    };
     return true;
   }
 
@@ -232,6 +251,13 @@ export function useFolderOpenIconGhosts(options: FolderIconGhostOptions = {}) {
     completedFolderCloseIconGhostKeys.clear();
     const normalizedFolderId = folderId || null;
     const ghosts = publishFolderIconGhosts(normalizedFolderId, capturedGhosts, requestId, "close");
+    folderCloseIconGhostSession.value = ghosts.length
+      ? {
+        folderId: normalizedFolderId,
+        requestId,
+        status: "staged",
+      }
+      : null;
     folderCloseIconGhosts.value = ghosts;
     folderCloseIconGhostedKeys.value = new Set(ghosts.map((ghost) => makeFolderOpenIconGhostedKey(normalizedFolderId, ghost.item.id)));
   }
@@ -254,10 +280,12 @@ export function useFolderOpenIconGhosts(options: FolderIconGhostOptions = {}) {
     acceptFolderOpenIconGhostSession,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
+    commitFolderCloseIconGhostPresentation,
     completeFolderOpenFrameGhost,
     completeFolderCloseIconGhost,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
+    folderCloseIconGhostSession,
     folderOpenIconGhosts,
     folderOpenIconGhostSession,
     folderOpenPreviewFrameGhostedIds,

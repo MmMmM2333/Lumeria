@@ -24,8 +24,15 @@ export type DesktopSceneDomRefs = Readonly<{
 
 export type DesktopFolderPageRenderMode = "empty" | "interactive" | "static-real";
 
+export type DesktopFolderCloseIconGhostSession = Readonly<{
+  folderId: string | null;
+  requestId: number;
+  status: "presented" | "staged";
+}>;
+
 export type DesktopFolderOverlayRuntime = Readonly<{
   acceptFolderOpenIconGhostSession?: (folderId: string | null, requestId: unknown) => boolean;
+  commitFolderCloseIconGhostPresentation?: (folderId: string | null, requestId: number) => boolean;
   commitFolderPageIndex?: (pageIndex: number) => unknown;
   commitOpenFolder?: (folderId: string | null, options?: unknown) => unknown;
   completeFolderCloseIconGhost?: (key: string) => boolean | void;
@@ -33,6 +40,7 @@ export type DesktopFolderOverlayRuntime = Readonly<{
   completeFolderOpenIconGhost?: (key: string) => unknown;
   completeFolderRenameRequest?: (token: number) => unknown;
   folderCloseIconGhosts?: SceneRuntimeRef<readonly SceneDataRecord[]>;
+  folderCloseIconGhostSession?: SceneRuntimeRef<DesktopFolderCloseIconGhostSession | null>;
   folderGridStyle?: SceneRuntimeRef<SceneDataRecord | null>;
   folderOpeningCancelRequest?: SceneRuntimeRef<SceneDataRecord | null>;
   folderOpeningOriginBounds?: SceneRuntimeRef<CapturedFolderOriginBounds | null>;
@@ -207,6 +215,19 @@ function requireFolderPageRenderMode(value: unknown, path: string): DesktopFolde
   return value;
 }
 
+function requireFolderCloseIconGhostSession(
+  value: unknown,
+  path: string,
+): DesktopFolderCloseIconGhostSession {
+  const session = requireObject(value, path);
+  if (session.folderId !== null) requireString(session.folderId, `${path}.folderId`);
+  requireFiniteNumber(session.requestId, `${path}.requestId`);
+  if (session.status !== "presented" && session.status !== "staged") {
+    throw new TypeError(`${path}.status must be presented or staged`);
+  }
+  return session as DesktopFolderCloseIconGhostSession;
+}
+
 function requireIconTextureItems(value: unknown, path: string): readonly IconTextureItem[] {
   return requireArray(value, path, (entry, entryPath) => {
     const item = requireObject(entry, entryPath);
@@ -332,6 +353,7 @@ function requireFolderOverlayRuntime(value: unknown): DesktopFolderOverlayRuntim
   requireFunction(state.renameFolder, `${path}.renameFolder`);
   requireOptionalProperties(state, OPTIONAL_FOLDER_OVERLAY_FUNCTION_KEYS, path, requireFunction);
   replaceOptionalFunction(state, "acceptFolderOpenIconGhostSession", path, requireBoolean);
+  replaceOptionalFunction(state, "commitFolderCloseIconGhostPresentation", path, requireBoolean);
   replaceOptionalFunction(state, "completeFolderCloseIconGhost", path, (result, resultPath) => {
     if (result === undefined) return undefined;
     return requireBoolean(result, resultPath);
@@ -343,6 +365,7 @@ function requireFolderOverlayRuntime(value: unknown): DesktopFolderOverlayRuntim
   requireOptionalRefs(state, OPTIONAL_FOLDER_OVERLAY_RECORD_ARRAY_REF_KEYS, path, (entry, entryPath) =>
     requireArray(entry, entryPath, requireObject));
   requireOptionalRefs(state, OPTIONAL_FOLDER_OVERLAY_NULLABLE_RECORD_REF_KEYS, path, requireNullable(requireObject));
+  requireOptionalRefs(state, ["folderCloseIconGhostSession"], path, requireNullable(requireFolderCloseIconGhostSession));
   requireOptionalRefs(state, OPTIONAL_FOLDER_OVERLAY_NUMBER_REF_KEYS, path, requireFiniteNumber);
   requireOptionalRefs(state, OPTIONAL_FOLDER_OVERLAY_UNKNOWN_REF_KEYS, path, acceptUnknown);
   requireOptionalRefs(state, OPTIONAL_FOLDER_OVERLAY_BOOLEAN_REF_KEYS, path, requireBoolean);

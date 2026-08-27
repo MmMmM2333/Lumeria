@@ -270,7 +270,7 @@ function retargetOpeningGhost(
 ): OpeningMotionControl {
   const geometryControl = parallel([
     motion(ghost)
-      .preset("layout")
+      .preset("handoff")
       .handoff()
       .interrupt("retarget")
       .to({ x: ghostMotion.toX, y: ghostMotion.toY, onUpdate: options.onFrame }),

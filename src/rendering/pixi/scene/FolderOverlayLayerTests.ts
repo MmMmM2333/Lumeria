@@ -2649,6 +2649,8 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     closingGhost.position.set(210, 170);
     closingGhost.scale.set(0.64);
     layer.closingGhostLayer.addChild(closingGhost as never);
+    assert(layer.commitFolderVisualPresentation().closingFolderId === null,
+      "a frame without an active close lease must not release a staged controller session");
     const beforeFrameBounds = layer.frameGhost.getBounds();
     const beforeGhostOrigin = closingGhost.toGlobal({ x: 0, y: 0 });
     const beforeGhostUnit = closingGhost.toGlobal({ x: 1, y: 0 });
@@ -2674,7 +2676,8 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
       x: 172,
       y: 202,
     });
-    layer.commitFolderVisualPresentation();
+    const presentation = layer.commitFolderVisualPresentation();
+    assert(presentation.closingFolderId === "folder-a", "a rendered active close should publish its presentation identity");
     closingGhost.position.set(310, 260);
     closingGhost.scale.set(0.3);
     layer.closingPhaseReporter.setDetachedGhostMotion(closingGhost, {

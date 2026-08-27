@@ -76,6 +76,13 @@ export function runFolderOpenIconGhostsTests() {
   const capturedClose = ghosts.captureFolderCloseIconGhosts(folder, [appA, appB]);
   ghosts.playFolderCloseIconGhosts(folder.id, capturedClose);
   assert(readRefValue(ghosts.folderCloseIconGhosts).length === 2, "close play should publish controller ghosts");
+  const closeSession = readRefValue(ghosts.folderCloseIconGhostSession);
+  assert(closeSession?.status === "staged", "close play should stage a presentation session until the GPU frame is committed");
+  assert(closeSession !== null, "a published close session should expose its request identity");
+  assert(!ghosts.commitFolderCloseIconGhostPresentation(folder.id, closeSession.requestId - 1), "a stale GPU presentation must not accept the current close session");
+  assert(ghosts.commitFolderCloseIconGhostPresentation(folder.id, closeSession.requestId), "the matching GPU presentation should accept the staged close session");
+  assert(readRefValue(ghosts.folderCloseIconGhostSession)?.status === "presented", "the accepted close session should stop gating cross-folder opens");
+  assert(!ghosts.commitFolderCloseIconGhostPresentation(folder.id, closeSession.requestId), "a duplicate GPU presentation should be ignored");
   assert(readRefValue(ghosts.isFolderCloseIconAnimationActive), "close play should mark the animation active");
   assert(ghosts.isFolderClosingIconGhosted(folder.id, appB.id), "close play should ghost closing folder children");
   assert(!ghosts.completeFolderCloseIconGhost("stale-key"), "stale close completion should not finish the close");
@@ -85,6 +92,7 @@ export function runFolderOpenIconGhostsTests() {
   assert(!ghosts.completeFolderCloseIconGhost(firstCloseGhostKey), "partial close completion should stay active");
   assert(ghosts.completeFolderCloseIconGhost(secondCloseGhostKey), "final close completion should finish the close");
   assert(readRefValue(ghosts.folderCloseIconGhosts).length === 0, "close ghosts should clear after all completions");
+  assert(readRefValue(ghosts.folderCloseIconGhostSession) === null, "close completion should retire its presentation session");
 
   ghosts.playFolderOpenIconGhosts(folder.id, capturedOpen);
   ghosts.clearFolderOpenIconGhosts();
@@ -93,4 +101,5 @@ export function runFolderOpenIconGhostsTests() {
   ghosts.playFolderCloseIconGhosts(folder.id, capturedClose);
   ghosts.clearFolderCloseIconGhosts();
   assert(readRefValue(ghosts.folderCloseIconGhosts).length === 0, "manual close clear should reset close ghosts");
+  assert(readRefValue(ghosts.folderCloseIconGhostSession) === null, "manual close clear should reset the presentation session");
 }

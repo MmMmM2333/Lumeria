@@ -93,6 +93,7 @@ function getPageRefElement(node: PageRefNode): PageRefElement | null | undefined
 }
 
 export type LaunchpadInputBoundsTarget = Readonly<{
+  folderOriginBounds?: CapturedFolderOriginBounds | null;
   id: string;
   meta?: Readonly<{
     area?: string | null;
@@ -102,6 +103,7 @@ export type LaunchpadInputBoundsTarget = Readonly<{
     item?: ReadonlyLaunchpadItem;
     pageIndex?: number | null;
   }>;
+  rect?: Readonly<Rect>;
 }>;
 
 export type LaunchpadInputTargetOptions = Readonly<{
@@ -151,7 +153,11 @@ export type LaunchpadInputGesturesOptions = Readonly<{
   isInteractionBlocked?: () => boolean;
   isSearchMode?: Readonly<Ref<boolean>>;
   openApp?: (item: ReadonlyLaunchpadApp, source: LaunchSource) => unknown;
-  openFolder?: (folder: ReadonlyLaunchpadFolder, event: LaunchpadGesturePointerEvent) => unknown;
+  openFolder?: (
+    folder: ReadonlyLaunchpadFolder,
+    event: LaunchpadGesturePointerEvent,
+    originBounds?: CapturedFolderOriginBounds | null,
+  ) => unknown;
   openFolderId?: Readonly<Ref<string | null>>;
   openIconContextMenu?: OpenIconContextMenuCallback;
   pageRefs: Array<PageRefElement | null | undefined>;
@@ -182,6 +188,7 @@ export type LaunchpadPageTrackScrub = Readonly<{
 
 type IconPointerDetails = Readonly<{
   event: LaunchpadGesturePointerEvent;
+  folderOriginBounds?: CapturedFolderOriginBounds | null | undefined;
   item: ReadonlyLaunchpadItem;
   scope: string;
   source: LaunchSource;
@@ -190,6 +197,7 @@ type IconPointerDetails = Readonly<{
 
 type SurfacePointerDetails = Readonly<{
   event: LaunchpadGesturePointerEvent;
+  folderOriginBounds?: undefined;
   item?: undefined;
   scope: string;
   source?: undefined;
@@ -408,9 +416,11 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     if (!details?.item) return;
     const { item, source } = details;
     if (item.type === "folder") {
-      if (options.openFolder) options.openFolder(item, details.event);
+      if (options.openFolder) {
+        options.openFolder(item, details.event, details.folderOriginBounds);
+      }
       else {
-        const originBounds = details.event.folderOriginBounds;
+        const originBounds = details.folderOriginBounds;
         options.commitOpenFolder?.(
           item.id,
           originBounds === undefined ? undefined : { originBounds },
@@ -648,14 +658,53 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     item: ReadonlyLaunchpadItem,
     source: LaunchSource,
     scope: string,
+    folderOriginBounds = event.folderOriginBounds,
   ): IconPointerDetails {
     return {
       event,
+      folderOriginBounds,
       item,
       scope,
       source,
       target: { id: item.id, itemType: item.type, kind: "icon" },
     };
+  }
+
+  function dispatchIconPointerDown(
+    event: LaunchpadGesturePointerEvent,
+    item: ReadonlyLaunchpadItem,
+    source: LaunchSource,
+    scope: string,
+    folderOriginBounds = event.folderOriginBounds,
+  ): boolean {
+    const details = makeIconDetails(event, item, source, scope, folderOriginBounds);
+    if (pointerListenersAttached && pointerDetails && isSamePointer(ownedPointerId, event)) {
+      const activeItem = pointerDetails.item;
+      const nextOriginBounds = details.folderOriginBounds;
+      if (
+        activeItem?.id === item.id &&
+        item.type === "folder" &&
+        source.type !== "folder" &&
+        nextOriginBounds != null &&
+        pointerDetails.folderOriginBounds == null
+      ) {
+        // The native canvas event and Pixi's federated icon event can arrive
+        // in either order. Keep one gesture owner, but let the richer Pixi
+        // event add the precise folder origin before pointerup activates it.
+        pointerDetails = details;
+        options.prepareFolderOpen?.(item, nextOriginBounds);
+      }
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      return false;
+    }
+    if (!dispatchPointerDown(event, details.target, scope, details)) return false;
+    if (item.type === "folder" && source.type !== "folder") {
+      options.prepareFolderOpen?.(item, details.folderOriginBounds);
+    }
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
   }
 
   function handleIconPointerDown(
@@ -665,14 +714,18 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
   ): void {
     if (options.isInteractionBlocked?.() || event?.button !== 0 || event?.isPrimary === false) return;
     const scope = source?.type === "folder" ? getFolderScope() : "desktop";
-    if (item?.type === "folder" && source?.type !== "folder") {
-      options.prepareFolderOpen?.(item, event?.folderOriginBounds);
+    let folderOriginBounds = event.folderOriginBounds;
+    if (
+      scope === "desktop" &&
+      item.type === "folder" &&
+      options.isFolderClosing?.value
+    ) {
+      const target = getIconTarget(event, { area: "desktop" });
+      if (target?.id === item.id) {
+        folderOriginBounds = target.folderOriginBounds ?? folderOriginBounds;
+      }
     }
-    const details = makeIconDetails(event, item, source, scope);
-    if (dispatchPointerDown(event, details.target, scope, details)) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-    }
+    dispatchIconPointerDown(event, item, source, scope, folderOriginBounds);
   }
 
   function handleDesktopSurfacePointerDown(event: LaunchpadGesturePointerEvent): void {
@@ -683,9 +736,15 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
 
     if (options.isFolderClosing?.value) {
       if (iconTarget?.meta?.area === "desktop" && iconTarget?.meta?.item?.type === "folder") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        options.commitOpenFolder?.(iconTarget.id);
+        const item = iconTarget.meta.item;
+        const source = makeLaunchSourceFromBounds(iconTarget, options.isSearchMode?.value);
+        dispatchIconPointerDown(
+          event,
+          item,
+          source,
+          "desktop",
+          iconTarget.folderOriginBounds,
+        );
       }
       return;
     }
@@ -704,8 +763,13 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     if (iconTarget?.meta?.item) {
       const item = iconTarget.meta.item;
       const source = makeLaunchSourceFromBounds(iconTarget, options.isSearchMode?.value);
-      const details = makeIconDetails(event, item, source, "desktop");
-      dispatchPointerDown(event, details.target, details.scope, details);
+      dispatchIconPointerDown(
+        event,
+        item,
+        source,
+        "desktop",
+        iconTarget.folderOriginBounds,
+      );
       return;
     }
 

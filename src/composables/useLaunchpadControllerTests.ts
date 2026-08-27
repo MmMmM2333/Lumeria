@@ -2,9 +2,9 @@ import { createSSRApp, h, ref } from "vue";
 import { renderToString } from "@vue/server-renderer";
 import {
   isMultiSelectFixtureEnabled,
-  shouldDeferFolderOpenForClosingGhostHandoff,
   shouldIgnoreFolderCloseRequest,
   shouldPlayFolderOpenIconGhosts,
+  shouldWaitForFolderClosePresentation,
   useLaunchpadController,
   type LaunchpadController,
 } from "./useLaunchpadController.js";
@@ -60,15 +60,22 @@ export async function runLaunchpadControllerTests() {
     renderedFolder: ref({ id: "folder" }),
   }), "closing an open folder should be accepted");
 
-  assert(shouldDeferFolderOpenForClosingGhostHandoff("next-folder", {
-    folderCloseIconGhosts: ref([{ key: "close-ghost" }]),
+  assert(shouldWaitForFolderClosePresentation("next-folder", {
+    folderCloseIconGhostSession: ref({ folderId: "folder", requestId: 1, status: "staged" }),
     isFolderAppLaunchClosing: ref(false),
     isFolderClosing: ref(true),
     isFolderZoomFadeClosing: ref(false),
     renderedFolder: ref({ id: "folder" }),
-  }), "opening another folder during a close ghost handoff should wait for Pixi consumption");
-  assert(!shouldDeferFolderOpenForClosingGhostHandoff("folder", {
-    folderCloseIconGhosts: ref([{ key: "close-ghost" }]),
+  }), "opening another folder before its close presentation should wait for Pixi consumption");
+  assert(!shouldWaitForFolderClosePresentation("next-folder", {
+    folderCloseIconGhostSession: ref({ folderId: "folder", requestId: 1, status: "presented" }),
+    isFolderAppLaunchClosing: ref(false),
+    isFolderClosing: ref(true),
+    isFolderZoomFadeClosing: ref(false),
+    renderedFolder: ref({ id: "folder" }),
+  }), "a cross-folder open should proceed immediately once the closing artwork was actually presented");
+  assert(!shouldWaitForFolderClosePresentation("folder", {
+    folderCloseIconGhostSession: ref({ folderId: "folder", requestId: 1, status: "staged" }),
     isFolderAppLaunchClosing: ref(false),
     isFolderClosing: ref(true),
     isFolderZoomFadeClosing: ref(false),

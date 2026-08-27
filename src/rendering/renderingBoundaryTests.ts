@@ -15,6 +15,7 @@ const PUBLIC_PORT_EXPORTS = new Map<string, readonly string[]>([
     "ICON_BOUNDS_KIND",
     "ICON_BOUNDS_VARIANT",
     "appendGroupTrailPoint",
+    "captureFolderOpeningOriginBounds",
     "createIconBoundsRegistry",
     "getSingleStageDiagnosticsOptions",
     "getSingleStageRenderKey",

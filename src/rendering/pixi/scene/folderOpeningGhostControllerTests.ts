@@ -702,6 +702,35 @@ export function runFolderOpeningGhostControllerTests() {
     const completed: string[] = [];
     const harness = makeHarness();
     const provisional = makeTarget("app-1", 0, { provisionalLayoutTarget: true });
+    const targetRect = provisional.targetStageLayoutRect;
+    if (!targetRect) throw new Error("opening curve fixture requires target geometry");
+    const { lease } = presentOpen(harness, [provisional], makeState(completed));
+    const ghost = requireArrayItem(harness.layer.openingGhostLayer.children, 0, "opening curve ghost");
+    const initialX = Number(Reflect.get(ghost, "x")) || 0;
+    const initialScale = ghost.scale.x;
+    const targetX = targetRect.left + targetRect.width / 2;
+
+    for (let frame = 0; frame < 3; frame += 1) motionRuntime.step(1 / 60);
+    lease.present({
+      state: makeState(completed),
+      targets: [{ ...provisional, provisionalLayoutTarget: false }],
+    });
+    for (let frame = 0; frame < 9; frame += 1) motionRuntime.step(1 / 60);
+
+    const positionProgress = (Number(Reflect.get(ghost, "x")) - initialX) / (targetX - initialX);
+    const scaleProgress = (ghost.scale.x - initialScale) / (1 - initialScale);
+    assert(
+      Math.abs(positionProgress - scaleProgress) < 0.01,
+      `same-target opening retarget should preserve one geometry curve (position=${positionProgress.toFixed(4)}, scale=${scaleProgress.toFixed(4)})`,
+    );
+    lease.cancel({ completeControllerKeys: false, restorePageTrack: false, reveal: false });
+    motionRuntime.reset();
+  }
+
+  {
+    const completed: string[] = [];
+    const harness = makeHarness();
+    const provisional = makeTarget("app-1", 0, { provisionalLayoutTarget: true });
     const { lease } = presentOpen(harness, [provisional], makeState(completed));
     lease.panelReady();
     advanceMotion();

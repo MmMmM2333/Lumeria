@@ -1057,7 +1057,19 @@ function commitDesktopPresentationFrame({
   const gpuStartedAt = nowMs();
   try {
     app?.render?.();
-    layer?.singleStageFolderLayer?.commitFolderVisualPresentation();
+    const folderPresentation = layer?.singleStageFolderLayer?.commitFolderVisualPresentation();
+    const folderOverlayState = sceneRuntime.value.folderOverlayState;
+    const closeSession = folderOverlayState.folderCloseIconGhostSession?.value;
+    if (
+      folderPresentation?.closingFolderId &&
+      closeSession?.status === "staged" &&
+      closeSession.folderId === folderPresentation.closingFolderId
+    ) {
+      folderOverlayState.commitFolderCloseIconGhostPresentation?.(
+        closeSession.folderId,
+        closeSession.requestId,
+      );
+    }
     runtimePerformanceMetrics.markOnce("scene.first-ready");
     if (result.didRender) {
       appLaunchCommitTracker.afterRender({

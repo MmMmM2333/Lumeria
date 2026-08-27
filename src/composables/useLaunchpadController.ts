@@ -30,7 +30,10 @@ import {
   type LaunchpadDragPlanRequest,
   type LaunchpadDragPlannerResult,
 } from "./useLaunchpadDrag.js";
-import { useFolderOpenIconGhosts } from "./useFolderOpenIconGhosts.js";
+import {
+  useFolderOpenIconGhosts,
+  type FolderCloseIconGhostSession,
+} from "./useFolderOpenIconGhosts.js";
 import {
   useLaunchpadFolderFlow,
   type FolderFlowCommitOptions,
@@ -59,6 +62,7 @@ import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
 import {
   useLaunchpadInputGestures,
   type LaunchpadGesturePointerEvent,
+  type LaunchpadInputBoundsTarget,
   type LaunchpadInputGesturesOptions,
   type OpenIconContextMenuCallback,
 } from "./useLaunchpadInputGestures.js";
@@ -83,6 +87,7 @@ import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 import { useSettingsPanelModel } from "./useSettingsPanelModel.js";
 import {
+  captureFolderOpeningOriginBounds,
   createIconBoundsRegistry,
   ICON_BOUNDS_KIND,
 } from "../rendering/desktopScenePort.js";
@@ -91,7 +96,7 @@ const BOUNDS_KIND = ICON_BOUNDS_KIND;
 
 type ValueOwner<T> = Readonly<Pick<Ref<T>, "value">>;
 type FolderTransitionState = Readonly<{
-  folderCloseIconGhosts?: ValueOwner<readonly unknown[] | null | undefined>;
+  folderCloseIconGhostSession?: ValueOwner<FolderCloseIconGhostSession | null | undefined>;
   isFolderAppLaunchClosing?: ValueOwner<boolean | null | undefined>;
   isFolderClosing?: ValueOwner<boolean | null | undefined>;
   isFolderZoomFadeClosing?: ValueOwner<boolean | null | undefined>;
@@ -156,30 +161,30 @@ export function shouldIgnoreFolderCloseRequest(state?: FolderTransitionState | n
   );
 }
 
-const DEFERRED_CLOSING_GHOST_HANDOFF_OPEN = "__deferredClosingGhostHandoffOpen";
-
 export type LaunchpadFolderCommitOptions = FolderFlowCommitOptions & Readonly<{
   excludeCloseGhostIds?: readonly string[];
-  [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]?: boolean;
 }>;
 
-export function shouldDeferFolderOpenForClosingGhostHandoff(
+export function shouldWaitForFolderClosePresentation(
   next: string | null | undefined,
   state?: FolderTransitionState | null,
-  commitOptions: LaunchpadFolderCommitOptions = {},
 ): boolean {
-  if (!next || commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) return false;
+  if (!next) return false;
   if (!state?.isFolderClosing?.value || state?.isFolderAppLaunchClosing?.value || state?.isFolderZoomFadeClosing?.value) return false;
   const renderedFolderId = state?.renderedFolder?.value?.id || null;
   if (!renderedFolderId || renderedFolderId === next) return false;
-  return (state?.folderCloseIconGhosts?.value?.length || 0) > 0;
+  const session = state?.folderCloseIconGhostSession?.value;
+  return Boolean(
+    session &&
+    session.folderId === renderedFolderId &&
+    session.status === "staged"
+  );
 }
 
 function toFolderFlowCommitOptions(
   commitOptions: LaunchpadFolderCommitOptions = {},
 ): FolderFlowCommitOptions {
   const {
-    [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: _deferred,
     excludeCloseGhostIds: _excludeCloseGhostIds,
     ...rest
   } = commitOptions;
@@ -525,10 +530,12 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     captureFolderPreviewIconGhosts,
     clearFolderCloseIconGhosts,
     clearFolderOpenIconGhosts,
+    commitFolderCloseIconGhostPresentation: commitFolderCloseIconGhostPresentationNow,
     completeFolderCloseIconGhost: completeFolderCloseIconGhostNow,
     completeFolderOpenFrameGhost,
     completeFolderOpenIconGhost,
     folderCloseIconGhosts,
+    folderCloseIconGhostSession,
     folderOpenIconGhosts,
     folderOpenIconGhostSession,
     folderOpenPreviewFrameGhostedIds,
@@ -640,34 +647,25 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
       phase: isClosingPhase ? "closing" : hasFolderLayer ? "open" : "idle",
     };
   });
-  let deferredFolderOpenAfterCloseHandoffToken = 0;
+  let pendingFolderOpenAfterClosePresentation: Readonly<{
+    closeRequestId: number;
+    closingFolderId: string;
+    commitOptions: LaunchpadFolderCommitOptions;
+    nextFolderId: string;
+  }> | null = null;
 
-  function scheduleFolderOpenAfterClosingGhostHandoff(
-    next: string,
-    commitOptions: LaunchpadFolderCommitOptions = {},
-  ): void {
-    const token = ++deferredFolderOpenAfterCloseHandoffToken;
-    const scheduler = typeof window !== "undefined" ? window : globalThis;
-    const scheduleFrame = (callback: () => void): void => {
-      if (typeof scheduler.requestAnimationFrame === "function") {
-        scheduler.requestAnimationFrame(callback);
-        return;
-      }
-      if (typeof scheduler.setTimeout === "function") {
-        scheduler.setTimeout(callback, 0);
-        return;
-      }
-      callback();
-    };
-    scheduleFrame(() => {
-      scheduleFrame(() => {
-        if (token !== deferredFolderOpenAfterCloseHandoffToken) return;
-        commitOpenFolder(next, {
-          ...commitOptions,
-          [DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]: true,
-        });
-      });
-    });
+  function commitFolderCloseIconGhostPresentation(folderId: string | null, requestId: number): boolean {
+    const committed = commitFolderCloseIconGhostPresentationNow(folderId, requestId);
+    if (!committed) return false;
+    const pending = pendingFolderOpenAfterClosePresentation;
+    if (
+      !pending ||
+      pending.closingFolderId !== folderId ||
+      pending.closeRequestId !== requestId
+    ) return true;
+    pendingFolderOpenAfterClosePresentation = null;
+    commitOpenFolder(pending.nextFolderId, pending.commitOptions);
+    return true;
   }
 
   function commitOpenFolder(
@@ -675,7 +673,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     commitOptions: LaunchpadFolderCommitOptions = {},
   ): void {
     const flowCommitOptions = toFolderFlowCommitOptions(commitOptions);
-    if (!commitOptions?.[DEFERRED_CLOSING_GHOST_HANDOFF_OPEN]) deferredFolderOpenAfterCloseHandoffToken += 1;
+    pendingFolderOpenAfterClosePresentation = null;
     if (!next) {
       if (shouldIgnoreFolderCloseRequest({
         isFolderAppLaunchClosing,
@@ -698,14 +696,23 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
       return;
     }
 
-    if (shouldDeferFolderOpenForClosingGhostHandoff(next, {
-      folderCloseIconGhosts,
+    if (shouldWaitForFolderClosePresentation(next, {
+      folderCloseIconGhostSession,
       isFolderAppLaunchClosing,
       isFolderClosing,
       isFolderZoomFadeClosing,
       renderedFolder,
-    }, commitOptions)) {
-      scheduleFolderOpenAfterClosingGhostHandoff(next, commitOptions);
+    })) {
+      const closeSession = folderCloseIconGhostSession.value;
+      if (!closeSession || !closeSession.folderId) {
+        throw new Error("Folder close presentation wait requires an active close session");
+      }
+      pendingFolderOpenAfterClosePresentation = {
+        closeRequestId: closeSession.requestId,
+        closingFolderId: closeSession.folderId,
+        commitOptions,
+        nextFolderId: next,
+      };
       return;
     }
 
@@ -1830,7 +1837,25 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     commitOpenFolder,
     activePageIndex,
     activePages,
-    getDesktopTargetAtPoint: (x, y, options = {}) => iconBoundsRegistry.getAtPoint(BOUNDS_KIND.LAUNCH, x, y, options),
+    getDesktopTargetAtPoint: (x, y, options = {}) => {
+      const target = iconBoundsRegistry.getAtPoint(
+        BOUNDS_KIND.LAUNCH,
+        x,
+        y,
+        options,
+      ) as LaunchpadInputBoundsTarget | null;
+      const item = target?.meta?.item;
+      if (target?.meta?.area !== "desktop" || item?.type !== "folder") return target;
+      return {
+        ...target,
+        folderOriginBounds: captureFolderOpeningOriginBounds({
+          fallbackIconRect: target.rect,
+          folder: item,
+          folderPageSize: folderPageSize.value,
+          iconBoundsRegistry,
+        }),
+      };
+    },
     commitFolderPageIndex,
     folderPageIndex,
     folderPages,
@@ -1853,12 +1878,12 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     isBatchSelectionActive: () => batchSelection.isActive.value,
     isSearchMode,
     openApp,
-    openFolder: (folder, event) => {
+    openFolder: (folder, _event, originBounds) => {
       const commit = () => {
         if (!isLaunchpadInteractionBlocked()) {
           commitOpenFolder(folder.id, {
-            ...(event?.folderOriginBounds !== undefined
-              ? { originBounds: event.folderOriginBounds }
+            ...(originBounds !== undefined
+              ? { originBounds }
               : {}),
           });
         }
@@ -2307,6 +2332,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     activePages,
     handleIconPointerDown,
     commitFolderPageIndex,
+    commitFolderCloseIconGhostPresentation,
     commitOpenFolder,
     completeFolderRenameRequest,
     confirmDissolveFolder,
@@ -2315,6 +2341,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     completeFolderOpenIconGhost,
     finishFolderZoomFadeClose,
     folderCloseIconGhosts,
+    folderCloseIconGhostSession,
     folderGridStyle,
     folderOpeningOriginBounds,
     folderOpeningCancelRequest,

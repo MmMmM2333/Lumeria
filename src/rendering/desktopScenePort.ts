@@ -28,6 +28,7 @@ export type {
   GroupTransferRuntimeSourceEntry,
 } from "./pixi/scene/groupTransferRuntimeAdapter.js";
 export type { CapturedFolderOriginBounds } from "./pixi/scene/folderOverlayTargetResolver.js";
+export { captureFolderOpeningOriginBounds } from "./pixi/scene/folderOverlayTargetResolver.js";
 export { makeIconVisualSpec } from "./pixi/scene/iconVisualSpec.js";
 export {
   resolveFolderClosingHandoffId,

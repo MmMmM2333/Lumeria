@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import type { LaunchpadApp, LaunchpadFolder } from "../domain/launchpadLayout.js";
 import type { LaunchSource } from "../domain/input/launchpadPointerTarget.js";
+import type { CapturedFolderOriginBounds } from "../rendering/desktopScenePort.js";
 import {
   useLaunchpadInputGestures,
   type LaunchpadDragPointerEvent,
@@ -11,6 +12,12 @@ import {
 
 const appA: LaunchpadApp = { id: "app-a", name: "App A", type: "app" };
 const appB: LaunchpadApp = { id: "app-b", name: "App B", type: "app" };
+const folderB: LaunchpadFolder = {
+  childPages: [[appB]],
+  id: "folder-b",
+  name: "Folder B",
+  type: "folder",
+};
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`[Launchpad input gestures test failed] ${message}`);
@@ -101,6 +108,7 @@ function makePointerEvent(
     buttons: overrides.buttons,
     clientX: overrides.clientX ?? 300,
     clientY: overrides.clientY ?? 120,
+    folderOriginBounds: overrides.folderOriginBounds,
     isPrimary: overrides.isPrimary ?? true,
     pointerId,
     pointerType: overrides.pointerType ?? "touch",
@@ -118,6 +126,17 @@ function makePointerEvent(
 type HarnessOptions = Readonly<{
   batch?: boolean;
   cancelFolderOpening?: boolean;
+  desktopTarget?: LaunchpadGesturePointerTarget & Readonly<{
+    folderOriginBounds?: CapturedFolderOriginBounds | null;
+    id: string;
+    meta: Readonly<{
+      area: "desktop";
+      index: number;
+      item: LaunchpadFolder;
+      pageIndex: number;
+    }>;
+  }>;
+  isFolderClosing?: boolean;
   pageWidth?: number;
 }>;
 
@@ -132,9 +151,11 @@ function createHarness(options: HarnessOptions = {}) {
     dragStarts: [] as LaunchpadDragPointerEvent[],
     dragUpdates: [] as LaunchpadDragPointerEvent[],
     folderOpeningCancels: 0,
+    folderOpenCommits: [] as Array<Readonly<{ folderId: string | null; options: unknown }>>,
     openFolders: [] as (string | null)[],
     openedApps: [] as string[],
     pageIndexes: [] as number[],
+    preparedFolders: [] as Array<Readonly<{ folderId: string; originBounds: unknown }>>,
   };
   const gestures = useLaunchpadInputGestures({
     activePageIndex,
@@ -148,7 +169,10 @@ function createHarness(options: HarnessOptions = {}) {
       calls.folderOpeningCancels += 1;
       return options.cancelFolderOpening === true;
     },
-    commitOpenFolder: (folderId) => calls.openFolders.push(folderId),
+    commitOpenFolder: (folderId, commitOptions) => {
+      calls.openFolders.push(folderId);
+      calls.folderOpenCommits.push({ folderId, options: commitOptions });
+    },
     dragControls: {
       cancelDrag: (event = {}) => {
         calls.dragCancels.push(event);
@@ -172,9 +196,9 @@ function createHarness(options: HarnessOptions = {}) {
     folderPages: ref([]),
     folderPanelRef: ref(null),
     folderViewportRef: ref(null),
-    getDesktopTargetAtPoint: () => null,
+    getDesktopTargetAtPoint: () => options.desktopTarget || null,
     isFolderAppLaunchClosing: ref(false),
-    isFolderClosing: ref(false),
+    isFolderClosing: ref(options.isFolderClosing === true),
     isBatchSelectionActive: () => options.batch === true,
     isInteractionBlocked: () => false,
     isSearchMode: ref(false),
@@ -182,6 +206,9 @@ function createHarness(options: HarnessOptions = {}) {
     openFolderId: ref<string | null>(null),
     openIconContextMenu: (_event, item) => calls.contextMenus.push(item.id),
     pageRefs: [{ getBoundingClientRect: () => ({ bottom: 640, height: 640, left: 0, right: pageWidth, top: 0, width: pageWidth }) }],
+    prepareFolderOpen: (folder, originBounds) => {
+      calls.preparedFolders.push({ folderId: folder.id, originBounds });
+    },
     renderedFolder: ref<LaunchpadFolder | null>(null),
     rootRef: ref({ getBoundingClientRect: () => ({ bottom: 640, height: 640, left: 0, right: pageWidth, top: 0, width: pageWidth }) }),
   });
@@ -189,6 +216,125 @@ function createHarness(options: HarnessOptions = {}) {
 }
 
 export function runLaunchpadInputGesturesTests() {
+  {
+    const originBounds = {
+      folderId: folderB.id,
+      iconRect: { height: 96, left: 320, top: 100, width: 96 },
+      previewChildRects: [],
+      thumbRect: { height: 76, left: 330, top: 110, width: 76 },
+    };
+    const desktopTarget = {
+      folderOriginBounds: originBounds,
+      id: folderB.id,
+      meta: {
+        area: "desktop" as const,
+        index: 1,
+        item: folderB,
+        pageIndex: 0,
+      },
+    };
+    const { calls, eventTarget, gestures } = createHarness({
+      desktopTarget,
+      isFolderClosing: true,
+    });
+    const captureTarget = createPointerCaptureTarget();
+
+    gestures.handleDesktopSurfacePointerDown(makePointerEvent(23, {
+      pointerType: "mouse",
+      target: captureTarget,
+    }));
+    eventTarget.dispatch("pointerup", makePointerEvent(23, {
+      buttons: 0,
+      pointerType: "mouse",
+      target: captureTarget,
+      timeStamp: 40,
+      type: "pointerup",
+    }));
+
+    const commit = calls.folderOpenCommits[0];
+    assert(
+      calls.preparedFolders[0]?.originBounds === originBounds &&
+        (commit?.options as { originBounds?: unknown } | undefined)?.originBounds === originBounds,
+      "a closing-state canvas hit should carry its stable folder origin through preparation and pointerup activation",
+    );
+    gestures.disposeInputGestures();
+  }
+
+  {
+    const transientOriginBounds = {
+      folderId: folderB.id,
+      iconRect: { height: 92, left: 322, top: 102, width: 92 },
+      previewChildRects: [],
+      thumbRect: { height: 72, left: 332, top: 112, width: 72 },
+    };
+    const originBounds = {
+      folderId: folderB.id,
+      iconRect: { height: 96, left: 320, top: 100, width: 96 },
+      previewChildRects: [],
+      thumbRect: { height: 76, left: 330, top: 110, width: 76 },
+    };
+    const desktopTarget = {
+      folderOriginBounds: originBounds,
+      id: folderB.id,
+      meta: {
+        area: "desktop" as const,
+        index: 1,
+        item: folderB,
+        pageIndex: 0,
+      },
+    };
+    const { calls, eventTarget, gestures } = createHarness({
+      desktopTarget,
+      isFolderClosing: true,
+    });
+    const source: LaunchSource = { type: "page", pageIndex: 0, index: 1 };
+    const captureTarget = createPointerCaptureTarget();
+    const pointerDown = makePointerEvent(24, {
+      folderOriginBounds: transientOriginBounds,
+      pointerType: "mouse",
+      target: captureTarget,
+    });
+    const surfacePointerDown = makePointerEvent(24, {
+      pointerType: "mouse",
+      target: captureTarget,
+    });
+
+    // A Pixi icon event and the native canvas surface event are both emitted
+    // for the same physical press. The Pixi event still reflects the closing
+    // desktop transform, so the closing-state registry snapshot must win.
+    gestures.handleIconPointerDown(pointerDown, folderB, source);
+    gestures.handleDesktopSurfacePointerDown(surfacePointerDown);
+
+    assert(
+      calls.openFolders.length === 0 &&
+        gestures.iconGesturePresentation.value?.phase === "pressing",
+      "pressing a desktop folder during another folder's close should retain the normal gesture presentation until release",
+    );
+    assert(
+      calls.preparedFolders.length === 1 &&
+        calls.preparedFolders[0]?.folderId === folderB.id &&
+        calls.preparedFolders[0]?.originBounds === originBounds,
+      "the interrupted switch should preserve the same prepared folder origin as a normal icon press",
+    );
+
+    eventTarget.dispatch("pointerup", makePointerEvent(24, {
+      buttons: 0,
+      pointerType: "mouse",
+      target: captureTarget,
+      timeStamp: 40,
+      type: "pointerup",
+    }));
+
+    const commit = calls.folderOpenCommits[0];
+    assert(
+      calls.openFolders.join(",") === folderB.id &&
+        commit?.folderId === folderB.id &&
+        (commit.options as { originBounds?: unknown } | undefined)?.originBounds === originBounds,
+      "the interrupted switch should commit exactly once on release with the captured origin bounds",
+    );
+    gestures.disposeInputGestures();
+  }
+
   {
     const { calls, gestures } = createHarness({ cancelFolderOpening: true });
     gestures.handleFolderOverlayPointerDown();

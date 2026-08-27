@@ -520,6 +520,32 @@ export function runLaunchpadFolderFlowTests() {
     assert(canceledCloseAfterFrame.flow.renderedFolder.value?.id === "folder-1", "canceled ghost handoff should keep the reopened folder rendered");
     assert(canceledCloseAfterFrame.calls.folderOpenProgressAnimations.at(-1)?.target === 1, "reopening during close should retarget open progress to one");
 
+    const crossFolderCloseHandoff = createFolderFlow({ pages: [[folder, secondFolder]] });
+    crossFolderCloseHandoff.flow.commitOpenFolder("folder-1");
+    crossFolderCloseHandoff.flow.folderOpenProgress.value = 1;
+    crossFolderCloseHandoff.flow.commitOpenFolder(null, { waitForCloseGhosts: true });
+    crossFolderCloseHandoff.flow.folderOpenProgress.value = 0.46;
+    const closingProgressControl = requireLast(
+      crossFolderCloseHandoff.folderOpenProgressControls,
+      "cross-folder closing progress control",
+    );
+    closingProgressControl.velocity = -0.9;
+    crossFolderCloseHandoff.flow.commitOpenFolder("folder-2");
+
+    assert(
+      crossFolderCloseHandoff.flow.folderOpenProgress.value === 0,
+      "opening a different folder after the close presentation handoff should start its visible progress from zero",
+    );
+    assert(
+      closingProgressControl.cancelReason === "cross-folder-open",
+      "a different folder should not inherit the interrupted close spring's position or velocity",
+    );
+    assert(
+      crossFolderCloseHandoff.flow.openFolderId.value === "folder-2" &&
+        crossFolderCloseHandoff.calls.folderOpenProgressAnimations.at(-1)?.target === 1,
+      "the rebased cross-folder handoff should start one fresh opening animation for the destination folder",
+    );
+
     const closeWithDelayedHandoff = createFolderFlow();
     closeWithDelayedHandoff.flow.commitOpenFolder("folder-1");
     closeWithDelayedHandoff.flow.commitOpenFolder(null, { waitForCloseGhosts: true });

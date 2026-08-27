@@ -435,10 +435,22 @@ export function useLaunchpadFolderFlow(options: FolderFlowOptions) {
     clearFolderZoomFadeCloseTimer();
     if (next) {
       const isSameFolder = openFolderId.value === next && renderedFolderId.value === next;
+      const isCrossFolderCloseHandoff = Boolean(
+        isFolderClosing.value &&
+        renderedFolderId.value &&
+        renderedFolderId.value !== next
+      );
       const originGeometry = commitOptions?.originGeometry;
       clearFolderCloseTimer();
       clearFolderAppLaunchTimer();
       finishHomeRevealSettleWindow();
+      if (isCrossFolderCloseHandoff) {
+        // The closing folder has already been presented and transferred to a
+        // detached visual before this commit. The destination folder owns a
+        // new visible timeline, so it must not inherit the previous folder's
+        // closing position or negative spring velocity.
+        setFolderOpenProgressImmediate(0, "cross-folder-open");
+      }
       resetNormalCloseCompletion();
       isFolderAppLaunchClosing.value = false;
       isFolderZoomFadeClosing.value = false;
