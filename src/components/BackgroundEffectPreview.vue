@@ -47,7 +47,7 @@ import type { BackgroundLayoutContext } from "../api/launchpadApi.js";
 import type { BackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   clampBackgroundBaseOpacity,
@@ -131,7 +131,7 @@ const canvasDarkenStrength = computed(() => (
 const effectClass = computed(() => {
   if (props.backgroundEffect === BACKGROUND_EFFECT_DIMMED) return "dimmed";
   if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR) return "blur";
-  if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
+  if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) return "acrylic";
   return "none";
 });
 const previewStyle = computed(() => ({

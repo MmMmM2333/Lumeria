@@ -140,7 +140,7 @@ export type LiveDesktopAcrylicEffectPlan = Readonly<{
 }>;
 
 export type LiveDesktopEffectPlan = Readonly<{
-  effect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  effect: "none" | "dimmed" | "blur" | "acrylic";
   blur: LiveDesktopBlurEffectPlan;
   acrylic: LiveDesktopAcrylicEffectPlan;
 }>;
@@ -156,7 +156,7 @@ export type LiveDesktopAcrylicParams = Readonly<{
 }>;
 
 export type LiveDesktopRuntimeConfig = Readonly<{
-  effect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  effect: "none" | "dimmed" | "blur" | "acrylic";
   debugFrameSourceOverride: "testPattern" | null;
   blurStrength: number;
   darkenStrength: number;
@@ -381,7 +381,7 @@ function validateAcrylicParams(value: unknown, path: string): LiveDesktopAcrylic
 
 function validateEffectPlan(value: unknown, path: string): LiveDesktopEffectPlan {
   const plan = requireRecord(value, path);
-  if (plan.effect !== "none" && plan.effect !== "dimmed" && plan.effect !== "blur" && plan.effect !== "acrylicWebgl") {
+  if (plan.effect !== "none" && plan.effect !== "dimmed" && plan.effect !== "blur" && plan.effect !== "acrylic") {
     throw new TypeError(`${path}.effect must be a supported background effect`);
   }
   const blur = requireRecord(plan.blur, `${path}.blur`);
@@ -405,7 +405,7 @@ function validateEffectPlan(value: unknown, path: string): LiveDesktopEffectPlan
 
 export function assertLiveDesktopRuntimeConfig(value: unknown): LiveDesktopRuntimeConfig {
   const config = requireRecord(value, "live desktop runtime config");
-  if (config.effect !== "none" && config.effect !== "dimmed" && config.effect !== "blur" && config.effect !== "acrylicWebgl") {
+  if (config.effect !== "none" && config.effect !== "dimmed" && config.effect !== "blur" && config.effect !== "acrylic") {
     throw new TypeError("live desktop runtime config.effect must be a supported background effect");
   }
   if (config.debugFrameSourceOverride !== null && config.debugFrameSourceOverride !== "testPattern") {

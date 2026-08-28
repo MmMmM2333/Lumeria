@@ -10,7 +10,7 @@ import { loadCachedBackgroundImageDataUrl } from "../../../api/launchpadApi.js";
 import { resolveBackgroundImagePlacement } from "../../../domain/backgroundImageLayout.js";
 import type { WindowsImagePlacementContext } from "../../../domain/backgroundImageLayout.js";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
 } from "../../../domain/backgroundSettings.js";
 import {
   createBackgroundEffectPlan,
@@ -18,6 +18,7 @@ import {
 } from "./acrylicBackgroundPlan.js";
 import { loadBackgroundTextureFromImage } from "./backgroundTextureLoader.js";
 import { BackgroundEffectPipeline, destroyTexture } from "./backgroundEffectPipeline.js";
+import { PIXI_RENDERER_PREFERENCE } from "../createPixiApp.js";
 
 const DEFAULT_PREVIEW_WIDTH = 320;
 const DEFAULT_PREVIEW_HEIGHT = 180;
@@ -75,7 +76,7 @@ async function resolveTextureSource(
   try {
     return await loadCachedBackgroundImageDataUrl(config.backgroundImagePath) || backgroundImageUrl;
   } catch (error) {
-    console.warn("Failed to load WebGL-safe background preview image", error);
+    console.warn("Failed to load cached background preview image", error);
     return backgroundImageUrl;
   }
 }
@@ -154,7 +155,7 @@ export class BackgroundEffectPreviewRenderer {
       backgroundAlpha: 0,
       height: DEFAULT_PREVIEW_HEIGHT,
       powerPreference: "high-performance",
-      preference: ["webgl"],
+      preference: [...PIXI_RENDERER_PREFERENCE],
       resolution: 1,
       width: DEFAULT_PREVIEW_WIDTH,
     });
@@ -215,7 +216,7 @@ export class BackgroundEffectPreviewRenderer {
     } else if (this.config.backgroundEffect !== previousEffect) {
       this.compositeDirty = true;
     } else if (
-      this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+      this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC
       && makeAcrylicKey(this.config) !== previousAcrylicKey
     ) {
       this.compositeDirty = true;
@@ -415,7 +416,7 @@ export class BackgroundEffectPreviewRenderer {
       this.compositeDirty = true;
     }
 
-    if (this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
+    if (this.config.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) {
       const acrylicKey = makeAcrylicKey(this.config);
       if (this.compositeDirty || acrylicKey !== this.lastAcrylicKey) {
         this.effectPipeline.renderAcrylicComposite(effectPlan.acrylic);

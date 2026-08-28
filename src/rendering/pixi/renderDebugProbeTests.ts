@@ -229,7 +229,7 @@ function makeFolderHarness(options: FolderHarnessOptions = {}) {
   return { app, batch, boundSource, child, childNode, expectedSource, folder, folderNode, layer };
 }
 
-export function runRenderDebugProbeTests(): void {
+export async function runRenderDebugProbeTests(): Promise<void> {
   {
     const harness = makeFolderHarness();
     const byBatch = new WeakMap([[harness.batch, {
@@ -716,6 +716,52 @@ export function runRenderDebugProbeTests(): void {
     const sessions = probe.commands.snapshot().sessions;
     assert(sessions.length === 2, "the completed drag session ring should enforce its configured bound");
     assert(sessions[0]?.dragItem?.id === "session-1", "the completed session ring should retain the newest sessions");
+    probe.destroy();
+  }
+
+  {
+    type UncapturedErrorEvent = Readonly<{
+      error?: { constructor?: { name?: string }; message?: unknown } | null;
+    }>;
+    const listeners = new Map<string, (event: UncapturedErrorEvent) => void>();
+    let resolveLost!: (info: { message: string; reason: string }) => void;
+    const lost = new Promise<{ message: string; reason: string }>((resolve) => {
+      resolveLost = resolve;
+    });
+    const renderer = {
+      gpu: {
+        adapter: { info: { description: "Test WebGPU adapter", vendor: "test" } },
+        device: {
+          addEventListener(type: string, listener: (event: UncapturedErrorEvent) => void): void {
+            listeners.set(type, listener);
+          },
+          features: new Set(["texture-compression-bc"]),
+          limits: { maxBindGroups: 4, maxSampledTexturesPerShaderStage: 16, maxTextureDimension2D: 8192 },
+          lost,
+          removeEventListener(type: string, listener: (event: UncapturedErrorEvent) => void): void {
+            if (listeners.get(type) === listener) listeners.delete(type);
+          },
+        },
+      },
+      name: "webgpu",
+    };
+    const probe = createPixiRenderProbe({
+      capture: ({ phase }) => ({ folders: [], phase, violations: [] }),
+    });
+    probe.commands.arm({ clear: true });
+    const dispose = probe.attachRenderer(renderer);
+    listeners.get("uncapturederror")?.({
+      error: { constructor: { name: "GPUValidationError" }, message: "invalid binding" },
+    });
+    resolveLost({ message: "test device loss", reason: "destroyed" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const events = probe.commands.snapshot().recentEvents;
+    assert(events.some((event) => event.type === "webgpu-uncaptured-error"), "WebGPU uncaptured errors should be recorded");
+    assert(events.some((event) => event.type === "webgpu-device-lost"), "WebGPU device loss should be recorded");
+    dispose();
+    assert(!listeners.has("uncapturederror"), "WebGPU diagnostics should release the device listener");
     probe.destroy();
   }
 }

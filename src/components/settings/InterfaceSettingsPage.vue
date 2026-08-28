@@ -475,9 +475,9 @@
                       </button>
                       <button
                         type="button"
-                        :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC_WEBGL && 'settings-segmented-button-active')"
-                        :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
-                        @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC_WEBGL)"
+                        :class="c.cx('settings-segmented-button', state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC && 'settings-segmented-button-active')"
+                        :disabled="!c.canUseDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC)"
+                        @click="state.setDraftBackgroundEffect(c.BACKGROUND_EFFECT_ACRYLIC)"
                       >
                         Acrylic
                       </button>
@@ -524,7 +524,7 @@
                     <span class="settings-opacity-value">{{ state.draftBackgroundDarkenStrength.value }}%</span>
                   </label>
 
-                  <div v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC_WEBGL" class="settings-acrylic-controls">
+                  <div v-if="c.doesDraftBackgroundUseLayer.value && state.draftBackgroundEffect.value === c.BACKGROUND_EFFECT_ACRYLIC" class="settings-acrylic-controls">
                     <label class="settings-opacity-control">
                       <span>{{ t("settings.interface.background.effect.blurStrength") }}</span>
                       <SettingsSlider

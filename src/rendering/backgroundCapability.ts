@@ -1,5 +1,5 @@
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   backgroundSourceUsesImage,
   normalizeBackgroundEffect,
@@ -17,7 +17,7 @@ type BackgroundCapabilityConfig = Readonly<{
  */
 export function backgroundEffectUsesPixi(effect: unknown): boolean {
   const normalizedEffect = normalizeBackgroundEffect(effect);
-  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+  return normalizedEffect === BACKGROUND_EFFECT_BLUR || normalizedEffect === BACKGROUND_EFFECT_ACRYLIC;
 }
 
 export function shouldUsePixiBackgroundEffect(config: BackgroundCapabilityConfig = {}): boolean {

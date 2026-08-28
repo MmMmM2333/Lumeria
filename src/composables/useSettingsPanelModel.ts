@@ -52,7 +52,7 @@ import {
   BACKGROUND_DARKEN_STRENGTH_MAX,
   BACKGROUND_DARKEN_STRENGTH_MIN,
   BACKGROUND_DARKEN_STRENGTH_STEP,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
@@ -716,7 +716,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     doesDraftBackgroundUseLayer.value
       ? doesDraftBackgroundUseLiveDesktop.value && !state.canUseLiveDesktopBackgroundEffect(state.draftBackgroundEffect.value)
         ? t("settings.interface.background.effect.hintCss")
-        : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+        : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
           ? t("settings.interface.background.effect.hintAcrylic")
           : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
             ? t("settings.interface.background.effect.hintBlur")
@@ -770,7 +770,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     return normalizeBackgroundAcrylicParams(params, appearance);
   });
   const draftBackgroundEffectBlurStrength = computed(() => (
-    state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
       ? state.draftBackgroundAcrylicBlurStrength.value
       : state.draftBackgroundBlurStrength.value
   ));
@@ -851,7 +851,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
   const backgroundEffectSummary = computed(() => {
     if (!doesDraftBackgroundUseLayer.value) return t("settings.interface.background.effect.unavailable");
     if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR) return `${t("settings.interface.background.effect.blur")} · ${state.draftBackgroundBlurStrength.value}%`;
-    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${state.draftBackgroundAcrylicBlurStrength.value}%`;
+    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC) return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${state.draftBackgroundAcrylicBlurStrength.value}%`;
     if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED) return `${t("settings.interface.background.effect.dim")} · ${state.draftBackgroundDarkenStrength.value}%`;
     return t("settings.interface.background.effect.original");
   });
@@ -879,7 +879,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     BACKGROUND_DARKEN_STRENGTH_MAX,
     BACKGROUND_DARKEN_STRENGTH_MIN,
     BACKGROUND_DARKEN_STRENGTH_STEP,
-    BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    BACKGROUND_EFFECT_ACRYLIC,
     BACKGROUND_EFFECT_BLUR,
     BACKGROUND_EFFECT_DIMMED,
     BACKGROUND_EFFECT_NONE,

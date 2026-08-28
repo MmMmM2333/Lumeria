@@ -515,7 +515,7 @@ impl LiveDesktopShaderPipeline {
         config.effect_plan.as_ref().is_some_and(|plan| {
             matches!(
                 plan.effect,
-                LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::AcrylicWebgl
+                LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::Acrylic
             ) && !self.down_textures.is_empty()
         })
     }
@@ -681,7 +681,7 @@ impl LiveDesktopShaderPipeline {
         }
 
         let final_srv = if effect_plan.acrylic.enabled
-            && effect_plan.effect == LiveDesktopBackgroundEffect::AcrylicWebgl
+            && effect_plan.effect == LiveDesktopBackgroundEffect::Acrylic
         {
             unsafe {
                 self.draw_acrylic_pass(
@@ -1441,7 +1441,7 @@ pub(crate) fn resolve_live_desktop_blur_standard_deviation(
 ) -> f32 {
     if !matches!(
         &config.effect,
-        LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::AcrylicWebgl
+        LiveDesktopBackgroundEffect::Blur | LiveDesktopBackgroundEffect::Acrylic
     ) {
         return 0.0;
     }
@@ -1506,9 +1506,7 @@ pub(crate) fn resolve_live_desktop_color_matrix(
 ) -> [[f32; 4]; 5] {
     match &config.effect {
         LiveDesktopBackgroundEffect::Dimmed => resolve_live_desktop_dimmed_color_matrix(config),
-        LiveDesktopBackgroundEffect::AcrylicWebgl => {
-            resolve_live_desktop_acrylic_color_matrix(config)
-        }
+        LiveDesktopBackgroundEffect::Acrylic => resolve_live_desktop_acrylic_color_matrix(config),
         LiveDesktopBackgroundEffect::None | LiveDesktopBackgroundEffect::Blur => {
             live_desktop_identity_color_matrix()
         }

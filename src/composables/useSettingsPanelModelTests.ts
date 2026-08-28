@@ -278,7 +278,7 @@ function createCapabilities() {
     canExcludeSelectedManagedAppsFromScan,
     canScanManagedApps,
     canUseDraftBackgroundEffect: (effect) => (
-      effect === "none" || effect === "dimmed" || effect === "blur" || effect === "acrylicWebgl"
+      effect === "none" || effect === "dimmed" || effect === "blur" || effect === "acrylic"
     ),
     canUseLiveDesktopBackground: () => false,
     canUseLiveDesktopBackgroundEffect: () => false,
@@ -495,7 +495,7 @@ function createCapabilities() {
       draftBackgroundDarkenStrength.value = requireFiniteNumber(value, "background darken strength");
     },
     setDraftBackgroundEffect: (value) => {
-      if (value !== "none" && value !== "dimmed" && value !== "blur" && value !== "acrylicWebgl") {
+      if (value !== "none" && value !== "dimmed" && value !== "blur" && value !== "acrylic") {
         throw new TypeError("unsupported background effect");
       }
       draftBackgroundEffect.value = value;

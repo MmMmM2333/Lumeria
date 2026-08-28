@@ -13,7 +13,7 @@ export const BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP = "windowsLiveDesktop";
 export const BACKGROUND_EFFECT_NONE = "none";
 export const BACKGROUND_EFFECT_DIMMED = "dimmed";
 export const BACKGROUND_EFFECT_BLUR = "blur";
-export const BACKGROUND_EFFECT_ACRYLIC_WEBGL = "acrylicWebgl";
+export const BACKGROUND_EFFECT_ACRYLIC = "acrylic";
 export const BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM = APPEARANCE_SYSTEM;
 export const BACKGROUND_ACRYLIC_APPEARANCE_DARK = APPEARANCE_DARK;
 export const BACKGROUND_ACRYLIC_APPEARANCE_LIGHT = APPEARANCE_LIGHT;
@@ -51,7 +51,7 @@ export type BackgroundEffect =
   | typeof BACKGROUND_EFFECT_NONE
   | typeof BACKGROUND_EFFECT_DIMMED
   | typeof BACKGROUND_EFFECT_BLUR
-  | typeof BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+  | typeof BACKGROUND_EFFECT_ACRYLIC;
 
 export function normalizeBackgroundSource(value: unknown): BackgroundSource {
   if (value === BACKGROUND_SOURCE_CUSTOM_IMAGE) return BACKGROUND_SOURCE_CUSTOM_IMAGE;
@@ -62,7 +62,7 @@ export function normalizeBackgroundSource(value: unknown): BackgroundSource {
 
 export function normalizeBackgroundEffect(value: unknown): BackgroundEffect {
   if (value === BACKGROUND_EFFECT_BLUR) return BACKGROUND_EFFECT_BLUR;
-  if (value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return BACKGROUND_EFFECT_ACRYLIC_WEBGL;
+  if (value === BACKGROUND_EFFECT_ACRYLIC) return BACKGROUND_EFFECT_ACRYLIC;
   return value === BACKGROUND_EFFECT_NONE ? BACKGROUND_EFFECT_NONE : BACKGROUND_EFFECT_DIMMED;
 }
 

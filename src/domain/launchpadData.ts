@@ -766,7 +766,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         backgroundBaseColor,
         backgroundBaseOpacity: Number.isFinite(backgroundBaseOpacity) ? clamp(Math.round(backgroundBaseOpacity), 0, 100) : 28,
         backgroundSource,
-        backgroundEffect: state.backgroundEffect === "none" || state.backgroundEffect === "blur" || state.backgroundEffect === "acrylicWebgl"
+        backgroundEffect: state.backgroundEffect === "none" || state.backgroundEffect === "blur" || state.backgroundEffect === "acrylic"
           ? state.backgroundEffect
           : "dimmed",
         backgroundImageOpacity: Number.isFinite(backgroundImageOpacity) ? clamp(Math.round(backgroundImageOpacity), 0, 100) : 46,

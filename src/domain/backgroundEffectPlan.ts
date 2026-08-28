@@ -1,7 +1,7 @@
 import {
   BACKGROUND_BLUR_STRENGTH_MAX,
   BACKGROUND_BLUR_STRENGTH_MIN,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   clampBackgroundBlurStrength,
   clampBackgroundImageOpacity,
@@ -177,7 +177,7 @@ export function resolveAutoBlurKernel(
 ): Exclude<BlurKernel, typeof BLUR_KERNEL_AUTO> {
   const normalizedEffect = normalizeBackgroundEffect(effect);
   const normalizedStrength = clampBackgroundBlurStrength(strength);
-  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC
     ? clampGaussianBlurCutoff(blur?.acrylicGaussianCutoff, ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT)
     : clampGaussianBlurCutoff(blur?.gaussianCutoff, BLUR_GAUSSIAN_CUTOFF_DEFAULT);
   return normalizedStrength <= cutoff ? BLUR_KERNEL_GAUSSIAN : BLUR_KERNEL_DUAL_KAWASE;
@@ -205,7 +205,7 @@ export function resolveAutoDualKawaseOffsetScale(
 ): number {
   const normalizedEffect = normalizeBackgroundEffect(effect);
   const normalizedStrength = clampBackgroundBlurStrength(strength);
-  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  const cutoff = normalizedEffect === BACKGROUND_EFFECT_ACRYLIC
     ? clampGaussianBlurCutoff(blur?.acrylicGaussianCutoff, ACRYLIC_GAUSSIAN_CUTOFF_DEFAULT)
     : clampGaussianBlurCutoff(blur?.gaussianCutoff, BLUR_GAUSSIAN_CUTOFF_DEFAULT);
   const baseScale = clampDualKawaseOffsetScale(blur?.offsetScale, DUAL_KAWASE_BLUR_OFFSET_SCALE_MIN);
@@ -357,7 +357,7 @@ export function createBackgroundEffectPlan(
     acrylic: {
       ...acrylic,
       alpha: opacity,
-      enabled: effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+      enabled: effect === BACKGROUND_EFFECT_ACRYLIC,
     },
   };
 }

@@ -30,7 +30,7 @@ pub(crate) enum LiveDesktopBackgroundEffect {
     None,
     Dimmed,
     Blur,
-    AcrylicWebgl,
+    Acrylic,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

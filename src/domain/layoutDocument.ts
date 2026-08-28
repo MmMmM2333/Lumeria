@@ -119,7 +119,7 @@ export type LayoutSettings = {
   backgroundBaseColor: string;
   backgroundBaseOpacity: number;
   backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
-  backgroundEffect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  backgroundEffect: "none" | "dimmed" | "blur" | "acrylic";
   backgroundImageOpacity: number;
   backgroundLiveDesktopOpacity: number;
   backgroundImageLayout: "fill" | "fit" | "stretch" | "tile" | "center";
@@ -469,7 +469,7 @@ function assertLayoutSettings(value: unknown): void {
     ["systemMaterial", "customImage", "windowsWallpaper", "windowsLiveDesktop"],
     `${path}.backgroundSource`
   );
-  requireEnum(settings.backgroundEffect, ["none", "dimmed", "blur", "acrylicWebgl"], `${path}.backgroundEffect`);
+  requireEnum(settings.backgroundEffect, ["none", "dimmed", "blur", "acrylic"], `${path}.backgroundEffect`);
   requireIntegerInRange(settings.backgroundImageOpacity, 0, 100, `${path}.backgroundImageOpacity`);
   requireIntegerInRange(settings.backgroundLiveDesktopOpacity, 0, 100, `${path}.backgroundLiveDesktopOpacity`);
   requireEnum(settings.backgroundImageLayout, ["fill", "fit", "stretch", "tile", "center"], `${path}.backgroundImageLayout`);

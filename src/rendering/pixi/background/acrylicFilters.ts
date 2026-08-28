@@ -1,6 +1,7 @@
 import {
   Filter,
   GlProgram,
+  GpuProgram,
   UniformGroup,
   type Texture,
   type TextureSource,
@@ -169,12 +170,165 @@ void main(void)
 }
 `;
 
-function createProgram(fragment: string, name: string): GlProgram {
-  return GlProgram.from({
-    vertex: FILTER_VERTEX,
-    fragment,
-    name,
-  });
+const FILTER_WGSL_HEADER = `
+struct GlobalFilterUniforms {
+  uInputSize: vec4<f32>,
+  uInputPixel: vec4<f32>,
+  uInputClamp: vec4<f32>,
+  uOutputFrame: vec4<f32>,
+  uGlobalFrame: vec4<f32>,
+  uOutputTexture: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> gfu: GlobalFilterUniforms;
+@group(0) @binding(1) var uTexture: texture_2d<f32>;
+@group(0) @binding(2) var uSampler: sampler;
+
+struct FilterVertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+};
+
+fn filterVertexPosition(aPosition: vec2<f32>) -> vec4<f32> {
+  var position = aPosition * gfu.uOutputFrame.zw + gfu.uOutputFrame.xy;
+  position.x = position.x * (2.0 / gfu.uOutputTexture.x) - 1.0;
+  position.y = position.y * (2.0 * gfu.uOutputTexture.z / gfu.uOutputTexture.y) - gfu.uOutputTexture.z;
+  return vec4<f32>(position, 0.0, 1.0);
+}
+
+fn filterTextureCoord(aPosition: vec2<f32>) -> vec2<f32> {
+  return aPosition * (gfu.uOutputFrame.zw * gfu.uInputSize.zw);
+}
+
+@vertex
+fn mainVertex(@location(0) aPosition: vec2<f32>) -> FilterVertexOutput {
+  return FilterVertexOutput(filterVertexPosition(aPosition), filterTextureCoord(aPosition));
+}
+`;
+
+export const KAWASE_WGSL = `${FILTER_WGSL_HEADER}
+struct KawaseUniforms {
+  uTexelSize: vec2<f32>,
+  uOffset: f32,
+};
+
+@group(1) @binding(0) var<uniform> kawaseUniforms: KawaseUniforms;
+
+fn sampleInput(uv: vec2<f32>) -> vec4<f32> {
+  return textureSample(uTexture, uSampler, clamp(uv, gfu.uInputClamp.xy, gfu.uInputClamp.zw));
+}
+
+@fragment
+fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let offset = kawaseUniforms.uTexelSize * kawaseUniforms.uOffset;
+  var color = sampleInput(uv + vec2<f32>(-offset.x, -offset.y));
+  color += sampleInput(uv + vec2<f32>(offset.x, -offset.y));
+  color += sampleInput(uv + vec2<f32>(offset.x, offset.y));
+  color += sampleInput(uv + vec2<f32>(-offset.x, offset.y));
+  return color * 0.25;
+}
+`;
+
+export const GAUSSIAN_WGSL = `${FILTER_WGSL_HEADER}
+struct GaussianUniforms {
+  uTexelSize: vec2<f32>,
+  uDirection: vec2<f32>,
+  uSigma: f32,
+  uRadius: f32,
+};
+
+@group(1) @binding(0) var<uniform> gaussianUniforms: GaussianUniforms;
+
+const MAX_GAUSSIAN_RADIUS: i32 = 32;
+
+fn sampleInput(uv: vec2<f32>) -> vec4<f32> {
+  return textureSample(uTexture, uSampler, clamp(uv, gfu.uInputClamp.xy, gfu.uInputClamp.zw));
+}
+
+@fragment
+fn mainFragment(@location(0) uv: vec2<f32>) -> @location(0) vec4<f32> {
+  let sigma = max(gaussianUniforms.uSigma, 0.001);
+  let radius = clamp(floor(gaussianUniforms.uRadius + 0.5), 0.0, f32(MAX_GAUSSIAN_RADIUS));
+  let stepOffset = gaussianUniforms.uTexelSize * gaussianUniforms.uDirection;
+  var color = vec4<f32>(0.0);
+  var totalWeight = 0.0;
+
+  for (var index = -MAX_GAUSSIAN_RADIUS; index <= MAX_GAUSSIAN_RADIUS; index += 1) {
+    let sampleIndex = f32(index);
+    if (abs(sampleIndex) <= radius) {
+      let weight = exp(-(sampleIndex * sampleIndex) / (2.0 * sigma * sigma));
+      color += sampleInput(uv + stepOffset * sampleIndex) * weight;
+      totalWeight += weight;
+    }
+  }
+
+  return color / max(totalWeight, 0.0001);
+}
+`;
+
+export const ACRYLIC_COMPOSITE_WGSL = `${FILTER_WGSL_HEADER}
+struct AcrylicUniforms {
+  uAlpha: f32,
+  uSaturation: f32,
+  uContrast: f32,
+  uBrightness: f32,
+  uTintStrength: f32,
+  uNoise: f32,
+  uSeed: f32,
+  uNoiseTextureSize: vec2<f32>,
+  uTintColor: vec3<f32>,
+};
+
+@group(1) @binding(0) var<uniform> acrylicUniforms: AcrylicUniforms;
+@group(1) @binding(1) var uNoiseSampler: sampler;
+@group(1) @binding(2) var uNoiseTexture: texture_2d<f32>;
+
+fn acrylicSoftLight(base: vec3<f32>, blend: f32) -> vec3<f32> {
+  let safeBase = clamp(base, vec3<f32>(0.0), vec3<f32>(1.0));
+  let low = safeBase - (1.0 - 2.0 * blend) * safeBase * (1.0 - safeBase);
+  let high = safeBase + (2.0 * blend - 1.0) * (sqrt(safeBase) - safeBase);
+  return select(low, high, blend >= 0.5);
+}
+
+@fragment
+fn mainFragment(
+  @location(0) uv: vec2<f32>,
+  @builtin(position) position: vec4<f32>,
+) -> @location(0) vec4<f32> {
+  let sampled = textureSample(uTexture, uSampler, clamp(uv, gfu.uInputClamp.xy, gfu.uInputClamp.zw));
+  var rgb = sampled.rgb;
+  if (sampled.a > 0.0) {
+    rgb /= sampled.a;
+  }
+
+  let luminance = dot(rgb, vec3<f32>(0.299, 0.587, 0.114));
+  rgb = mix(vec3<f32>(luminance), rgb, acrylicUniforms.uSaturation);
+  rgb = (rgb - 0.5) * acrylicUniforms.uContrast + 0.5;
+  rgb *= acrylicUniforms.uBrightness;
+  rgb = mix(rgb, acrylicUniforms.uTintColor, acrylicUniforms.uTintStrength);
+  let noiseOffset = vec2<f32>(acrylicUniforms.uSeed * 17.0, acrylicUniforms.uSeed * 31.0);
+  let noiseUv = fract((position.xy + noiseOffset) / acrylicUniforms.uNoiseTextureSize);
+  let noiseSample = textureSample(uNoiseTexture, uNoiseSampler, noiseUv).r;
+  rgb = mix(rgb, acrylicSoftLight(rgb, noiseSample), acrylicUniforms.uNoise);
+  rgb = clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+  let alpha = sampled.a * acrylicUniforms.uAlpha;
+  return vec4<f32>(rgb * alpha, alpha);
+}
+`;
+
+function createPrograms(fragment: string, source: string, name: string) {
+  return {
+    glProgram: GlProgram.from({
+      vertex: FILTER_VERTEX,
+      fragment,
+      name,
+    }),
+    gpuProgram: GpuProgram.from({
+      fragment: { entryPoint: "mainFragment", source },
+      name,
+      vertex: { entryPoint: "mainVertex", source },
+    }),
+  };
 }
 
 function clampAlpha(value: unknown, fallback = 1): number {
@@ -189,7 +343,7 @@ export function createKawaseFilter(name: string, offset = 1): KawaseFilter {
     uOffset: { value: offset, type: "f32" },
   });
   const filter = new Filter({
-    glProgram: createProgram(KAWASE_FRAGMENT, name),
+    ...createPrograms(KAWASE_FRAGMENT, KAWASE_WGSL, name),
     resources: {
       kawaseUniforms: uniforms,
     },
@@ -219,7 +373,7 @@ export function createGaussianFilter(
     uRadius: { value: 3, type: "f32" },
   });
   const filter = new Filter({
-    glProgram: createProgram(GAUSSIAN_FRAGMENT, name),
+    ...createPrograms(GAUSSIAN_FRAGMENT, GAUSSIAN_WGSL, name),
     resources: {
       gaussianUniforms: uniforms,
     },
@@ -260,7 +414,11 @@ export function createAcrylicCompositeFilter(noiseTexture: Texture): AcrylicComp
   });
   const noiseTextureSource: TextureSource = noiseTexture.source;
   const filter = new Filter({
-    glProgram: createProgram(ACRYLIC_COMPOSITE_FRAGMENT, "launchpad-acrylic-composite-filter"),
+    ...createPrograms(
+      ACRYLIC_COMPOSITE_FRAGMENT,
+      ACRYLIC_COMPOSITE_WGSL,
+      "launchpad-acrylic-composite-filter",
+    ),
     resources: {
       acrylicUniforms: uniforms,
       uNoiseSampler: noiseTextureSource.style,

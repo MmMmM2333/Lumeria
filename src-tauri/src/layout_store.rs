@@ -248,7 +248,7 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     require_enum_field(
         object,
         "backgroundEffect",
-        &["none", "dimmed", "blur", "acrylicWebgl"],
+        &["none", "dimmed", "blur", "acrylic"],
         "layout settings",
     )?;
     require_integer_in_range(object, "backgroundImageOpacity", 0, 100, "layout settings")?;

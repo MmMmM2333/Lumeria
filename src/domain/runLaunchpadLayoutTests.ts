@@ -164,6 +164,7 @@ import { runRenderingBoundaryTests } from "../rendering/renderingBoundaryTests.j
 import { runSceneRuntimeTests } from "../rendering/sceneRuntimeTests.js";
 import { runRenderInvalidationTests } from "../rendering/pixi/renderInvalidationTests.js";
 import { runDesktopPresentationLoopTests } from "../rendering/pixi/desktopPresentationLoopTests.js";
+import { runCreatePixiAppTests } from "../rendering/pixi/createPixiAppTests.js";
 import { runAcrylicFiltersTests } from "../rendering/pixi/background/acrylicFiltersTests.js";
 import { runAcrylicParamsTests } from "../rendering/pixi/background/acrylicParamsTests.js";
 import { runAcrylicNoiseTextureTests } from "../rendering/pixi/background/acrylicNoiseTextureTests.js";
@@ -309,7 +310,8 @@ runDragRenderSnapshotTests();
 runPixiHostMetricsTests();
 runAppLaunchVisualCommitTests();
 runFolderFramebufferSamplerTests();
-runRenderDebugProbeTests();
+await runRenderDebugProbeTests();
+runCreatePixiAppTests();
 await runAcrylicFiltersTests();
 runAcrylicParamsTests();
 await runAcrylicNoiseTextureTests();

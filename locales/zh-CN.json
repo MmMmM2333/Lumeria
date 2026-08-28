@@ -1326,7 +1326,7 @@
             "acrylicSaturation": "Acrylic 饱和度",
             "unavailable": "选择背景层后可用",
             "hintCss": "当前效果由前端透明层合成",
-            "hintAcrylic": "WebGL Acrylic 风格合成",
+            "hintAcrylic": "Acrylic 风格合成",
             "hintBlur": "模糊背景层",
             "hintDim": "叠加暗化遮罩",
             "hintOriginal": "直接显示背景层"

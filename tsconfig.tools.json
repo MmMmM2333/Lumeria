@@ -8,6 +8,7 @@
   },
   "include": [
     "playwright.config.ts",
+    "playwright.webgpu.config.ts",
     "playwright.webview.config.ts",
     "scripts/**/*.ts",
     "tests/browser/**/*.ts",

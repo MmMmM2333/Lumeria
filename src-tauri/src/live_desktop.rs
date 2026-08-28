@@ -916,7 +916,7 @@ mod tests {
         value.as_object_mut().unwrap().insert(
             "effectPlan".to_string(),
             serde_json::json!({
-                "effect": "acrylicWebgl",
+                "effect": "acrylic",
                 "opacity": 0.37,
                 "blur": {
                     "kernel": "gaussian",
@@ -948,10 +948,7 @@ mod tests {
         let config: LiveDesktopRuntimeConfig = serde_json::from_value(value).unwrap();
         let effect_plan = config.effect_plan.as_ref().unwrap();
 
-        assert_eq!(
-            effect_plan.effect,
-            LiveDesktopBackgroundEffect::AcrylicWebgl
-        );
+        assert_eq!(effect_plan.effect, LiveDesktopBackgroundEffect::Acrylic);
         assert_eq!(effect_plan.blur.kernel, LiveDesktopBlurKernel::Gaussian);
         assert!((effect_plan.blur.gaussian_radius_px - 20.0).abs() < 0.001);
         assert_eq!(effect_plan.blur.render_max_width, 960);
@@ -980,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn live_desktop_dual_kawase_levels_match_webgl_plan() {
+    fn live_desktop_dual_kawase_levels_match_acrylic_plan() {
         assert_eq!(
             create_live_desktop_dual_kawase_levels(960, 540, 4, 16),
             vec![(480, 270), (240, 135), (120, 68), (60, 34)]
@@ -1066,7 +1063,7 @@ mod tests {
         config.blur_strength = 200;
         assert!((resolve_live_desktop_blur_standard_deviation(&config) - 30.0).abs() < 0.001);
 
-        config.effect = LiveDesktopBackgroundEffect::AcrylicWebgl;
+        config.effect = LiveDesktopBackgroundEffect::Acrylic;
         config.blur_strength = 100;
         assert!((resolve_live_desktop_blur_standard_deviation(&config) - 30.0).abs() < 0.001);
 
@@ -1087,7 +1084,7 @@ mod tests {
             live_desktop_identity_color_matrix()
         );
 
-        config.effect = LiveDesktopBackgroundEffect::AcrylicWebgl;
+        config.effect = LiveDesktopBackgroundEffect::Acrylic;
         let acrylic = resolve_live_desktop_color_matrix(&config);
         assert!((acrylic[0][0] - 0.734672).abs() < 0.001);
         assert!((acrylic[1][0] + 0.159664).abs() < 0.001);

@@ -14,6 +14,7 @@
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.ts --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.ts --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.ts --project=chromium --workers=1",
+    "test:pixi-webgpu": "playwright test --config=playwright.webgpu.config.ts --workers=1",
     "test:trusted-mouse-ui": "playwright test tests/browser/launchpad-provisional-folder-mouse.spec.ts --project=chromium --workers=1",
     "test:trusted-mouse-webview": "playwright test tests/browser/launchpad-provisional-folder-mouse.spec.ts --config=playwright.webview.config.ts",
     "test:ui": "playwright test --project=chromium --workers=1",

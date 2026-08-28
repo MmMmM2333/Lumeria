@@ -100,7 +100,7 @@
     "backgroundBaseColor": "#203040",
     "backgroundBaseOpacity": 37,
     "backgroundSource": "customImage",
-    "backgroundEffect": "acrylicWebgl",
+    "backgroundEffect": "acrylic",
     "backgroundImageOpacity": 63,
     "backgroundLiveDesktopOpacity": 88,
     "backgroundImageLayout": "tile",

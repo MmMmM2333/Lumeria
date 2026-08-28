@@ -1326,7 +1326,7 @@
             "acrylicSaturation": "Acrylic saturation",
             "unavailable": "Available after selecting a background layer",
             "hintCss": "This effect is composited by the frontend transparency layer",
-            "hintAcrylic": "WebGL Acrylic-style composition",
+            "hintAcrylic": "Acrylic-style composition",
             "hintBlur": "Blur the background layer",
             "hintDim": "Add a dimming overlay",
             "hintOriginal": "Show the background layer directly"

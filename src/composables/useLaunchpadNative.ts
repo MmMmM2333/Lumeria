@@ -20,7 +20,7 @@ import type {
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundAcrylicBlurStrength,
@@ -366,7 +366,7 @@ function makeLiveDesktopRuntimeConfig(
     acrylicProfile
   );
   const effect = normalizeBackgroundEffect(config.effect);
-  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC
     ? clampBackgroundAcrylicBlurStrength(config.backgroundAcrylicBlurStrength)
     : clampBackgroundBlurStrength(config.backgroundBlurStrength);
   return {

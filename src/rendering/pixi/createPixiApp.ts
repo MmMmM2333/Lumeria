@@ -10,6 +10,8 @@ interface CreatePixiAppOptions {
   resizeTo?: ApplicationOptions["resizeTo"];
 }
 
+export const PIXI_RENDERER_PREFERENCE = ["webgpu", "webgl"] as const;
+
 export async function createPixiApp(
   host: HTMLElement,
   options: CreatePixiAppOptions = {},
@@ -21,7 +23,7 @@ export async function createPixiApp(
     autoStart: options.autoStart === true,
     autoDensity: true,
     backgroundAlpha: 0,
-    preference: options.preference,
+    preference: options.preference ?? [...PIXI_RENDERER_PREFERENCE],
     powerPreference: "high-performance",
     resolution: getEffectiveDevicePixelRatio(),
     resizeTo: options.resizeTo || host,

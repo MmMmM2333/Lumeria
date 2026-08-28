@@ -77,7 +77,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
@@ -493,7 +493,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     );
   });
   const backgroundEffectBlurStrength = computed(() => (
-    backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
       ? backgroundAcrylicBlurStrength.value
       : backgroundBlurStrength.value
   ));

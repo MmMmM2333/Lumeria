@@ -1362,7 +1362,7 @@ onMounted(async () => {
         layer,
       }),
     });
-    renderProbe.attachCanvas(app.canvas);
+    renderProbe.attachRenderer(app.renderer, app.canvas);
     const diagnosticAdapters: DiagnosticAdapterLike[] = [
       createMotionDiagnosticAdapter({
         getOverlaySnapshot: () => motionDebugOverlay?.debugSnapshot?.() || null,
