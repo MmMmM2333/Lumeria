@@ -1,5 +1,6 @@
 import { Container, Graphics, Matrix, Rectangle, RenderLayer, Sprite } from "pixi.js";
 import type { ContainerChild, FederatedPointerEvent, TextStyleFontWeight } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
@@ -1706,7 +1707,7 @@ export class FolderOverlayLayer extends Container {
         fill: 0xffffff,
         fontSize: 18,
         fontWeight: "620" as TextStyleFontWeight,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
       },
     });
     this.iconNodes = new Map();

@@ -48,7 +48,7 @@ export interface TextInputClipboard {
 }
 
 export interface TextInputStyle {
-	fontFamily: string;
+	fontFamily: string | readonly string[];
 	fontSize: number;
 	lineHeight: number;
 	padding: number;
@@ -82,7 +82,7 @@ export interface TextInputHostOptions {
 }
 
 const defaultStyle: TextInputStyle = {
-	fontFamily: "Microsoft YaHei UI",
+	fontFamily: "Segoe UI, Segoe UI Emoji, sans-serif",
 	fontSize: 18,
 	lineHeight: 26,
 	padding: 10,
@@ -374,7 +374,10 @@ export class TextInput extends Container {
 		this._readOnly = options.readOnly ?? false;
 		this._disabled = options.disabled ?? false;
 		this.inputStyle = { ...defaultStyle, ...options.style };
-		this.font = `${this.inputStyle.fontSize}px ${this.inputStyle.fontFamily}`;
+		const fontFamily = typeof this.inputStyle.fontFamily === "string"
+			? this.inputStyle.fontFamily
+			: this.inputStyle.fontFamily.join(", ");
+		this.font = `${this.inputStyle.fontSize}px ${fontFamily}`;
 		const context = (DOMAdapter.get().createCanvas(1, 1) as any).getContext("2d");
 		this.measure = (text) => { context.font = this.font; return context.measureText(text).width; };
 		this.editor = new TextEditor({
@@ -383,7 +386,7 @@ export class TextInput extends Container {
 			maxLength: options.maxLength ?? (this.multiline ? 16_384 : 4_096),
 		});
 		const textStyle = {
-			fontFamily: this.inputStyle.fontFamily,
+			fontFamily,
 			fontSize: this.inputStyle.fontSize,
 			lineHeight: this.inputStyle.lineHeight,
 			fill: this.inputStyle.textColor,

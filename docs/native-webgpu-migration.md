@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-02
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "等待 Starter 公共字体注册 API 后接入中文字体；随后迁移文件夹打开/关闭切片"
+next_entry: "迁移文件夹打开/关闭切片"
 ---
 
 # Native WebGPU migration
@@ -21,13 +21,14 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Completed native slice
 
-- Starter release commit `3062d76` is vendored with manifest schema v2, complete file hashes, native ABI 3 and capability mask validation.
+- Starter release commit `019c945` is vendored with manifest schema v2, complete file hashes, native ABI 3, capability-mask validation, and stable path-/memory-backed font registration exports.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
 - `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
 - Starter owns window creation, WebGPU/Pixi initialization, input, present, resize/DPI, minimize/restore, surface/device recovery and reverse-order cleanup.
 - LaunchPad owns only its scene-frame projection, `NativeDesktopScene`, native icon loading, motion updates and LaunchPad-specific pixel proof.
 - `NativeDesktopScene` no longer creates a second presentation loop. Its existing `motionRuntime` is advanced by Starter's application scheduler.
+- LaunchPad uses an explicit Latin/CJK/Emoji family list for Pixi text; no restricted Windows font is bundled.
 - The obsolete sibling imports, manual devkit/hash selection, manual WebGPU renderer/context lifecycle, local Pixi patcher and duplicate production canvas adapter are removed.
 
 ## Real data startup slice
@@ -50,6 +51,7 @@ The isolated real-data native smoke proves:
 - all three first-page scene nodes are visible and the second page can be entered and left;
 - the layout PNG and extracted catalog icon travel through the native texture path;
 - color Emoji and labels contain real GPU pixels;
+- a Chinese application label produces real GPU foreground pixels through the ordered Skia fallback stack;
 - the empty lower viewport remains clean;
 - adaptive resize exposes the live logical size before rebuilding the backing texture, then settles to the exact DPI-scaled backing size;
 - cross-DPI movement updates resolution when mixed-DPI displays exist;
@@ -72,7 +74,7 @@ npm run native:build
 
 Production data now reaches an interactive native Pixi frame through one authoritative path. Application icons support pointer/keyboard activation, launch through Rust, and show explicit success/failure status. The current native slice cannot mutate layout state, so there is no dirty state to save before launch; the existing launch-critical save rule must be connected when native editing is introduced.
 
-Font registration is waiting on the Starter's public API. Folder overlays, editing, search and WinUI-style settings controls remain later slices.
+Bundled fonts are intentionally deferred because the repository has no redistributable font asset. The public registration API is ready when one is selected. Folder overlays, editing, search and WinUI-style settings controls remain later slices.
 
 ## Guardrails
 
@@ -88,4 +90,4 @@ No new production Starter ABI capability blocked this slice. Bun child-process s
 
 ## Next complete slice
 
-Consume the public font registration API for Chinese labels, then migrate folder open/close as the next complete behavior slice.
+Migrate folder open/close as the next complete behavior slice.

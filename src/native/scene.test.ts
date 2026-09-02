@@ -11,6 +11,7 @@ import {
 import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import {
   getNativeActivePageItems,
   getNativePageTurnFromKey,
@@ -158,6 +159,14 @@ assert.ok(
   `the native app label should stay near its 16px line height, received ${nativeItemNode.labelText.height}px`,
 );
 const emojiFontFamily = nativeItemNode.emojiText.style.fontFamily;
+assert.deepEqual(
+  (Array.isArray(nativeItemNode.labelText.style.fontFamily)
+    ? nativeItemNode.labelText.style.fontFamily
+    : [nativeItemNode.labelText.style.fontFamily]
+  ).map((fontFamily) => fontFamily.replaceAll('"', "")),
+  [...PIXI_UI_FONT_FAMILY],
+  "native labels should use the explicit Latin/CJK/Emoji fallback order",
+);
 assert.deepEqual(
   (Array.isArray(emojiFontFamily) ? emojiFontFamily : [emojiFontFamily])
     .map((fontFamily) => fontFamily.replaceAll('"', "")),

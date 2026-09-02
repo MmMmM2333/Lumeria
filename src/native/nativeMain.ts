@@ -14,6 +14,7 @@ import {
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import type { SceneItem } from "../rendering/sceneFrame.js";
+import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
 import {
   NativeDataHost,
@@ -42,6 +43,7 @@ type NativeFrameProof = Readonly<{
   backingHeight: number;
   backingWidth: number;
   catalogApps: number;
+  cjkLabelPixels: readonly number[];
   height: number;
   loadedLayout: boolean;
   pageCount: number;
@@ -201,7 +203,7 @@ const statusText = new Text({
   resolution: app.resolution,
   style: {
     fill: 0xd8dee9,
-    fontFamily: "Segoe UI",
+    fontFamily: [...PIXI_UI_FONT_FAMILY],
     fontSize: 14,
   },
 });
@@ -540,11 +542,20 @@ try {
       iconRegions,
       labelRegions: iconNodes.map((node) => toPixelRegion(node.labelText, pixels.width, pixels.height)),
     });
+    const cjkLabelPixels = activePageItems.flatMap((item, index) => (
+      typeof item.name === "string" && /\p{Script=Han}/u.test(item.name)
+        ? [pixelProof.labelForegroundPixels[index] ?? 0]
+        : []
+    ));
+    if (cjkLabelPixels.length < 1 || cjkLabelPixels.some((count) => count <= 0)) {
+      throw new Error("Native CJK labels did not produce foreground pixels");
+    }
     const proof: NativeProof = Object.freeze({
       ...pixelProof,
       backingHeight,
       backingWidth,
       catalogApps: catalogResult.apps.length,
+      cjkLabelPixels,
       dpiResolution,
       dpiTransition,
       height: contentSize.height,

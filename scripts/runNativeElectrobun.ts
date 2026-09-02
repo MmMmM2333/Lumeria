@@ -43,7 +43,7 @@ fixture.pages = [[
   {
     id: "native-layout-icon",
     type: "manualApp",
-    name: "Loaded Layout",
+    name: "已加载布局",
     emoji: "L",
     customIconPath: iconPath,
     launchTarget: { kind: "executable", path: process.execPath },
@@ -117,6 +117,7 @@ try {
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;
       backingWidth?: unknown;
+      cjkLabelPixels?: unknown;
       coloredIconPixels?: unknown;
       catalogApps?: unknown;
       height?: unknown;
@@ -152,6 +153,13 @@ try {
       ))
     ) {
       throw new Error("Native smoke proof did not present the local PNG icon through the GPU texture path");
+    }
+    if (
+      !Array.isArray(proof.cjkLabelPixels)
+      || proof.cjkLabelPixels.length < 1
+      || proof.cjkLabelPixels.some((pixels) => !Number.isInteger(pixels) || Number(pixels) <= 0)
+    ) {
+      throw new Error("Native smoke proof did not render the CJK label through the configured font fallback");
     }
     if (
       !Number.isInteger(proof.visibleNodes)

@@ -6,6 +6,7 @@ import type {
   Text,
   TextStyleFontWeight,
 } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
@@ -156,7 +157,7 @@ function makeLabelText(fontSize = 13): Text {
     style: {
       align: "center",
       fill: 0xffffff,
-      fontFamily: "Inter, Segoe UI, sans-serif",
+      fontFamily: [...PIXI_UI_FONT_FAMILY],
       fontSize,
       fontWeight: "500" as TextStyleFontWeight,
       lineHeight: Math.round(fontSize * 1.22),
@@ -377,7 +378,7 @@ export class IconNode extends Container {
       style: {
         align: "center",
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 12,
         fontWeight: "800" as TextStyleFontWeight,
         lineHeight: 12,
@@ -424,7 +425,7 @@ export class IconNode extends Container {
       style: {
         align: "center",
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 12,
         fontWeight: "800" as TextStyleFontWeight,
         lineHeight: 12,

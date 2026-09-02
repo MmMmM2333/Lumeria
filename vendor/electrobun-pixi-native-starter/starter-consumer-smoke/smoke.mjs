@@ -349,7 +349,8 @@ const createExternalConsumer = () => {
 	].join("\n") + "\n");
 	writeFileSync(join(consumer, "src", "main.ts"), [
 		'import { createDemo } from "../vendor/electrobun-pixi-native-starter/src/demo/demo";',
-		'import { createNativePixiApplication } from "../vendor/electrobun-pixi-native-starter/src/native-host";',
+		'import { createNativePixiApplication, registerNativeFont, registerNativeFontData } from "../vendor/electrobun-pixi-native-starter/src/native-host";',
+		'if (typeof registerNativeFont !== "function" || typeof registerNativeFontData !== "function") throw new Error("font registration API is missing");',
 		'const app = await createNativePixiApplication({ title: "External Consumer", width: 900, height: 600 });',
 		'try {',
 		' await createDemo(app, { bunnyCount: 0, fastBundleSmokeBatches: 0, fpsHudScale: 2 });',

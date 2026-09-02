@@ -35,6 +35,13 @@ const BUNNY_NAMES = [
 	"rabbitv3_tron.png", "rabbitv3_wolverine.png", "rabbitv3.png",
 ];
 
+const DEMO_FONT_FAMILY = [
+	"Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI",
+	"Microsoft YaHei UI", "Microsoft YaHei",
+	"Yu Gothic UI", "Yu Gothic", "Malgun Gothic",
+	"Segoe UI Emoji", "sans-serif",
+] as const;
+
 export async function createDemo(app: NativePixiApplication, options: DemoOptions): Promise<DemoHandle> {
 	const testing = getNativePixiApplicationTesting(app);
 	const bunnyUrls = BUNNY_NAMES.map((name) => new URL(`../assets/bunnies/${name}`, import.meta.url).href);
@@ -122,8 +129,8 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	alphaMasked.mask = alphaMask;
 	const alphaMaskDemo = new Container();
 	alphaMaskDemo.position.set(300, 230); alphaMaskDemo.addChild(alphaMasked, alphaMask);
-	const title = new Text({ text: "PixiJS × Skia · 原生文字", style: {
-		fontFamily: "Microsoft YaHei UI, sans-serif", fontSize: 28, fontWeight: "bold",
+	const title = new Text({ text: "PixiJS · 中文 · 日本語 · 한국어 · 🙂", style: {
+		fontFamily: [...DEMO_FONT_FAMILY], fontSize: 28, fontWeight: "bold",
 		fill: 0xffffff, stroke: { color: 0x6c63ff, width: 3 },
 	} });
 	title.label = "title"; title.anchor.set(0.5); title.position.set(0, -235);
@@ -162,10 +169,11 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	mark.on("pointerenter", () => { mark.alpha = 0.78; requestFrame(); });
 	mark.on("pointerleave", () => { mark.alpha = 1; requestFrame(); });
 
-	const single = textInputHost.create({ width: 420, height: 42, placeholder: "单行输入 · 微软拼音 / Emoji" });
+	const single = textInputHost.create({ width: 420, height: 42,
+		placeholder: "单行输入 · 微软拼音 / Emoji", style: { fontFamily: DEMO_FONT_FAMILY } });
 	single.label = "single-line-input";
 	const multiline = textInputHost.create({ width: 420, height: 96, multiline: true,
-		placeholder: "多行输入 · Enter 换行 · 拖右下角缩放" });
+		placeholder: "多行输入 · Enter 换行 · 拖右下角缩放", style: { fontFamily: DEMO_FONT_FAMILY } });
 	multiline.label = "multiline-input";
 	const textareaSize = { width: 420, height: 96 };
 	const resizeHandle = new Graphics().rect(0, 0, 18, 18).fill({ color: 0xffffff, alpha: 0.001 })

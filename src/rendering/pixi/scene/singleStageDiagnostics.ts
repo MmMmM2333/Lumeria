@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { Text } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
@@ -97,7 +98,7 @@ export class SingleStageDiagnosticsLayer extends Container {
       text: "",
       style: {
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 12,
         fontWeight: "600",
       },

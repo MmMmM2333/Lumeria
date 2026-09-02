@@ -46,7 +46,13 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 		},
 		requestFrame() { requestedFrames++; },
 	});
-	const input = host.create({ width: 180, height: 36, value: "A中", maxLength: 16 });
+	const input = host.create({
+		width: 180,
+		height: 36,
+		value: "A中",
+		maxLength: 16,
+		style: { fontFamily: ["Segoe UI", "Microsoft YaHei", "Segoe UI Emoji"] },
+	});
 	root.addChild(input);
 	input.focus();
 	expect(nativeState).toMatchObject({ surroundingText: "A中", selection: { start: 2, end: 2 } });

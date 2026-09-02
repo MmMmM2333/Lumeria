@@ -255,18 +255,38 @@ npm run debug:pixi -- recover
 
 ```ts
 const text = new Text({
-  text: "PixiJS × Skia · 原生文字",
-  style: { fontFamily: "Microsoft YaHei UI", fontSize: 28 },
+  text: "English · 中文 · 日本語 · 한국어 · 🙂",
+  style: {
+    fontFamily: [
+      "Inter",
+      "Segoe UI Variable",
+      "Segoe UI Variable Text",
+      "Segoe UI",
+      "Microsoft YaHei UI",
+      "Microsoft YaHei",
+      "Yu Gothic UI",
+      "Yu Gothic",
+      "Malgun Gothic",
+      "Segoe UI Emoji",
+      "sans-serif",
+    ],
+    fontSize: 28,
+  },
 });
 ```
 
-系统中没有的字体可在创建 `Text` 前注册：
+字体列表按字形依次 fallback。不要直接照搬浏览器的 `system-ui`、`ui-sans-serif` 等 CSS 别名：Skia Canvas 不保证按 Chromium 的规则解析它们。应用应明确自己的字体顺序；Runtime 和输入控件不替业务选择中文字体。系统字体只有在目标 Windows 已安装时才可用，字体族名称也可能随 Windows 版本和语言包不同。
+
+系统中没有的字体可以通过稳定公共入口注册；注册应在创建任何 `Text` 或输入控件之前完成：
 
 ```ts
-import { registerNativeFont } from "./native-skia";
+import { registerNativeFont, registerNativeFontData } from "./native-host";
 
-registerNativeFont("C:/path/to/MyFont.ttf", "My Font");
+registerNativeFont("C:/absolute/path/to/AppInter.ttf", "App Inter");
+registerNativeFontData(await Bun.file("C:/absolute/path/to/AppCJK.ttf").bytes(), "App CJK");
 ```
+
+建议给 bundled font 使用应用专属别名，避免与机器上不同版本的同名字体冲突。字体必须具有随应用再发行的许可；微软雅黑等 Windows 系统字体不能直接打进应用。只打包拉丁字体只能保证拉丁字形一致，如需跨设备完全一致的 CJK 字形，还要提供有相应字形覆盖的可再发行字体。
 
 图片继续走 Pixi Assets：
 

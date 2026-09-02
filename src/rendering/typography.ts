@@ -1,0 +1,15 @@
+export const PIXI_UI_FONT_FAMILY = Object.freeze([
+  "Inter",
+  "Segoe UI Variable",
+  "Segoe UI Variable Text",
+  "Segoe UI",
+  "Microsoft YaHei UI",
+  "Microsoft YaHei",
+  "Yu Gothic UI",
+  "Yu Gothic",
+  "Malgun Gothic",
+  "Segoe UI Emoji",
+  "Apple Color Emoji",
+  "Noto Color Emoji",
+  "sans-serif",
+]);

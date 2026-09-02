@@ -19,6 +19,7 @@ export {
 	type NativePresentationMode,
 	type NativeResizeMode,
 } from "./runtime/native-app";
+export { registerNativeFont, registerNativeFontData } from "./rendering/native-skia";
 
 export const nativeHost = Object.freeze({
 	platform: nativePlatform,

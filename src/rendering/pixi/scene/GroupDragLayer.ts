@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { DestroyOptions, PointData, Text } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { createPixiText } from "../pixiText.js";
 import {
   GROUP_TRANSFER_OUTCOME,
@@ -712,7 +713,7 @@ export class GroupDragLayer extends Container {
       text: "",
       style: {
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 13,
         fontWeight: "700",
       },
@@ -1163,7 +1164,7 @@ export class GroupDragLayer extends Container {
         text: "",
         style: {
           fill: 0xffffff,
-          fontFamily: "Inter, Segoe UI, sans-serif",
+          fontFamily: [...PIXI_UI_FONT_FAMILY],
           fontSize: 11,
           fontWeight: "700",
         },

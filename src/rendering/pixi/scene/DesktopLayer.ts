@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { DestroyOptions } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
@@ -1226,7 +1227,7 @@ export class DesktopLayer extends Container {
     this.boundsDirty = false;
     this.emptyText = createPixiText({
       text: this.renderCopy.searchEmpty,
-      style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
+      style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: [...PIXI_UI_FONT_FAMILY] },
     } as NonNullable<Parameters<typeof createPixiText>[0]>);
     this.emptyText.anchor.set(0.5);
     this.visualRoot.addChild(this.pageTrack);

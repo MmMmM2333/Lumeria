@@ -14,14 +14,14 @@
     "minimumWindows": "10.0.19041"
   },
   "source": {
-    "commit": "3062d76177167253701ef9635e217fae8a06aed3",
+    "commit": "019c945d289c54a5d3b9a38d76f2d0968a35c34c",
     "dirty": false,
-    "sourceDateEpoch": 1788309094
+    "sourceDateEpoch": 1788333290
   },
   "build": {
-    "commit": "3062d76177167253701ef9635e217fae8a06aed3",
-    "sourceDateEpoch": 1788309094,
-    "timestamp": "2026-09-02T00:31:34.000Z"
+    "commit": "019c945d289c54a5d3b9a38d76f2d0968a35c34c",
+    "sourceDateEpoch": 1788333290,
+    "timestamp": "2026-09-02T07:14:50.000Z"
   },
   "dependencies": {
     "electrobun": "2.0.1",
@@ -2977,14 +2977,14 @@
     {
       "path": "README.md",
       "role": "documentation",
-      "size": 20575,
-      "sha256": "08668438636dd0771392c7b926652d4bc9b7c76ac75516bfdc267b4df43465a2"
+      "size": 21813,
+      "sha256": "5fc272f833d4eac56853047ad196cfe8aeab94807a1f3af9ff47216a0390ac8e"
     },
     {
       "path": "src/demo/demo.ts",
       "role": "starter-source",
-      "size": 28526,
-      "sha256": "5ede11f08461fa60c67e27e6ca8eb28a6495b3179a4c8dcbb42fec2dfa93e26a"
+      "size": 28841,
+      "sha256": "065f35de349a0f61fee45ae55b1c2edc505a22000ada23b8d390cd8cadd6a919"
     },
     {
       "path": "src/diagnostics/agent-debug.ts",
@@ -3025,14 +3025,14 @@
     {
       "path": "src/input/text-input.test.ts",
       "role": "starter-source",
-      "size": 7184,
-      "sha256": "e66e77a954723fbab1ec9e0ad81ba8a8f1d78c116d50c87d58bf955014f13ef3"
+      "size": 7270,
+      "sha256": "84268667b58a8a81f7fb2012fc4a4f9c73766a591d6df57ff3e877b8dffa90fd"
     },
     {
       "path": "src/input/text-input.ts",
       "role": "starter-source",
-      "size": 25807,
-      "sha256": "f22688a5f3c9b1bed8342e3fa6680a0b88d913f6ea24cde956737ef04122601f"
+      "size": 25945,
+      "sha256": "67322e071c3ebc54b173637924f2ec8ecde2dd0ba005e519d95eeef3b6ca3905"
     },
     {
       "path": "src/main.ts",
@@ -3043,8 +3043,8 @@
     {
       "path": "src/native-host.ts",
       "role": "starter-source",
-      "size": 1197,
-      "sha256": "4503b249ae579a8ddd4fd5f6b24e699f3b1010517022bada1ae6d0d4a174f66e"
+      "size": 1283,
+      "sha256": "2137ee354815ebf801db8039f79059e4ee62ac56ea491df4a6442137e90b1b7e"
     },
     {
       "path": "src/platform/native-accessibility.test.ts",
@@ -3115,8 +3115,8 @@
     {
       "path": "src/rendering/native-skia.test.ts",
       "role": "starter-source",
-      "size": 1523,
-      "sha256": "b2fe9361a0b62ab6cda8053eafa1646849907cd8f3a061be84715e801118c459"
+      "size": 4074,
+      "sha256": "8acbe858d19652c80734ea58002182086be6b91f8f5373f5bd9f5dc055616566"
     },
     {
       "path": "src/rendering/native-skia.ts",
@@ -3181,8 +3181,8 @@
     {
       "path": "starter-consumer-smoke/smoke.mjs",
       "role": "consumer-smoke",
-      "size": 26235,
-      "sha256": "9777a43d0285c8978b8e884bdfe537602f4d5e67cade01e38b4669223af88db5"
+      "size": 26431,
+      "sha256": "5a4588885dd19e420b84bb1b70ea7d2b8be8c4d859748cde1ad246cdcb04e5ab"
     },
     {
       "path": "tools/electrobun-dcomp-patch.mjs",
