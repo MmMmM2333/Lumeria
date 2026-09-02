@@ -11,6 +11,7 @@ mod layout_store;
 mod live_desktop;
 mod main_window_supervisor;
 mod models;
+mod native_data_host;
 mod native_error;
 mod path_utils;
 mod startup;
@@ -21,6 +22,8 @@ mod windows_app_catalog;
 mod windows_com;
 #[cfg(target_os = "windows")]
 mod windows_shell_link;
+
+pub use native_data_host::run as run_native_data_host;
 
 use std::{
     collections::{HashMap, HashSet},

@@ -5,13 +5,14 @@ import {
   createNativePixiApplication,
   type NativePixiApplication,
 } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
-import {
-  assertCompleteDesktopSceneFrame,
-  makeDesktopSceneFrame,
-  type CompleteDesktopSceneFrame,
-} from "../rendering/sceneFrame.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
+import type { LayoutDocument } from "../domain/layoutDocument.js";
+import { NativeDataHost, type NativeCatalogScanResult } from "./nativeDataHost.js";
+import {
+  makeNativeStartupFrame,
+  makeNativeStartupScanRequest,
+} from "./nativeStartup.js";
 import {
   assertNativeScenePixels,
   type NativePixelData,
@@ -24,7 +25,9 @@ type NativeMode = "dev" | "smoke";
 type NativeFrameProof = Readonly<{
   backingHeight: number;
   backingWidth: number;
+  catalogApps: number;
   height: number;
+  loadedLayout: boolean;
   presentCount: number;
   presented: true;
   reconciledNodes: number;
@@ -55,57 +58,6 @@ const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 const nativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
 if (nativeMode !== "dev" && nativeMode !== "smoke") {
   throw new Error(`LAUNCHPAD_NATIVE_MODE must be dev or smoke, received: ${String(nativeMode)}`);
-}
-
-function makeSmokeFrame(): CompleteDesktopSceneFrame {
-  const iconPath = process.env.LAUNCHPAD_NATIVE_ICON_PATH;
-  if (!iconPath) throw new Error("LAUNCHPAD_NATIVE_ICON_PATH is required");
-  const frame = makeDesktopSceneFrame({
-    activePageIndex: 0,
-    activePages: [[
-      { emoji: "🚀", iconPath, id: "app-1", name: "LaunchPad", type: "app" },
-      { emoji: "🧭", id: "app-2", name: "Native WebGPU", type: "app" },
-      { emoji: "⚙️", id: "app-3", name: "Settings", type: "app" },
-    ]],
-    appLaunchCloseSessionId: null,
-    desktopGridDebugOptions: null,
-    desktopProjectionEpoch: 0,
-    desktopTrackMotionKey: "native-static-snap",
-    desktopVisualAlpha: 1,
-    desktopVisualTransform: { scale: 1, y: 0 },
-    dragFolderHoverState: null,
-    dragFolderTargetId: null,
-    dragHitDebugOptions: null,
-    dragHitDebugState: null,
-    dragMeta: null,
-    focusedIcon: null,
-    folderClosingHandoffId: null,
-    folderPageSize: 24,
-    folderSourceGhostedId: null,
-    folderSourceGhostedIds: new Set<string>(),
-    gridCols: 7,
-    gridRows: 4,
-    groupDragState: null,
-    iconGesturePresentation: null,
-    iconSize: 64,
-    isBatchSelectionActive: false,
-    isDesktopClosing: false,
-    isEditMode: false,
-    isHomeRevealSettling: false,
-    isSearchMode: false,
-    isTextlessMode: false,
-    launchTargetStatusById: {},
-    launchpadVisualAlpha: 1,
-    launchpadVisualTransform: { scale: 1, y: 0 },
-    pageGridMeasureStyle: {},
-    pageTrackScrub: null,
-    provisionalFolderRollback: null,
-    selectedAppIds: new Set<string>(),
-    showMissingLaunchTargetBadge: false,
-    singleStageDiagnosticsOptions: null,
-  });
-  assertCompleteDesktopSceneFrame(frame);
-  return frame;
 }
 
 function displayFor(frame: Readonly<{ height: number; width: number; x: number; y: number }>) {
@@ -193,6 +145,20 @@ async function captureScenePixels(
   }) as unknown as NativePixelData;
 }
 
+const nativeData = new NativeDataHost();
+let loadedLayout: LayoutDocument | null;
+let catalogResult: NativeCatalogScanResult;
+try {
+  await nativeData.connect();
+  loadedLayout = await nativeData.loadLayout();
+  const scanRequest = makeNativeStartupScanRequest(loadedLayout);
+  catalogResult = await nativeData.scanApps(scanRequest.roots, scanRequest.filters);
+} catch (error) {
+  await nativeData.dispose();
+  throw error;
+}
+const frame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
+
 const app = await createNativePixiApplication({
   antialias: true,
   background: 0x090b14,
@@ -200,6 +166,9 @@ const app = await createNativePixiApplication({
   resizeMode: "smooth",
   title: `LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
+}).catch(async (error: unknown) => {
+  await nativeData.dispose();
+  throw error;
 });
 app.stage.label = "launchpad-native-stage";
 
@@ -211,16 +180,19 @@ let disconnectAnimationHost = (): void => {};
 
 try {
   await present(app, "the native host startup frame");
-  const frame = makeSmokeFrame();
   const iconTextureSnapshot = await iconTextures.synchronize(
     frame.viewport.activePages.flatMap((page) => page.filter((item) => item !== null)),
   );
-  if (
-    iconTextureSnapshot.cached.length !== 1
-    || iconTextureSnapshot.failed.length !== 0
-    || iconTextureSnapshot.pending.length !== 0
-  ) {
+  if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
+  }
+  if (nativeMode === "smoke" && (
+    iconTextureSnapshot.cached.length < 1 || iconTextureSnapshot.failed.length !== 0
+  )) {
+    throw new Error(`Native smoke icon texture failed: ${JSON.stringify(iconTextureSnapshot)}`);
+  }
+  if (nativeMode === "dev" && iconTextureSnapshot.failed.length > 0) {
+    console.warn("Some native icon textures could not be loaded", iconTextureSnapshot.failed);
   }
 
   disconnectAnimationHost = scene.connectAnimationHost({
@@ -360,48 +332,55 @@ try {
     );
   }
 
-  const pixels = await captureScenePixels(app, contentSize.width, contentSize.height);
-  const iconRegions = iconNodes
-    .filter((node) => node.iconSprite.visible)
-    .map((node) => toPixelRegion(node.iconSprite, pixels.width, pixels.height));
-  if (iconRegions.length !== 1) {
-    throw new Error(`Expected one native PNG icon sprite, received ${iconRegions.length}`);
-  }
-  const pixelProof = assertNativeScenePixels(pixels, {
-    background: NATIVE_BACKGROUND,
-    contentBottom: Math.ceil(contentSize.height / 2),
-    emojiRegions: iconNodes
-      .filter((node) => node.emojiText.visible)
-      .map((node) => toPixelRegion(node.emojiText, pixels.width, pixels.height)),
-    iconRegions,
-    labelRegions: iconNodes.map((node) => toPixelRegion(node.labelText, pixels.width, pixels.height)),
-  });
-  const proof: NativeProof = Object.freeze({
-    ...pixelProof,
-    backingHeight,
-    backingWidth,
-    dpiResolution,
-    dpiTransition,
-    height: contentSize.height,
-    presentCount,
-    presented: true,
-    reconciledNodes: work.reconciledNodes,
-    resolution,
-    resizeObserved,
-    resizePresentCount,
-    restoreObserved,
-    restorePresentCount,
-    visibleNodes,
-    width: contentSize.width,
-  });
-
   if (nativeMode === "smoke") {
+    const pixels = await captureScenePixels(app, contentSize.width, contentSize.height);
+    const iconRegions = iconNodes
+      .filter((node) => node.iconSprite.visible)
+      .map((node) => toPixelRegion(node.iconSprite, pixels.width, pixels.height));
+    if (iconRegions.length < 1) throw new Error("Expected at least one native PNG icon sprite");
+    const pixelProof = assertNativeScenePixels(pixels, {
+      background: NATIVE_BACKGROUND,
+      contentBottom: Math.ceil(contentSize.height / 2),
+      emojiRegions: iconNodes
+        .filter((node) => node.emojiText.visible)
+        .map((node) => toPixelRegion(node.emojiText, pixels.width, pixels.height)),
+      iconRegions,
+      labelRegions: iconNodes.map((node) => toPixelRegion(node.labelText, pixels.width, pixels.height)),
+    });
+    const proof: NativeProof = Object.freeze({
+      ...pixelProof,
+      backingHeight,
+      backingWidth,
+      catalogApps: catalogResult.apps.length,
+      dpiResolution,
+      dpiTransition,
+      height: contentSize.height,
+      loadedLayout: loadedLayout !== null,
+      presentCount,
+      presented: true,
+      reconciledNodes: work.reconciledNodes,
+      resolution,
+      resizeObserved,
+      resizePresentCount,
+      restoreObserved,
+      restorePresentCount,
+      visibleNodes,
+      width: contentSize.width,
+    });
     const markerPath = process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER;
     if (!markerPath) throw new Error("LAUNCHPAD_NATIVE_SMOKE_MARKER is required in smoke mode");
     writeFileSync(markerPath, JSON.stringify(proof), "utf8");
+    console.log(JSON.stringify(proof, null, 2));
+  } else {
+    console.log(JSON.stringify({
+      catalogApps: catalogResult.apps.length,
+      loadedLayout: loadedLayout !== null,
+      reconciledNodes: work.reconciledNodes,
+      resolution,
+      visibleNodes,
+    }, null, 2));
+    await closed;
   }
-  console.log(JSON.stringify(proof, null, 2));
-  if (nativeMode === "dev") await closed;
 } finally {
   disconnectAnimationHost();
   offResize();
@@ -409,4 +388,5 @@ try {
   scene.destroy();
   iconTextures.dispose();
   await app.dispose();
+  await nativeData.dispose();
 }

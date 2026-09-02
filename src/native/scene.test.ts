@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Container, type Text } from "pixi.js";
+import { assertLayoutDocument } from "../domain/layoutDocument.js";
 import {
   assertCompleteDesktopSceneFrame,
   makeDesktopSceneFrame,
@@ -9,8 +11,45 @@ import {
 import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import { makeNativeStartupFrame, makeNativeStartupScanRequest } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+
+const savedLayout = assertLayoutDocument(JSON.parse(readFileSync(
+  new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url),
+  "utf8",
+)) as unknown);
+const savedStartupFrame = makeNativeStartupFrame(savedLayout, []);
+assert.equal(savedStartupFrame.viewport.gridRows, 4);
+assert.equal(savedStartupFrame.viewport.gridCols, 6);
+assert.equal(savedStartupFrame.viewport.iconSize, 72);
+assert.equal(savedStartupFrame.interaction.isTextlessMode, true);
+assert.equal(savedStartupFrame.viewport.activePages[0]?.[0]?.id, "custom-editor");
+const savedScanRequest = makeNativeStartupScanRequest(savedLayout);
+assert.equal(savedScanRequest.roots.length, 1);
+assert.equal(savedScanRequest.roots[0]?.id, "root-custom");
+assert.deepEqual(savedScanRequest.filters.keywordBlacklist, ["uninstall", "卸载"]);
+const firstRunFrame = makeNativeStartupFrame(null, [{
+  id: "first-run-app",
+  type: "app",
+  name: "First Run",
+  launchTarget: { kind: "url", path: "https://example.invalid/first-run" },
+  trackingKey: "launch:url:first-run",
+  identityStatus: "exact",
+  sources: [{
+    key: "first-run-source",
+    type: "customDirectory",
+    state: "primary",
+    rootId: "first-run-root",
+    rootLabel: "First run root",
+    relativePath: "First Run.url",
+    absolutePath: "C:/First Run.url",
+  }],
+}]);
+assert.equal(firstRunFrame.viewport.gridRows, 5);
+assert.equal(firstRunFrame.viewport.gridCols, 7);
+assert.equal(firstRunFrame.viewport.activePages[0]?.[0]?.id, "first-run-app");
+assert.equal(makeNativeStartupScanRequest(null).roots.length, 3);
 
 function makeCompleteFrame(overrides: DesktopSceneFrameInput = {}): CompleteDesktopSceneFrame {
   const frame = makeDesktopSceneFrame({

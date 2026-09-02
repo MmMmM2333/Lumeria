@@ -3,15 +3,18 @@ import { nativePixiElectrobunCopy } from "./vendor/electrobun-pixi-native-starte
 
 export default {
   app: {
-    identifier: "dev.lumeria.launchpad-native-smoke",
-    name: "LaunchPad Native Smoke",
+    identifier: "dev.lumeria.launchpad-native",
+    name: "LaunchPad Native",
     version: "0.1.0",
   },
   build: {
     bun: {
       entrypoint: "src/native/electrobunSmoke.ts",
     },
-    copy: nativePixiElectrobunCopy,
+    copy: {
+      ...nativePixiElectrobunCopy,
+      "src-tauri/target/release/lumeria_native_data.exe": "bun/lumeria-native-data.exe",
+    },
     linux: { bundleWGPU: true },
     mac: { bundleWGPU: true },
     mainProcess: "bun",

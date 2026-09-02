@@ -76,7 +76,7 @@ pub(crate) fn find_layout_manual_app(layout: &Value, app_id: &str) -> Option<Sav
     find_manual_app_in_layout_value(layout, app_id, 0)
 }
 
-fn load_layout_from_path(path: &Path) -> Result<Option<Value>, String> {
+pub(crate) fn load_layout_from_path(path: &Path) -> Result<Option<Value>, String> {
     if !path.exists() {
         return Ok(None);
     }

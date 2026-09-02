@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-02
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "用现有域模型接入真实 layout/catalog 数据，生成第一个非固定数据的 CompleteDesktopSceneFrame"
+next_entry: "接入第一个可交互切片：原生图标激活事件经 Rust host 启动应用，并保留启动前布局一致性"
 ---
 
 # Native WebGPU migration
@@ -30,12 +30,23 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 - `NativeDesktopScene` no longer creates a second presentation loop. Its existing `motionRuntime` is advanced by Starter's application scheduler.
 - The obsolete sibling imports, manual devkit/hash selection, manual WebGPU renderer/context lifecycle, local Pixi patcher and duplicate production canvas adapter are removed.
 
+## Real data startup slice
+
+- `lumeria_native_data.exe` is built from the existing Rust crate and exposes protocol v1 over newline-delimited JSON. The implemented operations are exactly `hello`, `loadLayout` and `scanApps`.
+- The sidecar reuses `layout_store::load_layout_from_path` and `catalog::scan_apps_from_roots`; layout validation, Windows catalog enumeration, shortcut resolution and icon caching are not duplicated in TypeScript.
+- The Electrobun client validates every request/response envelope and existing layout/catalog contracts. Requests are serial because the Rust host is serial.
+- Startup loads `%APPDATA%\com.lumeria.app\layout.json` by default. `LUMERIA_NATIVE_DATA_DIR` exists only as an absolute-path isolation seam for tests.
+- `nativeStartup.ts` reuses `normalizeNativeApp`, `createLaunchpadLayoutHelpers` and `reconcileDocument` to produce the existing `CompleteDesktopSceneFrame`. There is no native-only layout model or second state owner.
+- The sidecar release executable is built before native dev/smoke/build and copied beside the Electrobun Bun entrypoint.
+
 ## Verified behavior
 
-The real native smoke proves:
+The isolated real-data native smoke proves:
 
-- all three reconciled scene nodes are visible;
-- a local PNG travels through the native texture path;
+- the persisted v2 layout is loaded through Rust;
+- one `.url` catalog item is scanned through Rust and appended by existing reconciliation rules;
+- all four reconciled scene nodes are visible;
+- the layout PNG and extracted catalog icon travel through the native texture path;
 - color Emoji and labels contain real GPU pixels;
 - the empty lower viewport remains clean;
 - resize updates logical and backing sizes;
@@ -56,15 +67,9 @@ npm run native:build
 
 ## Remaining migration boundary
 
-The current native entry still uses a fixed three-item smoke frame. Production startup requires one authoritative data path:
+Production data now reaches a native Pixi frame through one authoritative read path. The native scene is intentionally still read-only: icon nodes use `eventMode = "none"`, and the sidecar does not yet expose save, launch or target-check operations.
 
-1. Load the persisted v2 layout from the existing roaming data root.
-2. Scan the current Windows app catalog and extracted icon cache.
-3. Reuse the existing normalization, reconciliation and validation functions.
-4. Produce the existing `CompleteDesktopSceneFrame`; do not add a native-only scene model.
-5. Synchronize all visible icon textures, commit once, then await a public present.
-
-The existing Rust layout/catalog/icon/launcher implementation should be exposed through a host-neutral sidecar or native service rather than rewritten in TypeScript. Editing, launching, search, folders and full WinUI-style controls follow as complete behavior slices after real startup data.
+The next slice should make one complete user path interactive: pointer/keyboard activation of a native icon, launch through the existing Rust launcher, explicit success/failure feedback, and the existing launch-critical save rule before dispatch. Editing, search, folder overlays and WinUI-style settings controls remain later slices.
 
 ## Guardrails
 
@@ -74,6 +79,10 @@ The existing Rust layout/catalog/icon/launcher implementation should be exposed 
 - Do not keep both Vue and native presentation as writable owners of the same runtime state.
 - `vendor/` is third-party release payload: LaunchPad source policy skips it, while Starter manifest/hash validation and consumer typecheck remain authoritative.
 
+## Starter/native foundation feedback
+
+No new Starter ABI capability blocked this slice. Bun child-process stdio, Starter lifecycle, native input plumbing, resize/DPI, recovery and cleanup were sufficient. Bundled application sidecars remain LaunchPad packaging policy rather than a new rendering-host ABI.
+
 ## Next complete slice
 
-Use the existing domain model to load real layout/catalog data and render the first non-fixture native desktop frame. This is the next and only continuation entry.
+Add native icon activation and application launch as one verified behavior slice; do not add editing or a general UI framework in the same change.
