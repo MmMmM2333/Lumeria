@@ -1,0 +1,11 @@
+node_modules/
+.electrobun-v2.0.1-source/
+.hutch/
+build/
+dist/
+artifacts/
+.cottontail-tmp/
+.codex*
+*.log
+.DS_Store
+Thumbs.db

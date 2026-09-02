@@ -11,8 +11,10 @@ import {
 
 export type IconTextureItem = Readonly<{
   customIconDataUrl?: string | null;
+  customIconPath?: string | null;
   customIconUrl?: string | null;
   iconDataUrl?: string | null;
+  iconPath?: string | null;
   iconUrl?: string | null;
   id?: string | null;
 }>;
@@ -46,6 +48,7 @@ export type IconTextureRepository = Readonly<{
 
 type RepositoryOptions = Readonly<{
   loadTexture?: (source: string) => Promise<Texture>;
+  resolveSource?: (item: IconTextureItem | null | undefined) => string | null;
   scheduleAfterFrame?: (callback: () => void) => void;
 }>;
 
@@ -120,6 +123,7 @@ function makeItemKey(item: IconTextureItem, source: string): string {
 
 export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository {
   const loadTexture = options.loadTexture || loadTextureFromImage;
+  const resolveSource = options.resolveSource || getPixiIconTextureSource;
   const scheduleAfterFrame = options.scheduleAfterFrame || scheduleAfterRenderFrame;
   const cachedTextures = new Map<string, Texture>();
   const failedTextureSources = new Set<string>();
@@ -260,7 +264,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     onLoad?: (() => void) | null,
     listenerKey: unknown = onLoad,
   ): Texture | null {
-    const source = getPixiIconTextureSource(item) as string | null;
+    const source = resolveSource(item);
     if (!source) return null;
     const cached = cachedTextures.get(source);
     if (cached) return cached;
@@ -280,7 +284,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     const nextActiveSourceCounts = new Map<string, number>();
     for (const item of items || []) {
       if (!item) continue;
-      const source = getPixiIconTextureSource(item) as string | null;
+      const source = resolveSource(item);
       if (!source) continue;
       const itemKey = makeItemKey(item, source);
       nextSourceByItemKey.set(itemKey, source);

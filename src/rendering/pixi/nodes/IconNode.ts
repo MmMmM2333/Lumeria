@@ -12,7 +12,10 @@ import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motionAdd, motionSequence, motion } from "../animation/motionTween.js";
 import type { MotionControl } from "../animation/motionTween.js";
-import { iconTextureRepository } from "../assets/iconTextureRepository.js";
+import {
+  iconTextureRepository,
+  type IconTextureRepository,
+} from "../assets/iconTextureRepository.js";
 import {
   getCenteredLocalRect,
   mapDisplayObjectLocalRectToStageRect,
@@ -100,6 +103,7 @@ export type IconNodeActionHandler = (
 ) => void;
 
 export interface IconNodeOptions {
+  readonly iconTextures?: IconTextureRepository | undefined;
   readonly onAction?: IconNodeActionHandler | undefined;
 }
 
@@ -154,7 +158,7 @@ function makeLabelText(fontSize = 13): Text {
       fill: 0xffffff,
       fontFamily: "Inter, Segoe UI, sans-serif",
       fontSize,
-      fontWeight: "520" as TextStyleFontWeight,
+      fontWeight: "500" as TextStyleFontWeight,
       lineHeight: Math.round(fontSize * 1.22),
       wordWrap: true,
       wordWrapWidth: 160,
@@ -251,6 +255,7 @@ const APP_FOLDER_CREATE_DIM_DURATION = 0.12;
 const APP_FOLDER_CREATE_FRAME_DURATION = 0.16;
 const APP_FOLDER_CREATE_BLEND_DURATION = 0.08;
 const APP_FOLDER_CREATE_BLEND_EASE = "power2.out";
+const EMOJI_FONT_FAMILY = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"];
 const ICON_OPENING_SCALE = 1.08;
 const JIGGLE_ROTATION = 0.032;
 const JIGGLE_Y = 1;
@@ -308,6 +313,7 @@ export class IconNode extends Container {
   declare readonly folderCreateBackdrop: Graphics;
   declare readonly folderCreateFlashOverlay: Graphics;
   declare readonly iconSprite: Sprite;
+  declare readonly iconTextures: IconTextureRepository;
   declare readonly emojiText: Text;
   declare readonly labelText: Text;
   declare readonly labelTransitionText: Text;
@@ -360,6 +366,7 @@ export class IconNode extends Container {
     this.openingScaleActive = null;
     this.interactionPhase = null;
     this.onAction = options.onAction || (() => {});
+    this.iconTextures = options.iconTextures || iconTextureRepository;
 
     this.focusFrame = new Graphics();
     this.batchSelectionBadge = new Container();
@@ -382,7 +389,13 @@ export class IconNode extends Container {
     this.folderSlotReleaseSprite = new Sprite();
     this.folderSlotReleaseEmoji = createPixiText({
       text: "",
-      style: { align: "center", fill: 0xffffff, fontSize: 16, lineHeight: 0 },
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: EMOJI_FONT_FAMILY,
+        fontSize: 16,
+        lineHeight: 0,
+      },
     });
     this.folderThumb = new Graphics();
     this.folderPreviewMask = new Graphics();
@@ -394,7 +407,13 @@ export class IconNode extends Container {
     this.iconSprite = new Sprite();
     this.emojiText = createPixiText({
       text: "",
-      style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: EMOJI_FONT_FAMILY,
+        fontSize: 64,
+        lineHeight: 64,
+      },
     });
     this.labelText = makeLabelText();
     this.labelTransitionText = makeLabelText();
@@ -999,7 +1018,7 @@ export class IconNode extends Container {
 
     this.hideFolderChildren();
     const itemId = this.item?.id;
-    const texture = iconTextureRepository.resolve(this.item, () => {
+    const texture = this.iconTextures.resolve(this.item, () => {
       if (this.destroyed || this.item?.id !== itemId || !this.state) return;
       this.renderVisual(this.state);
     }, this);
@@ -1117,7 +1136,7 @@ export class IconNode extends Container {
         continue;
       }
       const childId = child.id;
-      const texture = iconTextureRepository.resolve(child, () => {
+      const texture = this.iconTextures.resolve(child, () => {
         if (this.destroyed || !this.state || this.item?.type !== "folder") return;
         const currentPlan = getFolderPreviewMotionPlan(
           this.item as SceneItem & { readonly childPages?: unknown } | null,

@@ -1,0 +1,37 @@
+{
+  "name": "electrobun-pixijs-webgpu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "electrobunPixiStarter": {
+    "nativeWrapperSha256": "42091e3a0a65941624ee47401a9d6bb20324077c2dabe9a23faa50dd55a7491b"
+  },
+  "scripts": {
+    "prepare:electrobun": "node tools/patch-electrobun.mjs",
+    "verify:adapter": "node tools/patch-electrobun.mjs --check",
+    "debug:pixi": "node tools/pixi-debug.mjs",
+    "test:host": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-scheduler.test.ts src/rendering/native-render.test.ts src/platform/native-accessibility.test.ts src/rendering/pixi-bind-group-lifecycle.test.ts src/rendering/native-skia.test.ts src/input/text-editor.test.ts src/input/text-input.test.ts src/input/native-text-input.test.ts src/rendering/native-webgpu-status.test.ts",
+    "test:lifecycle": "node tools/pixi-debug.mjs smoke",
+    "start": "node tools/run-electrobun.mjs start",
+    "bunnymark": "node tools/run-bunnymark.mjs",
+    "dev": "node tools/run-electrobun.mjs dev",
+    "build": "node tools/run-electrobun.mjs build",
+    "typecheck": "tsc --noEmit",
+    "release:generate": "node tools/starter-release.mjs generate",
+    "release:verify": "node tools/starter-release.mjs verify",
+    "release:package": "node tools/starter-release.mjs package",
+    "release:install": "node tools/starter-release.mjs install",
+    "release:install-consumer": "node tools/starter-release.mjs install-consumer",
+    "release:smoke": "node tools/starter-release.mjs smoke"
+  },
+  "dependencies": {
+    "@chenglou/pretext": "0.0.8",
+    "@napi-rs/canvas": "1.0.8",
+    "electrobun": "2.0.1",
+    "pixi.js": "8.20.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "5.9.3"
+  }
+}

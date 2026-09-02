@@ -1,0 +1,2077 @@
+diff --git a/package/src/native/win/dcomp_compositor.h b/package/src/native/win/dcomp_compositor.h
+index 4ef9512..119c3c5 100644
+--- a/package/src/native/win/dcomp_compositor.h
++++ b/package/src/native/win/dcomp_compositor.h
+@@ -4,13 +4,15 @@
+ // This matches the macOS CAMetalLayer compositing pattern used in Electrobun
+ // for native GPU rendering.
+ //
+-// Usage: initMinimal() to create DComp visual tree, then initSwapChainFromDevice()
+-// once Dawn's D3D11On12 device is available. Frames are presented via
+-// zeroCopyPresent() or presentOnly().
++// Usage: initMinimal() creates the persistent visual tree.
++// createSwapChainFromDevice() creates unattached generations, and
++// promoteSwapChain() atomically attaches one after its first Present.
+
+ #pragma once
+
+ #include <dcomp.h>
++#include <d2d1.h>
++#include <commctrl.h>
+ #include <dxgi1_2.h>
+ #include <dxgi1_4.h>
+ #include <d3d11.h>
+@@ -19,6 +21,7 @@
+ #include <d3d12.h>
+ #include <wrl.h>
+ #include <cstdio>
++#include <utility>
+
+ #pragma comment(lib, "dxgi.lib")
+ #pragma comment(lib, "d3d11.lib")
+@@ -64,14 +67,25 @@ static bool isDCompAvailable() {
+ class DCompCompositor {
+ public:
+     // Minimal init: DComp visual tree only, no rendering device or swap chain.
+-    // The swap chain is created later via initSwapChainFromDevice() once Dawn's
+-    // D3D11On12 device is available.
++    // Swap-chain generations are created later via createSwapChainFromDevice()
++    // once Dawn's D3D11On12 device is available.
+     bool initMinimal(HWND hwnd, int width, int height) {
+         if (!isDCompAvailable()) return false;
+
+         this->targetHwnd = hwnd;
+         this->surfaceWidth = width;
+         this->surfaceHeight = height;
++        this->viewportWidth = width;
++        this->viewportHeight = height;
++        RECT clientRect = {};
++        if (GetClientRect(hwnd, &clientRect)) {
++            const int clientWidth = clientRect.right - clientRect.left;
++            const int clientHeight = clientRect.bottom - clientRect.top;
++            if (clientWidth > 0 && clientHeight > 0) {
++                this->viewportWidth = clientWidth;
++                this->viewportHeight = clientHeight;
++            }
++        }
+
+         // DCompositionCreateDevice2 with a DXGI device creates a DComp device
+         // that can hold visuals/targets. We pass nullptr to create a device-less
+@@ -118,26 +132,28 @@ public:
+             return false;
+         }
+
++        // Queue the root without committing an empty visual tree. The first
++        // successful generation commits SetRoot + SetContent atomically.
+         hr = dcompTarget->SetRoot(rootVisual.Get());
+         if (FAILED(hr)) return false;
+
+-        hr = dcompDevice->Commit();
+-        if (FAILED(hr)) return false;
+-
+-        // Minimal init done
+         initialized = true;
++        if (!enableNativeResize()) {
++            shutdown();
++            return false;
++        }
+         return true;
+     }
+
+     // Create a swap chain on an external D3D11 device (e.g., Dawn's D3D11On12).
+     // Call after initMinimal() + Dawn device creation.
+-    bool initSwapChainFromDevice(ID3D11Device* externalDevice, int width, int height) {
++    bool createSwapChainFromDevice(
++        ID3D11Device* externalDevice,
++        int width,
++        int height,
++        ComPtr<IDXGISwapChain1>* createdSwapChain) {
+         if (!initialized || !dcompDevice || !rootVisual) return false;
+-        if (!externalDevice) return false;
+-
+-        // Store the external device for blit/present operations
+-        externalD3dDevice = externalDevice;
+-        externalDevice->GetImmediateContext(&externalD3dContext);
++        if (!externalDevice || !createdSwapChain) return false;
+
+         // Get DXGI factory from external device
+         ComPtr<IDXGIDevice> dxgiDevice;
+@@ -166,187 +182,277 @@ public:
+         scDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+         scDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+
++        ComPtr<IDXGISwapChain1> candidate;
+         hr = factory->CreateSwapChainForComposition(
+-            externalDevice, &scDesc, nullptr, &swapChain);
++            externalDevice, &scDesc, nullptr, &candidate);
+         if (FAILED(hr)) {
+             printf("[DComp] CreateSwapChainForComposition (external) failed: 0x%08lx\n", hr);
+             return false;
+         }
+
+-        // Set as root visual content
+-        hr = rootVisual->SetContent(swapChain.Get());
+-        if (FAILED(hr)) return false;
+-
+-        hr = dcompDevice->Commit();
+-        if (FAILED(hr)) return false;
+-
+-        surfaceWidth = width;
+-        surfaceHeight = height;
+-        zeroCopyMode = true;
+-        // Swap chain created
++        *createdSwapChain = std::move(candidate);
+         return true;
+     }
+
+-    // Zero-copy present: copy source D3D11 texture to swap chain back buffer.
+-    // sourceTexture must be on the same D3D11 device as the swap chain.
+-    bool zeroCopyPresent(ID3D11Texture2D* sourceTexture) {
+-        if (!swapChain || !externalD3dContext) return false;
++    // Keep the last committed frame visible while a replacement generation is
++    // being prepared. DirectComposition scales the active content to the new
++    // client size until promoteSwapChain() commits a rendered replacement.
++    bool scaleActiveTo(int width, int height) {
++        if (!initialized || width <= 0 || height <= 0) return false;
++        viewportWidth = width;
++        viewportHeight = height;
++        if (!activeSwapChain) return true;
++        if (FAILED(applyActiveTransform())) return false;
++        if (stagedVisual && FAILED(applyStagedTransform())) return false;
++        return SUCCEEDED(dcompDevice->Commit());
++    }
+
+-        ComPtr<ID3D11Texture2D> backBuffer;
+-        HRESULT hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+-        if (FAILED(hr)) {
+-            printf("[DComp] zeroCopyPresent: GetBuffer failed: 0x%08lx\n", hr);
+-            return false;
++    // Attach the first rendered generation. Replacements use the staged
++    // two-phase path below so the old frame stays visible until DWM has
++    // processed the new visual.
++    bool promoteSwapChain(IDXGISwapChain1* candidate, int width, int height) {
++        if (!initialized || !candidate || width <= 0 || height <= 0) return false;
++        if (activeVisual || activeSwapChain || stagedVisual) return false;
++
++        const float scaleX = static_cast<float>(viewportWidth) / width;
++        const float scaleY = static_cast<float>(viewportHeight) / height;
++        const D2D_MATRIX_3X2_F transform = { scaleX, 0, 0, scaleY, 0, 0 };
++        ComPtr<IDCompositionVisual> candidateVisual = activeVisual;
++        HRESULT hr = S_OK;
++        if (!candidateVisual) hr = dcompDevice->CreateVisual(&candidateVisual);
++        if (SUCCEEDED(hr)) hr = candidateVisual->SetContent(candidate);
++        if (SUCCEEDED(hr)) hr = candidateVisual->SetTransform(transform);
++        if (SUCCEEDED(hr) && !activeVisual) {
++            hr = rootVisual->AddVisual(candidateVisual.Get(), TRUE, nullptr);
+         }
+-
+-        externalD3dContext->CopyResource(backBuffer.Get(), sourceTexture);
+-
+-        hr = swapChain->Present(0, 0);
++        if (SUCCEEDED(hr)) hr = dcompDevice->Commit();
+         if (FAILED(hr)) {
+-            printf("[DComp] zeroCopyPresent: Present failed: 0x%08lx\n", hr);
++            if (!activeVisual && candidateVisual) {
++                rootVisual->RemoveVisual(candidateVisual.Get());
++            } else if (activeVisual) {
++                activeVisual->SetContent(activeSwapChain.Get());
++                applyActiveTransform();
++            }
++            dcompDevice->Commit();
+             return false;
+         }
+
+-        return SUCCEEDED(dcompDevice->Commit());
++        activeVisual = std::move(candidateVisual);
++        activeSwapChain = candidate;
++        surfaceWidth = width;
++        surfaceHeight = height;
++        return true;
+     }
+
+-    // Just Present + Commit (when the copy was already done externally).
+-    bool presentOnly() {
+-        if (!swapChain || !dcompDevice) return false;
+-
+-        HRESULT hr = swapChain->Present(0, 0);
+-        if (FAILED(hr)) return false;
+-
+-        return SUCCEEDED(dcompDevice->Commit());
++    // May block until DWM consumes the staged Commit. The caller deliberately
++    // runs this outside the Win32 UI thread so live resize messages keep moving.
++    bool waitForCommitCompletion() {
++        return initialized && dcompDevice &&
++            SUCCEEDED(dcompDevice->WaitForCommitCompletion());
+     }
+
+-    bool resize(int newWidth, int newHeight) {
+-        if (!initialized || !swapChain) return false;
+-        if (newWidth <= 0 || newHeight <= 0) return false;
+-        if (newWidth == surfaceWidth && newHeight == surfaceHeight) return true;
+-
+-        surfaceWidth = newWidth;
+-        surfaceHeight = newHeight;
++    // The active visual already owns this swap chain. A resize only updates
++    // its logical content size and transform; SetContent must stay untouched.
++    bool adoptResizedSwapChain(IDXGISwapChain1* candidate, int width, int height) {
++        if (!initialized || !candidate || width <= 0 || height <= 0 ||
++            !activeVisual || activeSwapChain.Get() != candidate || stagedVisual) {
++            return false;
++        }
+
+-        auto* ctx = externalD3dContext ? externalD3dContext.Get() : d3dContext.Get();
+-        if (ctx) {
+-            ctx->ClearState();
+-            ctx->Flush();
++        surfaceWidth = width;
++        surfaceHeight = height;
++        if (SUCCEEDED(applyActiveTransform()) && SUCCEEDED(dcompDevice->Commit())) {
++            return true;
+         }
++        return false;
++    }
+
+-        HRESULT hr = swapChain->ResizeBuffers(
+-            2, surfaceWidth, surfaceHeight,
+-            DXGI_FORMAT_B8G8R8A8_UNORM, 0);
++    // Commit a rendered replacement underneath the current active content.
++    bool stageSwapChain(IDXGISwapChain1* candidate, int width, int height) {
++        if (!initialized || !candidate || width <= 0 || height <= 0) return false;
++        if (!activeVisual || !activeSwapChain || stagedVisual) return false;
++
++        const D2D_MATRIX_3X2_F stagedTransform = {
++            static_cast<float>(viewportWidth) / width,
++            0,
++            0,
++            static_cast<float>(viewportHeight) / height,
++            0,
++            0,
++        };
++
++        ComPtr<IDCompositionVisual> staged;
++        HRESULT hr = dcompDevice->CreateVisual(&staged);
++        if (SUCCEEDED(hr)) hr = staged->SetContent(candidate);
++        if (SUCCEEDED(hr)) hr = staged->SetTransform(stagedTransform);
++        if (SUCCEEDED(hr)) {
++            hr = rootVisual->AddVisual(staged.Get(), FALSE, activeVisual.Get());
++        }
++        if (SUCCEEDED(hr)) hr = dcompDevice->Commit();
+         if (FAILED(hr)) {
+-            printf("[DComp] ResizeBuffers failed: 0x%08lx\n", hr);
++            if (staged) rootVisual->RemoveVisual(staged.Get());
++            dcompDevice->Commit();
+             return false;
+         }
+
+-        dcompDevice->Commit();
++        stagedVisual = std::move(staged);
++        stagedSwapChain = candidate;
++        stagedSurfaceWidth = width;
++        stagedSurfaceHeight = height;
+         return true;
+     }
+
+-    // Enable native resize tracking: subclass the target HWND to intercept
+-    // WM_SIZE and auto-resize the swap chain without TS FFI round-trip.
+-    void enableNativeResize() {
+-        if (!initialized || !targetHwnd || nativeResizeHooked) return;
++    // The staged visual is already committed below the active one. Removing
++    // the active visual therefore cannot leave an empty committed tree.
++    bool promoteStagedSwapChain(
++        IDXGISwapChain1* candidate, int width, int height) {
++        if (!initialized || !candidate || width <= 0 || height <= 0) return false;
++        if (!activeVisual || !stagedVisual ||
++            stagedSwapChain.Get() != candidate) {
++            return false;
++        }
+
+-        // Store this pointer for the subclass callback
+-        SetPropA(targetHwnd, "DCompCompositor", (HANDLE)this);
++        HRESULT hr = rootVisual->RemoveVisual(activeVisual.Get());
++        if (SUCCEEDED(hr)) hr = dcompDevice->Commit();
++        if (FAILED(hr)) {
++            rootVisual->AddVisual(activeVisual.Get(), TRUE, stagedVisual.Get());
++            dcompDevice->Commit();
++            return false;
++        }
+
+-        SetWindowSubclass(targetHwnd, resizeSubclassProc, 1, (DWORD_PTR)this);
+-        nativeResizeHooked = true;
+-        // Native resize hook installed
++        activeVisual = std::move(stagedVisual);
++        activeSwapChain = std::move(stagedSwapChain);
++        surfaceWidth = width;
++        surfaceHeight = height;
++        stagedSurfaceWidth = 0;
++        stagedSurfaceHeight = 0;
++        return true;
+     }
+
+-    void disableNativeResize() {
+-        if (!nativeResizeHooked || !targetHwnd) return;
+-        RemoveWindowSubclass(targetHwnd, resizeSubclassProc, 1);
+-        RemovePropA(targetHwnd, "DCompCompositor");
+-        nativeResizeHooked = false;
++    bool discardStagedSwapChain(IDXGISwapChain1* candidate = nullptr) {
++        if (!stagedVisual ||
++            (candidate && stagedSwapChain.Get() != candidate)) return true;
++        const HRESULT removeHr = rootVisual->RemoveVisual(stagedVisual.Get());
++        if (FAILED(removeHr) || FAILED(dcompDevice->Commit())) return false;
++        stagedVisual.Reset();
++        stagedSwapChain.Reset();
++        stagedSurfaceWidth = 0;
++        stagedSurfaceHeight = 0;
++        return true;
+     }
+
+     void shutdown() {
+         if (!initialized) return;
+
+-        // Remove native resize hook
+         disableNativeResize();
+
+         // Release DComp
+         if (dcompTarget) dcompTarget->SetRoot(nullptr);
+         if (dcompDevice) dcompDevice->Commit();
+
++        stagedVisual.Reset();
++        activeVisual.Reset();
+         rootVisual.Reset();
+         dcompTarget.Reset();
+         dcompDevice.Reset();
+-        swapChain.Reset();
+-
+-        // Release external device (zero-copy bridge)
+-        externalD3dContext.Reset();
+-        externalD3dDevice.Reset();
+-        zeroCopyMode = false;
++        stagedSwapChain.Reset();
++        activeSwapChain.Reset();
+
+         d3dContext.Reset();
+         d3dDevice.Reset();
+-        dxgiFactory.Reset();
+
+         initialized = false;
+         // Shutdown complete
+     }
+
+-    // Accessors
+-    bool isInitialized() const { return initialized; }
+-    bool isZeroCopyMode() const { return zeroCopyMode; }
+-    IDXGISwapChain1* getSwapChain() const { return swapChain.Get(); }
+-    IDCompositionDevice* getDCompDevice() const { return dcompDevice.Get(); }
+-    HWND getTargetHwnd() const { return targetHwnd; }
+-    ID3D11DeviceContext* getExternalD3dContext() const { return externalD3dContext.Get(); }
+-    ID3D11Device* getExternalD3dDevice() const { return externalD3dDevice.Get(); }
+-
+ private:
+-    HWND targetHwnd = NULL;
++    HWND targetHwnd = nullptr;
+     int surfaceWidth = 0;
+     int surfaceHeight = 0;
++    int viewportWidth = 0;
++    int viewportHeight = 0;
+     bool initialized = false;
++    bool nativeResizeHooked = false;
+
+     // D3D11 (fallback device for DComp init)
+     ComPtr<ID3D11Device> d3dDevice;
+     ComPtr<ID3D11DeviceContext> d3dContext;
+
+-    // DXGI
+-    ComPtr<IDXGIFactory2> dxgiFactory;
+-    ComPtr<IDXGISwapChain1> swapChain;
++    ComPtr<IDXGISwapChain1> activeSwapChain;
++    ComPtr<IDXGISwapChain1> stagedSwapChain;
++    int stagedSurfaceWidth = 0;
++    int stagedSurfaceHeight = 0;
+
+     // DirectComposition visual tree
+     ComPtr<IDCompositionDevice> dcompDevice;
+     ComPtr<IDCompositionTarget> dcompTarget;
+     ComPtr<IDCompositionVisual> rootVisual;
++    ComPtr<IDCompositionVisual> activeVisual;
++    ComPtr<IDCompositionVisual> stagedVisual;
++
++    HRESULT applyActiveTransform() {
++        const float scaleX = activeSwapChain && surfaceWidth > 0
++            ? static_cast<float>(viewportWidth) / surfaceWidth
++            : 1.0f;
++        const float scaleY = activeSwapChain && surfaceHeight > 0
++            ? static_cast<float>(viewportHeight) / surfaceHeight
++            : 1.0f;
++        const D2D_MATRIX_3X2_F transform = { scaleX, 0, 0, scaleY, 0, 0 };
++        return (activeVisual ? activeVisual.Get() : rootVisual.Get())
++            ->SetTransform(transform);
++    }
+
+-    // External D3D11 device (D3D11On12 from Dawn, for zero-copy bridge)
+-    ComPtr<ID3D11Device> externalD3dDevice;
+-    ComPtr<ID3D11DeviceContext> externalD3dContext;
++    HRESULT applyStagedTransform() {
++        const float scaleX = stagedSurfaceWidth > 0
++            ? static_cast<float>(viewportWidth) / stagedSurfaceWidth
++            : 1.0f;
++        const float scaleY = stagedSurfaceHeight > 0
++            ? static_cast<float>(viewportHeight) / stagedSurfaceHeight
++            : 1.0f;
++        const D2D_MATRIX_3X2_F transform = { scaleX, 0, 0, scaleY, 0, 0 };
++        return stagedVisual->SetTransform(transform);
++    }
+
+-    // Zero-copy mode: swap chain created on Dawn's D3D11On12 device
+-    bool zeroCopyMode = false;
++    bool enableNativeResize() {
++        if (!initialized || !targetHwnd) return false;
++        if (nativeResizeHooked) return true;
++        const UINT_PTR subclassId = reinterpret_cast<UINT_PTR>(this);
++        if (!SetWindowSubclass(
++                targetHwnd, resizeSubclassProc, subclassId,
++                reinterpret_cast<DWORD_PTR>(this))) {
++            printf("[DComp] SetWindowSubclass failed: %lu\n", GetLastError());
++            return false;
++        }
++        nativeResizeHooked = true;
++        return true;
++    }
+
+-    // Native resize hook
+-    bool nativeResizeHooked = false;
++    void disableNativeResize() {
++        if (nativeResizeHooked && targetHwnd) {
++            RemoveWindowSubclass(
++                targetHwnd, resizeSubclassProc, reinterpret_cast<UINT_PTR>(this));
++        }
++        nativeResizeHooked = false;
++        targetHwnd = nullptr;
++    }
+
+-    // Native subclass — handles WM_SIZE for auto-resize of swap chain.
+     static LRESULT CALLBACK resizeSubclassProc(
+-        HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+-        UINT_PTR subclassId, DWORD_PTR refData
+-    ) {
+-        auto* self = (DCompCompositor*)refData;
+-
+-        if (msg == WM_SIZE && wParam != SIZE_MINIMIZED) {
+-            int w = LOWORD(lParam);
+-            int h = HIWORD(lParam);
+-            if (self && self->isInitialized() && !self->isZeroCopyMode() && w > 0 && h > 0) {
+-                self->resize(w, h);
++        HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
++        UINT_PTR subclassId, DWORD_PTR refData) {
++        auto* self = reinterpret_cast<DCompCompositor*>(refData);
++        if (self && message == WM_SIZE && wParam != SIZE_MINIMIZED) {
++            const int width = LOWORD(lParam);
++            const int height = HIWORD(lParam);
++            if (width > 0 && height > 0 &&
++                !self->scaleActiveTo(width, height)) {
++                printf("[DComp] Failed to update active viewport on WM_SIZE\n");
+             }
++        } else if (self && message == WM_NCDESTROY) {
++            RemoveWindowSubclass(hwnd, resizeSubclassProc, subclassId);
++            self->nativeResizeHooked = false;
++            self->targetHwnd = nullptr;
+         }
+-
+-        return DefSubclassProc(hwnd, msg, wParam, lParam);
++        return DefSubclassProc(hwnd, message, wParam, lParam);
+     }
++
+ };
+diff --git a/package/src/native/win/nativeWrapper.cpp b/package/src/native/win/nativeWrapper.cpp
+index 006196c..ac80ab0 100644
+--- a/package/src/native/win/nativeWrapper.cpp
++++ b/package/src/native/win/nativeWrapper.cpp
+@@ -81,12 +81,14 @@
+ // DirectComposition compositor (GPU surface compositing for Windows)
+ #include "dcomp_compositor.h"
+
+-// DirectComposition zero-copy bridge state (per-surface)
+-// DCompBridgeState is defined later, after WGPU function pointer declarations.
+-// Forward declarations for the map:
++// DirectComposition zero-copy state is defined later, after WGPU declarations.
+ struct DCompBridgeState;
+-static std::map<void*, std::shared_ptr<DCompBridgeState>> g_dcompBridges;
++struct DCompSurfaceState;
++static std::map<void*, std::shared_ptr<DCompSurfaceState>> g_dcompSurfaces;
++static std::map<HWND, std::shared_ptr<DCompSurfaceState>> g_dcompSurfacesByHwnd;
++static std::map<void*, bool> g_dawnConfiguredSurfaces;
+ static std::mutex g_dcompBridgeMapMutex;
++static void releaseDCompStateForHwnd(HWND hwnd);
+
+ using namespace electrobun;
+
+@@ -4804,6 +4806,33 @@ public:
+     }
+ };
+
++static LRESULT CALLBACK WGPUViewWindowProc(
++    HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
++    if (message == WM_NCDESTROY) releaseDCompStateForHwnd(hwnd);
++    if (message == WM_ERASEBKGND) return 1;
++    if (message == WM_PAINT) {
++        PAINTSTRUCT paint = {};
++        BeginPaint(hwnd, &paint);
++        EndPaint(hwnd, &paint);
++        return 0;
++    }
++    return DefWindowProcW(hwnd, message, wParam, lParam);
++}
++
++static const wchar_t* ensureWGPUViewWindowClass() {
++    static const wchar_t className[] = L"ElectrobunWGPUView";
++    static const bool registered = []() {
++        WNDCLASSEXW windowClass = {};
++        windowClass.cbSize = sizeof(windowClass);
++        windowClass.lpfnWndProc = WGPUViewWindowProc;
++        windowClass.hInstance = GetModuleHandle(NULL);
++        windowClass.lpszClassName = className;
++        return RegisterClassExW(&windowClass) != 0 ||
++            GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
++    }();
++    return registered ? className : nullptr;
++}
++
+ // WGPUView class - simple native child window surface
+ class WGPUView : public AbstractView {
+ public:
+@@ -8764,9 +8793,14 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
+             // full-size WGPU view fills the drawable client area instead.
+             GetClientRect(containerHwnd, &physicalBounds);
+         }
++        const wchar_t* wgpuWindowClass = ensureWGPUViewWindowClass();
++        if (!wgpuWindowClass) {
++            ::log("ERROR: Failed to register WGPUView window class");
++            return;
++        }
+         view->hwnd = CreateWindowExW(
+-            0,
+-            L"STATIC",
++            WS_EX_NOREDIRECTIONBITMAP,
++            wgpuWindowClass,
+             L"",
+             WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+             physicalBounds.left,
+@@ -8884,6 +8918,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
+
+ typedef void* (*PFN_wgpuInstanceCreateSurface)(void* instance, const void* descriptor);
+ typedef void (*PFN_wgpuSurfaceConfigure)(void* surface, const void* config);
++typedef void (*PFN_wgpuSurfaceUnconfigure)(void* surface);
+ typedef void (*PFN_wgpuSurfaceGetCurrentTexture)(void* surface, void* surfaceTexture);
+ typedef int32_t (*PFN_wgpuSurfacePresent)(void* surface);
+ typedef WGPUFuture (*PFN_wgpuQueueOnSubmittedWorkDone)(WGPUQueue queue, WGPUQueueWorkDoneCallbackInfo callbackInfo);
+@@ -8896,6 +8931,7 @@ typedef void (*PFN_wgpuBufferUnmap)(WGPUBuffer buffer);
+ static HMODULE wgpuLibHandle = nullptr;
+ static PFN_wgpuInstanceCreateSurface p_wgpuInstanceCreateSurface = nullptr;
+ static PFN_wgpuSurfaceConfigure p_wgpuSurfaceConfigure = nullptr;
++static PFN_wgpuSurfaceUnconfigure p_wgpuSurfaceUnconfigure = nullptr;
+ static PFN_wgpuSurfaceGetCurrentTexture p_wgpuSurfaceGetCurrentTexture = nullptr;
+ static PFN_wgpuSurfacePresent p_wgpuSurfacePresent = nullptr;
+ static PFN_wgpuQueueOnSubmittedWorkDone p_wgpuQueueOnSubmittedWorkDone = nullptr;
+@@ -9024,7 +9060,8 @@ static bool ensureDCompSymbols() {
+
+ // DirectComposition zero-copy bridge state (per-surface)
+ struct DCompBridgeState {
+-    DCompCompositor compositor;
++    std::shared_ptr<DCompBridgeState> resizeSource;
++    ComPtr<IDXGISwapChain1> swapChain;
+     ComPtr<ID3D12Resource> stagingDx12;
+     ComPtr<ID3D11Device5> presentDevice;
+     ComPtr<ID3D11DeviceContext4> presentContext;
+@@ -9042,6 +9079,9 @@ struct DCompBridgeState {
+     WGPUDevice wgpuDevice = nullptr;
+     uint32_t width = 0;
+     uint32_t height = 0;
++    bool opaque = false;
++    uint64_t configureGeneration = 0;
++    bool resizeAttachedSwapChain = false;
+
+     void cleanup() {
+         std::lock_guard<std::mutex> lock(frameMutex);
+@@ -9079,12 +9119,34 @@ struct DCompBridgeState {
+         }
+         presentContext.Reset();
+         presentDevice.Reset();
+-        compositor.shutdown();
+     }
+
+     ~DCompBridgeState() { cleanup(); }
+ };
+
++struct DCompSurfaceState {
++    DCompCompositor compositor;
++    HWND hwnd = nullptr;
++    // Protected by g_dcompBridgeMapMutex. Late work from a released surface
++    // must not detach an HWND owner already claimed by its replacement.
++    void* boundSurface = nullptr;
++    // Serializes every operation that touches the shared immediate context or
++    // attached swap chain. Lock before mutex; never dispatch while holding it.
++    std::mutex presentMutex;
++    std::mutex mutex;
++    std::shared_ptr<DCompBridgeState> active;
++    std::shared_ptr<DCompBridgeState> retired;
++    std::shared_ptr<DCompBridgeState> pending;
++    std::shared_ptr<DCompBridgeState> inFlight;
++    WGPUDevice requestedDevice = nullptr;
++    uint32_t requestedWidth = 0;
++    uint32_t requestedHeight = 0;
++    bool requestedOpaque = false;
++    uint64_t configureGeneration = 0;
++
++    ~DCompSurfaceState() { compositor.shutdown(); }
++};
++
+ extern "C++" {
+
+ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
+@@ -9095,23 +9157,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
+         });
+ }
+
++static std::shared_ptr<DCompSurfaceState> makeDCompSurfaceState() {
++    return std::shared_ptr<DCompSurfaceState>(
++        new DCompSurfaceState(),
++        [](DCompSurfaceState* state) {
++            MainThreadDispatcher::dispatch_sync([state]() { delete state; });
++        });
++}
++
+ static void destroyDCompBridgeOnMainThread(std::shared_ptr<DCompBridgeState> bridge) {
+     bridge.reset();
+ }
+
++static void destroyDCompSurfaceOnMainThread(std::shared_ptr<DCompSurfaceState> state) {
++    state.reset();
++}
++
++// Requires g_dcompBridgeMapMutex.
++static void eraseDCompHwndOwnerLocked(
++    void* surface,
++    const std::shared_ptr<DCompSurfaceState>& state) {
++    if (!state || !state->hwnd || state->boundSurface != surface) return;
++    auto it = g_dcompSurfacesByHwnd.find(state->hwnd);
++    if (it != g_dcompSurfacesByHwnd.end() && it->second == state) {
++        g_dcompSurfacesByHwnd.erase(it);
++        state->boundSurface = nullptr;
++    }
++}
++
+ static void retireDCompBridge(
+     void* surface,
+     const std::shared_ptr<DCompBridgeState>& expectedBridge) {
+     std::shared_ptr<DCompBridgeState> retiredBridge;
++    std::shared_ptr<DCompSurfaceState> retiredSurface;
++    std::shared_ptr<DCompSurfaceState> surfaceState;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end() && it->second == expectedBridge) {
+-            retiredBridge = std::move(it->second);
+-            g_dcompBridges.erase(it);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end()) surfaceState = it->second;
++    }
++    if (surfaceState) {
++        std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            if (surfaceState->pending == expectedBridge) {
++                retiredBridge = std::move(surfaceState->pending);
++                if (surfaceState->inFlight == expectedBridge) {
++                    surfaceState->inFlight.reset();
++                }
++            } else if (surfaceState->active == expectedBridge) {
++                retiredSurface = it->second;
++                eraseDCompHwndOwnerLocked(surface, retiredSurface);
++                g_dcompSurfaces.erase(it);
++            } else if (surfaceState->inFlight == expectedBridge) {
++                retiredBridge = std::move(surfaceState->inFlight);
++            }
++            if (!retiredSurface && !surfaceState->active &&
++                !surfaceState->retired && !surfaceState->pending &&
++                !surfaceState->inFlight) {
++                retiredSurface = it->second;
++                eraseDCompHwndOwnerLocked(surface, retiredSurface);
++                g_dcompSurfaces.erase(it);
++            }
+         }
+     }
+     destroyDCompBridgeOnMainThread(std::move(retiredBridge));
++    destroyDCompSurfaceOnMainThread(std::move(retiredSurface));
+ }
+
+ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context) {
+@@ -9135,6 +9248,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
+     }
+ }
+
++enum class DCompResizeResult {
++    FailedBeforeResize,
++    FailedAfterResize,
++    Success,
++};
++
++// Preconditions: the caller owns surface.presentMutex, queued Dawn's fence
++// waits, and verified this bridge is still the current pending generation.
++static DCompResizeResult resizeAndPresentDCompBridge(DCompBridgeState& bridge) {
++    auto* context = bridge.presentContext.Get();
++    auto* device = bridge.presentDevice.Get();
++    auto* swapChain = bridge.swapChain.Get();
++    if (!context || !device || !swapChain || !bridge.presentStagingTex ||
++        bridge.width == 0 || bridge.height == 0) {
++        return DCompResizeResult::FailedBeforeResize;
++    }
++
++    context->ClearState();
++    if (!drainD3D11Context(device, context)) {
++        return DCompResizeResult::FailedBeforeResize;
++    }
++    HRESULT hr = swapChain->ResizeBuffers(
++        0, bridge.width, bridge.height, DXGI_FORMAT_UNKNOWN, 0);
++    if (FAILED(hr)) {
++        return DCompResizeResult::FailedBeforeResize;
++    }
++
++    ComPtr<ID3D11Texture2D> backBuffer;
++    hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
++    if (SUCCEEDED(hr)) {
++        context->CopyResource(backBuffer.Get(), bridge.presentStagingTex.Get());
++        backBuffer.Reset();
++        hr = swapChain->Present(0, DXGI_PRESENT_RESTART);
++    }
++    if (SUCCEEDED(hr)) {
++        hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
++    }
++    if (SUCCEEDED(hr)) {
++        context->CopyResource(backBuffer.Get(), bridge.presentStagingTex.Get());
++        const uint64_t fenceValue = bridge.presentationFenceValue + 1;
++        hr = context->Signal(bridge.presentationFence.Get(), fenceValue);
++        if (SUCCEEDED(hr)) {
++            bridge.presentationFenceValue = fenceValue;
++            bridge.presentationFencePending = true;
++            context->Flush();
++            hr = swapChain->Present(0, 0);
++        }
++    }
++    backBuffer.Reset();
++    if (FAILED(hr)) {
++        drainD3D11Context(device, context);
++        return DCompResizeResult::FailedAfterResize;
++    }
++    return DCompResizeResult::Success;
++}
++
+ } // extern "C++"
+
+ static std::wstring getExecutableDirW() {
+@@ -9171,7 +9340,8 @@ static HMODULE loadWgpuLibrary() {
+ }
+
+ static bool ensureWgpuSymbols() {
+-    if (p_wgpuInstanceCreateSurface && p_wgpuSurfaceConfigure && p_wgpuSurfaceGetCurrentTexture && p_wgpuSurfacePresent
++    if (p_wgpuInstanceCreateSurface && p_wgpuSurfaceConfigure && p_wgpuSurfaceUnconfigure &&
++        p_wgpuSurfaceGetCurrentTexture && p_wgpuSurfacePresent
+         && p_wgpuQueueOnSubmittedWorkDone && p_wgpuBufferMapAsync && p_wgpuInstanceWaitAny
+         && p_wgpuBufferGetMappedRange && p_wgpuBufferUnmap) {
+         return true;
+@@ -9180,6 +9350,7 @@ static bool ensureWgpuSymbols() {
+     if (!handle) return false;
+     p_wgpuInstanceCreateSurface = (PFN_wgpuInstanceCreateSurface)GetProcAddress(handle, "wgpuInstanceCreateSurface");
+     p_wgpuSurfaceConfigure = (PFN_wgpuSurfaceConfigure)GetProcAddress(handle, "wgpuSurfaceConfigure");
++    p_wgpuSurfaceUnconfigure = (PFN_wgpuSurfaceUnconfigure)GetProcAddress(handle, "wgpuSurfaceUnconfigure");
+     p_wgpuSurfaceGetCurrentTexture = (PFN_wgpuSurfaceGetCurrentTexture)GetProcAddress(handle, "wgpuSurfaceGetCurrentTexture");
+     p_wgpuSurfacePresent = (PFN_wgpuSurfacePresent)GetProcAddress(handle, "wgpuSurfacePresent");
+     p_wgpuQueueOnSubmittedWorkDone = (PFN_wgpuQueueOnSubmittedWorkDone)GetProcAddress(handle, "wgpuQueueOnSubmittedWorkDone");
+@@ -9188,7 +9359,8 @@ static bool ensureWgpuSymbols() {
+     p_wgpuBufferGetMappedRange = (PFN_wgpuBufferGetMappedRange)GetProcAddress(handle, "wgpuBufferGetMappedRange");
+     p_wgpuBufferGetConstMappedRange = (PFN_wgpuBufferGetConstMappedRange)GetProcAddress(handle, "wgpuBufferGetConstMappedRange");
+     p_wgpuBufferUnmap = (PFN_wgpuBufferUnmap)GetProcAddress(handle, "wgpuBufferUnmap");
+-    if (!p_wgpuInstanceCreateSurface || !p_wgpuSurfaceConfigure || !p_wgpuSurfaceGetCurrentTexture || !p_wgpuSurfacePresent
++    if (!p_wgpuInstanceCreateSurface || !p_wgpuSurfaceConfigure || !p_wgpuSurfaceUnconfigure ||
++        !p_wgpuSurfaceGetCurrentTexture || !p_wgpuSurfacePresent
+         || !p_wgpuQueueOnSubmittedWorkDone || !p_wgpuBufferMapAsync || !p_wgpuInstanceWaitAny
+         || !p_wgpuBufferGetMappedRange || !p_wgpuBufferUnmap) {
+         ::log("WGPU: missing symbols");
+@@ -9737,6 +9909,53 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
+ static std::map<void*, HWND> g_surfaceToHwnd;
+ static std::mutex g_surfaceToHwndMutex;
+
++extern "C++" {
++static void releaseDCompStateForHwnd(HWND hwnd) {
++    if (!hwnd) return;
++
++    std::shared_ptr<DCompSurfaceState> state;
++    {
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfacesByHwnd.find(hwnd);
++        if (it != g_dcompSurfacesByHwnd.end()) state = it->second;
++    }
++    if (state) {
++        std::lock_guard<std::mutex> presentLock(state->presentMutex);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto owner = g_dcompSurfacesByHwnd.find(hwnd);
++        if (owner != g_dcompSurfacesByHwnd.end() && owner->second == state) {
++            {
++                std::lock_guard<std::mutex> stateLock(state->mutex);
++                if (state->active) state->active->unusable.store(true);
++                if (state->pending) state->pending->unusable.store(true);
++                if (state->retired) state->retired->unusable.store(true);
++                if (state->inFlight) state->inFlight->unusable.store(true);
++            }
++            for (auto it = g_dcompSurfaces.begin();
++                 it != g_dcompSurfaces.end();) {
++                if (it->second == state) {
++                    it = g_dcompSurfaces.erase(it);
++                } else {
++                    ++it;
++                }
++            }
++            g_dcompSurfacesByHwnd.erase(owner);
++        }
++    }
++    {
++        std::lock_guard<std::mutex> hwndLock(g_surfaceToHwndMutex);
++        for (auto it = g_surfaceToHwnd.begin(); it != g_surfaceToHwnd.end();) {
++            if (it->second == hwnd) {
++                it = g_surfaceToHwnd.erase(it);
++            } else {
++                ++it;
++            }
++        }
++    }
++    destroyDCompSurfaceOnMainThread(std::move(state));
++}
++} // extern "C++"
++
+ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractView* abstractView) {
+     if (!wgpuInstance || !abstractView || !abstractView->hwnd) {
+         printf("[WGPU] createSurfaceForView: null check failed (inst=%p view=%p hwnd=%p)\n",
+@@ -9770,30 +9989,18 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
+
+ // Helper: Initialize DComp zero-copy bridge for a surface.
+ // Returns true on success, false if DComp is unavailable or init fails.
+-static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t width, uint32_t height) {
+-    if (!isDCompAvailable()) return false;
+-    if (!ensureDCompSymbols()) return false;
++static std::shared_ptr<DCompBridgeState> createDCompBridgeForSurface(
++    const std::shared_ptr<DCompSurfaceState>& surfaceState,
++    void* devicePtr,
++    uint32_t width,
++    uint32_t height,
++    bool opaque,
++    const std::shared_ptr<DCompBridgeState>& resizeSource = nullptr) {
++    if (!isDCompAvailable()) return nullptr;
++    if (!ensureDCompSymbols()) return nullptr;
+
+     WGPUDevice device = (WGPUDevice)devicePtr;
+
+-    // Look up the HWND this surface was created for
+-    HWND hwnd = nullptr;
+-    {
+-        std::lock_guard<std::mutex> lock(g_surfaceToHwndMutex);
+-        auto it = g_surfaceToHwnd.find(surface);
+-        if (it != g_surfaceToHwnd.end()) hwnd = it->second;
+-    }
+-    if (!hwnd) {
+-        printf("[DComp] No HWND mapping for surface=%p, skipping DComp bridge\n", surface);
+-        return false;
+-    }
+-
+-    // Use the view's own HWND for the DComp target — not the top-level window.
+-    // Each WGPU view is a child window positioned within its parent.
+-    // Targeting the child HWND ensures content renders at (0,0) of the view,
+-    // which the window manager already positions correctly.
+-    HWND targetHwnd = hwnd;
+-
+     // Require DXGI shared handle feature for cross-device sharing
+     bool hasDXGISharedHandle = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedTextureMemoryDXGISharedHandle);
+     bool hasSharedFence = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedFenceDXGISharedHandle);
+@@ -9801,82 +10008,88 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+
+     if (!hasDXGISharedHandle || !hasSharedFence) {
+         printf("[DComp] Zero-copy bridge requires DXGI shared texture and fence support\n");
+-        return false;
++        return nullptr;
+     }
+
+     auto bridge = makeDCompBridge();
+     bridge->wgpuDevice = device;
+     bridge->width = width;
+     bridge->height = height;
++    bridge->opaque = opaque;
+
+-    // Step 1: Init DComp compositor (visual tree) on main thread
+-    bool compOk = false;
+-    MainThreadDispatcher::dispatch_sync([&]() {
+-        compOk = bridge->compositor.initMinimal(targetHwnd, width, height);
+-    });
+-    if (!compOk) {
+-        printf("[DComp] initMinimal failed for HWND=%p\n", targetHwnd);
+-        return false;
+-    }
+
+     // Step 2: Get Dawn's DX12 device to find the DXGI adapter
+     auto dx12Device = dawn::native::d3d12::GetD3D12Device(device);
+     if (!dx12Device) {
+         printf("[DComp] GetD3D12Device failed\n");
+-        return false;
+-    }
+-
+-    // Step 3: Create dedicated presentation D3D11 device on Dawn's adapter
+-    LUID adapterLuid = dx12Device->GetAdapterLuid();
+-    ComPtr<IDXGIFactory4> dxgiFactory;
+-    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
+-    if (FAILED(hr)) {
+-        printf("[DComp] CreateDXGIFactory1 failed: 0x%08lx\n", hr);
+-        return false;
+-    }
+-    ComPtr<IDXGIAdapter> adapter;
+-    hr = dxgiFactory->EnumAdapterByLuid(adapterLuid, IID_PPV_ARGS(&adapter));
+-    if (FAILED(hr)) {
+-        printf("[DComp] EnumAdapterByLuid failed: 0x%08lx\n", hr);
+-        return false;
++        return nullptr;
+     }
+
++    HRESULT hr = S_OK;
+     ComPtr<ID3D11Device> baseDevice;
+-    D3D_FEATURE_LEVEL featureLevel;
+-    hr = D3D11CreateDevice(
+-        adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+-        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+-        nullptr, 0, D3D11_SDK_VERSION,
+-        &baseDevice, &featureLevel, nullptr);
+-    if (FAILED(hr)) {
+-        printf("[DComp] Presentation D3D11CreateDevice failed: 0x%08lx\n", hr);
+-        return false;
+-    }
++    if (resizeSource && resizeSource->wgpuDevice == device &&
++        resizeSource->opaque == opaque && resizeSource->presentDevice &&
++        resizeSource->presentContext) {
++        bridge->presentDevice = resizeSource->presentDevice;
++        bridge->presentContext = resizeSource->presentContext;
++        hr = bridge->presentDevice.As(&baseDevice);
++        if (FAILED(hr)) {
++            printf("[DComp] Presentation device QI for ID3D11Device failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
++    } else {
++        // Step 3: Create a dedicated presentation D3D11 device on Dawn's adapter.
++        LUID adapterLuid = dx12Device->GetAdapterLuid();
++        ComPtr<IDXGIFactory4> dxgiFactory;
++        hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
++        if (FAILED(hr)) {
++            printf("[DComp] CreateDXGIFactory1 failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
++        ComPtr<IDXGIAdapter> adapter;
++        hr = dxgiFactory->EnumAdapterByLuid(adapterLuid, IID_PPV_ARGS(&adapter));
++        if (FAILED(hr)) {
++            printf("[DComp] EnumAdapterByLuid failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
+
+-    hr = baseDevice.As(&bridge->presentDevice);
+-    if (FAILED(hr)) {
+-        printf("[DComp] Presentation device QI for ID3D11Device5 failed: 0x%08lx\n", hr);
+-        return false;
+-    }
++        D3D_FEATURE_LEVEL featureLevel;
++        hr = D3D11CreateDevice(
++            adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
++            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
++            nullptr, 0, D3D11_SDK_VERSION,
++            &baseDevice, &featureLevel, nullptr);
++        if (FAILED(hr)) {
++            printf("[DComp] Presentation D3D11CreateDevice failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
+
+-    ComPtr<ID3D11DeviceContext> baseCtx;
+-    bridge->presentDevice->GetImmediateContext(&baseCtx);
+-    hr = baseCtx.As(&bridge->presentContext);
+-    if (FAILED(hr)) {
+-        printf("[DComp] Presentation context QI for ID3D11DeviceContext4 failed: 0x%08lx\n", hr);
+-        return false;
+-    }
++        hr = baseDevice.As(&bridge->presentDevice);
++        if (FAILED(hr)) {
++            printf("[DComp] Presentation device QI for ID3D11Device5 failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
+
+-    // Presentation device ready
++        ComPtr<ID3D11DeviceContext> baseCtx;
++        bridge->presentDevice->GetImmediateContext(&baseCtx);
++        hr = baseCtx.As(&bridge->presentContext);
++        if (FAILED(hr)) {
++            printf("[DComp] Presentation context QI for ID3D11DeviceContext4 failed: 0x%08lx\n", hr);
++            return nullptr;
++        }
+
+-    // Step 4: Create swap chain on the presentation device
++    }
++    // A resize gets a fresh pending swap chain. Mutating the swap chain that
++    // DWM is currently displaying can expose a transient frame during resize.
+     bool swapChainOk = false;
+     MainThreadDispatcher::dispatch_sync([&]() {
+-        swapChainOk = bridge->compositor.initSwapChainFromDevice(baseDevice.Get(), width, height);
++        std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++        swapChainOk = surfaceState->compositor.createSwapChainFromDevice(
++            baseDevice.Get(), width, height, &bridge->swapChain);
+     });
+     if (!swapChainOk) {
+-        printf("[DComp] initSwapChainFromDevice on presentation device failed\n");
+-        return false;
++        printf("[DComp] createSwapChainFromDevice on presentation device failed\n");
++        return nullptr;
+     }
+
+     // Step 5: Create DX12 staging texture with shared access
+@@ -9899,7 +10112,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+         nullptr, IID_PPV_ARGS(&bridge->stagingDx12));
+     if (FAILED(hr)) {
+         printf("[DComp] CreateCommittedResource (staging) failed: 0x%08lx\n", hr);
+-        return false;
++        return nullptr;
+     }
+
+     // Step 6: Create DXGI shared handle
+@@ -9908,7 +10121,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+         GENERIC_ALL, nullptr, &bridge->stagingSharedHandle);
+     if (FAILED(hr)) {
+         printf("[DComp] CreateSharedHandle failed: 0x%08lx\n", hr);
+-        return false;
++        return nullptr;
+     }
+
+     // Step 7: Set up bidirectional cross-device synchronization. EndAccess
+@@ -9942,7 +10155,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+
+     if (FAILED(hr) || !bridge->presentationSharedFence) {
+         printf("[DComp] Shared presentation fence setup failed; using normal HWND surface\n");
+-        return false;
++        return nullptr;
+     }
+
+     // Step 8: Open shared handle on presentation device for CopyResource
+@@ -9954,7 +10167,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+     }
+     if (FAILED(hr)) {
+         printf("[DComp] OpenSharedResource1 on presentation device failed: 0x%08lx\n", hr);
+-        return false;
++        return nullptr;
+     }
+     // Staging texture shared to presentation device
+
+@@ -9970,7 +10183,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+
+     if (!bridge->sharedTexMem) {
+         printf("[DComp] wgpuDeviceImportSharedTextureMemory returned null\n");
+-        return false;
++        return nullptr;
+     }
+
+     // Verify properties
+@@ -9978,7 +10191,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+     WGPUStatus propStatus = p_wgpuSharedTextureMemoryGetProperties(bridge->sharedTexMem, &props);
+     if (propStatus != WGPUStatus_Success) {
+         printf("[DComp] SharedTextureMemory properties failed (status=%d)\n", propStatus);
+-        return false;
++        return nullptr;
+     }
+     // SharedTextureMemory imported successfully
+
+@@ -9998,75 +10211,236 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+     bridge->zeroCopyTexture = p_wgpuSharedTextureMemoryCreateTexture(bridge->sharedTexMem, &wgpuTexDesc);
+     if (!bridge->zeroCopyTexture) {
+         printf("[DComp] wgpuSharedTextureMemoryCreateTexture returned null\n");
+-        return false;
++        return nullptr;
+     }
+
+-    // Install the HWND subclass only after every fallible initialization step
+-    // has succeeded. A partial bridge can then be destroyed without leaving a
+-    // callback/property that points at freed state.
+-    MainThreadDispatcher::dispatch_sync([&]() {
+-        bridge->compositor.enableNativeResize();
+-    });
++    return bridge;
++}
+
+-    // Zero-copy bridge initialized
++static void configureDawnSurface(void* surface, void* config) {
++    runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceConfigure(surface, config); });
++    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++    g_dawnConfiguredSurfaces[surface] = true;
++}
+
+-    // Store the bridge
++static void unconfigureDawnSurface(void* surface) {
++    bool configured = false;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        g_dcompBridges[surface] = std::move(bridge);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        configured = g_dawnConfiguredSurfaces.erase(surface) > 0;
+     }
++    if (configured) {
++        runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceUnconfigure(surface); });
++    }
++}
+
+-    return true;
++static bool isDawnSurfaceConfigured(void* surface) {
++    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++    return g_dawnConfiguredSurfaces.find(surface) !=
++        g_dawnConfiguredSurfaces.end();
+ }
+
+ ELECTROBUN_EXPORT void wgpuSurfaceConfigureMainThread(void* surface, void* config) {
+     if (!ensureWgpuSymbols()) return;
+-    runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceConfigure(surface, config); });
+
+-    // Initialize or resize DComp zero-copy bridge for this surface.
+-    // WGPUSurfaceConfiguration struct layout (64-bit):
+-    //   nextInChain(ptr,8) + device(ptr,8) + format(u32,4) + pad(4) + usage(u64,8) +
+-    //   width(u32,4) + height(u32,4) + viewFormatCount(size_t,8) + viewFormats(ptr,8) +
+-    //   alphaMode(u32,4) + presentMode(u32,4)
+-    // device at offset 8, width at offset 32, height at offset 36
+-    void* devicePtr = *((void**)((uint8_t*)config + 8));
+-    uint32_t width = *((uint32_t*)((uint8_t*)config + 32));
+-    uint32_t height = *((uint32_t*)((uint8_t*)config + 36));
+-
+-    if (!devicePtr || width == 0 || height == 0) return;
+-
+-    // The bridge owns fixed-size D3D11/D3D12 textures. Reuse it only when
+-    // both the dimensions and Dawn device are unchanged.
+-    std::shared_ptr<DCompBridgeState> staleBridge;
++    const auto* surfaceConfig =
++        static_cast<const WGPUSurfaceConfiguration*>(config);
++    void* devicePtr = surfaceConfig->device;
++    uint32_t width = surfaceConfig->width;
++    uint32_t height = surfaceConfig->height;
++    const bool opaque =
++        surfaceConfig->alphaMode == WGPUCompositeAlphaMode_Opaque;
++    if (!devicePtr || width == 0 || height == 0 || !isDCompAvailable() ||
++        !ensureDCompSymbols()) {
++        configureDawnSurface(surface, config);
++        return;
++    }
++
++    HWND hwnd = nullptr;
++    {
++        std::lock_guard<std::mutex> hwndLock(g_surfaceToHwndMutex);
++        auto it = g_surfaceToHwnd.find(surface);
++        if (it != g_surfaceToHwnd.end()) hwnd = it->second;
++    }
++    if (!hwnd) {
++        configureDawnSurface(surface, config);
++        return;
++    }
++    unconfigureDawnSurface(surface);
++
++    std::shared_ptr<DCompSurfaceState> surfaceState;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end()) {
+-            if (it->second->wgpuDevice == devicePtr &&
+-                it->second->width == width && it->second->height == height) {
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end()) surfaceState = it->second;
++    }
++
++    if (!surfaceState) {
++        auto candidate = makeDCompSurfaceState();
++        candidate->hwnd = hwnd;
++        MainThreadDispatcher::dispatch_sync([&]() {
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto current = g_dcompSurfaces.find(surface);
++            if (current != g_dcompSurfaces.end()) {
++                surfaceState = current->second;
+                 return;
+             }
+-            staleBridge = std::move(it->second);
+-            g_dcompBridges.erase(it);
++
++            auto owner = g_dcompSurfacesByHwnd.find(hwnd);
++            if (owner != g_dcompSurfacesByHwnd.end()) {
++                surfaceState = owner->second;
++            } else {
++                if (!candidate->compositor.initMinimal(hwnd, width, height)) {
++                    return;
++                }
++                surfaceState = candidate;
++                g_dcompSurfacesByHwnd.emplace(hwnd, surfaceState);
++            }
++
++            if (surfaceState->boundSurface &&
++                surfaceState->boundSurface != surface) {
++                g_dcompSurfaces.erase(surfaceState->boundSurface);
++            }
++            surfaceState->boundSurface = surface;
++            g_dcompSurfaces[surface] = surfaceState;
++        });
++        if (!surfaceState) {
++            configureDawnSurface(surface, config);
++            return;
+         }
+     }
+
+-    destroyDCompBridgeOnMainThread(std::move(staleBridge));
++    // A configure changes only the pending generation. The active swap chain
++    // remains attached; the HWND subclass owns the current viewport transform.
++    std::shared_ptr<DCompBridgeState> retiredPending;
++    std::shared_ptr<DCompBridgeState> resizeSource;
++    bool activeMatches = false;
++    uint64_t configureGeneration = 0;
++    {
++        std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++        std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++        configureGeneration = ++surfaceState->configureGeneration;
++        surfaceState->requestedDevice = (WGPUDevice)devicePtr;
++        surfaceState->requestedWidth = width;
++        surfaceState->requestedHeight = height;
++        surfaceState->requestedOpaque = opaque;
++        retiredPending = std::move(surfaceState->pending);
++        activeMatches =
++            surfaceState->active &&
++            surfaceState->active->wgpuDevice == devicePtr &&
++            surfaceState->active->width == width &&
++            surfaceState->active->height == height &&
++            surfaceState->active->opaque == opaque;
++        if (!activeMatches && surfaceState->active &&
++            !surfaceState->active->unusable.load() &&
++            surfaceState->active->wgpuDevice == devicePtr &&
++            surfaceState->active->opaque == opaque) {
++            resizeSource = surfaceState->active;
++        }
++    }
++    if (retiredPending) {
++        auto retiredSwapChain = retiredPending->swapChain;
++        MainThreadDispatcher::dispatch_sync([&]() {
++            surfaceState->compositor.discardStagedSwapChain(
++                retiredSwapChain.Get());
++        });
++    }
++    destroyDCompBridgeOnMainThread(std::move(retiredPending));
++    if (activeMatches) return;
+
+-    // Try to initialize DComp bridge (graceful fallback on failure)
+-    initDCompBridgeForSurface(surface, devicePtr, width, height);
++    auto pending = createDCompBridgeForSurface(
++        surfaceState, devicePtr, width, height, opaque, resizeSource);
++    if (!pending) {
++        // If there has never been a successful frame, remove the empty DComp
++        // target so Dawn's normal HWND path remains the fallback.
++        std::shared_ptr<DCompSurfaceState> emptySurface;
++        bool useDawnFallback = false;
++        {
++            std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                if (surfaceState->configureGeneration == configureGeneration &&
++                    !surfaceState->active && !surfaceState->pending &&
++                    !surfaceState->inFlight) {
++                    emptySurface = it->second;
++                    eraseDCompHwndOwnerLocked(surface, emptySurface);
++                    g_dcompSurfaces.erase(it);
++                    useDawnFallback = true;
++                }
++            }
++        }
++        destroyDCompSurfaceOnMainThread(std::move(emptySurface));
++        if (useDawnFallback) configureDawnSurface(surface, config);
++        return;
++    }
++
++    std::shared_ptr<DCompBridgeState> replacedPending;
++    bool installed = false;
++    {
++        std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            if (surfaceState->configureGeneration == configureGeneration &&
++                (!resizeSource || surfaceState->active == resizeSource)) {
++                replacedPending = std::move(surfaceState->pending);
++                pending->configureGeneration = configureGeneration;
++                surfaceState->pending = pending;
++                installed = true;
++            }
++        }
++    }
++    destroyDCompBridgeOnMainThread(std::move(replacedPending));
++    if (!installed) destroyDCompBridgeOnMainThread(std::move(pending));
++}
++
++ELECTROBUN_EXPORT void wgpuSurfaceUnconfigureMainThread(void* surface) {
++    if (!surface || !ensureWgpuSymbols()) return;
++    unconfigureDawnSurface(surface);
+ }
+
+ ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
+     if (!surface) return;
++    if (ensureWgpuSymbols()) unconfigureDawnSurface(surface);
+
+-    std::shared_ptr<DCompBridgeState> bridge;
++    std::shared_ptr<DCompSurfaceState> surfaceState;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end()) {
+-            bridge = std::move(it->second);
+-            g_dcompBridges.erase(it);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end()) surfaceState = it->second;
++    }
++    std::shared_ptr<DCompBridgeState> abandonedPending;
++    std::shared_ptr<DCompBridgeState> abandonedInFlight;
++    if (surfaceState) {
++        std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            ++surfaceState->configureGeneration;
++            surfaceState->requestedDevice = nullptr;
++            surfaceState->requestedWidth = 0;
++            surfaceState->requestedHeight = 0;
++            surfaceState->requestedOpaque = false;
++            if (surfaceState->pending) {
++                surfaceState->pending->unusable.store(true);
++            }
++            abandonedPending = std::move(surfaceState->pending);
++            if (surfaceState->inFlight != surfaceState->active) {
++                if (surfaceState->inFlight) {
++                    surfaceState->inFlight->unusable.store(true);
++                }
++                abandonedInFlight = std::move(surfaceState->inFlight);
++            } else {
++                surfaceState->inFlight.reset();
++            }
++            if (surfaceState->boundSurface == surface) {
++                surfaceState->boundSurface = nullptr;
++            }
++            g_dcompSurfaces.erase(it);
+         }
+     }
+     {
+@@ -10074,25 +10448,84 @@ ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
+         g_surfaceToHwnd.erase(surface);
+     }
+
+-    destroyDCompBridgeOnMainThread(std::move(bridge));
++    // Keep the active DComp swap chain owned by the HWND. A replacement
++    // WGPUSurface will claim it and promote only after its first Present.
++    if (abandonedPending) {
++        auto abandonedSwapChain = abandonedPending->swapChain;
++        MainThreadDispatcher::dispatch_sync([&]() {
++            surfaceState->compositor.discardStagedSwapChain(
++                abandonedSwapChain.Get());
++        });
++    }
++    destroyDCompBridgeOnMainThread(std::move(abandonedPending));
++    destroyDCompBridgeOnMainThread(std::move(abandonedInFlight));
+     if (ensureDCompSymbols() && p_wgpuSurfaceRelease) {
+         p_wgpuSurfaceRelease((WGPUSurface)surface);
+     }
+ }
+
++static void writeDCompSurfaceTexture(
++    void* surfaceTexture,
++    WGPUTexture texture,
++    WGPUSurfaceGetCurrentTextureStatus status) {
++    static_assert(sizeof(WGPUSurfaceTexture) == 24);
++    auto* result = static_cast<WGPUSurfaceTexture*>(surfaceTexture);
++    std::memset(result, 0, sizeof(*result));
++    result->nextInChain = nullptr;
++    result->texture = texture;
++    result->status = status;
++}
++
++static void writeDCompSurfaceOutdated(void* surfaceTexture) {
++    writeDCompSurfaceTexture(
++        surfaceTexture, nullptr, WGPUSurfaceGetCurrentTextureStatus_Outdated);
++}
++
++static bool hasMismatchedDCompActive(
++    void* surface,
++    const std::shared_ptr<DCompSurfaceState>& expectedState) {
++    if (!expectedState) return false;
++    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++    auto it = g_dcompSurfaces.find(surface);
++    if (it == g_dcompSurfaces.end() || it->second != expectedState) return false;
++    std::lock_guard<std::mutex> stateLock(expectedState->mutex);
++    return expectedState->active &&
++        (expectedState->active->wgpuDevice != expectedState->requestedDevice ||
++         expectedState->active->width != expectedState->requestedWidth ||
++         expectedState->active->height != expectedState->requestedHeight ||
++         expectedState->active->opaque != expectedState->requestedOpaque);
++}
++
+ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, void* surfaceTexture) {
+     if (!ensureWgpuSymbols()) return;
+
+     // Check for DComp bridge
++    std::shared_ptr<DCompSurfaceState> surfaceState;
+     std::shared_ptr<DCompBridgeState> bridge;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end()) bridge = it->second;
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end()) {
++            surfaceState = it->second;
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            bridge = surfaceState->pending;
++            if (!bridge && surfaceState->active &&
++                surfaceState->active->wgpuDevice == surfaceState->requestedDevice &&
++                surfaceState->active->width == surfaceState->requestedWidth &&
++                surfaceState->active->height == surfaceState->requestedHeight &&
++                surfaceState->active->opaque == surfaceState->requestedOpaque) {
++                bridge = surfaceState->active;
++            }
++        }
+     }
+
+     if (bridge && bridge->zeroCopyTexture && !bridge->unusable.load()) {
+         std::unique_lock<std::mutex> lock(bridge->frameMutex);
++        if (bridge->unusable.load()) {
++            lock.unlock();
++            writeDCompSurfaceOutdated(surfaceTexture);
++            return;
++        }
+         auto retireBridge = [&]() {
+             bridge->unusable.store(true);
+             lock.unlock();
+@@ -10114,8 +10547,7 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+                     "[DComp] Failed to abandon previous access (status=%d); retiring bridge\n",
+                     abandonedStatus);
+                 retireBridge();
+-                runOnMainThreadSyncVoid(
+-                    [&]() { p_wgpuSurfaceGetCurrentTexture(surface, surfaceTexture); });
++                writeDCompSurfaceOutdated(surfaceTexture);
+                 return;
+             }
+         }
+@@ -10141,47 +10573,327 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+         if (status == WGPUStatus_Success) {
+             bridge->presentationFencePending = false;
+             bridge->accessActive = true;
+-            // Add a reference — callers release the texture after each frame
+-            // (standard WGPU surface pattern), so we need an extra ref to keep it alive.
+-            p_wgpuTextureAddRef(bridge->zeroCopyTexture);
++            // Configure may replace pending between GetCurrentTexture and
++            // publication. Revalidate under the presentation transaction lock
++            // before exposing this generation to the caller.
++            std::shared_ptr<DCompBridgeState> abandonedFrame;
++            bool published = false;
++            if (surfaceState) {
++                std::lock_guard<std::mutex> presentLock(surfaceState->presentMutex);
++                std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++                auto it = g_dcompSurfaces.find(surface);
++                if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                    std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                    const bool requestMatches =
++                        bridge->wgpuDevice == surfaceState->requestedDevice &&
++                        bridge->width == surfaceState->requestedWidth &&
++                        bridge->height == surfaceState->requestedHeight &&
++                        bridge->opaque == surfaceState->requestedOpaque;
++                    const bool currentPending =
++                        requestMatches && surfaceState->pending == bridge &&
++                        bridge->configureGeneration ==
++                            surfaceState->configureGeneration;
++                    const bool currentActive =
++                        requestMatches && surfaceState->active == bridge;
++                    if (currentPending || currentActive) {
++                        abandonedFrame = std::move(surfaceState->inFlight);
++                        surfaceState->inFlight = bridge;
++                        published = true;
++                    }
++                }
++            }
+
+-            // Fill the WGPUSurfaceTexture struct with our shared texture
+-            // WGPUSurfaceTexture layout: nextInChain(ptr,8) + texture(ptr,8) + status(u32,4)
+-            *((void**)surfaceTexture) = nullptr;                          // nextInChain = NULL
+-            *((void**)((uint8_t*)surfaceTexture + 8)) = bridge->zeroCopyTexture;  // texture
+-            *((uint32_t*)((uint8_t*)surfaceTexture + 16)) = WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal;  // status
++            if (!published) {
++                WGPUSharedTextureMemoryEndAccessState abandonedState =
++                    WGPU_SHARED_TEXTURE_MEMORY_END_ACCESS_STATE_INIT;
++                const WGPUStatus abandonedStatus =
++                    p_wgpuSharedTextureMemoryEndAccess(
++                    bridge->sharedTexMem, bridge->zeroCopyTexture, &abandonedState);
++                p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(abandonedState);
++                bridge->accessActive = false;
++                lock.unlock();
++                if (abandonedStatus != WGPUStatus_Success) {
++                    bridge->unusable.store(true);
++                    retireDCompBridge(surface, bridge);
++                }
++                writeDCompSurfaceOutdated(surfaceTexture);
++                return;
++            }
++            // Add a reference — callers release the texture after each frame.
++            p_wgpuTextureAddRef(bridge->zeroCopyTexture);
++            writeDCompSurfaceTexture(
++                surfaceTexture,
++                bridge->zeroCopyTexture,
++                WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal);
++            lock.unlock();
++            destroyDCompBridgeOnMainThread(std::move(abandonedFrame));
+             return;
+         }
+         printf("[DComp] BeginAccess failed (status=%d); retiring bridge\n", status);
+         retireBridge();
++        writeDCompSurfaceOutdated(surfaceTexture);
++        return;
+     }
+
+-    // Normal HWND path
++    // A mismatched active DComp visual deliberately remains visible while a
++    // replacement is retried. Returning Dawn's HWND texture here would render
++    // underneath that visual forever, so ask the JS adapter to reconfigure.
++    if (hasMismatchedDCompActive(surface, surfaceState)) {
++        writeDCompSurfaceOutdated(surfaceTexture);
++        return;
++    }
++
++    if (!isDawnSurfaceConfigured(surface)) {
++        writeDCompSurfaceOutdated(surfaceTexture);
++        return;
++    }
++
++    // Explicit normal HWND fallback path.
+     runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceGetCurrentTexture(surface, surfaceTexture); });
+ }
+
++static int32_t presentResizedDCompBridgeOnMainThread(
++    void* surface,
++    const std::shared_ptr<DCompSurfaceState>& surfaceState,
++    std::shared_ptr<DCompBridgeState> bridge) {
++    bool retireBridge = false;
++    std::shared_ptr<DCompBridgeState> expiredActive;
++    std::shared_ptr<DCompSurfaceState> detachedSurface;
++
++    const int32_t result = [&]() -> int32_t {
++        std::unique_lock<std::mutex> frameLock(bridge->frameMutex);
++        std::unique_lock<std::mutex> presentLock(surfaceState->presentMutex);
++
++        bool claimed = false;
++        bool current = false;
++        {
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                if (surfaceState->inFlight == bridge) {
++                    auto claimedBridge = std::move(surfaceState->inFlight);
++                    bridge = std::move(claimedBridge);
++                    claimed = true;
++                    current =
++                        surfaceState->pending == bridge &&
++                        surfaceState->active == bridge->resizeSource &&
++                        bridge->configureGeneration ==
++                            surfaceState->configureGeneration &&
++                        bridge->wgpuDevice == surfaceState->requestedDevice &&
++                        bridge->width == surfaceState->requestedWidth &&
++                        bridge->height == surfaceState->requestedHeight &&
++                        bridge->opaque == surfaceState->requestedOpaque &&
++                        bridge->resizeSource &&
++                        !bridge->resizeSource->unusable.load() &&
++                        bridge->swapChain.Get() ==
++                            bridge->resizeSource->swapChain.Get();
++                }
++            }
++        }
++
++        if (!claimed || !bridge->accessActive || bridge->unusable.load()) {
++            return 0;
++        }
++
++        auto detachSurface = [&]() {
++            bridge->unusable.store(true);
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it == g_dcompSurfaces.end() || it->second != surfaceState) return;
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            if (surfaceState->active) surfaceState->active->unusable.store(true);
++            if (surfaceState->pending) surfaceState->pending->unusable.store(true);
++            if (surfaceState->retired) surfaceState->retired->unusable.store(true);
++            detachedSurface = it->second;
++            eraseDCompHwndOwnerLocked(surface, detachedSurface);
++            g_dcompSurfaces.erase(it);
++        };
++
++        bridge->accessActive = false;
++        WGPUSharedTextureMemoryEndAccessState endState =
++            WGPU_SHARED_TEXTURE_MEMORY_END_ACCESS_STATE_INIT;
++        const WGPUStatus status = p_wgpuSharedTextureMemoryEndAccess(
++            bridge->sharedTexMem, bridge->zeroCopyTexture, &endState);
++        if (status != WGPUStatus_Success) {
++            p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
++            bridge->unusable.store(true);
++            retireBridge = true;
++            return 0;
++        }
++
++        bool dawnFenceWaitQueued = endState.fenceCount > 0;
++        for (size_t i = 0; i < endState.fenceCount; i++) {
++            WGPUSharedFenceDXGISharedHandleExportInfo dxgiExport =
++                WGPU_SHARED_FENCE_DXGI_SHARED_HANDLE_EXPORT_INFO_INIT;
++            WGPUSharedFenceExportInfo exportInfo =
++                WGPU_SHARED_FENCE_EXPORT_INFO_INIT;
++            exportInfo.nextInChain =
++                reinterpret_cast<WGPUChainedStruct*>(&dxgiExport);
++            p_wgpuSharedFenceExportInfo(endState.fences[i], &exportInfo);
++
++            if (exportInfo.type != WGPUSharedFenceType_DXGISharedHandle ||
++                !dxgiExport.handle) {
++                dawnFenceWaitQueued = false;
++                break;
++            }
++
++            ComPtr<ID3D11Fence> d3d11Fence;
++            const HRESULT fenceHr = bridge->presentDevice->OpenSharedFence(
++                dxgiExport.handle, IID_PPV_ARGS(&d3d11Fence));
++            if (FAILED(fenceHr) || !d3d11Fence ||
++                FAILED(bridge->presentContext->Wait(
++                    d3d11Fence.Get(), endState.signaledValues[i]))) {
++                dawnFenceWaitQueued = false;
++                break;
++            }
++        }
++        p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
++
++        if (!dawnFenceWaitQueued) {
++            if (current) {
++                bridge->unusable.store(true);
++                retireBridge = true;
++            } else {
++                detachSurface();
++            }
++            return 0;
++        }
++
++        if (!current) {
++            if (!drainD3D11Context(
++                    bridge->presentDevice.Get(), bridge->presentContext.Get())) {
++                detachSurface();
++            } else {
++                bridge->unusable.store(true);
++                retireBridge = true;
++            }
++            return 0;
++        }
++
++        const DCompResizeResult resizeResult =
++            resizeAndPresentDCompBridge(*bridge);
++        if (resizeResult == DCompResizeResult::FailedBeforeResize) {
++            bridge->unusable.store(true);
++            retireBridge = true;
++            return 0;
++        }
++
++        if (resizeResult == DCompResizeResult::FailedAfterResize) {
++            detachSurface();
++            return 0;
++        }
++
++        bool adopted = false;
++        {
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                if (surfaceState->pending == bridge &&
++                    surfaceState->active == bridge->resizeSource &&
++                    bridge->configureGeneration ==
++                        surfaceState->configureGeneration &&
++                    surfaceState->compositor.adoptResizedSwapChain(
++                        bridge->swapChain.Get(),
++                        static_cast<int>(bridge->width),
++                        static_cast<int>(bridge->height))) {
++                    expiredActive = std::move(surfaceState->retired);
++                    surfaceState->retired = std::move(surfaceState->active);
++                    surfaceState->active = std::move(surfaceState->pending);
++                    surfaceState->active->resizeAttachedSwapChain = false;
++                    surfaceState->active->resizeSource.reset();
++                    adopted = true;
++                }
++            }
++        }
++
++        if (!adopted) {
++            detachSurface();
++            return 0;
++        }
++        return 1;
++    }();
++
++    if (detachedSurface) {
++        destroyDCompSurfaceOnMainThread(std::move(detachedSurface));
++    } else if (retireBridge) {
++        retireDCompBridge(surface, bridge);
++    }
++    destroyDCompBridgeOnMainThread(std::move(expiredActive));
++    return result;
++}
++
+ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+     if (!ensureWgpuSymbols()) return 0;
+
+     // Check for DComp bridge
++    std::shared_ptr<DCompSurfaceState> surfaceState;
+     std::shared_ptr<DCompBridgeState> bridge;
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end()) bridge = it->second;
++        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++        auto it = g_dcompSurfaces.find(surface);
++        if (it != g_dcompSurfaces.end()) {
++            surfaceState = it->second;
++            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++            bridge = surfaceState->inFlight;
++        }
++    }
++
++    if (bridge && bridge->resizeAttachedSwapChain) {
++        if (!MainThreadDispatcher::is_main_thread()) {
++            return MainThreadDispatcher::dispatch_sync(
++                [surface]() { return wgpuSurfacePresentMainThread(surface); });
++        }
++        return presentResizedDCompBridgeOnMainThread(
++            surface, surfaceState, std::move(bridge));
+     }
+
+-    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
+-        !bridge->unusable.load()) {
++    if (bridge && bridge->zeroCopyTexture) {
+         std::unique_lock<std::mutex> lock(bridge->frameMutex);
++        std::unique_lock<std::mutex> presentLock(surfaceState->presentMutex);
++        bool attachedActive = false;
++        bool currentActive = false;
++        bool currentPending = false;
++        bool claimed = false;
++        {
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                if (surfaceState->inFlight == bridge) {
++                    auto claimedBridge = std::move(surfaceState->inFlight);
++                    bridge = std::move(claimedBridge);
++                    claimed = true;
++                    const bool requestMatches =
++                        bridge->wgpuDevice == surfaceState->requestedDevice &&
++                        bridge->width == surfaceState->requestedWidth &&
++                        bridge->height == surfaceState->requestedHeight &&
++                        bridge->opaque == surfaceState->requestedOpaque;
++                    attachedActive = surfaceState->active == bridge;
++                    currentActive =
++                        requestMatches && attachedActive;
++                    currentPending =
++                        requestMatches && surfaceState->pending == bridge &&
++                        bridge->configureGeneration ==
++                            surfaceState->configureGeneration;
++                }
++            }
++        }
++        if (!claimed || !bridge->accessActive || bridge->unusable.load()) {
++            presentLock.unlock();
++            lock.unlock();
++            return 0;
++        }
+         auto retireBridge = [&]() {
+             bridge->unusable.store(true);
++            presentLock.unlock();
+             lock.unlock();
+             retireDCompBridge(surface, bridge);
+             bridge.reset();
+         };
+
+-        auto* swapChain = bridge->compositor.getSwapChain();
++        auto* swapChain = bridge->swapChain.Get();
+         if (!swapChain) {
+             retireBridge();
+             return 0;
+@@ -10226,24 +10938,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+             }
+         }
+
++        p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
++
++        if (!currentActive && !currentPending) {
++            const bool drained =
++                dawnFenceWaitQueued &&
++                drainD3D11Context(
++                    bridge->presentDevice.Get(), bridge->presentContext.Get());
++            if (!drained) {
++                std::shared_ptr<DCompSurfaceState> detachedSurface;
++                {
++                    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++                    auto it = g_dcompSurfaces.find(surface);
++                    if (it != g_dcompSurfaces.end() &&
++                        it->second == surfaceState) {
++                        std::lock_guard<std::mutex> stateLock(
++                            surfaceState->mutex);
++                        if (surfaceState->active) {
++                            surfaceState->active->unusable.store(true);
++                        }
++                        if (surfaceState->pending) {
++                            surfaceState->pending->unusable.store(true);
++                        }
++                        detachedSurface = it->second;
++                        eraseDCompHwndOwnerLocked(surface, detachedSurface);
++                        g_dcompSurfaces.erase(it);
++                    }
++                }
++                presentLock.unlock();
++                lock.unlock();
++                destroyDCompSurfaceOnMainThread(std::move(detachedSurface));
++                return 0;
++            }
++
++            if (!attachedActive) bridge->unusable.store(true);
++            presentLock.unlock();
++            lock.unlock();
++            if (!attachedActive) retireDCompBridge(surface, bridge);
++            return 0;
++        }
++
+         if (!dawnFenceWaitQueued) {
+-            p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
+             printf("[DComp] Failed to queue Dawn fence wait; retiring bridge\n");
+             retireBridge();
+             return 0;
+         }
+
+-        p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
++        bool primeReplacement = false;
++        {
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                primeReplacement = currentPending && surfaceState->active;
++            }
++        }
+
+-        // Copy staging -> back buffer and present
+         ComPtr<ID3D11Texture2D> backBuffer;
+         HRESULT hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+         if (FAILED(hr)) {
+             retireBridge();
+             return 0;
+         }
++        bridge->presentContext->CopyResource(
++            backBuffer.Get(), bridge->presentStagingTex.Get());
+
+-        bridge->presentContext->CopyResource(backBuffer.Get(), bridge->presentStagingTex.Get());
++        if (primeReplacement) {
++            backBuffer.Reset();
++            hr = swapChain->Present(0, 0);
++            if (SUCCEEDED(hr)) {
++                hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
++            }
++            if (FAILED(hr)) {
++                const bool drained = drainD3D11Context(
++                    bridge->presentDevice.Get(), bridge->presentContext.Get());
++                printf(
++                    "[DComp] Failed to prime replacement buffer: 0x%08lx; "
++                    "retiring bridge (drained=%d)\n",
++                    hr,
++                    drained ? 1 : 0);
++                retireBridge();
++                return 0;
++            }
++            bridge->presentContext->CopyResource(
++                backBuffer.Get(), bridge->presentStagingTex.Get());
++        }
+
+         const uint64_t nextFenceValue = bridge->presentationFenceValue + 1;
+         hr = bridge->presentContext->Signal(
+@@ -10271,14 +11050,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+             return 0;
+         }
+
+-        auto* dcompDevice = bridge->compositor.getDCompDevice();
+-        if (!dcompDevice || FAILED(dcompDevice->Commit())) {
+-            drainD3D11Context(
+-                bridge->presentDevice.Get(), bridge->presentContext.Get());
+-            retireBridge();
++        backBuffer.Reset();
++        presentLock.unlock();
++        lock.unlock();
++        if (!currentPending) return 1;
++
++        // Commit the replacement below the old visual, wait for DWM off the
++        // Win32 UI thread, then remove the old visual in a second commit.
++        std::shared_ptr<DCompBridgeState> expiredActive;
++        bool staged = false;
++        bool promoted = false;
++        bool promotionFailed = false;
++        auto installPromotedBridge = [&]() {
++            expiredActive = std::move(surfaceState->retired);
++            surfaceState->retired = std::move(surfaceState->active);
++            surfaceState->active = std::move(surfaceState->pending);
++            promoted = true;
++        };
++        MainThreadDispatcher::dispatch_sync([&]() {
++            std::lock_guard<std::mutex> promotionLock(
++                surfaceState->presentMutex);
++            std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++            auto it = g_dcompSurfaces.find(surface);
++            if (it != g_dcompSurfaces.end() && it->second == surfaceState) {
++                std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
++                if (surfaceState->pending == bridge &&
++                    bridge->configureGeneration ==
++                        surfaceState->configureGeneration) {
++                    if (surfaceState->active) {
++                        staged = surfaceState->compositor.stageSwapChain(
++                            bridge->swapChain.Get(),
++                            static_cast<int>(bridge->width),
++                            static_cast<int>(bridge->height));
++                        promotionFailed = !staged;
++                    } else if (surfaceState->compositor.promoteSwapChain(
++                                   bridge->swapChain.Get(),
++                                   static_cast<int>(bridge->width),
++                                   static_cast<int>(bridge->height))) {
++                        installPromotedBridge();
++                    } else {
++                        promotionFailed = true;
++                    }
++                }
++            }
++        });
++
++        if (staged) {
++            const bool stagedCommitCompleted =
++                surfaceState->compositor.waitForCommitCompletion();
++            MainThreadDispatcher::dispatch_sync([&]() {
++                std::lock_guard<std::mutex> promotionLock(
++                    surfaceState->presentMutex);
++                std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
++                auto it = g_dcompSurfaces.find(surface);
++                bool stillCurrent = false;
++                if (it != g_dcompSurfaces.end() &&
++                    it->second == surfaceState) {
++                    std::lock_guard<std::mutex> stateLock(
++                        surfaceState->mutex);
++                    stillCurrent = surfaceState->pending == bridge &&
++                        bridge->configureGeneration ==
++                            surfaceState->configureGeneration;
++                    if (stillCurrent && stagedCommitCompleted &&
++                        surfaceState->compositor.promoteStagedSwapChain(
++                            bridge->swapChain.Get(),
++                            static_cast<int>(bridge->width),
++                            static_cast<int>(bridge->height))) {
++                        installPromotedBridge();
++                    } else if (stillCurrent) {
++                        promotionFailed = true;
++                    }
++                }
++                if (!promoted) {
++                    surfaceState->compositor.discardStagedSwapChain(
++                        bridge->swapChain.Get());
++                }
++            });
++        }
++
++        if (promotionFailed) {
++            {
++                std::lock_guard<std::mutex> frameLock(bridge->frameMutex);
++                std::lock_guard<std::mutex> failedPresentLock(
++                    surfaceState->presentMutex);
++                bridge->unusable.store(true);
++                drainD3D11Context(
++                    bridge->presentDevice.Get(), bridge->presentContext.Get());
++            }
++            retireDCompBridge(surface, bridge);
+             return 0;
+         }
+-        return 1;  // success
++        destroyDCompBridgeOnMainThread(std::move(expiredActive));
++        return promoted ? 1 : 0;
+     }
+
+     // Normal HWND path
+diff --git a/package/src/sdks/main/proc/native.ts b/package/src/sdks/main/proc/native.ts
+index 17a2f5e..46f9c1f 100644
+--- a/package/src/sdks/main/proc/native.ts
++++ b/package/src/sdks/main/proc/native.ts
+@@ -990,6 +990,10 @@ export const native = (() => {
+ 				args: [FFIType.ptr, FFIType.ptr],
+ 				returns: FFIType.void,
+ 			},
++			wgpuSurfaceUnconfigureMainThread: {
++				args: [FFIType.ptr],
++				returns: FFIType.void,
++			},
+ 			wgpuSurfaceCapabilitiesFreeMembersShim: {
+ 				args: [FFIType.ptr],
+ 				returns: FFIType.void,
+@@ -2452,6 +2456,8 @@ export const WGPUBridge = {
+ 			surfacePtr as any,
+ 			configPtr as any,
+ 		),
++	surfaceUnconfigure: (surfacePtr: Pointer) =>
++		native_.symbols.wgpuSurfaceUnconfigureMainThread(surfacePtr as any),
+ 	surfaceCapabilitiesFreeMembers: (capabilitiesPtr: Pointer) =>
+ 		native_.symbols.wgpuSurfaceCapabilitiesFreeMembersShim(
+ 			capabilitiesPtr as any,
+diff --git a/package/src/sdks/main/webgpuAdapter.ts b/package/src/sdks/main/webgpuAdapter.ts
+index bb347f0..001fc95 100644
+--- a/package/src/sdks/main/webgpuAdapter.ts
++++ b/package/src/sdks/main/webgpuAdapter.ts
+@@ -2634,7 +2634,7 @@ class GPUCanvasContext {
+ 		this.devicePtr = null;
+ 		this._device = null;
+ 		if (shouldUnconfigure) {
+-			return WGPUNative.symbols.wgpuSurfaceUnconfigure(this.surfacePtr as any);
++			return WGPUBridge.surfaceUnconfigure(this.surfacePtr as any);
+ 		}
+ 	}
+ 	_presentNative() {
+@@ -2655,7 +2655,7 @@ class GPUCanvasContext {
+ 		this._device = null;
+ 		if (shouldUnconfigure) {
+ 			try {
+-				WGPUNative.symbols.wgpuSurfaceUnconfigure(this.surfacePtr as any);
++				WGPUBridge.surfaceUnconfigure(this.surfacePtr as any);
+ 			} catch {}
+ 		}
+ 	}
+@@ -2732,7 +2732,7 @@ function createContext(view: WGPUView | GpuWindow) {
+ 				WGPUBridge.createSurfaceForView(instancePtr as Pointer, viewPtr),
+ 			),
+ 		unconfigureSurface: (surfacePtr: number) =>
+-			WGPUNative.symbols.wgpuSurfaceUnconfigure(surfacePtr as any),
++			WGPUBridge.surfaceUnconfigure(surfacePtr as any),
+ 		releaseSurface: (surfacePtr: number) =>
+ 			WGPUBridge.releaseSurfaceForView(surfacePtr as any) ||
+ 			WGPUNative.symbols.wgpuSurfaceRelease(surfacePtr as any),
+@@ -2783,7 +2783,7 @@ function createContext(view: WGPUView | GpuWindow) {
+ 					{
+ 						unconfigureSurface: (surfacePtr) => {
+ 							if (wasConfigured) {
+-								WGPUNative.symbols.wgpuSurfaceUnconfigure(surfacePtr as any);
++								WGPUBridge.surfaceUnconfigure(surfacePtr as any);
+ 							}
+ 						},
+ 						releaseSurface: nativeOps.releaseSurface,

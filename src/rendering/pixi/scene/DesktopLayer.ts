@@ -48,6 +48,7 @@ import type { DragHitDebugSnapshot } from "./DragHitDebugLayer.js";
 import { FolderDropTargetLayer } from "./FolderDropTargetLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import type { IconNodeAction, IconNodeActionHandler } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import type {
   SceneDataRecord,
   SceneItem,
@@ -121,6 +122,7 @@ interface DesktopRenderCopy {
 
 interface DesktopLayerOptions {
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures?: IconTextureRepository | undefined;
   onClosingFolderPointerDown?: ((folderId: string | null, event: unknown) => void) | undefined;
   onFolderGeometryChange?: ((geometry: unknown) => void) | undefined;
   onFolderInternalActivityChange?: ((active: boolean, folderId: string | null) => void) | undefined;
@@ -1097,6 +1099,7 @@ export class DesktopLayer extends Container {
   declare onFolderTitleFrameChange: NonNullable<DesktopLayerOptions["onFolderTitleFrameChange"]>;
   declare onGroupReleaseComplete: NonNullable<DesktopLayerOptions["onGroupReleaseComplete"]>;
   declare onIconAction: IconNodeActionHandler;
+  declare iconTextures: IconTextureRepository | undefined;
   declare pageTrack: Container;
   declare pageTrackMotion: PageTrackMotionState;
   declare primaryFolderHandoffId: string | null;
@@ -1122,6 +1125,7 @@ export class DesktopLayer extends Container {
     this.desktopClosingUnderlayLayer.eventMode = "none";
     this.handoffDebugLayer = new Graphics();
     this.onIconAction = options.onIconAction || (() => {});
+    this.iconTextures = options.iconTextures;
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
     this.onFolderGeometryChange = options.onFolderGeometryChange || (() => {});
     this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
@@ -1537,6 +1541,7 @@ export class DesktopLayer extends Container {
         const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
         if (isNewNode) {
           node = new IconNode({
+            iconTextures: this.iconTextures,
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
               this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
           });

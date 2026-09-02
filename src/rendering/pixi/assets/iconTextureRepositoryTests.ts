@@ -161,6 +161,24 @@ export async function runIconTextureRepositoryTests() {
     await disposedSync;
     assert(disposedTexture.destroyed, "a load completing after repository disposal must destroy its stale texture");
     assert(disposedRepository.snapshot().cached.length === 0, "repository disposal must clear all resident resources");
+
+    const nativeControlled = createControlledLoader();
+    const nativeRepository = createIconTextureRepository({
+      loadTexture: nativeControlled.loadTexture,
+      resolveSource: (item) => item?.customIconPath || item?.iconPath || null,
+    });
+    const nativeItem = { id: "native", iconPath: "C:\\Icons\\native.png" };
+    const nativeTexture = makeTexture(6);
+    const nativeSync = nativeRepository.synchronize([nativeItem]);
+    assert(
+      nativeControlled.requests[0]?.source === "C:\\Icons\\native.png",
+      "a repository-specific source resolver should select native file paths",
+    );
+    nativeControlled.requests[0]!.resolve(nativeTexture);
+    await nativeSync;
+    assert(nativeRepository.resolve(nativeItem) === nativeTexture, "a native-resolved texture should use the normal cache");
+    nativeRepository.dispose();
+    assert(nativeTexture.destroyed, "disposing a native repository should destroy its cached textures");
   } finally {
     console.error = originalConsoleError;
   }

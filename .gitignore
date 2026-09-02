@@ -3,6 +3,9 @@ node_modules/
 
 # Frontend build output
 dist/
+/build/
+/.hutch/
+/artifacts/
 
 # Tauri/Rust build output
 src-tauri/target/

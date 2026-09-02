@@ -43,6 +43,9 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".idea",
   ".vscode",
   ".worktrees",
+  ".hutch",
+  "artifacts",
+  "build",
   "dist",
   "docs-agents",
   "node_modules",
@@ -50,6 +53,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   "src-tauri",
   "target",
   "test-results",
+  "vendor",
 ]);
 const TYPE_DIRECTIVE_PREFIX = "@ts-";
 const FORBIDDEN_TYPE_DIRECTIVE_PATTERN = new RegExp(`${TYPE_DIRECTIVE_PREFIX}(?:ignore|nocheck)\\b`);
@@ -483,7 +487,7 @@ function runCli(): void {
   const result = analyzeProjectPolicy({
     projectRoot,
     scanRoots: ["."],
-    strictConfigs: ["tsconfig.json", "tsconfig.tools.json"],
+    strictConfigs: ["tsconfig.json", "tsconfig.tools.json", "tsconfig.electrobun.json"],
     testRoot: "src",
     testRunner: "src/domain/runLaunchpadLayoutTests.ts",
   });

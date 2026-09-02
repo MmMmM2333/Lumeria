@@ -1,0 +1,16 @@
+{
+  "extends": "./vendor/electrobun-pixi-native-starter/consumer/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "types": ["bun"],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["electrobun.config.ts", "src/native/electrobunSmoke.ts"]
+}
