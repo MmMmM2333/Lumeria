@@ -62,6 +62,14 @@ fixture.pages = [[
     emoji: "⚙️",
     launchTarget: { kind: "url", path: "https://example.invalid/settings" },
   },
+], [
+  {
+    id: "native-second-page",
+    type: "manualApp",
+    name: "Second Page",
+    emoji: "2️⃣",
+    launchTarget: { kind: "url", path: "https://example.invalid/second-page" },
+  },
 ]];
 fixture.settings.gridRows = 4;
 fixture.settings.gridCols = 7;

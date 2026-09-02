@@ -158,6 +158,8 @@ try {
   throw error;
 }
 const frame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
+const activePageItems = (frame.viewport.activePages[frame.viewport.activePageIndex] ?? [])
+  .filter((item) => item !== null);
 
 const app = await createNativePixiApplication({
   antialias: true,
@@ -180,9 +182,7 @@ let disconnectAnimationHost = (): void => {};
 
 try {
   await present(app, "the native host startup frame");
-  const iconTextureSnapshot = await iconTextures.synchronize(
-    frame.viewport.activePages.flatMap((page) => page.filter((item) => item !== null)),
-  );
+  const iconTextureSnapshot = await iconTextures.synchronize(activePageItems);
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
@@ -211,14 +211,11 @@ try {
     resizeEvents += 1;
   });
 
-  const iconNodes = frame.viewport.activePages
-    .flatMap((page) => page)
-    .filter((item) => item !== null)
-    .map((item) => {
-      const node = app.stage.getChildByLabel(`launchpad-item:${item.id}`, true);
-      if (!node) throw new Error(`LaunchPad native scene did not create node ${item.id}`);
-      return node as NativeIconNode;
-    });
+  const iconNodes = activePageItems.map((item) => {
+    const node = app.stage.getChildByLabel(`launchpad-item:${item.id}`, true);
+    if (!node) throw new Error(`LaunchPad native scene did not create node ${item.id}`);
+    return node as NativeIconNode;
+  });
 
   let resolveClosed!: () => void;
   const closed = new Promise<void>((resolve) => {
