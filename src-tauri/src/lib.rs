@@ -489,35 +489,20 @@ fn launch_app_inner(
     request: LaunchAppRequest,
     state: &AppState,
 ) -> Result<(), LaunchFailure> {
-    let app_id = request.id.trim().to_string();
-    if app_id.is_empty() {
-        return Err(LaunchFailure::missing_launch_info(
-            "App id is required".to_string(),
-        ));
-    }
+    let app_id = validate_launch_app_id(&request.id)?;
 
     let catalog_app = {
         let catalog = state.catalog.lock().map_err(|_| {
             LaunchFailure::layout_read_failed("Failed to lock app catalog".to_string())
         })?;
-        catalog.get(&app_id).cloned()
+        catalog.get(app_id).cloned()
     };
-    if let Some(app) = catalog_app {
-        return launch_selected_app(app.into());
-    }
 
     let saved_layout = load_saved_layout(app_handle).map_err(LaunchFailure::layout_read_failed)?;
-    if let Some(manual_app) = saved_layout
-        .as_ref()
-        .and_then(|layout| find_layout_manual_app(layout, &app_id))
-    {
-        return launch_selected_app(manual_app.into());
-    }
-    let app = find_app_in_saved_scan_roots(app_handle, saved_layout.as_ref(), &app_id)
-        .map_err(LaunchFailure::layout_read_failed)?
-        .ok_or_else(|| LaunchFailure::missing_launch_info(format!("Unknown app id: {app_id}")))?;
-
-    launch_selected_app(app.into())
+    let selected = resolve_launchable_app(app_id, catalog_app, saved_layout.as_ref(), || {
+        find_app_in_saved_scan_roots(saved_layout.as_ref(), app_id, || icon_cache_dir(app_handle))
+    })?;
+    launch_selected_app(selected)
 }
 
 #[tauri::command]
@@ -835,6 +820,34 @@ impl LaunchFailure {
     }
 }
 
+fn validate_launch_app_id(app_id: &str) -> Result<&str, LaunchFailure> {
+    let app_id = app_id.trim();
+    if app_id.is_empty() {
+        return Err(LaunchFailure::missing_launch_info(
+            "App id is required".to_string(),
+        ));
+    }
+    Ok(app_id)
+}
+
+fn resolve_launchable_app(
+    app_id: &str,
+    catalog_app: Option<AppCatalogItem>,
+    saved_layout: Option<&serde_json::Value>,
+    find_catalog_app: impl FnOnce() -> Result<Option<AppCatalogItem>, String>,
+) -> Result<LaunchableApp, LaunchFailure> {
+    if let Some(app) = catalog_app {
+        return Ok(app.into());
+    }
+    if let Some(app) = saved_layout.and_then(|layout| find_layout_manual_app(layout, app_id)) {
+        return Ok(app.into());
+    }
+    find_catalog_app()
+        .map_err(LaunchFailure::layout_read_failed)?
+        .map(Into::into)
+        .ok_or_else(|| LaunchFailure::missing_launch_info(format!("Unknown app id: {app_id}")))
+}
+
 fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), LaunchFailure> {
     let kind = app.launch_target.kind.as_str();
     if !matches!(kind, "executable" | "shortcut" | "url") {
@@ -931,9 +944,9 @@ fn show_launch_error_report(report: &LaunchFailureReport, locale: &str) -> Resul
 }
 
 fn find_app_in_saved_scan_roots(
-    app: &AppHandle,
     saved_layout: Option<&serde_json::Value>,
     app_id: &str,
+    resolve_icon_dir: impl FnOnce() -> Result<std::path::PathBuf, String>,
 ) -> Result<Option<AppCatalogItem>, String> {
     let Some((roots, filters)) = saved_scan_config(saved_layout) else {
         return Ok(None);
@@ -942,7 +955,7 @@ fn find_app_in_saved_scan_roots(
         return Ok(None);
     }
 
-    let icon_dir = icon_cache_dir(app)?;
+    let icon_dir = resolve_icon_dir()?;
     Ok(scan_apps_from_roots(&roots, &icon_dir, &filters)?
         .apps
         .into_iter()

@@ -12,5 +12,5 @@
     "types": ["bun"],
     "verbatimModuleSyntax": true
   },
-  "include": ["electrobun.config.ts", "src/native/electrobunSmoke.ts", "src/native/nativeDataHost.ts", "src/native/nativeStartup.ts"]
+  "include": ["electrobun.config.ts", "src/native/nativeMain.ts", "src/native/nativeDataHost.ts", "src/native/nativeStartup.ts"]
 }

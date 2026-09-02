@@ -10,7 +10,7 @@ const modeArgument = process.argv[2] ?? "--smoke";
 if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
   throw new Error(`Expected --dev or --smoke, received: ${modeArgument}`);
 }
-const nativeMode = modeArgument === "--dev" ? "dev" : "smoke";
+const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
 const runner = join(
   projectRoot,
   "vendor",
@@ -122,13 +122,19 @@ try {
       height?: unknown;
       iconForegroundPixels?: unknown;
       reconciledNodes?: unknown;
+      resizeLiveLogicalObserved?: unknown;
+      resizeMode?: unknown;
       resizeObserved?: unknown;
       resizePresentCount?: unknown;
+      resizeSettledBackingObserved?: unknown;
       resolution?: unknown;
       restoreObserved?: unknown;
       restorePresentCount?: unknown;
       presented?: unknown;
       loadedLayout?: unknown;
+      pageCount?: unknown;
+      pageNavigation?: unknown;
+      structuredLaunchFailureObserved?: unknown;
       visibleNodes?: unknown;
       width?: unknown;
     };
@@ -157,13 +163,24 @@ try {
     }
     if (
       proof.resizeObserved !== true
+      || proof.resizeMode !== "adaptive"
+      || proof.resizeLiveLogicalObserved !== true
       || !Number.isInteger(proof.resizePresentCount)
       || Number(proof.resizePresentCount) <= 0
+      || proof.resizeSettledBackingObserved !== true
       || proof.restoreObserved !== true
       || !Number.isInteger(proof.restorePresentCount)
       || Number(proof.restorePresentCount) <= 0
     ) {
       throw new Error("Native smoke proof did not complete resize and minimize/restore lifecycle checks");
+    }
+    if (
+      !Number.isInteger(proof.pageCount)
+      || Number(proof.pageCount) < 1
+      || proof.pageNavigation !== (Number(proof.pageCount) > 1 ? "verified" : "skipped-single-page")
+      || proof.structuredLaunchFailureObserved !== true
+    ) {
+      throw new Error("Native smoke proof did not complete paging and structured launch failure checks");
     }
     if (
       typeof proof.width !== "number"

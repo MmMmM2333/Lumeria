@@ -11,7 +11,14 @@ import {
 import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
-import { makeNativeStartupFrame, makeNativeStartupScanRequest } from "./nativeStartup.js";
+import {
+  getNativeActivePageItems,
+  getNativePageTurnFromKey,
+  getNativePageTurnFromWheel,
+  makeNativeStartupFrame,
+  makeNativeStartupScanRequest,
+  turnNativeDesktopPage,
+} from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
 
@@ -25,6 +32,7 @@ assert.equal(savedStartupFrame.viewport.gridCols, 6);
 assert.equal(savedStartupFrame.viewport.iconSize, 72);
 assert.equal(savedStartupFrame.interaction.isTextlessMode, true);
 assert.equal(savedStartupFrame.viewport.activePages[0]?.[0]?.id, "custom-editor");
+assert.equal(savedStartupFrame.interaction.focusedIcon?.id, "custom-editor");
 const savedScanRequest = makeNativeStartupScanRequest(savedLayout);
 assert.equal(savedScanRequest.roots.length, 1);
 assert.equal(savedScanRequest.roots[0]?.id, "root-custom");
@@ -50,6 +58,20 @@ assert.equal(firstRunFrame.viewport.gridRows, 5);
 assert.equal(firstRunFrame.viewport.gridCols, 7);
 assert.equal(firstRunFrame.viewport.activePages[0]?.[0]?.id, "first-run-app");
 assert.equal(makeNativeStartupScanRequest(null).roots.length, 3);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageDown" }), 1);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowLeft" }), -1);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowRight", repeat: true }), 0);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageUp", ctrlKey: true }), 0);
+assert.equal(getNativePageTurnFromWheel({ deltaX: 0, deltaY: 120 }), 1);
+assert.equal(getNativePageTurnFromWheel({ deltaX: -120, deltaY: 10 }), -1);
+assert.equal(getNativePageTurnFromWheel({ deltaX: 0, deltaY: 0 }), 0);
+assert.equal(getNativePageTurnFromWheel({ deltaX: 120, metaKey: true }), 0);
+
+const secondSavedPage = turnNativeDesktopPage(savedStartupFrame, 1);
+assert.equal(secondSavedPage.viewport.activePageIndex, 1);
+assert.equal(secondSavedPage.interaction.focusedIcon?.id, getNativeActivePageItems(secondSavedPage)[0]?.id);
+assert.equal(turnNativeDesktopPage(secondSavedPage, 1), secondSavedPage, "the last page must not turn past its edge");
+assert.equal(turnNativeDesktopPage(secondSavedPage, -1).viewport.activePageIndex, 0);
 
 function makeCompleteFrame(overrides: DesktopSceneFrameInput = {}): CompleteDesktopSceneFrame {
   const frame = makeDesktopSceneFrame({
@@ -98,7 +120,10 @@ function makeCompleteFrame(overrides: DesktopSceneFrameInput = {}): CompleteDesk
 }
 
 const stage = new Container();
-const scene = new NativeDesktopScene(stage);
+const activations: string[] = [];
+const scene = new NativeDesktopScene(stage, {
+  onIconActivate: (item) => activations.push(item.id),
+});
 const frame = makeCompleteFrame();
 const work = scene.commit(frame, { height: 600, resolution: 1.25, width: 900 });
 
@@ -108,7 +133,20 @@ assert.equal(work.reconciledNodes, 1);
 assert.ok(stage.getChildByLabel("launchpad-native-desktop"));
 const itemNode = stage.getChildByLabel("launchpad-item:app-1", true);
 assert.ok(itemNode, "the active desktop page should create a real Pixi icon node");
-assert.equal(itemNode.eventMode, "none", "the first native slice must remain read-only");
+assert.equal(itemNode.eventMode, "static", "the active native desktop page should accept pointer input");
+const itemEvents = itemNode as unknown as {
+  emit(type: string, event: unknown): boolean;
+};
+itemEvents.emit("pointerdown", {
+  button: 0,
+  getLocalPosition: () => ({ x: 0, y: 0 }),
+  nativeEvent: { button: 0 },
+});
+itemEvents.emit("pointerupoutside", {});
+itemEvents.emit("pointercancel", {});
+assert.deepEqual(activations, [], "press or cancellation must not activate an icon");
+itemEvents.emit("pointertap", {});
+assert.deepEqual(activations, ["app-1"], "a completed pointer tap should activate exactly once");
 const initialItemBounds = itemNode.getBounds();
 const nativeItemNode = itemNode as Container & { emojiText: Text; labelText: Text };
 assert.ok(
@@ -146,6 +184,30 @@ assert.ok(
 );
 assert.equal(nativeItemNode.emojiText.resolution, 2.5, "resize should update existing emoji texture resolution");
 assert.equal(nativeItemNode.labelText.resolution, 2.5, "resize should update existing label texture resolution");
+
+const pagedFrame = makeCompleteFrame({
+  activePages: [
+    [{ emoji: "1️⃣", id: "page-1", name: "第一页", type: "app" }],
+    [{ emoji: "2️⃣", id: "page-2", name: "第二页", type: "app" }],
+    [{ emoji: "3️⃣", id: "page-3", name: "第三页", type: "app" }],
+  ],
+});
+const pageTwoFrame = turnNativeDesktopPage(pagedFrame, 1);
+scene.commit(pageTwoFrame, { height: 760, resolution: 2.5, width: 1180 });
+assert.ok(stage.getChildByLabel("launchpad-item:page-2", true), "turning should materialize the next desktop page");
+assert.equal(stage.getChildByLabel("launchpad-item:page-1", true), null, "the previous page should not remain a second live scene");
+const pageThreeFrame = turnNativeDesktopPage(pageTwoFrame, 1);
+scene.commit(pageThreeFrame, { height: 760, resolution: 2.5, width: 1180 });
+const thirdPageNode = stage.getChildByLabel("launchpad-item:page-3", true);
+assert.ok(thirdPageNode, "three-page layouts should reach their final page");
+const thirdPageBounds = thirdPageNode.getBounds();
+assert.ok(
+  thirdPageBounds.x >= 0
+    && thirdPageBounds.y >= 0
+    && thirdPageBounds.x + thirdPageBounds.width <= 1180
+    && thirdPageBounds.y + thirdPageBounds.height <= 760,
+  "the turned page icon should remain inside the native viewport",
+);
 
 const background = [9, 11, 20, 255] as const;
 const contaminatedPixels = new Uint8ClampedArray(8 * 8 * 4);

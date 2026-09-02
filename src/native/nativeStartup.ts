@@ -22,6 +22,7 @@ import {
   assertCompleteDesktopSceneFrame,
   makeDesktopSceneFrame,
   type CompleteDesktopSceneFrame,
+  type SceneItem,
 } from "../rendering/sceneFrame.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -43,6 +44,84 @@ export type NativeStartupScanRequest = Readonly<{
   roots: readonly CatalogScanRoot[];
   filters: CatalogScanFilters;
 }>;
+
+export type NativePageTurn = -1 | 0 | 1;
+
+type NativeNavigationKey = Readonly<{
+  altKey?: boolean;
+  code?: string;
+  ctrlKey?: boolean;
+  key?: string;
+  metaKey?: boolean;
+  repeat?: boolean;
+  type?: string;
+}>;
+
+type NativeNavigationWheel = Readonly<{
+  ctrlKey?: boolean;
+  deltaX?: number;
+  deltaY?: number;
+  metaKey?: boolean;
+}>;
+
+export function getNativeActivePageItems(
+  frame: CompleteDesktopSceneFrame,
+): readonly SceneItem[] {
+  return (frame.viewport.activePages[frame.viewport.activePageIndex] ?? [])
+    .filter((item): item is SceneItem => item !== null);
+}
+
+export function getNativePageTurnFromKey(event: NativeNavigationKey): NativePageTurn {
+  if (
+    event.type !== "down"
+    || event.repeat
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+  ) return 0;
+  const key = event.key || event.code;
+  if (key === "ArrowRight" || key === "PageDown") return 1;
+  if (key === "ArrowLeft" || key === "PageUp") return -1;
+  return 0;
+}
+
+export function getNativePageTurnFromWheel(event: NativeNavigationWheel): NativePageTurn {
+  if (event.ctrlKey || event.metaKey) return 0;
+  const x = Number(event.deltaX) || 0;
+  const y = Number(event.deltaY) || 0;
+  const delta = Math.abs(x) >= Math.abs(y) ? x : y;
+  return delta === 0 ? 0 : delta > 0 ? 1 : -1;
+}
+
+export function turnNativeDesktopPage(
+  frame: CompleteDesktopSceneFrame,
+  direction: Exclude<NativePageTurn, 0>,
+): CompleteDesktopSceneFrame {
+  const pageCount = frame.viewport.activePages.length;
+  const activePageIndex = Math.max(
+    0,
+    Math.min(pageCount - 1, frame.viewport.activePageIndex + direction),
+  );
+  if (activePageIndex === frame.viewport.activePageIndex) return frame;
+  const focused = frame.viewport.activePages[activePageIndex]?.find((item) => item !== null) ?? null;
+  const next = Object.freeze({
+    ...frame,
+    viewport: Object.freeze({
+      ...frame.viewport,
+      activePageIndex,
+      desktopProjectionEpoch: frame.viewport.desktopProjectionEpoch + 1,
+      desktopTrackMotionKey: `native-page-${activePageIndex}`,
+    }),
+    interaction: Object.freeze({
+      ...frame.interaction,
+      focusedIcon: focused
+        ? Object.freeze({ area: "desktop", id: focused.id, pageIndex: activePageIndex })
+        : null,
+    }),
+  });
+  assertCompleteDesktopSceneFrame(next);
+  return next;
+}
 
 function settingsFor(layout: LayoutDocument | null): Pick<
   LayoutSettings,
@@ -125,9 +204,11 @@ export function makeNativeStartupFrame(
   catalog: readonly ScannedCatalogApp[],
 ): CompleteDesktopSceneFrame {
   const settings = settingsFor(layout);
+  const activePages = reconcilePages(layout, catalog);
+  const focused = activePages[0]?.find((item) => item !== null) ?? null;
   const frame = makeDesktopSceneFrame({
     activePageIndex: 0,
-    activePages: reconcilePages(layout, catalog),
+    activePages,
     appLaunchCloseSessionId: null,
     desktopGridDebugOptions: null,
     desktopProjectionEpoch: 0,
@@ -139,7 +220,9 @@ export function makeNativeStartupFrame(
     dragHitDebugOptions: null,
     dragHitDebugState: null,
     dragMeta: null,
-    focusedIcon: null,
+    focusedIcon: focused
+      ? { area: "desktop", id: focused.id, pageIndex: 0 }
+      : null,
     folderClosingHandoffId: null,
     folderPageSize: settings.folderRows * settings.folderCols,
     folderSourceGhostedId: null,

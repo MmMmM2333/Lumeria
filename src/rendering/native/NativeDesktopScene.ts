@@ -66,21 +66,27 @@ function visibleItems(page: readonly (SceneItem | null)[]): readonly SceneItem[]
 }
 
 export class NativeDesktopScene {
+  readonly #activationNodes = new WeakSet<Container>();
   readonly #layer: DesktopLayer;
+  readonly #onIconActivate: ((item: SceneItem) => void) | null;
   readonly #pageRefs = new Map<number, unknown>();
   #destroyed = false;
 
   constructor(stage: Container, options: Readonly<{
     iconTextures?: IconTextureRepository | undefined;
+    onIconActivate?: ((item: SceneItem) => void) | undefined;
   }> = {}) {
     if (stage.destroyed) throw new Error("NativeDesktopScene requires a live Pixi stage");
     this.#layer = new DesktopLayer({
       iconBoundsRegistry: createIconBoundsRegistry(),
       iconTextures: options.iconTextures,
-      onIconAction: () => {
-        throw new Error("NativeDesktopScene static slice received an unexpected icon action");
+      onIconAction: (action) => {
+        if (action !== "pointerdown") {
+          throw new Error(`NativeDesktopScene received an unexpected icon action: ${action}`);
+        }
       },
     });
+    this.#onIconActivate = options.onIconActivate ?? null;
     this.#layer.label = "launchpad-native-desktop";
     stage.addChild(this.#layer);
   }
@@ -116,7 +122,7 @@ export class NativeDesktopScene {
       folderPageSize: frame.viewport.folderPageSize,
       folderSourceGhostedIds: frame.folder.folderSourceGhostedIds,
       getDesktopPageRenderMode: (pageIndex) => (
-        pageIndex === frame.viewport.activePageIndex ? "static-real" : "empty"
+        pageIndex === frame.viewport.activePageIndex ? "interactive" : "empty"
       ),
       getVisibleDesktopPage: visibleItems,
       gridCols: frame.viewport.gridCols,
@@ -154,11 +160,18 @@ export class NativeDesktopScene {
       Object.freeze({ frame: structureFrame, lane: "structure" as const }),
     ]));
 
-    for (const page of frame.viewport.activePages) {
+    for (const [pageIndex, page] of frame.viewport.activePages.entries()) {
       for (const item of page) {
         if (!item) continue;
         const node = this.#layer.findIconNodeByItemId(item.id);
-        if (node) node.label = `launchpad-item:${item.id}`;
+        if (!node) continue;
+        node.label = `launchpad-item:${item.id}`;
+        if (pageIndex !== frame.viewport.activePageIndex || this.#activationNodes.has(node)) continue;
+        this.#activationNodes.add(node);
+        node.on("pointertap", () => {
+          const current = node.item;
+          if (current) this.#onIconActivate?.(current);
+        });
       }
     }
     syncPixiTextResolution(this.#layer, viewport.resolution);

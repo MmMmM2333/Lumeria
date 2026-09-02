@@ -1,17 +1,33 @@
 import { writeFileSync } from "node:fs";
 import { Screen } from "electrobun/main";
-import { Container, Rectangle, type Sprite, type Text } from "pixi.js";
+import {
+  Container,
+  Rectangle,
+  Text,
+  type FederatedWheelEvent,
+  type Sprite,
+} from "pixi.js";
 import {
   createNativePixiApplication,
   type NativePixiApplication,
 } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
+import type { SceneItem } from "../rendering/sceneFrame.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
-import { NativeDataHost, type NativeCatalogScanResult } from "./nativeDataHost.js";
 import {
+  NativeDataHost,
+  NativeLaunchError,
+  type NativeCatalogScanResult,
+} from "./nativeDataHost.js";
+import {
+  getNativeActivePageItems,
+  getNativePageTurnFromKey,
+  getNativePageTurnFromWheel,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
+  turnNativeDesktopPage,
+  type NativePageTurn,
 } from "./nativeStartup.js";
 import {
   assertNativeScenePixels,
@@ -20,7 +36,7 @@ import {
   type NativeScenePixelProof,
 } from "./nativePixelProof.js";
 
-type NativeMode = "dev" | "smoke";
+type NativeMode = "app" | "dev" | "smoke";
 
 type NativeFrameProof = Readonly<{
   backingHeight: number;
@@ -28,6 +44,8 @@ type NativeFrameProof = Readonly<{
   catalogApps: number;
   height: number;
   loadedLayout: boolean;
+  pageCount: number;
+  pageNavigation: "skipped-single-page" | "verified";
   presentCount: number;
   presented: true;
   reconciledNodes: number;
@@ -39,10 +57,14 @@ type NativeFrameProof = Readonly<{
 type NativeHostLifecycleProof = Readonly<{
   dpiResolution: number;
   dpiTransition: "skipped-no-mixed-dpi-display" | "verified-display-fallback";
+  resizeLiveLogicalObserved: boolean;
+  resizeMode: "adaptive";
   resizeObserved: boolean;
   resizePresentCount: number;
+  resizeSettledBackingObserved: boolean;
   restoreObserved: boolean;
   restorePresentCount: number;
+  structuredLaunchFailureObserved: boolean;
 }>;
 
 type NativeProof = NativeFrameProof & NativeHostLifecycleProof & NativeScenePixelProof;
@@ -55,10 +77,11 @@ type NativeIconNode = Container & Readonly<{
 
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 
-const nativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
-if (nativeMode !== "dev" && nativeMode !== "smoke") {
-  throw new Error(`LAUNCHPAD_NATIVE_MODE must be dev or smoke, received: ${String(nativeMode)}`);
+const configuredNativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
+if (configuredNativeMode !== undefined && configuredNativeMode !== "dev" && configuredNativeMode !== "smoke") {
+  throw new Error(`LAUNCHPAD_NATIVE_MODE must be dev or smoke when set, received: ${configuredNativeMode}`);
 }
+const nativeMode: NativeMode = configuredNativeMode ?? "app";
 
 function displayFor(frame: Readonly<{ height: number; width: number; x: number; y: number }>) {
   const primary = Screen.getPrimaryDisplay();
@@ -157,16 +180,15 @@ try {
   await nativeData.dispose();
   throw error;
 }
-const frame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
-const activePageItems = (frame.viewport.activePages[frame.viewport.activePageIndex] ?? [])
-  .filter((item) => item !== null);
+let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
+let activePageItems = getNativeActivePageItems(currentFrame);
 
 const app = await createNativePixiApplication({
   antialias: true,
   background: 0x090b14,
   height: 600,
-  resizeMode: "smooth",
-  title: `LaunchPad · Native WebGPU ${nativeMode}`,
+  resizeMode: "adaptive",
+  title: nativeMode === "app" ? "LaunchPad" : `LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
 }).catch(async (error: unknown) => {
   await nativeData.dispose();
@@ -175,9 +197,58 @@ const app = await createNativePixiApplication({
 app.stage.label = "launchpad-native-stage";
 
 const iconTextures = createNativeIconTextureRepository();
-const scene = new NativeDesktopScene(app.stage, { iconTextures });
+const statusText = new Text({
+  resolution: app.resolution,
+  style: {
+    fill: 0xd8dee9,
+    fontFamily: "Segoe UI",
+    fontSize: 14,
+  },
+});
+statusText.anchor.set(0.5, 1);
+statusText.eventMode = "none";
+
+function setStatus(message: string, color = 0xd8dee9): void {
+  statusText.text = message;
+  statusText.style.fill = color;
+  statusText.position.set(app.contentSize.width / 2, app.contentSize.height - 16);
+  statusText.resolution = app.resolution;
+  app.invalidate();
+}
+
+let launchInFlight = false;
+async function activateItem(item: SceneItem): Promise<void> {
+  const name = typeof item.name === "string" ? item.name : item.id;
+  if (item.type === "folder") {
+    setStatus(`Folder opening is not migrated yet: ${name}`, 0xf0b86e);
+    return;
+  }
+  if (launchInFlight) return;
+  launchInFlight = true;
+  setStatus(`Launching ${name}...`);
+  try {
+    await nativeData.launchApp(item.id);
+    setStatus(`Launch request accepted: ${name}`, 0x8bd49c);
+  } catch (error) {
+    const message = error instanceof NativeLaunchError
+      ? `${error.kind}: ${error.detail}`
+      : error instanceof Error ? error.message : String(error);
+    console.error(`Failed to launch ${item.id}`, error);
+    setStatus(`Launch failed: ${message}`, 0xff7b72);
+  } finally {
+    launchInFlight = false;
+  }
+}
+
+const scene = new NativeDesktopScene(app.stage, {
+  iconTextures,
+  onIconActivate: (item) => void activateItem(item),
+});
+app.stage.addChild(statusText);
 let offResize = (): void => {};
 let offStateChange = (): void => {};
+let offKey = (): void => {};
+let offWheel = (): void => {};
 let disconnectAnimationHost = (): void => {};
 
 try {
@@ -191,7 +262,7 @@ try {
   )) {
     throw new Error(`Native smoke icon texture failed: ${JSON.stringify(iconTextureSnapshot)}`);
   }
-  if (nativeMode === "dev" && iconTextureSnapshot.failed.length > 0) {
+  if (nativeMode !== "smoke" && iconTextureSnapshot.failed.length > 0) {
     console.warn("Some native icon textures could not be loaded", iconTextureSnapshot.failed);
   }
 
@@ -200,22 +271,31 @@ try {
     invalidate: () => app.invalidate(),
   });
 
-  let work = scene.commit(frame, {
+  let work = scene.commit(currentFrame, {
     height: app.contentSize.height,
     resolution: app.resolution,
     width: app.contentSize.width,
   });
   let resizeEvents = 0;
+  let resizeLiveLogicalObserved = false;
+  let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
   offResize = app.on("resize", ({ height, resolution, width }) => {
-    work = scene.commit(frame, { height, resolution, width });
+    work = scene.commit(currentFrame, { height, resolution, width });
+    setStatus(statusText.text);
+    if (adaptiveResizeBaseline) {
+      const source = app.renderer.view.texture.source;
+      resizeLiveLogicalObserved ||= source.pixelWidth === adaptiveResizeBaseline.width
+        && source.pixelHeight === adaptiveResizeBaseline.height;
+    }
     resizeEvents += 1;
   });
 
-  const iconNodes = activePageItems.map((item) => {
-    const node = app.stage.getChildByLabel(`launchpad-item:${item.id}`, true);
-    if (!node) throw new Error(`LaunchPad native scene did not create node ${item.id}`);
-    return node as NativeIconNode;
-  });
+  const collectActiveIconNodes = () => activePageItems.map((item) => {
+      const node = app.stage.getChildByLabel(`launchpad-item:${item.id}`, true);
+      if (!node) throw new Error(`LaunchPad native scene did not create node ${item.id}`);
+      return node as NativeIconNode;
+    });
+  let iconNodes = collectActiveIconNodes();
 
   let resolveClosed!: () => void;
   const closed = new Promise<void>((resolve) => {
@@ -226,6 +306,71 @@ try {
   });
 
   let presentCount = 0;
+  let pageTurnInFlight = false;
+  async function turnPage(direction: Exclude<NativePageTurn, 0>): Promise<boolean> {
+    if (pageTurnInFlight) return false;
+    const nextFrame = turnNativeDesktopPage(currentFrame, direction);
+    if (nextFrame === currentFrame) return false;
+    pageTurnInFlight = true;
+    try {
+      const nextItems = getNativeActivePageItems(nextFrame);
+      const snapshot = await iconTextures.synchronize([...activePageItems, ...nextItems]);
+      if (snapshot.pending.length !== 0) {
+        throw new Error(`Native page icon textures remained pending: ${JSON.stringify(snapshot)}`);
+      }
+      if (snapshot.failed.length > 0) {
+        console.warn("Some native page icon textures could not be loaded", snapshot.failed);
+      }
+      currentFrame = nextFrame;
+      activePageItems = nextItems;
+      work = scene.commit(currentFrame, {
+        height: app.contentSize.height,
+        resolution: app.resolution,
+        width: app.contentSize.width,
+      });
+      iconNodes = collectActiveIconNodes();
+      setStatus("");
+      await present(app, `desktop page ${currentFrame.viewport.activePageIndex + 1}`);
+      presentCount += 1;
+      return true;
+    } finally {
+      pageTurnInFlight = false;
+    }
+  }
+
+  const reportPageTurnFailure = (error: unknown): void => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Native desktop page turn failed", error);
+    setStatus(`Page turn failed: ${message}`, 0xff7b72);
+  };
+  const onWheel = (event: FederatedWheelEvent): void => {
+    const direction = getNativePageTurnFromWheel(event);
+    if (direction === 0) return;
+    event.preventDefault();
+    void turnPage(direction).catch(reportPageTurnFailure);
+  };
+  app.stage.on("wheel", onWheel);
+  offWheel = () => app.stage.off("wheel", onWheel);
+  offKey = app.nativeInput.onKey((event) => {
+    const direction = getNativePageTurnFromKey(event);
+    if (direction !== 0) {
+      void turnPage(direction).catch(reportPageTurnFailure);
+      return;
+    }
+    if (
+      event.type !== "down"
+      || event.repeat
+      || event.altKey
+      || event.ctrlKey
+      || event.metaKey
+      || event.isComposing
+      || (event.key !== "Enter" && event.key !== " " && event.code !== "Space")
+    ) return;
+    const focusedId = currentFrame.interaction.focusedIcon?.id;
+    const focused = activePageItems.find((item) => item.id === focusedId);
+    if (focused) void activateItem(focused);
+  });
+
   await present(app, "the first LaunchPad scene frame");
   presentCount += 1;
   await waitFor(
@@ -234,23 +379,53 @@ try {
   );
   await present(app, "the settled LaunchPad scene frame");
   presentCount += 1;
-  const visibleNodes = iconNodes.filter((node) => (
-    node.alpha >= 0.999 && node.renderable && node.visible
-  )).length;
-  if (visibleNodes !== iconNodes.length) {
-    throw new Error(`Only ${visibleNodes}/${iconNodes.length} LaunchPad nodes became visible`);
-  }
 
   let resizeObserved = false;
   let resizePresentCount = 0;
+  let resizeSettledBackingObserved = false;
   let restoreObserved = false;
   let restorePresentCount = 0;
+  let pageNavigation: NativeFrameProof["pageNavigation"] = "skipped-single-page";
+  let structuredLaunchFailureObserved = false;
   let dpiTransition: NativeHostLifecycleProof["dpiTransition"] = "skipped-no-mixed-dpi-display";
   let dpiResolution = app.resolution;
 
   if (nativeMode === "smoke") {
+    try {
+      await nativeData.launchApp(`__launchpad-native-smoke-missing-${process.pid}-${Date.now()}__`);
+      throw new Error("Native launch failure smoke unexpectedly succeeded");
+    } catch (error) {
+      if (!(error instanceof NativeLaunchError) || error.kind !== "missingLaunchInfo") throw error;
+      structuredLaunchFailureObserved = true;
+    }
+
+    if (currentFrame.viewport.activePages.length > 1) {
+      if (!await turnPage(1)) throw new Error("Native smoke could not turn to the second desktop page");
+      await waitFor(
+        "the second native desktop page to become visible",
+        () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
+      );
+      await present(app, "the settled second desktop page");
+      presentCount += 1;
+      if (!await turnPage(-1)) throw new Error("Native smoke could not return to the first desktop page");
+      await waitFor(
+        "the first native desktop page to become visible again",
+        () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
+      );
+      await present(app, "the restored first desktop page");
+      presentCount += 1;
+      pageNavigation = "verified";
+    }
+
     const initialSize = app.contentSize;
     const initialResizeEvents = resizeEvents;
+    const initialSource = app.renderer.view.texture.source;
+    const initialBackingWidth = initialSource.pixelWidth;
+    const initialBackingHeight = initialSource.pixelHeight;
+    adaptiveResizeBaseline = Object.freeze({
+      height: initialBackingHeight,
+      width: initialBackingWidth,
+    });
     const windowFrame = app.window.getFrame();
     app.window.setSize(windowFrame.width + 160, windowFrame.height + 80);
     await waitFor(
@@ -259,6 +434,20 @@ try {
         app.contentSize.width !== initialSize.width || app.contentSize.height !== initialSize.height
       ),
     );
+    const liveSize = app.contentSize;
+    if (!resizeLiveLogicalObserved) {
+      throw new Error("Adaptive resize rebuilt the GPU backing before the live logical resize was observed");
+    }
+    await waitFor(
+      "adaptive resize to settle the GPU backing",
+      () => {
+        const source = app.renderer.view.texture.source;
+        return source.pixelWidth === Math.round(liveSize.width * app.resolution)
+          && source.pixelHeight === Math.round(liveSize.height * app.resolution);
+      },
+    );
+    adaptiveResizeBaseline = null;
+    resizeSettledBackingObserved = true;
     await present(app, "the resized LaunchPad scene frame");
     presentCount += 1;
     resizeObserved = true;
@@ -277,7 +466,7 @@ try {
         "the public resolution to follow the mixed-DPI display",
         () => app.resolution === alternateDisplay.scaleFactor,
       );
-      work = scene.commit(frame, {
+      work = scene.commit(currentFrame, {
         height: app.contentSize.height,
         resolution: app.resolution,
         width: app.contentSize.width,
@@ -298,7 +487,7 @@ try {
       "the native application to resume after restoration",
       () => !app.window.isMinimized() && app.state === "running",
     );
-    work = scene.commit(frame, {
+    work = scene.commit(currentFrame, {
       height: app.contentSize.height,
       resolution: app.resolution,
       width: app.contentSize.width,
@@ -307,6 +496,13 @@ try {
     presentCount += 1;
     restoreObserved = true;
     restorePresentCount = 1;
+  }
+
+  const visibleNodes = iconNodes.filter((node) => (
+    node.alpha >= 0.999 && node.renderable && node.visible
+  )).length;
+  if (visibleNodes !== iconNodes.length) {
+    throw new Error(`Only ${visibleNodes}/${iconNodes.length} LaunchPad nodes became visible`);
   }
 
   const renderer = app.renderer;
@@ -353,14 +549,20 @@ try {
       dpiTransition,
       height: contentSize.height,
       loadedLayout: loadedLayout !== null,
+      pageCount: currentFrame.viewport.activePages.length,
+      pageNavigation,
       presentCount,
       presented: true,
       reconciledNodes: work.reconciledNodes,
       resolution,
+      resizeLiveLogicalObserved,
+      resizeMode: "adaptive",
       resizeObserved,
       resizePresentCount,
+      resizeSettledBackingObserved,
       restoreObserved,
       restorePresentCount,
+      structuredLaunchFailureObserved,
       visibleNodes,
       width: contentSize.width,
     });
@@ -372,6 +574,7 @@ try {
     console.log(JSON.stringify({
       catalogApps: catalogResult.apps.length,
       loadedLayout: loadedLayout !== null,
+      pageCount: currentFrame.viewport.activePages.length,
       reconciledNodes: work.reconciledNodes,
       resolution,
       visibleNodes,
@@ -380,6 +583,8 @@ try {
   }
 } finally {
   disconnectAnimationHost();
+  offKey();
+  offWheel();
   offResize();
   offStateChange();
   scene.destroy();

@@ -45,6 +45,18 @@ export type NativeCatalogScanResult = Readonly<{
   }>;
 }>;
 
+export class NativeLaunchError extends Error {
+  readonly detail: string;
+  readonly kind: string;
+
+  constructor(kind: string, detail: string) {
+    super(detail);
+    this.name = "NativeLaunchError";
+    this.kind = kind;
+    this.detail = detail;
+  }
+}
+
 function requireRecord(value: unknown, path: string): UnknownRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError(`${path} must be an object`);
@@ -152,6 +164,11 @@ export class NativeDataHost {
     return validateCatalogResult(await this.#request("scanApps", { roots, filters }));
   }
 
+  async launchApp(appId: string): Promise<void> {
+    if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
+    await this.#request("launchApp", { appId });
+  }
+
   async dispose(): Promise<void> {
     if (this.#closed) return;
     this.#closed = true;
@@ -182,6 +199,12 @@ export class NativeDataHost {
         throw new Error(`Native data host returned an invalid ${operation} envelope`);
       }
       if (!response.ok) {
+        if (operation === "launchApp" && response.error && typeof response.error === "object") {
+          const error = requireRecord(response.error, "launchApp response.error");
+          if (typeof error.kind === "string" && typeof error.detail === "string") {
+            throw new NativeLaunchError(error.kind, error.detail);
+          }
+        }
         throw new Error(typeof response.error === "string" ? response.error : `${operation} failed`);
       }
       if (!("value" in response)) throw new Error(`Native data host ${operation} response is missing value`);

@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-02
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "接入第一个可交互切片：原生图标激活事件经 Rust host 启动应用，并保留启动前布局一致性"
+next_entry: "等待 Starter 公共字体注册 API 后接入中文字体；随后迁移文件夹打开/关闭切片"
 ---
 
 # Native WebGPU migration
@@ -24,7 +24,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 - Starter release commit `3062d76` is vendored with manifest schema v2, complete file hashes, native ABI 3 and capability mask validation.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
-- `src/native/electrobunSmoke.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
+- `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
 - Starter owns window creation, WebGPU/Pixi initialization, input, present, resize/DPI, minimize/restore, surface/device recovery and reverse-order cleanup.
 - LaunchPad owns only its scene-frame projection, `NativeDesktopScene`, native icon loading, motion updates and LaunchPad-specific pixel proof.
 - `NativeDesktopScene` no longer creates a second presentation loop. Its existing `motionRuntime` is advanced by Starter's application scheduler.
@@ -32,11 +32,13 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Real data startup slice
 
-- `lumeria_native_data.exe` is built from the existing Rust crate and exposes protocol v1 over newline-delimited JSON. The implemented operations are exactly `hello`, `loadLayout` and `scanApps`.
+- `lumeria_native_data.exe` is built from the existing Rust crate and exposes protocol v1 over newline-delimited JSON. The implemented operations are `hello`, `loadLayout`, `scanApps` and `launchApp`.
 - The sidecar reuses `layout_store::load_layout_from_path` and `catalog::scan_apps_from_roots`; layout validation, Windows catalog enumeration, shortcut resolution and icon caching are not duplicated in TypeScript.
 - The Electrobun client validates every request/response envelope and existing layout/catalog contracts. Requests are serial because the Rust host is serial.
 - Startup loads `%APPDATA%\com.lumeria.app\layout.json` by default. `LUMERIA_NATIVE_DATA_DIR` exists only as an absolute-path isolation seam for tests.
 - `nativeStartup.ts` reuses `normalizeNativeApp`, `createLaunchpadLayoutHelpers` and `reconcileDocument` to produce the existing `CompleteDesktopSceneFrame`. There is no native-only layout model or second state owner.
+- Pointer tap and Enter/Space activation send only the stable app id to Rust. Rust resolves it from the scanned catalog, persisted manual app, or persisted scan roots and returns structured launch failures.
+- PageUp/PageDown, Left/Right and wheel paging update the same authoritative scene frame. Resize, DPI changes and restore always recommit the current page rather than the startup snapshot.
 - The sidecar release executable is built before native dev/smoke/build and copied beside the Electrobun Bun entrypoint.
 
 ## Verified behavior
@@ -45,14 +47,15 @@ The isolated real-data native smoke proves:
 
 - the persisted v2 layout is loaded through Rust;
 - one `.url` catalog item is scanned through Rust and appended by existing reconciliation rules;
-- all four reconciled scene nodes are visible;
+- all three first-page scene nodes are visible and the second page can be entered and left;
 - the layout PNG and extracted catalog icon travel through the native texture path;
 - color Emoji and labels contain real GPU pixels;
 - the empty lower viewport remains clean;
-- resize updates logical and backing sizes;
+- adaptive resize exposes the live logical size before rebuilding the backing texture, then settles to the exact DPI-scaled backing size;
 - cross-DPI movement updates resolution when mixed-DPI displays exist;
 - minimize suspends and restore resumes rendering;
 - public `nextPresent()` observes successful native surface submissions;
+- an unknown app id returns the expected structured `missingLaunchInfo` failure through the Rust host;
 - the worker and launcher close cleanly.
 
 Verification commands:
@@ -67,9 +70,9 @@ npm run native:build
 
 ## Remaining migration boundary
 
-Production data now reaches a native Pixi frame through one authoritative read path. The native scene is intentionally still read-only: icon nodes use `eventMode = "none"`, and the sidecar does not yet expose save, launch or target-check operations.
+Production data now reaches an interactive native Pixi frame through one authoritative path. Application icons support pointer/keyboard activation, launch through Rust, and show explicit success/failure status. The current native slice cannot mutate layout state, so there is no dirty state to save before launch; the existing launch-critical save rule must be connected when native editing is introduced.
 
-The next slice should make one complete user path interactive: pointer/keyboard activation of a native icon, launch through the existing Rust launcher, explicit success/failure feedback, and the existing launch-critical save rule before dispatch. Editing, search, folder overlays and WinUI-style settings controls remain later slices.
+Font registration is waiting on the Starter's public API. Folder overlays, editing, search and WinUI-style settings controls remain later slices.
 
 ## Guardrails
 
@@ -81,8 +84,8 @@ The next slice should make one complete user path interactive: pointer/keyboard 
 
 ## Starter/native foundation feedback
 
-No new Starter ABI capability blocked this slice. Bun child-process stdio, Starter lifecycle, native input plumbing, resize/DPI, recovery and cleanup were sufficient. Bundled application sidecars remain LaunchPad packaging policy rather than a new rendering-host ABI.
+No new production Starter ABI capability blocked this slice. Bun child-process stdio, pointer/keyboard/wheel input, adaptive resize/DPI, recovery and cleanup were sufficient. Public key/wheel injection would improve automated input tests but is not required by the application runtime.
 
 ## Next complete slice
 
-Add native icon activation and application launch as one verified behavior slice; do not add editing or a general UI framework in the same change.
+Consume the public font registration API for Chinese labels, then migrate folder open/close as the next complete behavior slice.

@@ -9,7 +9,7 @@ export default {
   },
   build: {
     bun: {
-      entrypoint: "src/native/electrobunSmoke.ts",
+      entrypoint: "src/native/nativeMain.ts",
     },
     copy: {
       ...nativePixiElectrobunCopy,
