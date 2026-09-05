@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 const EXPECTED = {
 	starter: "electrobun-pixi-native-starter",
 	product: "electrobun-pixijs-webgpu",
-	version: "0.2.6",
+	version: "0.2.7",
 	electrobun: "2.0.1",
 	pixi: "8.20.1",
 	coreAbi: 1,

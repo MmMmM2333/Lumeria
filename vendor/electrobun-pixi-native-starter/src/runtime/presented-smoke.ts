@@ -4,6 +4,7 @@ import type { NativePixiApplication } from "./native-app";
 import { getNativePixiApplicationTesting } from "./native-app-testing";
 import { createCanvas } from "@napi-rs/canvas";
 import { runColorDialogSmoke } from "./color-dialog-smoke";
+import { assertWindowInputCoverage } from "./window-input-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -33,6 +34,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    await assertWindowInputCoverage(app);
     const frame = app.getWindowFrame();
     assert.ok(Object.isFrozen(frame));
     assert.ok(Number.isFinite(frame.x) && Number.isFinite(frame.y));
@@ -51,11 +53,13 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
       assert.equal(app.windowMode, "fullscreen");
       await next();
       const fullscreenFrame = app.getWindowFrame();
+      await assertWindowInputCoverage(app);
       assert.ok(fullscreenFrame.width >= frame.width && fullscreenFrame.height >= frame.height);
       app.setWindowMode("fullscreen", 1);
       await new Promise(resolve => setTimeout(resolve, 120));
       await next();
       const overscan = app.getWindowFrame();
+      await assertWindowInputCoverage(app);
       assert.equal(overscan.x, fullscreenFrame.x - 1);
       assert.equal(overscan.y, fullscreenFrame.y - 1);
       assert.equal(overscan.width, fullscreenFrame.width + 2);
@@ -70,6 +74,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
       await next();
     }
     assert.deepEqual(app.getWindowFrame(), frame, "fullscreen must restore the previous window bounds");
+    await assertWindowInputCoverage(app);
     console.log("Native window modes passed: physical frame, fullscreen overscan and windowed restore");
     if(app.windowMaterialSupport.supportsAcrylic){
       for(const material of ["acrylic","mica","micaAlt","none"] as const){

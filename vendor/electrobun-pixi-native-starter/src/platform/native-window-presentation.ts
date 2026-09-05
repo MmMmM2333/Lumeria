@@ -18,6 +18,7 @@ const user=process.platform==="win32"?dlopen("user32.dll",{
   PostMessageW:{args:["ptr","u32","u64","i64"],returns:"i32"},
   GetWindowLongPtrW:{args:["ptr","i32"],returns:"i64"},
   SetWindowLongPtrW:{args:["ptr","i32","i64"],returns:"i64"},
+  SetLayeredWindowAttributes:{args:["ptr","u32","u8","u32"],returns:"i32"},
   MonitorFromWindow:{args:["ptr","u32"],returns:"ptr"},
   GetMonitorInfoW:{args:["ptr","ptr"],returns:"i32"},
 }):null;
@@ -28,11 +29,17 @@ const dwm=process.platform==="win32"?dlopen("dwmapi.dll",{
 }):null;
 const materials={none:1,mica:2,acrylic:3,micaAlt:4} as const;
 /** Only the application-owned root window is eligible for presentation changes. */
-export function createNativeWindowPresentation(inputWindow:number,releaseCapture:()=>void){
+export function createNativeWindowPresentation(inputWindow:number,releaseCapture:()=>void,transparentGpuWindow=false){
   if(!user||!dwm)return null;
   const window=user.symbols.GetAncestor(inputWindow as Pointer,2),owner=new Uint32Array(1);
   if(!window||!user.symbols.IsWindow(window)||!user.symbols.GetWindowThreadProcessId(window,ptr(owner))||owner[0]!==process.pid){
     throw new Error("Presentation requires a live application-owned window");
+  }
+  // A GpuWindow has no CEF bitmap to refresh its layered-window hit-test coverage.
+  // Give the owned root uniform opacity; the child DirectComposition visual owns
+  // pixel alpha. Otherwise Windows only routes input within the creation bounds.
+  if(transparentGpuWindow&&(BigInt(user.symbols.GetWindowLongPtrW(window,-20))&0x80000n)!==0n){
+    if(!user.symbols.SetLayeredWindowAttributes(window,0,255,2))throw new Error("Cannot initialize transparent GPU window input coverage");
   }
   const support=nativeWindowMaterialSupport();
   const setAttribute=(attribute:number,value:number)=>{
