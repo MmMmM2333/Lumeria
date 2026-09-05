@@ -481,7 +481,7 @@ index 4ef9512..119c3c5 100644
 +
  };
 diff --git a/package/src/native/win/nativeWrapper.cpp b/package/src/native/win/nativeWrapper.cpp
-index 006196c..ac8373c 100644
+index 006196c..46e5af4 100644
 --- a/package/src/native/win/nativeWrapper.cpp
 +++ b/package/src/native/win/nativeWrapper.cpp
 @@ -81,12 +81,14 @@
@@ -537,7 +537,76 @@ index 006196c..ac8373c 100644
  // WGPUView class - simple native child window surface
  class WGPUView : public AbstractView {
  public:
-@@ -8764,9 +8793,14 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
+@@ -5541,6 +5570,7 @@ typedef struct {
+     WindowBlurHandler blurHandler;
+     WindowKeyHandler keyHandler;
+     ChromeStyle chromeStyle;
++    bool fullClientChrome;
+     bool bypassShouldClose;
+     wchar_t pendingHighSurrogate;
+ } WindowData;
+@@ -5815,6 +5845,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+             break;
+ 
+         case WM_NCCALCSIZE:
++            if (data && data->fullClientChrome) {
++                if (wParam == TRUE && lParam) {
++                    auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
++                    if (IsZoomed(hwnd) && (GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_THICKFRAME)) {
++                        MONITORINFO info = { sizeof(MONITORINFO) };
++                        if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &info))
++                            params->rgrc[0] = info.rcWork;
++                    }
++                }
++                return 0;
++            }
+             if (wParam == TRUE && data && data->chromeStyle == ChromeStyle::HiddenInset) {
+                 NCCALCSIZE_PARAMS* p = (NCCALCSIZE_PARAMS*)lParam;
+                 RECT original = p->rgrc[0];
+@@ -5835,6 +5876,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+             }
+             break;
+ 
++        case WM_NCPAINT:
++        case 0x00AE: // WM_NCUAHDRAWCAPTION
++        case 0x00AF: // WM_NCUAHDRAWFRAME
++            if (data && data->fullClientChrome) return 0;
++            break;
++        case WM_NCACTIVATE:
++            if (data && data->fullClientChrome)
++                return DefWindowProcW(hwnd, msg, wParam, -1);
++            break;
++        case WM_SYSCOMMAND:
++            if (data && data->fullClientChrome && (wParam & 0xfff0) == SC_KEYMENU) return 0;
++            break;
++
+         case WM_INPUT: {
+             if (g_isMovingWindow && g_targetWindow) {
+                 UINT dwSize = 0;
+@@ -6060,7 +6114,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+             {
+                 PAINTSTRUCT ps;
+                 HDC hdc = BeginPaint(hwnd, &ps);
+-                // Don't need to do anything here, just validate the paint region
++                // GPU custom chrome uses no redirection bitmap; DComp owns paint.
+                 EndPaint(hwnd, &ps);
+             }
+             return 0;
+@@ -8752,6 +8806,13 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
+             ::log("ERROR: Container window handle invalid for WGPUView");
+             return;
+         }
++        // The full-window transparent GPU path is composed by DComp. Keeping a
++        // GDI redirection bitmap on its empty container exposes stale creation-
++        // sized pixels when the GPU surface becomes transparent during resize.
++        if (view->fullSize && (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & (WS_EX_LAYERED | WS_EX_NOREDIRECTIONBITMAP))) {
++            SetWindowLongPtrW(containerHwnd, GWL_EXSTYLE,
++                GetWindowLongPtrW(containerHwnd, GWL_EXSTYLE) | WS_EX_NOREDIRECTIONBITMAP);
++        }
+ 
+         RECT physicalBounds = electrobun::logicalToPhysicalRect(
+             x,
+@@ -8764,9 +8825,14 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
              // full-size WGPU view fills the drawable client area instead.
              GetClientRect(containerHwnd, &physicalBounds);
          }
@@ -554,7 +623,7 @@ index 006196c..ac8373c 100644
              L"",
              WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
              physicalBounds.left,
-@@ -8884,6 +8918,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
+@@ -8884,6 +8950,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
  
  typedef void* (*PFN_wgpuInstanceCreateSurface)(void* instance, const void* descriptor);
  typedef void (*PFN_wgpuSurfaceConfigure)(void* surface, const void* config);
@@ -562,7 +631,7 @@ index 006196c..ac8373c 100644
  typedef void (*PFN_wgpuSurfaceGetCurrentTexture)(void* surface, void* surfaceTexture);
  typedef int32_t (*PFN_wgpuSurfacePresent)(void* surface);
  typedef WGPUFuture (*PFN_wgpuQueueOnSubmittedWorkDone)(WGPUQueue queue, WGPUQueueWorkDoneCallbackInfo callbackInfo);
-@@ -8896,6 +8931,7 @@ typedef void (*PFN_wgpuBufferUnmap)(WGPUBuffer buffer);
+@@ -8896,6 +8963,7 @@ typedef void (*PFN_wgpuBufferUnmap)(WGPUBuffer buffer);
  static HMODULE wgpuLibHandle = nullptr;
  static PFN_wgpuInstanceCreateSurface p_wgpuInstanceCreateSurface = nullptr;
  static PFN_wgpuSurfaceConfigure p_wgpuSurfaceConfigure = nullptr;
@@ -570,7 +639,7 @@ index 006196c..ac8373c 100644
  static PFN_wgpuSurfaceGetCurrentTexture p_wgpuSurfaceGetCurrentTexture = nullptr;
  static PFN_wgpuSurfacePresent p_wgpuSurfacePresent = nullptr;
  static PFN_wgpuQueueOnSubmittedWorkDone p_wgpuQueueOnSubmittedWorkDone = nullptr;
-@@ -9024,7 +9060,8 @@ static bool ensureDCompSymbols() {
+@@ -9024,7 +9092,8 @@ static bool ensureDCompSymbols() {
  
  // DirectComposition zero-copy bridge state (per-surface)
  struct DCompBridgeState {
@@ -580,7 +649,7 @@ index 006196c..ac8373c 100644
      ComPtr<ID3D12Resource> stagingDx12;
      ComPtr<ID3D11Device5> presentDevice;
      ComPtr<ID3D11DeviceContext4> presentContext;
-@@ -9042,6 +9079,9 @@ struct DCompBridgeState {
+@@ -9042,6 +9111,9 @@ struct DCompBridgeState {
      WGPUDevice wgpuDevice = nullptr;
      uint32_t width = 0;
      uint32_t height = 0;
@@ -590,7 +659,7 @@ index 006196c..ac8373c 100644
  
      void cleanup() {
          std::lock_guard<std::mutex> lock(frameMutex);
-@@ -9079,12 +9119,34 @@ struct DCompBridgeState {
+@@ -9079,12 +9151,34 @@ struct DCompBridgeState {
          }
          presentContext.Reset();
          presentDevice.Reset();
@@ -626,7 +695,7 @@ index 006196c..ac8373c 100644
  extern "C++" {
  
  static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
-@@ -9095,23 +9157,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
+@@ -9095,23 +9189,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
          });
  }
  
@@ -706,7 +775,7 @@ index 006196c..ac8373c 100644
  }
  
  static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context) {
-@@ -9135,6 +9248,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
+@@ -9135,6 +9280,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
      }
  }
  
@@ -769,7 +838,7 @@ index 006196c..ac8373c 100644
  } // extern "C++"
  
  static std::wstring getExecutableDirW() {
-@@ -9171,7 +9340,8 @@ static HMODULE loadWgpuLibrary() {
+@@ -9171,7 +9372,8 @@ static HMODULE loadWgpuLibrary() {
  }
  
  static bool ensureWgpuSymbols() {
@@ -779,7 +848,7 @@ index 006196c..ac8373c 100644
          && p_wgpuQueueOnSubmittedWorkDone && p_wgpuBufferMapAsync && p_wgpuInstanceWaitAny
          && p_wgpuBufferGetMappedRange && p_wgpuBufferUnmap) {
          return true;
-@@ -9180,6 +9350,7 @@ static bool ensureWgpuSymbols() {
+@@ -9180,6 +9382,7 @@ static bool ensureWgpuSymbols() {
      if (!handle) return false;
      p_wgpuInstanceCreateSurface = (PFN_wgpuInstanceCreateSurface)GetProcAddress(handle, "wgpuInstanceCreateSurface");
      p_wgpuSurfaceConfigure = (PFN_wgpuSurfaceConfigure)GetProcAddress(handle, "wgpuSurfaceConfigure");
@@ -787,7 +856,7 @@ index 006196c..ac8373c 100644
      p_wgpuSurfaceGetCurrentTexture = (PFN_wgpuSurfaceGetCurrentTexture)GetProcAddress(handle, "wgpuSurfaceGetCurrentTexture");
      p_wgpuSurfacePresent = (PFN_wgpuSurfacePresent)GetProcAddress(handle, "wgpuSurfacePresent");
      p_wgpuQueueOnSubmittedWorkDone = (PFN_wgpuQueueOnSubmittedWorkDone)GetProcAddress(handle, "wgpuQueueOnSubmittedWorkDone");
-@@ -9188,7 +9359,8 @@ static bool ensureWgpuSymbols() {
+@@ -9188,7 +9391,8 @@ static bool ensureWgpuSymbols() {
      p_wgpuBufferGetMappedRange = (PFN_wgpuBufferGetMappedRange)GetProcAddress(handle, "wgpuBufferGetMappedRange");
      p_wgpuBufferGetConstMappedRange = (PFN_wgpuBufferGetConstMappedRange)GetProcAddress(handle, "wgpuBufferGetConstMappedRange");
      p_wgpuBufferUnmap = (PFN_wgpuBufferUnmap)GetProcAddress(handle, "wgpuBufferUnmap");
@@ -797,7 +866,7 @@ index 006196c..ac8373c 100644
          || !p_wgpuQueueOnSubmittedWorkDone || !p_wgpuBufferMapAsync || !p_wgpuInstanceWaitAny
          || !p_wgpuBufferGetMappedRange || !p_wgpuBufferUnmap) {
          ::log("WGPU: missing symbols");
-@@ -9737,6 +9909,53 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
+@@ -9737,6 +9941,53 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
  static std::map<void*, HWND> g_surfaceToHwnd;
  static std::mutex g_surfaceToHwndMutex;
  
@@ -851,7 +920,7 @@ index 006196c..ac8373c 100644
  ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractView* abstractView) {
      if (!wgpuInstance || !abstractView || !abstractView->hwnd) {
          printf("[WGPU] createSurfaceForView: null check failed (inst=%p view=%p hwnd=%p)\n",
-@@ -9770,30 +9989,18 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
+@@ -9770,30 +10021,18 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
  
  // Helper: Initialize DComp zero-copy bridge for a surface.
  // Returns true on success, false if DComp is unavailable or init fails.
@@ -891,7 +960,7 @@ index 006196c..ac8373c 100644
      // Require DXGI shared handle feature for cross-device sharing
      bool hasDXGISharedHandle = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedTextureMemoryDXGISharedHandle);
      bool hasSharedFence = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedFenceDXGISharedHandle);
-@@ -9801,82 +10008,88 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9801,82 +10040,88 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (!hasDXGISharedHandle || !hasSharedFence) {
          printf("[DComp] Zero-copy bridge requires DXGI shared texture and fence support\n");
@@ -1033,7 +1102,7 @@ index 006196c..ac8373c 100644
      }
  
      // Step 5: Create DX12 staging texture with shared access
-@@ -9899,7 +10112,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9899,7 +10144,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          nullptr, IID_PPV_ARGS(&bridge->stagingDx12));
      if (FAILED(hr)) {
          printf("[DComp] CreateCommittedResource (staging) failed: 0x%08lx\n", hr);
@@ -1042,7 +1111,7 @@ index 006196c..ac8373c 100644
      }
  
      // Step 6: Create DXGI shared handle
-@@ -9908,7 +10121,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9908,7 +10153,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          GENERIC_ALL, nullptr, &bridge->stagingSharedHandle);
      if (FAILED(hr)) {
          printf("[DComp] CreateSharedHandle failed: 0x%08lx\n", hr);
@@ -1051,7 +1120,7 @@ index 006196c..ac8373c 100644
      }
  
      // Step 7: Set up bidirectional cross-device synchronization. EndAccess
-@@ -9942,7 +10155,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9942,7 +10187,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (FAILED(hr) || !bridge->presentationSharedFence) {
          printf("[DComp] Shared presentation fence setup failed; using normal HWND surface\n");
@@ -1060,7 +1129,7 @@ index 006196c..ac8373c 100644
      }
  
      // Step 8: Open shared handle on presentation device for CopyResource
-@@ -9954,7 +10167,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9954,7 +10199,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      }
      if (FAILED(hr)) {
          printf("[DComp] OpenSharedResource1 on presentation device failed: 0x%08lx\n", hr);
@@ -1069,7 +1138,7 @@ index 006196c..ac8373c 100644
      }
      // Staging texture shared to presentation device
  
-@@ -9970,7 +10183,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9970,7 +10215,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (!bridge->sharedTexMem) {
          printf("[DComp] wgpuDeviceImportSharedTextureMemory returned null\n");
@@ -1078,7 +1147,7 @@ index 006196c..ac8373c 100644
      }
  
      // Verify properties
-@@ -9978,7 +10191,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9978,7 +10223,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      WGPUStatus propStatus = p_wgpuSharedTextureMemoryGetProperties(bridge->sharedTexMem, &props);
      if (propStatus != WGPUStatus_Success) {
          printf("[DComp] SharedTextureMemory properties failed (status=%d)\n", propStatus);
@@ -1087,7 +1156,7 @@ index 006196c..ac8373c 100644
      }
      // SharedTextureMemory imported successfully
  
-@@ -9998,75 +10211,236 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9998,75 +10243,236 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      bridge->zeroCopyTexture = p_wgpuSharedTextureMemoryCreateTexture(bridge->sharedTexMem, &wgpuTexDesc);
      if (!bridge->zeroCopyTexture) {
          printf("[DComp] wgpuSharedTextureMemoryCreateTexture returned null\n");
@@ -1119,10 +1188,10 @@ index 006196c..ac8373c 100644
 -        g_dcompBridges[surface] = std::move(bridge);
 +        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +        configured = g_dawnConfiguredSurfaces.erase(surface) > 0;
-+    }
+     }
 +    if (configured) {
 +        runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceUnconfigure(surface); });
-     }
++    }
 +}
  
 -    return true;
@@ -1165,7 +1234,12 @@ index 006196c..ac8373c 100644
 +    }
 +
 +    HWND hwnd = nullptr;
-+    {
+     {
+-        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
+-        auto it = g_dcompBridges.find(surface);
+-        if (it != g_dcompBridges.end()) {
+-            if (it->second->wgpuDevice == devicePtr &&
+-                it->second->width == width && it->second->height == height) {
 +        std::lock_guard<std::mutex> hwndLock(g_surfaceToHwndMutex);
 +        auto it = g_surfaceToHwnd.find(surface);
 +        if (it != g_surfaceToHwnd.end()) hwnd = it->second;
@@ -1177,12 +1251,7 @@ index 006196c..ac8373c 100644
 +    unconfigureDawnSurface(surface);
 +
 +    std::shared_ptr<DCompSurfaceState> surfaceState;
-     {
--        std::lock_guard<std::mutex> lock(g_dcompBridgeMapMutex);
--        auto it = g_dcompBridges.find(surface);
--        if (it != g_dcompBridges.end()) {
--            if (it->second->wgpuDevice == devicePtr &&
--                it->second->width == width && it->second->height == height) {
++    {
 +        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +        auto it = g_dcompSurfaces.find(surface);
 +        if (it != g_dcompSurfaces.end()) surfaceState = it->second;
@@ -1222,9 +1291,10 @@ index 006196c..ac8373c 100644
 +        if (!surfaceState) {
 +            configureDawnSurface(surface, config);
 +            return;
-+        }
-+    }
-+
+         }
+     }
+ 
+-    destroyDCompBridgeOnMainThread(std::move(staleBridge));
 +    // A configure changes only the pending generation. The active swap chain
 +    // remains attached; the HWND subclass owns the current viewport transform.
 +    std::shared_ptr<DCompBridgeState> retiredPending;
@@ -1262,7 +1332,9 @@ index 006196c..ac8373c 100644
 +    }
 +    destroyDCompBridgeOnMainThread(std::move(retiredPending));
 +    if (activeMatches) return;
-+
+ 
+-    // Try to initialize DComp bridge (graceful fallback on failure)
+-    initDCompBridgeForSurface(surface, devicePtr, width, height);
 +    auto pending = createDCompBridgeForSurface(
 +        surfaceState, devicePtr, width, height, opaque, resizeSource);
 +    if (!pending) {
@@ -1285,13 +1357,12 @@ index 006196c..ac8373c 100644
 +                    useDawnFallback = true;
 +                }
 +            }
-         }
++        }
 +        destroyDCompSurfaceOnMainThread(std::move(emptySurface));
 +        if (useDawnFallback) configureDawnSurface(surface, config);
 +        return;
-     }
- 
--    destroyDCompBridgeOnMainThread(std::move(staleBridge));
++    }
++
 +    std::shared_ptr<DCompBridgeState> replacedPending;
 +    bool installed = false;
 +    {
@@ -1312,9 +1383,7 @@ index 006196c..ac8373c 100644
 +    destroyDCompBridgeOnMainThread(std::move(replacedPending));
 +    if (!installed) destroyDCompBridgeOnMainThread(std::move(pending));
 +}
- 
--    // Try to initialize DComp bridge (graceful fallback on failure)
--    initDCompBridgeForSurface(surface, devicePtr, width, height);
++
 +ELECTROBUN_EXPORT void wgpuSurfaceUnconfigureMainThread(void* surface) {
 +    if (!surface || !ensureWgpuSymbols()) return;
 +    unconfigureDawnSurface(surface);
@@ -1368,7 +1437,7 @@ index 006196c..ac8373c 100644
          }
      }
      {
-@@ -10074,25 +10448,84 @@ ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
+@@ -10074,25 +10480,84 @@ ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
          g_surfaceToHwnd.erase(surface);
      }
  
@@ -1457,7 +1526,7 @@ index 006196c..ac8373c 100644
          auto retireBridge = [&]() {
              bridge->unusable.store(true);
              lock.unlock();
-@@ -10114,8 +10547,7 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+@@ -10114,8 +10579,7 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
                      "[DComp] Failed to abandon previous access (status=%d); retiring bridge\n",
                      abandonedStatus);
                  retireBridge();
@@ -1467,7 +1536,7 @@ index 006196c..ac8373c 100644
                  return;
              }
          }
-@@ -10141,47 +10573,327 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+@@ -10141,47 +10605,327 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
          if (status == WGPUStatus_Success) {
              bridge->presentationFencePending = false;
              bridge->accessActive = true;
@@ -1748,10 +1817,8 @@ index 006196c..ac8373c 100644
 +            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
 +            bridge = surfaceState->inFlight;
 +        }
-     }
- 
--    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
--        !bridge->unusable.load()) {
++    }
++
 +    if (bridge && bridge->resizeAttachedSwapChain) {
 +        if (!MainThreadDispatcher::is_main_thread()) {
 +            return MainThreadDispatcher::dispatch_sync(
@@ -1759,8 +1826,10 @@ index 006196c..ac8373c 100644
 +        }
 +        return presentResizedDCompBridgeOnMainThread(
 +            surface, surfaceState, std::move(bridge));
-+    }
-+
+     }
+ 
+-    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
+-        !bridge->unusable.load()) {
 +    if (bridge && bridge->zeroCopyTexture) {
          std::unique_lock<std::mutex> lock(bridge->frameMutex);
 +        std::unique_lock<std::mutex> presentLock(surfaceState->presentMutex);
@@ -1810,7 +1879,7 @@ index 006196c..ac8373c 100644
          if (!swapChain) {
              retireBridge();
              return 0;
-@@ -10226,24 +10938,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+@@ -10226,24 +10970,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              }
          }
  
@@ -1906,7 +1975,7 @@ index 006196c..ac8373c 100644
  
          const uint64_t nextFenceValue = bridge->presentationFenceValue + 1;
          hr = bridge->presentContext->Signal(
-@@ -10271,14 +11050,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+@@ -10271,14 +11082,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              return 0;
          }
  
@@ -2011,7 +2080,44 @@ index 006196c..ac8373c 100644
      }
  
      // Normal HWND path
-@@ -12535,8 +13398,17 @@ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
+@@ -11075,10 +11970,13 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+ 
+         // Handle titleBarStyle options
+         data->chromeStyle = ChromeStyle::Default;
++        data->fullClientChrome = false;
+         if (titleBarStyle && strcmp(titleBarStyle, "hidden") == 0) {
+-            // "hidden" = borderless window (no titlebar, no native controls)
+-            // This is for completely custom chrome
+-            windowStyle = WS_POPUP;
++            // Preserve native sizing/maximize/material semantics, but consume
++            // the complete non-client area in WM_NCCALCSIZE for custom chrome.
++            windowStyle = WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU |
++                WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
++            data->fullClientChrome = true;
+         } else if (titleBarStyle && strcmp(titleBarStyle, "hiddenInset") == 0) {
+             // "hiddenInset" = frameless window with resize borders and DWM shadow.
+             // We use WS_CAPTION | WS_THICKFRAME so the system treats it as a
+@@ -11091,8 +11989,8 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+ 
+         // Handle transparent windows
+         if (transparent) {
+-            // For transparent windows, we need WS_EX_LAYERED to support per-pixel alpha
+-            windowExStyle |= WS_EX_LAYERED;
++            // Custom GPU windows use DComp's alpha, not a CEF layered bitmap.
++            windowExStyle |= data->fullClientChrome ? WS_EX_NOREDIRECTIONBITMAP : WS_EX_LAYERED;
+         }
+ 
+         // Electrobun's cross-platform window geometry is expressed in DIPs.
+@@ -11147,7 +12045,7 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+ 
+             // Force the window frame to recalculate so WM_NCCALCSIZE
+             // is sent again with chromeStyle already set.
+-            if (data->chromeStyle == ChromeStyle::HiddenInset) {
++            if (data->chromeStyle == ChromeStyle::HiddenInset || data->fullClientChrome) {
+                 SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+                     SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+             }
+@@ -12535,8 +13433,17 @@ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                      
                      switch (LOWORD(lParam)) {
                          case WM_LBUTTONUP:

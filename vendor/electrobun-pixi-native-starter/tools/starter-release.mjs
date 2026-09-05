@@ -31,7 +31,7 @@ const nativeFrameSource = join(root, "src", "platform", "native-frame.rs");
 const nativeWrapper = join(devkit, "libNativeWrapper.dll");
 const host = join(root, "src", "platform", "native-frame-host.ts");
 const smoke = join(root, "starter-consumer-smoke", "smoke.mjs");
-const NATIVE_WRAPPER_SHA256 = "71c8222cec57d94dafac88e3e5d6c3a3ad156f0a0d244a6e709d4f0549d3b2ff";
+const NATIVE_WRAPPER_SHA256 = "3188bb0e4db8b9d1b728e94bd2f6c64ba3114cf12c78738b0dec3b83f1910701";
 const ROOT_FILES = [
 	".gitignore", "README.md", "package.json", "package-lock.json", "electrobun.config.ts", "tsconfig.json",
 ];

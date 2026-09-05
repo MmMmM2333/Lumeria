@@ -7,6 +7,7 @@ import { runColorDialogSmoke } from "./color-dialog-smoke";
 import { assertWindowInputCoverage } from "./window-input-smoke";
 import { runShortcutSmoke } from "./shortcut-smoke";
 import { runTraySmoke } from "./tray-smoke";
+import { runWindowChromeSmoke } from "./window-chrome-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -36,6 +37,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    if(process.env.PIXI_WINDOW_PROBE_DIR)await runWindowChromeSmoke(app);
     if(process.env.PIXI_TRAY_SMOKE_ICON)await runTraySmoke(process.env.PIXI_TRAY_SMOKE_ICON);
     await runShortcutSmoke();
     await assertWindowInputCoverage(app);
@@ -135,6 +137,9 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		} finally { offFailure(); }
 		console.log("Presented callback smoke passed: synchronous ordering, monotonic frames, scene changes and unsubscribe");
 		testing.resume();
+		const offVeto=app.beforeClose(async()=>false);
+		app.window.requestClose();await new Promise(resolve=>setTimeout(resolve,100));
+		assert.equal(app.state,"running","explicit close veto must preserve the application");offVeto();
 		let attempts = 0;
 		let release!: () => void;
 		const gate = new Promise<void>(resolve => { release = resolve; });

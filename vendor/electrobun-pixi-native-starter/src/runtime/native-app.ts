@@ -145,7 +145,7 @@ export interface NativePixiApplication {
 	animate(update: (deltaMs: number) => void): () => void;
 	on<K extends keyof NativeAppEvents>(type: K, listener: (event: NativeAppEvents[K]) => void): () => void;
 	dispose(): Promise<void>;
-	beforeClose(listener: () => Promise<void>): () => void;
+	beforeClose(listener: () => Promise<void | boolean>): () => void;
   readonly windowMaterialSupport: ReturnType<typeof import("../platform/native-window-presentation").nativeWindowMaterialSupport>;
   setWindowPresentation(material:NativeWindowMaterial,appearance:NativeWindowAppearance):void;
   readonly supportsWindowIcon: boolean;
@@ -357,7 +357,7 @@ export async function createNativePixiApplication(
 		};
 		const nativeInputEvents: Array<Record<string, unknown>> = [];
 		const cleanups = new Set<() => void | Promise<void>>();
-		const closeGuards = new Set<() => Promise<void>>();
+		const closeGuards = new Set<() => Promise<void | boolean>>();
 		let closeRequest: Promise<void> | null = null;
 		const presentWaiters = new Set<{ resolve(): void; reject(error: Error): void }>();
 		const rejectPresentWaiters = (error: Error) => {
@@ -485,6 +485,9 @@ export async function createNativePixiApplication(
 				destroyBundle(item: any) { item.bundle?.destroy(); if (item.batch?.bindGroup) item.batch.bindGroup = null; },
 			});
 			batchPipe.execute = (batch: any) => {
+				// The current native bundle ABI clears to opaque #090b14. Transparent
+				// windows must use Pixi's normal pass, which carries backgroundAlpha.
+				if(options.transparent){fastFallback="transparent-surface";return executeBatch(batch);}
 				if (target.renderTarget.renderTarget !== target.renderTarget.rootRenderTarget || !stage.renderGroup) {
 					return executeBatch(batch);
 				}
@@ -855,7 +858,7 @@ export async function createNativePixiApplication(
 			event.response = { allow: false };
 			if (closeRequest) return;
 			closeRequest = (async () => {
-				for (const guard of [...closeGuards]) await guard();
+				for (const guard of [...closeGuards]) if(await guard()===false)return;
 				await dispose();
 				allowClose = true;
 				window.close();

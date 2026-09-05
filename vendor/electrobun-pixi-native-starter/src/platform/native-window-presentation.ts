@@ -18,7 +18,6 @@ const user=process.platform==="win32"?dlopen("user32.dll",{
   PostMessageW:{args:["ptr","u32","u64","i64"],returns:"i32"},
   GetWindowLongPtrW:{args:["ptr","i32"],returns:"i64"},
   SetWindowLongPtrW:{args:["ptr","i32","i64"],returns:"i64"},
-  SetLayeredWindowAttributes:{args:["ptr","u32","u8","u32"],returns:"i32"},
   MonitorFromWindow:{args:["ptr","u32"],returns:"ptr"},
   GetMonitorInfoW:{args:["ptr","ptr"],returns:"i32"},
 }):null;
@@ -35,12 +34,8 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
   if(!window||!user.symbols.IsWindow(window)||!user.symbols.GetWindowThreadProcessId(window,ptr(owner))||owner[0]!==process.pid){
     throw new Error("Presentation requires a live application-owned window");
   }
-  // A GpuWindow has no CEF bitmap to refresh its layered-window hit-test coverage.
-  // Give the owned root uniform opacity; the child DirectComposition visual owns
-  // pixel alpha. Otherwise Windows only routes input within the creation bounds.
-  if(transparentGpuWindow&&(BigInt(user.symbols.GetWindowLongPtrW(window,-20))&0x80000n)!==0n){
-    if(!user.symbols.SetLayeredWindowAttributes(window,0,255,2))throw new Error("Cannot initialize transparent GPU window input coverage");
-  }
+  // The native custom GPU window is created with WS_EX_NOREDIRECTIONBITMAP.
+  // Do not switch redirection modes after the HWND and DComp surface are created.
   const support=nativeWindowMaterialSupport();
   const setAttribute=(attribute:number,value:number)=>{
     const data=new Int32Array([value]);
@@ -52,6 +47,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     return result<0?null:data[0]!;
   };
   const initialDark=readAttribute(20),initialMaterial=readAttribute(38);
+  const initialBorder=readAttribute(34),initialCorner=readAttribute(33);
   let current={material:"none" as NativeWindowMaterial,appearance:"light" as NativeWindowAppearance};
   let overscanPixels=0;
   let fullscreen=false;
@@ -79,9 +75,12 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
   };
   const apply=(material:NativeWindowMaterial,appearance:NativeWindowAppearance)=>{
     setAttribute(20,appearance==="dark"?1:0);
+    // Application close phases remove native frame decoration together with the material.
+    if(initialBorder!==null)setAttribute(34,material==="none"?-2:-1);
+    if(initialCorner!==null)setAttribute(33,material==="none"||fullscreen?1:2);
     if(initialMaterial!==null){
       setAttribute(38,materials[material]);
-      const margin=new Int32Array([material==="none"?0:-1,0,0,0]);
+      const margin=new Int32Array([transparentGpuWindow||material!=="none"?-1:0,0,0,0]);
       const result=dwm.symbols.DwmExtendFrameIntoClientArea(window,ptr(margin));
       if(result<0)throw new Error(`DwmExtendFrameIntoClientArea failed (${result})`);
       if(readAttribute(38)!==materials[material])throw new Error("DWM did not retain the requested backdrop");
@@ -101,7 +100,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(nextFullscreen){
         const monitor=user.symbols.MonitorFromWindow(window,2),info=new Int32Array(10);info[0]=40;
         if(!monitor||!user.symbols.GetMonitorInfoW(monitor,ptr(info)))throw new Error("Cannot read the window display bounds");
-        target={style:BigInt.asUintN(32,(previous.style&~0x00cf0000n)|0x80000000n),
+        target={style:BigInt.asUintN(32,(previous.style&~0x01000000n)|0x80cf0000n),
           rect:new Int32Array([info[1]!-pixels,info[2]!-pixels,info[3]!+pixels,info[4]!+pixels])};
       }else{
         if(!windowedPlacement)throw new Error("Windowed placement is unavailable");
@@ -112,6 +111,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(nextFullscreen&&!fullscreen)windowedPlacement=previous;
       if(!nextFullscreen)windowedPlacement=null;
       fullscreen=nextFullscreen;overscanPixels=nextPixels;
+      if(initialCorner!==null)setAttribute(33,fullscreen||current.material==="none"?1:2);
     },
     startDrag(){startNonClient(2);},
     startResize(direction:NativeResizeDirection){
@@ -129,6 +129,8 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(!user.symbols.IsWindow(window))return;
       if(initialMaterial!==null)setAttribute(38,initialMaterial);
       if(initialDark!==null)setAttribute(20,initialDark);
+      if(initialBorder!==null)setAttribute(34,initialBorder);
+      if(initialCorner!==null)setAttribute(33,initialCorner);
     },
   };
 }
