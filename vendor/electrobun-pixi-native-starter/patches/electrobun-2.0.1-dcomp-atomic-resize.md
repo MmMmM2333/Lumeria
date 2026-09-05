@@ -41,8 +41,12 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,061,824 bytes with SHA-256
-`3188BB0E4DB8B9D1B728E94BD2F6C64BA3114CF12C78738B0DEC3B83F1910701`.
+The staged native DLL is 2,062,336 bytes with SHA-256
+`59CEEC977F5922FE4D0904C325057D590897D38D0268BA9F0A81BEEAE01C6730`.
+Starter 0.2.11 primes replacement visuals with a zero-opacity effect, then removes
+that effect and the old visual in the same commit. This prevents translucent
+generations from blending together during live resize. Real screen-pixel sampling
+covers both repeated SetWindowPos changes and the native mouse resize loop.
 Starter 0.2.10 preserves resizable native window styles for custom full-client
 chrome, consumes the caption area, suppresses caption paint, and creates the
 transparent GPU root/container without GDI redirection bitmaps. DComp owns pixel

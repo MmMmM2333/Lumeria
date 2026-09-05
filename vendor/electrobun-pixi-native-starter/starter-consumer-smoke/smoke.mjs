@@ -22,13 +22,13 @@ import { tmpdir } from "node:os";
 const EXPECTED = {
 	starter: "electrobun-pixi-native-starter",
 	product: "electrobun-pixijs-webgpu",
-	version: "0.2.10",
+	version: "0.2.11",
 	electrobun: "2.0.1",
 	pixi: "8.20.1",
 	coreAbi: 1,
 	sdkAbi: 1,
 	nativeFrameAbi: 4,
-	nativeWrapperSha256: "3188bb0e4db8b9d1b728e94bd2f6c64ba3114cf12c78738b0dec3b83f1910701",
+	nativeWrapperSha256: "59ceec977f5922fe4d0904c325057d590897d38d0268ba9f0a81beeae01c6730",
 	capabilities: "0x0000000000001fbf",
 	hostCapabilityBits: [
 		["CAP_MULTI_BUNDLE", 0], ["CAP_SURFACE_STATUS_V2", 1], ["CAP_WINDOW_INPUT", 2],

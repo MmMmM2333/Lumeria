@@ -1,10 +1,10 @@
 {
   "name": "electrobun-pixijs-webgpu",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "private": true,
   "type": "module",
   "electrobunPixiStarter": {
-    "nativeWrapperSha256": "3188bb0e4db8b9d1b728e94bd2f6c64ba3114cf12c78738b0dec3b83f1910701"
+    "nativeWrapperSha256": "59ceec977f5922fe4d0904c325057d590897d38d0268ba9f0a81beeae01c6730"
   },
   "scripts": {
     "prepare:electrobun": "node tools/patch-electrobun.mjs",

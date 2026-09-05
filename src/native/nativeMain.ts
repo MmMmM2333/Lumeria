@@ -130,8 +130,8 @@ type NativeFrameProof = Readonly<{
 type NativeHostLifecycleProof = Readonly<{
   dpiResolution: number;
   dpiTransition: "skipped-no-mixed-dpi-display" | "verified-display-fallback";
-  resizeLiveLogicalObserved: boolean;
-  resizeMode: "adaptive";
+  resizeLiveBackingObserved: boolean;
+  resizeMode: "live";
   resizeObserved: boolean;
   resizePresentCount: number;
   resizeSettledBackingObserved: boolean;
@@ -319,7 +319,7 @@ const app = await createNativePixiApplication({
   antialias: true,
   background: 0x090b14,
   height: 600,
-  resizeMode: "adaptive",
+  resizeMode: "live",
   title: nativeMode === "app" ? "LaunchPad" : `LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
 }).catch(async (error: unknown) => {
@@ -825,17 +825,17 @@ try {
   };
   searchBar.update(app.contentSize.width, false);
   let resizeEvents = 0;
-  let resizeLiveLogicalObserved = false;
-  let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
+  let resizeLiveBackingObserved = false;
+  let observeLiveResize = false;
   offResize = app.on("resize", ({ height, resolution, width }) => {
     windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     settingsShell?.redraw();
     work = commitScene({ height, resolution, width }, true);
     setStatus(statusText.text);
-    if (adaptiveResizeBaseline) {
+    if (observeLiveResize) {
       const source = app.renderer.view.texture.source;
-      resizeLiveLogicalObserved ||= source.pixelWidth === adaptiveResizeBaseline.width
-        && source.pixelHeight === adaptiveResizeBaseline.height;
+      resizeLiveBackingObserved ||= source.pixelWidth === Math.round(width * resolution)
+        && source.pixelHeight === Math.round(height * resolution);
     }
     resizeEvents += 1;
   });
@@ -2358,13 +2358,7 @@ try {
 
     const initialSize = app.contentSize;
     const initialResizeEvents = resizeEvents;
-    const initialSource = app.renderer.view.texture.source;
-    const initialBackingWidth = initialSource.pixelWidth;
-    const initialBackingHeight = initialSource.pixelHeight;
-    adaptiveResizeBaseline = Object.freeze({
-      height: initialBackingHeight,
-      width: initialBackingWidth,
-    });
+    observeLiveResize = true;
     const windowFrame = app.window.getFrame();
     app.window.setSize(windowFrame.width + 160, windowFrame.height + 80);
     await waitFor(
@@ -2374,18 +2368,18 @@ try {
       ),
     );
     const liveSize = app.contentSize;
-    if (!resizeLiveLogicalObserved) {
-      throw new Error("Adaptive resize rebuilt the GPU backing before the live logical resize was observed");
+    if (!resizeLiveBackingObserved) {
+      throw new Error("Live resize did not update the GPU backing with the public viewport");
     }
     await waitFor(
-      "adaptive resize to settle the GPU backing",
+      "live resize to match the GPU backing",
       () => {
         const source = app.renderer.view.texture.source;
         return source.pixelWidth === Math.round(liveSize.width * app.resolution)
           && source.pixelHeight === Math.round(liveSize.height * app.resolution);
       },
     );
-    adaptiveResizeBaseline = null;
+    observeLiveResize = false;
     resizeSettledBackingObserved = true;
     await present(app, "the resized LaunchPad scene frame");
     presentCount += 1;
@@ -2519,8 +2513,8 @@ try {
       presented: true,
       reconciledNodes: work.reconciledNodes,
       resolution,
-      resizeLiveLogicalObserved,
-      resizeMode: "adaptive",
+      resizeLiveBackingObserved,
+      resizeMode: "live",
       resizeObserved,
       resizePresentCount,
       resizeSettledBackingObserved,

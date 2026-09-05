@@ -40,8 +40,8 @@ const app = await createNativePixiApplication({
 	width: 900,
 	height: 600,
 	background: 0x090b14,
-  transparent:process.env.PIXI_PRESENTED_SMOKE==="1",
-  titleBarStyle:process.env.PIXI_PRESENTED_SMOKE==="1"?"hidden":"default",
+  transparent:process.env.PIXI_PRESENTED_SMOKE==="1"||process.env.PIXI_RESIZE_ALPHA_SMOKE==="1",
+  titleBarStyle:process.env.PIXI_PRESENTED_SMOKE==="1"||process.env.PIXI_RESIZE_ALPHA_SMOKE==="1"?"hidden":"default",
 	antialias: !bunnyCount,
 	maxFps,
 	resizeMode,
@@ -49,7 +49,10 @@ const app = await createNativePixiApplication({
 	presentationMode: bunnyCount ? "mailbox" : "fifo",
 });
 try {
-	if (process.env.PIXI_PRESENTED_SMOKE === "1") {
+	if (process.env.PIXI_RESIZE_ALPHA_SMOKE === "1") {
+		await (await import("./runtime/resize-alpha-smoke")).runResizeAlphaSmoke(app);
+		await app.dispose();
+	} else if (process.env.PIXI_PRESENTED_SMOKE === "1") {
 		await (await import("./runtime/presented-smoke")).runPresentedSmoke(app);
 	} else {
 		await createDemo(app, { bunnyCount, fastBundleSmokeBatches, fpsHudScale });

@@ -2,11 +2,11 @@
   "schemaVersion": 2,
   "starter": {
     "name": "electrobun-pixi-native-starter",
-    "version": "0.2.10"
+    "version": "0.2.11"
   },
   "product": {
     "name": "electrobun-pixijs-webgpu",
-    "version": "0.2.10"
+    "version": "0.2.11"
   },
   "target": {
     "platform": "win32",
@@ -14,14 +14,14 @@
     "minimumWindows": "10.0.19041"
   },
   "source": {
-    "commit": "9d1840f7680202da12c19e084b8f505033651c8b",
+    "commit": "74f202a4e8b79a80dbbc3fca2a5cde93096ce163",
     "dirty": false,
-    "sourceDateEpoch": 1788631798
+    "sourceDateEpoch": 1788633899
   },
   "build": {
-    "commit": "9d1840f7680202da12c19e084b8f505033651c8b",
-    "sourceDateEpoch": 1788631798,
-    "timestamp": "2026-09-05T18:09:58.000Z"
+    "commit": "74f202a4e8b79a80dbbc3fca2a5cde93096ce163",
+    "sourceDateEpoch": 1788633899,
+    "timestamp": "2026-09-05T18:44:59.000Z"
   },
   "dependencies": {
     "electrobun": "2.0.1",
@@ -37,7 +37,7 @@
         "name": "electrobun-sdk",
         "version": 1
       },
-      "nativeWrapperSha256": "3188bb0e4db8b9d1b728e94bd2f6c64ba3114cf12c78738b0dec3b83f1910701"
+      "nativeWrapperSha256": "59ceec977f5922fe4d0904c325057d590897d38d0268ba9f0a81beeae01c6730"
     },
     "nativeFrame": {
       "abiVersion": 4,
@@ -2762,8 +2762,8 @@
     {
       "path": ".hutch/devkit-dcomp-2.0.1/libNativeWrapper.dll",
       "role": "electrobun-native-wrapper",
-      "size": 2061824,
-      "sha256": "3188bb0e4db8b9d1b728e94bd2f6c64ba3114cf12c78738b0dec3b83f1910701"
+      "size": 2062336,
+      "sha256": "59ceec977f5922fe4d0904c325057d590897d38d0268ba9f0a81beeae01c6730"
     },
     {
       "path": ".hutch/devkit-dcomp-2.0.1/main.js",
@@ -2955,31 +2955,31 @@
       "path": "package-lock.json",
       "role": "starter-config",
       "size": 15320,
-      "sha256": "cf993950741b8573abeaf7c6e59fe0ab4786b753b74c0a13354c7ab23bd829af"
+      "sha256": "7465f7b639a66f295b766bbc32ea23fb53d4e67500e663cab55a3e1c2fe2b837"
     },
     {
       "path": "package.json",
       "role": "starter-config",
       "size": 1832,
-      "sha256": "77f3815c9a3bdbf3afea36416a6fb4222fd47fcf7f40067bf76fe070ca5386d9"
+      "sha256": "ac40a8810101ec5471a7b7a020d37e9435d1ff1a429d61ca914e26b6e2312246"
     },
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.md",
       "role": "electrobun-patch",
-      "size": 4248,
-      "sha256": "f504a4eef6765c91c66a7bde8107990ff905c5f01f2e1fb1cdd5163f43a4057f"
+      "size": 4566,
+      "sha256": "708462a2a56c934ad7e3fe67bc6fcf5753a4e9882a2d23c5782de66a4c6e577c"
     },
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.patch",
       "role": "electrobun-patch",
-      "size": 96129,
-      "sha256": "fefdea7a205ef1dbedb013594794d015c7b520a4aab323dfafe8aa40de769378"
+      "size": 96837,
+      "sha256": "c2cca8e37f98ffdabc6441f8703264a3e02a225655c12a8b0be981b874425692"
     },
     {
       "path": "README.md",
       "role": "documentation",
-      "size": 27521,
-      "sha256": "ccb83ed33938edcce24004ac5bf5d1c68714f70a414ebe3e8ad7da44c6df2ad2"
+      "size": 27881,
+      "sha256": "c5f172921754f99c0530c5ce6852c4836fec79ac51d8a4ac9cc81882a465694c"
     },
     {
       "path": "src/demo/demo.ts",
@@ -3044,8 +3044,8 @@
     {
       "path": "src/main.ts",
       "role": "starter-source",
-      "size": 2550,
-      "sha256": "3238e84492c57733f9f3ff54c89253828d0f89191ec2f3c143f31b85dca70611"
+      "size": 2797,
+      "sha256": "28049e3fabcc169eab7b1eaf8bcd6a05e36863840985e5bba3b7077295a154d8"
     },
     {
       "path": "src/native-host.ts",
@@ -3246,6 +3246,12 @@
       "sha256": "fa802d7190bca1c1248dfcd99e3f857eb6ff96f736e50a858894fb53ff1dfb4d"
     },
     {
+      "path": "src/runtime/resize-alpha-smoke.ts",
+      "role": "starter-source",
+      "size": 6514,
+      "sha256": "1fc5957ae4b8a89b6ec9f281dda36c4b29d75268d7f15b9b25304477c01fb813"
+    },
+    {
       "path": "src/runtime/runtime-shim.ts",
       "role": "starter-source",
       "size": 293,
@@ -3279,7 +3285,7 @@
       "path": "starter-consumer-smoke/smoke.mjs",
       "role": "consumer-smoke",
       "size": 26472,
-      "sha256": "1015ebdb637a96b20241bc4556313669a58afc15794a9812a49cefdcad3e7972"
+      "sha256": "b88b246465129520b3b968d3e315af58c740ac951a6a353e29a3f68214f3515e"
     },
     {
       "path": "tools/electrobun-dcomp-patch.mjs",
@@ -3315,7 +3321,7 @@
       "path": "tools/starter-release.mjs",
       "role": "starter-tool",
       "size": 25414,
-      "sha256": "388ed0ed254e5e2199defb613986c6e5bb7279ba5b428a61ae0ac00768a139e1"
+      "sha256": "1b873f4b3a8fa6f01a3d2d60138bedc344a2c9efb240c22c50d5e7bbcde536c4"
     },
     {
       "path": "tsconfig.json",

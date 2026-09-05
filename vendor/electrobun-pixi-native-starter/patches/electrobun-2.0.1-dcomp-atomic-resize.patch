@@ -1,5 +1,5 @@
 diff --git a/package/src/native/win/dcomp_compositor.h b/package/src/native/win/dcomp_compositor.h
-index 4ef9512..119c3c5 100644
+index 4ef9512..e2f7af6 100644
 --- a/package/src/native/win/dcomp_compositor.h
 +++ b/package/src/native/win/dcomp_compositor.h
 @@ -4,13 +4,15 @@
@@ -96,7 +96,7 @@ index 4ef9512..119c3c5 100644
  
          // Get DXGI factory from external device
          ComPtr<IDXGIDevice> dxgiDevice;
-@@ -166,187 +182,277 @@ public:
+@@ -166,187 +182,289 @@ public:
          scDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
          scDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
  
@@ -234,7 +234,8 @@ index 4ef9512..119c3c5 100644
 -        HRESULT hr = swapChain->ResizeBuffers(
 -            2, surfaceWidth, surfaceHeight,
 -            DXGI_FORMAT_B8G8R8A8_UNORM, 0);
-+    // Commit a rendered replacement underneath the current active content.
++    // Prime the replacement without blending two translucent generations.
++    // Promotion exposes it and removes the active visual in one commit.
 +    bool stageSwapChain(IDXGISwapChain1* candidate, int width, int height) {
 +        if (!initialized || !candidate || width <= 0 || height <= 0) return false;
 +        if (!activeVisual || !activeSwapChain || stagedVisual) return false;
@@ -249,9 +250,13 @@ index 4ef9512..119c3c5 100644
 +        };
 +
 +        ComPtr<IDCompositionVisual> staged;
++        ComPtr<IDCompositionEffectGroup> hiddenEffect;
 +        HRESULT hr = dcompDevice->CreateVisual(&staged);
 +        if (SUCCEEDED(hr)) hr = staged->SetContent(candidate);
 +        if (SUCCEEDED(hr)) hr = staged->SetTransform(stagedTransform);
++        if (SUCCEEDED(hr)) hr = dcompDevice->CreateEffectGroup(&hiddenEffect);
++        if (SUCCEEDED(hr)) hr = hiddenEffect->SetOpacity(0.0f);
++        if (SUCCEEDED(hr)) hr = staged->SetEffect(hiddenEffect.Get());
 +        if (SUCCEEDED(hr)) {
 +            hr = rootVisual->AddVisual(staged.Get(), FALSE, activeVisual.Get());
 +        }
@@ -265,6 +270,7 @@ index 4ef9512..119c3c5 100644
  
 -        dcompDevice->Commit();
 +        stagedVisual = std::move(staged);
++        stagedHiddenEffect = std::move(hiddenEffect);
 +        stagedSwapChain = candidate;
 +        stagedSurfaceWidth = width;
 +        stagedSurfaceHeight = height;
@@ -275,8 +281,8 @@ index 4ef9512..119c3c5 100644
 -    // WM_SIZE and auto-resize the swap chain without TS FFI round-trip.
 -    void enableNativeResize() {
 -        if (!initialized || !targetHwnd || nativeResizeHooked) return;
-+    // The staged visual is already committed below the active one. Removing
-+    // the active visual therefore cannot leave an empty committed tree.
++    // The replacement's content has been committed. Make it visible atomically
++    // with removing the old generation, preserving translucent pixel alpha.
 +    bool promoteStagedSwapChain(
 +        IDXGISwapChain1* candidate, int width, int height) {
 +        if (!initialized || !candidate || width <= 0 || height <= 0) return false;
@@ -287,9 +293,11 @@ index 4ef9512..119c3c5 100644
  
 -        // Store this pointer for the subclass callback
 -        SetPropA(targetHwnd, "DCompCompositor", (HANDLE)this);
-+        HRESULT hr = rootVisual->RemoveVisual(activeVisual.Get());
++        HRESULT hr = stagedVisual->SetEffect(nullptr);
++        if (SUCCEEDED(hr)) hr = rootVisual->RemoveVisual(activeVisual.Get());
 +        if (SUCCEEDED(hr)) hr = dcompDevice->Commit();
 +        if (FAILED(hr)) {
++            stagedVisual->SetEffect(stagedHiddenEffect.Get());
 +            rootVisual->AddVisual(activeVisual.Get(), TRUE, stagedVisual.Get());
 +            dcompDevice->Commit();
 +            return false;
@@ -299,6 +307,7 @@ index 4ef9512..119c3c5 100644
 -        nativeResizeHooked = true;
 -        // Native resize hook installed
 +        activeVisual = std::move(stagedVisual);
++        stagedHiddenEffect.Reset();
 +        activeSwapChain = std::move(stagedSwapChain);
 +        surfaceWidth = width;
 +        surfaceHeight = height;
@@ -318,6 +327,7 @@ index 4ef9512..119c3c5 100644
 +        const HRESULT removeHr = rootVisual->RemoveVisual(stagedVisual.Get());
 +        if (FAILED(removeHr) || FAILED(dcompDevice->Commit())) return false;
 +        stagedVisual.Reset();
++        stagedHiddenEffect.Reset();
 +        stagedSwapChain.Reset();
 +        stagedSurfaceWidth = 0;
 +        stagedSurfaceHeight = 0;
@@ -335,6 +345,7 @@ index 4ef9512..119c3c5 100644
          if (dcompDevice) dcompDevice->Commit();
  
 +        stagedVisual.Reset();
++        stagedHiddenEffect.Reset();
 +        activeVisual.Reset();
          rootVisual.Reset();
          dcompTarget.Reset();
@@ -393,6 +404,7 @@ index 4ef9512..119c3c5 100644
      ComPtr<IDCompositionVisual> rootVisual;
 +    ComPtr<IDCompositionVisual> activeVisual;
 +    ComPtr<IDCompositionVisual> stagedVisual;
++    ComPtr<IDCompositionEffectGroup> stagedHiddenEffect;
 +
 +    HRESULT applyActiveTransform() {
 +        const float scaleX = activeSwapChain && surfaceWidth > 0

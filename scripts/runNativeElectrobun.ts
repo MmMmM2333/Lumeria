@@ -223,7 +223,7 @@ try {
       height?: unknown;
       iconForegroundPixels?: unknown;
       reconciledNodes?: unknown;
-      resizeLiveLogicalObserved?: unknown;
+      resizeLiveBackingObserved?: unknown;
       resizeMode?: unknown;
       resizeObserved?: unknown;
       resizePresentCount?: unknown;
@@ -275,8 +275,8 @@ try {
     }
     if (
       proof.resizeObserved !== true
-      || proof.resizeMode !== "adaptive"
-      || proof.resizeLiveLogicalObserved !== true
+      || proof.resizeMode !== "live"
+      || proof.resizeLiveBackingObserved !== true
       || !Number.isInteger(proof.resizePresentCount)
       || Number(proof.resizePresentCount) <= 0
       || proof.resizeSettledBackingObserved !== true
