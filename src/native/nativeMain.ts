@@ -6,7 +6,7 @@ import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.j
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
 import { createLaunchpadTray } from "./nativeTray.js";
 import { prepareNativeRestart } from "./nativeRestart.js";
-import { clickOwnedNativeWindow, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
+import { captureOwnedWindow, clickOwnedNativeWindow, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -305,6 +305,7 @@ let showLaunchpad=()=>{};
 let disposeLaunchFlow=()=>{};
 let tray:ReturnType<typeof createLaunchpadTray>|null=null;
 let restartRequested=false;
+let quitRequested=false;
 const folderLayout = Object.freeze({
   get cols(){return layoutState.presentation.folderCols.value;},
   get iconSize(){return layoutState.presentation.folderIconSizeMode.value==="custom"
@@ -654,6 +655,9 @@ app.stage.on("rightclick",onContext);
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
+  // Maximize state may settle after the resize notification. Refresh caption
+  // controls against the HWND state of the frame that actually reached screen.
+  windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
   folderFlow.commitPresented(scene.commitPresentedFrame());
   const session=launchFlow?.appLaunchCloseSessionId.value;
   if(session&&currentFrame.visual.appLaunchCloseSessionId===session)launchFlow?.commitAppLaunchCloseFrame(session);
@@ -669,6 +673,13 @@ let offTouch = (): void => {};
 let disconnectAnimationHost = (): void => {};
 let windowClosing=false;
 const offSaveBeforeClose = app.beforeClose(async () => {
+  if(!quitRequested&&!restartRequested){
+    logNativeRuntime("window-close-hide");
+    if(app.window.isMinimized()||app.state!=="running"){
+      await saves.flush();app.window.hide();return false;
+    }
+    dismissLaunchpad();return false;
+  }
   windowClosing=true;app.stage.interactiveChildren=false;
   try {
     await settingsShell?.waitForApply();
@@ -684,6 +695,7 @@ const offSaveBeforeClose = app.beforeClose(async () => {
     }
   } catch (error) {
     restartRequested=false;
+    quitRequested=false;
     windowClosing=false;app.stage.interactiveChildren=true;
     setStatus(readErrorMessage(error),0xff7b72);throw error;
   }
@@ -702,7 +714,7 @@ try {
     if(setNativeUiFontFamily(result.value.uiFontFamily))settingsShell?.redraw();
     if(systemAppearance!==result.value.appearance){
       systemAppearance=result.value.appearance;settingsShell?.redraw();
-      if(settings.presentation.windowEffectAppearance.value==="system"){
+      if(settings.presentation.windowEffectAppearance.value==="system"&&(!launchFlow||launchFlow.isDesktopOpen.value)){
         try{app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,systemAppearance);}
         catch(error){setStatus(readErrorMessage(error),0xff7b72);}
       }
@@ -960,7 +972,9 @@ try {
     showNativeLaunchError:error=>{showLaunchpad();management.form(error.title,[],t("common.actions.close"),()=>{},error.message);},
     beginNativeWindowClose:()=>{
       visibilityGeneration++;
-      fadeNativeLaunchpadChrome([desktopBackground,searchBar,settingsButton,windowChrome,management,...(settingsShell?[settingsShell]:[])],false);
+      app.setWindowPresentation("none",resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
+      desktopBackground.alpha=0;
+      fadeNativeLaunchpadChrome([searchBar,settingsButton,windowChrome,management,...(settingsShell?[settingsShell]:[])],false);
     },
     hideNativeWindow:hideAfterPresented,onDesktopCloseComplete:()=>{void hideAfterPresented().catch(error=>setStatus(readErrorMessage(error),0xff7b72));},
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
@@ -975,6 +989,7 @@ try {
     if(app.state==="failed"){logNativeRuntime("show-failed","Renderer failed; use tray restart to recover");return;}
     if(folderFlow.snapshot().renderedFolder)folderFlow.reset();
     if(app.window.isMinimized())app.window.unminimize();
+    app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
     app.window.show();app.window.activate();
     const reveal=()=>{
       if(generation!==visibilityGeneration||windowClosing)return;
@@ -1075,7 +1090,7 @@ try {
       void waitFor("tray settings window ready",()=>app.state==="running"&&launchFlow!.isDesktopOpen.value)
         .then(()=>openSettings()).catch(error=>logNativeRuntime("tray-settings-error",error));
     },
-    quit:restart=>{if(windowClosing)return;restartRequested=restart;logNativeRuntime(restart?"restart-request":"quit-request");app.window.requestClose();},
+    quit:restart=>{if(windowClosing)return;restartRequested=restart;quitRequested=!restart;logNativeRuntime(restart?"restart-request":"quit-request");app.window.requestClose();},
   });
   logNativeRuntime("ready",{version:"0.1.0",state:app.state,logDirectory:nativeLogDirectory});
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
@@ -1596,6 +1611,30 @@ try {
     assert.equal((await nativeData.loadLayout())!.settings.showCustomTitlebar,true);
     assert.ok(windowChrome.getChildByLabel("native-window-chrome:close"),"custom titlebar must expose a close action");
     await captureSmokeFrame("settings-titlebar");
+    {
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      const handle=getNativePixiApplicationTesting(app).handles().inputWindow;
+      const caption=windowChrome.getChildByLabel("native-window-chrome:close");assert.ok(caption);
+      clickWithNativeInput(caption);
+      await waitFor("caption X starts hiding",()=>launchFlow!.isDesktopClosing.value);
+      assert.equal((await captureOwnedWindow(handle)).material,1,"closing begins by removing the Windows material");
+      await waitFor("caption X hides without exiting",()=>!app.window.isVisible());
+      assert.equal(app.state,"running");assert.ok(tray?.id,"X must retain the tray");
+      showLaunchpad();await waitFor("caption X reopen settles",()=>app.window.isVisible()&&scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+      openSettings();await present(app,"settings reopened after X");
+      await captureOwnedWindow(handle,join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"caption-system.png"));
+      const beforeMaximize=app.getWindowFrame();
+      const maximize=windowChrome.getChildByLabel("native-window-chrome:maximize");assert.ok(maximize);
+      clickWithNativeInput(maximize);await waitFor("caption maximize",()=>app.window.isMaximized());await present(app,"maximized caption settled");
+      await waitFor("restore caption presented and hit-testable",()=>{
+        const control=windowChrome.getChildByLabel("native-window-chrome:restore");if(!control)return false;
+        const point=control.toGlobal({x:21,y:22});return app.renderer.events.rootBoundary.hitTest(point.x,point.y)===control;
+      });
+      const restore=windowChrome.getChildByLabel("native-window-chrome:restore");assert.ok(restore);
+      clickWithNativeInput(restore);await waitFor("caption restore",()=>!app.window.isMaximized()&&app.contentSize.width===beforeMaximize.width&&app.contentSize.height===beforeMaximize.height);
+      await present(app,"restored caption settled");
+      console.log("Caption X hides and preserves tray; close begins with DWM material disabled");
+    }
     if(process.env.LAUNCHPAD_NATIVE_WINDOW_INPUT_SMOKE==="1"){
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       const testing=getNativePixiApplicationTesting(app),handle=testing.handles().inputWindow;
@@ -1644,6 +1683,7 @@ try {
     try{
       clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
       assert.ok(applyingShell.applying);
+      quitRequested=true;
       app.window.requestClose();
       await waitFor("close waits for settings",()=>windowClosing);
       assert.equal(app.state,"running");assert.equal(app.stage.interactiveChildren,false);
@@ -2296,6 +2336,8 @@ try {
       throw new Error("LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER is required in smoke mode");
     }
     clickWithNativeInput(childNode);
+    await waitFor("launch close state committed",()=>launchFlow!.isDesktopClosing.value);
+    assert.equal(desktopBackground.alpha,0,"application launch removes the Pixi background immediately");
     await waitFor("an intermediate app launch ghost",()=>launchGhostView.visible&&launchGhostView.alpha>0.15&&launchGhostView.alpha<0.6);
     assert.ok(launchGhostView.scale.x>1.2,"launch icon must expand as it fades");
     await captureSmokeFrame("folder-app-launch-animation");

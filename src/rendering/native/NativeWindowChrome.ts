@@ -2,7 +2,7 @@ import { Container, FillGradient, Graphics, Rectangle, Text } from "pixi.js";
 import type { WindowResizeDirection } from "../../platform/windowChromeContracts.js";
 import { t } from "../../native/nativeLocalization.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
-import { NativeFluentButton } from "./NativeFluentButton.js";
+import { NativeCaptionButton } from "./NativeCaptionButton.js";
 
 export type NativeWindowChromeHost = {
   readonly contentSize:{width:number;height:number};
@@ -55,26 +55,22 @@ export class NativeWindowChrome extends Container {
         [1,maximized?"restore":"maximize",()=>maximized?this.app.window.unmaximize():this.app.window.maximize()],
         [2,"close",()=>this.app.window.requestClose()],
       ] as const){
-        const button=new NativeFluentButton(t(name==="close"?"common.actions.close":`window.chrome.${name}`),42,()=>run(action),()=>this.app.invalidate(),"dark","subtle",name==="close",44);
-        button.label=`native-window-chrome:${name}`;button.x=width-126+index*42;button.caption.visible=false;
-        const icon=new Graphics({eventMode:"none"});
-        if(name==="minimize")icon.moveTo(15,22).lineTo(27,22).stroke({color:0xffffff,width:1});
-        else if(name==="close")icon.moveTo(16,17).lineTo(26,27).moveTo(26,17).lineTo(16,27).stroke({color:0xffffff,width:1});
-        else {if(maximized)icon.rect(18,16,9,9).stroke({color:0xffffff,width:1});icon.rect(15,19,9,9).fill(0x20242b).stroke({color:0xffffff,width:1});}
-        button.addChild(icon);this.addChild(button);
+        const button=new NativeCaptionButton(name,()=>run(action),()=>this.app.invalidate());
+        button.x=width-126+index*42;this.addChild(button);
       }
     }
     if(!this.app.window.isMaximized())for(const [direction,x,y,w,h,cursor] of [
-      ["North",8,0,width-16,5,"ns-resize"],["South",8,height-5,width-16,5,"ns-resize"],
-      ["West",0,8,5,height-16,"ew-resize"],["East",width-5,8,5,height-16,"ew-resize"],
-      ["NorthWest",0,0,8,8,"nwse-resize"],["NorthEast",width-8,0,8,8,"nesw-resize"],
-      ["SouthWest",0,height-8,8,8,"nesw-resize"],["SouthEast",width-8,height-8,8,8,"nwse-resize"],
+      ["North",14,0,width-28,8,"ns-resize"],["South",14,height-8,width-28,8,"ns-resize"],
+      ["West",0,14,8,height-28,"ew-resize"],["East",width-8,14,8,height-28,"ew-resize"],
+      ["NorthWest",0,0,14,14,"nwse-resize"],["NorthEast",width-14,0,14,14,"nesw-resize"],
+      ["SouthWest",0,height-14,14,14,"nesw-resize"],["SouthEast",width-14,height-14,14,14,"nwse-resize"],
     ] as const){
       const edge=new Container({label:`native-window-resize:${direction}`,eventMode:"static",cursor});
       edge.hitArea=new Rectangle(x,y,w,h);
       edge.on("pointerdown",event=>{event.stopPropagation();if(event.button===0&&event.isPrimary!==false)run(()=>this.app.startWindowResize(direction));});
       this.addChild(edge);
     }
+    this.app.invalidate();
   }
   override destroy():void{
     super.destroy({children:true});this.#logoGradient?.destroy();this.#logoGradient=null;
