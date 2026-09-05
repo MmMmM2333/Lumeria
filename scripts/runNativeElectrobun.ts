@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { runNativeProcess } from "./runNativeProcess.js";
 import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
 
@@ -161,7 +161,9 @@ writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
 try {
-  const result = spawnSync(process.execPath, [runner, nativeMode === "dev" ? "dev" : "start"], {
+  // A normal native dev session ends with its window. The Starter --watch command
+  // intentionally outlives windows and previously retained the Windows build lock.
+  const status = await runNativeProcess(process.execPath, [runner, "start"], {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -182,9 +184,9 @@ try {
     },
     stdio: "inherit",
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Electrobun exited with status ${String(result.status)}`);
-  if (nativeMode === "smoke") {
+  if (status === 130) process.exitCode = 130;
+  else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
+  if (nativeMode === "smoke" && status !== 130) {
     if (!existsSync(markerPath)) throw new Error("Electrobun worker exited without completing the native smoke test");
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Container, type Text } from "pixi.js";
+import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
 import {
   assertCompleteDesktopSceneFrame,
@@ -25,6 +26,21 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+
+{
+  const root = new Container();
+  const chrome = new Container({ label: "native-search-bar" });
+  const unlabelled = new Container();
+  root.addChild(chrome); chrome.addChild(unlabelled);
+  assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "control" }, "unlabelled search children must belong to the input, not desktop gestures");
+  const icon = new Container({ label: "launchpad-item:app" });
+  icon.addChild(unlabelled); root.addChild(icon);
+  assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "icon", id: "app" });
+  root.addChild(unlabelled);
+  assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "surface" });
+  assert.deepEqual(resolveNativePointerTarget(null), { kind: "surface" });
+  root.destroy({ children: true });
+}
 
 const savedLayout = assertLayoutDocument(JSON.parse(readFileSync(
   new URL("../domain/fixtures/layout-v2-roundtrip.json", import.meta.url),
@@ -128,6 +144,7 @@ const scene = new NativeDesktopScene(stage, {
 });
 let animationUpdate: ((deltaMs: number) => void) | null = null;
 const disconnectAnimationHost = scene.connectAnimationHost({
+  commit: () => {},
   animate: (update) => {
     animationUpdate = update;
     return () => {
@@ -546,4 +563,40 @@ assert.throws(
 );
 
 stage.destroy();
+
+// The original Web loop commits geometry after each motion step. Native must keep
+// the closing target tracking the desktop's simultaneous scale/offset restoration.
+{
+  const root = new Container();
+  const subject = new NativeDesktopScene(root);
+  const folder: NativeFolderItem = { id: "handoff-regression", type: "folder", name: "Folder", childPages: [[{id:"child",type:"app",name:"Child",emoji:"A"}]] };
+  const snapshot = makeCompleteFrame({ activePages: [[folder]] });
+  let presentation: NativeFolderPresentation | null = null;
+  let tick: ((delta: number) => void) | null = null;
+  const commit = () => subject.commit(snapshot, {width:900,height:600,resolution:1}, {folderPresentation:presentation,snapDesktopLayout:false});
+  const off = subject.connectAnimationHost({
+    animate: fn => {tick=fn; return()=>{tick=null;};}, invalidate:()=>{}, commit,
+  });
+  const advance = async () => {
+    for(let index=0;index<100;index+=1){const current=tick as ((delta:number)=>void)|null;current?.(1000/60);await Promise.resolve();subject.commitPresentedFrame();}
+  };
+  commit();await advance();
+  presentation={renderedFolder:folder,folderPageIndex:0,isClosing:false,openProgress:1,openProgressTarget:1,openingCancelRequest:null};
+  commit();await advance();
+  presentation={renderedFolder:folder,folderPageIndex:0,isClosing:true,openProgress:0,openProgressTarget:0,openingCancelRequest:null};
+  commit();await advance();
+  const layer=root.getChildByLabel("launchpad-native-desktop") as Container & {
+    singleStageFolderLayer:{stableFolderCloseTarget:{thumbRect:{left:number;top:number;width:number}}|null};
+  };
+  const icon=root.getChildByLabel("launchpad-item:handoff-regression",true) as Container & {
+    getFolderThumbBounds(stage:{left:number;top:number}):{left:number;top:number;width:number};
+  };
+  const target=layer.singleStageFolderLayer.stableFolderCloseTarget?.thumbRect;
+  assert.ok(target);
+  const actual=icon.getFolderThumbBounds({left:0,top:0});
+  assert.ok(Math.abs(target.left-actual.left)<0.51 && Math.abs(target.top-actual.top)<0.51,
+    `closing target must follow restored desktop: target=${target.left},${target.top}, actual=${actual.left},${actual.top}`);
+  assert.ok(Math.abs(target.width-actual.width)<0.1,"closing ghost and restored icon must have the same size");
+  off();subject.destroy();root.destroy();
+}
 console.log("Native desktop scene tests passed");

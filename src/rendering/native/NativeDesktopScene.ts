@@ -35,6 +35,7 @@ export type NativeSceneViewport = Readonly<{
 }>;
 
 export type NativeSceneAnimationHost = Readonly<{
+  commit(): void;
   animate(update: (deltaMs: number) => void): () => void;
   invalidate(): void;
 }>;
@@ -384,6 +385,9 @@ export class NativeDesktopScene {
       if (disconnected || stopFrames !== null || !motionRuntime.hasActiveWork()) return;
       stopFrames = host.animate((deltaMs) => {
         motionRuntime.step(deltaMs / 1000);
+        // Match the Web presentation loop: update geometry/handoffs after motion, before rendering.
+        this.#layer.flushInteractiveBounds();
+        host.commit();
         if (motionRuntime.hasActiveWork()) return;
         const stop = stopFrames;
         stopFrames = null;

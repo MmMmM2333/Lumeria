@@ -24,6 +24,7 @@ import {
 } from "../domain/input/launchpadGestureEngine.js";
 import { findFocusedIcon, firstIconFocus, moveIconFocus, type LaunchpadIconScope } from "../domain/iconFocus.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
 import { NativeSearchBar } from "../rendering/native/NativeSearchBar.js";
 import { NativeManagement } from "../rendering/native/NativeManagement.js";
 import { makeLaunchTarget } from "../domain/launchpadData.js";
@@ -342,6 +343,7 @@ const requestSceneRender = (): void => {
   if (sceneRenderQueued) return;
   sceneRenderQueued = true;
   queueMicrotask(() => {
+    if (!sceneRenderQueued) return;
     sceneRenderQueued = false;
     renderScene();
   });
@@ -363,7 +365,7 @@ function setFocusedIcon(focusedIcon: SceneFocusedIcon | null): void {
 
 function getCurrentIconScope(): LaunchpadIconScope<SceneItem> {
   const folder = folderFlow.snapshot();
-  return folder.renderedFolder ? {
+  return folder.renderedFolder && !folder.isClosing ? {
     area: "folder", columns: folderLayout.cols, folderId: folder.renderedFolder.id,
     items: (folder.renderedFolder.childPages[folder.folderPageIndex] ?? []).filter((item): item is SceneItem => item !== null),
     pageIndex: folder.folderPageIndex,
@@ -537,8 +539,9 @@ const doneButton=management.button(t("launchpad.batch.done"),62,()=>{editing!.se
 selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
 app.stage.addChild(selectionToolbar);
 const onContext = (event: FederatedPointerEvent):void=>{
-  let node:Container|null=event.target;while(node&&!node.label.startsWith("launchpad-item:"))node=node.parent;
-  const id=node?.label.slice("launchpad-item:".length);
+  const target=resolveNativePointerTarget(event.target);
+  if(target.kind==="control")return;
+  const id=target.kind==="icon"?target.id:null;
   const item=id?getCurrentIconScope().items.find(item=>item.id===id)??null:null;
   contextMenu(item,event.global.x,event.global.y);event.stopPropagation();
 };
@@ -578,6 +581,7 @@ try {
   }
 
   disconnectAnimationHost = scene.connectAnimationHost({
+    commit: () => renderScene(),
     animate: (update) => app.animate(update),
     invalidate: () => app.invalidate(),
   });
@@ -599,6 +603,7 @@ try {
     width: app.contentSize.width,
   }, true);
   renderScene = () => {
+    sceneRenderQueued = false;
     if(editing) {
       const interaction = snapshotContractValue({ ...currentFrame.interaction,
         dragMeta: editing.drag.dragMeta.value, groupDragState: editing.drag.groupDragState.value,
@@ -895,13 +900,13 @@ try {
     if (type === "pointerDown" && (touchId !== null || event.isPrimary === false)) return;
     if (type !== "pointerDown" && touchId !== event.pointerId) return;
     const scope = getCurrentIconScope();
-    if (folderFlow.snapshot().isClosing && type === "pointerDown") return;
-    let target: Container | null = event.target;
-    while (target && !target.label.startsWith("launchpad-item:")) target = target.parent;
-    const itemId = target?.label.slice("launchpad-item:".length);
+    const target = resolveNativePointerTarget(event.target);
+    const itemId = target.kind === "icon" ? target.id : undefined;
+    if(type === "pointerDown" && target.kind === "control") return;
+    // Closing residuals keep their original reopen handler; desktop icons use the desktop scope.
+    if(type === "pointerDown" && folderFlow.snapshot().isClosing && (!itemId || !activePageItems.some(item=>item.id===itemId))) return;
     if(type === "pointerDown" && !itemId && scope.area === "folder") return;
     if(type === "pointerDown" && management.modal) return;
-    if(type === "pointerDown" && event.target?.label?.startsWith("native-")) return;
     const output = wheelGestures.dispatch({ type, pointerId: event.pointerId, pointerType: event.pointerType,
       isPrimary: event.isPrimary, button: event.button, buttons: event.buttons,
       x: event.global.x, y: event.global.y, time: event.timeStamp,
@@ -1036,7 +1041,12 @@ try {
     }
 
     const baselinePages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
-    searchBar.input.focus();
+    clickWithNativeInput(searchBar);
+    assert.equal(searchBar.input.focused,true,"pointer click on search chrome must focus without exiting");
+    searchBar.input.blur();
+    await present(app,"search blurred before child hit");
+    clickWithNativeInput(searchBar.input);
+    assert.equal(searchBar.input.focused,true,"pointer click on search editor must not start a desktop gesture");
     searchBar.input.beginComposition();searchBar.input.updateComposition("\u5df2\u52a0\u8f7d",3);
     assert.equal(searchQuery,"","IME preedit must not submit a search");
     searchBar.input.commitText("\u5df2\u52a0\u8f7d");
@@ -1253,7 +1263,12 @@ try {
     await waitFor("same-folder reopen", () => !folderFlow.snapshot().isClosing && folderFlow.snapshot().openProgress >= 0.999);
     await present(app, "same-folder reopened");
     await captureSmokeFrame("folder-reopened");
-    await activateItem(otherFolder);
+    assert.equal(closeFolder(),true);
+    await present(app,"closing before desktop pointer activation");
+    assert.equal(folderFlow.snapshot().isClosing,true,"desktop pointer regression must run during closing");
+    const otherFolderNode=app.stage.getChildByLabel(`launchpad-item:${otherFolder.id}`,true);
+    assert.ok(otherFolderNode);
+    clickWithNativeInput(otherFolderNode);
     await waitFor("cross-folder opening", () => folderFlow.snapshot().renderedFolder?.id === otherFolder.id);
     await present(app, "cross-folder handoff");
     await captureSmokeFrame("folder-cross-handoff");

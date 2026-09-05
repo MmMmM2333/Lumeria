@@ -133,6 +133,12 @@ Bundled fonts are intentionally deferred because the repository has no redistrib
 
 ## Guardrails
 
+- Regression fixes after e9a128c: pointer/context routing now resolves unlabelled Pixi children through their ancestors and excludes input/control subtrees. The actual Windows search click previously threw at label.startsWith; repaired real-window click now focuses successfully without exiting.
+- Closing scopes expose desktop items, permitting pointer activation of another desktop folder while existing closing residuals retain their original reopen handler. GPU smoke now clicks the desktop folder during closing rather than bypassing input with activateItem.
+- Animation timing matches the original Web loop: motion step → dirty bounds refresh → scene/handoff commit → Starter render → presented snapshot. Previously Native only advanced motion and invalidated rendering, leaving closing targets frozen while the desktop scale/y spring continued. A deterministic regression checks closing target/icon position within pixel rounding and equal size. No fixed offset, extra wait or second render loop was added.
+- Validation: full npm run check, native stable build and expanded GPU smoke passed. Actual Windows search click and right-top close were exercised; native:dev returned exit code 0 after window close. SIGINT process test verifies its descendant process is removed.
+- native:dev now uses a normal Starter start session, not persistent --watch. Re-run after code edits. Async process supervision handles Ctrl+C/SIGTERM and terminates its own Windows process tree; Ctrl+C is forced cancellation, while normal close remains save-guarded. User requested the dev window be restarted after verification.
+
 - Do not restore imports containing `webgpu test` or `LAUNCHPAD_ELECTROBUN_DEVKIT_ROOT`.
 - Do not call Starter files other than its documented public native host and consumer integration entries.
 - Do not restore a LaunchPad-owned window/WebGPU/present/recovery loop.
