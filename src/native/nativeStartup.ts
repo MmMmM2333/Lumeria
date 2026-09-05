@@ -47,13 +47,14 @@ export type NativeStartupScanRequest = Readonly<{
 
 export type NativePageTurn = -1 | 0 | 1;
 
-type NativeNavigationKey = Readonly<{
+export type NativeNavigationKey = Readonly<{
   altKey?: boolean;
   code?: string;
   ctrlKey?: boolean;
   key?: string;
   metaKey?: boolean;
   repeat?: boolean;
+  isComposing?: boolean;
   type?: string;
 }>;
 
@@ -67,28 +68,28 @@ export function getNativeActivePageItems(
 export function getNativePageTurnFromKey(event: NativeNavigationKey): NativePageTurn {
   if (
     event.type !== "down"
-    || event.repeat
+    || event.isComposing
     || event.altKey
-    || event.ctrlKey
+    || !event.ctrlKey
     || event.metaKey
   ) return 0;
   const key = event.key || event.code;
-  if (key === "ArrowRight" || key === "PageDown") return 1;
-  if (key === "ArrowLeft" || key === "PageUp") return -1;
+  if (key === "ArrowRight") return 1;
+  if (key === "ArrowLeft") return -1;
   return 0;
 }
 
-export function turnNativeDesktopPage(
+export function setNativeDesktopPage(
   frame: CompleteDesktopSceneFrame,
-  direction: Exclude<NativePageTurn, 0>,
+  pageIndex: number,
 ): CompleteDesktopSceneFrame {
+  if (!Number.isInteger(pageIndex)) throw new TypeError("Native desktop page index must be an integer");
   const pageCount = frame.viewport.activePages.length;
   const activePageIndex = Math.max(
     0,
-    Math.min(pageCount - 1, frame.viewport.activePageIndex + direction),
+    Math.min(pageCount - 1, pageIndex),
   );
   if (activePageIndex === frame.viewport.activePageIndex) return frame;
-  const focused = frame.viewport.activePages[activePageIndex]?.find((item) => item !== null) ?? null;
   const next = Object.freeze({
     ...frame,
     viewport: Object.freeze({
@@ -99,9 +100,7 @@ export function turnNativeDesktopPage(
     }),
     interaction: Object.freeze({
       ...frame.interaction,
-      focusedIcon: focused
-        ? Object.freeze({ area: "desktop", id: focused.id, pageIndex: activePageIndex })
-        : null,
+      focusedIcon: null,
     }),
   });
   assertCompleteDesktopSceneFrame(next);
@@ -190,7 +189,6 @@ export function makeNativeStartupFrame(
 ): CompleteDesktopSceneFrame {
   const settings = settingsFor(layout);
   const activePages = reconcilePages(layout, catalog);
-  const focused = activePages[0]?.find((item) => item !== null) ?? null;
   const frame = makeDesktopSceneFrame({
     activePageIndex: 0,
     activePages,
@@ -205,9 +203,7 @@ export function makeNativeStartupFrame(
     dragHitDebugOptions: null,
     dragHitDebugState: null,
     dragMeta: null,
-    focusedIcon: focused
-      ? { area: "desktop", id: focused.id, pageIndex: 0 }
-      : null,
+    focusedIcon: null,
     folderClosingHandoffId: null,
     folderPageSize: settings.folderRows * settings.folderCols,
     folderSourceGhostedId: null,

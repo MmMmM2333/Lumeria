@@ -181,7 +181,7 @@ function makeNativeFolderFrame(
     },
     stage: { rect: stageRect },
     ui: {
-      focusedIcon: presentation.focusedIcon,
+      focusedIcon: desktopFrame.interaction.focusedIcon,
       iconGesturePresentation: null,
       isBatchSelectionActive: false,
       isEditMode: false,
@@ -282,7 +282,10 @@ export class NativeDesktopScene {
       folderSourceGhostedIds,
       getDesktopPageRenderMode: (pageIndex) => {
         if (pageIndex === frame.viewport.activePageIndex) return "interactive";
-        return Math.abs(pageIndex - frame.viewport.activePageIndex) === 1 ? "static-real" : "empty";
+        const presentedPage = -this.#layer.pageTrack.x / viewport.width;
+        return Math.abs(pageIndex - frame.viewport.activePageIndex) === 1
+          || (pageIndex >= Math.floor(presentedPage) && pageIndex <= Math.ceil(presentedPage))
+          ? "static-real" : "empty";
       },
       getVisibleDesktopPage: visibleItems,
       gridCols: frame.viewport.gridCols,

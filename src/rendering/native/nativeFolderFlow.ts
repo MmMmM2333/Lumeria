@@ -2,7 +2,7 @@ import type { MotionControl } from "../pixi/animation/motionTween.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { motionRuntime } from "../pixi/animation/motionRuntime.js";
 import { motionSprings } from "../pixi/animation/motionPresets.js";
-import type { SceneFocusedIcon, SceneItem } from "../sceneFrame.js";
+import type { SceneItem } from "../sceneFrame.js";
 
 const FOLDER_PROGRESS_LANE_KEY = "native-folder-open-progress";
 
@@ -13,7 +13,6 @@ export type NativeFolderItem = SceneItem & Readonly<{
 }>;
 
 export type NativeFolderPresentation = Readonly<{
-  focusedIcon: SceneFocusedIcon | null;
   folderPageIndex: number;
   isClosing: boolean;
   openProgress: number;
@@ -28,7 +27,6 @@ export type NativeFolderFlow = Readonly<{
   open(item: SceneItem): boolean;
   setPageIndex(pageIndex: number): boolean;
   snapshot(): NativeFolderPresentation;
-  turnPage(direction: -1 | 1): boolean;
 }>;
 
 function requireFolder(item: SceneItem): NativeFolderItem {
@@ -39,10 +37,6 @@ function requireFolder(item: SceneItem): NativeFolderItem {
     if (!Array.isArray(page)) throw new TypeError(`Native folder ${item.id} childPages[${pageIndex}] must be an array`);
   });
   return item as NativeFolderItem;
-}
-
-function firstItem(folder: NativeFolderItem | null, pageIndex: number): SceneItem | null {
-  return folder?.childPages[pageIndex]?.find((item): item is SceneItem => item !== null) ?? null;
 }
 
 export function createNativeFolderFlow(
@@ -64,16 +58,7 @@ export function createNativeFolderFlow(
   let closeFinishScheduled = false;
 
   const snapshot = (): NativeFolderPresentation => {
-    const focusedItem = firstItem(renderedFolder, folderPageIndex);
     return Object.freeze({
-      focusedIcon: focusedItem && renderedFolder
-        ? Object.freeze({
-          area: "folder",
-          folderId: renderedFolder.id,
-          id: focusedItem.id,
-          pageIndex: folderPageIndex,
-        })
-        : null,
       folderPageIndex,
       isClosing,
       openProgress: progress.value,
@@ -200,8 +185,5 @@ export function createNativeFolderFlow(
     open,
     setPageIndex,
     snapshot,
-    turnPage(direction: -1 | 1): boolean {
-      return setPageIndex(folderPageIndex + direction);
-    },
   });
 }

@@ -18,11 +18,10 @@ import {
 } from "../rendering/native/nativeFolderFlow.js";
 import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import {
-  getNativeActivePageItems,
   getNativePageTurnFromKey,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
-  turnNativeDesktopPage,
+  setNativeDesktopPage,
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
@@ -37,7 +36,7 @@ assert.equal(savedStartupFrame.viewport.gridCols, 6);
 assert.equal(savedStartupFrame.viewport.iconSize, 72);
 assert.equal(savedStartupFrame.interaction.isTextlessMode, true);
 assert.equal(savedStartupFrame.viewport.activePages[0]?.[0]?.id, "custom-editor");
-assert.equal(savedStartupFrame.interaction.focusedIcon?.id, "custom-editor");
+assert.equal(savedStartupFrame.interaction.focusedIcon, null, "startup must not manufacture keyboard focus");
 const savedScanRequest = makeNativeStartupScanRequest(savedLayout);
 assert.equal(savedScanRequest.roots.length, 1);
 assert.equal(savedScanRequest.roots[0]?.id, "root-custom");
@@ -63,15 +62,18 @@ assert.equal(firstRunFrame.viewport.gridRows, 5);
 assert.equal(firstRunFrame.viewport.gridCols, 7);
 assert.equal(firstRunFrame.viewport.activePages[0]?.[0]?.id, "first-run-app");
 assert.equal(makeNativeStartupScanRequest(null).roots.length, 3);
-assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageDown" }), 1);
-assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowLeft" }), -1);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageDown" }), 0);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowLeft" }), 0);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowLeft", ctrlKey: true }), -1);
+assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowRight", ctrlKey: true }), 1);
 assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowRight", repeat: true }), 0);
 assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageUp", ctrlKey: true }), 0);
-const secondSavedPage = turnNativeDesktopPage(savedStartupFrame, 1);
+const secondSavedPage = setNativeDesktopPage(savedStartupFrame, 1);
 assert.equal(secondSavedPage.viewport.activePageIndex, 1);
-assert.equal(secondSavedPage.interaction.focusedIcon?.id, getNativeActivePageItems(secondSavedPage)[0]?.id);
-assert.equal(turnNativeDesktopPage(secondSavedPage, 1), secondSavedPage, "the last page must not turn past its edge");
-assert.equal(turnNativeDesktopPage(secondSavedPage, -1).viewport.activePageIndex, 0);
+assert.equal(secondSavedPage.interaction.focusedIcon, null, "page commits must not manufacture keyboard focus");
+assert.equal(setNativeDesktopPage(secondSavedPage, 2), secondSavedPage, "the last page must not turn past its edge");
+assert.equal(setNativeDesktopPage(secondSavedPage, 0).viewport.activePageIndex, 0);
+assert.throws(() => setNativeDesktopPage(secondSavedPage, Number.NaN), /integer/);
 
 function makeCompleteFrame(overrides: DesktopSceneFrameInput = {}): CompleteDesktopSceneFrame {
   const frame = makeDesktopSceneFrame({
@@ -226,7 +228,7 @@ assert.ok(prefetchedSecondPageNode, "the adjacent desktop page should be rendere
 assert.equal(firstPageNode.eventMode, "static", "the active desktop page should be interactive");
 assert.equal(prefetchedSecondPageNode.eventMode, "none", "the adjacent desktop page should stay static");
 assert.equal(stage.getChildByLabel("launchpad-item:page-3", true), null, "distant pages should remain empty");
-const pageTwoFrame = turnNativeDesktopPage(pagedFrame, 1);
+const pageTwoFrame = setNativeDesktopPage(pagedFrame, 1);
 scene.commit(
   pageTwoFrame,
   { height: 760, resolution: 2.5, width: 1180 },
@@ -254,7 +256,7 @@ for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x +
   stepSceneAnimations();
 }
 assert.ok(Math.abs(desktopLayer.pageTrack.x + 1180) <= 0.01, "the desktop page track should settle at page two");
-const pageThreeFrame = turnNativeDesktopPage(pageTwoFrame, 1);
+const pageThreeFrame = setNativeDesktopPage(pageTwoFrame, 2);
 scene.commit(
   pageThreeFrame,
   { height: 760, resolution: 2.5, width: 1180 },
@@ -305,12 +307,6 @@ const folderItem: NativeFolderItem = {
 };
 const folderFrame = makeCompleteFrame({ activePages: [[folderItem]] });
 const folderPresentation = (folderPageIndex: number): NativeFolderPresentation => Object.freeze({
-  focusedIcon: Object.freeze({
-    area: "folder" as const,
-    folderId: folderItem.id,
-    id: `folder-child-${folderPageIndex + 1}`,
-    pageIndex: folderPageIndex,
-  }),
   folderPageIndex,
   isClosing: false,
   openProgress: 1,

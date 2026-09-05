@@ -210,6 +210,7 @@ try {
       loadedLayout?: unknown;
       pageCount?: unknown;
       pageNavigation?: unknown;
+      inputNavigation?: unknown;
       structuredLaunchFailureObserved?: unknown;
       visibleNodes?: unknown;
       width?: unknown;
@@ -273,6 +274,7 @@ try {
       || proof.pageNavigation !== (Number(proof.pageCount) > 1 ? "verified" : "skipped-single-page")
       || (Number(proof.pageCount) > 1 && proof.desktopPageMotionObserved !== true)
       || proof.structuredLaunchFailureObserved !== true
+      || proof.inputNavigation !== "verified"
     ) {
       throw new Error("Native smoke proof did not complete paging and structured launch failure checks");
     }

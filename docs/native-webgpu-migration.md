@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "继续步骤 3/4：共享 domain 焦点规则，移除 native 自动首项焦点和异步翻页门禁，验证键盘与 wheel/scrub 一致性"
+next_entry: "下一完整切片是文件夹中断行为：先对照原版开关/跨文件夹交接并核对 Starter 的呈现后回调能力，再确定迁移方案"
 ---
 
 # Native WebGPU migration
@@ -14,7 +14,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Confirmed direction
 
-- Active task (2026-09-05): user authorized completing steps 2, 3 and 4 in this run: independently upgrade/verify/commit Starter 0.2.0, then restore shared original focus/keyboard semantics and synchronous wheel/page-track integration, removing replaced paths. Baseline commit: `714385a`. Do not expand into touch, folder interruption, search or settings in this task.
+- Current task (2026-09-05): user authorized steps 2, 3 and 4: independently upgrade/verify/commit Starter 0.2.0, then restore shared original focus/keyboard semantics and synchronous wheel/page-track integration, removing replaced paths. Baseline commit: `714385a`; upgrade commit: `3211cd1`. Touch, folder interruption, search and settings remain outside this task.
 
 - Target Electrobun plus native WebGPU; Deno is out of scope.
 - Keep the existing domain and `CompleteDesktopSceneFrame` boundary.
@@ -40,13 +40,13 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 - The Electrobun client validates every request/response envelope and existing layout/catalog contracts. Requests are serial because the Rust host is serial.
 - Startup loads `%APPDATA%\com.lumeria.app\layout.json` by default. `LUMERIA_NATIVE_DATA_DIR` exists only as an absolute-path isolation seam for tests.
 - `nativeStartup.ts` reuses `normalizeNativeApp`, `createLaunchpadLayoutHelpers` and `reconcileDocument` to produce the existing `CompleteDesktopSceneFrame`. There is no native-only layout model or second state owner.
-- Pointer tap and Enter/Space activation send only the stable app id to Rust. Rust resolves it from the scanned catalog, persisted manual app, or persisted scan roots and returns structured launch failures.
-- PageUp/PageDown, Left/Right and wheel paging update the same authoritative scene frame. Resize, DPI changes and restore always recommit the current page rather than the startup snapshot.
+- Pointer tap and focused Enter activation send only the stable app id to Rust. Rust resolves it from the scanned catalog, persisted manual app, or persisted scan roots and returns structured launch failures. Enter without focus only establishes focus; Space does not activate.
+- Ordinary arrows move icon focus; Ctrl+Left/Right turns pages and focuses the new page's first item. Wheel paging clears stale focus without manufacturing a new selection. Resize, DPI changes and restore always recommit the current page rather than the startup snapshot.
 - Desktop page turns now keep the source/target Pixi pages alive and run through the existing page-track spring instead of snapping.
 - The native texture repository retains every desktop/folder item in the layout for the scene lifetime, matching the original layout-wide retention rule. It no longer unloads textures solely because their page leaves the active/adjacent window while exit animation still references them.
-- Native wheel input now feeds the existing `createLaunchpadGestureEngine`, deadlines and desktop/folder `pageTrackScrub`. Starter 0.1.1 supplies pixel-mode wheel deltas. This is existing integration, not completed original-behavior parity: the asynchronous desktop page-turn gate still needs replacement in the subsequent input slice.
+- Native wheel input feeds the existing `createLaunchpadGestureEngine`, deadlines and desktop/folder `pageTrackScrub`, using Starter pixel-mode deltas. Accepted page commands synchronously update the authoritative frame without texture resynchronization or animation waits. New presentations cancel obsolete clear timers; keyboard navigation clears the previous wheel session and presentation. Native rendering retains the currently presented source page when another page turn redirects the animation.
 - Native folders reuse `FolderOverlayLayer`, its page-track motion and the existing folder panel visual system. Pointer, Escape, keyboard and wheel input cover open, close, page turns and child launch.
-- Folder state is native-owned presentation state only; shared layout metrics were extracted above Vue/Pixi so the Web and native paths use the same calculation without importing Vue into the native runtime.
+- Folder state is native-owned presentation state only, with no focus field. Focus lives solely in `currentFrame.interaction.focusedIcon`; initial display and folder open/close clear it. Vue and native use the same pure helpers in `domain/iconFocus.ts`. Shared layout metrics remain above Vue/Pixi, without importing Vue into the native runtime.
 - Normal close waits for both progress arrival and Pixi's closing-handoff completion. Opening interruption and cross-folder retargeting remain intentionally rejected until there is a per-present hook for exact presented-ghost capture.
 - Folder children, opening ghosts and closing preview swaps use the scene's injected native texture repository. Folder thumbnail emoji request the same color-emoji font stack as full-size icons.
 - The sidecar release executable is built before native dev/smoke/build and copied beside the Electrobun Bun entrypoint.
@@ -94,11 +94,14 @@ npm run native:smoke
 
 ## Current slice handoff
 
-- Step 2 completed on 2026-09-05: public release installer validated all 528 payload files and ABI 4/0x1fbf before and after installation. Patch checks, app/tools/native types, npm tests, stable native build and native GPU smoke passed. The 0.1.1 payload was replaced, not retained as a runtime alternative. No application behavior changes are included in the upgrade commit. Steps 3/4 are now the active work.
+- Step 2 completed on 2026-09-05 in `3211cd1`: public release installer validated all 528 payload files and ABI 4/0x1fbf before and after installation. Patch checks, app/tools/native types, npm tests, stable native build and native GPU smoke passed. The 0.1.1 payload and temporary rollback copy were removed. No application behavior changes are included in that upgrade commit.
+- Steps 3/4 implementation: domain focus helpers serve Vue and native; folder presentation no longer owns focus; desktop page commits are synchronous, and scene retention follows the actually presented source page during interruptions. Native smoke verifies first Enter, arrow navigation, two Ctrl page commands before any animation frame, keyboard folder activation/navigation/close, discrete wheel burst suppression/repeat/reversal, continuous scrub/cancel/progress/velocity/edge behavior, and pointer-opened folder wheel paging without default focus.
+- Verification: `npm run check`, stable native build and final GPU/input smoke all passed; proof reports `inputNavigation: verified`, and screenshots show no initial desktop or pointer-opened folder selection. Stable packaging was followed by smoke to preserve artifacts. Keyboard cases call the same callback registered with native input; wheel cases inject FederatedWheelEvent into the application's Pixi stage handler. These tests do not claim physical keyboard/precision-touchpad or OS input-adapter acceptance.
 
-- Changed anchors: `nativeMain.ts` and its smoke runner; `nativeStartup.ts`; `NativeDesktopScene.ts`; `nativeFolderFlow.ts`; shared `folderLayoutMetrics.ts` and Vue consumer; `DesktopLayer.ts`, `FolderOverlayLayer.ts`, `IconNode.ts`; native scene tests; source-policy test and exclusions; vendored Starter 0.1.1 release payload.
+- Changed anchors for steps 3/4: `domain/iconFocus.ts` and its registered tests; `useIconFocus.ts`; `nativeMain.ts` and its smoke runner; `nativeStartup.ts`; `NativeDesktopScene.ts`; `nativeFolderFlow.ts`; native scene tests.
 - Removed/replaced paths: native sign-only wheel helper, Vue-local duplicate folder metric implementation, windowed native texture retention, and implicit Web texture repository use by native folder children/ghosts. Do not restore them.
-- Preserved limitations for the agreed later slices: initial/auto-generated first-item focus, simplified keyboard activation, asynchronous `pageTurnInFlight`, and rejection of folder opening interruption/cross-folder retargeting. This commit is not input or visual parity certification.
+- Removed in steps 3/4: Vue-local duplicate focus navigation, folder-generated focus, startup/page-generated first-item focus, plain-arrow/PageUp/PageDown paging, Space activation, `turnNativeDesktopPage`, `pageTurnInFlight`, page-time texture synchronization and production animation waits. Do not restore these old paths.
+- Remaining limits: folder opening interruption/cross-folder retargeting, touch gesture integration, search/settings/editing/persistence and full product visual parity. Hardware touchpad and mixed-DPI acceptance remain unverified.
 
 ## Remaining migration boundary
 
@@ -120,4 +123,4 @@ No new production Starter ABI capability blocked this slice. Bun child-process s
 
 ## Next complete slice
 
-Next action: inspect and install the selected Starter 0.2.0 release through its public consumer installation flow, replacing the 0.1.1 payload as one independently verified commit. Then restore shared focus/keyboard semantics, remove the obsolete asynchronous page-turn gate and complete wheel/scrub behavior parity. Search, settings, editing/persistence and final WebView removal follow those complete slices.
+Next action: compare native folder opening/closing interruptions and cross-folder retargeting against the original flow, and inspect the Starter public API for exact post-present capture support before implementing that slice. Touch, search, settings, editing/persistence and final WebView removal remain subsequent work.

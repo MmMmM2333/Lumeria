@@ -1,11 +1,12 @@
 import { existsSync, writeFileSync } from "node:fs";
+import assert from "node:assert/strict";
 import { join } from "node:path";
 import { Screen } from "electrobun/main";
 import {
   Container,
   Rectangle,
   Text,
-  type FederatedWheelEvent,
+  FederatedWheelEvent,
   type Sprite,
 } from "pixi.js";
 import {
@@ -18,13 +19,14 @@ import {
   type LaunchpadGestureOutput,
   type LaunchpadPagePresentation,
 } from "../domain/input/launchpadGestureEngine.js";
+import { findFocusedIcon, firstIconFocus, moveIconFocus, type LaunchpadIconScope } from "../domain/iconFocus.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import {
   createNativeFolderFlow,
   type NativeFolderItem,
 } from "../rendering/native/nativeFolderFlow.js";
-import type { SceneItem, ScenePageTrackScrub } from "../rendering/sceneFrame.js";
+import type { SceneFocusedIcon, SceneItem, ScenePageTrackScrub } from "../rendering/sceneFrame.js";
 import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
 import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "../domain/launchpadGridDefaults.js";
@@ -38,7 +40,8 @@ import {
   getNativePageTurnFromKey,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
-  turnNativeDesktopPage,
+  setNativeDesktopPage,
+  type NativeNavigationKey,
   type NativePageTurn,
 } from "./nativeStartup.js";
 import {
@@ -65,6 +68,7 @@ type NativeFrameProof = Readonly<{
   folderPageMotionObserved: boolean;
   folderPageNavigation: "verified";
   pageNavigation: "skipped-single-page" | "verified";
+  inputNavigation: "verified";
   presentCount: number;
   presented: true;
   reconciledNodes: number;
@@ -321,14 +325,49 @@ const requestSceneRender = (): void => {
 };
 const folderFlow = createNativeFolderFlow(() => requestSceneRender());
 
+function setFocusedIcon(focusedIcon: SceneFocusedIcon | null): void {
+  currentFrame = Object.freeze({
+    ...currentFrame,
+    interaction: Object.freeze({ ...currentFrame.interaction, focusedIcon: focusedIcon ? Object.freeze({ ...focusedIcon }) : null }),
+  });
+  requestSceneRender();
+}
+
+function getCurrentIconScope(): LaunchpadIconScope<SceneItem> {
+  const folder = folderFlow.snapshot();
+  return folder.renderedFolder ? {
+    area: "folder", columns: folderLayout.cols, folderId: folder.renderedFolder.id,
+    items: (folder.renderedFolder.childPages[folder.folderPageIndex] ?? []).filter((item): item is SceneItem => item !== null),
+    pageIndex: folder.folderPageIndex,
+  } : {
+    area: "desktop", columns: currentFrame.viewport.gridCols, folderId: null,
+    items: activePageItems, pageIndex: currentFrame.viewport.activePageIndex,
+  };
+}
+
+function closeFolder(): boolean {
+  if (!folderFlow.close()) return false;
+  setFocusedIcon(null);
+  return true;
+}
+
+function setFolderPageIndex(pageIndex: number): boolean {
+  if (!folderFlow.setPageIndex(pageIndex)) return false;
+  setFocusedIcon(null);
+  return true;
+}
+
 async function activateItem(item: SceneItem): Promise<void> {
   const name = typeof item.name === "string" ? item.name : item.id;
   if (item.type === "folder") {
-    if (folderFlow.open(item)) setStatus("");
+    if (folderFlow.open(item)) {
+      setFocusedIcon(null);
+      setStatus("");
+    }
     return;
   }
   if (launchInFlight) return;
-  if (folderFlow.snapshot().renderedFolder && !folderFlow.close()) return;
+  if (folderFlow.snapshot().renderedFolder && !closeFolder()) return;
   launchInFlight = true;
   setStatus(`Launching ${name}...`);
   try {
@@ -348,11 +387,11 @@ async function activateItem(item: SceneItem): Promise<void> {
 const scene = new NativeDesktopScene(app.stage, {
   folderLayout,
   iconTextures,
-  onFolderCloseRequest: () => folderFlow.close(),
+  onFolderCloseRequest: closeFolder,
   onFolderInternalActivityChange: (active, folderId) => {
     folderFlow.notifyInternalActivity(active, folderId);
   },
-  onFolderPageIndexCommit: (pageIndex) => folderFlow.setPageIndex(pageIndex),
+  onFolderPageIndexCommit: setFolderPageIndex,
   onFolderRenderRequest: requestSceneRender,
   onIconActivate: (item) => void activateItem(item),
 });
@@ -442,58 +481,27 @@ try {
   });
 
   let presentCount = 0;
-  let pageTurnInFlight = false;
   let desktopPageMotionObserved = false;
   let folderPageMotionObserved = false;
-  async function turnPage(direction: Exclude<NativePageTurn, 0>): Promise<boolean> {
-    if (pageTurnInFlight) return false;
-    const nextFrame = turnNativeDesktopPage(currentFrame, direction);
+  function commitDesktopPage(pageIndex: number): boolean {
+    const nextFrame = setNativeDesktopPage(currentFrame, pageIndex);
     if (nextFrame === currentFrame) return false;
-    pageTurnInFlight = true;
-    try {
-      const nextItems = getNativeActivePageItems(nextFrame);
-      const snapshot = await iconTextures.synchronize(collectTextureItems(nextFrame));
-      if (snapshot.pending.length !== 0) {
-        throw new Error(`Native page icon textures remained pending: ${JSON.stringify(snapshot)}`);
-      }
-      if (snapshot.failed.length > 0) {
-        console.warn("Some native page icon textures could not be loaded", snapshot.failed);
-      }
-      currentFrame = nextFrame;
-      activePageItems = nextItems;
-      work = commitScene({
-        height: app.contentSize.height,
-        resolution: app.resolution,
-        width: app.contentSize.width,
-      }, false);
-      const committedMotion = scene.getMotionSnapshot();
-      desktopPageMotionObserved ||= Math.abs(
-        committedMotion.desktopPageTrackX - committedMotion.desktopPageTrackTargetX,
-      ) > 0.5;
-      iconNodes = collectActiveIconNodes();
-      setStatus("");
-      await present(app, `desktop page ${currentFrame.viewport.activePageIndex + 1}`);
-      presentCount += 1;
-      await waitFor(
-        `desktop page ${currentFrame.viewport.activePageIndex + 1} motion to settle`,
-        () => {
-          const motion = scene.getMotionSnapshot();
-          return Math.abs(motion.desktopPageTrackX - motion.desktopPageTrackTargetX) < 0.05;
-        },
-      );
-      return true;
-    } finally {
-      pageTurnInFlight = false;
-    }
+    currentFrame = nextFrame;
+    activePageItems = getNativeActivePageItems(currentFrame);
+    renderScene();
+    const committedMotion = scene.getMotionSnapshot();
+    desktopPageMotionObserved ||= Math.abs(
+      committedMotion.desktopPageTrackX - committedMotion.desktopPageTrackTargetX,
+    ) > 0.5;
+    iconNodes = collectActiveIconNodes();
+    setStatus("");
+    return true;
   }
-
-  const reportPageTurnFailure = (error: unknown): void => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error("Native desktop page turn failed", error);
-    setStatus(`Page turn failed: ${message}`, 0xff7b72);
+  const turnPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
+    return commitDesktopPage(currentFrame.viewport.activePageIndex + direction);
   };
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
-    if (!folderFlow.turnPage(direction)) return false;
+    if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
     setStatus("");
     return true;
   };
@@ -554,6 +562,7 @@ try {
   applyWheelOutput = (output, event, time): void => {
     lastWheelGestureTime = time;
     if (output.presentation) {
+      clearWheelDeadline("clearPresentation");
       const scrub = toPageTrackScrub(output.presentation);
       if (scrub.scope.startsWith("folder:")) {
         desktopPageTrackScrub = null;
@@ -567,16 +576,20 @@ try {
     for (const command of output.commands) {
       if (command.type !== "commitPage") continue;
       if (command.scope.startsWith("folder:")) {
-        folderFlow.setPageIndex(command.pageIndex);
+        if (command.scope === `folder:${folderFlow.snapshot().renderedFolder?.id}`) {
+          setFolderPageIndex(command.pageIndex);
+        }
       } else {
-        const direction = Math.sign(command.pageIndex - currentFrame.viewport.activePageIndex) as NativePageTurn;
-        if (direction !== 0) void turnPage(direction).catch(reportPageTurnFailure);
+        commitDesktopPage(command.pageIndex);
       }
     }
     if (Object.prototype.hasOwnProperty.call(output, "deadline")) {
       scheduleWheelDeadline(output.deadline);
     }
-    if (output.handled) event?.preventDefault();
+    if (output.handled) {
+      event?.preventDefault();
+      event?.stopPropagation();
+    }
   };
   const onWheel = (event: FederatedWheelEvent): void => {
     const folder = folderFlow.snapshot();
@@ -617,47 +630,41 @@ try {
     const time = Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : performance.now();
     applyWheelOutput(wheelGestures.dispatch({ type: "cancel", time }), null, time);
   };
-  app.stage.on("pointerdown", interruptWheel);
-  offWheelPointerInterrupt = () => app.stage.off("pointerdown", interruptWheel);
-  offKey = app.nativeInput.onKey((event) => {
-    if (
-      event.type === "down"
-      && !event.repeat
-      && !event.altKey
-      && !event.ctrlKey
-      && !event.metaKey
-      && event.key === "Escape"
-      && folderFlow.snapshot().renderedFolder
-    ) {
-      folderFlow.close();
-      return;
-    }
+  app.stage.on("pointerdowncapture", interruptWheel);
+  offWheelPointerInterrupt = () => app.stage.off("pointerdowncapture", interruptWheel);
+  const onKey = (event: NativeNavigationKey): void => {
+    if (event.type !== "down" || event.isComposing || event.altKey || event.metaKey) return;
+    const key = event.key || event.code;
     const direction = getNativePageTurnFromKey(event);
-    if (direction !== 0) {
-      const folder = folderFlow.snapshot();
-      if (folder.renderedFolder) {
-        if (!folder.isClosing) turnFolderPage(direction);
-        return;
-      }
-      void turnPage(direction).catch(reportPageTurnFailure);
+    const arrow = key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
+    if (event.ctrlKey && direction === 0) return;
+    if (!arrow && key !== "Enter" && key !== "Escape") return;
+    if (event.repeat && !arrow) return;
+    wheelGestures.dispatch({ type: "cancel", time: performance.now() });
+    for (const timer of wheelDeadlines.values()) clearTimeout(timer);
+    wheelDeadlines.clear();
+    clearWheelPresentation();
+    const folder = folderFlow.snapshot();
+    if (key === "Escape") {
+      closeFolder();
       return;
     }
-    if (
-      event.type !== "down"
-      || event.repeat
-      || event.altKey
-      || event.ctrlKey
-      || event.metaKey
-      || event.isComposing
-      || (event.key !== "Enter" && event.key !== " " && event.code !== "Space")
-    ) return;
-    const folder = folderFlow.snapshot();
-    const focusedId = folder.focusedIcon?.id ?? currentFrame.interaction.focusedIcon?.id;
-    const focused = folder.renderedFolder
-      ? folder.renderedFolder.childPages[folder.folderPageIndex]?.find((item) => item?.id === focusedId)
-      : activePageItems.find((item) => item.id === focusedId);
-    if (focused) void activateItem(focused);
-  });
+    if (folder.isClosing) return;
+    if (direction !== 0) {
+      const changed = folder.renderedFolder ? turnFolderPage(direction) : turnPage(direction);
+      if (changed) setFocusedIcon(firstIconFocus(getCurrentIconScope()));
+      return;
+    }
+    const scope = getCurrentIconScope();
+    if (arrow) {
+      setFocusedIcon(moveIconFocus(currentFrame.interaction.focusedIcon, scope, key));
+    } else if (key === "Enter") {
+      const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, scope);
+      if (focused) void activateItem(focused);
+      else setFocusedIcon(firstIconFocus(scope));
+    }
+  };
+  offKey = app.nativeInput.onKey(onKey);
 
   await present(app, "the first LaunchPad scene frame");
   presentCount += 1;
@@ -691,9 +698,95 @@ try {
     }
 
     await captureSmokeFrame("desktop-page-1");
+    const settleDesktop = async (): Promise<void> => {
+      await waitFor("desktop input motion to settle", () => {
+        const motion = scene.getMotionSnapshot();
+        return Math.abs(motion.desktopPageTrackX - motion.desktopPageTrackTargetX) < 0.05;
+      });
+      await present(app, "settled desktop input");
+    };
+    const currentFocus = (): SceneFocusedIcon | null => currentFrame.interaction.focusedIcon;
+    assert.equal(currentFocus(), null, "startup must have no keyboard focus");
+    onKey({ type: "down", key: " " });
+    onKey({ type: "down", key: "PageDown" });
+    assert.equal(currentFocus(), null, "Space must not activate or focus an icon");
+    assert.equal(currentFrame.viewport.activePageIndex, 0, "PageDown is not the original page shortcut");
+    onKey({ type: "down", key: "Enter" });
+    assert.equal(currentFocus()?.id, activePageItems[0]?.id, "first Enter should only establish focus");
+    onKey({ type: "down", key: "ArrowRight" });
+    assert.equal(currentFocus()?.id, activePageItems[1]?.id, "plain arrows should navigate icons");
+    assert.equal(currentFrame.viewport.activePageIndex, 0, "plain arrows must not turn pages");
+    onKey({ type: "down", key: "ArrowRight", ctrlKey: true });
+    onKey({ type: "down", key: "ArrowRight", ctrlKey: true, repeat: true });
+    assert.equal(currentFrame.viewport.activePageIndex, 2, "two keyboard page commits must work before any animation frame");
+    assert.equal(currentFocus()?.id, activePageItems[0]?.id, "keyboard paging should focus the new page's first icon");
+    assert.ok(app.stage.getChildByLabel("launchpad-item:native-layout-icon", true), "interrupted turns must retain the still-presented source page");
+    await settleDesktop();
+    onKey({ type: "down", key: "ArrowLeft", ctrlKey: true });
+    onKey({ type: "down", key: "ArrowLeft", ctrlKey: true });
+    await settleDesktop();
+    setFocusedIcon(null);
+
+    // Inject at the same Pixi event boundary consumed by native wheel input.
+    // This verifies application integration; physical touchpad fidelity needs hardware acceptance.
+    let wheelTime = performance.now();
+    const wheel = (deltaY: number, elapsedMs = 16): void => {
+      const event = new FederatedWheelEvent(app.renderer.events.rootBoundary);
+      event.deltaY = deltaY;
+      event.deltaMode = 0;
+      event.timeStamp = wheelTime += elapsedMs;
+      app.stage.emit("wheel", event);
+    };
+    wheel(100);
+    assert.equal(currentFrame.viewport.activePageIndex, 1, "one discrete wheel step should commit immediately");
+    wheel(100);
+    assert.equal(currentFrame.viewport.activePageIndex, 1, "a discrete burst should not turn twice immediately");
+    wheel(100, 320);
+    assert.equal(currentFrame.viewport.activePageIndex, 2, "accepted repeat input must not wait for the previous spring");
+    assert.equal(currentFocus(), null, "wheel paging must not manufacture focus");
+    wheel(-100);
+    assert.equal(currentFrame.viewport.activePageIndex, 1, "opposite wheel input should retarget immediately");
+    await settleDesktop();
+    onKey({ type: "down", key: "Escape" });
+    commitDesktopPage(0);
+    await settleDesktop();
+    wheel(5);
+    await present(app, "continuous wheel scrub");
+    assert.ok(scene.getMotionSnapshot().desktopPageTrackX < -0.5, "small wheel deltas should scrub the live track");
+    interruptWheel({ timeStamp: wheelTime + 1 });
+    await settleDesktop();
+    assert.equal(currentFrame.viewport.activePageIndex, 0, "cancelled short gestures must not commit");
+    assert.ok(Math.abs(scene.getMotionSnapshot().desktopPageTrackX) < 0.1, "cancelled scrubs should return to their source page");
+    wheel(60);
+    wheel(60);
+    wheel(60);
+    await waitFor("continuous wheel progress commit", () => currentFrame.viewport.activePageIndex === 1);
+    await settleDesktop();
+    onKey({ type: "down", key: "Escape" });
+    commitDesktopPage(0);
+    await settleDesktop();
+    wheel(20);
+    wheel(20);
+    await waitFor("continuous wheel velocity commit", () => currentFrame.viewport.activePageIndex === 1);
+    await settleDesktop();
+    onKey({ type: "down", key: "Escape" });
+    commitDesktopPage(0);
+    await settleDesktop();
+    wheel(-20);
+    await present(app, "first-page edge resistance");
+    assert.ok(scene.getMotionSnapshot().desktopPageTrackX > 0, "edge gestures should expose a resisted stretch");
+    assert.ok(scene.getMotionSnapshot().desktopPageTrackX < app.contentSize.width * 0.12, "edge stretch must remain bounded");
+    await new Promise<void>((resolve) => setTimeout(resolve, 160));
+    await settleDesktop();
+    assert.equal(currentFrame.viewport.activePageIndex, 0, "edge gestures must not leave the page range");
+    onKey({ type: "down", key: "Escape" });
     if (currentFrame.viewport.activePages.length > 1) {
       while (currentFrame.viewport.activePageIndex < currentFrame.viewport.activePages.length - 1) {
-        if (!await turnPage(1)) throw new Error("Native smoke could not turn to the next desktop page");
+        if (!turnPage(1)) throw new Error("Native smoke could not turn to the next desktop page");
+        await waitFor("desktop page motion to settle", () => {
+          const motion = scene.getMotionSnapshot();
+          return Math.abs(motion.desktopPageTrackX - motion.desktopPageTrackTargetX) < 0.05;
+        });
         await waitFor(
           "the next native desktop page to become visible",
           () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
@@ -702,9 +795,13 @@ try {
         await captureSmokeFrame(`desktop-page-${currentFrame.viewport.activePageIndex + 1}`);
         presentCount += 1;
       }
-      if (await turnPage(1)) throw new Error("Native desktop paging advanced past its last page");
+      if (turnPage(1)) throw new Error("Native desktop paging advanced past its last page");
       while (currentFrame.viewport.activePageIndex > 0) {
-        if (!await turnPage(-1)) throw new Error("Native smoke could not turn to the previous desktop page");
+        if (!turnPage(-1)) throw new Error("Native smoke could not turn to the previous desktop page");
+        await waitFor("desktop page motion to settle", () => {
+          const motion = scene.getMotionSnapshot();
+          return Math.abs(motion.desktopPageTrackX - motion.desktopPageTrackTargetX) < 0.05;
+        });
         await waitFor(
           "the previous native desktop page to become visible",
           () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
@@ -722,9 +819,25 @@ try {
       item.type === "folder" && Array.isArray(item.childPages) && item.childPages.length > 1
     )) as NativeFolderItem | undefined;
     if (!smokeFolder) throw new Error("Native smoke fixture must contain a multi-page folder on page one");
+    onKey({ type: "down", key: "Enter" });
+    const folderIndex = activePageItems.findIndex((item) => item.id === smokeFolder.id);
+    for (let index = 0; index < folderIndex; index += 1) onKey({ type: "down", key: "ArrowRight" });
+    assert.equal(currentFocus()?.id, smokeFolder.id);
+    onKey({ type: "down", key: "Enter" });
+    assert.equal(folderFlow.snapshot().renderedFolder?.id, smokeFolder.id, "Enter with focus should activate the folder");
+    assert.equal(currentFocus(), null, "opening a folder must clear the previous scope's focus");
+    await waitFor("keyboard-opened folder", () => folderFlow.snapshot().openProgress >= 0.999);
+    onKey({ type: "down", key: "ArrowDown" });
+    assert.equal(currentFocus()?.id, smokeFolder.childPages[0]?.[0]?.id, "first folder arrow should establish focus");
+    onKey({ type: "down", key: "ArrowDown" });
+    assert.equal(currentFocus()?.id, smokeFolder.childPages[0]?.[folderLayout.cols]?.id, "folder arrows should use folder columns");
+    onKey({ type: "down", key: "Escape" });
+    await waitFor("keyboard-closed folder handoff", () => folderFlow.snapshot().renderedFolder === null);
+    assert.equal(currentFocus(), null, "closing a folder must clear keyboard focus");
     const folderNode = app.stage.getChildByLabel(`launchpad-item:${smokeFolder.id}`, true);
     if (!folderNode) throw new Error(`Native smoke folder node ${smokeFolder.id} was not rendered`);
     clickWithNativeInput(folderNode);
+    assert.equal(currentFocus(), null, "pointer-opened folders must not create keyboard focus");
     if (folderFlow.close()) {
       throw new Error("Native folder close should be rejected until opening settles");
     }
@@ -744,7 +857,9 @@ try {
     await captureSmokeFrame("folder-page-1");
     presentCount += 1;
 
-    if (!turnFolderPage(1)) throw new Error("Native smoke could not turn to the second folder page");
+    wheel(100);
+    assert.equal(folderFlow.snapshot().folderPageIndex, 1, "folder wheel commits should use the shared engine");
+    assert.equal(currentFocus(), null, "folder wheel paging must not manufacture focus");
     await waitFor(
       "an intermediate native folder page frame",
       () => {
@@ -958,6 +1073,7 @@ try {
       loadedLayout: loadedLayout !== null,
       pageCount: currentFrame.viewport.activePages.length,
       pageNavigation,
+      inputNavigation: "verified",
       presentCount,
       presented: true,
       reconciledNodes: work.reconciledNodes,
