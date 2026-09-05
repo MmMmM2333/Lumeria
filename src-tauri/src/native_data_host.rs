@@ -22,6 +22,7 @@ const APP_IDENTIFIER: &str = "com.lumeria.app";
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    Autostart { version: u32, id: u64, enabled: Option<bool> },
     LoadIconChoices { version: u32, id: u64, #[serde(rename = "targetPath")] target_path: String },
     CacheCustomIcon { version: u32, id: u64, #[serde(rename = "dataUrl")] data_url: String },
     SaveLayout { version: u32, id: u64, layout: Value },
@@ -52,6 +53,7 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::Autostart { id, .. }
             | Self::LoadIconChoices { id, .. }
             | Self::CacheCustomIcon { id, .. }
             | Self::SaveLayout { id, .. }
@@ -64,6 +66,7 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::Autostart { version, .. }
             | Self::LoadIconChoices { version, .. }
             | Self::CacheCustomIcon { version, .. }
             | Self::SaveLayout { version, .. }
@@ -182,13 +185,14 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::Autostart { enabled, .. } => crate::autostart::native_autostart(enabled).map(Value::Bool),
         Request::LoadIconChoices { target_path, .. } => icon_cache_dir(data_dir)
             .and_then(|dir| crate::load_app_icon_choices_from_dir(&target_path, &dir))
             .and_then(|choices| serde_json::to_value(choices).map_err(|error| error.to_string())),
         Request::CacheCustomIcon { data_url, .. } => icon_cache_dir(data_dir)
             .and_then(|dir| crate::cache_custom_icon_to_dir(&data_url, &dir))
             .and_then(|icon| serde_json::to_value(icon).map_err(|error| error.to_string())),
-        Request::Hello { .. } => Ok(json!({ "protocolVersion": PROTOCOL_VERSION })),
+        Request::Hello { .. } => Ok(json!({ "protocolVersion": PROTOCOL_VERSION, "autostartAvailable": crate::autostart::native_autostart_available() })),
         Request::SaveLayout { layout, .. } => save_layout_to_path(&data_dir.join("layout.json"), &layout).map(|()| Value::Null),
         Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
             .and_then(|layout| serde_json::to_value(layout).map_err(|error| error.to_string())),
@@ -268,7 +272,7 @@ mod tests {
         );
         assert!(hello.ok);
         assert_eq!(hello.id, 7);
-        assert_eq!(hello.value, Some(json!({ "protocolVersion": 1 })));
+        assert_eq!(hello.value, Some(json!({ "protocolVersion": 1, "autostartAvailable": false })));
 
         let unsupported = handle_line(
             r#"{"version":2,"id":8,"operation":"loadLayout"}"#,
@@ -285,6 +289,9 @@ mod tests {
 
     #[test]
     fn launch_protocol_accepts_only_app_id_and_preserves_failure_kind_and_detail() {
+        let rejected=handle_line(r#"{"version":1,"id":1,"operation":"autostart","enabled":true,"executable":"C:/other.exe"}"#,
+            &env::temp_dir(),&mut HostState::default());
+        assert!(!rejected.ok,"autostart protocol must not accept a caller-selected executable");
         let data_dir =
             env::temp_dir().join(format!("lumeria-native-launch-host-{}", std::process::id()));
         let mut state = HostState::default();

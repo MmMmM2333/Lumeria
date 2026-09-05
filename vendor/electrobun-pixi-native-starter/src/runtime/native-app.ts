@@ -47,6 +47,7 @@ import {
 import { nativeFrameHost, nativeInputKinds, type NativeCursorKind } from "../platform/native-frame-host";
 import { installNativeExtract } from "../rendering/native-pixi";
 import { installNativeSkia } from "../rendering/native-skia";
+import { createNativeWindowIcon } from "../platform/native-window-icon";
 import {
 	registerNativePixiApplicationTesting,
 	type NativeAppDiagnostics,
@@ -124,6 +125,8 @@ export interface NativePixiApplication {
 	on<K extends keyof NativeAppEvents>(type: K, listener: (event: NativeAppEvents[K]) => void): () => void;
 	dispose(): Promise<void>;
 	beforeClose(listener: () => Promise<void>): () => void;
+  readonly supportsWindowIcon: boolean;
+  setWindowIcon(png: Uint8Array): void;
 }
 
 const gpuPowerPreferences = { default: 0, integrated: 1, discrete: 2 } as const;
@@ -202,6 +205,8 @@ export async function createNativePixiApplication(
 		const surfaceWindow = electrobunNativeAdapter.getWgpuNativeHandle(window);
 		if (!surfaceWindow) throw new Error("WGPU child window has no native handle");
 		const inputWindow = nativeFrameHost.resolveInputWindow(surfaceWindow);
+    const windowIcon=createNativeWindowIcon(inputWindow);
+    startupCleanup.push(()=>windowIcon?.dispose());
 		const route = BigInt(window.wgpuViewId);
 		let snapshot = nativeFrameHost.getWindowSnapshot(inputWindow);
 		let resolution = snapshot.scaleFactor > 0 ? snapshot.scaleFactor : 1;
@@ -680,6 +685,7 @@ export async function createNativePixiApplication(
 		const dispose = () => disposePromise ??= (async () => {
 			if (closed) return;
 			closed = true; inputPollingEnabled = false; setState("closing"); clearInterval(monitor);
+      windowIcon?.dispose();
 			rejectPresentWaiters(new Error("Native Pixi application is closing"));
 			if (windowSyncTimer !== null) clearTimeout(windowSyncTimer);
 			frameScheduler?.close(); animations.clear(); offFocus(); offLifecycle();
@@ -698,6 +704,8 @@ export async function createNativePixiApplication(
 
 		const application: NativePixiApplication = {
 			stage, window,
+      supportsWindowIcon:windowIcon!==null,
+      setWindowIcon(png){if(!windowIcon)throw new Error("Window icons are unavailable on this platform");windowIcon.set(png);},
 			get renderer() {
 				if (state === "recovering" || state === "failed" || state === "closing" || state === "closed") {
 					throw new Error("Native Pixi renderer is unavailable while application state is " + state + "; await nextPresent()");

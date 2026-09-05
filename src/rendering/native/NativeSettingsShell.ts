@@ -1,6 +1,6 @@
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { createSettingsNavigation, SettingsTabId } from "../../application/settingsNavigation.js";
-import { NativeFluentButton, nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
+import { NativeFluentButton, nativeFluentTheme, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeScrollView } from "./NativeScrollView.js";
 import { PIXI_UI_FONT_FAMILY } from "../typography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
@@ -28,6 +28,7 @@ export type NativeSettingsShellOptions = {
   close():void;
   apply():Promise<void>;
   tabs:readonly SettingsTabId[];
+  beforeKey?(event:{key?:string;code?:string;type?:string;shiftKey?:boolean;ctrlKey?:boolean;altKey?:boolean;metaKey?:boolean}):boolean;
   content(tab:SettingsTabId,subPage:string|null,width:number):NativeSettingsContent;
 };
 
@@ -54,7 +55,9 @@ export class NativeSettingsShell extends Container {
   get applying():boolean{return this.#applying;}
   redraw():void{
     const {options}=this, {width,height}=options.size(), theme=options.theme(), colors=nativeFluentTheme(theme);
+    const style=nativeSettingsStyle(theme);
     const route=options.navigation.activeRoute.value;
+    const focusLabel=this.#routeKey===route.key?this.#controls[this.#focus]?.node.label:null;
     const previousScroll=this.#routeKey===route.key?this.#scroll?.offset??0:0;
     const routeChanged=this.#routeKey!==route.key;this.#routeKey=route.key;
     if(this.#page)killMotionOf(this.#page.node);
@@ -66,13 +69,14 @@ export class NativeSettingsShell extends Container {
     this.#panel.position.set((width-w)/2,(height-h)/2);
     this.#panel.eventMode="static";this.#panel.hitArea=new Rectangle(0,0,w,h);
     this.#shade.clear().rect(0,0,width,height).fill({color:0,alpha:0.26});
-    this.#panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,8).fill(colors.colorNeutralBackground2));
+    this.#panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,8).fill(style.panel)
+      .rect(0,0,navWidth,h).fill(style.nav));
     const label=(text:string,x:number,y:number,size=14)=>{
       const node=new Text({text,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fill:colors.colorNeutralForeground1}});
       node.position.set(x,y);node.eventMode="none";this.#panel.addChild(node);return node;
     };
-    const button=(text:string,x:number,y:number,bw:number,action:()=>void,primary=false)=>{
-      const node=new NativeFluentButton(text,bw,action,options.invalidate,theme,primary?"primary":"subtle");
+    const button=(text:string,x:number,y:number,bw:number,action:()=>void,primary=false,controlHeight=34)=>{
+      const node=new NativeFluentButton(text,bw,action,options.invalidate,theme,primary?"primary":"subtle",false,controlHeight);
       node.position.set(x,y);node.disabled=this.#applying;this.#panel.addChild(node);this.#buttons.push(node);
       return node;
     };
@@ -85,24 +89,25 @@ export class NativeSettingsShell extends Container {
     label(route.depth?`${route.parentLabel} › ${route.label}`:route.label,navWidth+(route.depth?54:20),22,20);
     iconButton("dismiss-16-regular",options.t("settings.shell.close"),w-52,16,36,()=>options.close());
     options.navigation.settingsTabs.value.filter(tab=>options.tabs.includes(tab.id)).forEach((tab,index)=>{
-      const node=button(tab.label,8,72+index*44,navWidth-16,()=>{
+      const node=button(tab.label,8,72+index*52,navWidth-16,()=>{
         options.navigation.selectTab(tab.id);this.redraw();
-      });
+      },false,48);
       const iconName={general:"settings-24-regular",interface:"paint-brush-24-regular",apps:"apps-24-regular",about:"info-24-regular"} as const;
       const icon=nativeFluentIcon(iconName[tab.id],colors.colorNeutralForeground1,20);
-      icon.position.set(16,7);node.addChild(icon);
+      icon.position.set(16,14);node.addChild(icon);
       node.caption.visible=!compact;
       node.caption.anchor.x=0;node.caption.x=46;
       if(route.tabId===tab.id){
-        const indicator=new Graphics({eventMode:"none"}).roundRect(0,8,3,18,1.5).fill(colors.colorBrandBackground);
-        node.addChild(indicator);
+        const indicator=new Graphics({eventMode:"none"}).roundRect(0,0,navWidth-16,48,4).fill(style.selected)
+          .roundRect(3,14,3,20,1.5).fill(style.accent);
+        node.addChildAt(indicator,1);
       }
     });
     const footer=route.depth===0&&(route.tabId==="general"||route.tabId==="interface");
-    const bodyWidth=Math.max(80,w-navWidth-32),bodyHeight=Math.max(1,h-76-(footer?68:16));
+    const bodyWidth=Math.max(80,w-navWidth-40),bodyHeight=Math.max(1,h-76-(footer?68:20));
     this.#scroll=new NativeScrollView(options.invalidate,()=>{},theme);
-    this.#scroll.position.set(navWidth+16,68);this.#panel.addChild(this.#scroll);
-    this.#page=options.content(route.tabId,route.subPageId,bodyWidth-12);
+    this.#scroll.position.set(navWidth+20,76);this.#panel.addChild(this.#scroll);
+    this.#page=options.content(route.tabId,route.subPageId,bodyWidth);
     this.#scroll.content.addChild(this.#page.node);
     this.#scroll.resize(bodyWidth,bodyHeight,this.#page.height);
     this.#scroll.scrollTo(previousScroll);
@@ -127,6 +132,7 @@ export class NativeSettingsShell extends Container {
     const footerCount=footer?2:0;
     this.#controls=[...chromeControls.slice(0,chromeControls.length-footerCount),...this.#page.controls,...chromeControls.slice(chromeControls.length-footerCount)];
     this.#controls.forEach((control,index)=>control.node.on("pointerdown",()=>this.#setFocus(index)));
+    if(focusLabel){const index=this.#controls.findIndex(control=>control.node.label===focusLabel&&!control.disabled());if(index>=0)this.#setFocus(index);}
     if(this.#applying)this.#page.node.eventMode="none";
     options.invalidate();
   }
@@ -145,12 +151,14 @@ export class NativeSettingsShell extends Container {
       this.#scroll.reveal(point.y,control.node.height);
     }
   }
-  handleKey(event:{key?:string;type?:string;shiftKey?:boolean}):boolean{
+  handleKey(event:{key?:string;code?:string;type?:string;shiftKey?:boolean;ctrlKey?:boolean;altKey?:boolean;metaKey?:boolean}):boolean{
+    if(this.#applying)return true;
+    if(this.options.beforeKey?.(event))return true;
     if(event.type!=="down")return false;
     if(event.key==="Escape"){if(!this.#applying)this.options.close();return true;}
     if(event.key==="Tab"){
       const count=this.#controls.length;
-      let index=this.#focus;
+      let index=this.#focus<0?(event.shiftKey?0:-1):this.#focus;
       for(let attempt=0;attempt<count;attempt++){
         index=(index+(event.shiftKey?-1:1)+count)%count;
         if(!this.#controls[index]!.disabled()){this.#setFocus(index);break;}

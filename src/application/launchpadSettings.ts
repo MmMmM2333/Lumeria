@@ -92,6 +92,7 @@ import { backgroundEffectUsesPixi } from "../rendering/backgroundPort.js";
 const DEFAULT_SETTINGS_THEME_PREFERENCE = APPEARANCE_DARK;
 
 export type LaunchpadSettingsRuntimeOptions = Readonly<{
+  applyWindowPresentation?: boolean;
   reclampPageIndices?: () => void;
   schedulePageGridMetrics?: () => void;
   syncLiveDesktop?: () => unknown | Promise<unknown>;
@@ -324,7 +325,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     launchpadIconErrorState.value = "";
     launchAtLoginErrorState.value = "";
     syncDraftsFromCommitted();
-    void refreshLaunchAtLoginStatus();
+    return refreshLaunchAtLoginStatus();
   }
 
   function cancelEdit() {
@@ -765,11 +766,11 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
         runtimeOptions,
       );
       if (appliedLocaleState) activateLocale(appliedLocaleState);
-      const modeOutcome = await mainWindow.setMode({
+      const modeOutcome = runtimeOptions.applyWindowPresentation===false ? undefined : await mainWindow.setMode({
         mode: windowModeState.value,
         fullscreenOverscanEnabled: fullscreenOverscanEnabledState.value,
       });
-      const effectsOutcome = await mainWindow.setEffectsEnabled({
+      const effectsOutcome = runtimeOptions.applyWindowPresentation===false ? undefined : await mainWindow.setEffectsEnabled({
         enabled: true,
         material: windowEffectMaterialState.value,
         appearance: windowEffectAppearanceState.value,
@@ -1054,6 +1055,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   syncDraftsFromCommitted();
 
   return {
+    layoutSettings,
     actions,
     applyLayoutEdit,
     applyEdit,

@@ -495,12 +495,12 @@ const installConsumer = async (consumerDirectory) => {
 };
 
 const verify = async (target) => {
-	const actual = await makeManifest();
 	if (target && lstatSync(resolve(target)).isDirectory()) {
 		const release = resolve(target);
 		runConsumerSmoke(release, "validate", join(release, "starter-consumer-smoke", "smoke.mjs"), dirname(release));
 		return;
 	}
+	const actual = await makeManifest();
 	const path = resolve(target ?? join(root, "artifacts", manifestName(actual)));
 	if (!existsSync(path)) throw new Error(`manifest is missing: ${path}`);
 	const expected = readFileSync(path, "utf8");

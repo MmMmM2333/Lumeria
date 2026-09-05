@@ -12,5 +12,5 @@
     "types": ["bun"],
     "verbatimModuleSyntax": true
   },
-  "include": ["electrobun.config.ts", "src/native/nativeMain.ts", "src/native/nativeDataHost.ts", "src/native/nativeStartup.ts", "src/rendering/native/NativeSearchBar.ts", "src/rendering/native/NativeManagement.ts", "src/rendering/native/NativeSpinButton.ts", "src/rendering/native/nativeLayoutSettingsPage.ts"]
+  "include": ["electrobun.config.ts", "src/native/nativeMain.ts", "src/native/nativeDataHost.ts", "src/native/nativeStartup.ts", "src/rendering/native/NativeSearchBar.ts", "src/rendering/native/NativeManagement.ts", "src/rendering/native/NativeSpinButton.ts", "src/rendering/native/nativeLayoutSettingsPage.ts", "src/rendering/native/nativeGeneralSettingsPage.ts"]
 }

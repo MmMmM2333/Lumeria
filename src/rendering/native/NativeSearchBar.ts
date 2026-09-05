@@ -57,6 +57,7 @@ export class NativeSearchBar extends Container {
     this.#sync();
   }
   setQuery(value: string): void { this.input.value = value; this.#sync(); this.onQuery(value); }
+  setPlaceholder(value:string):void {this.#placeholder.text=value;this.#sync();}
   update(width: number, hidden: boolean): void {
     const nextWidth = Math.min(348, Math.max(180, width - 40));
     if(nextWidth !== this.#width) { this.#width = nextWidth; this.input.resize(nextWidth - 63, 27); this.#sync(); }

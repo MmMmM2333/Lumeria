@@ -1,5 +1,6 @@
 import zh from "../../locales/zh-CN.json";
 import en from "../../locales/en-US.json";
+export const nativeLocaleOptions=[zh,en].map(catalog=>({value:catalog.locale,label:catalog.displayName}));
 let messages: unknown=zh.messages;
 export function setNativeLocale(locale:string):void {messages=locale==="en-US"?en.messages:zh.messages;}
 export function t(key:string,values:Record<string,string|number>={}):string {

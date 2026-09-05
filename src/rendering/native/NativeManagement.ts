@@ -28,9 +28,10 @@ export class NativeManagement extends Container {
   #scroll:NativeScrollView|null=null;
   readonly #parents:ModalFrame[]=[];
   #restoreInput:TextInput|null=null;
-  constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void, readonly theme:NativeTheme="dark") {
+  constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void, readonly themeSource:NativeTheme|(()=>NativeTheme)="dark") {
     super({ label: "native-management", eventMode: "passive" });
   }
+  get theme():NativeTheme{return typeof this.themeSource==="function"?this.themeSource():this.themeSource;}
   get modal(): boolean { return this.#panel !== null; }
   focusNext(reverse=false):void {
     if(!this.#controls.length)return;
@@ -80,6 +81,7 @@ export class NativeManagement extends Container {
   }
   #begin():boolean {
     if(this.#busy)return false;
+    this.parent?.setChildIndex(this,this.parent.children.length-1);
     if(this.#menu)this.close();
     if(this.#panel){
       this.#focusRing.removeFromParent();
@@ -162,13 +164,13 @@ export class NativeManagement extends Container {
     this.#focus(0);
     overlay.alpha=0;motion(overlay).preset("fade").to({alpha:1}).start();
   }
-  menu(x:number,y:number,actions:readonly {label:string;run:()=>void}[]):void {
+  menu(x:number,y:number,actions:readonly {label:string;run:()=>void;selected?:boolean}[],minimumWidth=210):void {
     if(!this.#begin())return;
     const {width,height}=this.size();
     const layer=new Container({eventMode:"static",label:"native-context-menu"});
     layer.hitArea=new Rectangle(0,0,width,height);layer.on("pointerdown",event=>{event.stopPropagation();if(event.target===layer)this.close();});
     const panel=new Container();
-    const panelWidth=Math.min(210,Math.max(1,width-16));
+    const panelWidth=Math.min(minimumWidth,Math.max(1,width-16));
     const panelHeight=Math.min(actions.length*36+8,Math.max(1,height-16));
     panel.position.set(Math.max(8,Math.min(x,width-panelWidth-8)),Math.max(8,Math.min(y,height-panelHeight-8)));
     const colors=nativeFluentTheme(this.theme);
@@ -176,9 +178,13 @@ export class NativeManagement extends Container {
     this.#scroll=new NativeScrollView(this.invalidate,()=>{},this.theme);
     this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,actions.length*36);
     panel.addChild(this.#scroll);
-    actions.forEach((action,index)=>{const button=this.#modalButton(action.label,panelWidth-12,()=>{this.close();action.run();},"subtle");button.position.set(0,index*36);this.#scroll!.content.addChild(button);});
+    actions.forEach((action,index)=>{
+      const button=this.#modalButton(action.label,panelWidth-12,()=>{this.close();action.run();},"subtle");
+      button.position.set(0,index*36);this.#scroll!.content.addChild(button);
+      if(action.selected)button.addChild(new Graphics({eventMode:"none"}).roundRect(4,8,3,18,1.5).fill(0x4ba3f6));
+    });
     layer.addChild(panel);this.addChild(layer);this.#panel=layer;
-    this.#menu=true;this.#focus(0);
+    this.#menu=true;this.#focus(Math.max(0,actions.findIndex(action=>action.selected)));
   }
   override destroy():void {
     this.#restoreInput=null;

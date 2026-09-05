@@ -1,8 +1,8 @@
-import { t, setNativeLocale } from "./nativeLocalization.js";
-import { existsSync, writeFileSync } from "node:fs";
+import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { Screen } from "electrobun/main";
+import { Screen, GlobalShortcut } from "electrobun/main";
 import {
   Container,
   Graphics,
@@ -14,6 +14,8 @@ import {
 } from "pixi.js";
 import {
   createNativePixiApplication,
+  readNativeSystemPreferences,
+  subscribeNativeSystemPreferences,
   type NativePixiApplication,
 } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import {
@@ -34,7 +36,11 @@ import { snapshotContractValue } from "../rendering/contractSnapshot.js";
 import { createNativeEditing } from "./nativeEditing.js";
 import { createLayoutSaveQueue } from "../application/layoutSaveQueue.js";
 import { normalizeNativeCustomIcon } from "./nativeCustomIcon.js";
-import { createLayoutSettings } from "../application/layoutSettings.js";
+import { createLaunchpadSettings } from "../application/launchpadSettings.js";
+import { createLocaleRuntimePort } from "../platform/localeRuntime.js";
+import { mainWindowShortcutFromKeyboardEvent } from "../platform/mainWindowShortcutInput.js";
+import { nativeGeneralSettingsPage } from "../rendering/native/nativeGeneralSettingsPage.js";
+import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { createNativeStateHost } from "../application/stateHost.js";
 import { createSettingsNavigation } from "../application/settingsNavigation.js";
 import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
@@ -42,7 +48,9 @@ import { nativeLayoutSettingsPage } from "../rendering/native/nativeLayoutSettin
 import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
 import { nativeAboutSettingsPage } from "../rendering/native/nativeAboutSettingsPage.js";
 import { loadNativeIconTexture } from "../rendering/native/nativeIconTextureLoader.js";
-import { normalizeLaunchpadIconVariant } from "../domain/launchpadIconVariant.js";
+import { normalizeLaunchpadIconVariant, LAUNCHPAD_ICON_VARIANTS } from "../domain/launchpadIconVariant.js";
+import { createNativeShortcut } from "./nativeShortcut.js";
+import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
 import type { LaunchpadPages } from "../domain/launchpadLayout.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import {
@@ -265,9 +273,6 @@ try {
 }
 setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
 const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
-const layoutSettings=createLayoutSettings({layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false},createNativeStateHost(()=>{}));
-layoutSettings.isTextlessModeState.value=loadedLayout?.settings.textless??false;
-layoutSettings.syncDraftsFromCommitted();
 const settingsNavigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>t(key));
 settingsNavigation.selectTab("interface");
 let settingsShell:NativeSettingsShell|null=null;
@@ -296,11 +301,50 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
-const brandingTexture=await loadNativeIconTexture(join(import.meta.dir,"branding",normalizeLaunchpadIconVariant(loadedLayout?.settings.launchpadIconVariant)+".svg"));
+const mainShortcut=createNativeShortcut(GlobalShortcut,()=>{
+  if(app.window.isVisible())app.window.hide();
+  else{app.window.show();app.window.activate();}
+});
+const brandingTextures=new Map(await Promise.all(LAUNCHPAD_ICON_VARIANTS.map(async variant=>
+  [variant,await loadNativeIconTexture(join(import.meta.dir,"branding",variant+".svg"))] as const)));
+const systemPreferences=readNativeSystemPreferences();
+let systemAppearance=systemPreferences.ok?systemPreferences.value.appearance:"dark";
+const settingsTheme=()=>resolveAppearancePreference(settings.draft.settingsThemePreference.value,systemAppearance);
+const settings=createLaunchpadSettings({
+  layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false,localizationText:{t},
+  autostartPort:{isAvailable:()=>nativeData.autostartAvailable,getStatus:()=>nativeData.autostart(),setEnabled:value=>nativeData.autostart(value)},
+  localeRuntime:createLocaleRuntimePort({getSystemLanguages:()=>[Intl.DateTimeFormat().resolvedOptions().locale]}),
+  activateLocale:state=>{setNativeLocale(state.resolvedLocale);searchBar.setPlaceholder(t("launchpad.search.placeholder"));},
+  launchpadIconPort:{isAvailable:()=>app.supportsWindowIcon,applyVariant:async variant=>{
+    app.setWindowIcon(readFileSync(join(import.meta.dir,"branding",variant+".png")));return variant;
+  }},
+  liveDesktopSupport:{value:{supportsLiveDesktopBackground:false}},
+  backgroundAssetPort:{
+    toAssetUrl:path=>path??null,
+    getDesktopWallpaper:async()=>{throw new Error("Native wallpaper integration is not yet available");},
+    pickImage:async()=>{throw new Error("Native background picker integration is not yet available");},
+  },
+  mainWindow:{support:{value:{}},registerShortcut:async value=>mainShortcut.apply(value),
+    setMode:()=>{throw new Error("Native window presentation settings are not yet available");},
+    setEffectsEnabled:()=>{throw new Error("Native window effects settings are not yet available");}},
+},createNativeStateHost(()=>{}));
+settings.persistence.restore(loadedLayout?.settings??{});
+const layoutSettings=settings.layoutSettings;
+let recordingShortcut=false,expandedIcons=false;
+const stopShortcutRecording=()=>{
+  if(!recordingShortcut)return true;
+  try{mainShortcut.resume();recordingShortcut=false;return true;}
+  catch(error){settings.actions.setMainWindowShortcutError(String(error));return false;}
+};
+const recordShortcut=()=>{
+  try{mainShortcut.suspend();recordingShortcut=true;settings.actions.setMainWindowShortcutError("");}
+  catch(error){settings.actions.setMainWindowShortcutError(String(error));}
+  settingsShell?.redraw();
+};
 let changeSearch: (query: string) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query));
 const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate(),
-  loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark");
+  settingsTheme);
 
 const iconTextures = createNativeIconTextureRepository();
 const statusText = new Text({
@@ -584,6 +628,7 @@ const offPresented = app.on("presented", () => {
 });
 let offStateChange = (): void => {};
 let offFocus = (): void => {};
+let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
 let offWheelPointerInterrupt = (): void => {};
 let offTouch = (): void => {};
@@ -598,6 +643,14 @@ const wheelDeadlines = new Map<
 >();
 
 try {
+  offSystemPreferences=subscribeNativeSystemPreferences(result=>{
+    if(!result.ok){setStatus(result.error.message,0xff7b72);return;}
+    if(systemAppearance!==result.value.appearance){systemAppearance=result.value.appearance;settingsShell?.redraw();app.invalidate();}
+  });
+  if(!process.env.LUMERIA_NATIVE_DATA_DIR){
+    const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
+    if(!outcome.ok)setStatus(String(outcome.error),0xff7b72);
+  }
   await present(app, "the native host startup frame");
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   if (iconTextureSnapshot.pending.length !== 0) {
@@ -763,7 +816,7 @@ try {
     layoutState.commitPages(pages);
     layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
     const config = layoutState.captureConfiguration();
-    const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,
+    const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),
       pages, gridRows: config.rows, gridCols: config.cols, folderRows: config.folderRows, folderCols: config.folderCols,
       iconSize: config.iconSize, folderIconSize: config.folderIconSize, folderIconSizeMode: config.folderIconSizeMode,
       textless: layoutSettings.isTextlessModeState.value, hiddenAppIds });
@@ -783,23 +836,39 @@ try {
   });
   const closeSettings=()=>{
     if(settingsShell?.applying)return;
+    if(!stopShortcutRecording()){settingsShell?.redraw();return;}
     searchBar.host.blur();settingsShell?.destroy();settingsShell=null;
-    layoutSettings.syncDraftsFromCommitted();requestSceneRender();
+    settings.cancelEdit();requestSceneRender();
   };
   openSettings=()=>{
     if(settingsShell||editing!.drag.isDragActive())return;
     closeFolder();editing!.selection.clear();editing!.alt.cancelAltEditMode();searchBar.host.blur();
-    layoutSettings.syncDraftsFromCommitted();
+    const startupStatus=settings.beginEdit();
     settingsShell=new NativeSettingsShell({
-      navigation:settingsNavigation,t:key=>t(key),tabs:["interface","about"],
-      theme:()=>loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark",
+      navigation:settingsNavigation,t:key=>t(key),tabs:["general","interface","about"],
+      beforeKey:event=>{
+        if(!recordingShortcut)return false;
+        if(event.type!=="down")return true;
+        const result=mainWindowShortcutFromKeyboardEvent(event);
+        if(result.status==="valid"){settings.actions.setDraftMainWindowShortcut(result.shortcut);stopShortcutRecording();}
+        else if(result.status==="cancel")stopShortcutRecording();
+        else settings.actions.setMainWindowShortcutError(t(`settings.general.shortcut.invalid.${result.reason}`));
+        settingsShell?.redraw();return true;
+      },
+      theme:()=>settingsTheme(),
       size:()=>app.contentSize,invalidate:()=>app.invalidate(),close:closeSettings,
-      content:(tab,_subPage,width)=>tab==="about"
-        ?nativeAboutSettingsPage(width,loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark",brandingTexture)
-        :nativeLayoutSettingsPage(layoutSettings,searchBar.host,width,()=>app.invalidate(),
-          loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark"),
+      content:(tab,_subPage,width)=>tab==="general"
+        ?nativeGeneralSettingsPage({settings,width,theme:settingsTheme(),
+          management,invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),recording:recordingShortcut,
+          record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;settingsShell?.redraw();},icons:brandingTextures})
+        :tab==="about"
+        ?nativeAboutSettingsPage(width,settingsTheme(),brandingTextures.get(settings.draft.launchpadIconVariant.value)!)
+        :nativeLayoutSettingsPage(settings,searchBar.host,width,()=>app.invalidate(),
+          settingsTheme(),()=>settingsShell?.redraw()),
       apply:async()=>{
-        layoutSettings.applyLayoutEdit();
+        if(!stopShortcutRecording())throw new Error(settings.presentation.mainWindowShortcutError.value);
+        const outcome=await settings.applyEdit({applyWindowPresentation:false});
+        if(!outcome.ok)throw outcome.error;
         const config=layoutState.captureConfiguration();
         currentFrame=Object.freeze({...currentFrame,viewport:Object.freeze({...currentFrame.viewport,
           gridRows:config.rows,gridCols:config.cols,iconSize:config.iconSize,
@@ -808,6 +877,8 @@ try {
         await saves.flush();
       },
     });
+    const openedShell=settingsShell;
+    void startupStatus.then(()=>{if(settingsShell===openedShell&&!openedShell.destroyed)openedShell.redraw();});
     app.stage.addChild(settingsShell);requestSceneRender();
   };
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
@@ -1155,11 +1226,63 @@ try {
     clickWithNativeInput(aboutTab);await present(app,"native about route");
     await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
     await captureSmokeFrame("settings-about");
+    const generalTab=app.stage.getChildByLabel(`native-action:${t("settings.general.title")}`,true);assert.ok(generalTab);
+    clickWithNativeInput(generalTab);await present(app,"native general settings");
+    await waitFor("general entrance settles",()=>!scene.getMotionSnapshot().active);
+    await captureSmokeFrame("settings-general");
+    const originalShortcut=settings.draft.mainWindowShortcut.value;
+    const shortcutControl=app.stage.getChildByLabel("native-setting:shortcut",true);assert.ok(shortcutControl);
+    clickWithNativeInput(shortcutControl);
+    app.nativeInput.emitKey("down",{keyCode:0x77,modifiers:6});
+    assert.equal(settings.draft.mainWindowShortcut.value,"control+alt+F8","native shortcut recording must reach the shared draft");
+    assert.equal(recordingShortcut,false);
+    settings.actions.setDraftMainWindowShortcut(originalShortcut);
+    await present(app,"shortcut recording settles refreshed controls");
+    const languageControl=app.stage.getChildByLabel("native-setting:language",true);assert.ok(languageControl);
+    clickWithNativeInput(languageControl);await present(app,"general language menu");
+    assert.ok(management.modal,"language selector must open the native menu");
+    app.nativeInput.emitKey("down",{keyCode:0x1b});
+    assert.ok(settingsShell,"closing the language menu must retain settings");
+    await present(app,"language menu dismissed");
+    const localeBefore=settings.draft.localePreference.value;
+    const iconBefore=settings.draft.launchpadIconVariant.value;
+    const nextLocale=localeBefore==="en-US"?"zh-CN":"en-US";
+    const nextIcon=LAUNCHPAD_ICON_VARIANTS.find(value=>value!==iconBefore)!;
+    const languageAgain=app.stage.getChildByLabel("native-setting:language",true)!;
+    clickWithNativeInput(languageAgain);await present(app,"language menu selection");
+    const localeLabel=nativeLocaleOptions.find(option=>option.value===nextLocale)!.label;
+    const languageOption=management.getChildByLabel(`native-action:${localeLabel}`,true);assert.ok(languageOption);
+    clickWithNativeInput(languageOption);
+    assert.equal(settings.draft.localePreference.value,nextLocale);
+    settings.actions.setDraftLaunchpadIconVariant(nextIcon);
+    await present(app,"general changes ready");
+    clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+    await waitFor("general settings persisted",()=>Boolean(settingsShell&&!settingsShell.applying));
+    const savedGeneral=(await nativeData.loadLayout())!.settings;
+    assert.equal(savedGeneral.localePreference,nextLocale);
+    assert.equal(savedGeneral.launchpadIconVariant,nextIcon);
+    await captureSmokeFrame("settings-general-applied");
+    settings.actions.setDraftLocalePreference(localeBefore);settings.actions.setDraftLaunchpadIconVariant(iconBefore);
+    await present(app,"general restore ready");
+    clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+    await waitFor("general settings restored",()=>Boolean(settingsShell&&!settingsShell.applying));
+    assert.equal((await nativeData.loadLayout())!.settings.localePreference,localeBefore);
+
     const appearanceTab=app.stage.getChildByLabel(`native-action:${t("settings.interface.title")}`,true);assert.ok(appearanceTab);
     clickWithNativeInput(appearanceTab);await present(app,"back to native layout settings");
+    const committedTheme=settings.persistence.capture().settingsThemePreference;
+    const previewTheme=settingsTheme()==="dark"?"light":"dark";
+    clickWithNativeInput(app.stage.getChildByLabel(`native-setting:theme-${previewTheme}`,true)!);
+    await present(app,"settings theme preview");
+    assert.equal(settingsTheme(),previewTheme);
+    assert.equal(settings.persistence.capture().settingsThemePreference,committedTheme,"theme preview must not commit settings");
+    await captureSmokeFrame("settings-theme-preview");
+    settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
+    await present(app,"settings theme restored");
+
     const rowsControl=app.stage.getChildByLabel("native-setting:desktopRows",true);
     assert.ok(rowsControl);
-    for(let index=0;index<5;index++)onKey({type:"down",key:"Tab"});
+    for(let index=0;index<20&&!searchBar.host.focused;index++)onKey({type:"down",key:"Tab"});
     assert.ok(searchBar.host.focused,"Tab must reach the first settings numeric input");
     onKey({type:"down",key:"ArrowUp"});
     assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1,"numeric keyboard handling must reach the shared draft");
@@ -1846,8 +1969,9 @@ try {
   }
 } finally {
   sceneDisposed=true;sceneRenderQueued=false;
+  mainShortcut.dispose();
   (settingsShell as NativeSettingsShell|null)?.destroy();
-  brandingTexture.destroy(true);
+  for(const texture of brandingTextures.values())texture.destroy(true);
   offWheelPointerInterrupt();
   offTouch();
   editing?.dispose();
@@ -1857,6 +1981,7 @@ try {
   disconnectAnimationHost();
   folderFlow.destroy();
   offFocus();
+  offSystemPreferences();
   offWheel();
   offResize();
   offPresented();

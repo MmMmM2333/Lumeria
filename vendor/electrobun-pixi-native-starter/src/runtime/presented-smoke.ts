@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Graphics, Sprite, Texture } from "pixi.js";
 import type { NativePixiApplication } from "./native-app";
 import { getNativePixiApplicationTesting } from "./native-app-testing";
+import { createCanvas } from "@napi-rs/canvas";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -29,6 +30,16 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    if(process.platform==="win32"){
+      assert.equal(app.supportsWindowIcon,true);
+      const iconCanvas=createCanvas(32,32),iconContext=iconCanvas.getContext("2d");
+      for(const color of ["red","blue"]){
+        iconContext.fillStyle=color;iconContext.fillRect(0,0,32,32);
+        app.setWindowIcon(iconCanvas.toBuffer("image/png"));
+      }
+      assert.throws(()=>app.setWindowIcon(new Uint8Array([1,2,3])));
+      console.log("Native window icon replacement and invalid-input checks passed");
+    }
 		const sprite = new Sprite(Texture.WHITE);
 		sprite.width = sprite.height = 40;
 		app.stage.addChild(sprite);

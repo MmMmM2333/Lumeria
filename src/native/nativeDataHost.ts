@@ -132,6 +132,7 @@ function resolveExecutable(): string {
 }
 
 export class NativeDataHost {
+  autostartAvailable = false;
   readonly #process: NativeDataProcess;
   readonly #lines: AsyncIterator<string>;
   readonly #lineReader: Interface;
@@ -158,6 +159,8 @@ export class NativeDataHost {
     if (value.protocolVersion !== PROTOCOL_VERSION) {
       throw new Error(`Native data host protocol mismatch: ${String(value.protocolVersion)}`);
     }
+    if(typeof value.autostartAvailable!=="boolean")throw new TypeError("Native hello must report autostart availability");
+    this.autostartAvailable=value.autostartAvailable;
   }
 
   async loadLayout(): Promise<LayoutDocument | null> {
@@ -179,6 +182,11 @@ export class NativeDataHost {
   }
   async cacheCustomIcon(dataUrl:string):Promise<CachedCustomIconResult> {
     return validateCachedIcon(await this.#request("cacheCustomIcon",{dataUrl}));
+  }
+  async autostart(enabled?:boolean):Promise<boolean>{
+    const value=await this.#request("autostart",enabled===undefined?{}:{enabled});
+    if(typeof value!=="boolean")throw new TypeError("Native autostart must return a boolean");
+    return value;
   }
 
   async scanApps(

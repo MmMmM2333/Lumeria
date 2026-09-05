@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "先读 docs/native-product-parity.plan.md 的当前输入验收：1+2 完成；继续原版管理闭环差异，并集中积累上游回放/UIA/桌面 IME 需求"
+next_entry: "完整设置/系统迁移进行中；唯一执行状态见 docs/native-product-parity.plan.md 当前执行检查点"
 ---
 
 # Native WebGPU migration
@@ -27,7 +27,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Completed native slice
 
-- Starter `0.2.2`, release commit `9832eaf`, is vendored with manifest schema v2, 529 verified payload files and native ABI 4. It exposes TextInputHost/TextInput with consumer-owned chrome, focus/composition state and async beforeClose guards, in addition to font registration and synchronous presented events.
+- Starter `0.2.3`, release commit `c68691d`, is vendored with manifest schema v2, 532 verified payload files and native ABI 4. It exposes TextInputHost/TextInput with consumer-owned chrome, focus/composition state and async beforeClose guards, in addition to font registration and synchronous presented events.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
 - `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.

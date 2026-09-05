@@ -22,6 +22,8 @@ export {
 } from "./runtime/native-app";
 export { registerNativeFont, registerNativeFontData } from "./rendering/native-skia";
 export { createTextInputHost, TextInput, TextInputHost } from "./input/text-input";
+export { readNativeSystemPreferences, subscribeNativeSystemPreferences } from "./platform/native-system-preferences";
+export type { NativeSystemPreferences } from "./platform/native-system-preferences";
 export type { TextInputOptions, TextInputStyle, TextInputHostOptions } from "./input/text-input";
 
 export const nativeHost = Object.freeze({

@@ -13,6 +13,7 @@ import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { NativePageDots } from "../rendering/native/NativePageDots.js";
+import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
 import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
 import { NativeFluentToggle } from "../rendering/native/NativeFluentToggle.js";
 import { NativeFluentSlider } from "../rendering/native/NativeFluentSlider.js";
@@ -21,6 +22,7 @@ import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
 import { createNumericControlModel } from "../domain/numericControl.js";
 import { createSettingsNavigation, SETTINGS_SUBPAGE_SPECS } from "../application/settingsNavigation.js";
 import { createNativeStateHost } from "../application/stateHost.js";
+import { createNativeShortcut, nativeShortcutAccelerator } from "./nativeShortcut.js";
 import {
   createNativeFolderFlow,
   type NativeFolderItem,
@@ -35,6 +37,43 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+{
+  let activated=0,focused=false,finishApply!:()=>void;
+  const shell=new NativeSettingsShell({
+    navigation:createSettingsNavigation(createNativeStateHost(()=>{}),key=>key),tabs:["general"],
+    theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,invalidate:()=>{},close:()=>{},
+    apply:()=>new Promise<void>(resolve=>{finishApply=resolve;}),
+    content:()=>{
+      const node=new Container({label:"test-settings-control"});
+      return {node,height:40,dispose:()=>{},controls:[{node,disabled:()=>false,
+        focus:active=>{focused=active;},handleKey:()=>{activated++;return true;}}]};
+    },
+  });
+  for(let index=0;index<4;index++)shell.handleKey({type:"down",key:"Tab"});
+  assert.ok(focused,"Tab reaches the page control");
+  shell.redraw();assert.ok(focused,"same-route redraw preserves control focus");
+  const apply=shell.getChildByLabel("native-action:common.actions.apply",true) as NativeFluentButton;
+  apply.activate();assert.ok(shell.applying);
+  shell.handleKey({type:"down",key:"Enter"});
+  assert.equal(activated,0,"submitting settings blocks keyboard mutations");
+  finishApply();await Promise.resolve();await Promise.resolve();
+  shell.destroy();
+}
+
+{
+  const registered=new Set<string>();
+  const shortcut=createNativeShortcut({
+    register:accelerator=>{if(accelerator==="Alt+F9")return false;registered.add(accelerator);return true;},
+    unregister:accelerator=>registered.delete(accelerator),
+  },()=>{});
+  assert.equal(nativeShortcutAccelerator("control+shift+KeyN"),"Control+Shift+N");
+  assert.equal(shortcut.apply("alt+Space").ok,true);
+  assert.equal(shortcut.apply("alt+F9").ok,false);
+  assert.deepEqual([...registered],["Alt+Space"],"failed replacement must retain previous shortcut");
+  shortcut.suspend();assert.equal(registered.size,0);
+  shortcut.resume();assert.equal(registered.has("Alt+Space"),true);
+  shortcut.dispose();assert.equal(registered.size,0);
+}
 {
   for(const name of ["settings-24-regular","navigation-24-regular","paint-brush-24-regular","apps-24-regular","info-24-regular","dismiss-16-regular","arrow-left-20-regular"] as const){
     const icon=nativeFluentIcon(name,0xffffff);

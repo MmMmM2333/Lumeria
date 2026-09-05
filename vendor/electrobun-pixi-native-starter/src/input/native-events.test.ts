@@ -10,6 +10,29 @@ test("native wheel exposes browser-compatible pixel deltas without losing precis
 		.reduce((sum, delta) => sum + delta, 0)).toBe(100);
 });
 
+test("public key wheel and focus replay uses host normalization and resets repeat on blur", () => {
+  const wheels:any[]=[];
+  const events={rootBoundary:{mappingState:{trackingData:{}}},onWheel:(event:any)=>wheels.push(event)};
+  const input=attachNativePixiEvents(
+    {id:1,wgpuViewId:1,on:()=>()=>{}} as any,{events} as any,
+    {pollEvent:()=>null},
+  );
+  const keys:any[]=[],focus:boolean[]=[];
+  input.onKey(event=>keys.push(event));input.onFocusChange(value=>focus.push(value));
+  input.emitFocus(true);
+  input.emitKey("down",{keyCode:0x41,modifiers:3});
+  input.emitKey("down",{keyCode:0x41,modifiers:3});
+  expect(keys[0]).toMatchObject({key:"A",code:"KeyA",ctrlKey:true,shiftKey:true,repeat:false});
+  expect(keys[1].repeat).toBe(true);
+  input.emitFocus(false);input.emitFocus(true);
+  input.emitKey("down",{keyCode:0x41});
+  expect(keys[2].repeat).toBe(false);
+  input.emitWheel(10,20,0,100,0);
+  expect(wheels[0]).toMatchObject({clientX:10,clientY:20,deltaY:100,deltaMode:0});
+  expect(focus.slice(-2)).toEqual([false,true]);
+  input.destroy();
+});
+
 test("two native touch contacts keep independent pointer data and implicit capture", () => {
 	const pending: any[] = [];
 	const delivered: any[] = [];

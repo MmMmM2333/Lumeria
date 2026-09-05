@@ -654,6 +654,10 @@ export function attachNativePixiEvents(
 	return {
 		poll,
 		emitPointer,
+		/** Replay through the same normalizer/listeners as host events. Wheel deltas are Pixi pixels. */
+		emitKey,
+		emitWheel,
+		emitFocus: (value: boolean) => value ? onFocus() : onBlur(),
 		emitText,
 		onKey: (listener: (event: NativeKeyEvent) => void) => subscribe(keyListeners, listener),
 		onFocusChange: (listener: (focused: boolean) => void) => subscribe(focusListeners, listener),
