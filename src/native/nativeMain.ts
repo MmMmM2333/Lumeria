@@ -2338,6 +2338,7 @@ try {
     clickWithNativeInput(childNode);
     await waitFor("launch close state committed",()=>launchFlow!.isDesktopClosing.value);
     assert.equal(desktopBackground.alpha,0,"application launch removes the Pixi background immediately");
+    assert.deepEqual(app.renderer.background.colorRgba,[0,0,0,0],"launch animation must clear to premultiplied transparent black");
     await waitFor("an intermediate app launch ghost",()=>launchGhostView.visible&&launchGhostView.alpha>0.15&&launchGhostView.alpha<0.6);
     assert.ok(launchGhostView.scale.x>1.2,"launch icon must expand as it fades");
     await captureSmokeFrame("folder-app-launch-animation");

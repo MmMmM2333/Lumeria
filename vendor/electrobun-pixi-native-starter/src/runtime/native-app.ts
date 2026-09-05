@@ -286,7 +286,8 @@ export async function createNativePixiApplication(
 			const result = new WebGPURenderer();
 			await result.init({
 				canvas: canvas as any, width: contentSize.width, height: contentSize.height, resolution,
-				antialias: options.antialias ?? true, backgroundColor: options.background ?? 0x090b14, backgroundAlpha:options.transparent?0:1,
+				// DComp consumes premultiplied pixels: alpha zero also requires RGB zero.
+				antialias: options.antialias ?? true, backgroundColor: options.transparent ? 0 : options.background ?? 0x090b14, backgroundAlpha:options.transparent?0:1,
 				gpu: { adapter, device } as any, skipExtensionImports: true,
 			});
 			const uniformBatch = (result.renderPipes as any).uniformBatch;

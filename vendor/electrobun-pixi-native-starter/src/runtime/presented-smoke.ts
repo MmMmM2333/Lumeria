@@ -8,6 +8,7 @@ import { assertWindowInputCoverage } from "./window-input-smoke";
 import { runShortcutSmoke } from "./shortcut-smoke";
 import { runTraySmoke } from "./tray-smoke";
 import { runWindowChromeSmoke } from "./window-chrome-smoke";
+import { runTransparentClearSmoke } from "./transparent-clear-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -37,6 +38,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    await runTransparentClearSmoke(app);
     if(process.env.PIXI_WINDOW_PROBE_DIR)await runWindowChromeSmoke(app);
     if(process.env.PIXI_TRAY_SMOKE_ICON)await runTraySmoke(process.env.PIXI_TRAY_SMOKE_ICON);
     await runShortcutSmoke();
