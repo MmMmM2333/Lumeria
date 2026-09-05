@@ -92,10 +92,16 @@ export interface NativeAppFatalEvent {
 	readonly message: string;
 	readonly error?: unknown;
 }
+export interface NativeAppPresentedEvent {
+	readonly frameNumber: number;
+	readonly deviceGeneration: number;
+	readonly surfaceGeneration: number;
+}
 
 type NativeInput = ReturnType<typeof attachNativePixiEvents>;
 type NativeTextInput = ReturnType<typeof createNativeTextInputSession>;
 type NativeAppEvents = {
+	presented: NativeAppPresentedEvent;
 	resize: NativeAppResizeEvent;
 	statechange: NativeAppStateChangeEvent;
 	recovered: NativeAppRecoveredEvent;
@@ -323,6 +329,7 @@ export async function createNativePixiApplication(
 			for (const waiter of waiters) waiter.reject(error);
 		};
 		const listeners = {
+			presented: new Set<(event: NativeAppPresentedEvent) => void>(),
 			resize: new Set<(event: NativeAppResizeEvent) => void>(),
 			statechange: new Set<(event: NativeAppStateChangeEvent) => void>(),
 			recovered: new Set<(event: NativeAppRecoveredEvent) => void>(),
@@ -478,6 +485,13 @@ export async function createNativePixiApplication(
 		const presentFailureCode = (status: Exclude<NativePresentStatus, "success" | "suboptimal"> | null) => ({ outdated: -3, timeout: -2, "surface-lost": -4, "out-of-memory": -6, "device-lost": -5, fatal: -15 }[status ?? "fatal"]);
 		const markPresented = (status: NativePresentStatus) => {
 			lastPresentedAt = performance.now(); renderCount++;
+			try {
+				const event = Object.freeze({ frameNumber: renderCount, deviceGeneration, surfaceGeneration });
+				for (const listener of [...listeners.presented]) listener(event);
+			} catch (error) {
+				fail("presented-listener", error instanceof Error ? error.message : String(error), error);
+				return;
+			}
 			const waiters = [...presentWaiters]; presentWaiters.clear();
 			for (const waiter of waiters) waiter.resolve();
 			if (status === "suboptimal") { try { reconfigureSurface("surface suboptimal"); } catch { void requestRecovery("surface suboptimal", "surface"); } }

@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "下一完整切片是文件夹中断行为：先对照原版开关/跨文件夹交接并核对 Starter 的呈现后回调能力，再确定迁移方案"
+next_entry: "文件夹中断与自动验收完成后，下一切片为多点触控接入同一手势引擎；先读取当前验证记录和上游能力清单"
 ---
 
 # Native WebGPU migration
@@ -13,6 +13,8 @@ Branch: `feature/electrobun-native-migration`
 Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Confirmed direction
+
+- Current task after d09f528: original folder opening cancellation, closing reopen and cross-folder handoff, plus automated Windows input/window/title checks. User authorized upstream callback implementation, fixed-release consumption, and closure of the existing native dev window. User has no confirmed precision-touchpad/mixed-DPI setup; physical checks remain unverified. Collect further upstream needs together rather than patching the vendor privately.
 
 - Current task (2026-09-05): user authorized steps 2, 3 and 4: independently upgrade/verify/commit Starter 0.2.0, then restore shared original focus/keyboard semantics and synchronous wheel/page-track integration, removing replaced paths. Baseline commit: `714385a`; upgrade commit: `3211cd1`. Touch, folder interruption, search and settings remain outside this task.
 
@@ -23,7 +25,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Completed native slice
 
-- Starter `0.2.0`, release commit `b3e6536`, is vendored with manifest schema v2, complete file hashes, native ABI 4, capability-mask validation, and stable path-/memory-backed font registration exports.
+- Starter `0.2.1`, release commit `986ce97`, is vendored with manifest schema v2, 529 verified payload files, native ABI 4, capability-mask validation, and stable path-/memory-backed font registration exports. `app.on("presented")` synchronously publishes successful presentation before queued scene mutations and nextPresent continuations.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
 - `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
@@ -47,7 +49,8 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 - Native wheel input feeds the existing `createLaunchpadGestureEngine`, deadlines and desktop/folder `pageTrackScrub`, using Starter pixel-mode deltas. Accepted page commands synchronously update the authoritative frame without texture resynchronization or animation waits. New presentations cancel obsolete clear timers; keyboard navigation clears the previous wheel session and presentation. Native rendering retains the currently presented source page when another page turn redirects the animation.
 - Native folders reuse `FolderOverlayLayer`, its page-track motion and the existing folder panel visual system. Pointer, Escape, keyboard and wheel input cover open, close, page turns and child launch.
 - Folder state is native-owned presentation state only, with no focus field. Focus lives solely in `currentFrame.interaction.focusedIcon`; initial display and folder open/close clear it. Vue and native use the same pure helpers in `domain/iconFocus.ts`. Shared layout metrics remain above Vue/Pixi, without importing Vue into the native runtime.
-- Normal close waits for both progress arrival and Pixi's closing-handoff completion. Opening interruption and cross-folder retargeting remain intentionally rejected until there is a per-present hook for exact presented-ghost capture.
+- Normal close waits for both progress arrival and Pixi's closing-handoff completion. Opening cancellation now passes the original openingCancelRequest into Pixi; same-folder reopen keeps progress, while a different folder starts at zero. Pending opens wait for a successful closing presentation, latest request wins, and stale folder notifications cannot release them. The existing Pixi detached-closing visuals retain ownership until their handoff completes.
+- The native presented subscription calls `commitFolderVisualPresentation` after each successful frame, matching the original Web path's snapshot boundary. Closing residual visuals route pointer input back to folder reopen. Old reject-during-opening/reject-if-any-folder-open gates were removed.
 - Folder children, opening ghosts and closing preview swaps use the scene's injected native texture repository. Folder thumbnail emoji request the same color-emoji font stack as full-size icons.
 - The sidecar release executable is built before native dev/smoke/build and copied beside the Electrobun Bun entrypoint.
 
@@ -101,7 +104,18 @@ npm run native:smoke
 - Changed anchors for steps 3/4: `domain/iconFocus.ts` and its registered tests; `useIconFocus.ts`; `nativeMain.ts` and its smoke runner; `nativeStartup.ts`; `NativeDesktopScene.ts`; `nativeFolderFlow.ts`; native scene tests.
 - Removed/replaced paths: native sign-only wheel helper, Vue-local duplicate folder metric implementation, windowed native texture retention, and implicit Web texture repository use by native folder children/ghosts. Do not restore them.
 - Removed in steps 3/4: Vue-local duplicate focus navigation, folder-generated focus, startup/page-generated first-item focus, plain-arrow/PageUp/PageDown paging, Space activation, `turnNativeDesktopPage`, `pageTurnInFlight`, page-time texture synchronization and production animation waits. Do not restore these old paths.
-- Remaining limits: folder opening interruption/cross-folder retargeting, touch gesture integration, search/settings/editing/persistence and full product visual parity. Hardware touchpad and mixed-DPI acceptance remain unverified.
+- Remaining limits: touch gesture integration, search/settings/editing/persistence and full product visual parity. Hardware touchpad and mixed-DPI acceptance remain unverified.
+
+## Folder interruption and automatic acceptance (2026-09-05)
+
+- Upstream commits: `8e2c7ab` implements presented and real-host regression; `986ce97` updates fixed-release validation to 0.2.1. Typecheck, host tests (80 pass including packaged baseline duplicates), actual GPU callback ordering/unsubscribe/observed-timeout tests, and package validation passed. No DLL ABI increase was needed.
+- Red baseline: `npx tsx src/native/scene.test.ts` failed with `folder close must interrupt an opening spring: false !== true` before implementation. The same regression and stale/latest-request tests pass after the flow change.
+- Native GPU smoke passed cancellation before the first opening present, cancellation during visible opening, same-folder reopen, cross-folder latest-request handoff, final source icon restoration, child launch, three-page wheel/keyboard regression, adaptive resize and minimize/restore.
+- Twenty alternating folder-page GPU readbacks check bright title pixels. User observation exposed a test synchronization bug: the old loop could observe the previous page's settled track before the queued new commit. The loop now awaits a new presentation and requires both the target and live track to equal the requested page's distinct X coordinate. The corrected final run passed all 20 completed traversals. The earlier passes established title visibility, not completed page traversal. No speculative title fix is claimed.
+- Additional screenshots: folder-opening-cancel.png, folder-reopened.png and folder-cross-handoff.png. These capture intermediate motion, so two visible folders during cross-handoff can be intentional outgoing/incoming visuals, not leaked duplicate state.
+- Windows acceptance via Computer Use observed actual mouse folder opening, Escape closing, and wheel transition followed by a settled new page. Titlebar movement did not visibly damage the content. Edge resize was not certified: outward drag exceeded the tool bounds and an inward attempt was interrupted by user-input protection. Native smoke independently verifies logical/backing resize and minimize/restore. Physical touchpad/mixed-DPI checks are explicitly unverified.
+- Dev watcher cleanup revealed the Node wrapper's child hutch-engine can outlive it and retain a build lock/relaunch the app. The exact acceptance watcher was identified, stopped, and its window closed under the user's authorization; later smoke runs must not overlap native:dev.
+- Complete project gate and stable native build passed; the final smoke after the test synchronization correction passed with `folderInterruptions: verified` and `folderTitleSamples: 20`. Native types were rechecked after the test-only correction. Artifacts are retained and the temporary Starter 0.2.0 rollback payload is removed before commit. Next entry is the subsequent touch integration slice.
 
 ## Remaining migration boundary
 
@@ -119,8 +133,8 @@ Bundled fonts are intentionally deferred because the repository has no redistrib
 
 ## Starter/native foundation feedback
 
-No new production Starter ABI capability blocked this slice. Bun child-process stdio, pointer/keyboard/wheel input, animation scheduling, adaptive resize/DPI, recovery and cleanup were sufficient. A public per-frame post-present hook would be needed before exact opening-interruption/cross-folder ghost handoff parity; public key/wheel injection would improve automated input tests. Neither blocks the current normal folder flow.
+Required and completed: synchronous successful `presented` notification (0.2.1), needed because a nextPresent Promise can run after already queued scene-mutating microtasks. Standard and fast paths share markPresented; failed submissions do not notify. Further optional needs accumulated: public key/wheel injection or replay for deterministic end-to-end host tests; reliable precision-touchpad source/phase/momentum only if Windows can actually provide them. Neither is required for the current folder slice, and no metadata is fabricated. Future capability requests should be grouped and validated at the upstream release boundary.
 
 ## Next complete slice
 
-Next action: compare native folder opening/closing interruptions and cross-folder retargeting against the original flow, and inspect the Starter public API for exact post-present capture support before implementing that slice. Touch, search, settings, editing/persistence and final WebView removal remain subsequent work.
+Next action after this acceptance/commit: connect multi-touch pointer capture/cancel to the existing gesture engine, then search, settings, editing/persistence and final WebView removal. Preserve the single state owner and fixed-release boundary.

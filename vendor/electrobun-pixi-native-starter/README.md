@@ -11,6 +11,10 @@ PixiJS scene → WebGPURenderer → Electrobun adapter → Dawn/WebGPU → GpuWi
 
 ## 运行
 
+Starter 0.2.1 新增 `app.on("presented", listener)`：在普通渲染或 fast-bundle 成功提交后同步通知，早于 `nextPresent()` Promise 的 continuation 和动画排入的微任务。事件包含 `frameNumber/deviceGeneration/surfaceGeneration`；失败帧不通知。回调只保存已呈现的场景快照或 invalidate，不可重入渲染；监听器抛错会进入 fatal 状态。返回的函数用于取消订阅，dispose 清理所有订阅。DLL ABI 保持 4。
+
+回调实际宿主验证：`$env:PIXI_PRESENTED_SMOKE='1'; npm start`。
+
 ```powershell
 npm install
 npm start
@@ -42,7 +46,7 @@ await presented;
 版本化 release 本身就是完整项目，不需要旁边存在本仓库、兄弟仓库、原仓库 `node_modules` 或全局 Electrobun devkit。解压后直接：
 
 ```powershell
-cd C:\path\to\electrobun-pixi-native-starter-0.2.0-win-x64
+cd C:\path\to\electrobun-pixi-native-starter-0.2.1-win-x64
 npm install
 npm run dev
 npm run build

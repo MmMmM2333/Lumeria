@@ -9,6 +9,7 @@ process.once("exit", () => {
 export {
 	createNativePixiApplication,
 	type NativeAppFatalEvent,
+	type NativeAppPresentedEvent,
 	type NativeAppRecoveredEvent,
 	type NativeAppResizeEvent,
 	type NativeAppState,

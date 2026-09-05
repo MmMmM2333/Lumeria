@@ -307,6 +307,7 @@ const folderItem: NativeFolderItem = {
 };
 const folderFrame = makeCompleteFrame({ activePages: [[folderItem]] });
 const folderPresentation = (folderPageIndex: number): NativeFolderPresentation => Object.freeze({
+  openingCancelRequest: null,
   folderPageIndex,
   isClosing: false,
   openProgress: 1,
@@ -391,7 +392,9 @@ const folderFlow = createNativeFolderFlow((snapshot) => {
   flowSnapshot = snapshot;
 });
 assert.equal(folderFlow.open(folderItem), true);
-assert.equal(folderFlow.close(), false, "folder close must wait for the opening spring to settle");
+assert.equal(folderFlow.close(), true, "folder close must interrupt an opening spring");
+assert.equal(folderFlow.open(folderItem), true, "the same folder must reopen during closing");
+folderFlow.commitPresented(folderItem.id);
 for (let frameIndex = 0; frameIndex < 600 && folderFlow.snapshot().openProgress < 0.999; frameIndex += 1) {
   stepSceneAnimations();
 }
@@ -430,6 +433,22 @@ for (let frameIndex = 0; frameIndex < 600 && earlyHandoffFlow.snapshot().rendere
 }
 assert.equal(earlyHandoffFlow.snapshot().renderedFolder, null, "close should also finish when handoff settles first");
 earlyHandoffFlow.destroy();
+
+const retargetFlow = createNativeFolderFlow(() => {});
+const otherFolder = { ...folderItem, id: "folder-other" };
+retargetFlow.open(folderItem);
+retargetFlow.open(otherFolder);
+assert.equal(retargetFlow.snapshot().renderedFolder?.id, folderItem.id, "cross-folder open must wait for the source close presentation");
+retargetFlow.commitPresented("stale-folder");
+assert.equal(retargetFlow.snapshot().renderedFolder?.id, folderItem.id, "stale presentation cannot release a pending open");
+retargetFlow.commitPresented(folderItem.id);
+assert.equal(retargetFlow.snapshot().renderedFolder?.id, otherFolder.id, "presented close should release the next folder");
+assert.equal(retargetFlow.snapshot().openProgress, 0, "a different folder must start its own opening timeline");
+retargetFlow.open(folderItem);
+retargetFlow.open(otherFolder);
+retargetFlow.commitPresented(otherFolder.id);
+assert.equal(retargetFlow.snapshot().renderedFolder?.id, otherFolder.id, "the latest requested folder wins");
+retargetFlow.destroy();
 
 const background = [9, 11, 20, 255] as const;
 const contaminatedPixels = new Uint8ClampedArray(8 * 8 * 4);

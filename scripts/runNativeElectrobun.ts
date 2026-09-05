@@ -133,6 +133,11 @@ fixture.pages = [[
   },
 ]];
 fixture.settings.gridRows = 4;
+fixture.pages[0]!.push({
+  id: "native-folder-other", type: "folder", name: "另一个文件夹",
+  childPages: [[{ id: "native-other-child", type: "manualApp", name: "另一个子项", emoji: "🌟",
+    launchTarget: { kind: "url", path: "https://example.invalid/other" } }]],
+});
 fixture.settings.gridCols = 7;
 fixture.settings.iconSize = 64;
 fixture.settings.folderRows = 2;
@@ -211,6 +216,8 @@ try {
       pageCount?: unknown;
       pageNavigation?: unknown;
       inputNavigation?: unknown;
+      folderInterruptions?: unknown;
+      folderTitleSamples?: unknown;
       structuredLaunchFailureObserved?: unknown;
       visibleNodes?: unknown;
       width?: unknown;
@@ -275,6 +282,8 @@ try {
       || (Number(proof.pageCount) > 1 && proof.desktopPageMotionObserved !== true)
       || proof.structuredLaunchFailureObserved !== true
       || proof.inputNavigation !== "verified"
+      || proof.folderInterruptions !== "verified"
+      || proof.folderTitleSamples !== 20
     ) {
       throw new Error("Native smoke proof did not complete paging and structured launch failure checks");
     }

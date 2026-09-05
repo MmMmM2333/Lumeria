@@ -52,6 +52,7 @@ export type NativeDesktopSceneOptions = Readonly<{
   folderLayout?: NativeSceneFolderLayout | undefined;
   iconTextures?: IconTextureRepository | undefined;
   onFolderCloseRequest?: (() => void) | undefined;
+  onFolderReopenRequest?: ((folderId: string | null) => void) | undefined;
   onFolderInternalActivityChange?: ((active: boolean, folderId: string | null) => void) | undefined;
   onFolderPageIndexCommit?: ((pageIndex: number) => void) | undefined;
   onFolderRenderRequest?: (() => void) | undefined;
@@ -141,7 +142,7 @@ function makeNativeFolderFrame(
       isAppLaunchClosing: false,
       isClosing: presentation.isClosing,
       isZoomFadeClosing: false,
-      openingCancelRequest: null,
+      openingCancelRequest: presentation.openingCancelRequest,
       openingOriginBounds: null,
       openIconGhostSession: null,
       openIconGhosts: null,
@@ -214,6 +215,7 @@ export class NativeDesktopScene {
     this.#layer = new DesktopLayer({
       iconBoundsRegistry: createIconBoundsRegistry(),
       iconTextures: options.iconTextures,
+      onClosingFolderPointerDown: options.onFolderReopenRequest,
       onFolderInternalActivityChange: options.onFolderInternalActivityChange,
       onFolderOutsidePointerDown: options.onFolderCloseRequest,
       onFolderRenderRequest: options.onFolderRenderRequest,
@@ -259,6 +261,7 @@ export class NativeDesktopScene {
     );
     const folderId = folderState?.renderedFolder?.id ?? null;
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
+    for (const id of this.#layer.singleStageFolderLayer.getDesktopSourceGhostedIds()) folderSourceGhostedIds.add(id);
     if (folderId) folderSourceGhostedIds.add(folderId);
     const structureFrame = makeDesktopStructureFrame({
       activePageIndex: frame.viewport.activePageIndex,
@@ -384,6 +387,11 @@ export class NativeDesktopScene {
       stopFrames = null;
       motionRuntime.resumeAutoTicker();
     };
+  }
+
+  commitPresentedFrame(): string | null {
+    if (this.#destroyed) return null;
+    return this.#layer.singleStageFolderLayer.commitFolderVisualPresentation().closingFolderId;
   }
 
   getMotionSnapshot(): Readonly<{

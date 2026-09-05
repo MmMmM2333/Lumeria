@@ -13,6 +13,7 @@ export type NativeFolderItem = SceneItem & Readonly<{
 }>;
 
 export type NativeFolderPresentation = Readonly<{
+  openingCancelRequest: Readonly<{ folderId: string; id: number; progress: number }> | null;
   folderPageIndex: number;
   isClosing: boolean;
   openProgress: number;
@@ -24,6 +25,7 @@ export type NativeFolderFlow = Readonly<{
   close(): boolean;
   destroy(): void;
   notifyInternalActivity(active: boolean, folderId: string | null): void;
+  commitPresented(closingFolderId: string | null): void;
   open(item: SceneItem): boolean;
   setPageIndex(pageIndex: number): boolean;
   snapshot(): NativeFolderPresentation;
@@ -56,9 +58,13 @@ export function createNativeFolderFlow(
   let closingHandoffStarted = false;
   let closingHandoffFinished = false;
   let closeFinishScheduled = false;
+  let openingCancelRequest: NativeFolderPresentation["openingCancelRequest"] = null;
+  let pendingOpen: NativeFolderItem | null = null;
+  let closingPresented = false;
 
   const snapshot = (): NativeFolderPresentation => {
     return Object.freeze({
+      openingCancelRequest,
       folderPageIndex,
       isClosing,
       openProgress: progress.value,
@@ -90,6 +96,7 @@ export function createNativeFolderFlow(
         || !closingHandoffFinished
       ) return;
       renderedFolder = null;
+      openingCancelRequest = null;
       folderPageIndex = 0;
       isClosing = false;
       closeProgressArrived = false;
@@ -120,7 +127,11 @@ export function createNativeFolderFlow(
   };
 
   const close = (): boolean => {
-    if (destroyed || !renderedFolder || isClosing || openProgressTarget !== 1 || progress.value < 0.999) return false;
+    pendingOpen = null;
+    if (destroyed || !renderedFolder || isClosing || openProgressTarget !== 1) return false;
+    openingCancelRequest = progress.value < 0.999
+      ? Object.freeze({ folderId: renderedFolder.id, id: epoch + 1, progress: progress.value }) : null;
+    closingPresented = false;
     isClosing = true;
     closeProgressArrived = false;
     closingHandoffStarted = false;
@@ -146,16 +157,28 @@ export function createNativeFolderFlow(
   const open = (item: SceneItem): boolean => {
     if (destroyed) throw new Error("Native folder flow has been destroyed");
     const folder = requireFolder(item);
-    if (renderedFolder) return false;
+    if (renderedFolder?.id === folder.id && !isClosing) {
+      pendingOpen = null;
+      return false;
+    }
+    if (renderedFolder && !closingPresented) {
+      if (!isClosing) close();
+      pendingOpen = folder;
+      return true;
+    }
+    const sameFolder = renderedFolder?.id === folder.id;
     renderedFolder = folder;
-    folderPageIndex = 0;
+    pendingOpen = null;
+    openingCancelRequest = null;
+    closingPresented = false;
+    if (!sameFolder) folderPageIndex = 0;
     isClosing = false;
     closeProgressArrived = false;
     closingHandoffStarted = false;
     closingHandoffFinished = false;
     closeFinishScheduled = false;
     internalActivity = false;
-    progress.value = 0;
+    if (!sameFolder) progress.value = 0;
     openProgressTarget = 1;
     publish();
     animateProgress(1);
@@ -182,6 +205,11 @@ export function createNativeFolderFlow(
     close,
     destroy,
     notifyInternalActivity,
+    commitPresented(closingFolderId: string | null): void {
+      if (!isClosing || !renderedFolder || closingFolderId !== renderedFolder.id) return;
+      closingPresented = true;
+      if (pendingOpen) open(pendingOpen);
+    },
     open,
     setPageIndex,
     snapshot,

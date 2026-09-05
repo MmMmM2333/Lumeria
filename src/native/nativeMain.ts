@@ -69,6 +69,8 @@ type NativeFrameProof = Readonly<{
   folderPageNavigation: "verified";
   pageNavigation: "skipped-single-page" | "verified";
   inputNavigation: "verified";
+  folderInterruptions: "verified";
+  folderTitleSamples: number;
   presentCount: number;
   presented: true;
   reconciledNodes: number;
@@ -388,6 +390,10 @@ const scene = new NativeDesktopScene(app.stage, {
   folderLayout,
   iconTextures,
   onFolderCloseRequest: closeFolder,
+  onFolderReopenRequest: (folderId) => {
+    const item = currentFrame.viewport.activePages.flat().find((item) => item?.id === folderId);
+    if (item) void activateItem(item);
+  },
   onFolderInternalActivityChange: (active, folderId) => {
     folderFlow.notifyInternalActivity(active, folderId);
   },
@@ -397,6 +403,9 @@ const scene = new NativeDesktopScene(app.stage, {
 });
 app.stage.addChild(statusText);
 let offResize = (): void => {};
+const offPresented = app.on("presented", () => {
+  folderFlow.commitPresented(scene.commitPresentedFrame());
+});
 let offStateChange = (): void => {};
 let offKey = (): void => {};
 let offWheel = (): void => {};
@@ -819,6 +828,43 @@ try {
       item.type === "folder" && Array.isArray(item.childPages) && item.childPages.length > 1
     )) as NativeFolderItem | undefined;
     if (!smokeFolder) throw new Error("Native smoke fixture must contain a multi-page folder on page one");
+    const otherFolder = activePageItems.find((item) => item.id === "native-folder-other");
+    assert.ok(otherFolder, "interruption smoke requires a second desktop folder");
+    await activateItem(smokeFolder);
+    assert.equal(closeFolder(), true, "a close before the first opening present must be accepted");
+    await waitFor("unpresented opening cancellation", () => folderFlow.snapshot().renderedFolder === null);
+    await activateItem(smokeFolder);
+    await waitFor("partial folder opening", () => {
+      const progress = folderFlow.snapshot().openProgress;
+      return progress > 0.01 && progress < 0.95;
+    });
+    await present(app, "partial opening before cancel");
+    assert.equal(closeFolder(), true, "close must interrupt a presented opening");
+    await present(app, "interrupted folder close");
+    await captureSmokeFrame("folder-opening-cancel");
+    await activateItem(smokeFolder);
+    await waitFor("same-folder reopen", () => !folderFlow.snapshot().isClosing && folderFlow.snapshot().openProgress >= 0.999);
+    await present(app, "same-folder reopened");
+    await captureSmokeFrame("folder-reopened");
+    await activateItem(otherFolder);
+    await waitFor("cross-folder opening", () => folderFlow.snapshot().renderedFolder?.id === otherFolder.id);
+    await present(app, "cross-folder handoff");
+    await captureSmokeFrame("folder-cross-handoff");
+    await activateItem(smokeFolder);
+    await activateItem(otherFolder);
+    await activateItem(smokeFolder);
+    await waitFor("latest cross-folder request wins", () => (
+      folderFlow.snapshot().renderedFolder?.id === smokeFolder.id
+      && !folderFlow.snapshot().isClosing && folderFlow.snapshot().openProgress >= 0.999
+    ));
+    assert.equal(closeFolder(), true);
+    await waitFor("interruption stress cleanup", () => folderFlow.snapshot().renderedFolder === null);
+    await present(app, "clean desktop after interruptions");
+    for (const folder of [smokeFolder, otherFolder]) {
+      const node = app.stage.getChildByLabel(`launchpad-item:${folder.id}`, true);
+      assert.ok(node?.visible && node.renderable, "every folder source must return after interrupted handoffs");
+    }
+    console.log("Native folder interruption smoke: cancel, reopen, cross-folder latest-request and cleanup passed");
     onKey({ type: "down", key: "Enter" });
     const folderIndex = activePageItems.findIndex((item) => item.id === smokeFolder.id);
     for (let index = 0; index < folderIndex; index += 1) onKey({ type: "down", key: "ArrowRight" });
@@ -838,9 +884,6 @@ try {
     if (!folderNode) throw new Error(`Native smoke folder node ${smokeFolder.id} was not rendered`);
     clickWithNativeInput(folderNode);
     assert.equal(currentFocus(), null, "pointer-opened folders must not create keyboard focus");
-    if (folderFlow.close()) {
-      throw new Error("Native folder close should be rejected until opening settles");
-    }
     await waitFor(
       "an intermediate native folder opening frame",
       () => {
@@ -884,6 +927,40 @@ try {
     }
     await present(app, "the settled second native folder page");
     await captureSmokeFrame("folder-page-2");
+    const secondFolderPageX = scene.getMotionSnapshot().folderPageTrackTargetX;
+    assert.ok(secondFolderPageX !== null && secondFolderPageX < -1);
+    for (let sample = 0; sample < 20; sample += 1) {
+      const pageIndex = sample % 2;
+      assert.equal(setFolderPageIndex(pageIndex), true, "each title sample must change the logical page");
+      await present(app, "folder title stress page commit");
+      const expectedX = pageIndex === 0 ? 0 : secondFolderPageX;
+      await waitFor("folder title paging stress", () => {
+        const motion = scene.getMotionSnapshot();
+        return motion.folderPageTrackX !== null && motion.folderPageTrackTargetX !== null
+          && Math.abs(motion.folderPageTrackTargetX - expectedX) < 0.05
+          && Math.abs(motion.folderPageTrackX - expectedX) < 0.05;
+      });
+      await present(app, "folder title stress sample");
+      const pending: Container[] = [app.stage];
+      let title: Text | null = null;
+      while (pending.length) {
+        const node = pending.pop()!;
+        if (node instanceof Text && node.text === smokeFolder.name && Number(node.style.fontSize) === 18) title = node;
+        pending.push(...node.children);
+      }
+      assert.ok(title, "folder title must remain in the scene while paging");
+      const pixels = await captureScenePixels(app, app.contentSize.width, app.contentSize.height);
+      const region = toPixelRegion(title, pixels.width, pixels.height);
+      let brightPixels = 0;
+      for (let y = region.y; y < region.y + region.height; y += 1) {
+        for (let x = region.x; x < region.x + region.width; x += 1) {
+          const offset = (y * pixels.width + x) * 4;
+          if (pixels.pixels[offset]! > 200 && pixels.pixels[offset + 1]! > 200 && pixels.pixels[offset + 2]! > 200) brightPixels += 1;
+        }
+      }
+      assert.ok(brightPixels > 20, `folder title disappeared after page ${pageIndex}, sample ${sample}: ${brightPixels} bright pixels`);
+    }
+    console.log("Folder title GPU stress: 20 alternating page samples passed");
     presentCount += 1;
     if (turnFolderPage(1)) throw new Error("Native folder paging advanced past its last page");
 
@@ -1074,6 +1151,8 @@ try {
       pageCount: currentFrame.viewport.activePages.length,
       pageNavigation,
       inputNavigation: "verified",
+      folderInterruptions: "verified",
+      folderTitleSamples: 20,
       presentCount,
       presented: true,
       reconciledNodes: work.reconciledNodes,
@@ -1113,6 +1192,7 @@ try {
   offKey();
   offWheel();
   offResize();
+  offPresented();
   offStateChange();
   scene.destroy();
   iconTextures.dispose();

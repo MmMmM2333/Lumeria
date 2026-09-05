@@ -47,7 +47,11 @@ const app = await createNativePixiApplication({
 	presentationMode: bunnyCount ? "mailbox" : "fifo",
 });
 try {
-	await createDemo(app, { bunnyCount, fastBundleSmokeBatches, fpsHudScale });
+	if (process.env.PIXI_PRESENTED_SMOKE === "1") {
+		await (await import("./runtime/presented-smoke")).runPresentedSmoke(app);
+	} else {
+		await createDemo(app, { bunnyCount, fastBundleSmokeBatches, fpsHudScale });
+	}
 } catch (error) {
 	await app.dispose();
 	throw error;
