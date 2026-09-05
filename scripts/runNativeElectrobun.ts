@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { runNativeProcess } from "./runNativeProcess.js";
@@ -23,6 +23,8 @@ const artifactDir = join(projectRoot, "artifacts", "native-smoke");
 if (nativeMode === "smoke") mkdirSync(artifactDir, { recursive: true });
 const markerPath = join(tmpdir(), `launchpad-native-smoke-${process.pid}.json`);
 const dataDir = mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
+const restartPath=join(dataDir,"restart-request.json");
+let restartAttempt=0;
 const iconPath = join(dataDir, "smoke-icon.png");
 const childLaunchHelperPath = join(dataDir, "child-launch.mjs");
 const childLaunchMarkerPath = join(dataDir, "child-launched.txt");
@@ -170,7 +172,10 @@ if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
 try {
   // A normal native dev session ends with its window. The Starter --watch command
   // intentionally outlives windows and previously retained the Windows build lock.
-  const status = await runNativeProcess(process.execPath, [runner, "start"], {
+  let status:number;
+  do {
+  rmSync(restartPath,{force:true});
+  status = await runNativeProcess(process.execPath, [runner, "start"], {
     cwd: projectRoot,
     env: {
       ...process.env,
@@ -182,6 +187,9 @@ try {
         "lumeria_native_data.exe",
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      LAUNCHPAD_NATIVE_RESTART_FILE:restartPath,
+      LAUNCHPAD_NATIVE_RESTART_ATTEMPT:String(restartAttempt++),
+      LAUNCHPAD_NATIVE_RESTART_SMOKE:process.argv.includes("--restart-smoke")?"1":"0",
       LAUNCHPAD_NATIVE_WINDOW_INPUT_SMOKE: process.argv.includes("--window-input") ? "1" : "0",
       ...(isolated ? { LUMERIA_NATIVE_DATA_DIR: dataDir } : {}),
       ...(nativeMode === "smoke" ? {
@@ -192,6 +200,8 @@ try {
     },
     stdio: "inherit",
   });
+  } while(status===0&&existsSync(restartPath));
+  if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
   if (nativeMode === "smoke" && status !== 130) {
@@ -317,6 +327,9 @@ try {
     }
   }
 } finally {
+  if(nativeMode==="smoke"&&existsSync(join(dataDir,"logs","native-runtime.log"))){
+    copyFileSync(join(dataDir,"logs","native-runtime.log"),join(artifactDir,"native-runtime.log"));
+  }
   rmSync(dataDir, { force: true, recursive: true });
   if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 }

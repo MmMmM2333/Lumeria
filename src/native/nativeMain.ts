@@ -2,6 +2,10 @@ import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js
 import { readErrorMessage } from "../application/errorMessage.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
+import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.js";
+import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
+import { createLaunchpadTray } from "./nativeTray.js";
+import { prepareNativeRestart } from "./nativeRestart.js";
 import { clickOwnedNativeWindow, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
@@ -19,6 +23,7 @@ import {
 import {
   createNativePixiApplication,
   NativeGlobalShortcut,
+  NativeTray,openNativePath,
   readNativeSystemPreferences,
   subscribeNativeSystemPreferences,
   type NativePixiApplication,
@@ -298,6 +303,8 @@ let launchFlow:ReturnType<typeof createLaunchpadLaunchFlow>|null=null;
 let dismissLaunchpad=()=>{};
 let showLaunchpad=()=>{};
 let disposeLaunchFlow=()=>{};
+let tray:ReturnType<typeof createLaunchpadTray>|null=null;
+let restartRequested=false;
 const folderLayout = Object.freeze({
   get cols(){return layoutState.presentation.folderCols.value;},
   get iconSize(){return layoutState.presentation.folderIconSizeMode.value==="custom"
@@ -320,7 +327,10 @@ const app = await createNativePixiApplication({
 });
 app.stage.label = "launchpad-native-stage";
 let toggleLaunchpad=()=>{};
-const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>toggleLaunchpad());
+const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
+  logNativeRuntime("shortcut",{state:app.state,visible:app.window.isVisible(),minimized:app.window.isMinimized()});
+  try{toggleLaunchpad();}catch(error){logNativeRuntime("shortcut-error",error);}
+});
 const brandingTextures=new Map(await Promise.all(LAUNCHPAD_ICON_VARIANTS.map(async variant=>
   [variant,await loadNativeIconTexture(join(import.meta.dir,"branding",variant+".svg"))] as const)));
 const systemPreferences=readNativeSystemPreferences();
@@ -331,7 +341,7 @@ const settings=createLaunchpadSettings({
   layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false,localizationText:{t},
   autostartPort:{isAvailable:()=>nativeData.autostartAvailable,getStatus:()=>nativeData.autostart(),setEnabled:value=>nativeData.autostart(value)},
   localeRuntime:createLocaleRuntimePort({getSystemLanguages:()=>[Intl.DateTimeFormat().resolvedOptions().locale]}),
-  activateLocale:state=>{setNativeLocale(state.resolvedLocale);searchBar.setPlaceholder(t("launchpad.search.placeholder"));},
+  activateLocale:state=>{setNativeLocale(state.resolvedLocale);searchBar.setPlaceholder(t("launchpad.search.placeholder"));tray?.refresh();},
   launchpadIconPort:{isAvailable:()=>app.supportsWindowIcon,applyVariant:async variant=>{
     app.setWindowIcon(readFileSync(join(import.meta.dir,"branding",variant+".png")));return variant;
   }},
@@ -394,6 +404,7 @@ statusText.anchor.set(0.5, 1);
 statusText.eventMode = "none";
 
 function setStatus(message: string, color = 0xd8dee9): void {
+  if(message&&color===0xff7b72)logNativeRuntime("error",message);
   statusText.text = message;
   statusText.style.fill = color;
   statusText.position.set(app.contentSize.width / 2, app.contentSize.height - 16);
@@ -627,9 +638,7 @@ const removeButton=management.button(t("launchpad.batch.remove"),80,()=>removeIt
 const doneButton=management.button(t("launchpad.batch.done"),68,()=>{if(!editing!.selection.isFrozen.value)editing!.selection.clear();});
 selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
 app.stage.addChild(selectionToolbar);
-const settingsButton=management.button(t("settings.shell.title"),34,()=>openSettings(),"subtle");
-settingsButton.caption.visible=false;settingsButton.label="native-settings-button";
-const settingsIcon=nativeFluentIcon("settings-24-regular",0xffffff,20);settingsIcon.position.set(7,7);settingsButton.addChild(settingsIcon);
+const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
 app.stage.addChild(settingsButton);
 const windowChrome=new NativeWindowChrome(app,error=>setStatus(readErrorMessage(error),0xff7b72));
 app.stage.addChild(windowChrome);
@@ -650,6 +659,8 @@ const offPresented = app.on("presented", () => {
   if(session&&currentFrame.visual.appLaunchCloseSessionId===session)launchFlow?.commitAppLaunchCloseFrame(session);
 });
 let offStateChange = (): void => {};
+const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
+const offRecovered=app.on("recovered",event=>logNativeRuntime("recovered",event));
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -662,12 +673,17 @@ const offSaveBeforeClose = app.beforeClose(async () => {
   try {
     await settingsShell?.waitForApply();
     await saves.flush();
-    if(launchFlow?.isDesktopOpen.value&&app.window.isVisible()){
+    if(launchFlow?.isDesktopOpen.value&&app.window.isVisible()&&!app.window.isMinimized()&&app.state==="running"){
       launchFlow.closeDesktop();
       await waitFor("native window close animation",()=>!launchFlow!.isDesktopClosing.value);
       await present(app,"native window final close frame");
     }
+    if(restartRequested){
+      await prepareNativeRestart();
+      logNativeRuntime("restart-ready");
+    }
   } catch (error) {
+    restartRequested=false;
     windowClosing=false;app.stage.interactiveChildren=true;
     setStatus(readErrorMessage(error),0xff7b72);throw error;
   }
@@ -766,7 +782,9 @@ try {
       width: app.contentSize.width,
     }, false);
     settingsButton.position.set(app.contentSize.width-54,14+chromeInset());
-    settingsButton.visible=!settingsShell&&!editing?.selection.isActive.value&&!folderFlow.snapshot().renderedFolder;
+    const folderHeader=folderFlow.snapshot();
+    const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
+    settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
     searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
     searchBar.y=14+chromeInset();
     selectionToolbar.visible=Boolean(editing?.selection.isActive.value);
@@ -841,7 +859,8 @@ try {
   const closed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
   });
-  offStateChange = app.on("statechange", ({ state }) => {
+  offStateChange = app.on("statechange", ({ state,previous,reason }) => {
+    logNativeRuntime("state",{state,previous,reason});
     if (state === "closing" || state === "closed") resolveClosed();
   });
 
@@ -910,9 +929,9 @@ try {
   const hideAfterPresented=async()=>{
     if(windowClosing)return;
     const generation=visibilityGeneration;
-    await present(app,"desktop close animation final frame");
+    if(!app.window.isMinimized()&&app.state==="running")await present(app,"desktop close animation final frame");
     if(generation!==visibilityGeneration||launchFlow!.isDesktopOpen.value)return;
-    app.window.hide();
+    app.window.hide();logNativeRuntime("hidden");
   };
   launchFlow=createLaunchpadLaunchFlow({
     localizationText:{t},desktopMainRef:flowState.cell(null),keyboardFocusArea:flowState.cell("desktop"),openingIcon,
@@ -951,10 +970,20 @@ try {
   });
   showLaunchpad=()=>{
     visibilityGeneration++;visibilityPreparing=false;
+    const generation=visibilityGeneration;
+    logNativeRuntime("show-request",{state:app.state,minimized:app.window.isMinimized()});
+    if(app.state==="failed"){logNativeRuntime("show-failed","Renderer failed; use tray restart to recover");return;}
     if(folderFlow.snapshot().renderedFolder)folderFlow.reset();
-    app.window.show();app.window.activate();launchFlow!.openDesktop();
-    fadeNativeLaunchpadChrome([desktopBackground,searchBar,settingsButton,windowChrome,management],true);
-    requestSceneRender();
+    if(app.window.isMinimized())app.window.unminimize();
+    app.window.show();app.window.activate();
+    const reveal=()=>{
+      if(generation!==visibilityGeneration||windowClosing)return;
+      launchFlow!.openDesktop();fadeNativeLaunchpadChrome([desktopBackground,searchBar,windowChrome,management],true);
+      requestSceneRender();logNativeRuntime("shown",{state:app.state});
+    };
+    if(app.state==="running")reveal();
+    else void waitFor("window restored before reveal",()=>app.state==="running"&&!app.window.isMinimized()).then(reveal)
+      .catch(error=>logNativeRuntime("show-timeout",error));
   };
   dismissLaunchpad=()=>{
     if(visibilityPreparing||launchFlow!.isLaunchpadInteractionBlocked()||editing?.drag.isDragActive()||settingsShell?.applying)return;
@@ -965,7 +994,8 @@ try {
     }).catch(error=>{visibilityPreparing=false;setStatus(readErrorMessage(error),0xff7b72);});
   };
   toggleLaunchpad=()=>{
-    if(!app.window.isVisible()||!launchFlow!.isDesktopOpen.value||visibilityPreparing)showLaunchpad();
+    if(windowClosing)return;
+    if(app.window.isMinimized()||app.state!=="running"||!app.window.isVisible()||!launchFlow!.isDesktopOpen.value||visibilityPreparing)showLaunchpad();
     else dismissLaunchpad();
   };
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
@@ -1029,12 +1059,25 @@ try {
         }),interaction:Object.freeze({...currentFrame.interaction,isTextlessMode:layoutSettings.isTextlessModeState.value})});
         commitEditedPages(layoutState.operations.clonePages(layoutState.presentation.pages.value));
         await saves.flush();
+        tray?.refresh();
       },
     });
     const openedShell=settingsShell;
     void startupStatus.then(()=>{if(settingsShell===openedShell&&!openedShell.destroyed)openedShell.redraw();});
     app.stage.addChild(settingsShell);requestSceneRender();
   };
+  tray=createLaunchpadTray({
+    brandingDirectory:join(import.meta.dir,"branding"),createTray:options=>new NativeTray(options),openPath:openNativePath,
+    icon:()=>settings.presentation.launchpadIconVariant.value,
+    show:()=>showLaunchpad(),toggle:()=>toggleLaunchpad(),
+    settings:()=>{
+      showLaunchpad();
+      void waitFor("tray settings window ready",()=>app.state==="running"&&launchFlow!.isDesktopOpen.value)
+        .then(()=>openSettings()).catch(error=>logNativeRuntime("tray-settings-error",error));
+    },
+    quit:restart=>{if(windowClosing)return;restartRequested=restart;logNativeRuntime(restart?"restart-request":"quit-request");app.window.requestClose();},
+  });
+  logNativeRuntime("ready",{version:"0.1.0",state:app.state,logDirectory:nativeLogDirectory});
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
     setStatus("");
@@ -1383,6 +1426,12 @@ try {
         await sendAltSpace();
         await waitFor("physical shortcut reopens",()=>app.window.isVisible()&&launchFlow!.isDesktopOpen.value);
         await waitFor("shortcut reopen settles",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+        app.window.minimize();
+        await waitFor("shortcut test minimized",()=>app.window.isMinimized()&&app.state==="suspended");
+        await sendAltSpace();
+        await waitFor("Alt+Space restores minimized window",()=>!app.window.isMinimized()&&app.window.isVisible()&&app.state==="running");
+        await waitFor("minimized restoration settles",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+        console.log("Physical Alt+Space restored minimized/suspended window");
         dismissLaunchpad();
         await waitFor("interruptible close started",()=>launchFlow!.isDesktopClosing.value);
         await sendAltSpace();
@@ -1397,6 +1446,19 @@ try {
         await waitFor("reopen after Escape",()=>app.window.isVisible()&&scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
         console.log("Physical Alt+Space: animated close, hidden reopen and close interruption passed");
       }finally{mainShortcut.apply(null);}
+    }
+    {
+      const {sendTrayTestAction}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
+      assert.ok(tray);
+      await sendTrayTestAction(tray.id,"left");await waitFor("tray left click hides",()=>!app.window.isVisible());
+      await sendTrayTestAction(tray.id,"left");await waitFor("tray left click reopens",()=>app.window.isVisible()&&launchFlow!.isDesktopOpen.value);
+      await waitFor("tray show settles",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+      app.window.minimize();await waitFor("tray minimized fixture",()=>app.window.isMinimized()&&app.state==="suspended");
+      await sendTrayTestAction(tray.id,"menu",0);await waitFor("tray menu restores",()=>!app.window.isMinimized()&&app.state==="running");
+      await sendTrayTestAction(tray.id,"menu",1);await waitFor("tray settings opened",()=>Boolean(settingsShell));
+      await present(app,"tray settings ready");
+      app.nativeInput.emitKey("down",{keyCode:0x1b});await present(app,"tray settings dismissed");
+      console.log("Tray left toggle, right-menu restore and settings actions passed");
     }
     if(settings.presentation.windowMode.value==="fullscreen"){
       await present(app,"restored fullscreen background settled");
@@ -2108,6 +2170,10 @@ try {
       && !folderFlow.snapshot().isClosing && folderFlow.snapshot().openProgress >= 0.999
     ));
     assert.equal(closeFolder(), true);
+    await waitFor("settings button reveals while folder is still closing",()=>settingsButton.alpha>0.1&&folderFlow.snapshot().isClosing);
+    assert.ok(folderFlow.snapshot().renderedFolder,"settings button must appear before folder cleanup");
+    assert.equal(settingsButton.eventMode,"none","visual reveal must not enable clicks through the closing folder");
+    await captureSmokeFrame("settings-button-folder-closing");
     await waitFor("interruption stress cleanup", () => folderFlow.snapshot().renderedFolder === null);
     await present(app, "clean desktop after interruptions");
     for (const folder of [smokeFolder, otherFolder]) {
@@ -2435,9 +2501,30 @@ try {
       resolution,
       visibleNodes,
     }, null, 2));
+    if(process.env.LAUNCHPAD_NATIVE_RESTART_SMOKE==="1"){
+      const {sendTrayTestAction}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
+      assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR,"restart smoke must use isolated data");
+      const attempt=Number(process.env.LAUNCHPAD_NATIVE_RESTART_ATTEMPT);
+      if(attempt===0){
+        editing!.rename("native-layout-icon","Tray restart saved");await saves.flush();
+        app.window.minimize();await waitFor("restart fixture minimized",()=>app.window.isMinimized()&&app.state==="suspended");
+        await sendTrayTestAction(tray!.id,"menu",4);
+      }else if(attempt===1){
+        const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+        const testing=getNativePixiApplicationTesting(app);testing.injectFault("out-of-memory");app.invalidate();
+        await waitFor("injected fatal recorded",()=>app.state==="failed");
+        assert.ok(readFileSync(nativeLogPath,"utf8").includes('"event":"fatal"'),"fatal error must reach the persistent journal");
+        await sendTrayTestAction(tray!.id,"menu",4);
+      }else{
+        assert.equal(attempt,2);assert.equal(layoutState.presentation.pages.value.flat().find(item=>item.id==="native-layout-icon")?.name,"Tray restart saved");
+        logNativeRuntime("restart-smoke-restored");
+        await sendTrayTestAction(tray!.id,"menu",5);
+      }
+    }
     await closed;
   }
 } finally {
+  tray?.remove();tray=null;
   disposeLaunchFlow();
   sceneDisposed=true;sceneRenderQueued=false;
   desktopBackground.destroy();
@@ -2459,6 +2546,7 @@ try {
   offBackgroundResize();
   offPresented();
   offStateChange();
+  offFatal();offRecovered();logNativeRuntime("shutdown");
   scene.destroy();
   app.stage.off("rightclick",onContext);
   management.destroy();
