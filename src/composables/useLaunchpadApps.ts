@@ -38,13 +38,8 @@ import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import { catalogPort } from "../platform/launchpadPorts.js";
 import type { CatalogPort } from "../platform/launchpadPorts.js";
 import type { LocalizationText } from "../i18n/localization.js";
-import { ICON_SIZE_MAX } from "./launchpadConstants.js";
-
-const CUSTOM_ICON_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
-const CUSTOM_ICON_DATA_URL_MAX_LENGTH = 1_400_000;
-const CUSTOM_ICON_MIN_SOURCE_SIZE = 16;
-const CUSTOM_ICON_OUTPUT_MIN_SIZE = ICON_SIZE_MAX;
-const CUSTOM_ICON_OUTPUT_MAX_SIZE = ICON_SIZE_MAX * 2;
+import { CUSTOM_ICON_SOURCE_MAX_BYTES, CUSTOM_ICON_DATA_URL_MAX_LENGTH, CUSTOM_ICON_MIN_SOURCE_SIZE, getCustomIconPlacement } from "../domain/customIcon.js";
+export { getCustomIconCanvasSize } from "../domain/customIcon.js";
 const WINDOWS_APP_CATALOG_ROOT_TYPE = "windowsAppCatalog";
 const SCAN_RESULT_TAB_AVAILABLE = "available";
 const SCAN_RESULT_TAB_IGNORED = "ignored";
@@ -128,12 +123,6 @@ type LaunchTargetCheck = Readonly<{ id: string; launchTarget: LaunchTarget; targ
 type ReadonlyLaunchTarget = NonNullable<ReadonlyLaunchpadApp["launchTarget"]>;
 type OperationErrorConfig = Readonly<{ title: string; message: string; suggestion: string }>;
 type FileInputEvent = Readonly<{ target?: (HTMLInputElement & { value: string }) | null }> | null | undefined;
-
-export function getCustomIconCanvasSize(width: unknown, height: unknown): number {
-  const sourceMax = Math.max(Number(width) || 0, Number(height) || 0);
-  if (sourceMax <= 0) return CUSTOM_ICON_OUTPUT_MIN_SIZE;
-  return Math.min(CUSTOM_ICON_OUTPUT_MAX_SIZE, Math.max(CUSTOM_ICON_OUTPUT_MIN_SIZE, sourceMax));
-}
 
 export function useLaunchpadApps(options: LaunchpadAppsOptions) {
   const catalog = options.catalogPort || catalogPort;
@@ -649,10 +638,8 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
       throw new Error(t("settings.apps.icon.tooSmall"));
     }
 
-    const canvasSize = getCustomIconCanvasSize(width, height);
-    const scale = Math.min(canvasSize / width, canvasSize / height);
-    const drawWidth = Math.max(1, Math.round(width * scale));
-    const drawHeight = Math.max(1, Math.round(height * scale));
+    const placement = getCustomIconPlacement(width,height);
+    const canvasSize = placement.size;
     const canvas = document.createElement("canvas");
     canvas.width = canvasSize;
     canvas.height = canvasSize;
@@ -663,10 +650,10 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
     context.imageSmoothingQuality = "high";
     context.drawImage(
       image,
-      Math.round((canvasSize - drawWidth) / 2),
-      Math.round((canvasSize - drawHeight) / 2),
-      drawWidth,
-      drawHeight
+      placement.x,
+      placement.y,
+      placement.width,
+      placement.height
     );
 
     const dataUrl = await canvasToPngDataUrl(canvas);

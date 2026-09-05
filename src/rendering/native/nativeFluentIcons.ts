@@ -1,0 +1,61 @@
+import { Graphics, GraphicsPath, type ColorSource } from "pixi.js";
+// Fluent icons from the installed @iconify-json/fluent package (MIT), shared with Web.
+const icons = {
+  "navigation-24-regular": {
+    "width": 24,
+    "height": 24,
+    "body": "<path fill=\"currentColor\" d=\"M2.753 18h18.5a.75.75 0 0 1 .101 1.493l-.101.007h-18.5a.75.75 0 0 1-.102-1.494zh18.5zm0-6.497h18.5a.75.75 0 0 1 .101 1.493l-.101.007h-18.5a.75.75 0 0 1-.102-1.494zh18.5zm-.001-6.5h18.5a.75.75 0 0 1 .102 1.493l-.102.007h-18.5A.75.75 0 0 1 2.65 5.01zh18.5z\"/>"
+  },
+  "settings-24-regular": {
+    "width": 24,
+    "height": 24,
+    "body": "<path fill=\"currentColor\" d=\"M12.012 2.25c.734.008 1.465.093 2.182.253a.75.75 0 0 1 .582.649l.17 1.527a1.384 1.384 0 0 0 1.927 1.116l1.4-.615a.75.75 0 0 1 .85.174a9.8 9.8 0 0 1 2.205 3.792a.75.75 0 0 1-.272.825l-1.241.916a1.38 1.38 0 0 0 0 2.226l1.243.915a.75.75 0 0 1 .272.826a9.8 9.8 0 0 1-2.204 3.792a.75.75 0 0 1-.849.175l-1.406-.617a1.38 1.38 0 0 0-1.926 1.114l-.17 1.526a.75.75 0 0 1-.571.647a9.5 9.5 0 0 1-4.406 0a.75.75 0 0 1-.572-.647l-.169-1.524a1.382 1.382 0 0 0-1.925-1.11l-1.406.616a.75.75 0 0 1-.85-.175a9.8 9.8 0 0 1-2.203-3.796a.75.75 0 0 1 .272-.826l1.243-.916a1.38 1.38 0 0 0 0-2.226l-1.243-.914a.75.75 0 0 1-.272-.826a9.8 9.8 0 0 1 2.205-3.792a.75.75 0 0 1 .85-.174l1.4.615a1.387 1.387 0 0 0 1.93-1.118l.17-1.526a.75.75 0 0 1 .583-.65q1.074-.238 2.201-.252m0 1.5a9 9 0 0 0-1.354.117l-.11.977A2.886 2.886 0 0 1 6.526 7.17l-.899-.394A8.3 8.3 0 0 0 4.28 9.092l.797.587a2.88 2.88 0 0 1 .001 4.643l-.799.588c.32.842.776 1.626 1.348 2.322l.905-.397a2.882 2.882 0 0 1 4.017 2.318l.109.984c.89.15 1.799.15 2.688 0l.11-.984a2.88 2.88 0 0 1 4.018-2.322l.904.396a8.3 8.3 0 0 0 1.348-2.318l-.798-.588a2.88 2.88 0 0 1-.001-4.643l.797-.587a8.3 8.3 0 0 0-1.348-2.317l-.897.393a2.884 2.884 0 0 1-4.023-2.324l-.109-.976a9 9 0 0 0-1.334-.117M12 8.25a3.75 3.75 0 1 1 0 7.5a3.75 3.75 0 0 1 0-7.5m0 1.5a2.25 2.25 0 1 0 0 4.5a2.25 2.25 0 0 0 0-4.5\"/>"
+  },
+  "paint-brush-24-regular": {
+    "width": 24,
+    "height": 24,
+    "body": "<path fill=\"currentColor\" d=\"M5.75 2a.75.75 0 0 0-.75.75v11.5a2.25 2.25 0 0 0 2.25 2.25H9.5v3a2.5 2.5 0 1 0 5 0v-3h2.25A2.25 2.25 0 0 0 19 14.25V2.75a.75.75 0 0 0-.75-.75zm.75 9V3.5h6v1.752a.75.75 0 1 0 1.5 0V3.5h1v2.751a.75.75 0 1 0 1.5 0V3.5h1V11zm0 3.25V12.5h11v1.75a.75.75 0 0 1-.75.75h-3a.75.75 0 0 0-.75.75v3.75a1 1 0 0 1-2 0v-3.75a.75.75 0 0 0-.75-.75h-3a.75.75 0 0 1-.75-.75\"/>"
+  },
+  "apps-24-regular": {
+    "width": 24,
+    "height": 24,
+    "body": "<path fill=\"currentColor\" d=\"m18.492 2.33l3.179 3.18a2.25 2.25 0 0 1 0 3.182l-2.584 2.584A2.25 2.25 0 0 1 21 13.5v5.25A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75V5.25A2.25 2.25 0 0 1 5.25 3h5.25a2.25 2.25 0 0 1 2.225 1.915L15.31 2.33a2.25 2.25 0 0 1 3.182 0M4.5 18.75c0 .415.336.75.75.75h5.999l.001-6.75H4.5zm8.249.75h6.001a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75h-6.001zM10.5 4.5H5.25a.75.75 0 0 0-.75.75v6h6.75v-6a.75.75 0 0 0-.75-.75m2.25 4.81v1.94h1.94zm3.62-5.918L13.193 6.57a.75.75 0 0 0 0 1.061l3.179 3.179a.75.75 0 0 0 1.06 0l3.18-3.179a.75.75 0 0 0 0-1.06l-3.18-3.18a.75.75 0 0 0-1.06 0\"/>"
+  },
+  "info-24-regular": {
+    "width": 24,
+    "height": 24,
+    "body": "<path fill=\"currentColor\" d=\"M12.002 1.999c5.523 0 10.001 4.478 10.001 10.002c0 5.523-4.478 10.001-10.001 10.001C6.478 22.002 2 17.524 2 12.001C2 6.477 6.478 1.999 12.002 1.999m0 1.5a8.502 8.502 0 1 0 0 17.003a8.502 8.502 0 0 0 0-17.003M12 10.5a.75.75 0 0 1 .75.75v5a.75.75 0 0 1-1.5 0v-5a.75.75 0 0 1 .75-.75M12 9a1 1 0 1 0 0-2a1 1 0 0 0 0 2\"/>"
+  },
+  "dismiss-16-regular": {
+    "width": 16,
+    "height": 16,
+    "body": "<path fill=\"currentColor\" d=\"m2.589 2.716l.057-.07a.5.5 0 0 1 .638-.057l.07.057L8 7.293l4.646-4.647a.5.5 0 0 1 .708.708L8.707 8l4.647 4.646a.5.5 0 0 1 .057.638l-.057.07a.5.5 0 0 1-.638.057l-.07-.057L8 8.707l-4.646 4.647a.5.5 0 0 1-.708-.708L7.293 8L2.646 3.354a.5.5 0 0 1-.057-.638l.057-.07z\"/>"
+  },
+  "arrow-left-20-regular": {
+    "width": 20,
+    "height": 20,
+    "body": "<path fill=\"currentColor\" d=\"M9.159 16.867a.5.5 0 1 0 .674-.739l-6.168-5.63h13.831a.5.5 0 0 0 0-1H3.668l6.165-5.629a.5.5 0 0 0-.674-.738L2.243 9.445a.75.75 0 0 0-.24.631a.75.75 0 0 0 .24.477z\"/>"
+  }
+} as const;
+export function nativeFluentIcon(name:keyof typeof icons,color:ColorSource,size=20):Graphics {
+  const icon=icons[name];
+  if(name==="info-24-regular"){
+    const graphic=new Graphics({eventMode:"none"})
+      .circle(12,12,9.25).stroke({color,width:1.5})
+      .roundRect(11.25,10.5,1.5,6.5,0.75).fill(color)
+      .circle(12,8,1).fill(color);
+    graphic.scale.set(size/24);return graphic;
+  }
+  if(name==="navigation-24-regular"){
+    // This icon consists of three bars. Its SVG close-then-relative commands are
+    // misinterpreted by Pixi's path parser; preserve the same geometry directly.
+    const graphic=new Graphics({eventMode:"none"});
+    for(const y of [5.003,11.503,18])graphic.roundRect(2.003,y,20,1.5,0.75).fill(color);
+    graphic.scale.set(size/24);return graphic;
+  }
+  const path=icon.body.match(/ d="([^"]+)"/)?.[1];
+  if(!path)throw new Error(`Fluent icon ${name} must contain a vector path`);
+  const graphic=new Graphics({eventMode:"none"}).path(new GraphicsPath(path,true)).fill(color);
+  graphic.scale.set(size/icon.width,size/icon.height);
+  return graphic;
+}

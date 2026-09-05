@@ -1,10 +1,21 @@
 import { t } from "../../native/nativeLocalization.js";
-import { Container, Graphics, Rectangle, Text } from "pixi.js";
+import { Color, Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { PIXI_UI_FONT_FAMILY } from "../typography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
+import { NativeFluentButton, nativeFluentTheme, type NativeTheme, type NativeButtonAppearance } from "./NativeFluentButton.js";
+import { NativeScrollView } from "./NativeScrollView.js";
 
 export type NativeFormField = { label: string; value: string; readOnly?: boolean; browse?:()=>Promise<string|null> };
+type ModalFrame = {
+  panel:Container;
+  fields:TextInput[];
+  submit:(()=>void)|null;
+  controls:{node:Container;activate?:()=>void}[];
+  focusIndex:number;
+  menu:boolean;
+  scroll:NativeScrollView|null;
+};
 export class NativeManagement extends Container {
   #panel: Container | null = null;
   #fields: TextInput[] = [];
@@ -14,7 +25,10 @@ export class NativeManagement extends Container {
   #focusIndex = -1;
   readonly #focusRing = new Graphics({ eventMode: "none" });
   #menu = false;
-  constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void) {
+  #scroll:NativeScrollView|null=null;
+  readonly #parents:ModalFrame[]=[];
+  #restoreInput:TextInput|null=null;
+  constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void, readonly theme:NativeTheme="dark") {
     super({ label: "native-management", eventMode: "passive" });
   }
   get modal(): boolean { return this.#panel !== null; }
@@ -27,6 +41,10 @@ export class NativeManagement extends Container {
     this.#focusRing.removeFromParent();
     const control=this.#controls[index];
     if(!control)return;
+    if(this.#scroll){
+      const point=this.#scroll.content.toLocal(control.node.toGlobal({x:0,y:0}));
+      this.#scroll.reveal(point.y,34);
+    }
     if(!control.activate) {(control.node as TextInput).focus();return;}
     this.host.blur();
     const area=control.node.hitArea as Rectangle;
@@ -46,25 +64,34 @@ export class NativeManagement extends Container {
     if(event.key==="Enter" && this.#submit){this.#submit();return true;}
     return !this.host.focused;
   }
-  button(label: string, width: number, action: () => void): Container {
-    const button = new Container({ label: `native-action:${label}`, eventMode: "static", cursor: "pointer" });
-    const bg = new Graphics().roundRect(0, 0, width, 34, 4).fill({ color: 0xffffff, alpha: 0.08 }).stroke({ color: 0xffffff, alpha: 0.15, width: 1 });
-    const text = new Text({ text: label, style: { fontFamily: [...PIXI_UI_FONT_FAMILY], fontSize: 13, fill: 0xffffff } });
-    text.anchor.set(0.5); text.position.set(width/2,17); text.eventMode="none";
-    button.hitArea = new Rectangle(0,0,width,34);
-    button.addChild(bg,text);
+  button(label: string, width: number, action: () => void, appearance:NativeButtonAppearance="outline"): NativeFluentButton {
+    const button = new NativeFluentButton(label,width,action,this.invalidate,this.theme,appearance);
     button.on("pointerdown", event=>{
       event.stopPropagation();
       const index=this.#controls.findIndex(control=>control.node===button);
       if(index>=0)this.#focus(index);
     });
-    button.on("pointertap", event=>{event.stopPropagation();action();});
     return button;
   }
-  #modalButton(label:string,width:number,action:()=>void):Container {
-    const button=this.button(label,width,action);
+  #modalButton(label:string,width:number,action:()=>void,appearance:NativeButtonAppearance="outline"):Container {
+    const button=this.button(label,width,action,appearance);
     this.#controls.push({node:button,activate:action});
     return button;
+  }
+  #begin():boolean {
+    if(this.#busy)return false;
+    if(this.#menu)this.close();
+    if(this.#panel){
+      this.#focusRing.removeFromParent();
+      this.#parents.push({panel:this.#panel,fields:this.#fields,submit:this.#submit,controls:this.#controls,
+        focusIndex:this.#focusIndex,menu:this.#menu,scroll:this.#scroll});
+      this.#panel.eventMode="none";
+      this.host.blur();
+      this.#panel=null;this.#fields=[];this.#controls=[];this.#submit=null;this.#focusIndex=-1;this.#scroll=null;
+    }else{
+      this.#restoreInput=this.host.focused;this.host.blur();
+    }
+    return true;
   }
   close(force=false): void {
     if(this.#busy && !force)return;
@@ -72,14 +99,24 @@ export class NativeManagement extends Container {
     this.#controls=[];this.#focusIndex=-1;this.#menu=false;
     this.host.blur();
     this.#submit=null;
+    this.#scroll=null;
     for(const input of this.#fields) input.destroy();
     this.#fields=[];
     if(this.#panel) {killMotionOf(this.#panel);this.#panel.destroy({children:true});this.#panel=null;}
+    const parent=this.#parents.pop();
+    if(parent){
+      this.#panel=parent.panel;this.#fields=parent.fields;this.#controls=parent.controls;this.#submit=parent.submit;
+      this.#menu=parent.menu;this.#scroll=parent.scroll;this.#panel.eventMode="static";this.#focus(parent.focusIndex);
+    }else{
+      if(this.#restoreInput&&!this.#restoreInput.destroyed)this.#restoreInput.focus();
+      this.#restoreInput=null;
+    }
+    this.invalidate();
   }
   form(title: string, fields: NativeFormField[], confirm: string, submit: (values: string[]) => void | Promise<void>): void {
-    if(this.#busy)return;
-    this.close();
+    if(!this.#begin())return;
     const {width,height}=this.size();
+    const colors=nativeFluentTheme(this.theme);
     const overlay=new Container({eventMode:"static",label:"native-form-overlay"});
     const shade=new Graphics().rect(0,0,width,height).fill({color:0,alpha:0.5});
     overlay.addChild(shade); overlay.hitArea=new Rectangle(0,0,width,height);
@@ -87,14 +124,18 @@ export class NativeManagement extends Container {
     const panel=new Container({eventMode:"static",label:"native-form-panel"});
     const w=Math.min(540,width-48), h=130+fields.length*70;
     panel.position.set((width-w)/2,Math.max(24,(height-h)/2));
-    panel.addChild(new Graphics().roundRect(0,0,w,h,8).fill(0x292929).stroke({color:0xffffff,alpha:0.15,width:1}));
-    const heading=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:20,fontWeight:"600",fill:0xffffff}});
+    panel.addChild(new Graphics().roundRect(0,0,w,h,8).fill(colors.colorNeutralBackground2).stroke({color:colors.colorNeutralStroke2,width:1}));
+    const heading=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:20,fontWeight:"600",fill:colors.colorNeutralForeground1}});
     heading.position.set(20,20);panel.addChild(heading);
     fields.forEach((field,index)=>{
-      const label=new Text({text:field.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:0xcccccc}});
+      const label=new Text({text:field.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorNeutralForeground2}});
       label.position.set(20,58+index*70);panel.addChild(label);
       const input=this.host.create({width:w-40-(field.browse?86:0),height:34,value:field.value,readOnly:field.readOnly,
-        style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18,padding:8,backgroundColor:0x202020,borderColor:0x555555,focusColor:0x60aaff}});
+        style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18,padding:8,
+          backgroundColor:new Color(colors.colorNeutralBackground3).toNumber(),
+          borderColor:new Color(colors.colorNeutralStroke1).toNumber(),
+          focusColor:new Color(colors.colorBrandStroke1).toNumber(),
+          textColor:new Color(colors.colorNeutralForeground1).toNumber()}});
       input.position.set(20,78+index*70);panel.addChild(input);this.#fields.push(input);
       this.#controls.push({node:input});
       input.on("focus",()=>{
@@ -105,7 +146,7 @@ export class NativeManagement extends Container {
         void field.browse!().then(value=>{if(value!==null)input.value=value;},reason=>{error.text=String(reason);});
       });browse.position.set(w-96,78+index*70);panel.addChild(browse);}
     });
-    const error=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:0xff8d8d}});
+    const error=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorPaletteRedForeground1}});
     error.position.set(20,h-42);panel.addChild(error);
     const saveAction=()=>{
       if(this.#busy)return;this.#busy=true;
@@ -116,22 +157,32 @@ export class NativeManagement extends Container {
     };
     this.#submit=saveAction;
     const cancel=this.#modalButton(t("common.actions.cancel"),76,()=>this.close());cancel.position.set(w-182,h-48);
-    const save=this.#modalButton(confirm,76,saveAction);save.position.set(w-96,h-48);
+    const save=this.#modalButton(confirm,76,saveAction,"primary");save.position.set(w-96,h-48);
     panel.addChild(cancel,save);overlay.addChild(panel);this.addChild(overlay);this.#panel=overlay;
     this.#focus(0);
     overlay.alpha=0;motion(overlay).preset("fade").to({alpha:1}).start();
   }
   menu(x:number,y:number,actions:readonly {label:string;run:()=>void}[]):void {
-    if(this.#busy)return;
-    this.close();
+    if(!this.#begin())return;
     const {width,height}=this.size();
     const layer=new Container({eventMode:"static",label:"native-context-menu"});
     layer.hitArea=new Rectangle(0,0,width,height);layer.on("pointerdown",event=>{event.stopPropagation();if(event.target===layer)this.close();});
-    const panel=new Container();panel.position.set(Math.min(x,width-220),Math.min(y,height-actions.length*36-12));
-    panel.addChild(new Graphics().roundRect(0,0,210,actions.length*36+8,8).fill(0x292929).stroke({color:0xffffff,alpha:0.15,width:1}));
-    actions.forEach((action,index)=>{const button=this.#modalButton(action.label,202,()=>{this.close();action.run();});button.position.set(4,4+index*36);panel.addChild(button);});
+    const panel=new Container();
+    const panelWidth=Math.min(210,Math.max(1,width-16));
+    const panelHeight=Math.min(actions.length*36+8,Math.max(1,height-16));
+    panel.position.set(Math.max(8,Math.min(x,width-panelWidth-8)),Math.max(8,Math.min(y,height-panelHeight-8)));
+    const colors=nativeFluentTheme(this.theme);
+    panel.addChild(new Graphics().roundRect(0,0,panelWidth,panelHeight,8).fill(colors.colorNeutralBackground1).stroke({color:colors.colorNeutralStroke2,width:1}));
+    this.#scroll=new NativeScrollView(this.invalidate,()=>{},this.theme);
+    this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,actions.length*36);
+    panel.addChild(this.#scroll);
+    actions.forEach((action,index)=>{const button=this.#modalButton(action.label,panelWidth-12,()=>{this.close();action.run();},"subtle");button.position.set(0,index*36);this.#scroll!.content.addChild(button);});
     layer.addChild(panel);this.addChild(layer);this.#panel=layer;
     this.#menu=true;this.#focus(0);
   }
-  override destroy():void {this.close(true);this.#focusRing.destroy();super.destroy({children:true});}
+  override destroy():void {
+    this.#restoreInput=null;
+    while(this.#panel)this.close(true);
+    this.#focusRing.destroy();super.destroy({children:true});
+  }
 }

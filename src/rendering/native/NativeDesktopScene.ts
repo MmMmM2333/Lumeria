@@ -211,10 +211,8 @@ export class NativeDesktopScene {
 
   constructor(stage: Container, options: NativeDesktopSceneOptions = {}) {
     if (stage.destroyed) throw new Error("NativeDesktopScene requires a live Pixi stage");
-    this.#folderLayout = Object.freeze({
-      cols: Math.max(1, Math.trunc(options.folderLayout?.cols ?? DEFAULT_FOLDER_COLS)),
-      iconSize: Math.max(1, options.folderLayout?.iconSize ?? DEFAULT_ICON_SIZE),
-      rows: Math.max(1, Math.trunc(options.folderLayout?.rows ?? DEFAULT_FOLDER_ROWS)),
+    this.#folderLayout = options.folderLayout ?? Object.freeze({
+      cols: DEFAULT_FOLDER_COLS, iconSize: DEFAULT_ICON_SIZE, rows: DEFAULT_FOLDER_ROWS,
     });
     this.#onFolderPageIndexCommit = options.onFolderPageIndexCommit ?? (() => {});
     this.#layer = new DesktopLayer({

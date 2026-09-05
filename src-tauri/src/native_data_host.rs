@@ -22,6 +22,8 @@ const APP_IDENTIFIER: &str = "com.lumeria.app";
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    LoadIconChoices { version: u32, id: u64, #[serde(rename = "targetPath")] target_path: String },
+    CacheCustomIcon { version: u32, id: u64, #[serde(rename = "dataUrl")] data_url: String },
     SaveLayout { version: u32, id: u64, layout: Value },
     Hello {
         version: u32,
@@ -50,6 +52,8 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::LoadIconChoices { id, .. }
+            | Self::CacheCustomIcon { id, .. }
             | Self::SaveLayout { id, .. }
             | Self::LoadLayout { id, .. }
             | Self::ScanApps { id, .. }
@@ -60,6 +64,8 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::LoadIconChoices { version, .. }
+            | Self::CacheCustomIcon { version, .. }
             | Self::SaveLayout { version, .. }
             | Self::LoadLayout { version, .. }
             | Self::ScanApps { version, .. }
@@ -176,6 +182,12 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::LoadIconChoices { target_path, .. } => icon_cache_dir(data_dir)
+            .and_then(|dir| crate::load_app_icon_choices_from_dir(&target_path, &dir))
+            .and_then(|choices| serde_json::to_value(choices).map_err(|error| error.to_string())),
+        Request::CacheCustomIcon { data_url, .. } => icon_cache_dir(data_dir)
+            .and_then(|dir| crate::cache_custom_icon_to_dir(&data_url, &dir))
+            .and_then(|icon| serde_json::to_value(icon).map_err(|error| error.to_string())),
         Request::Hello { .. } => Ok(json!({ "protocolVersion": PROTOCOL_VERSION })),
         Request::SaveLayout { layout, .. } => save_layout_to_path(&data_dir.join("layout.json"), &layout).map(|()| Value::Null),
         Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
@@ -302,5 +314,23 @@ mod tests {
             .as_ref()
             .and_then(Value::as_str)
             .is_some_and(|error| error.contains("unknown field `path`")));
+    }
+
+    #[test]
+    fn icon_protocol_rejects_invalid_data_and_caches_png_in_isolated_directory() {
+        let data_dir=env::temp_dir().join(format!("lumeria-native-icon-host-{}",std::process::id()));
+        let mut state=HostState::default();
+        let invalid=handle_line(r#"{"version":1,"id":1,"operation":"cacheCustomIcon","dataUrl":"not-png"}"#,&data_dir,&mut state);
+        assert!(!invalid.ok);
+        let request=json!({"version":1,"id":2,"operation":"cacheCustomIcon","dataUrl":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1sAAAAASUVORK5CYII="});
+        let response=handle_line(&request.to_string(),&data_dir,&mut state);
+        assert!(response.ok,"{:?}",response.error);
+        let value=response.value.unwrap();
+        let path=PathBuf::from(value["iconPath"].as_str().unwrap());
+        assert!(path.starts_with(data_dir.join("icons")));
+        assert!(path.is_file());
+        let repeat=handle_line(&request.to_string(),&data_dir,&mut state);
+        assert_eq!(repeat.value,Some(value));
+        fs::remove_dir_all(data_dir).unwrap();
     }
 }

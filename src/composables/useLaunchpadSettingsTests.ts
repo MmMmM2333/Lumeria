@@ -1,5 +1,8 @@
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
-import { useLaunchpadSettings } from "./useLaunchpadSettings.js";
+import { useLaunchpadSettings as createVueSettings, type LaunchpadSettingsOptions } from "./useLaunchpadSettings.js";
+import { createLaunchpadSettings } from "../application/launchpadSettings.js";
+import { createNativeStateHost } from "../application/stateHost.js";
+import { backgroundAssetPort, autostartPort as defaultAutostart, launchpadIconPort, localeRuntimePort } from "../platform/launchpadPorts.js";
 import type { LaunchpadSettingsMainWindow } from "./useLaunchpadSettings.js";
 import type { AutostartPort, LaunchpadIconPort } from "../platform/launchpadPorts.js";
 import type { LaunchpadIconVariant } from "../domain/launchpadIconVariant.js";
@@ -84,6 +87,18 @@ function makeLocaleState(preference: string): LocaleState {
 }
 
 export async function runLaunchpadSettingsTests() {
+  for(const native of [false,true])await runSettingsForHost(native);
+}
+
+async function runSettingsForHost(native:boolean) {
+  const useLaunchpadSettings = (options:LaunchpadSettingsOptions) => native
+    ? createLaunchpadSettings({...options,
+      backgroundAssetPort:options.backgroundAssetPort??backgroundAssetPort,
+      autostartPort:options.autostartPort??defaultAutostart,
+      launchpadIconPort:options.launchpadIconPort??launchpadIconPort,
+      localeRuntime:options.localeRuntime??localeRuntimePort,
+    },createNativeStateHost(()=>{}))
+    : createVueSettings(options);
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(`[Launchpad settings owner test failed] ${message}`);
   };

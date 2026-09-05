@@ -13,6 +13,14 @@ import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { NativePageDots } from "../rendering/native/NativePageDots.js";
+import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
+import { NativeFluentToggle } from "../rendering/native/NativeFluentToggle.js";
+import { NativeFluentSlider } from "../rendering/native/NativeFluentSlider.js";
+import { NativeScrollView } from "../rendering/native/NativeScrollView.js";
+import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
+import { createNumericControlModel } from "../domain/numericControl.js";
+import { createSettingsNavigation, SETTINGS_SUBPAGE_SPECS } from "../application/settingsNavigation.js";
+import { createNativeStateHost } from "../application/stateHost.js";
 import {
   createNativeFolderFlow,
   type NativeFolderItem,
@@ -27,6 +35,47 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+{
+  for(const name of ["settings-24-regular","navigation-24-regular","paint-brush-24-regular","apps-24-regular","info-24-regular","dismiss-16-regular","arrow-left-20-regular"] as const){
+    const icon=nativeFluentIcon(name,0xffffff);
+    assert.ok(icon.width>0&&icon.height>0,`Fluent path ${name} must render without a DOM`);
+    icon.destroy();
+  }
+}
+{
+  const number=createNumericControlModel({min:0,max:1,step:0.01});
+  assert.equal(number.normalizeValue(0.333),0.33);
+  assert.equal(number.parseNumber("0,25"),0.25);
+  assert.equal(number.formatValue(0.5),"0.5");
+  assert.equal(number.normalizeValue(9),1);
+  const navigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>key);
+  navigation.openSubPage(SETTINGS_SUBPAGE_SPECS.appsAppManager);
+  assert.equal(navigation.activeRoute.value.tabId,"apps");
+  assert.equal(navigation.activeRoute.value.depth,1);
+  navigation.closeSubPage();
+  assert.equal(navigation.activeRoute.value.depth,0);
+  assert.equal(navigation.routeTransitionName.value,"settings-route-back");
+}
+
+for(const theme of ["light","dark"] as const){
+  let calls=0;
+  const button=new NativeFluentButton("Apply",96,()=>calls++,()=>{},theme,"primary");
+  button.activate();button.disabled=true;button.activate();
+  assert.equal(calls,1,"disabled Fluent button must not activate");
+  button.disabled=false;button.focused=true;button.destroy({children:true});
+  const toggle=new NativeFluentToggle("switch",()=>calls++,()=>{},theme);
+  toggle.toggle();assert.equal(toggle.checked,true);
+  toggle.disabled=true;toggle.toggle();assert.equal(toggle.checked,true);toggle.destroy();
+  const slider=new NativeFluentSlider(200,0,1,0.1,0,()=>calls++,()=>{},theme);
+  slider.handleKey("ArrowRight");slider.handleKey("ArrowRight");slider.handleKey("ArrowRight");
+  assert.equal(slider.value,0.3,"fractional slider steps must remain exact");
+  slider.handleKey("End");slider.handleKey("ArrowRight");assert.equal(slider.value,1);
+  slider.disabled=true;assert.equal(slider.handleKey("Home"),false);slider.destroy({children:true});
+  const scroll=new NativeScrollView(()=>{},()=>{},theme);
+  scroll.resize(200,100,1000);scroll.scrollTo(950);assert.equal(scroll.offset,900);
+  scroll.reveal(20,30);assert.equal(scroll.offset,20);
+  scroll.resize(200,100,50);assert.equal(scroll.offset,0);scroll.destroy();
+}
 
 {
   const root = new Container();

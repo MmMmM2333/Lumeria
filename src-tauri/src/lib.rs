@@ -424,12 +424,15 @@ fn load_app_icon_choices(
     app: AppHandle,
     target_path: String,
 ) -> Result<Vec<AppIconChoice>, String> {
+    load_app_icon_choices_from_dir(&target_path, &icon_cache_dir(&app)?)
+}
+
+fn load_app_icon_choices_from_dir(target_path: &str, icon_dir: &std::path::Path) -> Result<Vec<AppIconChoice>, String> {
     let path = std::path::Path::new(target_path.trim());
     if path.as_os_str().is_empty() || !path.exists() {
         return Ok(Vec::new());
     }
 
-    let icon_dir = icon_cache_dir(&app)?;
     let app_id = stable_app_id(&target_path);
     let choices = cache_app_icon_choices(path, &icon_dir, &app_id)?
         .into_iter()
@@ -448,8 +451,11 @@ fn load_app_icon_choices(
 
 #[tauri::command]
 fn cache_custom_icon(app: AppHandle, data_url: String) -> Result<CachedCustomIconResult, String> {
+    cache_custom_icon_to_dir(&data_url, &icon_cache_dir(&app)?)
+}
+
+fn cache_custom_icon_to_dir(data_url: &str, icon_dir: &std::path::Path) -> Result<CachedCustomIconResult, String> {
     let bytes = decode_custom_icon_data_url(&data_url)?;
-    let icon_dir = icon_cache_dir(&app)?;
     let icon_path =
         cache_content_addressed(&icon_dir, "custom-icon", "png", &bytes).map_err(|error| {
             format!(

@@ -15,6 +15,7 @@ import {
   type ScannedCatalogApp,
 } from "../domain/applicationCatalog.js";
 import { assertLayoutDocument, type LayoutDocument } from "../domain/layoutDocument.js";
+import type { AppIconChoice, CachedCustomIconResult } from "../api/launchpadApi.js";
 
 const PROTOCOL_VERSION = 1;
 const SCAN_COUNT_FIELDS = [
@@ -62,6 +63,15 @@ function requireRecord(value: unknown, path: string): UnknownRecord {
     throw new TypeError(`${path} must be an object`);
   }
   return value as UnknownRecord;
+}
+
+function validateCachedIcon(value:unknown):CachedCustomIconResult {
+  const icon=requireRecord(value,"cached icon");
+  if(typeof icon.iconPath!=="string"||!isAbsolute(icon.iconPath)
+    ||typeof icon.iconDataUrl!=="string"||!icon.iconDataUrl.startsWith("data:image/png;base64,")){
+    throw new TypeError("Native cached icon must contain an absolute path and PNG data");
+  }
+  return {iconPath:icon.iconPath,iconDataUrl:icon.iconDataUrl};
 }
 
 function validateCatalogResult(value: unknown): NativeCatalogScanResult {
@@ -157,6 +167,18 @@ export class NativeDataHost {
 
   async saveLayout(layout: LayoutDocument): Promise<void> {
     await this.#request("saveLayout", { layout: assertLayoutDocument(layout) });
+  }
+  async loadIconChoices(targetPath:string):Promise<readonly AppIconChoice[]> {
+    const result=await this.#request("loadIconChoices",{targetPath});
+    if(!Array.isArray(result))throw new TypeError("Native icon choices must be an array");
+    return result.map(value=>{
+      const entry=requireRecord(value,"icon choice");
+      if(typeof entry.id!=="string"||!entry.id)throw new TypeError("Native icon choice must have an id");
+      return {id:entry.id,...validateCachedIcon(entry)};
+    });
+  }
+  async cacheCustomIcon(dataUrl:string):Promise<CachedCustomIconResult> {
+    return validateCachedIcon(await this.#request("cacheCustomIcon",{dataUrl}));
   }
 
   async scanApps(

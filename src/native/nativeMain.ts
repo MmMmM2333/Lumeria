@@ -33,6 +33,16 @@ import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpad
 import { snapshotContractValue } from "../rendering/contractSnapshot.js";
 import { createNativeEditing } from "./nativeEditing.js";
 import { createLayoutSaveQueue } from "../application/layoutSaveQueue.js";
+import { normalizeNativeCustomIcon } from "./nativeCustomIcon.js";
+import { createLayoutSettings } from "../application/layoutSettings.js";
+import { createNativeStateHost } from "../application/stateHost.js";
+import { createSettingsNavigation } from "../application/settingsNavigation.js";
+import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
+import { nativeLayoutSettingsPage } from "../rendering/native/nativeLayoutSettingsPage.js";
+import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
+import { nativeAboutSettingsPage } from "../rendering/native/nativeAboutSettingsPage.js";
+import { loadNativeIconTexture } from "../rendering/native/nativeIconTextureLoader.js";
+import { normalizeLaunchpadIconVariant } from "../domain/launchpadIconVariant.js";
 import type { LaunchpadPages } from "../domain/launchpadLayout.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import {
@@ -42,7 +52,6 @@ import {
 import type { SceneFocusedIcon, SceneItem, ScenePageTrackScrub } from "../rendering/sceneFrame.js";
 import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
-import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "../domain/launchpadGridDefaults.js";
 import {
   NativeDataHost,
   NativeLaunchError,
@@ -256,17 +265,23 @@ try {
 }
 setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
 const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
+const layoutSettings=createLayoutSettings({layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false},createNativeStateHost(()=>{}));
+layoutSettings.isTextlessModeState.value=loadedLayout?.settings.textless??false;
+layoutSettings.syncDraftsFromCommitted();
+const settingsNavigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>t(key));
+settingsNavigation.selectTab("interface");
+let settingsShell:NativeSettingsShell|null=null;
+let openSettings:()=>void;
 let hiddenAppIds=[...(loadedLayout?.settings.hiddenAppIds ?? [])];
 const saves = createLayoutSaveQueue(document => nativeData.saveLayout(document));
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
 let activePageItems = getNativeActivePageItems(currentFrame);
 let searchQuery = "";
 const folderLayout = Object.freeze({
-  cols: loadedLayout?.settings.folderCols ?? DEFAULT_FOLDER_COLS,
-  iconSize: loadedLayout?.settings.folderIconSizeMode === "custom"
-    ? loadedLayout.settings.folderIconSize
-    : currentFrame.viewport.iconSize,
-  rows: loadedLayout?.settings.folderRows ?? DEFAULT_FOLDER_ROWS,
+  get cols(){return layoutState.presentation.folderCols.value;},
+  get iconSize(){return layoutState.presentation.folderIconSizeMode.value==="custom"
+    ?layoutState.presentation.folderIconSize.value:layoutState.presentation.iconSize.value;},
+  get rows(){return layoutState.presentation.folderRows.value;},
 });
 
 const app = await createNativePixiApplication({
@@ -281,9 +296,11 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
+const brandingTexture=await loadNativeIconTexture(join(import.meta.dir,"branding",normalizeLaunchpadIconVariant(loadedLayout?.settings.launchpadIconVariant)+".svg"));
 let changeSearch: (query: string) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query));
-const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate());
+const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate(),
+  loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark");
 
 const iconTextures = createNativeIconTextureRepository();
 const statusText = new Text({
@@ -339,8 +356,9 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
 let launchInFlight = false;
 let renderScene: () => void;
 let sceneRenderQueued = false;
+let sceneDisposed = false;
 const requestSceneRender = (): void => {
-  if (sceneRenderQueued) return;
+  if (sceneDisposed || sceneRenderQueued) return;
   sceneRenderQueued = true;
   queueMicrotask(() => {
     if (!sceneRenderQueued) return;
@@ -481,6 +499,7 @@ function contextMenu(item: SceneItem | null,x:number,y:number):void {
       {label:t("common.actions.restoreDefault"),run:()=>{void updateIcon(item,true).catch(error=>setStatus(String(error),0xff7b72));}},
     ] : [],
   ] : [{label:t("dialogs.appEditor.addTitle"),run:()=>editItem(null)}];
+  if(!item)actions.push({label:t("settings.shell.title"),run:()=>openSettings()});
   if(item?.type === "folder")actions.push({label:t("commands.dissolve.confirm"),run:()=>{
     editing!.commit(layoutState.operations.dissolveFolder(layoutState.presentation.pages.value,item.id,layoutState.presentation.pageSize.value));
   }});
@@ -496,6 +515,8 @@ async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
     const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp",multiple:false});
     if(!result.ok) {if(result.error.code==="CANCELLED")return;throw new Error(result.error.message);}
     path=result.value[0]??null;if(!path)return;
+    const cached=await nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path));
+    path=cached.iconPath;
   }
   const pages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
   const app=pages.flatMap(page=>page.flatMap(item=>item.type==="folder"?item.childPages.flat():[item])).find(app=>app?.id===item.id);
@@ -545,6 +566,10 @@ const removeButton=management.button(t("launchpad.batch.remove"),80,()=>removeIt
 const doneButton=management.button(t("launchpad.batch.done"),68,()=>{if(!editing!.selection.isFrozen.value)editing!.selection.clear();});
 selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
 app.stage.addChild(selectionToolbar);
+const settingsButton=management.button(t("settings.shell.title"),34,()=>openSettings(),"subtle");
+settingsButton.caption.visible=false;settingsButton.label="native-settings-button";
+const settingsIcon=nativeFluentIcon("settings-24-regular",0xffffff,20);settingsIcon.position.set(7,7);settingsButton.addChild(settingsIcon);
+app.stage.addChild(settingsButton);
 const onContext = (event: FederatedPointerEvent):void=>{
   const target=resolveNativePointerTarget(event.target);
   if(target.kind==="control")return;
@@ -629,7 +654,9 @@ try {
       resolution: app.resolution,
       width: app.contentSize.width,
     }, false);
-    searchBar.update(app.contentSize.width, Boolean(editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
+    settingsButton.position.set(app.contentSize.width-54,14);
+    settingsButton.visible=!settingsShell&&!editing?.selection.isActive.value&&!folderFlow.snapshot().renderedFolder;
+    searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
     selectionToolbar.visible=Boolean(editing?.selection.isActive.value);
     const toolbarWidth=Math.min(760,app.contentSize.width-40);
     selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14);
@@ -649,6 +676,7 @@ try {
       button.eventMode=disabled?"none":"static";button.alpha=disabled?0.4:1;
     });
     if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
+    if(settingsShell&&!management.modal)app.stage.setChildIndex(settingsShell,app.stage.children.length-1);
     app.invalidate();
   };
   searchBar.update(app.contentSize.width, false);
@@ -656,6 +684,7 @@ try {
   let resizeLiveLogicalObserved = false;
   let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
   offResize = app.on("resize", ({ height, resolution, width }) => {
+    settingsShell?.redraw();
     work = commitScene({ height, resolution, width }, true);
     setStatus(statusText.text);
     if (adaptiveResizeBaseline) {
@@ -737,7 +766,7 @@ try {
     const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,
       pages, gridRows: config.rows, gridCols: config.cols, folderRows: config.folderRows, folderCols: config.folderCols,
       iconSize: config.iconSize, folderIconSize: config.folderIconSize, folderIconSizeMode: config.folderIconSizeMode,
-      textless: loadedLayout?.settings.textless ?? false, hiddenAppIds });
+      textless: layoutSettings.isTextlessModeState.value, hiddenAppIds });
     saves.enqueue(document);
     void saves.flush().catch(error => setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72));
     changeSearch(searchQuery);
@@ -752,6 +781,35 @@ try {
       if(item) { folderFlow.open(snapshotContractValue(item) as SceneItem);setFocusedIcon(null);requestSceneRender(); }
     },
   });
+  const closeSettings=()=>{
+    if(settingsShell?.applying)return;
+    searchBar.host.blur();settingsShell?.destroy();settingsShell=null;
+    layoutSettings.syncDraftsFromCommitted();requestSceneRender();
+  };
+  openSettings=()=>{
+    if(settingsShell||editing!.drag.isDragActive())return;
+    closeFolder();editing!.selection.clear();editing!.alt.cancelAltEditMode();searchBar.host.blur();
+    layoutSettings.syncDraftsFromCommitted();
+    settingsShell=new NativeSettingsShell({
+      navigation:settingsNavigation,t:key=>t(key),tabs:["interface","about"],
+      theme:()=>loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark",
+      size:()=>app.contentSize,invalidate:()=>app.invalidate(),close:closeSettings,
+      content:(tab,_subPage,width)=>tab==="about"
+        ?nativeAboutSettingsPage(width,loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark",brandingTexture)
+        :nativeLayoutSettingsPage(layoutSettings,searchBar.host,width,()=>app.invalidate(),
+          loadedLayout?.settings.settingsThemePreference==="light"?"light":"dark"),
+      apply:async()=>{
+        layoutSettings.applyLayoutEdit();
+        const config=layoutState.captureConfiguration();
+        currentFrame=Object.freeze({...currentFrame,viewport:Object.freeze({...currentFrame.viewport,
+          gridRows:config.rows,gridCols:config.cols,iconSize:config.iconSize,
+        }),interaction:Object.freeze({...currentFrame.interaction,isTextlessMode:layoutSettings.isTextlessModeState.value})});
+        commitEditedPages(layoutState.operations.clonePages(layoutState.presentation.pages.value));
+        await saves.flush();
+      },
+    });
+    app.stage.addChild(settingsShell);requestSceneRender();
+  };
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
     setStatus("");
@@ -869,7 +927,7 @@ try {
     }
   };
   const onWheel = (event: FederatedWheelEvent): void => {
-    if(management.modal || searchBar.input.focused || editing?.drag.isDragActive())return;
+    if(settingsShell||management.modal || searchBar.input.focused || editing?.drag.isDragActive())return;
     const folder = folderFlow.snapshot();
     if (folder.renderedFolder && folder.isClosing) {
       event.preventDefault();
@@ -923,6 +981,7 @@ try {
     if(type === "pointerDown" && folderFlow.snapshot().isClosing && (!itemId || !activePageItems.some(item=>item.id===itemId))) return;
     if(type === "pointerDown" && !itemId && scope.area === "folder") return;
     if(type === "pointerDown" && management.modal) return;
+    if(type === "pointerDown" && settingsShell) return;
     pointerShiftKey=event.shiftKey;
     const output = wheelGestures.dispatch({ type, pointerId: event.pointerId, pointerType: event.pointerType,
       isPrimary: event.isPrimary, button: event.button, buttons: event.buttons,
@@ -969,6 +1028,10 @@ try {
     if(event.type==="up") {editing?.alt.handleAltKeyUp(event);return false;}
     if(management.modal) {
       const handled=management.handleKey(event);app.invalidate();return handled;
+    }
+    if(settingsShell){
+      if(searchBar.host.focused?.composing||event.isComposing)return false;
+      return settingsShell.handleKey(event);
     }
     if (searchBar.input.composing || event.isComposing) return false;
     if(editing?.drag.isDragActive()){
@@ -1082,6 +1145,57 @@ try {
     }
 
     const baselinePages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
+    const baselineConfig=layoutState.captureConfiguration();
+    clickWithNativeInput(settingsButton);await present(app,"native settings opened");
+    assert.ok(settingsShell,"settings button must open the native settings shell");
+    await waitFor("settings entrance settles",()=>!scene.getMotionSnapshot().active);
+    await present(app,"settings layout settled");
+    await captureSmokeFrame("settings-layout");
+    const aboutTab=app.stage.getChildByLabel(`native-action:${t("settings.about.title")}`,true);assert.ok(aboutTab);
+    clickWithNativeInput(aboutTab);await present(app,"native about route");
+    await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
+    await captureSmokeFrame("settings-about");
+    const appearanceTab=app.stage.getChildByLabel(`native-action:${t("settings.interface.title")}`,true);assert.ok(appearanceTab);
+    clickWithNativeInput(appearanceTab);await present(app,"back to native layout settings");
+    const rowsControl=app.stage.getChildByLabel("native-setting:desktopRows",true);
+    assert.ok(rowsControl);
+    for(let index=0;index<5;index++)onKey({type:"down",key:"Tab"});
+    assert.ok(searchBar.host.focused,"Tab must reach the first settings numeric input");
+    onKey({type:"down",key:"ArrowUp"});
+    assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1,"numeric keyboard handling must reach the shared draft");
+    onKey({type:"down",key:"ArrowDown"});
+    const increase=rowsControl.getChildByLabel("native-action:+",true);assert.ok(increase);
+    clickWithNativeInput(increase);
+    assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1);
+    assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"draft edits must not change desktop configuration");
+    onKey({type:"down",key:"Escape"});
+    assert.equal(settingsShell,null);
+    assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"Cancel must retain the committed configuration");
+    await present(app,"settings close restores entry hit target");
+    clickWithNativeInput(settingsButton);await present(app,"settings reopened");
+    const reopenedRows=app.stage.getChildByLabel("native-setting:desktopRows",true);assert.ok(reopenedRows);
+    clickWithNativeInput(reopenedRows.getChildByLabel("native-action:+",true)!);
+    const applyButton=app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true);assert.ok(applyButton);
+    clickWithNativeInput(applyButton);
+    await waitFor("settings applied and persisted",()=>Boolean(settingsShell&&!settingsShell.applying));
+    assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows+1);
+    assert.equal((await nativeData.loadLayout())?.settings.gridRows,baselineConfig.rows+1);
+    for(let index=0;index<12;index++)onKey({type:"down",key:"Tab"});
+    await present(app,"settings keyboard scrolled content");
+    await captureSmokeFrame("settings-layout-keyboard");
+    onKey({type:"down",key:"Escape"});
+    layoutState.applyConfiguration(baselineConfig);layoutSettings.syncDraftsFromCommitted();
+    currentFrame=Object.freeze({...currentFrame,viewport:Object.freeze({...currentFrame.viewport,gridRows:baselineConfig.rows,gridCols:baselineConfig.cols,iconSize:baselineConfig.iconSize})});
+    commitEditedPages(baselinePages);await saves.flush();
+    await waitFor("settings restored layout settled",()=>!scene.getMotionSnapshot().active);
+    await present(app,"settings restoration complete");
+    const customSource=baselinePages.flat().find(item=>item.id==="native-layout-icon")?.customIconPath;
+    assert.equal(typeof customSource,"string","runNativeElectrobun smoke fixture must provide its generated icon");
+    const normalizedIcon=await normalizeNativeCustomIcon(customSource as string);
+    const cachedIcon=await nativeData.cacheCustomIcon(normalizedIcon);
+    assert.ok(existsSync(cachedIcon.iconPath),"normalized icon must be cached by the real Rust host");
+    assert.equal(cachedIcon.iconDataUrl,normalizedIcon);
+    assert.deepEqual(await nativeData.loadIconChoices(""),[],"empty target has no embedded icon choices");
     clickWithNativeInput(searchBar);
     assert.equal(searchBar.input.focused,true,"pointer click on search chrome must focus without exiting");
     searchBar.input.blur();
@@ -1215,6 +1329,11 @@ try {
     editItem(activePageItems.find(item=>item.id==="native-settings")??null);
     await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await captureSmokeFrame("application-edit-dialog");
     const initialField=searchBar.host.focused;assert.ok(initialField);
+    management.form(t("dialogs.appEditor.changeIcon"),[],t("common.actions.cancel"),()=>{});
+    assert.equal(management.modal,true,"nested form must retain the parent editing session");
+    onKey({type:"down",key:"Escape"});
+    assert.equal(searchBar.host.focused,initialField,"closing nested form must restore the parent field focus");
+    assert.equal(management.modal,true,"closing nested form must not close its parent");
     onKey({type:"down",key:"Tab",shiftKey:true});
     assert.equal(searchBar.host.focused,null,"reverse Tab from first field must focus the last dialog button");
     onKey({type:"down",key:"Tab"});
@@ -1726,6 +1845,9 @@ try {
     await closed;
   }
 } finally {
+  sceneDisposed=true;sceneRenderQueued=false;
+  (settingsShell as NativeSettingsShell|null)?.destroy();
+  brandingTexture.destroy(true);
   offWheelPointerInterrupt();
   offTouch();
   editing?.dispose();

@@ -134,6 +134,7 @@ fixture.pages = [[
   },
 ]];
 fixture.settings.gridRows = 4;
+if(process.argv.includes("--light"))fixture.settings.settingsThemePreference="light";
 fixture.pages[0]!.push({
   id: "native-folder-other", type: "folder", name: "另一个文件夹",
   childPages: [[{ id: "native-other-child", type: "manualApp", name: "另一个子项", emoji: "🌟",
