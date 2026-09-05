@@ -6,6 +6,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { runColorDialogSmoke } from "./color-dialog-smoke";
 import { assertWindowInputCoverage } from "./window-input-smoke";
 import { runShortcutSmoke } from "./shortcut-smoke";
+import { runTraySmoke } from "./tray-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -35,6 +36,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    if(process.env.PIXI_TRAY_SMOKE_ICON)await runTraySmoke(process.env.PIXI_TRAY_SMOKE_ICON);
     await runShortcutSmoke();
     await assertWindowInputCoverage(app);
     const frame = app.getWindowFrame();

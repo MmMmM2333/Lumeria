@@ -41,8 +41,11 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,059,776 bytes with SHA-256
-`42091E3A0A65941624EE47401A9D6BB20324077C2DABE9A23FAA50DD55A7491B`.
+The staged native DLL is 2,061,312 bytes with SHA-256
+`71C8222CEC57D94DAFAC88E3E5D6C3A3AD156F0A0D244A6E709D4F0549D3B2FF`.
+Starter 0.2.9 also separates tray primary activation from the right-click menu.
+The primary callback copies its id/function before asynchronous dispatch so tray
+destruction cannot invalidate the captured tray object.
 
 The same DLL hash was verified in `package/src/native/win/build`,
 `package/dist`, and `package/dist-win-x64`. The official `build.ts` completed

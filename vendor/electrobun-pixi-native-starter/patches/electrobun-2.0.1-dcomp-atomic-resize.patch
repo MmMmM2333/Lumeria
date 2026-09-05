@@ -12,9 +12,9 @@ index 4ef9512..119c3c5 100644
 +// Usage: initMinimal() creates the persistent visual tree.
 +// createSwapChainFromDevice() creates unattached generations, and
 +// promoteSwapChain() atomically attaches one after its first Present.
-
+ 
  #pragma once
-
+ 
  #include <dcomp.h>
 +#include <d2d1.h>
 +#include <commctrl.h>
@@ -26,7 +26,7 @@ index 4ef9512..119c3c5 100644
  #include <wrl.h>
  #include <cstdio>
 +#include <utility>
-
+ 
  #pragma comment(lib, "dxgi.lib")
  #pragma comment(lib, "d3d11.lib")
 @@ -64,14 +67,25 @@ static bool isDCompAvailable() {
@@ -39,7 +39,7 @@ index 4ef9512..119c3c5 100644
 +    // once Dawn's D3D11On12 device is available.
      bool initMinimal(HWND hwnd, int width, int height) {
          if (!isDCompAvailable()) return false;
-
+ 
          this->targetHwnd = hwnd;
          this->surfaceWidth = width;
          this->surfaceHeight = height;
@@ -54,18 +54,18 @@ index 4ef9512..119c3c5 100644
 +                this->viewportHeight = clientHeight;
 +            }
 +        }
-
+ 
          // DCompositionCreateDevice2 with a DXGI device creates a DComp device
          // that can hold visuals/targets. We pass nullptr to create a device-less
 @@ -118,26 +132,28 @@ public:
              return false;
          }
-
+ 
 +        // Queue the root without committing an empty visual tree. The first
 +        // successful generation commits SetRoot + SetContent atomically.
          hr = dcompTarget->SetRoot(rootVisual.Get());
          if (FAILED(hr)) return false;
-
+ 
 -        hr = dcompDevice->Commit();
 -        if (FAILED(hr)) return false;
 -
@@ -77,7 +77,7 @@ index 4ef9512..119c3c5 100644
 +        }
          return true;
      }
-
+ 
      // Create a swap chain on an external D3D11 device (e.g., Dawn's D3D11On12).
      // Call after initMinimal() + Dawn device creation.
 -    bool initSwapChainFromDevice(ID3D11Device* externalDevice, int width, int height) {
@@ -93,13 +93,13 @@ index 4ef9512..119c3c5 100644
 -        externalD3dDevice = externalDevice;
 -        externalDevice->GetImmediateContext(&externalD3dContext);
 +        if (!externalDevice || !createdSwapChain) return false;
-
+ 
          // Get DXGI factory from external device
          ComPtr<IDXGIDevice> dxgiDevice;
 @@ -166,187 +182,277 @@ public:
          scDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
          scDesc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-
+ 
 +        ComPtr<IDXGISwapChain1> candidate;
          hr = factory->CreateSwapChainForComposition(
 -            externalDevice, &scDesc, nullptr, &swapChain);
@@ -108,7 +108,7 @@ index 4ef9512..119c3c5 100644
              printf("[DComp] CreateSwapChainForComposition (external) failed: 0x%08lx\n", hr);
              return false;
          }
-
+ 
 -        // Set as root visual content
 -        hr = rootVisual->SetContent(swapChain.Get());
 -        if (FAILED(hr)) return false;
@@ -123,7 +123,7 @@ index 4ef9512..119c3c5 100644
 +        *createdSwapChain = std::move(candidate);
          return true;
      }
-
+ 
 -    // Zero-copy present: copy source D3D11 texture to swap chain back buffer.
 -    // sourceTexture must be on the same D3D11 device as the swap chain.
 -    bool zeroCopyPresent(ID3D11Texture2D* sourceTexture) {
@@ -140,7 +140,7 @@ index 4ef9512..119c3c5 100644
 +        if (stagedVisual && FAILED(applyStagedTransform())) return false;
 +        return SUCCEEDED(dcompDevice->Commit());
 +    }
-
+ 
 -        ComPtr<ID3D11Texture2D> backBuffer;
 -        HRESULT hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
 -        if (FAILED(hr)) {
@@ -180,7 +180,7 @@ index 4ef9512..119c3c5 100644
 +            dcompDevice->Commit();
              return false;
          }
-
+ 
 -        return SUCCEEDED(dcompDevice->Commit());
 +        activeVisual = std::move(candidateVisual);
 +        activeSwapChain = candidate;
@@ -188,7 +188,7 @@ index 4ef9512..119c3c5 100644
 +        surfaceHeight = height;
 +        return true;
      }
-
+ 
 -    // Just Present + Commit (when the copy was already done externally).
 -    bool presentOnly() {
 -        if (!swapChain || !dcompDevice) return false;
@@ -203,7 +203,7 @@ index 4ef9512..119c3c5 100644
 +        return initialized && dcompDevice &&
 +            SUCCEEDED(dcompDevice->WaitForCommitCompletion());
      }
-
+ 
 -    bool resize(int newWidth, int newHeight) {
 -        if (!initialized || !swapChain) return false;
 -        if (newWidth <= 0 || newHeight <= 0) return false;
@@ -218,7 +218,7 @@ index 4ef9512..119c3c5 100644
 +            !activeVisual || activeSwapChain.Get() != candidate || stagedVisual) {
 +            return false;
 +        }
-
+ 
 -        auto* ctx = externalD3dContext ? externalD3dContext.Get() : d3dContext.Get();
 -        if (ctx) {
 -            ctx->ClearState();
@@ -230,7 +230,7 @@ index 4ef9512..119c3c5 100644
          }
 +        return false;
 +    }
-
+ 
 -        HRESULT hr = swapChain->ResizeBuffers(
 -            2, surfaceWidth, surfaceHeight,
 -            DXGI_FORMAT_B8G8R8A8_UNORM, 0);
@@ -262,7 +262,7 @@ index 4ef9512..119c3c5 100644
 +            dcompDevice->Commit();
              return false;
          }
-
+ 
 -        dcompDevice->Commit();
 +        stagedVisual = std::move(staged);
 +        stagedSwapChain = candidate;
@@ -270,7 +270,7 @@ index 4ef9512..119c3c5 100644
 +        stagedSurfaceHeight = height;
          return true;
      }
-
+ 
 -    // Enable native resize tracking: subclass the target HWND to intercept
 -    // WM_SIZE and auto-resize the swap chain without TS FFI round-trip.
 -    void enableNativeResize() {
@@ -284,7 +284,7 @@ index 4ef9512..119c3c5 100644
 +            stagedSwapChain.Get() != candidate) {
 +            return false;
 +        }
-
+ 
 -        // Store this pointer for the subclass callback
 -        SetPropA(targetHwnd, "DCompCompositor", (HANDLE)this);
 +        HRESULT hr = rootVisual->RemoveVisual(activeVisual.Get());
@@ -294,7 +294,7 @@ index 4ef9512..119c3c5 100644
 +            dcompDevice->Commit();
 +            return false;
 +        }
-
+ 
 -        SetWindowSubclass(targetHwnd, resizeSubclassProc, 1, (DWORD_PTR)this);
 -        nativeResizeHooked = true;
 -        // Native resize hook installed
@@ -306,7 +306,7 @@ index 4ef9512..119c3c5 100644
 +        stagedSurfaceHeight = 0;
 +        return true;
      }
-
+ 
 -    void disableNativeResize() {
 -        if (!nativeResizeHooked || !targetHwnd) return;
 -        RemoveWindowSubclass(targetHwnd, resizeSubclassProc, 1);
@@ -323,17 +323,17 @@ index 4ef9512..119c3c5 100644
 +        stagedSurfaceHeight = 0;
 +        return true;
      }
-
+ 
      void shutdown() {
          if (!initialized) return;
-
+ 
 -        // Remove native resize hook
          disableNativeResize();
-
+ 
          // Release DComp
          if (dcompTarget) dcompTarget->SetRoot(nullptr);
          if (dcompDevice) dcompDevice->Commit();
-
+ 
 +        stagedVisual.Reset();
 +        activeVisual.Reset();
          rootVisual.Reset();
@@ -347,15 +347,15 @@ index 4ef9512..119c3c5 100644
 -        zeroCopyMode = false;
 +        stagedSwapChain.Reset();
 +        activeSwapChain.Reset();
-
+ 
          d3dContext.Reset();
          d3dDevice.Reset();
 -        dxgiFactory.Reset();
-
+ 
          initialized = false;
          // Shutdown complete
      }
-
+ 
 -    // Accessors
 -    bool isInitialized() const { return initialized; }
 -    bool isZeroCopyMode() const { return zeroCopyMode; }
@@ -374,11 +374,11 @@ index 4ef9512..119c3c5 100644
 +    int viewportHeight = 0;
      bool initialized = false;
 +    bool nativeResizeHooked = false;
-
+ 
      // D3D11 (fallback device for DComp init)
      ComPtr<ID3D11Device> d3dDevice;
      ComPtr<ID3D11DeviceContext> d3dContext;
-
+ 
 -    // DXGI
 -    ComPtr<IDXGIFactory2> dxgiFactory;
 -    ComPtr<IDXGISwapChain1> swapChain;
@@ -386,7 +386,7 @@ index 4ef9512..119c3c5 100644
 +    ComPtr<IDXGISwapChain1> stagedSwapChain;
 +    int stagedSurfaceWidth = 0;
 +    int stagedSurfaceHeight = 0;
-
+ 
      // DirectComposition visual tree
      ComPtr<IDCompositionDevice> dcompDevice;
      ComPtr<IDCompositionTarget> dcompTarget;
@@ -405,7 +405,7 @@ index 4ef9512..119c3c5 100644
 +        return (activeVisual ? activeVisual.Get() : rootVisual.Get())
 +            ->SetTransform(transform);
 +    }
-
+ 
 -    // External D3D11 device (D3D11On12 from Dawn, for zero-copy bridge)
 -    ComPtr<ID3D11Device> externalD3dDevice;
 -    ComPtr<ID3D11DeviceContext> externalD3dContext;
@@ -419,7 +419,7 @@ index 4ef9512..119c3c5 100644
 +        const D2D_MATRIX_3X2_F transform = { scaleX, 0, 0, scaleY, 0, 0 };
 +        return stagedVisual->SetTransform(transform);
 +    }
-
+ 
 -    // Zero-copy mode: swap chain created on Dawn's D3D11On12 device
 -    bool zeroCopyMode = false;
 +    bool enableNativeResize() {
@@ -435,7 +435,7 @@ index 4ef9512..119c3c5 100644
 +        nativeResizeHooked = true;
 +        return true;
 +    }
-
+ 
 -    // Native resize hook
 -    bool nativeResizeHooked = false;
 +    void disableNativeResize() {
@@ -446,7 +446,7 @@ index 4ef9512..119c3c5 100644
 +        nativeResizeHooked = false;
 +        targetHwnd = nullptr;
 +    }
-
+ 
 -    // Native subclass — handles WM_SIZE for auto-resize of swap chain.
      static LRESULT CALLBACK resizeSubclassProc(
 -        HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
@@ -481,13 +481,13 @@ index 4ef9512..119c3c5 100644
 +
  };
 diff --git a/package/src/native/win/nativeWrapper.cpp b/package/src/native/win/nativeWrapper.cpp
-index 006196c..ac80ab0 100644
+index 006196c..ac8373c 100644
 --- a/package/src/native/win/nativeWrapper.cpp
 +++ b/package/src/native/win/nativeWrapper.cpp
 @@ -81,12 +81,14 @@
  // DirectComposition compositor (GPU surface compositing for Windows)
  #include "dcomp_compositor.h"
-
+ 
 -// DirectComposition zero-copy bridge state (per-surface)
 -// DCompBridgeState is defined later, after WGPU function pointer declarations.
 -// Forward declarations for the map:
@@ -500,13 +500,13 @@ index 006196c..ac80ab0 100644
 +static std::map<void*, bool> g_dawnConfiguredSurfaces;
  static std::mutex g_dcompBridgeMapMutex;
 +static void releaseDCompStateForHwnd(HWND hwnd);
-
+ 
  using namespace electrobun;
-
+ 
 @@ -4804,6 +4806,33 @@ public:
      }
  };
-
+ 
 +static LRESULT CALLBACK WGPUViewWindowProc(
 +    HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
 +    if (message == WM_NCDESTROY) releaseDCompStateForHwnd(hwnd);
@@ -555,7 +555,7 @@ index 006196c..ac80ab0 100644
              WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
              physicalBounds.left,
 @@ -8884,6 +8918,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
-
+ 
  typedef void* (*PFN_wgpuInstanceCreateSurface)(void* instance, const void* descriptor);
  typedef void (*PFN_wgpuSurfaceConfigure)(void* surface, const void* config);
 +typedef void (*PFN_wgpuSurfaceUnconfigure)(void* surface);
@@ -571,7 +571,7 @@ index 006196c..ac80ab0 100644
  static PFN_wgpuSurfacePresent p_wgpuSurfacePresent = nullptr;
  static PFN_wgpuQueueOnSubmittedWorkDone p_wgpuQueueOnSubmittedWorkDone = nullptr;
 @@ -9024,7 +9060,8 @@ static bool ensureDCompSymbols() {
-
+ 
  // DirectComposition zero-copy bridge state (per-surface)
  struct DCompBridgeState {
 -    DCompCompositor compositor;
@@ -587,7 +587,7 @@ index 006196c..ac80ab0 100644
 +    bool opaque = false;
 +    uint64_t configureGeneration = 0;
 +    bool resizeAttachedSwapChain = false;
-
+ 
      void cleanup() {
          std::lock_guard<std::mutex> lock(frameMutex);
 @@ -9079,12 +9119,34 @@ struct DCompBridgeState {
@@ -596,10 +596,10 @@ index 006196c..ac80ab0 100644
          presentDevice.Reset();
 -        compositor.shutdown();
      }
-
+ 
      ~DCompBridgeState() { cleanup(); }
  };
-
+ 
 +struct DCompSurfaceState {
 +    DCompCompositor compositor;
 +    HWND hwnd = nullptr;
@@ -624,12 +624,12 @@ index 006196c..ac80ab0 100644
 +};
 +
  extern "C++" {
-
+ 
  static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
 @@ -9095,23 +9157,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
          });
  }
-
+ 
 +static std::shared_ptr<DCompSurfaceState> makeDCompSurfaceState() {
 +    return std::shared_ptr<DCompSurfaceState>(
 +        new DCompSurfaceState(),
@@ -641,7 +641,7 @@ index 006196c..ac80ab0 100644
  static void destroyDCompBridgeOnMainThread(std::shared_ptr<DCompBridgeState> bridge) {
      bridge.reset();
  }
-
+ 
 +static void destroyDCompSurfaceOnMainThread(std::shared_ptr<DCompSurfaceState> state) {
 +    state.reset();
 +}
@@ -704,12 +704,12 @@ index 006196c..ac80ab0 100644
      destroyDCompBridgeOnMainThread(std::move(retiredBridge));
 +    destroyDCompSurfaceOnMainThread(std::move(retiredSurface));
  }
-
+ 
  static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context) {
 @@ -9135,6 +9248,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
      }
  }
-
+ 
 +enum class DCompResizeResult {
 +    FailedBeforeResize,
 +    FailedAfterResize,
@@ -767,11 +767,11 @@ index 006196c..ac80ab0 100644
 +}
 +
  } // extern "C++"
-
+ 
  static std::wstring getExecutableDirW() {
 @@ -9171,7 +9340,8 @@ static HMODULE loadWgpuLibrary() {
  }
-
+ 
  static bool ensureWgpuSymbols() {
 -    if (p_wgpuInstanceCreateSurface && p_wgpuSurfaceConfigure && p_wgpuSurfaceGetCurrentTexture && p_wgpuSurfacePresent
 +    if (p_wgpuInstanceCreateSurface && p_wgpuSurfaceConfigure && p_wgpuSurfaceUnconfigure &&
@@ -800,7 +800,7 @@ index 006196c..ac80ab0 100644
 @@ -9737,6 +9909,53 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
  static std::map<void*, HWND> g_surfaceToHwnd;
  static std::mutex g_surfaceToHwndMutex;
-
+ 
 +extern "C++" {
 +static void releaseDCompStateForHwnd(HWND hwnd) {
 +    if (!hwnd) return;
@@ -852,7 +852,7 @@ index 006196c..ac80ab0 100644
      if (!wgpuInstance || !abstractView || !abstractView->hwnd) {
          printf("[WGPU] createSurfaceForView: null check failed (inst=%p view=%p hwnd=%p)\n",
 @@ -9770,30 +9989,18 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
-
+ 
  // Helper: Initialize DComp zero-copy bridge for a surface.
  // Returns true on success, false if DComp is unavailable or init fails.
 -static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t width, uint32_t height) {
@@ -867,9 +867,9 @@ index 006196c..ac80ab0 100644
 +    const std::shared_ptr<DCompBridgeState>& resizeSource = nullptr) {
 +    if (!isDCompAvailable()) return nullptr;
 +    if (!ensureDCompSymbols()) return nullptr;
-
+ 
      WGPUDevice device = (WGPUDevice)devicePtr;
-
+ 
 -    // Look up the HWND this surface was created for
 -    HWND hwnd = nullptr;
 -    {
@@ -892,19 +892,19 @@ index 006196c..ac80ab0 100644
      bool hasDXGISharedHandle = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedTextureMemoryDXGISharedHandle);
      bool hasSharedFence = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedFenceDXGISharedHandle);
 @@ -9801,82 +10008,88 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
-
+ 
      if (!hasDXGISharedHandle || !hasSharedFence) {
          printf("[DComp] Zero-copy bridge requires DXGI shared texture and fence support\n");
 -        return false;
 +        return nullptr;
      }
-
+ 
      auto bridge = makeDCompBridge();
      bridge->wgpuDevice = device;
      bridge->width = width;
      bridge->height = height;
 +    bridge->opaque = opaque;
-
+ 
 -    // Step 1: Init DComp compositor (visual tree) on main thread
 -    bool compOk = false;
 -    MainThreadDispatcher::dispatch_sync([&]() {
@@ -914,7 +914,7 @@ index 006196c..ac80ab0 100644
 -        printf("[DComp] initMinimal failed for HWND=%p\n", targetHwnd);
 -        return false;
 -    }
-
+ 
      // Step 2: Get Dawn's DX12 device to find the DXGI adapter
      auto dx12Device = dawn::native::d3d12::GetD3D12Device(device);
      if (!dx12Device) {
@@ -937,7 +937,7 @@ index 006196c..ac80ab0 100644
 -        return false;
 +        return nullptr;
      }
-
+ 
 +    HRESULT hr = S_OK;
      ComPtr<ID3D11Device> baseDevice;
 -    D3D_FEATURE_LEVEL featureLevel;
@@ -975,7 +975,7 @@ index 006196c..ac80ab0 100644
 +            printf("[DComp] EnumAdapterByLuid failed: 0x%08lx\n", hr);
 +            return nullptr;
 +        }
-
+ 
 -    hr = baseDevice.As(&bridge->presentDevice);
 -    if (FAILED(hr)) {
 -        printf("[DComp] Presentation device QI for ID3D11Device5 failed: 0x%08lx\n", hr);
@@ -991,7 +991,7 @@ index 006196c..ac80ab0 100644
 +            printf("[DComp] Presentation D3D11CreateDevice failed: 0x%08lx\n", hr);
 +            return nullptr;
 +        }
-
+ 
 -    ComPtr<ID3D11DeviceContext> baseCtx;
 -    bridge->presentDevice->GetImmediateContext(&baseCtx);
 -    hr = baseCtx.As(&bridge->presentContext);
@@ -1004,7 +1004,7 @@ index 006196c..ac80ab0 100644
 +            printf("[DComp] Presentation device QI for ID3D11Device5 failed: 0x%08lx\n", hr);
 +            return nullptr;
 +        }
-
+ 
 -    // Presentation device ready
 +        ComPtr<ID3D11DeviceContext> baseCtx;
 +        bridge->presentDevice->GetImmediateContext(&baseCtx);
@@ -1013,7 +1013,7 @@ index 006196c..ac80ab0 100644
 +            printf("[DComp] Presentation context QI for ID3D11DeviceContext4 failed: 0x%08lx\n", hr);
 +            return nullptr;
 +        }
-
+ 
 -    // Step 4: Create swap chain on the presentation device
 +    }
 +    // A resize gets a fresh pending swap chain. Mutating the swap chain that
@@ -1031,7 +1031,7 @@ index 006196c..ac80ab0 100644
 +        printf("[DComp] createSwapChainFromDevice on presentation device failed\n");
 +        return nullptr;
      }
-
+ 
      // Step 5: Create DX12 staging texture with shared access
 @@ -9899,7 +10112,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          nullptr, IID_PPV_ARGS(&bridge->stagingDx12));
@@ -1040,7 +1040,7 @@ index 006196c..ac80ab0 100644
 -        return false;
 +        return nullptr;
      }
-
+ 
      // Step 6: Create DXGI shared handle
 @@ -9908,7 +10121,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          GENERIC_ALL, nullptr, &bridge->stagingSharedHandle);
@@ -1049,16 +1049,16 @@ index 006196c..ac80ab0 100644
 -        return false;
 +        return nullptr;
      }
-
+ 
      // Step 7: Set up bidirectional cross-device synchronization. EndAccess
 @@ -9942,7 +10155,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
-
+ 
      if (FAILED(hr) || !bridge->presentationSharedFence) {
          printf("[DComp] Shared presentation fence setup failed; using normal HWND surface\n");
 -        return false;
 +        return nullptr;
      }
-
+ 
      // Step 8: Open shared handle on presentation device for CopyResource
 @@ -9954,7 +10167,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      }
@@ -1068,15 +1068,15 @@ index 006196c..ac80ab0 100644
 +        return nullptr;
      }
      // Staging texture shared to presentation device
-
+ 
 @@ -9970,7 +10183,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
-
+ 
      if (!bridge->sharedTexMem) {
          printf("[DComp] wgpuDeviceImportSharedTextureMemory returned null\n");
 -        return false;
 +        return nullptr;
      }
-
+ 
      // Verify properties
 @@ -9978,7 +10191,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      WGPUStatus propStatus = p_wgpuSharedTextureMemoryGetProperties(bridge->sharedTexMem, &props);
@@ -1086,7 +1086,7 @@ index 006196c..ac80ab0 100644
 +        return nullptr;
      }
      // SharedTextureMemory imported successfully
-
+ 
 @@ -9998,75 +10211,236 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      bridge->zeroCopyTexture = p_wgpuSharedTextureMemoryCreateTexture(bridge->sharedTexMem, &wgpuTexDesc);
      if (!bridge->zeroCopyTexture) {
@@ -1094,7 +1094,7 @@ index 006196c..ac80ab0 100644
 -        return false;
 +        return nullptr;
      }
-
+ 
 -    // Install the HWND subclass only after every fallible initialization step
 -    // has succeeded. A partial bridge can then be destroyed without leaving a
 -    // callback/property that points at freed state.
@@ -1103,14 +1103,14 @@ index 006196c..ac80ab0 100644
 -    });
 +    return bridge;
 +}
-
+ 
 -    // Zero-copy bridge initialized
 +static void configureDawnSurface(void* surface, void* config) {
 +    runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceConfigure(surface, config); });
 +    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +    g_dawnConfiguredSurfaces[surface] = true;
 +}
-
+ 
 -    // Store the bridge
 +static void unconfigureDawnSurface(void* surface) {
 +    bool configured = false;
@@ -1119,23 +1119,23 @@ index 006196c..ac80ab0 100644
 -        g_dcompBridges[surface] = std::move(bridge);
 +        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +        configured = g_dawnConfiguredSurfaces.erase(surface) > 0;
-     }
++    }
 +    if (configured) {
 +        runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceUnconfigure(surface); });
-+    }
+     }
 +}
-
+ 
 -    return true;
 +static bool isDawnSurfaceConfigured(void* surface) {
 +    std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +    return g_dawnConfiguredSurfaces.find(surface) !=
 +        g_dawnConfiguredSurfaces.end();
  }
-
+ 
  ELECTROBUN_EXPORT void wgpuSurfaceConfigureMainThread(void* surface, void* config) {
      if (!ensureWgpuSymbols()) return;
 -    runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceConfigure(surface, config); });
-
+ 
 -    // Initialize or resize DComp zero-copy bridge for this surface.
 -    // WGPUSurfaceConfiguration struct layout (64-bit):
 -    //   nextInChain(ptr,8) + device(ptr,8) + format(u32,4) + pad(4) + usage(u64,8) +
@@ -1222,10 +1222,9 @@ index 006196c..ac80ab0 100644
 +        if (!surfaceState) {
 +            configureDawnSurface(surface, config);
 +            return;
-         }
-     }
-
--    destroyDCompBridgeOnMainThread(std::move(staleBridge));
++        }
++    }
++
 +    // A configure changes only the pending generation. The active swap chain
 +    // remains attached; the HWND subclass owns the current viewport transform.
 +    std::shared_ptr<DCompBridgeState> retiredPending;
@@ -1263,9 +1262,7 @@ index 006196c..ac80ab0 100644
 +    }
 +    destroyDCompBridgeOnMainThread(std::move(retiredPending));
 +    if (activeMatches) return;
-
--    // Try to initialize DComp bridge (graceful fallback on failure)
--    initDCompBridgeForSurface(surface, devicePtr, width, height);
++
 +    auto pending = createDCompBridgeForSurface(
 +        surfaceState, devicePtr, width, height, opaque, resizeSource);
 +    if (!pending) {
@@ -1288,12 +1285,13 @@ index 006196c..ac80ab0 100644
 +                    useDawnFallback = true;
 +                }
 +            }
-+        }
+         }
 +        destroyDCompSurfaceOnMainThread(std::move(emptySurface));
 +        if (useDawnFallback) configureDawnSurface(surface, config);
 +        return;
-+    }
-+
+     }
+ 
+-    destroyDCompBridgeOnMainThread(std::move(staleBridge));
 +    std::shared_ptr<DCompBridgeState> replacedPending;
 +    bool installed = false;
 +    {
@@ -1314,16 +1312,18 @@ index 006196c..ac80ab0 100644
 +    destroyDCompBridgeOnMainThread(std::move(replacedPending));
 +    if (!installed) destroyDCompBridgeOnMainThread(std::move(pending));
 +}
-+
+ 
+-    // Try to initialize DComp bridge (graceful fallback on failure)
+-    initDCompBridgeForSurface(surface, devicePtr, width, height);
 +ELECTROBUN_EXPORT void wgpuSurfaceUnconfigureMainThread(void* surface) {
 +    if (!surface || !ensureWgpuSymbols()) return;
 +    unconfigureDawnSurface(surface);
  }
-
+ 
  ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
      if (!surface) return;
 +    if (ensureWgpuSymbols()) unconfigureDawnSurface(surface);
-
+ 
 -    std::shared_ptr<DCompBridgeState> bridge;
 +    std::shared_ptr<DCompSurfaceState> surfaceState;
      {
@@ -1371,7 +1371,7 @@ index 006196c..ac80ab0 100644
 @@ -10074,25 +10448,84 @@ ELECTROBUN_EXPORT void wgpuReleaseSurfaceForView(void* surface) {
          g_surfaceToHwnd.erase(surface);
      }
-
+ 
 -    destroyDCompBridgeOnMainThread(std::move(bridge));
 +    // Keep the active DComp swap chain owned by the HWND. A replacement
 +    // WGPUSurface will claim it and promote only after its first Present.
@@ -1388,7 +1388,7 @@ index 006196c..ac80ab0 100644
          p_wgpuSurfaceRelease((WGPUSurface)surface);
      }
  }
-
+ 
 +static void writeDCompSurfaceTexture(
 +    void* surfaceTexture,
 +    WGPUTexture texture,
@@ -1423,7 +1423,7 @@ index 006196c..ac80ab0 100644
 +
  ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, void* surfaceTexture) {
      if (!ensureWgpuSymbols()) return;
-
+ 
      // Check for DComp bridge
 +    std::shared_ptr<DCompSurfaceState> surfaceState;
      std::shared_ptr<DCompBridgeState> bridge;
@@ -1446,7 +1446,7 @@ index 006196c..ac80ab0 100644
 +            }
 +        }
      }
-
+ 
      if (bridge && bridge->zeroCopyTexture && !bridge->unusable.load()) {
          std::unique_lock<std::mutex> lock(bridge->frameMutex);
 +        if (bridge->unusable.load()) {
@@ -1503,7 +1503,7 @@ index 006196c..ac80ab0 100644
 +                    }
 +                }
 +            }
-
+ 
 -            // Fill the WGPUSurfaceTexture struct with our shared texture
 -            // WGPUSurfaceTexture layout: nextInChain(ptr,8) + texture(ptr,8) + status(u32,4)
 -            *((void**)surfaceTexture) = nullptr;                          // nextInChain = NULL
@@ -1540,7 +1540,7 @@ index 006196c..ac80ab0 100644
 +        writeDCompSurfaceOutdated(surfaceTexture);
 +        return;
      }
-
+ 
 -    // Normal HWND path
 +    // A mismatched active DComp visual deliberately remains visible while a
 +    // replacement is retried. Returning Dawn's HWND texture here would render
@@ -1558,7 +1558,7 @@ index 006196c..ac80ab0 100644
 +    // Explicit normal HWND fallback path.
      runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceGetCurrentTexture(surface, surfaceTexture); });
  }
-
+ 
 +static int32_t presentResizedDCompBridgeOnMainThread(
 +    void* surface,
 +    const std::shared_ptr<DCompSurfaceState>& surfaceState,
@@ -1733,7 +1733,7 @@ index 006196c..ac80ab0 100644
 +
  ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
      if (!ensureWgpuSymbols()) return 0;
-
+ 
      // Check for DComp bridge
 +    std::shared_ptr<DCompSurfaceState> surfaceState;
      std::shared_ptr<DCompBridgeState> bridge;
@@ -1748,8 +1748,10 @@ index 006196c..ac80ab0 100644
 +            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
 +            bridge = surfaceState->inFlight;
 +        }
-+    }
-+
+     }
+ 
+-    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
+-        !bridge->unusable.load()) {
 +    if (bridge && bridge->resizeAttachedSwapChain) {
 +        if (!MainThreadDispatcher::is_main_thread()) {
 +            return MainThreadDispatcher::dispatch_sync(
@@ -1757,10 +1759,8 @@ index 006196c..ac80ab0 100644
 +        }
 +        return presentResizedDCompBridgeOnMainThread(
 +            surface, surfaceState, std::move(bridge));
-     }
-
--    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
--        !bridge->unusable.load()) {
++    }
++
 +    if (bridge && bridge->zeroCopyTexture) {
          std::unique_lock<std::mutex> lock(bridge->frameMutex);
 +        std::unique_lock<std::mutex> presentLock(surfaceState->presentMutex);
@@ -1804,7 +1804,7 @@ index 006196c..ac80ab0 100644
              retireDCompBridge(surface, bridge);
              bridge.reset();
          };
-
+ 
 -        auto* swapChain = bridge->compositor.getSwapChain();
 +        auto* swapChain = bridge->swapChain.Get();
          if (!swapChain) {
@@ -1813,7 +1813,7 @@ index 006196c..ac80ab0 100644
 @@ -10226,24 +10938,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              }
          }
-
+ 
 +        p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
 +
 +        if (!currentActive && !currentPending) {
@@ -1860,7 +1860,7 @@ index 006196c..ac80ab0 100644
              retireBridge();
              return 0;
          }
-
+ 
 -        p_wgpuSharedTextureMemoryEndAccessStateFreeMembers(endState);
 +        bool primeReplacement = false;
 +        {
@@ -1871,7 +1871,7 @@ index 006196c..ac80ab0 100644
 +                primeReplacement = currentPending && surfaceState->active;
 +            }
 +        }
-
+ 
 -        // Copy staging -> back buffer and present
          ComPtr<ID3D11Texture2D> backBuffer;
          HRESULT hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
@@ -1881,7 +1881,7 @@ index 006196c..ac80ab0 100644
          }
 +        bridge->presentContext->CopyResource(
 +            backBuffer.Get(), bridge->presentStagingTex.Get());
-
+ 
 -        bridge->presentContext->CopyResource(backBuffer.Get(), bridge->presentStagingTex.Get());
 +        if (primeReplacement) {
 +            backBuffer.Reset();
@@ -1903,13 +1903,13 @@ index 006196c..ac80ab0 100644
 +            bridge->presentContext->CopyResource(
 +                backBuffer.Get(), bridge->presentStagingTex.Get());
 +        }
-
+ 
          const uint64_t nextFenceValue = bridge->presentationFenceValue + 1;
          hr = bridge->presentContext->Signal(
 @@ -10271,14 +11050,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              return 0;
          }
-
+ 
 -        auto* dcompDevice = bridge->compositor.getDCompDevice();
 -        if (!dcompDevice || FAILED(dcompDevice->Commit())) {
 -            drainD3D11Context(
@@ -2009,8 +2009,28 @@ index 006196c..ac80ab0 100644
 +        destroyDCompBridgeOnMainThread(std::move(expiredActive));
 +        return promoted ? 1 : 0;
      }
-
+ 
      // Normal HWND path
+@@ -12535,8 +13398,17 @@ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
+                     
+                     switch (LOWORD(lParam)) {
+                         case WM_LBUTTONUP:
+-                           
+-                            
++                            // Primary activation is separate from the context menu.
++                            // Copy callback/id before crossing threads; the tray may be removed.
++                            if (trayItem->handler) {
++                                const auto handler = trayItem->handler;
++                                const auto trayId = trayItem->trayId;
++                                std::thread([handler, trayId]() {
++                                    try { handler(trayId, ""); }
++                                    catch (...) { ::log("Exception in tray primary handler"); }
++                                }).detach();
++                            }
++                            return 0;
+                         case WM_RBUTTONUP:
+                             // Right click - show context menu if it exists, otherwise call handler
+                             if (trayItem->contextMenu) {
 diff --git a/package/src/sdks/main/proc/native.ts b/package/src/sdks/main/proc/native.ts
 index 17a2f5e..46f9c1f 100644
 --- a/package/src/sdks/main/proc/native.ts

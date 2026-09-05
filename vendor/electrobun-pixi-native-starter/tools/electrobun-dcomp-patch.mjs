@@ -34,7 +34,7 @@ if (refresh) {
 	}
 	writeFileSync(
 		patch,
-		diff.stdout.replaceAll("\r\n", "\n").replace(/[ \t]+$/gm, ""),
+		diff.stdout.replaceAll("\r\n", "\n"),
 	);
 }
 
