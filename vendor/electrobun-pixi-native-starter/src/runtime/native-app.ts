@@ -123,6 +123,7 @@ export interface NativePixiApplication {
 	animate(update: (deltaMs: number) => void): () => void;
 	on<K extends keyof NativeAppEvents>(type: K, listener: (event: NativeAppEvents[K]) => void): () => void;
 	dispose(): Promise<void>;
+	beforeClose(listener: () => Promise<void>): () => void;
 }
 
 const gpuPowerPreferences = { default: 0, integrated: 1, discrete: 2 } as const;
@@ -323,6 +324,8 @@ export async function createNativePixiApplication(
 		};
 		const nativeInputEvents: Array<Record<string, unknown>> = [];
 		const cleanups = new Set<() => void | Promise<void>>();
+		const closeGuards = new Set<() => Promise<void>>();
+		let closeRequest: Promise<void> | null = null;
 		const presentWaiters = new Set<{ resolve(): void; reject(error: Error): void }>();
 		const rejectPresentWaiters = (error: Error) => {
 			const waiters = [...presentWaiters]; presentWaiters.clear();
@@ -723,6 +726,7 @@ export async function createNativePixiApplication(
 			},
 			on(type, listener) { if (closed) return () => {}; (listeners[type] as Set<any>).add(listener); return () => { (listeners[type] as Set<any>).delete(listener); }; },
 			dispose,
+			beforeClose(listener) { closeGuards.add(listener); return () => { closeGuards.delete(listener); }; },
 		};
 		const diagnostics = (): NativeAppDiagnostics => {
 			snapshot = nativeFrameHost.getWindowSnapshot(inputWindow); const input = nativeFrameHost.readInputDiagnostics();
@@ -783,7 +787,18 @@ export async function createNativePixiApplication(
 			resetInputEvents: () => { nativeInputEvents.length = 0; },
 			addCleanup: (cleanup) => { cleanups.add(cleanup); return () => { cleanups.delete(cleanup); }; },
 		});
-		window.on("will-close", (event: any) => { if (allowClose || closed) return; event.response = { allow: false }; void dispose().finally(() => { allowClose = true; window.close(); }); });
+		window.on("will-close", (event: any) => {
+			if (allowClose || closed) return;
+			event.response = { allow: false };
+			if (closeRequest) return;
+			closeRequest = (async () => {
+				for (const guard of [...closeGuards]) await guard();
+				await dispose();
+				allowClose = true;
+				window.close();
+			})().catch(error => { console.error("[native-app] close guard rejected; window remains open", error); })
+				.finally(() => { closeRequest = null; });
+		});
 		window.on("close", () => { void dispose(); });
 		startupCleanup.length = 0;
 		return application;

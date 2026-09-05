@@ -1,12 +1,15 @@
+import { t, setNativeLocale } from "./nativeLocalization.js";
 import { existsSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { Screen } from "electrobun/main";
 import {
   Container,
+  Graphics,
   Rectangle,
   Text,
   FederatedWheelEvent,
+  type FederatedPointerEvent,
   type Sprite,
 } from "pixi.js";
 import {
@@ -21,6 +24,15 @@ import {
 } from "../domain/input/launchpadGestureEngine.js";
 import { findFocusedIcon, firstIconFocus, moveIconFocus, type LaunchpadIconScope } from "../domain/iconFocus.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import { NativeSearchBar } from "../rendering/native/NativeSearchBar.js";
+import { NativeManagement } from "../rendering/native/NativeManagement.js";
+import { makeLaunchTarget } from "../domain/launchpadData.js";
+import { nativeHost } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
+import { snapshotContractValue } from "../rendering/contractSnapshot.js";
+import { createNativeEditing } from "./nativeEditing.js";
+import { createLayoutSaveQueue } from "../application/layoutSaveQueue.js";
+import type { LaunchpadPages } from "../domain/launchpadLayout.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import {
   createNativeFolderFlow,
@@ -37,6 +49,7 @@ import {
 } from "./nativeDataHost.js";
 import {
   getNativeActivePageItems,
+  createNativeLayoutState,
   getNativePageTurnFromKey,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
@@ -240,8 +253,13 @@ try {
   await nativeData.dispose();
   throw error;
 }
-let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
+setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
+const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
+let hiddenAppIds=[...(loadedLayout?.settings.hiddenAppIds ?? [])];
+const saves = createLayoutSaveQueue(document => nativeData.saveLayout(document));
+let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
 let activePageItems = getNativeActivePageItems(currentFrame);
+let searchQuery = "";
 const folderLayout = Object.freeze({
   cols: loadedLayout?.settings.folderCols ?? DEFAULT_FOLDER_COLS,
   iconSize: loadedLayout?.settings.folderIconSizeMode === "custom"
@@ -262,6 +280,9 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
+let changeSearch: (query: string) => void;
+const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query));
+const management = new NativeManagement(searchBar.host, () => app.contentSize);
 
 const iconTextures = createNativeIconTextureRepository();
 const statusText = new Text({
@@ -325,7 +346,12 @@ const requestSceneRender = (): void => {
     renderScene();
   });
 };
-const folderFlow = createNativeFolderFlow(() => requestSceneRender());
+const folderFlow = createNativeFolderFlow(presentation => {
+  if(!presentation.renderedFolder && editing?.rollback.presentation.value?.phase === "closing") {
+    editing.rollback.beginDissolve(editing.rollback.presentation.value.folderId);
+  }
+  requestSceneRender();
+});
 
 function setFocusedIcon(focusedIcon: SceneFocusedIcon | null): void {
   currentFrame = Object.freeze({
@@ -342,7 +368,7 @@ function getCurrentIconScope(): LaunchpadIconScope<SceneItem> {
     items: (folder.renderedFolder.childPages[folder.folderPageIndex] ?? []).filter((item): item is SceneItem => item !== null),
     pageIndex: folder.folderPageIndex,
   } : {
-    area: "desktop", columns: currentFrame.viewport.gridCols, folderId: null,
+    area: searchQuery.trim() ? "search" : "desktop", columns: currentFrame.viewport.gridCols, folderId: null,
     items: activePageItems, pageIndex: currentFrame.viewport.activePageIndex,
   };
 }
@@ -360,6 +386,12 @@ function setFolderPageIndex(pageIndex: number): boolean {
 }
 
 async function activateItem(item: SceneItem): Promise<void> {
+  if (editing?.drag.isDragActive()) return;
+  if (editing?.selection.isActive.value && item.type === "app") {
+    editing.selection.toggle(item.id, { scope: { key: getCurrentIconScope().area, orderedIds: getCurrentIconScope().items.map(item => item.id) } });
+    return;
+  }
+  if(editing?.mode.value && item.type === "app") { editItem(item); return; }
   const name = typeof item.name === "string" ? item.name : item.id;
   if (item.type === "folder") {
     if (folderFlow.open(item)) {
@@ -373,6 +405,7 @@ async function activateItem(item: SceneItem): Promise<void> {
   launchInFlight = true;
   setStatus(`Launching ${name}...`);
   try {
+    await saves.flush();
     await nativeData.launchApp(item.id);
     setStatus(`Launch request accepted: ${name}`, 0x8bd49c);
   } catch (error) {
@@ -386,7 +419,87 @@ async function activateItem(item: SceneItem): Promise<void> {
   }
 }
 
+let onDesktopPageIndexCommit: (index: number) => void;
+let editing: ReturnType<typeof createNativeEditing> | null = null;
+function editItem(item: SceneItem | null): void {
+  const appItem = item && layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value).find(app => app.id === item.id);
+  if(item?.type === "folder") {
+    management.form(t("common.actions.rename"), [{label:t("dialogs.appEditor.name"), value:String(item.name ?? "")}], t("common.actions.save"), async values=>{
+      editing!.rename(item.id,values[0]!); await saves.flush();
+    });
+    return;
+  }
+  const target=appItem?.launchTarget;
+  management.form(item ? t("dialogs.appEditor.editTitle") : t("dialogs.appEditor.addTitle"), [
+    {label:t("dialogs.appEditor.name"),value:appItem?.name ?? ""},
+    {label:target?.kind === "appUserModelId" ? t("dialogs.appEditor.windowsId") : t("dialogs.appEditor.target"),value:target?.path ?? target?.appUserModelId ?? "",readOnly:target?.kind === "appUserModelId",
+      ...(target?.kind!=="appUserModelId"?{browse:async()=>{const result=await nativeHost.platform.dialogs.openFiles({multiple:false});if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}return result.value[0]??null;}}:{})},
+    {label:t("dialogs.appEditor.args"),value:appItem?.launchArgs ?? ""},
+  ],t("common.actions.save"), async values=>{
+    const [name,path,args]=values;
+    if(!name?.trim())throw new Error("Name is required");
+    const nextTarget=target?.kind === "appUserModelId" ? target : makeLaunchTarget(path);
+    if(!nextTarget)throw new Error("Launch target is required");
+    const pages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
+    if(appItem) {
+      const app=pages.flatMap(page=>page.flatMap(item=>item.type==="folder"?item.childPages.flat():[item])).find(item=>item?.id===appItem.id);
+      if(!app || app.type!=="app")throw new Error("Application no longer exists");
+      if(app.origin==="catalog" && (JSON.stringify(app.launchTarget)!==JSON.stringify(nextTarget) || (app.launchArgs??"")!==(args??""))) {
+        hiddenAppIds=[...new Set([...hiddenAppIds,app.id])];
+        app.id=layoutState.operations.makeId("manual");app.origin="manual";
+        delete app.presentationOverrides;delete app.catalogPresentation;
+      }
+      app.name=name.trim();app.launchTarget=nextTarget;app.launchArgs=args ?? "";
+      if(app.origin==="catalog")app.presentationOverrides={...app.presentationOverrides,name:app.name};
+    } else {
+      const app={id:layoutState.operations.makeId("manual"),type:"app" as const,origin:"manual" as const,name:name.trim(),emoji:"◼",launchTarget:nextTarget,launchArgs:args ?? ""};
+      const next=layoutState.operations.appendAppsToPages(pages,[app]);pages.splice(0,pages.length,...next);
+    }
+    editing!.commit(pages);await saves.flush();
+  });
+}
+function removeItems(ids: readonly string[]): void {
+  management.form(t("settings.apps.manager.remove"), [{label:t("launchpad.batch.removeMessage",{count:ids.length}),value:"",readOnly:true}],t("launchpad.batch.remove"),async()=>{
+    const catalogIds=layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value).filter(app=>ids.includes(app.id)&&app.origin==="catalog").map(app=>app.id);
+    hiddenAppIds=[...new Set([...hiddenAppIds,...catalogIds])];
+    editing!.remove(ids);await saves.flush();
+  });
+}
+function contextMenu(item: SceneItem | null,x:number,y:number):void {
+  const actions = item ? [
+    {label:item.type==="folder"?t("common.actions.rename"):t("dialogs.appEditor.editTitle"),run:()=>editItem(item)},
+    {label:t("settings.apps.manager.remove"),run:()=>removeItems([item.id])},
+    ...item.type==="app" ? [
+      {label:t("dialogs.appEditor.changeIcon"),run:()=>{void updateIcon(item,false).catch(error=>setStatus(String(error),0xff7b72));}},
+      {label:t("common.actions.restoreDefault"),run:()=>{void updateIcon(item,true).catch(error=>setStatus(String(error),0xff7b72));}},
+    ] : [],
+  ] : [{label:t("dialogs.appEditor.addTitle"),run:()=>editItem(null)}];
+  if(item?.type === "folder")actions.push({label:t("commands.dissolve.confirm"),run:()=>{
+    editing!.commit(layoutState.operations.dissolveFolder(layoutState.presentation.pages.value,item.id,layoutState.presentation.pageSize.value));
+  }});
+  actions.push({label:t("launchpad.batch.toolbarLabel"),run:()=>{editing!.selection.begin({initialIds:item?.type==="app"?[item.id]:[]});}},
+    {label:"Edit mode",run:()=>{editing!.mode.value=!editing!.mode.value;}});
+  management.menu(x,y,actions);
+}
+async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
+  let path:string|null=null;
+  if(!reset) {
+    const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp",multiple:false});
+    if(!result.ok) {if(result.error.code==="CANCELLED")return;throw new Error(result.error.message);}
+    path=result.value[0]??null;if(!path)return;
+  }
+  const pages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
+  const app=pages.flatMap(page=>page.flatMap(item=>item.type==="folder"?item.childPages.flat():[item])).find(app=>app?.id===item.id);
+  if(!app || app.type!=="app")throw new Error("Application no longer exists");
+  if(reset) {delete app.customIconPath;delete app.customIconDataUrl;if(app.presentationOverrides)delete app.presentationOverrides.customIconPath;}
+  else {app.customIconPath=path;if(app.origin==="catalog")app.presentationOverrides={...app.presentationOverrides,customIconPath:path!};}
+  editing!.commit(pages);await saves.flush();
+  const result=await iconTextures.synchronize(collectTextureItems(currentFrame));
+  if(result.failed.length)throw new Error("Icon loading failed");
+  requestSceneRender();
+}
 const scene = new NativeDesktopScene(app.stage, {
+  onDesktopPageIndexCommit: index => onDesktopPageIndexCommit(index),
   folderLayout,
   iconTextures,
   onFolderCloseRequest: closeFolder,
@@ -400,8 +513,36 @@ const scene = new NativeDesktopScene(app.stage, {
   onFolderPageIndexCommit: setFolderPageIndex,
   onFolderRenderRequest: requestSceneRender,
   onIconActivate: (item) => void activateItem(item),
+  onGroupReleaseComplete: result => editing?.complete(result),
+  onRollbackComplete: token => {editing?.rollback.complete(token);},
+  onIconEditAction:(action,item)=>{
+    if(action==="remove")removeItems([item.id]);
+    else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(error=>setStatus(String(error),0xff7b72));
+  },
 });
 app.stage.addChild(statusText);
+app.stage.addChild(searchBar);
+app.stage.addChild(management);
+const selectionToolbar = new Container({label:"native-selection-toolbar"});
+selectionToolbar.visible=false;
+const toolbarBackground=new Graphics();
+const toolbarSummary=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:0xffffff}});
+toolbarSummary.eventMode="none";
+selectionToolbar.addChild(toolbarBackground,toolbarSummary);
+const selectAllButton=management.button(t("common.actions.selectAll"),62,()=>editing!.selection.selectScope({orderedIds:getCurrentIconScope().items.filter(item=>item.type==="app").map(item=>item.id)}));
+const clearSelectionButton=management.button(t("common.actions.clearSelection"),62,()=>editing!.selection.deselectAll());clearSelectionButton.x=70;
+const createFolderButton=management.button(t("launchpad.batch.createFolder"),96,()=>editing!.createFolder());createFolderButton.x=140;
+const removeButton=management.button(t("launchpad.batch.remove"),62,()=>removeItems([...editing!.selection.selectedIds.value]));removeButton.x=244;
+const doneButton=management.button(t("launchpad.batch.done"),62,()=>{editing!.selection.clear();editing!.mode.value=false;});doneButton.x=314;
+selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
+app.stage.addChild(selectionToolbar);
+const onContext = (event: FederatedPointerEvent):void=>{
+  let node:Container|null=event.target;while(node&&!node.label.startsWith("launchpad-item:"))node=node.parent;
+  const id=node?.label.slice("launchpad-item:".length);
+  const item=id?getCurrentIconScope().items.find(item=>item.id===id)??null:null;
+  contextMenu(item,event.global.x,event.global.y);event.stopPropagation();
+};
+app.stage.on("rightclick",onContext);
 let offResize = (): void => {};
 const offPresented = app.on("presented", () => {
   folderFlow.commitPresented(scene.commitPresentedFrame());
@@ -410,7 +551,12 @@ let offStateChange = (): void => {};
 let offKey = (): void => {};
 let offWheel = (): void => {};
 let offWheelPointerInterrupt = (): void => {};
+let offTouch = (): void => {};
 let disconnectAnimationHost = (): void => {};
+const offSaveBeforeClose = app.beforeClose(async () => {
+  try { await saves.flush(); }
+  catch (error) { setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72); throw error; }
+});
 const wheelDeadlines = new Map<
   LaunchpadGestureDeadline["kind"],
   ReturnType<typeof setTimeout>
@@ -453,13 +599,39 @@ try {
     width: app.contentSize.width,
   }, true);
   renderScene = () => {
+    if(editing) {
+      const interaction = snapshotContractValue({ ...currentFrame.interaction,
+        dragMeta: editing.drag.dragMeta.value, groupDragState: editing.drag.groupDragState.value,
+        dragFolderHoverState: editing.drag.dragFolderHoverState.value, dragFolderTargetId: editing.drag.dragFolderTargetId.value,
+        isEditMode: editing.mode.value, isBatchSelectionActive: editing.selection.isActive.value,
+        selectedAppIds: editing.selection.selectedIds.value,
+        provisionalFolderRollback: editing.rollback.presentation.value,
+      }) as typeof currentFrame.interaction;
+      const pages = searchQuery.trim() ? currentFrame.viewport.activePages : snapshotContractValue(editing.projectedPages()) as typeof currentFrame.viewport.activePages;
+      currentFrame = Object.freeze({ ...currentFrame, interaction,
+        viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) });
+      activePageItems = getNativeActivePageItems(currentFrame);
+    }
     work = commitScene({
       height: app.contentSize.height,
       resolution: app.resolution,
       width: app.contentSize.width,
     }, false);
+    searchBar.update(app.contentSize.width, Boolean(folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing));
+    selectionToolbar.visible=Boolean(editing?.selection.isActive.value || editing?.mode.value);
+    const toolbarWidth=Math.min(760,app.contentSize.width-40);
+    selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14);
+    toolbarBackground.clear().roundRect(0,0,toolbarWidth,54,18).fill({color:0x292929,alpha:0.96}).stroke({color:0xffffff,alpha:0.16,width:1});
+    const cancelling=Boolean(editing?.drag.groupDragState.value?.canCancel);
+    toolbarSummary.text=cancelling?t("launchpad.batch.cancelDrag"):t("launchpad.batch.selectedCount",{count:editing?.selection.selectedCount.value??0});
+    toolbarSummary.position.set(14,19);
+    [selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton].forEach((button,index)=>{
+      button.visible=!cancelling;button.y=10;button.x=toolbarWidth-390+[0,70,140,244,314][index]!;
+    });
+    if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
     app.invalidate();
   };
+  searchBar.update(app.contentSize.width, false);
   let resizeEvents = 0;
   let resizeLiveLogicalObserved = false;
   let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
@@ -480,6 +652,26 @@ try {
       return node as NativeIconNode;
     });
   let iconNodes = collectActiveIconNodes();
+  changeSearch = query => {
+    searchQuery = query;
+    layoutState.commitSearchPageIndex(0);
+    if(query.trim() && folderFlow.snapshot().renderedFolder) closeFolder();
+    const documents = buildAppSearchDocuments(layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value));
+    const pages = query.trim()
+      ? layoutState.operations.chunkIntoPages(searchAppDocuments(documents, query), layoutState.presentation.pageSize.value)
+      : layoutState.presentation.pages.value;
+    currentFrame = Object.freeze({ ...currentFrame,
+      viewport: Object.freeze({ ...currentFrame.viewport, activePages: snapshotContractValue(pages) as typeof currentFrame.viewport.activePages,
+        activePageIndex: query.trim() ? 0 : layoutState.presentation.pageIndex.value,
+        desktopProjectionEpoch: currentFrame.viewport.desktopProjectionEpoch + 1,
+        desktopTrackMotionKey: query.trim() ? "native-search" : "native-desktop" }),
+      interaction: Object.freeze({ ...currentFrame.interaction, focusedIcon: null, isSearchMode: Boolean(query.trim()) }),
+    });
+    activePageItems = getNativeActivePageItems(currentFrame);
+    if(query.trim()) setFocusedIcon(firstIconFocus(getCurrentIconScope()));
+    renderScene();
+    iconNodes = collectActiveIconNodes();
+  };
 
   let resolveClosed!: () => void;
   const closed = new Promise<void>((resolve) => {
@@ -495,6 +687,8 @@ try {
   function commitDesktopPage(pageIndex: number): boolean {
     const nextFrame = setNativeDesktopPage(currentFrame, pageIndex);
     if (nextFrame === currentFrame) return false;
+    if(searchQuery.trim()) layoutState.commitSearchPageIndex(nextFrame.viewport.activePageIndex);
+    else layoutState.commitPageIndex(nextFrame.viewport.activePageIndex);
     currentFrame = nextFrame;
     activePageItems = getNativeActivePageItems(currentFrame);
     renderScene();
@@ -509,6 +703,35 @@ try {
   const turnPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     return commitDesktopPage(currentFrame.viewport.activePageIndex + direction);
   };
+  onDesktopPageIndexCommit = index => {
+    wheelGestures.dispatch({ type: "cancel", time: performance.now() });
+    for (const timer of wheelDeadlines.values()) clearTimeout(timer);
+    wheelDeadlines.clear();
+    clearWheelPresentation();
+    commitDesktopPage(index);
+  };
+  const commitEditedPages = (pages: LaunchpadPages): void => {
+    layoutState.commitPages(pages);
+    layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
+    const config = layoutState.captureConfiguration();
+    const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,
+      pages, gridRows: config.rows, gridCols: config.cols, folderRows: config.folderRows, folderCols: config.folderCols,
+      iconSize: config.iconSize, folderIconSize: config.folderIconSize, folderIconSizeMode: config.folderIconSizeMode,
+      textless: loadedLayout?.settings.textless ?? false, hiddenAppIds });
+    saves.enqueue(document);
+    void saves.flush().catch(error => setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72));
+    changeSearch(searchQuery);
+    requestSceneRender();
+  };
+  editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
+    size: () => app.contentSize, changed: requestSceneRender, commit: commitEditedPages,
+    page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
+    open: id => {
+      if(!id) { closeFolder(); return; }
+      const item = editing?.projectedPages().flat().find(item => item.id === id);
+      if(item) { folderFlow.open(snapshotContractValue(item) as SceneItem);setFocusedIcon(null);requestSceneRender(); }
+    },
+  });
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
     setStatus("");
@@ -551,6 +774,7 @@ try {
   ): void => {
     if (!deadline) {
       clearWheelDeadline("wheelEnd");
+      clearWheelDeadline("hold");
       return;
     }
     clearWheelDeadline(deadline.kind);
@@ -583,6 +807,30 @@ try {
       requestSceneRender();
     }
     for (const command of output.commands) {
+      if(command.type === "startDrag" && command.target.kind === "icon" && command.target.id) {
+        const node=app.stage.getChildByLabel(`launchpad-item:${command.target.id}`,true);
+        if(!node)throw new Error("Drag target is not rendered");
+        editing?.beginDrag(command.target.id, { clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
+          pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType,
+          button: 0, buttons: 1, dragAnchor: command.dragAnchor,
+          dragStartedFromThreshold: command.dragStartedFromThreshold,
+          type:"pointermove",currentTarget:{getBoundingClientRect:()=>{const b=node.getBounds();return {left:b.x,top:b.y,width:b.width,height:b.height};}},
+          preventDefault: () => {}, stopPropagation: () => {} });
+      }
+      if(command.type === "updateDrag") editing?.drag.updateDragPointer({ clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
+        pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType, buttons: command.pointer.buttons, preventDefault: () => {} });
+      if(command.type === "finishDrag") editing?.drag.finishDrag({ clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
+        pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType, button: 0, type: "pointerup" });
+      if(command.type === "cancelDrag") editing?.drag.cancelDrag({ pointerId: command.pointer.pointerId, type: "pointercancel" });
+      if(command.type === "openContextMenu" && command.target.kind === "icon") {
+        const id=command.target.id;const item=getCurrentIconScope().items.find(item=>item.id===id);
+        if(item)contextMenu(item,Number(command.pointer.x),Number(command.pointer.y));
+      }
+      if (command.type === "activateTarget" && command.target.kind === "icon") {
+        const id = command.target.id;
+        const item = getCurrentIconScope().items.find(item => item.id === id);
+        if (item) void activateItem(item);
+      }
       if (command.type !== "commitPage") continue;
       if (command.scope.startsWith("folder:")) {
         if (command.scope === `folder:${folderFlow.snapshot().renderedFolder?.id}`) {
@@ -601,6 +849,7 @@ try {
     }
   };
   const onWheel = (event: FederatedWheelEvent): void => {
+    if(management.modal || searchBar.input.focused || editing?.drag.isDragActive())return;
     const folder = folderFlow.snapshot();
     if (folder.renderedFolder && folder.isClosing) {
       event.preventDefault();
@@ -635,13 +884,88 @@ try {
   app.stage.on("wheel", onWheel);
   offWheel = () => app.stage.off("wheel", onWheel);
   const interruptWheel = (event: Readonly<{ timeStamp?: unknown }>): void => {
+    if (touchId !== null) return;
     const timestamp = Number(event.timeStamp);
     const time = Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : performance.now();
     applyWheelOutput(wheelGestures.dispatch({ type: "cancel", time }), null, time);
   };
+  let touchId: number | null = null;
+  const touch = (type: string, event: FederatedPointerEvent): void => {
+    if (event.pointerType !== "touch" && event.pointerType !== "mouse") return;
+    if (type === "pointerDown" && (touchId !== null || event.isPrimary === false)) return;
+    if (type !== "pointerDown" && touchId !== event.pointerId) return;
+    const scope = getCurrentIconScope();
+    if (folderFlow.snapshot().isClosing && type === "pointerDown") return;
+    let target: Container | null = event.target;
+    while (target && !target.label.startsWith("launchpad-item:")) target = target.parent;
+    const itemId = target?.label.slice("launchpad-item:".length);
+    if(type === "pointerDown" && !itemId && scope.area === "folder") return;
+    if(type === "pointerDown" && management.modal) return;
+    if(type === "pointerDown" && event.target?.label?.startsWith("native-")) return;
+    const output = wheelGestures.dispatch({ type, pointerId: event.pointerId, pointerType: event.pointerType,
+      isPrimary: event.isPrimary, button: event.button, buttons: event.buttons,
+      x: event.global.x, y: event.global.y, time: event.timeStamp,
+      target: itemId ? { kind: "icon", id: itemId } : { kind: "surface" },
+      dragOnHold: editing?.selection.isActive.value === true,
+      viewport: { scope: scope.area === "folder" ? `folder:${scope.folderId}` : scope.area,
+        pageIndex: scope.pageIndex,
+        pageCount: scope.area === "folder" ? folderFlow.snapshot().renderedFolder!.childPages.length : currentFrame.viewport.activePages.length,
+        pageWidth: scene.getPageWidth(scope.area === "folder" ? `folder:${scope.folderId}` : scope.area, scope.pageIndex, app.contentSize.width) },
+    });
+    if (output.ownsPointer) {
+      touchId = event.pointerId;
+      clearWheelPresentation();
+      app.nativeInput.capturePointer(event.pointerId);
+    }
+    applyWheelOutput(output, null, event.timeStamp);
+    if (output.releasesPointer) {
+      app.nativeInput.releasePointerCapture(event.pointerId);
+      touchId = null;
+    }
+    event.stopPropagation();
+  };
+  const touchDown = (event: FederatedPointerEvent) => touch("pointerDown", event);
+  const touchMove = (event: FederatedPointerEvent) => touch("pointerMove", event);
+  const touchUp = (event: FederatedPointerEvent) => touch("pointerUp", event);
+  const touchCancel = (event: FederatedPointerEvent) => touch("pointerCancel", event);
+  app.stage.on("pointerdowncapture", touchDown);
+  app.stage.on("globalpointermove", touchMove);
+  app.stage.on("pointerupcapture", touchUp);
+  app.stage.on("pointerupoutside", touchUp);
+  app.stage.on("pointercancel", touchCancel);
+  offTouch = () => {
+    app.stage.off("pointerdowncapture", touchDown);
+    app.stage.off("globalpointermove", touchMove);
+    app.stage.off("pointerupcapture", touchUp);
+    app.stage.off("pointerupoutside", touchUp);
+    app.stage.off("pointercancel", touchCancel);
+    if (touchId !== null) app.nativeInput.releasePointerCapture(touchId);
+  };
   app.stage.on("pointerdowncapture", interruptWheel);
   offWheelPointerInterrupt = () => app.stage.off("pointerdowncapture", interruptWheel);
   const onKey = (event: NativeNavigationKey): void => {
+    if(management.modal) {if(event.type==="down" && event.key==="Escape")management.close();if(event.type==="down"&&event.key==="Tab")management.focusNext();return;}
+    if (searchBar.input.composing) return;
+    if (searchBar.input.focused) {
+      if(event.type === "down" && event.key === "Escape") { searchBar.setQuery(""); searchBar.input.blur(); }
+      if(event.type === "down" && event.key === "ArrowDown") { searchBar.input.blur(); setFocusedIcon(firstIconFocus(getCurrentIconScope())); }
+      return;
+    }
+    if(event.type === "down" && event.key === "Escape" && editing?.drag.isDragActive()) { editing.drag.cancelDrag({ userInitiatedCancel: true }); return; }
+    if(event.type === "down" && event.key === "Escape" && editing?.selection.isActive.value) { editing.selection.clear(); return; }
+    if(event.type === "down" && event.key === "Escape" && editing?.mode.value) { editing.mode.value=false;return; }
+    if(event.type === "down" && event.key === "Alt") {if(editing)editing.mode.value=true;return;}
+    if(event.type === "up" && event.key === "Alt") {if(editing)editing.mode.value=false;return;}
+    if(event.type === "down" && event.ctrlKey && event.key?.toLowerCase()==="a") {
+      editing!.selection.begin();editing!.selection.selectScope({orderedIds:getCurrentIconScope().items.filter(item=>item.type==="app").map(item=>item.id)});return;
+    }
+    if(event.type==="down" && event.ctrlKey && event.key?.toLowerCase()==="n" && editing?.selection.isActive.value){editing.createFolder();return;}
+    if(event.type==="down" && event.key==="F2") {const item=findFocusedIcon(currentFrame.interaction.focusedIcon,getCurrentIconScope());if(item)editItem(item);return;}
+    if(event.type==="down" && event.key==="Delete" && editing?.selection.isActive.value) {removeItems([...editing.selection.selectedIds.value]);return;}
+    if(event.type==="down" && event.key==="Tab") {searchBar.input.focus();return;}
+    if(event.type==="down" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key?.length===1 && event.key!==" " && !folderFlow.snapshot().renderedFolder) {
+      searchBar.input.focus();searchBar.input.commitText(event.key);return;
+    }
     if (event.type !== "down" || event.isComposing || event.altKey || event.metaKey) return;
     const key = event.key || event.code;
     const direction = getNativePageTurnFromKey(event);
@@ -655,6 +979,7 @@ try {
     clearWheelPresentation();
     const folder = folderFlow.snapshot();
     if (key === "Escape") {
+      if(searchQuery) { searchBar.setQuery(""); return; }
       closeFolder();
       return;
     }
@@ -674,6 +999,10 @@ try {
     }
   };
   offKey = app.nativeInput.onKey(onKey);
+  searchBar.input.on("submit", () => {
+    const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, getCurrentIconScope());
+    if(focused) void activateItem(focused);
+  });
 
   await present(app, "the first LaunchPad scene frame");
   presentCount += 1;
@@ -706,7 +1035,85 @@ try {
       structuredLaunchFailureObserved = true;
     }
 
+    const baselinePages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
+    searchBar.input.focus();
+    searchBar.input.beginComposition();searchBar.input.updateComposition("\u5df2\u52a0\u8f7d",3);
+    assert.equal(searchQuery,"","IME preedit must not submit a search");
+    searchBar.input.commitText("\u5df2\u52a0\u8f7d");
+    assert.equal(activePageItems.length,1,"Chinese search should use shared matching");
+    assert.equal(activePageItems[0]?.id,"native-layout-icon");
+    await new Promise<void>(resolve=>setTimeout(resolve,250));await present(app,"native search results");await captureSmokeFrame("search-chinese");
+    searchBar.setQuery("yijiazai");
+    assert.equal(activePageItems[0]?.id,"native-layout-icon","pinyin search should match the original algorithm");
+    searchBar.setQuery("no-such-app-xyz");assert.equal(activePageItems.length,0);
+    searchBar.setQuery("");searchBar.input.blur();await present(app,"search cleared");
+    const pointer=(type:string,x:number,y:number,id=17)=>app.nativeInput.emitPointer(type,x,y,0,0,undefined,{pointerId:id,pointerType:"touch",isPrimary:id===17});
+    pointer("pointerdown",app.contentSize.width-30,app.contentSize.height/2);
+    pointer("pointermove",app.contentSize.width/2,app.contentSize.height/2);
+    pointer("pointerdown",20,100,18);pointer("pointerup",20,100,18);
+    pointer("pointerup",app.contentSize.width/2,app.contentSize.height/2);
+    await waitFor("touch page commit",()=>currentFrame.viewport.activePageIndex===1);
+    onDesktopPageIndexCommit(0);await present(app,"touch reset");
+    await waitFor("touch reset settle",()=>Math.abs(scene.getMotionSnapshot().desktopPageTrackX)<0.05);
+    pointer("pointerdown",app.contentSize.width-30,app.contentSize.height/2);
+    pointer("pointermove",app.contentSize.width/2,app.contentSize.height/2);
+    pointer("pointercancel",app.contentSize.width/2,app.contentSize.height/2);
+    await present(app,"touch cancellation committed");
+    await waitFor("touch cancelled return",()=>Math.abs(scene.getMotionSnapshot().desktopPageTrackX)<0.05);
+    await present(app,"touch cancellation settled hit testing");
+    assert.equal(currentFrame.viewport.activePageIndex,0);
+    const dragNode=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(dragNode);
+    const start=dragNode.getBounds();
+    assert.ok(start.x >= 0 && start.x+start.width <= app.contentSize.width,"drag source must be on screen");
+    app.nativeInput.emitPointer("pointermove",start.x+start.width/2,start.y+start.height/2,0);
+    app.nativeInput.emitPointer("pointerdown",start.x+start.width/2,start.y+start.height/2,0);
+    await new Promise<void>(resolve=>setTimeout(resolve,450));
+    app.nativeInput.emitPointer("pointermove",start.x+start.width/2+35,start.y+start.height/2+30,0);
+    await present(app,"native drag preview");
+    assert.ok(editing?.drag.isDragActive(),"native mouse movement must enter shared drag");
+    editing!.drag.cancelDrag({userInitiatedCancel:true});
+    app.nativeInput.emitPointer("pointerup",start.x+start.width/2+35,start.y+start.height/2+30,0);
+    await waitFor("drag cancellation release",()=>!editing!.drag.isDragActive());
+    await present(app,"drag source restored");
+    const moveNode=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(moveNode);
+    const moveBounds=moveNode.getBounds();const mx=moveBounds.x+moveBounds.width/2,my=moveBounds.y+moveBounds.height/2;
+    app.nativeInput.emitPointer("pointerdown",mx,my,0);await new Promise<void>(resolve=>setTimeout(resolve,450));
+    app.nativeInput.emitPointer("pointermove",mx+30,my+25,0);await present(app,"drag start for committed reorder");
+    app.nativeInput.emitPointer("pointermove",app.contentSize.width-100,my+80,0);await present(app,"drag reorder destination");
+    app.nativeInput.emitPointer("pointerup",app.contentSize.width-100,my+80,0);
+    await waitFor("committed drag release",()=>!editing!.drag.isDragActive());await saves.flush();
+    assert.notDeepEqual(layoutState.presentation.pages.value,baselinePages,"a drop into an empty desktop slot must change layout");
+    editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after reorder");
+    editing!.rename("native-layout-icon","Save roundtrip");await saves.flush();
+    const persisted=await nativeData.loadLayout();assert.ok(persisted);
+    assert.equal(makeNativeStartupFrame(persisted,catalogResult.apps).viewport.activePages[0]?.[0]?.name,"Save roundtrip");
+    editing!.commit(baselinePages);await saves.flush();
+    await present(app,"restored isolated layout");
+    editing!.selection.begin({initialIds:["native-layout-icon","native-webgpu"],primaryId:"native-layout-icon"});
+    await present(app,"selected applications");
+    assert.equal(editing!.createFolder(),true,"multi-select folder creation must start the original group transfer");
+    await waitFor("group folder creation release",()=>!editing!.drag.isDragActive());
+    await saves.flush();
+    const created=layoutState.presentation.pages.value.flat().find(item=>item.type==="folder" && item.id!=="native-folder" && item.id!=="native-folder-other");
+    assert.ok(created?.type==="folder" && created.childPages.flat().some(item=>item?.id==="native-layout-icon"));
+    await captureSmokeFrame("edited-folder-created");
+    const freshHost=new NativeDataHost();
+    try {await freshHost.connect();const saved=await freshHost.loadLayout();assert.ok(saved);assert.ok(saved.pages.flat().some(item=>item.id===created.id),"a restarted Rust host must read committed folder creation");}
+    finally {await freshHost.dispose();}
+    editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after editing");
+    editItem(activePageItems.find(item=>item.id==="native-settings")??null);
+    await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await captureSmokeFrame("application-edit-dialog");
+    management.close();await present(app,"edit dialog cancelled");
+    console.log("Native search/IME/touch/drag cancellation/save roundtrip smoke passed");
+
     await captureSmokeFrame("desktop-page-1");
+    const lastDot = app.stage.getChildByLabel(`native-page-dot:${currentFrame.viewport.activePages.length - 1}`, true);
+    assert.ok(lastDot, "desktop pages must expose clickable dots");
+    clickWithNativeInput(lastDot);
+    assert.equal(currentFrame.viewport.activePageIndex, currentFrame.viewport.activePages.length - 1, "page dot click must commit its exact page");
+    const firstDot = app.stage.getChildByLabel("native-page-dot:0", true);
+    assert.ok(firstDot);
+    clickWithNativeInput(firstDot);
     const settleDesktop = async (): Promise<void> => {
       await waitFor("desktop input motion to settle", () => {
         const motion = scene.getMotionSnapshot();
@@ -897,6 +1304,10 @@ try {
       () => folderFlow.snapshot().openProgress >= 0.999,
     );
     await present(app, "the opened native folder");
+    await waitFor("desktop fade behind folder", () => {
+      const dots = app.stage.getChildByLabel("native-desktop-page-dots", true);
+      return Boolean(dots && dots.alpha < 0.01 && scene.getDesktopAlpha()<0.01);
+    });
     await captureSmokeFrame("folder-page-1");
     presentCount += 1;
 
@@ -1118,6 +1529,7 @@ try {
     const pixelProof = assertNativeScenePixels(pixels, {
       background: NATIVE_BACKGROUND,
       contentBottom: Math.ceil(contentSize.height / 2),
+      contentEnd: Math.floor(contentSize.height - 72),
       emojiRegions: iconNodes
         .filter((node) => node.emojiText.visible)
         .map((node) => toPixelRegion(node.emojiText, pixels.width, pixels.height)),
@@ -1185,6 +1597,9 @@ try {
   }
 } finally {
   offWheelPointerInterrupt();
+  offTouch();
+  editing?.dispose();
+  offSaveBeforeClose();
   for (const timer of wheelDeadlines.values()) clearTimeout(timer);
   wheelDeadlines.clear();
   disconnectAnimationHost();
@@ -1195,6 +1610,9 @@ try {
   offPresented();
   offStateChange();
   scene.destroy();
+  app.stage.off("rightclick",onContext);
+  management.destroy();
+  searchBar.destroy();
   iconTextures.dispose();
   await app.dispose();
   await nativeData.dispose();

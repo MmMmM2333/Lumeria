@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "文件夹中断与自动验收完成后，下一切片为多点触控接入同一手势引擎；先读取当前验证记录和上游能力清单"
+next_entry: "先读 docs/native-product-parity.plan.md 的主链路验收和已知差异；继续原版管理细节/真实硬件验收，不重复迁移共享核心"
 ---
 
 # Native WebGPU migration
@@ -25,7 +25,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Completed native slice
 
-- Starter `0.2.1`, release commit `986ce97`, is vendored with manifest schema v2, 529 verified payload files, native ABI 4, capability-mask validation, and stable path-/memory-backed font registration exports. `app.on("presented")` synchronously publishes successful presentation before queued scene mutations and nextPresent continuations.
+- Starter `0.2.2`, release commit `9832eaf`, is vendored with manifest schema v2, 529 verified payload files and native ABI 4. It exposes TextInputHost/TextInput with consumer-owned chrome, focus/composition state and async beforeClose guards, in addition to font registration and synchronous presented events.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
 - `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
@@ -119,7 +119,15 @@ npm run native:smoke
 
 ## Remaining migration boundary
 
-Production data now reaches an interactive native Pixi frame through one authoritative path. Application icons support pointer/keyboard activation, launch through Rust, and show explicit success/failure status. The current native slice cannot mutate layout state, so there is no dirty state to save before launch; the existing launch-critical save rule must be connected when native editing is introduced.
+## Product parity slice after ddeb94a
+
+- Shared core commit `b4aacb7`: original layout/drag/selection/provisional rollback implementation moved to application, Vue retains host adapters. Native now consumes the same rule owners; frame remains a detached rendering projection.
+- Native now has original folder desktop fade/scale/offset, desktop page dots and click navigation, shared pointer gesture handling for touch/mouse, search/IME/pinyin results, context menu, app/name/target/args editing and browse, icon update/reset, removal confirmation, dissolve, selection toolbar, group folder creation and drag ordering/rollback.
+- Rust saveLayout reuses existing format validation and atomic file replacement. Serialized saves retain dirty state on failure; launch and normal close flush first. Starter beforeClose rejection keeps the window open. Automatic smoke uses only isolated data; real user edits intentionally persist to the existing layout location.
+- Validation passed: full project check; all final types/tests; 7 Chromium multi-select management regressions; Rust save protocol roundtrip/invalid-no-overwrite test; save queue retry/serialization; native stable build and GPU search/IME/touch/multi-pointer cancel/mouse drag cancel+commit/group folder creation/new-host reload plus prior folder/page/title/resize checks. GPU screenshots are retained in artifacts/native-smoke.
+- These historical tests do not cover every visual or hardware configuration. Main paths are implemented, but this is not complete product or pixel parity, nor certification of physical touchpad/IME candidate-window/mixed-DPI behavior.
+
+Production data reaches an interactive native Pixi frame through the shared layout owner. Native editing mutates that owner, persists through Rust and flushes before launch/normal close, with explicit failure. Search pages are derived and do not replace saved desktop pages.
 
 Bundled fonts are intentionally deferred because the repository has no redistributable font asset. The public registration API is ready when one is selected. Editing, search and WinUI-style settings controls remain later slices.
 
@@ -137,4 +145,4 @@ Required and completed: synchronous successful `presented` notification (0.2.1),
 
 ## Next complete slice
 
-Next action after this acceptance/commit: connect multi-touch pointer capture/cancel to the existing gesture engine, then search, settings, editing/persistence and final WebView removal. Preserve the single state owner and fixed-release boundary.
+The next step at this historical checkpoint was settings and full desktop host migration. This is not a current task directive; the Native product boundary is documented in [native-architecture.md](native-architecture.md).

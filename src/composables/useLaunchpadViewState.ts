@@ -4,6 +4,7 @@ import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument
 import type { BackgroundImageLayout } from "../domain/backgroundImageLayout.js";
 import type { NormalizedLiveDesktopBackgroundSupport } from "./useLaunchpadSettingsConfig.js";
 import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
+import { FOLDER_OPEN_DESKTOP_TRANSFORM } from "../rendering/desktopVisualTargets.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_DIMMED,
@@ -167,7 +168,7 @@ export function useLaunchpadViewState(options: LaunchpadViewStateOptions) {
   }));
   const desktopVisualTransform = computed(() => {
     if (isDesktopAnimatingClosed.value) return { scale: DESKTOP_CLOSE_SCALE, y: 0 };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { scale: 0.92, y: 44 };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return FOLDER_OPEN_DESKTOP_TRANSFORM;
     return { scale: 1, y: 0 };
   });
   const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));

@@ -19,5 +19,5 @@
     "verbatimModuleSyntax": true
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],
-  "exclude": ["src/native/nativeMain.ts"]
+  "exclude": ["src/native/nativeMain.ts", "src/rendering/native/NativeSearchBar.ts", "src/rendering/native/NativeManagement.ts"]
 }

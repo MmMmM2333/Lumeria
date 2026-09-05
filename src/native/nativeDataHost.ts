@@ -155,6 +155,10 @@ export class NativeDataHost {
     return value === null ? null : assertLayoutDocument(value);
   }
 
+  async saveLayout(layout: LayoutDocument): Promise<void> {
+    await this.#request("saveLayout", { layout: assertLayoutDocument(layout) });
+  }
+
   async scanApps(
     roots: readonly CatalogScanRoot[],
     filters: CatalogScanFilters,

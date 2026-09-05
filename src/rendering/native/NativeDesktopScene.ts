@@ -1,9 +1,13 @@
 import { Container } from "pixi.js";
+import { FOLDER_OPEN_DESKTOP_TRANSFORM } from "../desktopVisualTargets.js";
+import { NativePageDots } from "./NativePageDots.js";
+import { t } from "../../native/nativeLocalization.js";
 import {
   assertCompleteDesktopSceneFrame,
   type CompleteDesktopSceneFrame,
   type SceneItem,
   type ScenePageTrackScrub,
+  type SceneDataRecord,
 } from "../sceneFrame.js";
 import {
   DEFAULT_FOLDER_COLS,
@@ -57,21 +61,19 @@ export type NativeDesktopSceneOptions = Readonly<{
   onFolderPageIndexCommit?: ((pageIndex: number) => void) | undefined;
   onFolderRenderRequest?: (() => void) | undefined;
   onIconActivate?: ((item: SceneItem) => void) | undefined;
+  onDesktopPageIndexCommit?: ((index: number) => void) | undefined;
+  onIconPointerDown?: ((item: SceneItem, source: SceneDataRecord | null, event: unknown) => void) | undefined;
+  onGroupReleaseComplete?: ((result: unknown) => void) | undefined;
+  onRollbackComplete?: ((token:number)=>void) | undefined;
+  onIconEditAction?: ((action:"remove"|"choose-icon"|"reset-icon",item:SceneItem)=>void) | undefined;
 }>;
 
 function assertStaticFrame(frame: CompleteDesktopSceneFrame): void {
   const unsupported = [
     [frame.viewport.pageTrackScrub !== null, "viewport.pageTrackScrub"],
     [frame.visual.appLaunchCloseSessionId !== null, "visual.appLaunchCloseSessionId"],
-    [frame.interaction.dragFolderHoverState !== null, "interaction.dragFolderHoverState"],
-    [frame.interaction.dragFolderTargetId !== null, "interaction.dragFolderTargetId"],
-    [frame.interaction.dragMeta !== null, "interaction.dragMeta"],
-    [frame.interaction.groupDragState !== null, "interaction.groupDragState"],
-    [frame.interaction.iconGesturePresentation !== null, "interaction.iconGesturePresentation"],
     [frame.interaction.isDesktopClosing, "interaction.isDesktopClosing"],
-    [frame.interaction.isEditMode, "interaction.isEditMode"],
     [frame.interaction.isHomeRevealSettling, "interaction.isHomeRevealSettling"],
-    [frame.interaction.provisionalFolderRollback !== null, "interaction.provisionalFolderRollback"],
     [frame.folder.folderClosingHandoffId !== null, "folder.folderClosingHandoffId"],
     [frame.folder.folderSourceGhostedId !== null, "folder.folderSourceGhostedId"],
     [frame.folder.folderSourceGhostedIds.size > 0, "folder.folderSourceGhostedIds"],
@@ -131,7 +133,7 @@ function makeNativeFolderFrame(
       isIconOpening: () => false,
       setFolderPageRef,
     },
-    drag: { groupDragState: null, meta: null },
+    drag: { groupDragState: desktopFrame.interaction.groupDragState, meta: desktopFrame.interaction.dragMeta },
     folder: {
       closeIconGhosts: null,
       desktopClosing: false,
@@ -169,7 +171,7 @@ function makeNativeFolderFrame(
     },
     geometry: {
       canvasStageRect: stageRect,
-      desktopFrame: stageRect,
+      desktopFrame: { ...stageRect, top: 64, height: Math.max(1, viewport.height - 136) },
       desktopGrid: {
         cols: desktopFrame.viewport.gridCols,
         isSearchMode: false,
@@ -183,9 +185,9 @@ function makeNativeFolderFrame(
     stage: { rect: stageRect },
     ui: {
       focusedIcon: desktopFrame.interaction.focusedIcon,
-      iconGesturePresentation: null,
-      isBatchSelectionActive: false,
-      isEditMode: false,
+      iconGesturePresentation: desktopFrame.interaction.iconGesturePresentation,
+      isBatchSelectionActive: desktopFrame.interaction.isBatchSelectionActive,
+      isEditMode: desktopFrame.interaction.isEditMode,
       isTextlessMode: desktopFrame.interaction.isTextlessMode,
       launchTargetStatusById: desktopFrame.diagnostics.launchTargetStatusById,
       selectedAppIds: desktopFrame.interaction.selectedAppIds,
@@ -195,6 +197,8 @@ function makeNativeFolderFrame(
 }
 
 export class NativeDesktopScene {
+  readonly iconBoundsRegistry = createIconBoundsRegistry();
+  readonly #pageDots: NativePageDots;
   readonly #activationNodes = new WeakSet<Container>();
   readonly #folderLayout: NativeSceneFolderLayout;
   readonly #folderPageRefs = new Map<number, unknown>();
@@ -213,22 +217,32 @@ export class NativeDesktopScene {
     });
     this.#onFolderPageIndexCommit = options.onFolderPageIndexCommit ?? (() => {});
     this.#layer = new DesktopLayer({
-      iconBoundsRegistry: createIconBoundsRegistry(),
+      iconBoundsRegistry: this.iconBoundsRegistry,
       iconTextures: options.iconTextures,
+      renderCopy:{searchEmpty:t("launchpad.search.empty"),newFolderName:t("launchpad.newFolder")},
       onClosingFolderPointerDown: options.onFolderReopenRequest,
       onFolderInternalActivityChange: options.onFolderInternalActivityChange,
       onFolderOutsidePointerDown: options.onFolderCloseRequest,
       onFolderRenderRequest: options.onFolderRenderRequest,
-      onIconAction: (action) => {
+      onGroupReleaseComplete: result => options.onGroupReleaseComplete?.(result),
+      onProvisionalFolderRollbackComplete: payload => options.onRollbackComplete?.(payload.token),
+      onIconAction: (action, event, item, source) => {
         if (action !== "pointerdown") {
+          if(action==="remove" || action==="choose-icon" || action==="reset-icon") {
+            if(item)options.onIconEditAction?.(action,item);
+            return;
+          }
           throw new Error(`NativeDesktopScene received an unexpected icon action: ${action}`);
         }
+        if(item) options.onIconPointerDown?.(item, source ?? null, event);
       },
       showFolderTitle: true,
     });
     this.#onIconActivate = options.onIconActivate ?? null;
     this.#layer.label = "launchpad-native-desktop";
     stage.addChild(this.#layer);
+    this.#pageDots = new NativePageDots(index => options.onDesktopPageIndexCommit?.(index));
+    stage.addChild(this.#pageDots);
   }
 
   commit(
@@ -263,20 +277,22 @@ export class NativeDesktopScene {
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
     for (const id of this.#layer.singleStageFolderLayer.getDesktopSourceGhostedIds()) folderSourceGhostedIds.add(id);
     if (folderId) folderSourceGhostedIds.add(folderId);
+    const folderOpen = Boolean(folderState && !folderState.isFolderClosing);
+    this.#pageDots.update(frame, viewport.width, viewport.height, folderOpen || frame.interaction.isDesktopClosing);
     const structureFrame = makeDesktopStructureFrame({
       activePageIndex: frame.viewport.activePageIndex,
       activePages: frame.viewport.activePages,
-      desktopFrame: stageRect,
+      desktopFrame: { ...stageRect, top: 64, height: Math.max(1, viewport.height - 136) },
       desktopGridDebugOptions: null,
       desktopTrackMotionKey: frame.viewport.desktopTrackMotionKey,
-      desktopVisualAlpha: frame.visual.desktopVisualAlpha,
-      desktopVisualTransform: frame.visual.desktopVisualTransform,
+      desktopVisualAlpha: folderOpen ? 0 : frame.visual.desktopVisualAlpha,
+      desktopVisualTransform: folderOpen ? FOLDER_OPEN_DESKTOP_TRANSFORM : frame.visual.desktopVisualTransform,
       deviceResolution: viewport.resolution,
-      dragFolderHoverState: null,
-      dragFolderTargetId: null,
+      dragFolderHoverState: frame.interaction.dragFolderHoverState,
+      dragFolderTargetId: frame.interaction.dragFolderTargetId,
       dragHitDebugOptions: null,
       dragHitDebugState: null,
-      dragMeta: null,
+      dragMeta: frame.interaction.dragMeta,
       focusedIcon: frame.interaction.focusedIcon,
       folderClosingHandoffIds: folderId && folderState?.isFolderClosing
         ? new Set([folderId])
@@ -293,12 +309,12 @@ export class NativeDesktopScene {
       getVisibleDesktopPage: visibleItems,
       gridCols: frame.viewport.gridCols,
       gridRows: frame.viewport.gridRows,
-      groupDragState: null,
+      groupDragState: frame.interaction.groupDragState,
       height: viewport.height,
-      iconGesturePresentation: null,
+      iconGesturePresentation: frame.interaction.iconGesturePresentation,
       iconSize: frame.viewport.iconSize,
       isBatchSelectionActive: frame.interaction.isBatchSelectionActive,
-      isEditMode: false,
+      isEditMode: frame.interaction.isEditMode,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isHomeRevealSettling: false,
       isIconOpening: () => false,
@@ -308,7 +324,7 @@ export class NativeDesktopScene {
       launchpadVisualAlpha: frame.visual.launchpadVisualAlpha,
       launchpadVisualTransform: frame.visual.launchpadVisualTransform,
       pageTrackScrub: options.pageTrackScrub ?? null,
-      provisionalFolderRollback: null,
+      provisionalFolderRollback: frame.interaction.provisionalFolderRollback,
       selectedAppIds: frame.interaction.selectedAppIds,
       setPageRef: (element, pageIndex) => {
         if (element == null) this.#pageRefs.delete(pageIndex);
@@ -334,7 +350,8 @@ export class NativeDesktopScene {
         node.label = `launchpad-item:${item.id}`;
         if (pageIndex !== frame.viewport.activePageIndex || this.#activationNodes.has(node)) continue;
         this.#activationNodes.add(node);
-        node.on("pointertap", () => {
+        node.on("pointertap", event => {
+          if (event.pointerType === "touch" || event.pointerType === "mouse") return;
           const current = node.item;
           if (current) this.#onIconActivate?.(current);
         });
@@ -348,7 +365,8 @@ export class NativeDesktopScene {
         const sourcePageIndex = Number(node.source?.pageIndex);
         if (sourcePageIndex !== folderState.folderPageIndex || this.#activationNodes.has(node)) continue;
         this.#activationNodes.add(node);
-        node.on("pointertap", () => {
+        node.on("pointertap", event => {
+          if (event.pointerType === "touch" || event.pointerType === "mouse") return;
           const current = node.item;
           if (current) this.#onIconActivate?.(current);
         });
@@ -394,6 +412,11 @@ export class NativeDesktopScene {
     return this.#layer.singleStageFolderLayer.commitFolderVisualPresentation().closingFolderId;
   }
 
+  getPageRefs(): unknown[] { return Array.from({ length: this.#pageRefs.size }, (_, index) => this.#pageRefs.get(index)); }
+  getFolderPageRefs(): unknown[] { return Array.from({ length: this.#folderPageRefs.size }, (_, index) => this.#folderPageRefs.get(index)); }
+  getFolderPanelRect() { return this.#layer.singleStageFolderLayer.panelGeometry; }
+  getDesktopAlpha():number { return this.#layer.visualRoot.alpha; }
+
   getMotionSnapshot(): Readonly<{
     desktopPageTrackTargetX: number;
     desktopPageTrackX: number;
@@ -430,6 +453,8 @@ export class NativeDesktopScene {
     this.#folderPageRefs.clear();
     this.#pageRefs.clear();
     this.#layer.removeFromParent();
+    this.#pageDots.removeFromParent();
+    this.#pageDots.destroy();
     this.#layer.destroy({ children: true });
   }
 }

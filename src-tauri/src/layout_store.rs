@@ -90,7 +90,7 @@ pub(crate) fn load_layout_from_path(path: &Path) -> Result<Option<Value>, String
     Ok(Some(layout))
 }
 
-fn save_layout_to_path(path: &Path, layout: &Value) -> Result<(), String> {
+pub(crate) fn save_layout_to_path(path: &Path, layout: &Value) -> Result<(), String> {
     validate_layout_value(layout)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {

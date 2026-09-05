@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createLayoutSaveQueue } from "../application/layoutSaveQueue.js";
+import { assertLayoutDocument } from "../domain/layoutDocument.js";
+
+const document=assertLayoutDocument(JSON.parse(readFileSync(new URL("../domain/fixtures/layout-v2-roundtrip.json",import.meta.url),"utf8")));
+let fail=true;
+const writes:unknown[]=[];
+const queue=createLayoutSaveQueue(async value=>{if(fail)throw new Error("disk failure");writes.push(value);});
+queue.enqueue(document);
+await assert.rejects(queue.flush(),/disk failure/);
+assert.equal(queue.dirty,true,"failed writes remain dirty");
+fail=false;
+await queue.flush();
+assert.equal(queue.dirty,false);
+assert.deepEqual(writes,[document]);
+let release!:()=>void;
+const gate=new Promise<void>(resolve=>{release=resolve;});
+const serial:unknown[]=[];
+const pending=createLayoutSaveQueue(async value=>{serial.push(value);if(serial.length===1)await gate;});
+pending.enqueue(document);const flush=pending.flush();
+const next={...document,pages:[...document.pages]};pending.enqueue(next);
+release();await flush;
+assert.deepEqual(serial,[document,next],"a newer snapshot must follow the in-flight write");
+assert.equal(pending.dirty,false);
+console.log("Native persistence queue tests passed");

@@ -23,6 +23,7 @@ export type NativeScenePixelProof = Readonly<{
 export type NativeScenePixelProofOptions = Readonly<{
   background: readonly [number, number, number, number];
   contentBottom: number;
+  contentEnd?: number;
   emojiRegions: readonly NativePixelRegion[];
   iconRegions: readonly NativePixelRegion[];
   labelRegions: readonly NativePixelRegion[];
@@ -81,7 +82,7 @@ export function assertNativeScenePixels(
   options.labelRegions.forEach((region, index) => assertRegion(data, region, `Label region ${index}`));
 
   let bottomForegroundPixels = 0;
-  for (let y = options.contentBottom; y < data.height; y += 1) {
+  for (let y = options.contentBottom; y < (options.contentEnd ?? data.height); y += 1) {
     for (let x = 0; x < data.width; x += 1) {
       if (isForeground(data.pixels, (y * data.width + x) * 4, options.background)) {
         bottomForegroundPixels += 1;

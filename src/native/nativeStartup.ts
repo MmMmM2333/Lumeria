@@ -1,14 +1,13 @@
+import { t } from "./nativeLocalization.js";
 import type { CatalogScanFilters, CatalogScanRoot, ScannedCatalogApp } from "../domain/applicationCatalog.js";
+import { createLaunchpadLayoutState } from "../application/launchpadLayoutState.js";
+import { createNativeStateHost } from "../application/stateHost.js";
 import {
-  createLaunchpadDataHelpers,
   DEFAULT_SCAN_KEYWORD_BLACKLIST,
   normalizeNativeApp,
   type NormalizedScanRoot,
 } from "../domain/launchpadData.js";
-import {
-  createLaunchpadLayoutHelpers,
-  type LaunchpadPages,
-} from "../domain/launchpadLayout.js";
+import type { ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
 import {
   DEFAULT_COLS,
   DEFAULT_FOLDER_COLS,
@@ -153,42 +152,31 @@ export function makeNativeStartupScanRequest(layout: LayoutDocument | null): Nat
   };
 }
 
-function reconcilePages(
+export function createNativeLayoutState(
   layout: LayoutDocument | null,
   catalog: readonly ScannedCatalogApp[],
-): LaunchpadPages {
+  onChange: () => void = () => {},
+) {
   const settings = settingsFor(layout);
-  const pageSize = settings.gridRows * settings.gridCols;
-  const folderPageSize = settings.folderRows * settings.folderCols;
-  const layoutHelpers = createLaunchpadLayoutHelpers({
-    getPageSize: () => pageSize,
-    getFolderPageSize: () => folderPageSize,
-  });
-  const dataHelpers = createLaunchpadDataHelpers({
-    cloneItem: layoutHelpers.cloneItem,
-    clonePages: layoutHelpers.clonePages,
-    compactPages: layoutHelpers.compactPages,
-    ensurePage: layoutHelpers.ensurePage,
-    getFolderChildPages: layoutHelpers.getFolderChildPages,
-    getFolderPageSize: () => folderPageSize,
-    getNewFolderName: () => "Folder",
-    getPageSize: () => pageSize,
-    makeId: layoutHelpers.makeId,
-    withFolderPages: layoutHelpers.withFolderPages,
-  });
-  return dataHelpers.reconcileDocument(
+  const state = createLaunchpadLayoutState({ getNewFolderName: () => t("launchpad.newFolder"), seedEnabled: false }, createNativeStateHost(onChange));
+  state.applyConfiguration({ rows: settings.gridRows, cols: settings.gridCols,
+    folderRows: settings.folderRows, folderCols: settings.folderCols, iconSize: settings.iconSize,
+    folderIconSizeMode: layout?.settings.folderIconSizeMode, folderIconSize: layout?.settings.folderIconSize });
+  state.commitPages(state.operations.reconcileDocument(
     catalog.map(normalizeNativeApp),
     layout ?? { pages: [] },
     settings.hiddenAppIds,
-  ).pages;
+  ).pages);
+  return state;
 }
 
 export function makeNativeStartupFrame(
   layout: LayoutDocument | null,
   catalog: readonly ScannedCatalogApp[],
+  pages: ReadonlyLaunchpadPages = createNativeLayoutState(layout, catalog).presentation.pages.value,
 ): CompleteDesktopSceneFrame {
   const settings = settingsFor(layout);
-  const activePages = reconcilePages(layout, catalog);
+  const activePages = pages;
   const frame = makeDesktopSceneFrame({
     activePageIndex: 0,
     activePages,

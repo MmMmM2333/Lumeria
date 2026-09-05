@@ -21,6 +21,8 @@ export {
 	type NativeResizeMode,
 } from "./runtime/native-app";
 export { registerNativeFont, registerNativeFontData } from "./rendering/native-skia";
+export { createTextInputHost, TextInput, TextInputHost } from "./input/text-input";
+export type { TextInputOptions, TextInputStyle, TextInputHostOptions } from "./input/text-input";
 
 export const nativeHost = Object.freeze({
 	platform: nativePlatform,

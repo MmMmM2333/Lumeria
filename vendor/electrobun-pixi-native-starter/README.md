@@ -11,6 +11,8 @@ PixiJS scene → WebGPURenderer → Electrobun adapter → Dawn/WebGPU → GpuWi
 
 ## 运行
 
+0.2.2 公开 `createTextInputHost`/`TextInput`/相关类型；`chrome:false` 仅绘制编辑内容，由消费者提供外观，保留 IME、选择、撤销、剪贴板及既有 focus/blur/change 事件。`focused`/`composing` 可供宿主路由键盘。`app.beforeClose(async () => save())` 在正常窗口关闭前等待；reject 保留窗口，成功才清理并关闭。直接 dispose 为强制清理接口，不运行 guard。
+
 Starter 0.2.1 新增 `app.on("presented", listener)`：在普通渲染或 fast-bundle 成功提交后同步通知，早于 `nextPresent()` Promise 的 continuation 和动画排入的微任务。事件包含 `frameNumber/deviceGeneration/surfaceGeneration`；失败帧不通知。回调只保存已呈现的场景快照或 invalidate，不可重入渲染；监听器抛错会进入 fatal 状态。返回的函数用于取消订阅，dispose 清理所有订阅。DLL ABI 保持 4。
 
 回调实际宿主验证：`$env:PIXI_PRESENTED_SMOKE='1'; npm start`。
@@ -46,7 +48,7 @@ await presented;
 版本化 release 本身就是完整项目，不需要旁边存在本仓库、兄弟仓库、原仓库 `node_modules` 或全局 Electrobun devkit。解压后直接：
 
 ```powershell
-cd C:\path\to\electrobun-pixi-native-starter-0.2.1-win-x64
+cd C:\path\to\electrobun-pixi-native-starter-0.2.2-win-x64
 npm install
 npm run dev
 npm run build

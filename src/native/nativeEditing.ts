@@ -1,0 +1,144 @@
+import { t } from "./nativeLocalization.js";
+import { createLaunchpadDrag, type LaunchpadDragOptions, type LaunchpadDragPointerEvent, type CompleteGroupReleaseResult } from "../application/launchpadDrag.js";
+import { createNativeStateHost } from "../application/stateHost.js";
+import { createLaunchpadSelectionSession } from "../application/launchpadSelectionSession.js";
+import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
+import { createProvisionalFolderRollback } from "../application/provisionalFolderRollback.js";
+import type { LaunchpadPages, ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
+import type { createNativeLayoutState } from "./nativeStartup.js";
+import type { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import type { NativeFolderFlow } from "../rendering/native/nativeFolderFlow.js";
+
+type Options = {
+  layout: ReturnType<typeof createNativeLayoutState>;
+  scene: NativeDesktopScene;
+  folder: NativeFolderFlow;
+  size(): { width: number; height: number };
+  changed(): void;
+  commit(pages: LaunchpadPages): void;
+  open(id: string | null): void;
+  page(index: number): void;
+  folderPage(index: number): void;
+};
+
+export function createNativeEditing(options: Options) {
+  const state = createNativeStateHost(options.changed);
+  const selection = createLaunchpadSelectionSession(state);
+  const mode = state.cell(false);
+  let revision = 0;
+  const layout = options.layout;
+  const cells = layout.presentation;
+  const rollback=createProvisionalFolderRollback({cloneItem:layout.operations.cloneItem},state);
+  const timers = new Map<number, ReturnType<typeof setTimeout>>();
+  let timerId = 0;
+  const schedule = (callback: () => void, delay: number): number => {
+    const id = ++timerId;
+    timers.set(id, setTimeout(() => { timers.delete(id); callback(); }, delay));
+    return id;
+  };
+  const clear = (id: number) => { clearTimeout(timers.get(id)); timers.delete(id); };
+  const rect = () => { const { width, height } = options.size(); return { left: 0, top: 64, width, height: height - 136, right: width, bottom: height - 72 }; };
+  const folderRect = () => {
+    const value = options.scene.getFolderPanelRect();
+    return value ? { ...value, right: value.left + value.width, bottom: value.top + value.height } : rect();
+  };
+  const commit = (pages: LaunchpadPages) => { revision += 1; options.commit(pages); selection.reconcile(pages); };
+  const drag = createLaunchpadDrag({
+    ...layout.operations,
+    pages: cells.pages,
+    gridCols: cells.gridCols, gridRows: cells.gridRows, iconSize: cells.iconSize,
+    folderCols: cells.folderCols, folderPageSize: cells.folderPageSize,
+    folderPageIndex: state.derived(() => options.folder.snapshot().folderPageIndex),
+    folderPages: state.derived(() => options.folder.snapshot().renderedFolder?.childPages ?? []) as LaunchpadDragOptions["folderPages"],
+    openFolderId: state.derived(() => options.folder.snapshot().isClosing ? null : options.folder.snapshot().renderedFolder?.id ?? null),
+    pageIndex: cells.pageIndex,
+    get pageRefs() { return options.scene.getPageRefs() as LaunchpadDragOptions["pageRefs"]; },
+    get folderPageRefs() { return options.scene.getFolderPageRefs() as LaunchpadDragOptions["folderPageRefs"]; },
+    desktopMainRef: state.derived(() => ({ getBoundingClientRect: rect })),
+    folderPanelRef: state.derived(() => ({ getBoundingClientRect: folderRect })),
+    folderViewportRef: state.derived(() => ({ getBoundingClientRect: folderRect })),
+    visibleFolderRowCount: cells.folderRows,
+    iconBoundsRegistry: options.scene.iconBoundsRegistry,
+    getBatchCancelZoneRect:()=>selection.isActive.value?{left:(options.size().width-Math.min(760,options.size().width-40))/2,top:14,width:Math.min(760,options.size().width-40),height:54}:null,
+    isHomeRevealSettling: state.derived(() => false),
+    isLaunchpadInteractionBlocked: () => false,
+    finishHomeRevealSettleWindow: () => {},
+    getGroupLayoutRevision: () => revision,
+    getNewFolderName: () => t("launchpad.newFolder"),
+    commitPageIndex: options.page,
+    commitFolderPageIndex: options.folderPage,
+    commitOpenFolder: options.open,
+    planGroupTransfer: request => planGroupTransfer({ basePages: request.basePages,
+      baseRevision: request.baseRevision, currentRevision: revision,
+      selectedIds: request.draggedIds, leadId: request.leadId, intent: request.intent,
+      makeFolderId: () => request.createdFolderId, folderName: t("launchpad.newFolder"),
+      pageSize: cells.pageSize.value, folderPageSize: cells.folderPageSize.value }),
+    commitGroupDrop: (plan, operation) => {
+      if(operation.baseRevision !== revision || (!operation.standalone && operation.selectionRevision !== selection.revision.value)) return false;
+      const openId = options.folder.snapshot().renderedFolder?.id;
+      if(openId && !(operation.intent?.type === "folder-slot" && operation.intent.folderId === openId)) options.open(null);
+      commit(plan.nextPages);
+      return true;
+    },
+    discardProvisionalFolder: (id,request) => {
+      if(layout.operations.findFolder(cells.pages.value, id)) return false;
+      rollback.begin({...request,folderId:id});
+      options.open(null);
+      return true;
+    },
+    onGroupDragStart: payload => { if(!payload.standalone) selection.freeze("drag"); },
+    onGroupDragEnd: () => selection.unfreeze("drag"),
+  }, state, {
+    setTimeout: schedule, clearTimeout: clear,
+    requestAnimationFrame: callback => schedule(callback, 0), cancelAnimationFrame: clear,
+    // Native Pixi has no automatic browser context menu to suppress.
+    addEventListener: () => {}, removeEventListener: () => {}, afterCommit: queueMicrotask,
+  });
+  const projectedPages = (): ReadonlyLaunchpadPages => rollback.projectedPages.value ?? drag.projectedPages.value ?? cells.pages.value;
+  return {
+    drag, selection, mode, projectedPages,rollback,
+    commit,
+    beginDrag(id: string, event: LaunchpadDragPointerEvent): boolean {
+      const pages = cells.pages.value;
+      const top = layout.operations.findTopLevel(pages, id);
+      const nested = top ? null : pages.flat().filter(item => item.type === "folder")
+        .map(folder => layout.operations.findInFolder(pages, folder.id, id)).find(Boolean);
+      const item = top?.item ?? nested?.item;
+      if(!item) return false;
+      const source = top ? { type: "page" as const, pageIndex: top.pageIndex, index: top.index }
+        : { type: "folder" as const, folderId: nested!.folder.id, pageIndex: nested!.pageIndex, index: nested!.index };
+      return drag.startDrag(event, item, source, selection.isActive.value ? {
+        draggedIds: selection.isSelected(id) ? [...selection.selectedIds.value] : [id],
+        leadId: id, layoutRevision: revision, selectionRevision: selection.revision.value,
+      } : undefined);
+    },
+    complete(result: unknown): void { drag.completeGroupRelease(result as CompleteGroupReleaseResult); },
+    remove(ids: readonly string[]): void {
+      let pages = layout.operations.clonePages(cells.pages.value);
+      for(const id of ids) pages = layout.operations.removeEverywhere(pages, id);
+      commit(pages);
+    },
+    rename(id: string, name: string): void {
+      if(!name.trim()) throw new Error("Name is required");
+      const pages = layout.operations.clonePages(cells.pages.value);
+      const item = pages.flatMap(itemPage => itemPage.flatMap(item => item.type === "folder" ? [item, ...item.childPages.flat()] : [item]))
+        .find(item => item?.id === id);
+      if(!item) throw new Error("Item no longer exists");
+      item.name = name.trim();
+      if(item.type === "app" && item.origin === "catalog") item.presentationOverrides = { ...item.presentationOverrides, name: item.name };
+      commit(pages);
+    },
+    createFolder(): boolean {
+      const ids = [...selection.selectedIds.value];
+      const lead = ids[0];
+      if(ids.length < 2 || !lead) return false;
+      const plan = planGroupTransfer({ basePages: cells.pages.value, baseRevision: revision, currentRevision: revision,
+        selectedIds: ids, leadId: lead, intent: { type: "toolbar-folder-create", anchorId: lead },
+        makeFolderId: () => layout.operations.makeId("folder"), folderName: t("launchpad.newFolder"), pageSize: cells.pageSize.value, folderPageSize: cells.folderPageSize.value });
+      if(plan.status !== "accepted") return false;
+      return drag.startCommittedGroupTransfer({ baseRevision: revision, draggedIds: ids, leadId: lead,
+        selectionRevision: selection.revision.value, plan, commit: accepted => { commit(accepted.nextPages); selection.clear(); return true; } });
+    },
+    dispose(): void { drag.disposeDrag(); rollback.dispose(); for(const timer of timers.values()) clearTimeout(timer); timers.clear(); },
+  };
+}

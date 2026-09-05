@@ -529,10 +529,7 @@ assert.throws(
   "native pixel proof should reject an icon region without colored pixels",
 );
 
-assert.throws(
-  () => scene.commit(makeCompleteFrame({ isEditMode: true }), { height: 600, resolution: 1, width: 900 }),
-  /interaction\.isEditMode/,
-);
+assert.doesNotThrow(() => scene.commit(makeCompleteFrame({ isEditMode: true }), { height: 600, resolution: 1, width: 900 }), "native scene should accept shared edit presentation");
 assert.throws(
   () => scene.commit(frame, { height: 600, resolution: 0, width: 900 }),
   /NativeSceneViewport\.resolution/,

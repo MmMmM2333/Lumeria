@@ -57,6 +57,33 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 			assert.equal(failedFrameEvents, 0, "a timeout must not report successful presentation");
 		} finally { offFailure(); }
 		console.log("Presented callback smoke passed: synchronous ordering, monotonic frames, scene changes and unsubscribe");
+		testing.resume();
+		let attempts = 0;
+		let release!: () => void;
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		const offGuard = app.beforeClose(async () => {
+			attempts += 1;
+			if (attempts === 1) throw new Error("expected save failure");
+			await gate;
+		});
+		app.window.requestClose();
+		await new Promise(resolve => setTimeout(resolve, 100));
+		assert.equal(attempts, 1);
+		assert.equal(app.state, "running", "save failure must retain the window");
+		app.window.requestClose();
+		await new Promise(resolve => setTimeout(resolve, 100));
+		assert.equal(attempts, 2);
+		assert.equal(app.state, "running", "pending save must delay close");
+		console.log("Close guard failure and pending-save checks passed; releasing save");
+		release();
+		const closeDeadline = performance.now() + 3000;
+		const isClosed = () => app.state === "closed";
+		while (!isClosed()) {
+			if (performance.now() > closeDeadline) throw new Error("guarded close did not finish");
+			await new Promise(resolve => setTimeout(resolve, 10));
+		}
+		offGuard();
+		console.log("Close guard smoke passed: failure retains window, retry waits for save then closes");
 	} finally {
 		off(); stop(); await app.dispose();
 	}

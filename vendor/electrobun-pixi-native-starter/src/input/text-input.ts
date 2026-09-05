@@ -62,6 +62,7 @@ export interface TextInputStyle {
 }
 
 export interface TextInputOptions {
+  chrome?: boolean;
 	width: number;
 	height: number;
 	value?: string;
@@ -333,6 +334,7 @@ export class TextInputHost {
 }
 
 export class TextInput extends Container {
+  private readonly chrome: boolean;
 	readonly multiline: boolean;
 	readonly editor: TextEditor;
 	revision = 0;
@@ -366,6 +368,7 @@ export class TextInput extends Container {
 		private placeholder = options.placeholder ?? "",
 	) {
 		super();
+		this.chrome = options.chrome !== false;
 		if (!Number.isFinite(this.inputWidth) || this.inputWidth <= 0
 			|| !Number.isFinite(this.inputHeight) || this.inputHeight <= 0) {
 			throw new RangeError("TextInput width and height must be positive");
@@ -411,6 +414,8 @@ export class TextInput extends Container {
 	}
 
 	get value(): string { return this.editor.state.value; }
+	get focused(): boolean { return this.focusedState; }
+	get composing(): boolean { return this.editor.view.composition != null; }
 	set value(value: string) { this.setValue(value); }
 	get selection(): Readonly<TextSelection> {
 		const { anchor, focus } = this.editor.state;
@@ -554,10 +559,11 @@ export class TextInput extends Container {
 	private draw(): void {
 		const style = this.inputStyle;
 		const inner = this.innerSize();
-		this.background.clear().roundRect(0, 0, this.inputWidth, this.inputHeight, 8)
+		this.background.clear();
+		if (this.chrome) this.background.roundRect(0, 0, this.inputWidth, this.inputHeight, 8)
 			.fill({ color: style.backgroundColor }).stroke({ color: style.borderColor, width: 1 });
 		this.focusLayer.clear();
-		if (this.focusedState) this.focusLayer.roundRect(0, 0, this.inputWidth, this.inputHeight, 8)
+		if (this.chrome && this.focusedState) this.focusLayer.roundRect(0, 0, this.inputWidth, this.inputHeight, 8)
 			.stroke({ color: style.focusColor, width: 2 });
 		this.clip.clear().rect(style.padding, style.padding, inner.width, inner.height).fill({ color: 0xffffff });
 		this.alpha = this._disabled ? 0.55 : 1;

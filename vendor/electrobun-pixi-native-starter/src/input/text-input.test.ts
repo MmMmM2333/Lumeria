@@ -166,5 +166,17 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	(scrollInput as any).emit("wheel", { deltaY: 1, deltaMode: 2 });
 	expect(scrollInput.editor.state.scrollY).toBe(92);
 
+	const plain = host.create({ width: 200, height: 35, chrome: false });
+	root.addChild(plain);
+	plain.focus();
+	expect(plain.focused).toBe(true);
+	expect((plain as any).background.context.instructions.length).toBe(0);
+	expect((plain as any).focusLayer.context.instructions.length).toBe(0);
+	plain.beginComposition();
+	expect(plain.composing).toBe(true);
+	plain.cancelComposition();
+	expect(plain.composing).toBe(false);
+	plain.blur();
+	expect(plain.focused).toBe(false);
 	host.destroy();
 });

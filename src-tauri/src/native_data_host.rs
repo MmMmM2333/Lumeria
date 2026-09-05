@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use crate::{
     catalog::{scan_apps_from_roots, ScanFilters, ScanRoot},
     find_app_in_saved_scan_roots, launch_selected_app,
-    layout_store::load_layout_from_path,
+    layout_store::{load_layout_from_path, save_layout_to_path},
     models::AppCatalogItem,
     resolve_launchable_app, validate_launch_app_id, LaunchFailure,
 };
@@ -22,6 +22,7 @@ const APP_IDENTIFIER: &str = "com.lumeria.app";
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    SaveLayout { version: u32, id: u64, layout: Value },
     Hello {
         version: u32,
         id: u64,
@@ -49,6 +50,7 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::SaveLayout { id, .. }
             | Self::LoadLayout { id, .. }
             | Self::ScanApps { id, .. }
             | Self::LaunchApp { id, .. } => *id,
@@ -58,6 +60,7 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::SaveLayout { version, .. }
             | Self::LoadLayout { version, .. }
             | Self::ScanApps { version, .. }
             | Self::LaunchApp { version, .. } => *version,
@@ -174,6 +177,7 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
 
     let result = match request {
         Request::Hello { .. } => Ok(json!({ "protocolVersion": PROTOCOL_VERSION })),
+        Request::SaveLayout { layout, .. } => save_layout_to_path(&data_dir.join("layout.json"), &layout).map(|()| Value::Null),
         Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
             .and_then(|layout| serde_json::to_value(layout).map_err(|error| error.to_string())),
         Request::ScanApps { roots, filters, .. } => icon_cache_dir(data_dir).and_then(|icon_dir| {
@@ -223,6 +227,22 @@ fn launch_app(app_id: &str, data_dir: &Path, state: &HostState) -> Result<(), La
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_protocol_roundtrips_and_rejects_invalid_layout_without_overwrite() {
+        let data_dir = env::temp_dir().join(format!("lumeria-native-save-{}", std::process::id()));
+        let mut state = HostState::default();
+        let layout: Value = serde_json::from_str(include_str!("../../src/domain/fixtures/layout-v2-roundtrip.json")).unwrap();
+        let saved = handle_line(&json!({"version":1,"id":1,"operation":"saveLayout","layout":layout}).to_string(), &data_dir, &mut state);
+        assert!(saved.ok, "{:?}", saved.error);
+        let loaded = handle_line(r#"{"version":1,"id":2,"operation":"loadLayout"}"#, &data_dir, &mut state);
+        assert_eq!(loaded.value, Some(layout.clone()));
+        let rejected = handle_line(r#"{"version":1,"id":3,"operation":"saveLayout","layout":{}}"#, &data_dir, &mut state);
+        assert!(!rejected.ok);
+        assert_eq!(load_layout_from_path(&data_dir.join("layout.json")).unwrap(), Some(layout));
+        fs::remove_file(data_dir.join("layout.json")).unwrap();
+        fs::remove_dir(data_dir).unwrap();
+    }
 
     #[test]
     fn protocol_reports_success_and_explicit_errors() {
