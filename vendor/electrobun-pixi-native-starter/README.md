@@ -42,7 +42,7 @@ await presented;
 版本化 release 本身就是完整项目，不需要旁边存在本仓库、兄弟仓库、原仓库 `node_modules` 或全局 Electrobun devkit。解压后直接：
 
 ```powershell
-cd C:\path\to\electrobun-pixi-native-starter-0.1.1-win-x64
+cd C:\path\to\electrobun-pixi-native-starter-0.2.0-win-x64
 npm install
 npm run dev
 npm run build
@@ -187,6 +187,7 @@ npm run debug:pixi -- capture
 npm run debug:pixi -- hover interactive-mark
 npm run debug:pixi -- click interactive-mark
 npm run debug:pixi -- native-input-check
+npm run debug:pixi -- native-touch-check
 npm run debug:pixi -- pause
 npm run debug:pixi -- step 1
 npm run debug:pixi -- resume
@@ -199,7 +200,7 @@ npm run debug:pixi -- file-drop-status
 npm run test:lifecycle
 ```
 
-`test:lifecycle` 会依次覆盖窗口原地 resize、DPI hit-test、真实 Win32 单击去重、capture 后拖出窗口并在窗口外释放、IME 会话、异步 jobs、dirty-frame 空闲、filter/mask/RenderTexture 标准渲染指纹、surface timeout/outdated/lost、device lost、internal GPU error、暂停/单步、最小化/恢复和 GPU 截图。validation 与 OOM 故意停在 `failed`，避免错误代码触发无休止的设备重建；确认原因后可手动恢复：
+`test:lifecycle` 会依次覆盖窗口原地 resize、DPI hit-test、真实 Win32 单击和滚轮、单指/双指触屏、触屏取消、capture 后拖出窗口并在窗口外释放、IME 会话、异步 jobs、dirty-frame 空闲、filter/mask/RenderTexture 标准渲染指纹、surface timeout/outdated/lost、device lost、internal GPU error、暂停/单步、最小化/恢复和 GPU 截图。validation 与 OOM 故意停在 `failed`，避免错误代码触发无休止的设备重建；确认原因后可手动恢复：
 
 ```powershell
 npm run debug:pixi -- fault validation
@@ -242,6 +243,7 @@ npm run debug:pixi -- recover
 | PNG/JPEG/WebP/AVIF/SVG texture | 可用 | Skia 解码成 RGBA8；SVG 在这里是栅格纹理 |
 | `Text`、CJK、系统字体、描边和换行 | 可用 | Pixi CanvasText 走 Skia Canvas2D，不依赖浏览器 |
 | pointer、wheel、keyboard、focus、capture/cancel | 可用 | Rust 在 WGPU HWND 所属 UI 线程挂接 Win32 消息，再通过有界队列投递给 Bun/Pixi |
+| Windows 触屏和多点触控 | 可用 | `WM_POINTER`/`PT_TOUCH` 映射为 Pixi touch pointer；保留逐触点 ID、主触点、接触面积、压力、取消和隐式捕获 |
 | 微软拼音 composition/commit/candidate | 可用 | 原生 IME 会话、UTF-16 commit 与物理 caret 定位 |
 | Save As、文件拖入/拖出 | 可用 | Win32 Save dialog + `WM_DROPFILES` + OLE `CF_HDROP` |
 | `renderer.extract.pixels/canvas/base64/image/download/log` | 可用 | GPU readback + Skia；这些方法在本项目中是异步的，`log` 输出尺寸信息 |
@@ -312,6 +314,8 @@ await renderer.extract.download({ target: stage, filename: "capture.png" });
 - 正式模式使用 FIFO + dirty frame；BunnyMark 使用 Mailbox + continuous frame。窗口最小化会停帧。
 - 纯 root batch（包括多 batch）会编译为有序 render bundles，并在原生层一次 acquire、一次 submit、一次 present；filter/mask/RenderTexture 等复杂 pass 自动回退标准 `renderer.render()`。
 - HWND ring 是启用后的唯一 pointer/keyboard/lifecycle 权威源；Windows 输入包含 capture/cancel、窗口外 move/up、pointerId、client/screen 坐标、完整 buttons、横纵滚轮、修饰键、物理 `code`、逻辑 `key`、repeat、focus/blur 和系统 cursor。
+- `PT_TOUCH` 直接映射为 Pixi `FederatedPointerEvent`：每个触点独立维护 `pointerId`、`isPrimary`、`width/height`、`pressure` 和捕获路径；client 坐标、movement 与接触面积按窗口 DPI 转为逻辑像素。Pixi 继续公开 `pointerupoutside` 表示捕获后在命中区域外结束。
+- Starter 不识别 pinch、swipe、翻页或惯性，也没有浏览器 `touch-action`；业务通过这些 pointer 字段自行实现手势。
 - 对应用公开的 Pixi `FederatedWheelEvent` 固定为 `deltaMode = 0`：一个 Win32 `WHEEL_DELTA` 映射为 100 个逻辑像素，纵向符号与浏览器一致；小于一格的触控板/高精度滚轮增量按比例保留，delta 不随窗口 DPI 缩放。
 - `onHostEvent` 仅用于底层诊断，保留 Win32 原始 wheel delta，不是 DOM/Pixi 兼容事件；业务手势必须监听 Pixi `wheel`。
 - 100px 标定与 Chromium 在 Windows 默认“三行/格”设置下的换算一致；Starter 将它固定为手势强度，不把系统滚动行数伪装成 DOM `line` 单位。需要传统文本滚动的控件仍应按最终 `deltaMode` 处理。[Chromium Windows wheel builder](https://chromium.googlesource.com/chromium/src/+/e22d04949d069f7184b3233d1b83e26fe79e1bcc/ui/events/blink/web_input_event_builders_win.cc)
@@ -329,7 +333,9 @@ await renderer.extract.download({ target: stage, filename: "capture.png" });
 | `<video>`、摄像头、MediaStream | 依赖浏览器媒体栈；用原生解码器逐帧写入 `BufferImageSource` |
 | DOM SVG/`parseAsGraphicsContext` 完整语义 | 普通 SVG 图片已由 Skia 栅格化；需要可编辑矢量时直接构造 `Graphics` |
 | 压缩 GPU texture 与 WebGPU 3D texture | 当前 native feature/adapter 没有可靠暴露；保持禁用，避免产生“创建成功但渲染错误”的假能力 |
-| 原生触屏、多点触控和笔输入 | 当前只支持 Windows 提升为鼠标的主触点；尚未接入 `WM_POINTER`，不会把它标记成真正的 touch/pen 支持 |
+| 触控笔 pressure/tilt/twist/hover | 0.2.0 只消费 `PT_TOUCH`；笔输入继续交给系统默认路径，待有明确业务需求时再扩 ABI |
+| 触控板 source/momentum/phase | 双指滚动已作为高精度 wheel 工作，但 Windows 当前链路不可靠区分设备来源和惯性阶段 |
+| Windows 系统触摸键盘 | 自定义 Pixi 文本控件不会自动获得系统文本服务焦点；当前只提供 IMM 输入法会话 |
 | macOS/Linux 原生宿主 | 当前原生输入、IME、surface 与 DLL 是 Windows 实现；待 Windows 路径稳定后再拆平台层 |
 
 这里没有实现大而全的 DOM polyfill。Pixi 真正只缺一小块 Canvas2D 的地方交给 Skia，GPU 路径直接补 adapter/device 命令；浏览器独有能力则留在明确的平台边界之外。

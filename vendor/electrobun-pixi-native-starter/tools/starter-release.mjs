@@ -50,6 +50,7 @@ const CAPABILITIES = [
 	[9, "input-diagnostics"],
 	[10, "input-wake"],
 	[11, "lifecycle-events"],
+	[12, "touch-input"],
 ];
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));

@@ -154,10 +154,15 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	const pointerEvents: Array<Record<string, unknown>> = [];
 	const wheelEvents: Array<Record<string, unknown>> = [];
 	const recordPointer = (event: any) => {
-		pointerEvents.push({ type: event.type, x: event.clientX, y: event.clientY, button: event.button, buttons: event.buttons });
+		pointerEvents.push({
+			type: event.type, x: event.clientX, y: event.clientY,
+			pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: event.isPrimary,
+			width: event.width, height: event.height, pressure: event.pressure,
+			button: event.button, buttons: event.buttons,
+		});
 		if (pointerEvents.length > 128) pointerEvents.shift();
 	};
-	for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "gotpointercapture", "lostpointercapture"]) {
+	for (const type of ["pointerdown", "pointermove", "pointerup", "pointerupoutside", "pointercancel", "gotpointercapture", "lostpointercapture"]) {
 		mark.on(type, recordPointer);
 	}
 	root.on("wheel", (event: any) => {

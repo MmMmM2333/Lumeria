@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "按固定发行版流程将 Starter 0.1.1 升级至已选定的 0.2.0 / ABI 4；先核对发行版，再运行 manifest、patch、typecheck、native build/smoke"
+next_entry: "继续步骤 3/4：共享 domain 焦点规则，移除 native 自动首项焦点和异步翻页门禁，验证键盘与 wheel/scrub 一致性"
 ---
 
 # Native WebGPU migration
@@ -14,6 +14,8 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Confirmed direction
 
+- Active task (2026-09-05): user authorized completing steps 2, 3 and 4 in this run: independently upgrade/verify/commit Starter 0.2.0, then restore shared original focus/keyboard semantics and synchronous wheel/page-track integration, removing replaced paths. Baseline commit: `714385a`. Do not expand into touch, folder interruption, search or settings in this task.
+
 - Target Electrobun plus native WebGPU; Deno is out of scope.
 - Keep the existing domain and `CompleteDesktopSceneFrame` boundary.
 - Keep Vue/WebView until the native path reaches feature parity; do not introduce a second domain-state owner.
@@ -21,7 +23,7 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Completed native slice
 
-- Starter `0.1.1`, release commit `7ee8a40`, is vendored with manifest schema v2, complete file hashes, native ABI 3, capability-mask validation, and stable path-/memory-backed font registration exports.
+- Starter `0.2.0`, release commit `b3e6536`, is vendored with manifest schema v2, complete file hashes, native ABI 4, capability-mask validation, and stable path-/memory-backed font registration exports.
 - Electrobun `2.0.1`, PixiJS `8.20.1`, Pretext `0.0.8`, native DLLs, patched devkit and consumer runner are fixed by the release contract.
 - `tsconfig.electrobun.json` extends the vendored consumer config; Electrobun build/copy/patch operations use only public consumer files.
 - `src/native/nativeMain.ts` uses public `createNativePixiApplication()`, `app.animate()`, `invalidate()` and `nextPresent()`.
@@ -91,6 +93,8 @@ npm run native:smoke
 - One earlier readback lacked the second folder-page title. Diagnostic state reported visible/in-bounds text, and subsequent captures including the final run without diagnostics show it normally. No title-specific fix or root cause is claimed; revisit with native frame diagnostics if reproduced.
 
 ## Current slice handoff
+
+- Step 2 completed on 2026-09-05: public release installer validated all 528 payload files and ABI 4/0x1fbf before and after installation. Patch checks, app/tools/native types, npm tests, stable native build and native GPU smoke passed. The 0.1.1 payload was replaced, not retained as a runtime alternative. No application behavior changes are included in the upgrade commit. Steps 3/4 are now the active work.
 
 - Changed anchors: `nativeMain.ts` and its smoke runner; `nativeStartup.ts`; `NativeDesktopScene.ts`; `nativeFolderFlow.ts`; shared `folderLayoutMetrics.ts` and Vue consumer; `DesktopLayer.ts`, `FolderOverlayLayer.ts`, `IconNode.ts`; native scene tests; source-policy test and exclusions; vendored Starter 0.1.1 release payload.
 - Removed/replaced paths: native sign-only wheel helper, Vue-local duplicate folder metric implementation, windowed native texture retention, and implicit Web texture repository use by native folder children/ghosts. Do not restore them.

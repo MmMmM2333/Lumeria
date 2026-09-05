@@ -139,6 +139,117 @@ if (-not ${gesture === "wheel"
 	if (result.error) throw result.error;
 	if (result.status !== 0) throw new Error(result.stderr.trim() || `native mouse gesture exited ${result.status}`);
 };
+const sendTouchGesture = ({ windowHandle, screen, frame }, gesture) => {
+	for (const value of [windowHandle, screen.x, screen.y, frame.x, frame.y, frame.width, frame.height]) {
+		if (!Number.isSafeInteger(value)) throw new Error("native touch target contains an invalid coordinate");
+	}
+	if (!["single", "multi", "outside", "cancel"].includes(gesture)) throw new Error(`unknown native touch gesture: ${gesture}`);
+	const script = String.raw`
+$ErrorActionPreference = "Stop"
+$source = @'
+using System;
+using System.Runtime.InteropServices;
+public static class NativeTouch {
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; }
+    [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct PointerInfo {
+        public uint PointerType; public uint PointerId; public uint FrameId; public uint PointerFlags;
+        public IntPtr SourceDevice; public IntPtr WindowTarget;
+        public Point PixelLocation; public Point HimetricLocation; public Point PixelLocationRaw; public Point HimetricLocationRaw;
+        public uint Time; public uint HistoryCount; public int InputData; public uint KeyStates;
+        public ulong PerformanceCount; public uint ButtonChangeType;
+    }
+    [StructLayout(LayoutKind.Sequential)] public struct PointerTouchInfo {
+        public PointerInfo PointerInfo; public uint TouchFlags; public uint TouchMask;
+        public Rect Contact; public Rect ContactRaw; public uint Orientation; public uint Pressure;
+    }
+    [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool InitializeTouchInjection(uint maxCount, uint feedbackMode);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool InjectTouchInput(uint count, [In] PointerTouchInfo[] contacts);
+    const uint InRange = 0x00000002, InContact = 0x00000004;
+    const uint Canceled = 0x00008000, Down = 0x00010000, Update = 0x00020000, Up = 0x00040000;
+    static PointerTouchInfo Touch(uint id, int x, int y, uint flags) {
+        return new PointerTouchInfo {
+            PointerInfo = new PointerInfo {
+                PointerType = 2, PointerId = id, PointerFlags = flags,
+                PixelLocation = new Point { X = x, Y = y },
+            },
+            TouchMask = 0x7,
+            Contact = new Rect { Left = x - 6, Top = y - 9, Right = x + 6, Bottom = y + 9 },
+            Orientation = 90,
+            Pressure = 512,
+        };
+    }
+    static void Frame(params PointerTouchInfo[] contacts) {
+        if (!InjectTouchInput((uint)contacts.Length, contacts)) {
+            throw new Exception("InjectTouchInput failed: " + Marshal.GetLastWin32Error());
+        }
+        System.Threading.Thread.Sleep(50);
+    }
+    public static void Single(int x, int y) {
+        Frame(Touch(1, x, y, InRange | InContact | Down));
+        Frame(Touch(1, x + 8, y + 6, InRange | InContact | Update));
+        Frame(Touch(1, x + 8, y + 6, Up));
+    }
+    public static void Multi(int x, int y) {
+        Frame(Touch(2, x - 20, y, InRange | InContact | Down));
+        Frame(Touch(2, x - 20, y, InRange | InContact | Update), Touch(3, x + 20, y, InRange | InContact | Down));
+        Frame(Touch(2, x - 20, y, Up), Touch(3, x + 24, y + 4, InRange | InContact | Update));
+        Frame(Touch(3, x + 30, y + 8, InRange | InContact | Update));
+        Frame(Touch(3, x + 30, y + 8, Up));
+    }
+    public static void Outside(int x, int y, int frameX, int frameY, int frameWidth, int frameHeight) {
+        int desktopLeft = GetSystemMetrics(76), desktopTop = GetSystemMetrics(77);
+        int desktopRight = desktopLeft + GetSystemMetrics(78) - 1, desktopBottom = desktopTop + GetSystemMetrics(79) - 1;
+        int outsideX = frameX - 24 >= desktopLeft ? frameX - 24 : Math.Min(desktopRight, frameX + frameWidth + 24);
+        int outsideY = Math.Max(desktopTop, Math.Min(desktopBottom, frameY + 24));
+        if (outsideX >= frameX && outsideX < frameX + frameWidth) {
+            outsideX = Math.Max(desktopLeft, Math.Min(desktopRight, x));
+            outsideY = frameY - 24 >= desktopTop ? frameY - 24 : Math.Min(desktopBottom, frameY + frameHeight + 24);
+        }
+        Frame(Touch(4, x, y, InRange | InContact | Down));
+        Frame(Touch(4, outsideX, outsideY, InRange | InContact | Update));
+        Frame(Touch(4, outsideX, outsideY, Up));
+    }
+    public static void Cancel(int x, int y) {
+        Frame(Touch(5, x, y, InRange | InContact | Down));
+        Frame(Touch(5, x, y, Canceled | Up));
+    }
+}
+'@
+Add-Type -TypeDefinition $source
+[NativeTouch]::SetThreadDpiAwarenessContext([IntPtr](-4)) | Out-Null
+$window = [IntPtr]${windowHandle}
+[NativeTouch]::ShowWindow($window, 9) | Out-Null
+[NativeTouch]::SetWindowPos($window, [IntPtr](-1), 0, 0, 0, 0, 0x43) | Out-Null
+[NativeTouch]::SetWindowPos($window, [IntPtr](-2), 0, 0, 0, 0, 0x43) | Out-Null
+[NativeTouch]::SetForegroundWindow($window) | Out-Null
+$point = New-Object NativeTouch+Point
+$point.X = ${screen.x}
+$point.Y = ${screen.y}
+$hit = [NativeTouch]::GetAncestor([NativeTouch]::WindowFromPoint($point), 2)
+if ($hit -ne $window) { throw "native touch target is obscured by HWND $hit" }
+if (-not [NativeTouch]::InitializeTouchInjection(10, 3)) { throw "InitializeTouchInjection failed: $([Runtime.InteropServices.Marshal]::GetLastWin32Error())" }
+${gesture === "single"
+	? `[NativeTouch]::Single(${screen.x}, ${screen.y})`
+	: gesture === "multi"
+		? `[NativeTouch]::Multi(${screen.x}, ${screen.y})`
+		: gesture === "outside"
+			? `[NativeTouch]::Outside(${screen.x}, ${screen.y}, ${frame.x}, ${frame.y}, ${frame.width}, ${frame.height})`
+			: `[NativeTouch]::Cancel(${screen.x}, ${screen.y})`}
+`;
+	const result = spawnSync("powershell.exe", [
+		"-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script,
+	], { encoding: "utf8", windowsHide: true });
+	if (result.error) throw result.error;
+	if (result.status !== 0) throw new Error(result.stderr.trim() || `native touch gesture exited ${result.status}`);
+};
 const realInputCheck = async () => {
 	const target = await command({ action: "native-input-target", label: "interactive-mark" });
 	await command({ action: "input-reset" });
@@ -199,6 +310,99 @@ const realInputCheck = async () => {
 		outsideRelease: { down: dragDown, up: dragUp, captured: false },
 		wheel: { events: actual },
 		modifiers: { control: true, shift: true },
+	};
+};
+const realTouchInputCheck = async () => {
+	const target = await command({ action: "native-input-target", label: "interactive-mark" });
+	const resolution = (await request("/status")).window.resolution;
+	const pointerKinds = new Set([1, 2, 3, 4, 5, 6, 7, 8]);
+	const inspect = async (name, pointerCount) => {
+		await sleep(300);
+		const input = await command({ action: "input-status" });
+		const rawTouch = input.events.filter((event) => pointerKinds.has(event.kind) && event.pointerType === "touch");
+		const rawMouse = input.events.filter((event) => pointerKinds.has(event.kind) && event.pointerType === "mouse");
+		const promotedMouseButtons = rawMouse.filter((event) => event.kind === 2 || event.kind === 3);
+		const publicTouch = input.pointerEvents.filter((event) => event.pointerType === "touch");
+		const downs = publicTouch.filter((event) => event.type === "pointerdown");
+		const ups = publicTouch.filter((event) => event.type === "pointerup" || event.type === "pointerupoutside");
+		const pointerIds = downs.map(({ pointerId }) => pointerId);
+		if (promotedMouseButtons.length || downs.length !== pointerCount || new Set(pointerIds).size !== pointerCount
+			|| JSON.stringify(ups.map(({ pointerId }) => pointerId).sort((a, b) => a - b))
+				!== JSON.stringify([...pointerIds].sort((a, b) => a - b))) {
+			throw new Error(`${name} touch sequence was duplicated or lost: ${JSON.stringify({ promotedMouseButtons, downs, ups })}`);
+		}
+		for (const event of publicTouch) {
+			if (event.type === "pointerdown" && (event.button !== 0 || event.buttons !== 1)
+				|| event.type === "pointermove" && (event.button !== -1 || event.buttons !== 1)
+				|| (event.type === "pointerup" || event.type === "pointerupoutside") && (event.button !== 0 || event.buttons !== 0)) {
+				throw new Error(`${name} exposed invalid touch button state: ${JSON.stringify(event)}`);
+			}
+		}
+		const down = downs[0];
+		if (!down || Math.abs(down.width * resolution - 12) > 0.01
+			|| Math.abs(down.height * resolution - 18) > 0.01 || Math.abs(down.pressure - 0.5) > 0.001) {
+			throw new Error(`${name} exposed invalid touch geometry or pressure: ${JSON.stringify(down)}`);
+		}
+		return { input, rawTouch, publicTouch, pointerIds };
+	};
+
+	await command({ action: "input-reset" });
+	const beforeSingle = await command({ action: "input-status" });
+	sendTouchGesture(target, "single");
+	const single = await inspect("single", 1);
+	const singleId = single.pointerIds[0];
+	if (single.input.activationCount !== beforeSingle.activationCount + 1
+		|| !single.publicTouch.some((event) => event.type === "gotpointercapture" && event.pointerId === singleId)
+		|| !single.publicTouch.some((event) => event.type === "lostpointercapture" && event.pointerId === singleId)
+		|| single.input.captured || single.input.nativeCaptured) {
+		throw new Error(`single touch capture/tap contract failed: ${JSON.stringify(single.input)}`);
+	}
+
+	await command({ action: "input-reset" });
+	sendTouchGesture(target, "multi");
+	const multi = await inspect("multi", 2);
+	const multiDowns = multi.publicTouch.filter((event) => event.type === "pointerdown");
+	const [firstId, secondId] = multi.pointerIds;
+	const firstUp = multi.publicTouch.findIndex((event) => (event.type === "pointerup" || event.type === "pointerupoutside") && event.pointerId === firstId);
+	const secondMoveAfterFirstUp = multi.publicTouch.findIndex((event, index) => index > firstUp && event.type === "pointermove" && event.pointerId === secondId);
+	if (multiDowns.filter(({ isPrimary }) => isPrimary).length !== 1 || !multiDowns[0]?.isPrimary || multiDowns[1]?.isPrimary
+		|| firstUp < 0 || secondMoveAfterFirstUp < 0
+		|| !multi.pointerIds.every((pointerId) => multi.publicTouch.some((event) => event.type === "gotpointercapture" && event.pointerId === pointerId)
+			&& multi.publicTouch.some((event) => event.type === "lostpointercapture" && event.pointerId === pointerId))) {
+		throw new Error(`multi-touch identity/capture contract failed: ${JSON.stringify(multi.publicTouch)}`);
+	}
+
+	await command({ action: "input-reset" });
+	const beforeOutside = await command({ action: "input-status" });
+	sendTouchGesture(target, "outside");
+	const outside = await inspect("outside", 1);
+	const outsideId = outside.pointerIds[0];
+	if (outside.input.activationCount !== beforeOutside.activationCount
+		|| !outside.publicTouch.some((event) => (event.type === "pointerup" || event.type === "pointerupoutside") && event.pointerId === outsideId)) {
+		throw new Error(`touch capture did not deliver outside release without a tap: ${JSON.stringify(outside.input)}`);
+	}
+
+	await command({ action: "input-reset" });
+	const beforeCancel = await command({ action: "input-status" });
+	sendTouchGesture(target, "cancel");
+	await sleep(300);
+	const cancelled = await command({ action: "input-status" });
+	const rawCancels = cancelled.events.filter((event) => event.kind === 6 && event.pointerType === "touch");
+	const publicCancels = cancelled.pointerEvents.filter((event) => event.type === "pointercancel" && event.pointerType === "touch");
+	const cancelEvent = publicCancels[0];
+	if (rawCancels.length !== 1 || publicCancels.length !== 1 || !cancelEvent
+		|| cancelled.activationCount !== beforeCancel.activationCount
+		|| cancelled.captured || cancelled.nativeCaptured
+		|| cancelled.events.some((event) => (event.kind === 2 || event.kind === 3) && event.pointerType === "mouse")) {
+		throw new Error(`touch cancellation contract failed: ${JSON.stringify(cancelled)}`);
+	}
+
+	return {
+		passed: true,
+		single: { pointerId: singleId, tap: true, rawEvents: single.rawTouch.length },
+		multi: { pointerIds: multi.pointerIds, primary: firstId, rawEvents: multi.rawTouch.length },
+		outsideRelease: { pointerId: outsideId, tap: false, rawEvents: outside.rawTouch.length },
+		cancel: { pointerId: cancelEvent.pointerId, tap: false },
 	};
 };
 const injectRecoverableFault = async (kind) => {
@@ -332,6 +536,7 @@ const dpiLifecycleCheck = async () => {
 		&& status.runtime.surfaceGeneration === before.runtime.surfaceGeneration;
 	let moved;
 	let inputAtTarget;
+	let touchAtTarget;
 	try {
 		const event = before.events.at(-1)?.sequence ?? 0;
 		await command({ action: "move", ...targetPosition });
@@ -361,6 +566,7 @@ const dpiLifecycleCheck = async () => {
 			}
 		}
 		inputAtTarget = await realInputCheck();
+		touchAtTarget = await realTouchInputCheck();
 	} finally {
 		const current = await request("/status");
 		const event = current.events.at(-1)?.sequence ?? 0;
@@ -385,6 +591,7 @@ const dpiLifecycleCheck = async () => {
 		to: { display: moved.window.display.id, resolution: moved.window.resolution },
 		runtime: moved.runtime,
 		input: inputAtTarget,
+		touch: touchAtTarget,
 	};
 };
 
@@ -433,6 +640,7 @@ if (name === "status") {
 		realInputFailure = error;
 		results.push({ check: "real-win32-input", passed: false, error: error instanceof Error ? error.message : String(error) });
 	}
+	results.push({ check: "real-win32-touch", ...await realTouchInputCheck() });
 	const textBegin = await command({ action: "text-begin", text: "中文" });
 	status = await request("/status");
 	if (!status.host.textInputActive) throw new Error("native text input session did not start");
@@ -547,6 +755,8 @@ if (name === "status") {
 	console.log(JSON.stringify(await command({ action: "input-status" }), null, 2));
 } else if (name === "native-input-check") {
 	console.log(JSON.stringify(await realInputCheck(), null, 2));
+} else if (name === "native-touch-check") {
+	console.log(JSON.stringify(await realTouchInputCheck(), null, 2));
 } else if (name === "native-input-target") {
 	console.log(JSON.stringify(await command({ action: "native-input-target", label: args.join(" ") || "interactive-mark" }), null, 2));
 } else if (name === "input-reset") {

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { normalizeNativeWheel } from "./native-events";
+import { attachNativePixiEvents, normalizeNativeWheel } from "./native-events";
 
 test("native wheel exposes browser-compatible pixel deltas without losing precision", () => {
 	expect(normalizeNativeWheel(0, 120)).toEqual({ deltaX: 0, deltaY: -100, deltaMode: 0 });
@@ -8,4 +8,74 @@ test("native wheel exposes browser-compatible pixel deltas without losing precis
 	expect(normalizeNativeWheel(-120, 0)).toEqual({ deltaX: -100, deltaY: 0, deltaMode: 0 });
 	expect(Array.from({ length: 4 }, () => normalizeNativeWheel(30, 0).deltaX)
 		.reduce((sum, delta) => sum + delta, 0)).toBe(100);
+});
+
+test("two native touch contacts keep independent pointer data and implicit capture", () => {
+	const pending: any[] = [];
+	const delivered: any[] = [];
+	const trackingData: Record<number, any> = {};
+	const tracking = (pointerId: number) => trackingData[pointerId] ??= { pressTargetsByButton: {} };
+	const events = {
+		rootBoundary: {
+			mappingState: { trackingData },
+			trackingData: tracking,
+		},
+		_onPointerDown(event: any) {
+			tracking(event.pointerId).pressTargetsByButton[0] = [{ label: `touch-${event.pointerId}` }];
+			delivered.push(event);
+		},
+		_onPointerMove: (event: any) => delivered.push(event),
+		_onPointerUp: (event: any) => delivered.push(event),
+		_onPointerOverOut: (event: any) => delivered.push(event),
+	};
+	const captureCalls: boolean[] = [];
+	const input = attachNativePixiEvents(
+		{ id: 1, wgpuViewId: 1, on: () => () => {} } as any,
+		{ events } as any,
+		{
+			pollEvent: () => pending.shift() ?? null,
+			setPointerCapture: (captured) => { captureCalls.push(captured); return true; },
+		},
+	);
+	const touch = (kind: number, pointerId: number, overrides: Record<string, unknown> = {}) => ({
+		route: 1n, timestamp: 100n + BigInt(delivered.length), kind, modifiers: 0,
+		x: pointerId, y: pointerId + 1, movementX: 0, movementY: 0,
+		button: kind === 1 ? -1 : 0, buttons: kind === 3 || kind === 6 ? 0 : 1,
+		wheelX: 0, wheelY: 0, deltaMode: 0, keyCode: 0, scanCode: 0,
+		repeat: false, detail: 0, pointerId, screenX: pointerId, screenY: pointerId + 1,
+		pointerType: "touch", isPrimary: pointerId === 31, width: 12, height: 18, pressure: 0.4,
+		...overrides,
+	});
+
+	pending.push(touch(2, 31), touch(2, 44, { pressure: 0.7 }));
+	input.poll();
+	expect(input.hasPointerCapture(31)).toBe(true);
+	expect(input.hasPointerCapture(44)).toBe(true);
+	expect(captureCalls).toEqual([]);
+	expect(delivered.filter(({ type }) => type === "pointerdown").map((event) => ({
+		pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: event.isPrimary,
+		width: event.width, height: event.height, pressure: event.pressure, buttons: event.buttons,
+	}))).toEqual([
+		{ pointerId: 31, pointerType: "touch", isPrimary: true, width: 12, height: 18, pressure: 0.4, buttons: 1 },
+		{ pointerId: 44, pointerType: "touch", isPrimary: false, width: 12, height: 18, pressure: 0.7, buttons: 1 },
+	]);
+
+	pending.push(touch(3, 31, { pressure: 0 }));
+	input.poll();
+	expect(input.hasPointerCapture(31)).toBe(false);
+	expect(input.hasPointerCapture(44)).toBe(true);
+
+	pending.push(touch(1, 44, { x: 50, y: 60, movementX: 6, movementY: 15 }));
+	input.poll();
+	const move = delivered.findLast(({ type }) => type === "pointermove");
+	expect({ pointerId: move.pointerId, button: move.button, buttons: move.buttons, movementX: move.movementX, movementY: move.movementY })
+		.toEqual({ pointerId: 44, button: -1, buttons: 1, movementX: 6, movementY: 15 });
+
+	pending.push(touch(6, 44, { buttons: 0, pressure: 0 }));
+	input.poll();
+	expect(delivered.slice(-3).map(({ type, pointerId }) => [type, pointerId])).toEqual([
+		["pointercancel", 44], ["pointerout", 44], ["lostpointercapture", 44],
+	]);
+
+	input.destroy();
 });

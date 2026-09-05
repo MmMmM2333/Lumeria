@@ -18,7 +18,7 @@ use std::time::Instant;
 
 type Handle = *mut c_void;
 
-const PIXI_HOST_ABI_VERSION: u32 = 3;
+const PIXI_HOST_ABI_VERSION: u32 = 4;
 const PIXI_HOST_CAP_MULTI_BUNDLE: u64 = 1 << 0;
 const PIXI_HOST_CAP_SURFACE_STATUS_V2: u64 = 1 << 1;
 const MAX_BUNDLES_PER_FRAME: u64 = 4096;
@@ -41,6 +41,7 @@ pub extern "C" fn pixi_host_capabilities() -> u64 {
         | PIXI_HOST_CAP_INPUT_DIAGNOSTICS
         | PIXI_HOST_CAP_INPUT_WAKE
         | PIXI_HOST_CAP_LIFECYCLE_EVENTS
+		| PIXI_HOST_CAP_TOUCH_INPUT
 }
 
 #[unsafe(no_mangle)]
@@ -103,6 +104,8 @@ unsafe extern "system" {
     fn SetCursor(cursor: Handle) -> Handle;
     fn GetForegroundWindow() -> Handle;
     fn GetDpiForWindow(window: Handle) -> u32;
+	fn GetPointerType(pointer_id: u32, pointer_type: *mut u32) -> i32;
+	fn GetPointerTouchInfo(pointer_id: u32, touch_info: *mut PointerTouchInfo) -> i32;
     fn GetAncestor(window: Handle, flags: u32) -> Handle;
     fn RegisterWindowMessageW(name: *const u16) -> u32;
     fn SetWindowsHookExW(
@@ -182,6 +185,42 @@ struct Rect {
     right: i32,
     bottom: i32,
 }
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct PointerInfo {
+	pointer_type: u32,
+	pointer_id: u32,
+	frame_id: u32,
+	pointer_flags: u32,
+	source_device: Handle,
+	window_target: Handle,
+	pixel_location: Point,
+	himetric_location: Point,
+	pixel_location_raw: Point,
+	himetric_location_raw: Point,
+	time: u32,
+	history_count: u32,
+	input_data: i32,
+	key_states: u32,
+	performance_count: u64,
+	button_change_type: u32,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct PointerTouchInfo {
+	pointer_info: PointerInfo,
+	touch_flags: u32,
+	touch_mask: u32,
+	contact: Rect,
+	contact_raw: Rect,
+	orientation: u32,
+	pressure: u32,
+}
+
+const _: [(); 96] = [(); std::mem::size_of::<PointerInfo>()];
+const _: [(); 144] = [(); std::mem::size_of::<PointerTouchInfo>()];
 
 #[repr(C)]
 struct CandidateForm {
@@ -528,6 +567,7 @@ const PIXI_HOST_CAP_WINDOW_SNAPSHOT: u64 = 1 << 8;
 const PIXI_HOST_CAP_INPUT_DIAGNOSTICS: u64 = 1 << 9;
 const PIXI_HOST_CAP_INPUT_WAKE: u64 = 1 << 10;
 const PIXI_HOST_CAP_LIFECYCLE_EVENTS: u64 = 1 << 11;
+const PIXI_HOST_CAP_TOUCH_INPUT: u64 = 1 << 12;
 const INPUT_SUBCLASS_ID: usize = 0x5049_5849;
 const ACCESSIBILITY_SUBCLASS_ID: usize = 0x4131_3159;
 const INPUT_EVENT_CAPACITY: usize = 4096;
@@ -567,6 +607,15 @@ const INPUT_MINIMIZED: u32 = 18;
 const INPUT_RESTORED: u32 = 19;
 const INPUT_SUSPEND: u32 = 20;
 const INPUT_RESUME: u32 = 21;
+
+const POINTER_TYPE_MOUSE: u32 = 1;
+const POINTER_TYPE_TOUCH: u32 = 2;
+const WINDOWS_POINTER_TOUCH: u32 = 2;
+const POINTER_FLAG_IN_CONTACT: u32 = 0x0000_0004;
+const POINTER_FLAG_PRIMARY: u32 = 0x0000_2000;
+const POINTER_FLAG_CANCELED: u32 = 0x0000_8000;
+const TOUCH_MASK_CONTACT_AREA: u32 = 0x0000_0001;
+const TOUCH_MASK_PRESSURE: u32 = 0x0000_0004;
 
 const TEXT_COMPOSITION_START: u32 = 1;
 const TEXT_COMPOSITION_UPDATE: u32 = 2;
@@ -609,7 +658,7 @@ pub struct InputDiagnostics {
 const _: [(); 32] = [(); std::mem::size_of::<InputDiagnostics>()];
 const _: [(); 8] = [(); std::mem::align_of::<InputDiagnostics>()];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct InputEvent {
     pub route_id: u64,
@@ -632,9 +681,15 @@ pub struct InputEvent {
     pub pointer_id: u32,
     pub screen_x: i32,
     pub screen_y: i32,
+	pub pointer_type: u32,
+	pub is_primary: u32,
+	pub width: f32,
+	pub height: f32,
+	pub pressure: f32,
+	pub reserved0: u32,
 }
 
-const _: [(); 88] = [(); std::mem::size_of::<InputEvent>()];
+const _: [(); 112] = [(); std::mem::size_of::<InputEvent>()];
 const _: [(); 8] = [(); std::mem::align_of::<InputEvent>()];
 
 #[derive(Clone, Copy)]
@@ -756,6 +811,7 @@ struct WindowInputState {
     caret: Rect,
     suppressed_result_chars: VecDeque<u16>,
     pending_high_surrogate: u16,
+	active_touches: HashMap<u32, InputEvent>,
 }
 
 static INPUT_EVENTS: OnceLock<Mutex<VecDeque<InputEvent>>> = OnceLock::new();
@@ -1009,6 +1065,12 @@ fn blank_input_event(route_id: u64, kind: u32) -> InputEvent {
         pointer_id: u32::from(matches!(kind, INPUT_POINTER_MOVE..=INPUT_WHEEL)),
         screen_x: 0,
         screen_y: 0,
+		pointer_type: if matches!(kind, INPUT_POINTER_MOVE..=INPUT_WHEEL) { POINTER_TYPE_MOUSE } else { 0 },
+		is_primary: u32::from(matches!(kind, INPUT_POINTER_MOVE..=INPUT_WHEEL)),
+		width: if matches!(kind, INPUT_POINTER_MOVE..=INPUT_WHEEL) { 1.0 } else { 0.0 },
+		height: if matches!(kind, INPUT_POINTER_MOVE..=INPUT_WHEEL) { 1.0 } else { 0.0 },
+		pressure: 0.0,
+		reserved0: 0,
     }
 }
 
@@ -1030,6 +1092,8 @@ fn push_input_event(event: InputEvent) {
     if coalescable_input(event.kind) {
         if let Some(last) = events.back_mut().filter(|last| {
             last.kind == event.kind && last.route_id == event.route_id
+				&& (event.kind != INPUT_POINTER_MOVE
+					|| (last.pointer_id == event.pointer_id && last.pointer_type == event.pointer_type))
         }) {
             let movement_x = if event.kind == INPUT_POINTER_MOVE {
                 last.movement_x.saturating_add(event.movement_x)
@@ -1811,6 +1875,7 @@ unsafe fn queue_state_event(state: *mut WindowInputState, window: Handle, kind: 
         )
     };
     event.buttons = unsafe { (*state).buttons };
+	event.pressure = if event.buttons == 0 { 0.0 } else { 0.5 };
     push_input_event(event);
 }
 
@@ -1849,6 +1914,119 @@ unsafe fn cancel_pointer(state: *mut WindowInputState, window: Handle) {
         unsafe { ReleaseCapture() };
         unsafe { (*state).releasing_capture = false };
     }
+	unsafe { cancel_touch_pointers(state) };
+}
+
+fn touch_contact_size(mask: u32, contact: Rect) -> (f32, f32) {
+	if mask & TOUCH_MASK_CONTACT_AREA == 0 { return (1.0, 1.0); }
+	(
+		contact.right.saturating_sub(contact.left).unsigned_abs().max(1) as f32,
+		contact.bottom.saturating_sub(contact.top).unsigned_abs().max(1) as f32,
+	)
+}
+
+fn touch_pressure(mask: u32, pressure: u32, in_contact: bool) -> f32 {
+	if !in_contact { return 0.0; }
+	if mask & TOUCH_MASK_PRESSURE == 0 { 0.5 } else { (pressure as f32 / 1024.0).clamp(0.0, 1.0) }
+}
+
+unsafe fn cancel_touch_pointers(state: *mut WindowInputState) {
+	for (_, mut event) in std::mem::take(unsafe { &mut (*state).active_touches }) {
+		event.timestamp = input_timestamp_millis();
+		event.kind = INPUT_POINTER_CANCEL;
+		event.button = -1;
+		event.buttons = 0;
+		event.pressure = 0.0;
+		push_input_event(event);
+	}
+}
+
+unsafe fn cancel_touch_pointer(state: *mut WindowInputState, pointer_id: u32) {
+	let Some(mut event) = (unsafe { (*state).active_touches.remove(&pointer_id) }) else { return; };
+	event.timestamp = input_timestamp_millis();
+	event.kind = INPUT_POINTER_CANCEL;
+	event.button = -1;
+	event.buttons = 0;
+	event.pressure = 0.0;
+	push_input_event(event);
+}
+
+unsafe fn handle_touch_message(
+	state: *mut WindowInputState,
+	window: Handle,
+	message: u32,
+	w_param: usize,
+) -> bool {
+	let pointer_id = w_param as u32 & 0xffff;
+	if message == 0x024c && unsafe { (*state).active_touches.contains_key(&pointer_id) } {
+		unsafe { cancel_touch_pointers(state) };
+		return true;
+	}
+	let mut windows_pointer_type = 0u32;
+	if unsafe { GetPointerType(pointer_id, &mut windows_pointer_type) } == 0 {
+		if unsafe { (*state).active_touches.contains_key(&pointer_id) } {
+			unsafe { cancel_touch_pointer(state, pointer_id) };
+			return true;
+		}
+		return false;
+	}
+	if windows_pointer_type != WINDOWS_POINTER_TOUCH { return false; }
+	if message == 0x024c {
+		unsafe { cancel_touch_pointers(state) };
+		return true;
+	}
+
+	let mut touch = MaybeUninit::<PointerTouchInfo>::zeroed();
+	if unsafe { GetPointerTouchInfo(pointer_id, touch.as_mut_ptr()) } == 0 {
+		unsafe { cancel_touch_pointer(state, pointer_id) };
+		return true;
+	}
+	let touch = unsafe { touch.assume_init() };
+	let screen = touch.pointer_info.pixel_location;
+	let mut client = screen;
+	if unsafe { ScreenToClient(window, &mut client) } == 0 {
+		unsafe { cancel_touch_pointer(state, pointer_id) };
+		return true;
+	}
+	let flags = touch.pointer_info.pointer_flags;
+	let cancelled = flags & POINTER_FLAG_CANCELED != 0;
+	let kind = if cancelled {
+		INPUT_POINTER_CANCEL
+	} else {
+		match message {
+			0x0245 => INPUT_POINTER_MOVE,
+			0x0246 => INPUT_POINTER_DOWN,
+			0x0247 => INPUT_POINTER_UP,
+			0x0249 => INPUT_POINTER_ENTER,
+			0x024a => INPUT_POINTER_LEAVE,
+			_ => return true,
+		}
+	};
+	let in_contact = flags & POINTER_FLAG_IN_CONTACT != 0
+		&& !matches!(kind, INPUT_POINTER_UP | INPUT_POINTER_CANCEL);
+	let previous = unsafe { (*state).active_touches.get(&pointer_id).copied() };
+	if previous.is_none() && matches!(kind, INPUT_POINTER_MOVE | INPUT_POINTER_UP | INPUT_POINTER_CANCEL) {
+		return true;
+	}
+	let mut event = blank_input_event(unsafe { (*state).route_id }, kind);
+	event.modifiers = input_modifiers();
+	unsafe { set_event_coordinates(window, &mut event, client, Some(screen)) };
+	event.movement_x = if kind == INPUT_POINTER_MOVE { previous.map_or(0, |last| client.x.saturating_sub(last.x)) } else { 0 };
+	event.movement_y = if kind == INPUT_POINTER_MOVE { previous.map_or(0, |last| client.y.saturating_sub(last.y)) } else { 0 };
+	event.button = if matches!(kind, INPUT_POINTER_DOWN | INPUT_POINTER_UP) { 0 } else { -1 };
+	event.buttons = u32::from(in_contact);
+	event.pointer_id = pointer_id;
+	event.pointer_type = POINTER_TYPE_TOUCH;
+	event.is_primary = u32::from(flags & POINTER_FLAG_PRIMARY != 0);
+	(event.width, event.height) = touch_contact_size(touch.touch_mask, touch.contact);
+	event.pressure = touch_pressure(touch.touch_mask, touch.pressure, in_contact);
+	push_input_event(event);
+	if in_contact && matches!(kind, INPUT_POINTER_DOWN | INPUT_POINTER_MOVE) {
+		unsafe { (*state).active_touches.insert(pointer_id, event) };
+	} else if matches!(kind, INPUT_POINTER_UP | INPUT_POINTER_CANCEL) {
+		unsafe { (*state).active_touches.remove(&pointer_id) };
+	}
+	true
 }
 
 fn make_caret_rect(x: i32, y: i32, width: i32, height: i32) -> Option<Rect> {
@@ -2049,6 +2227,9 @@ unsafe fn input_subclass_proc_inner(
                 unsafe { queue_state_event(state, window, kind) };
             }
         }
+		0x0245 | 0x0246 | 0x0247 | 0x0249 | 0x024a | 0x024c => {
+			if unsafe { handle_touch_message(state, window, message, w_param) } { return 0; }
+		}
         0x0200 => {
             let x = signed_low_word(l_param);
             let y = signed_high_word(l_param);
@@ -2081,6 +2262,7 @@ unsafe fn input_subclass_proc_inner(
             event.movement_x = movement_x;
             event.movement_y = movement_y;
             event.buttons = unsafe { (*state).buttons };
+			event.pressure = if event.buttons == 0 { 0.0 } else { 0.5 };
             push_input_event(event);
         }
         0x0201 | 0x0203 | 0x0204 | 0x0206 | 0x0207 | 0x0209 | 0x020b | 0x020d => {
@@ -2098,6 +2280,7 @@ unsafe fn input_subclass_proc_inner(
             unsafe { set_event_coordinates(window, &mut event, Point { x, y }, None) };
             event.button = button;
             event.buttons = unsafe { (*state).buttons };
+			event.pressure = if event.buttons == 0 { 0.0 } else { 0.5 };
             event.detail = unsafe { next_click_detail(state, button, x, y, event.timestamp) };
             push_input_event(event);
             if matches!(message, 0x020b | 0x020d) { return 1; }
@@ -2117,6 +2300,7 @@ unsafe fn input_subclass_proc_inner(
             unsafe { set_event_coordinates(window, &mut event, Point { x, y }, None) };
             event.button = button;
             event.buttons = unsafe { (*state).buttons };
+			event.pressure = if event.buttons == 0 { 0.0 } else { 0.5 };
             if button == unsafe { (*state).last_click_button } {
                 event.detail = unsafe { (*state).last_click_detail };
             }
@@ -2151,6 +2335,9 @@ unsafe fn input_subclass_proc_inner(
             let had_capture = unsafe { (*state).has_capture };
             let intentional = unsafe { (*state).releasing_capture };
             unsafe { (*state).has_capture = false };
+			if !intentional {
+				unsafe { cancel_touch_pointers(state) };
+			}
             if !intentional && unsafe { (*state).buttons != 0 } {
                 unsafe { (*state).buttons = 0 };
                 unsafe { queue_state_event(state, window, INPUT_POINTER_CANCEL) };
@@ -2502,6 +2689,7 @@ pub unsafe extern "C" fn pixi_attach_input(window: Handle, route_id: u64) -> i32
         caret: Rect { left: 0, top: 0, right: 0, bottom: 0 },
         suppressed_result_chars: VecDeque::new(),
         pending_high_surrogate: 0,
+		active_touches: HashMap::new(),
     });
     let state = Box::into_raw(state);
     if unsafe {
@@ -3845,6 +4033,33 @@ pub unsafe extern "C" fn pixi_submit_bundle(
 mod tests {
     use super::*;
 
+	fn input_state(route_id: u64, text_active: bool) -> Box<WindowInputState> {
+		Box::new(WindowInputState {
+			route_id,
+			last_x: 0,
+			last_y: 0,
+			last_position_valid: false,
+			tracking_leave: false,
+			buttons: 0,
+			has_capture: false,
+			releasing_capture: false,
+			cursor: null_mut(),
+			cursor_kind: 0,
+			minimized: false,
+			last_click_time: 0,
+			last_click_x: 0,
+			last_click_y: 0,
+			last_click_button: -1,
+			last_click_detail: 0,
+			text_active,
+			ime_composing: false,
+			caret: Rect { left: 0, top: 0, right: 0, bottom: 0 },
+			suppressed_result_chars: VecDeque::new(),
+			pending_high_surrogate: 0,
+			active_touches: HashMap::new(),
+		})
+	}
+
     #[test]
     fn window_scale_factor_uses_dpi_or_failure_sentinel() {
         assert_eq!(scale_factor_from_dpi(0), 0.0);
@@ -3863,13 +4078,15 @@ mod tests {
 
     #[test]
     fn stable_frame_abi_and_surface_statuses() {
-        assert_eq!(pixi_host_abi_version(), 3);
-        assert_eq!(pixi_host_capabilities(), 4031);
+        assert_eq!(pixi_host_abi_version(), 4);
+        assert_eq!(pixi_host_capabilities(), 8127);
         assert_eq!(pixi_uia_provider_available(), 0);
         assert_eq!(std::mem::size_of::<FastBundleItem>(), 32);
         assert_eq!(std::mem::size_of::<WindowSnapshot>(), 48);
         assert_eq!(std::mem::size_of::<InputDiagnostics>(), 32);
-        assert_eq!(std::mem::size_of::<InputEvent>(), 88);
+        assert_eq!(std::mem::size_of::<InputEvent>(), 112);
+		assert_eq!(std::mem::size_of::<PointerInfo>(), 96);
+		assert_eq!(std::mem::size_of::<PointerTouchInfo>(), 144);
         assert_eq!(std::mem::size_of::<TextEventMeta>(), 40);
         assert_eq!(std::mem::size_of::<FileDropMeta>(), 32);
         assert_eq!(std::mem::size_of::<JobEventMeta>(), 48);
@@ -3894,6 +4111,12 @@ mod tests {
         assert_eq!(mouse_buttons(0x0073), 0b1_1111);
         assert_eq!(wheel_message_modifiers(0x000c, 0b1100), 0b1111);
         assert_eq!(wheel_message_modifiers(0, 0b1111), 0b1100);
+		assert_eq!(touch_contact_size(0, Rect { left: 10, top: 20, right: 40, bottom: 70 }), (1.0, 1.0));
+		assert_eq!(touch_contact_size(1, Rect { left: 10, top: 20, right: 40, bottom: 70 }), (30.0, 50.0));
+		assert_eq!(touch_pressure(0, 0, true), 0.5);
+		assert_eq!(touch_pressure(4, 512, true), 0.5);
+		assert_eq!(touch_pressure(4, 2048, true), 1.0);
+		assert_eq!(touch_pressure(4, 512, false), 0.0);
 
         let path = std::env::current_dir().unwrap();
         let mut drag_paths: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
@@ -3930,6 +4153,37 @@ mod tests {
         assert_eq!((output.x, output.movement_x), (3, 3));
         assert_eq!(wakes.load(Ordering::Relaxed), 1);
         assert_eq!(INPUT_COALESCED.load(Ordering::Relaxed), coalesced_before + 1);
+
+		let mut first_touch = blank_input_event(route_id, INPUT_POINTER_MOVE);
+		first_touch.pointer_id = 31;
+		first_touch.pointer_type = 2;
+		let mut second_touch = blank_input_event(route_id, INPUT_POINTER_MOVE);
+		second_touch.pointer_id = 44;
+		second_touch.pointer_type = 2;
+		push_input_event(first_touch);
+		push_input_event(second_touch);
+		let mut first_output = MaybeUninit::<InputEvent>::uninit();
+		let mut second_output = MaybeUninit::<InputEvent>::uninit();
+		assert_eq!(unsafe { pixi_poll_input_event(first_output.as_mut_ptr()) }, 1);
+		assert_eq!(unsafe { pixi_poll_input_event(second_output.as_mut_ptr()) }, 1);
+		assert_eq!(unsafe { first_output.assume_init() }.pointer_id, 31);
+		assert_eq!(unsafe { second_output.assume_init() }.pointer_id, 44);
+		assert_eq!(INPUT_COALESCED.load(Ordering::Relaxed), coalesced_before + 1);
+
+		let mut capture_state = input_state(route_id, false);
+		capture_state.active_touches = HashMap::from([(31, first_touch), (44, second_touch)]);
+		assert!(unsafe { handle_touch_message(&mut *capture_state, null_mut(), 0x024c, 31) });
+		assert!(capture_state.active_touches.is_empty());
+		let mut cancelled = Vec::new();
+		for _ in 0..2 {
+			let mut output = MaybeUninit::<InputEvent>::uninit();
+			assert_eq!(unsafe { pixi_poll_input_event(output.as_mut_ptr()) }, 1);
+			let output = unsafe { output.assume_init() };
+			assert_eq!(output.kind, INPUT_POINTER_CANCEL);
+			cancelled.push(output.pointer_id);
+		}
+		cancelled.sort_unstable();
+		assert_eq!(cancelled, [31, 44]);
         let mut diagnostics = MaybeUninit::<InputDiagnostics>::uninit();
         assert_eq!(unsafe { pixi_get_input_diagnostics(diagnostics.as_mut_ptr()) }, 1);
         assert_eq!(unsafe { diagnostics.assume_init() }.queued, 0);
@@ -3938,29 +4192,7 @@ mod tests {
         assert!(make_caret_rect(i32::MAX, 0, 1, 1).is_none());
         let text_route = u64::MAX - 1;
         purge_text_events(text_route);
-        let mut state = Box::new(WindowInputState {
-            route_id: text_route,
-            last_x: 0,
-            last_y: 0,
-            last_position_valid: false,
-            tracking_leave: false,
-            buttons: 0,
-            has_capture: false,
-            releasing_capture: false,
-            cursor: null_mut(),
-            cursor_kind: 0,
-            minimized: false,
-            last_click_time: 0,
-            last_click_x: 0,
-            last_click_y: 0,
-            last_click_button: -1,
-            last_click_detail: 0,
-            text_active: true,
-            ime_composing: false,
-            caret: Rect { left: 0, top: 0, right: 0, bottom: 0 },
-            suppressed_result_chars: VecDeque::new(),
-            pending_high_surrogate: 0,
-        });
+		let mut state = input_state(text_route, true);
         unsafe { handle_wm_char(&mut *state, 0x0008) };
         let mut ignored = MaybeUninit::<TextEventMeta>::uninit();
         assert_eq!(unsafe {

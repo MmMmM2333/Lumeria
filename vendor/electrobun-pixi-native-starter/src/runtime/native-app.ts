@@ -359,7 +359,9 @@ export async function createNativePixiApplication(
 				if (event) {
 					nativeInputEvents.push({
 						kind: event.kind, x: event.x, y: event.y, screenX: event.screenX, screenY: event.screenY,
-						pointerId: event.pointerId, button: event.button, buttons: event.buttons,
+						pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: event.isPrimary,
+						width: event.width, height: event.height, pressure: event.pressure,
+						button: event.button, buttons: event.buttons,
 						wheelX: event.wheelX, wheelY: event.wheelY, deltaMode: event.deltaMode,
 						modifiers: event.modifiers, keyCode: event.keyCode, timestamp: event.timestamp.toString(),
 					});
@@ -368,7 +370,12 @@ export async function createNativePixiApplication(
 				if (!event || event.kind > 9) return event;
 				syncInputLayout();
 				if (resolution === 1) return event;
-				return { ...event, x: event.x / resolution, y: event.y / resolution, movementX: event.movementX / resolution, movementY: event.movementY / resolution };
+				return {
+					...event,
+					x: event.x / resolution, y: event.y / resolution,
+					movementX: event.movementX / resolution, movementY: event.movementY / resolution,
+					width: event.width / resolution, height: event.height / resolution,
+				};
 			},
 			setPointerCapture: (captured) => (captured ? nativeFrameHost.setMouseCapture(inputWindow) : nativeFrameHost.releaseMouseCapture(inputWindow)) > 0,
 			setCursor: (cursor) => { nativeFrameHost.setCursor(inputWindow, cursorKinds[cursor] ?? 0); },

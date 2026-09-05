@@ -1,7 +1,10 @@
 import * as BunFFI from "bun:ffi";
 import { isAbsolute, join } from "path";
+import { decodeNativeInputEvent, INPUT_EVENT_BYTES } from "./native-input-event";
 
-const ABI_VERSION = 3;
+export { decodeNativeInputEvent } from "./native-input-event";
+
+const ABI_VERSION = 4;
 const CAP_MULTI_BUNDLE = 1n << 0n;
 const CAP_SURFACE_STATUS_V2 = 1n << 1n;
 const CAP_WINDOW_INPUT = 1n << 2n;
@@ -13,11 +16,11 @@ const CAP_WINDOW_SNAPSHOT = 1n << 8n;
 const CAP_INPUT_DIAGNOSTICS = 1n << 9n;
 const CAP_INPUT_WAKE = 1n << 10n;
 const CAP_LIFECYCLE_EVENTS = 1n << 11n;
+const CAP_TOUCH_INPUT = 1n << 12n;
 const REQUIRED_CAPABILITIES = CAP_MULTI_BUNDLE | CAP_SURFACE_STATUS_V2 | CAP_WINDOW_INPUT | CAP_TEXT_INPUT | CAP_JOBS
 	| CAP_ACCESSIBILITY_BRIDGE | CAP_PLATFORM_FILES | CAP_WINDOW_SNAPSHOT | CAP_INPUT_DIAGNOSTICS | CAP_INPUT_WAKE
-	| CAP_LIFECYCLE_EVENTS;
+	| CAP_LIFECYCLE_EVENTS | CAP_TOUCH_INPUT;
 const MAX_BUNDLES_PER_FRAME = 4096;
-const INPUT_EVENT_BYTES = 88;
 const WINDOW_SNAPSHOT_BYTES = 48;
 const MAX_PENDING_INPUT_EVENTS_PER_ROUTE = 4096;
 const TEXT_EVENT_META_BYTES = 40;
@@ -140,6 +143,11 @@ export interface NativeInputEvent {
 	pointerId: number;
 	screenX: number;
 	screenY: number;
+	pointerType?: "mouse" | "touch";
+	isPrimary: boolean;
+	width: number;
+	height: number;
+	pressure: number;
 }
 
 export interface TextInputRect {
@@ -594,30 +602,7 @@ export const nativeFrameHost = {
 			const status = symbols.pixi_poll_input_event(ptr(inputEventBytes));
 			if (status < 0) throw new Error(`poll input event failed (${status})`);
 			if (status === 0) return null;
-			const kind = inputEventView.getUint32(16, true);
-			if (kind < 1 || kind > 21) throw new Error(`native input event has invalid kind ${kind}`);
-			const event: NativeInputEvent = {
-				route: inputEventView.getBigUint64(0, true),
-				timestamp: inputEventView.getBigUint64(8, true),
-				kind: kind as NativeInputKind,
-				modifiers: inputEventView.getUint32(20, true),
-				x: inputEventView.getInt32(24, true),
-				y: inputEventView.getInt32(28, true),
-				movementX: inputEventView.getInt32(32, true),
-				movementY: inputEventView.getInt32(36, true),
-				button: inputEventView.getInt32(40, true),
-				buttons: inputEventView.getUint32(44, true),
-				wheelX: inputEventView.getInt32(48, true),
-				wheelY: inputEventView.getInt32(52, true),
-				deltaMode: inputEventView.getUint32(56, true),
-				keyCode: inputEventView.getUint32(60, true),
-				scanCode: inputEventView.getUint32(64, true),
-				repeat: inputEventView.getUint32(68, true) !== 0,
-				detail: inputEventView.getUint32(72, true),
-				pointerId: inputEventView.getUint32(76, true),
-				screenX: inputEventView.getInt32(80, true),
-				screenY: inputEventView.getInt32(84, true),
-			};
+			const event = decodeNativeInputEvent(inputEventView);
 			assertRoute(event.route);
 			if (route === undefined || event.route === route) return event;
 			if (![...attachedInputRoutes.values()].includes(event.route)) {

@@ -22,23 +22,23 @@ import { tmpdir } from "node:os";
 const EXPECTED = {
 	starter: "electrobun-pixi-native-starter",
 	product: "electrobun-pixijs-webgpu",
-	version: "0.1.1",
+	version: "0.2.0",
 	electrobun: "2.0.1",
 	pixi: "8.20.1",
 	coreAbi: 1,
 	sdkAbi: 1,
-	nativeFrameAbi: 3,
+	nativeFrameAbi: 4,
 	nativeWrapperSha256: "42091e3a0a65941624ee47401a9d6bb20324077c2dabe9a23faa50dd55a7491b",
-	capabilities: "0x0000000000000fbf",
+	capabilities: "0x0000000000001fbf",
 	hostCapabilityBits: [
 		["CAP_MULTI_BUNDLE", 0], ["CAP_SURFACE_STATUS_V2", 1], ["CAP_WINDOW_INPUT", 2],
 		["CAP_TEXT_INPUT", 3], ["CAP_JOBS", 4], ["CAP_ACCESSIBILITY_BRIDGE", 5],
 		["CAP_PLATFORM_FILES", 7], ["CAP_WINDOW_SNAPSHOT", 8], ["CAP_INPUT_DIAGNOSTICS", 9],
-		["CAP_INPUT_WAKE", 10], ["CAP_LIFECYCLE_EVENTS", 11],
+		["CAP_INPUT_WAKE", 10], ["CAP_LIFECYCLE_EVENTS", 11], ["CAP_TOUCH_INPUT", 12],
 	],
 	capabilityNames: [
 		"multi-bundle", "surface-status-v2", "window-input", "text-input", "jobs", "accessibility-bridge",
-		"platform-files", "window-snapshot", "input-diagnostics", "input-wake", "lifecycle-events",
+		"platform-files", "window-snapshot", "input-diagnostics", "input-wake", "lifecycle-events", "touch-input",
 	],
 };
 

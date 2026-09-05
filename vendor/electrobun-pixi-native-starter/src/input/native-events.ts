@@ -55,6 +55,11 @@ export interface NativeHostInputEvent {
 	movementX: number;
 	movementY: number;
 	pointerId?: number;
+	pointerType?: "mouse" | "touch";
+	isPrimary?: boolean;
+	width?: number;
+	height?: number;
+	pressure?: number;
 	screenX?: number;
 	screenY?: number;
 	button: number;
@@ -310,8 +315,13 @@ export function attachNativePixiEvents(
 	let currentModifiers = 0;
 	let focused = true;
 	let closed = false;
-	let captured = false;
-	let capturePath: any[] | undefined;
+	const capturedPointers = new Set<number>();
+	const capturePaths = new Map<number, any[]>();
+	const pointerStates = new Map<number, {
+		x: number; y: number; buttons: number; modifiers: number;
+		pointerType: "mouse" | "touch"; isPrimary: boolean;
+		width: number; height: number; pressure: number;
+	}>();
 	let lastX = Number.NaN;
 	let lastY = Number.NaN;
 	let clickButton = -1;
@@ -324,17 +334,24 @@ export function attachNativePixiEvents(
 	const notify = <T>(listeners: Set<(value: T) => void>, value: T) => {
 		if (!closed) for (const listener of [...listeners]) listener(value);
 	};
-	const currentCapturePath = () => {
-		const tracking = events.rootBoundary?.mappingState?.trackingData?.[1];
+	const currentCapturePath = (pointerId = 1) => {
+		const tracking = events.rootBoundary?.trackingData?.(pointerId)
+			?? events.rootBoundary?.mappingState?.trackingData?.[pointerId];
 		const paths = Object.values(tracking?.pressTargetsByButton ?? {}) as any[][];
 		return paths.find(Boolean)?.slice();
 	};
-	const releasePointerCapture = () => {
-		if (!captured) return;
-		hooks.setPointerCapture?.(false);
-		captured = false;
-		emitPointer("lostpointercapture", lastX, lastY, -1, currentModifiers, capturePath);
-		capturePath = undefined;
+	const releasePointerCapture = (pointerId = 1) => {
+		if (!capturedPointers.has(pointerId)) return;
+		const state = pointerStates.get(pointerId);
+		if (state?.pointerType !== "touch") hooks.setPointerCapture?.(false);
+		capturedPointers.delete(pointerId);
+		const capturePath = capturePaths.get(pointerId);
+		emitPointer(
+			"lostpointercapture", state?.x ?? lastX, state?.y ?? lastY, -1,
+			state?.modifiers ?? currentModifiers, capturePath,
+			state && { pointerId, ...state },
+		);
+		capturePaths.delete(pointerId);
 	};
 	const emitPointer = (
 		type: string,
@@ -348,30 +365,43 @@ export function attachNativePixiEvents(
 		if (closed) return;
 		currentModifiers = modifiers;
 		const now = performance.now();
+		const pointerId = native?.pointerId ?? 1;
+		const previous = pointerStates.get(pointerId);
+		const pointerType = native?.pointerType ?? previous?.pointerType ?? "mouse";
 		const bit = BUTTON_BITS[button] ?? 0;
-		if (type === "pointerdown") {
-			buttons |= bit;
+		let pointerButtons = native?.buttons ?? previous?.buttons ?? (pointerType === "mouse" ? buttons : 0);
+		if (type === "pointerdown" && native?.buttons === undefined) pointerButtons |= bit;
+		else if (type === "pointerup" && native?.buttons === undefined) pointerButtons &= ~bit;
+		else if (type === "pointercancel") pointerButtons = 0;
+		if (pointerType === "mouse") buttons = pointerButtons;
+		if (type === "pointerdown" && pointerType === "mouse") {
 			const nearby = Math.abs(x - clickX) <= 5 && Math.abs(y - clickY) <= 5;
 			clickCount = button === clickButton && nearby && now - clickTime <= 500 ? clickCount + 1 : 1;
 			clickButton = button;
 			clickTime = now;
 			clickX = x;
 			clickY = y;
-		} else if (type === "pointerup") buttons &= ~bit;
-		else if (type === "pointercancel") buttons = 0;
-		if (native?.buttons !== undefined) buttons = native.buttons;
+		}
 
-		const movementX = native?.movementX ?? (type === "pointermove" && Number.isFinite(lastX) ? x - lastX : 0);
-		const movementY = native?.movementY ?? (type === "pointermove" && Number.isFinite(lastY) ? y - lastY : 0);
+		const movementX = native?.movementX ?? (type === "pointermove" && Number.isFinite(previous?.x) ? x - previous!.x : 0);
+		const movementY = native?.movementY ?? (type === "pointermove" && Number.isFinite(previous?.y) ? y - previous!.y : 0);
+		const width = native?.width ?? previous?.width ?? 1;
+		const height = native?.height ?? previous?.height ?? 1;
+		const pressure = native?.pressure ?? (pointerButtons ? previous?.pressure ?? 0.5 : 0);
+		const state = {
+			x, y, buttons: pointerButtons, modifiers, pointerType,
+			isPrimary: native?.isPrimary ?? previous?.isPrimary ?? true,
+			width, height, pressure,
+		};
 		if (Number.isFinite(x) && Number.isFinite(y) && !type.endsWith("pointercapture")) {
-			lastX = x;
-			lastY = y;
+			pointerStates.set(pointerId, state);
+			if (pointerType === "mouse") { lastX = x; lastY = y; }
 		}
 		const modifierState = modifiersFor(modifiers);
 		const event = {
 			type,
 			button,
-			buttons,
+			buttons: pointerButtons,
 			clientX: x,
 			clientY: y,
 			screenX: native?.screenX ?? x,
@@ -380,13 +410,13 @@ export function attachNativePixiEvents(
 			pageY: y,
 			movementX,
 			movementY,
-			pointerId: native?.pointerId ?? 1,
-			pointerType: "mouse",
-			isPrimary: true,
+			pointerId,
+			pointerType,
+			isPrimary: state.isPrimary,
 			isTrusted: true,
-			width: 1,
-			height: 1,
-			pressure: buttons ? 0.5 : 0,
+			width,
+			height,
+			pressure,
 			tangentialPressure: 0,
 			tiltX: 0,
 			tiltY: 0,
@@ -405,19 +435,29 @@ export function attachNativePixiEvents(
 		else if (type === "pointerdown") events._onPointerDown(event);
 		else if (type === "pointerup") events._onPointerUp(event);
 		else events._onPointerOverOut(event);
-		if (type === "pointerdown" && !captured) acquirePointerCapture();
-		if ((type === "pointerup" && buttons === 0) || type === "pointercancel") releasePointerCapture();
+		if (type === "pointercancel") events._onPointerOverOut({ ...event, type: "pointerout" });
+		if (type === "pointerdown" && !capturedPointers.has(pointerId)) acquirePointerCapture(pointerId);
+		if (type === "pointerup" || type === "pointercancel"
+			|| (type === "pointerout" && pointerType === "touch" && pointerButtons === 0)) {
+			releasePointerCapture(pointerId);
+			pointerStates.delete(pointerId);
+		}
 		hooks.onActivity?.();
 	};
-	function acquirePointerCapture() {
-		if (closed || captured) return captured;
-		capturePath = currentCapturePath();
-		if (!capturePath || hooks.setPointerCapture?.(true) !== true) {
-			capturePath = undefined;
+	function acquirePointerCapture(pointerId = 1) {
+		if (closed || capturedPointers.has(pointerId)) return capturedPointers.has(pointerId);
+		const capturePath = currentCapturePath(pointerId);
+		const state = pointerStates.get(pointerId);
+		if (!capturePath || (state?.pointerType !== "touch" && hooks.setPointerCapture?.(true) !== true)) {
 			return false;
 		}
-		captured = true;
-		emitPointer("gotpointercapture", lastX, lastY, -1, currentModifiers, capturePath);
+		capturePaths.set(pointerId, capturePath);
+		capturedPointers.add(pointerId);
+		emitPointer(
+			"gotpointercapture", state?.x ?? lastX, state?.y ?? lastY, -1,
+			state?.modifiers ?? currentModifiers, capturePath,
+			state && { pointerId, ...state },
+		);
 		return true;
 	}
 
@@ -530,8 +570,11 @@ export function attachNativePixiEvents(
 	const onBlur = () => {
 		if (closed || !focused) return;
 		focused = false;
-		if (buttons) emitPointer("pointercancel", lastX, lastY, -1, currentModifiers, capturePath);
-		else releasePointerCapture();
+		for (const [pointerId, state] of [...pointerStates]) {
+			if (state.buttons || capturedPointers.has(pointerId)) {
+				emitPointer("pointercancel", state.x, state.y, -1, state.modifiers, capturePaths.get(pointerId), { pointerId, ...state });
+			}
+		}
 		pressedKeys.clear();
 		notify(focusListeners, false);
 		hooks.onActivity?.();
@@ -566,20 +609,23 @@ export function attachNativePixiEvents(
 			if (hooks.route !== undefined && event.route !== hooks.route) continue;
 			notify(hostEventListeners, event);
 			if (closed) break;
-			if (event.kind === 1) emitPointer("pointermove", event.x, event.y, 0, event.modifiers, capturePath, event);
+			const pointerId = event.pointerId ?? 1;
+			const capturePath = capturePaths.get(pointerId);
+			if (event.kind === 1) emitPointer("pointermove", event.x, event.y, event.button, event.modifiers, capturePath, event);
 			else if (event.kind === 2) emitPointer("pointerdown", event.x, event.y, event.button, event.modifiers, capturePath, event);
 			else if (event.kind === 3) emitPointer("pointerup", event.x, event.y, event.button, event.modifiers, capturePath, event);
-			else if (event.kind === 4) emitPointer("pointerover", event.x, event.y, 0, event.modifiers, capturePath, event);
-			else if (event.kind === 5) emitPointer("pointerout", event.x, event.y, 0, event.modifiers, capturePath, event);
+			else if (event.kind === 4) emitPointer("pointerover", event.x, event.y, event.button, event.modifiers, capturePath, event);
+			else if (event.kind === 5) emitPointer("pointerout", event.x, event.y, event.button, event.modifiers, capturePath, event);
 			else if (event.kind === 6) emitPointer("pointercancel", event.x, event.y, -1, event.modifiers, capturePath, event);
-			else if (event.kind === 8 && captured) {
-				captured = false;
+			else if (event.kind === 8 && capturedPointers.has(pointerId)) {
+				capturedPointers.delete(pointerId);
 				emitPointer("lostpointercapture", event.x, event.y, -1, event.modifiers, capturePath, event);
-				capturePath = undefined;
-			} else if (event.kind === 7 && !captured) {
-				capturePath = currentCapturePath();
-				captured = true;
-				emitPointer("gotpointercapture", event.x, event.y, -1, event.modifiers, capturePath, event);
+				capturePaths.delete(pointerId);
+			} else if (event.kind === 7 && !capturedPointers.has(pointerId)) {
+				const path = currentCapturePath(pointerId);
+				if (path) capturePaths.set(pointerId, path);
+				capturedPointers.add(pointerId);
+				emitPointer("gotpointercapture", event.x, event.y, -1, event.modifiers, path, event);
 			} else if (event.kind === 9) {
 				const wheel = normalizeNativeWheel(event.wheelX, event.wheelY);
 				emitWheel(
@@ -616,10 +662,10 @@ export function attachNativePixiEvents(
 		onHostEvent: (listener: (event: NativeHostInputEvent) => void) => subscribe(hostEventListeners, listener),
 		capturePointer: acquirePointerCapture,
 		releasePointerCapture,
-		hasPointerCapture: () => captured,
+		hasPointerCapture: (pointerId = 1) => capturedPointers.has(pointerId),
 		destroy() {
 			if (closed) return;
-			if (captured) hooks.setPointerCapture?.(false);
+			if (capturedPointers.has(1) && pointerStates.get(1)?.pointerType !== "touch") hooks.setPointerCapture?.(false);
 			closed = true;
 			if (hasNativePointers) Electrobun.events.off(pointerChannel, onPointer);
 			if (hasNativeKeys) Electrobun.events.off(keyChannel, onViewKey);
@@ -638,8 +684,9 @@ export function attachNativePixiEvents(
 			hostEventListeners.clear();
 			pressedKeys.clear();
 			buttons = 0;
-			captured = false;
-			capturePath = undefined;
+			capturedPointers.clear();
+			capturePaths.clear();
+			pointerStates.clear();
 		},
 	};
 }
