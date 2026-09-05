@@ -283,7 +283,7 @@ const app = await createNativePixiApplication({
 app.stage.label = "launchpad-native-stage";
 let changeSearch: (query: string) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query));
-const management = new NativeManagement(searchBar.host, () => app.contentSize);
+const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate());
 
 const iconTextures = createNativeIconTextureRepository();
 const statusText = new Text({
@@ -305,7 +305,7 @@ function setStatus(message: string, color = 0xd8dee9): void {
   app.invalidate();
 }
 
-function clickWithNativeInput(target: Container): void {
+function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
   const hitArea = target.hitArea as Readonly<{
     height?: number;
     width?: number;
@@ -320,7 +320,7 @@ function clickWithNativeInput(target: Container): void {
     })
     : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   const { x, y } = point;
-  app.nativeInput.emitPointer("pointermove", x, y, 0);
+  app.nativeInput.emitPointer("pointermove", x, y, 0, modifiers);
   if (nativeMode === "smoke") {
     const boundary = app.renderer.events.rootBoundary;
     const hit = boundary.hitTest(x, y);
@@ -332,8 +332,8 @@ function clickWithNativeInput(target: Container): void {
       );
     }
   }
-  app.nativeInput.emitPointer("pointerdown", x, y, 0);
-  app.nativeInput.emitPointer("pointerup", x, y, 0);
+  app.nativeInput.emitPointer("pointerdown", x, y, button, modifiers);
+  app.nativeInput.emitPointer("pointerup", x, y, button, modifiers);
 }
 
 let launchInFlight = false;
@@ -387,10 +387,15 @@ function setFolderPageIndex(pageIndex: number): boolean {
   return true;
 }
 
-async function activateItem(item: SceneItem): Promise<void> {
+function getSelectionScope() {
+  const scope=getCurrentIconScope();
+  return {key:`${scope.area}:${scope.folderId ?? ""}:${scope.pageIndex}`,orderedIds:scope.items.filter(item=>item.type==="app").map(item=>item.id)};
+}
+
+async function activateItem(item: SceneItem, event: {shiftKey?:boolean} = {}): Promise<void> {
   if (editing?.drag.isDragActive()) return;
   if (editing?.selection.isActive.value && item.type === "app") {
-    editing.selection.toggle(item.id, { scope: { key: getCurrentIconScope().area, orderedIds: getCurrentIconScope().items.map(item => item.id) } });
+    editing.selection.toggle(item.id, { range:Boolean(event.shiftKey),scope:getSelectionScope() });
     return;
   }
   if(editing?.mode.value && item.type === "app") { editItem(item); return; }
@@ -479,8 +484,10 @@ function contextMenu(item: SceneItem | null,x:number,y:number):void {
   if(item?.type === "folder")actions.push({label:t("commands.dissolve.confirm"),run:()=>{
     editing!.commit(layoutState.operations.dissolveFolder(layoutState.presentation.pages.value,item.id,layoutState.presentation.pageSize.value));
   }});
-  actions.push({label:t("launchpad.batch.toolbarLabel"),run:()=>{editing!.selection.begin({initialIds:item?.type==="app"?[item.id]:[]});}},
-    {label:"Edit mode",run:()=>{editing!.mode.value=!editing!.mode.value;}});
+  if(!editing!.mode.value)actions.push({label:t("launchpad.batch.toolbarLabel"),run:()=>{
+    editing!.alt.cancelAltEditMode();
+    editing!.selection.begin({initialIds:item?.type==="app"?[item.id]:[]});
+  }});
   management.menu(x,y,actions);
 }
 async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
@@ -531,11 +538,11 @@ const toolbarBackground=new Graphics();
 const toolbarSummary=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:0xffffff}});
 toolbarSummary.eventMode="none";
 selectionToolbar.addChild(toolbarBackground,toolbarSummary);
-const selectAllButton=management.button(t("common.actions.selectAll"),62,()=>editing!.selection.selectScope({orderedIds:getCurrentIconScope().items.filter(item=>item.type==="app").map(item=>item.id)}));
-const clearSelectionButton=management.button(t("common.actions.clearSelection"),62,()=>editing!.selection.deselectAll());clearSelectionButton.x=70;
-const createFolderButton=management.button(t("launchpad.batch.createFolder"),96,()=>editing!.createFolder());createFolderButton.x=140;
-const removeButton=management.button(t("launchpad.batch.remove"),62,()=>removeItems([...editing!.selection.selectedIds.value]));removeButton.x=244;
-const doneButton=management.button(t("launchpad.batch.done"),62,()=>{editing!.selection.clear();editing!.mode.value=false;});doneButton.x=314;
+const selectAllButton=management.button(t("common.actions.selectAll"),88,()=>editing!.selection.selectScope(getSelectionScope()));
+const clearSelectionButton=management.button(t("common.actions.clearSelection"),116,()=>editing!.selection.deselectAll());
+const createFolderButton=management.button(t("launchpad.batch.createFolder"),116,()=>editing!.createFolder());
+const removeButton=management.button(t("launchpad.batch.remove"),80,()=>removeItems([...editing!.selection.selectedIds.value]));
+const doneButton=management.button(t("launchpad.batch.done"),68,()=>{if(!editing!.selection.isFrozen.value)editing!.selection.clear();});
 selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
 app.stage.addChild(selectionToolbar);
 const onContext = (event: FederatedPointerEvent):void=>{
@@ -551,7 +558,7 @@ const offPresented = app.on("presented", () => {
   folderFlow.commitPresented(scene.commitPresentedFrame());
 });
 let offStateChange = (): void => {};
-let offKey = (): void => {};
+let offFocus = (): void => {};
 let offWheel = (): void => {};
 let offWheelPointerInterrupt = (): void => {};
 let offTouch = (): void => {};
@@ -622,16 +629,24 @@ try {
       resolution: app.resolution,
       width: app.contentSize.width,
     }, false);
-    searchBar.update(app.contentSize.width, Boolean(folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing));
-    selectionToolbar.visible=Boolean(editing?.selection.isActive.value || editing?.mode.value);
+    searchBar.update(app.contentSize.width, Boolean(editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
+    selectionToolbar.visible=Boolean(editing?.selection.isActive.value);
     const toolbarWidth=Math.min(760,app.contentSize.width-40);
     selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14);
     toolbarBackground.clear().roundRect(0,0,toolbarWidth,54,18).fill({color:0x292929,alpha:0.96}).stroke({color:0xffffff,alpha:0.16,width:1});
     const cancelling=Boolean(editing?.drag.groupDragState.value?.canCancel);
-    toolbarSummary.text=cancelling?t("launchpad.batch.cancelDrag"):t("launchpad.batch.selectedCount",{count:editing?.selection.selectedCount.value??0});
-    toolbarSummary.position.set(14,19);
+    toolbarSummary.text=cancelling
+      ?t(editing?.drag.groupDragState.value?.cancelArmed?"launchpad.batch.releaseToCancel":"launchpad.batch.cancelDrag")+"\n"+t("launchpad.batch.cancelDragHint")
+      :t("launchpad.batch.selectedCount",{count:editing?.selection.selectedCount.value??0});
+    const hiddenCount=(editing?.selection.selectedCount.value??0)-getSelectionScope().orderedIds.filter(id=>editing?.selection.isSelected(id)).length;
+    if(!cancelling && hiddenCount>0)toolbarSummary.text+="\n"+t("launchpad.batch.hiddenCount",{count:hiddenCount});
+    toolbarSummary.position.set(14,hiddenCount>0||cancelling?10:19);
     [selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton].forEach((button,index)=>{
-      button.visible=!cancelling;button.y=10;button.x=toolbarWidth-390+[0,70,140,244,314][index]!;
+      button.visible=!cancelling;button.y=10;button.x=toolbarWidth-510+[0,96,220,344,432][index]!;
+      const disabled=Boolean(editing?.selection.isFrozen.value)
+        || (button===createFolderButton && (editing?.selection.selectedCount.value??0)<2)
+        || ((button===removeButton || button===clearSelectionButton) && !editing?.selection.selectedCount.value);
+      button.eventMode=disabled?"none":"static";button.alpha=disabled?0.4:1;
     });
     if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
     app.invalidate();
@@ -834,7 +849,7 @@ try {
       if (command.type === "activateTarget" && command.target.kind === "icon") {
         const id = command.target.id;
         const item = getCurrentIconScope().items.find(item => item.id === id);
-        if (item) void activateItem(item);
+        if (item) void activateItem(item, {shiftKey: pointerShiftKey});
       }
       if (command.type !== "commitPage") continue;
       if (command.scope.startsWith("folder:")) {
@@ -895,6 +910,7 @@ try {
     applyWheelOutput(wheelGestures.dispatch({ type: "cancel", time }), null, time);
   };
   let touchId: number | null = null;
+  let pointerShiftKey = false;
   const touch = (type: string, event: FederatedPointerEvent): void => {
     if (event.pointerType !== "touch" && event.pointerType !== "mouse") return;
     if (type === "pointerDown" && (touchId !== null || event.isPrimary === false)) return;
@@ -907,6 +923,7 @@ try {
     if(type === "pointerDown" && folderFlow.snapshot().isClosing && (!itemId || !activePageItems.some(item=>item.id===itemId))) return;
     if(type === "pointerDown" && !itemId && scope.area === "folder") return;
     if(type === "pointerDown" && management.modal) return;
+    pointerShiftKey=event.shiftKey;
     const output = wheelGestures.dispatch({ type, pointerId: event.pointerId, pointerType: event.pointerType,
       isPrimary: event.isPrimary, button: event.button, buttons: event.buttons,
       x: event.global.x, y: event.global.y, time: event.timeStamp,
@@ -948,51 +965,73 @@ try {
   };
   app.stage.on("pointerdowncapture", interruptWheel);
   offWheelPointerInterrupt = () => app.stage.off("pointerdowncapture", interruptWheel);
-  const onKey = (event: NativeNavigationKey): void => {
-    if(management.modal) {if(event.type==="down" && event.key==="Escape")management.close();if(event.type==="down"&&event.key==="Tab")management.focusNext();return;}
-    if (searchBar.input.composing) return;
+  const onKey = (event: NativeNavigationKey): boolean => {
+    if(event.type==="up") {editing?.alt.handleAltKeyUp(event);return false;}
+    if(management.modal) {
+      const handled=management.handleKey(event);app.invalidate();return handled;
+    }
+    if (searchBar.input.composing || event.isComposing) return false;
+    if(editing?.drag.isDragActive()){
+      if(event.key==="Escape")editing.drag.cancelDrag({userInitiatedCancel:true});
+      return true;
+    }
+    if(event.key==="Escape" && editing?.selection.isActive.value){
+      if(!editing.selection.isFrozen.value)editing.selection.clear();
+      return true;
+    }
     if (searchBar.input.focused) {
-      if(event.type === "down" && event.key === "Escape") { searchBar.setQuery(""); searchBar.input.blur(); }
-      if(event.type === "down" && event.key === "ArrowDown") { searchBar.input.blur(); setFocusedIcon(firstIconFocus(getCurrentIconScope())); }
-      return;
+      if(event.key==="Escape") {searchBar.setQuery("");searchBar.input.blur();return true;}
+      if(event.key==="Tab" || event.key?.startsWith("Arrow") || event.key==="Enter") {
+        if((event.key==="ArrowLeft" || event.key==="ArrowRight") && event.shiftKey)return false;
+        searchBar.input.blur();
+        if(event.key==="Tab"){setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));return true;}
+      } else return false;
     }
-    if(event.type === "down" && event.key === "Escape" && editing?.drag.isDragActive()) { editing.drag.cancelDrag({ userInitiatedCancel: true }); return; }
-    if(event.type === "down" && event.key === "Escape" && editing?.selection.isActive.value) { editing.selection.clear(); return; }
-    if(event.type === "down" && event.key === "Escape" && editing?.mode.value) { editing.mode.value=false;return; }
-    if(event.type === "down" && event.key === "Alt") {if(editing)editing.mode.value=true;return;}
-    if(event.type === "up" && event.key === "Alt") {if(editing)editing.mode.value=false;return;}
-    if(event.type === "down" && event.ctrlKey && event.key?.toLowerCase()==="a") {
-      editing!.selection.begin();editing!.selection.selectScope({orderedIds:getCurrentIconScope().items.filter(item=>item.type==="app").map(item=>item.id)});return;
+    editing?.alt.handleAltKeyDown(event);
+    if(editing?.alt.isAltKeyEvent(event))return true;
+    if(event.type === "down" && (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key?.toLowerCase()==="a" && editing?.selection.isActive.value) {
+      editing.selection.selectScope(getSelectionScope());return true;
     }
-    if(event.type==="down" && event.ctrlKey && event.key?.toLowerCase()==="n" && editing?.selection.isActive.value){editing.createFolder();return;}
-    if(event.type==="down" && event.key==="F2") {const item=findFocusedIcon(currentFrame.interaction.focusedIcon,getCurrentIconScope());if(item)editItem(item);return;}
-    if(event.type==="down" && event.key==="Delete" && editing?.selection.isActive.value) {removeItems([...editing.selection.selectedIds.value]);return;}
-    if(event.type==="down" && event.key==="Tab") {searchBar.input.focus();return;}
+    if(event.type==="down" && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key?.toLowerCase()==="n" && editing?.selection.isActive.value){editing.createFolder();return true;}
+    if(event.type==="down" && event.key==="F2") {const item=findFocusedIcon(currentFrame.interaction.focusedIcon,getCurrentIconScope());if(item)editItem(item);return true;}
+    if(event.type==="down" && event.key==="Delete" && editing?.selection.isActive.value) {if(editing.selection.selectedCount.value)removeItems([...editing.selection.selectedIds.value]);return true;}
+    if(editing?.selection.isActive.value && event.key===" " && !event.altKey){
+      const item=findFocusedIcon(currentFrame.interaction.focusedIcon,getCurrentIconScope());
+      if(item?.type==="app")void activateItem(item,event);
+      return true;
+    }
+    if(editing?.selection.isActive.value && (event.key==="Enter" || event.key==="Backspace" || (!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key?.length===1)))return true;
+    if(event.type==="down" && event.key==="Tab") {
+      if(folderFlow.snapshot().renderedFolder || editing?.selection.isActive.value)setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));
+      else searchBar.input.focus();
+      return true;
+    }
     if(event.type==="down" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key?.length===1 && event.key!==" " && !folderFlow.snapshot().renderedFolder) {
-      searchBar.input.focus();searchBar.input.commitText(event.key);return;
+      // The native text session starts after this key's character message; transfer its first character once.
+      searchBar.input.focus();searchBar.input.commitText(event.key);return true;
     }
-    if (event.type !== "down" || event.isComposing || event.altKey || event.metaKey) return;
+    if (event.type !== "down" || event.isComposing || event.altKey || event.metaKey) return false;
     const key = event.key || event.code;
     const direction = getNativePageTurnFromKey(event);
     const arrow = key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
-    if (event.ctrlKey && direction === 0) return;
-    if (!arrow && key !== "Enter" && key !== "Escape") return;
-    if (event.repeat && !arrow) return;
+    if (event.ctrlKey && direction === 0) return false;
+    if (!arrow && key !== "Enter" && key !== "Escape") return false;
+    if (event.repeat && !arrow) return true;
     wheelGestures.dispatch({ type: "cancel", time: performance.now() });
     for (const timer of wheelDeadlines.values()) clearTimeout(timer);
     wheelDeadlines.clear();
     clearWheelPresentation();
     const folder = folderFlow.snapshot();
     if (key === "Escape") {
-      if(searchQuery) { searchBar.setQuery(""); return; }
-      closeFolder();
-      return;
+      if(folder.renderedFolder)closeFolder();
+      else if(searchQuery)searchBar.setQuery("");
+      return true;
     }
-    if (folder.isClosing) return;
+    if (folder.isClosing) return true;
     if (direction !== 0) {
       const changed = folder.renderedFolder ? turnFolderPage(direction) : turnPage(direction);
       if (changed) setFocusedIcon(firstIconFocus(getCurrentIconScope()));
-      return;
+      return true;
     }
     const scope = getCurrentIconScope();
     if (arrow) {
@@ -1002,8 +1041,10 @@ try {
       if (focused) void activateItem(focused);
       else setFocusedIcon(firstIconFocus(scope));
     }
+    return true;
   };
-  offKey = app.nativeInput.onKey(onKey);
+  searchBar.handleKey=onKey;
+  offFocus=app.nativeInput.onFocusChange(focused=>{if(!focused)editing?.alt.handleWindowBlur();});
   searchBar.input.on("submit", () => {
     const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, getCurrentIconScope());
     if(focused) void activateItem(focused);
@@ -1056,7 +1097,67 @@ try {
     searchBar.setQuery("yijiazai");
     assert.equal(activePageItems[0]?.id,"native-layout-icon","pinyin search should match the original algorithm");
     searchBar.setQuery("no-such-app-xyz");assert.equal(activePageItems.length,0);
-    searchBar.setQuery("");searchBar.input.blur();await present(app,"search cleared");
+    await present(app,"search clear hit target");
+    const searchClear=app.stage.getChildByLabel("native-search-clear",true);assert.ok(searchClear);
+    clickWithNativeInput(searchClear);
+    assert.equal(searchQuery,"","clear child pointer must clear the query");
+    assert.equal(searchBar.input.focused,true,"clear child pointer must retain input focus");
+    searchBar.input.blur();await present(app,"search cleared");
+    await waitFor("search clear restores desktop icon positions",()=>!scene.getMotionSnapshot().active);
+    await present(app,"desktop icon hit areas after search reset");
+    const firstApp=app.stage.getChildByLabel("launchpad-item:native-layout-icon",true);assert.ok(firstApp);
+    clickWithNativeInput(firstApp,2);await present(app,"native context menu hit targets");
+    assert.equal(management.modal,true);
+    const batchAction=management.getChildByLabel(`native-action:${t("launchpad.batch.toolbarLabel")}`,true);assert.ok(batchAction);
+    clickWithNativeInput(batchAction);await present(app,"native selection from context menu");
+    assert.equal(editing!.selection.isActive.value,true);
+    assert.deepEqual([...editing!.selection.selectedIds.value],["native-layout-icon"]);
+    clickWithNativeInput(firstApp);clickWithNativeInput(firstApp);
+    const thirdApp=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(thirdApp);
+    clickWithNativeInput(thirdApp,0,1);
+    assert.deepEqual([...editing!.selection.selectedIds.value],["native-layout-icon","native-webgpu","native-settings"],"Shift pointer range must include the intermediate app");
+    await waitFor("selected pointer range settles",()=>!scene.getMotionSnapshot().active);
+    await present(app,"selected pointer range committed");
+    const selectionBeforeCancel=[...editing!.selection.selectedIds.value];
+    const sourceBounds=firstApp.getBounds(), sx=sourceBounds.x+sourceBounds.width/2,sy=sourceBounds.y+sourceBounds.height/2;
+    assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(sx,sy)).kind,"icon","group drag must start on an icon");
+    app.nativeInput.emitPointer("pointerdown",sx,sy,0,0);
+    await new Promise<void>(resolve=>setTimeout(resolve,450));
+    app.nativeInput.emitPointer("pointermove",sx+30,sy+30,0,0);
+    await present(app,"selected group drag started");
+    assert.ok(editing!.drag.isDragActive());
+    app.nativeInput.emitPointer("pointermove",app.contentSize.width/2,30,0,0);
+    await present(app,"selected group over cancel zone");
+    assert.equal(editing!.drag.groupDragState.value?.cancelArmed,true);
+    assert.ok(toolbarSummary.text.includes(t("launchpad.batch.releaseToCancel")));
+    await captureSmokeFrame("selection-cancel-zone");
+    app.nativeInput.emitPointer("pointerup",app.contentSize.width/2,30,0,0);
+    await waitFor("selected group cancelled return",()=>!editing!.drag.isDragActive());
+    assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancel-zone drop must preserve layout");
+    assert.deepEqual([...editing!.selection.selectedIds.value],selectionBeforeCancel,"cancel-zone drop must preserve selection");
+    onKey({type:"down",key:"Alt"});await new Promise<void>(resolve=>setTimeout(resolve,550));
+    assert.equal(editing!.mode.value,false,"Alt must remain blocked in selection mode");
+    onKey({type:"up",key:"Alt"});
+    onKey({type:"down",key:"q"});
+    onKey({type:"down",key:"Enter"});
+    assert.equal(searchQuery,"","selection mode must suppress printable search");
+    assert.equal(management.modal,false,"selection Enter must not launch or edit");
+    const secondDot=app.stage.getChildByLabel("native-page-dot:1",true);assert.ok(secondDot);
+    clickWithNativeInput(secondDot);await present(app,"selection hidden on second page");
+    assert.ok(toolbarSummary.text.includes(t("launchpad.batch.hiddenCount",{count:3})));
+    await captureSmokeFrame("selection-hidden-count");
+    onKey({type:"down",key:"Escape"});await present(app,"selection escaped");
+    assert.equal(editing!.selection.isActive.value,false);
+    const homeDot=app.stage.getChildByLabel("native-page-dot:0",true);assert.ok(homeDot);
+    clickWithNativeInput(homeDot);
+    await waitFor("selection test page restoration",()=>Math.abs(scene.getMotionSnapshot().desktopPageTrackX)<0.05);
+    await present(app,"selection page restored");
+    onKey({type:"down",key:"Alt"});
+    assert.equal(editing!.mode.value,false,"Alt must not enter edit immediately");
+    await new Promise<void>(resolve=>setTimeout(resolve,550));
+    assert.equal(editing!.mode.value,true,"holding Alt must enter shared edit mode");
+    onKey({type:"up",key:"Alt"});
+    assert.equal(editing!.mode.value,false,"Alt release must exit edit mode");
     const pointer=(type:string,x:number,y:number,id=17)=>app.nativeInput.emitPointer(type,x,y,0,0,undefined,{pointerId:id,pointerType:"touch",isPrimary:id===17});
     pointer("pointerdown",app.contentSize.width-30,app.contentSize.height/2);
     pointer("pointermove",app.contentSize.width/2,app.contentSize.height/2);
@@ -1113,7 +1214,21 @@ try {
     editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after editing");
     editItem(activePageItems.find(item=>item.id==="native-settings")??null);
     await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await captureSmokeFrame("application-edit-dialog");
-    management.close();await present(app,"edit dialog cancelled");
+    const initialField=searchBar.host.focused;assert.ok(initialField);
+    onKey({type:"down",key:"Tab",shiftKey:true});
+    assert.equal(searchBar.host.focused,null,"reverse Tab from first field must focus the last dialog button");
+    onKey({type:"down",key:"Tab"});
+    assert.equal(searchBar.host.focused,initialField,"Tab from the last button must wrap to the first field");
+    onKey({type:"down",key:"Tab",shiftKey:true});
+    onKey({type:"down",key:"Tab",shiftKey:true});
+    onKey({type:"down",key:" "});
+    assert.equal(management.modal,false,"Space on the focused Cancel button must close the dialog");
+    await present(app,"edit dialog cancelled");
+    editItem(activePageItems.find(item=>item.id==="native-settings")??null);
+    onKey({type:"down",key:"Enter"});
+    onKey({type:"down",key:"Escape"});
+    assert.equal(management.modal,true,"Escape cannot destroy an in-flight form submission");
+    await waitFor("Enter submits native edit form",()=>!management.modal);
     console.log("Native search/IME/touch/drag cancellation/save roundtrip smoke passed");
 
     await captureSmokeFrame("desktop-page-1");
@@ -1619,7 +1734,7 @@ try {
   wheelDeadlines.clear();
   disconnectAnimationHost();
   folderFlow.destroy();
-  offKey();
+  offFocus();
   offWheel();
   offResize();
   offPresented();

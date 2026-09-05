@@ -2,9 +2,11 @@ import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import { createTextInputHost, nativeHost, type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { PIXI_UI_FONT_FAMILY } from "../typography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
+import type { NativeNavigationKey } from "../../native/nativeStartup.js";
 
 /** Native editor with the original search-pill presentation and timing. */
 export class NativeSearchBar extends Container {
+  handleKey: (event: NativeNavigationKey) => boolean = () => false;
   readonly host;
   readonly input;
   readonly #background = new Graphics();
@@ -12,12 +14,17 @@ export class NativeSearchBar extends Container {
   readonly #icon = new Graphics().circle(6, 6, 5).stroke({ color: 0xffffff, alpha: 0.82, width: 1.4 })
     .moveTo(10, 10).lineTo(14, 14).stroke({ color: 0xffffff, alpha: 0.82, width: 1.4 });
   readonly #placeholder;
-  readonly #clear = new Graphics();
+  readonly #clear = new Graphics({label:"native-search-clear"});
   #width = 348;
   #hidden = false;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
-    this.host = createTextInputHost({ root: app.stage, nativeInput: app.nativeInput,
+    this.host = createTextInputHost({ root: app.stage, nativeInput: {
+      ...app.nativeInput,
+      onKey: listener => app.nativeInput.onKey(event => {
+        if (!this.handleKey(event)) listener(event);
+      }),
+    },
       nativeTextInput: app.textInput, clipboard: {
         writeText: text => nativeHost.platform.clipboard.writeText(text),
         readText: async () => {

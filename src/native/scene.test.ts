@@ -12,6 +12,7 @@ import {
 import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import { NativePageDots } from "../rendering/native/NativePageDots.js";
 import {
   createNativeFolderFlow,
   type NativeFolderItem,
@@ -47,6 +48,20 @@ const savedLayout = assertLayoutDocument(JSON.parse(readFileSync(
   "utf8",
 )) as unknown);
 const savedStartupFrame = makeNativeStartupFrame(savedLayout, []);
+{
+  const dots=new NativePageDots(()=>{});
+  const frame:CompleteDesktopSceneFrame={
+    ...savedStartupFrame,
+    viewport:{...savedStartupFrame.viewport,activePages:[[{id:"folder",type:"folder",childPages:[[{id:"child",type:"app"}]]}],[]]},
+    interaction:{...savedStartupFrame.interaction,isBatchSelectionActive:true,selectedAppIds:new Set(["child"])},
+  };
+  dots.update(frame,1000,700,false);
+  assert.equal(dots.getChildByLabel("native-page-selection:0",true)?.visible,true,"a selected folder child must mark its desktop page");
+  assert.equal(dots.getChildByLabel("native-page-selection:1",true)?.visible,false);
+  dots.update({...frame,interaction:{...frame.interaction,isBatchSelectionActive:false}},1000,700,false);
+  assert.equal(dots.getChildByLabel("native-page-selection:0",true)?.visible,false,"leaving selection must hide page markers");
+  dots.destroy();
+}
 assert.equal(savedStartupFrame.viewport.gridRows, 4);
 assert.equal(savedStartupFrame.viewport.gridCols, 6);
 assert.equal(savedStartupFrame.viewport.iconSize, 72);

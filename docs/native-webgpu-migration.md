@@ -4,7 +4,7 @@ status: active
 scope: native-webgpu-migration
 updated: 2026-09-05
 read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "先读 docs/native-product-parity.plan.md 的主链路验收和已知差异；继续原版管理细节/真实硬件验收，不重复迁移共享核心"
+next_entry: "先读 docs/native-product-parity.plan.md 的当前输入验收：1+2 完成；继续原版管理闭环差异，并集中积累上游回放/UIA/桌面 IME 需求"
 ---
 
 # Native WebGPU migration
@@ -13,6 +13,8 @@ Branch: `feature/electrobun-native-migration`
 Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Confirmed direction
+
+- Latest completed slice (2026-09-05, after df982ae): user approved combined real-input regression and original keyboard/multiselect parity. Shared Alt 520ms state replaces both old implementations; one native key subscription arbitrates product/modal handling before TextInput. Native Shift scope, batch shortcuts, modal focus/buttons, hidden counts, folder-child page markers and cancel-zone presentation are verified. Full check, expanded GPU smoke and 7 Web UI tests passed. Real Windows search, menu/Tab/button, cross-page selection/folder creation and close-exit tested only with isolated data. The checks above are historical evidence and do not establish current release acceptance. No user layout was changed; all isolated validation windows closed.
 
 - Current task after d09f528: original folder opening cancellation, closing reopen and cross-folder handoff, plus automated Windows input/window/title checks. User authorized upstream callback implementation, fixed-release consumption, and closure of the existing native dev window. User has no confirmed precision-touchpad/mixed-DPI setup; physical checks remain unverified. Collect further upstream needs together rather than patching the vendor privately.
 

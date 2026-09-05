@@ -11,6 +11,7 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
   throw new Error(`Expected --dev or --smoke, received: ${modeArgument}`);
 }
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
+const isolated = nativeMode === "smoke" || process.argv.includes("--isolated");
 const runner = join(
   projectRoot,
   "vendor",
@@ -175,11 +176,11 @@ try {
         "lumeria_native_data.exe",
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      ...(isolated ? { LUMERIA_NATIVE_DATA_DIR: dataDir } : {}),
       ...(nativeMode === "smoke" ? {
         LAUNCHPAD_NATIVE_SMOKE_MARKER: markerPath,
         LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR: artifactDir,
         LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER: childLaunchMarkerPath,
-        LUMERIA_NATIVE_DATA_DIR: dataDir,
       } : {}),
     },
     stdio: "inherit",

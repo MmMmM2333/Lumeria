@@ -53,6 +53,7 @@ export type NativeNavigationKey = Readonly<{
   key?: string;
   metaKey?: boolean;
   repeat?: boolean;
+  shiftKey?: boolean;
   isComposing?: boolean;
   type?: string;
 }>;

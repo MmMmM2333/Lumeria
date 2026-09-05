@@ -1,4 +1,5 @@
 import { t } from "./nativeLocalization.js";
+import { createAltEditMode } from "../application/altEditMode.js";
 import { createLaunchpadDrag, type LaunchpadDragOptions, type LaunchpadDragPointerEvent, type CompleteGroupReleaseResult } from "../application/launchpadDrag.js";
 import { createNativeStateHost } from "../application/stateHost.js";
 import { createLaunchpadSelectionSession } from "../application/launchpadSelectionSession.js";
@@ -24,19 +25,24 @@ type Options = {
 export function createNativeEditing(options: Options) {
   const state = createNativeStateHost(options.changed);
   const selection = createLaunchpadSelectionSession(state);
-  const mode = state.cell(false);
   let revision = 0;
   const layout = options.layout;
   const cells = layout.presentation;
   const rollback=createProvisionalFolderRollback({cloneItem:layout.operations.cloneItem},state);
   const timers = new Map<number, ReturnType<typeof setTimeout>>();
   let timerId = 0;
-  const schedule = (callback: () => void, delay: number): number => {
+  const schedule = (callback: () => void, delay = 0): number => {
     const id = ++timerId;
     timers.set(id, setTimeout(() => { timers.delete(id); callback(); }, delay));
     return id;
   };
   const clear = (id: number) => { clearTimeout(timers.get(id)); timers.delete(id); };
+  const alt = createAltEditMode({
+    eventTarget: { setTimeout: schedule, clearTimeout: clear },
+    isBatchSelectionActive: () => selection.isActive.value,
+    isDragActive: () => drag.isDragActive(),
+  }, state);
+  const mode = alt.isEditMode;
   const rect = () => { const { width, height } = options.size(); return { left: 0, top: 64, width, height: height - 136, right: width, bottom: height - 72 }; };
   const folderRect = () => {
     const value = options.scene.getFolderPanelRect();
@@ -96,7 +102,7 @@ export function createNativeEditing(options: Options) {
   });
   const projectedPages = (): ReadonlyLaunchpadPages => rollback.projectedPages.value ?? drag.projectedPages.value ?? cells.pages.value;
   return {
-    drag, selection, mode, projectedPages,rollback,
+    drag, selection, mode, alt, projectedPages,rollback,
     commit,
     beginDrag(id: string, event: LaunchpadDragPointerEvent): boolean {
       const pages = cells.pages.value;

@@ -422,6 +422,7 @@ export class NativeDesktopScene {
   getDesktopAlpha():number { return this.#layer.visualRoot.alpha; }
 
   getMotionSnapshot(): Readonly<{
+    active: boolean;
     desktopPageTrackTargetX: number;
     desktopPageTrackX: number;
     folderPageTrackTargetX: number | null;
@@ -430,6 +431,7 @@ export class NativeDesktopScene {
     const folderPageTrackX = this.#layer.singleStageFolderLayer.pageTrack?.x;
     const folderPageTrackTargetX = this.#layer.singleStageFolderLayer.pageTrackMotion?.targetX;
     return Object.freeze({
+      active: motionRuntime.hasActiveWork(),
       desktopPageTrackTargetX: Number(this.#layer.lastDesktopRenderPlan?.targetX ?? this.#layer.pageTrack.x),
       desktopPageTrackX: this.#layer.pageTrack.x,
       folderPageTrackTargetX: typeof folderPageTrackTargetX === "number" && Number.isFinite(folderPageTrackTargetX)
