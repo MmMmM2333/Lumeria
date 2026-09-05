@@ -1,5 +1,16 @@
 import type { AcrylicParameters } from "./layoutDocument.js";
 
+// UI ranges are shared by Web and Native; document normalization remains wider.
+export const ACRYLIC_PARAM_STEP = 0.01;
+export const ACRYLIC_TINT_STRENGTH_MIN = 0;
+export const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
+export const ACRYLIC_BRIGHTNESS_MIN = 0.5;
+export const ACRYLIC_BRIGHTNESS_MAX = 1.2;
+export const ACRYLIC_CONTRAST_MIN = 0.75;
+export const ACRYLIC_CONTRAST_MAX = 1.25;
+export const ACRYLIC_SATURATION_MIN = 0.8;
+export const ACRYLIC_SATURATION_MAX = 1.8;
+
 export const DEFAULT_ACRYLIC_COMPOSITE_PARAMS: AcrylicParameters = {
   brightness: 0.8,
   contrast: 0.85,

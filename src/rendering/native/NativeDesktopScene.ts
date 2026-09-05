@@ -41,6 +41,7 @@ export type NativeSceneAnimationHost = Readonly<{
 }>;
 
 export type NativeSceneCommitOptions = Readonly<{
+  chromeInset?: number;
   folderPageTrackScrub?: ScenePageTrackScrub | null;
   folderPresentation?: NativeFolderPresentation | null;
   pageTrackScrub?: ScenePageTrackScrub | null;
@@ -109,6 +110,7 @@ function makeNativeFolderFrame(
   layout: NativeSceneFolderLayout,
   setFolderPageRef: (element: unknown, pageIndex: number) => void,
   onFolderPageIndexCommit: (pageIndex: number) => void,
+  chromeInset: number,
 ): FolderOverlayFrame | null {
   const folder = presentation?.renderedFolder;
   if (!folder) return null;
@@ -172,7 +174,7 @@ function makeNativeFolderFrame(
     },
     geometry: {
       canvasStageRect: stageRect,
-      desktopFrame: { ...stageRect, top: 64, height: Math.max(1, viewport.height - 136) },
+      desktopFrame: { ...stageRect, top: 64+chromeInset, height: Math.max(1, viewport.height - 136-chromeInset) },
       desktopGrid: {
         cols: desktopFrame.viewport.gridCols,
         isSearchMode: false,
@@ -271,6 +273,7 @@ export class NativeDesktopScene {
         else this.#folderPageRefs.set(pageIndex, element);
       },
       this.#onFolderPageIndexCommit,
+      options.chromeInset??0,
     );
     const folderId = folderState?.renderedFolder?.id ?? null;
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
@@ -281,7 +284,7 @@ export class NativeDesktopScene {
     const structureFrame = makeDesktopStructureFrame({
       activePageIndex: frame.viewport.activePageIndex,
       activePages: frame.viewport.activePages,
-      desktopFrame: { ...stageRect, top: 64, height: Math.max(1, viewport.height - 136) },
+      desktopFrame: { ...stageRect, top: 64+(options.chromeInset??0), height: Math.max(1, viewport.height - 136-(options.chromeInset??0)) },
       desktopGridDebugOptions: null,
       desktopTrackMotionKey: frame.viewport.desktopTrackMotionKey,
       desktopVisualAlpha: folderOpen ? 0 : frame.visual.desktopVisualAlpha,

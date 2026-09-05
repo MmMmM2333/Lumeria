@@ -14,6 +14,8 @@ Worktree: `<local-workspace>/LaunchPad-native-webgpu`
 
 ## Confirmed direction
 
+- Current module ownership is described in [native-architecture.md](native-architecture.md). The chronological slices below are historical; their former scope exclusions and Starter versions do not override the current plan. The latest window/background/settings slice consumes Starter `0.2.6` (536 verified payload files, native ABI 4).
+
 - Latest completed slice (2026-09-05, after df982ae): user approved combined real-input regression and original keyboard/multiselect parity. Shared Alt 520ms state replaces both old implementations; one native key subscription arbitrates product/modal handling before TextInput. Native Shift scope, batch shortcuts, modal focus/buttons, hidden counts, folder-child page markers and cancel-zone presentation are verified. Full check, expanded GPU smoke and 7 Web UI tests passed. Real Windows search, menu/Tab/button, cross-page selection/folder creation and close-exit tested only with isolated data. The checks above are historical evidence and do not establish current release acceptance. No user layout was changed; all isolated validation windows closed.
 
 - Current task after d09f528: original folder opening cancellation, closing reopen and cross-folder handoff, plus automated Windows input/window/title checks. User authorized upstream callback implementation, fixed-release consumption, and closure of the existing native dev window. User has no confirmed precision-touchpad/mixed-DPI setup; physical checks remain unverified. Collect further upstream needs together rather than patching the vendor privately.

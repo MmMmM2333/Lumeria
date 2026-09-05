@@ -427,4 +427,97 @@ async function runSettingsForHost(native:boolean) {
   assert(startupFailureCalls.join(",") === "true,false", "sign-in startup failure should attempt a native rollback");
   assert(!startupFailureSettings.presentation.launchAtLogin.value, "sign-in startup failure should commit no startup state");
   assert(startupFailureSettings.presentation.launchAtLoginError.value.includes("startup denied"), "sign-in startup failures should remain visible");
+
+  const windowFailure = new Error("Window effects denied");
+  const windowFailureLayout = useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" });
+  const windowFailureRuntime = makeMainWindowRuntime();
+  let effectAttempts = 0;
+  const windowFailureSettings = useLaunchpadSettings({
+    layout: windowFailureLayout, localizationText, liveDesktopSupport: { value: {} },
+    mainWindow: { ...windowFailureRuntime, setEffectsEnabled: async () => {
+      effectAttempts++;
+      return effectAttempts === 1 ? { ok: false, error: windowFailure } : { ok: true };
+    } },
+  });
+  await windowFailureSettings.beginEdit();
+  const windowFailureBefore = JSON.stringify(windowFailureSettings.persistence.capture());
+  const windowFailureLayoutBefore = JSON.stringify(windowFailureLayout.documentPersistence.capture());
+  windowFailureSettings.draft.rows.value = 2;
+  windowFailureSettings.actions.setDraftWindowMode(WINDOW_MODE_WINDOWED);
+  const windowFailureResult = await windowFailureSettings.applyEdit();
+  assert(!windowFailureResult.ok && windowFailureResult.error === windowFailure, "window errors must remain explicit");
+  assert(JSON.stringify(windowFailureSettings.persistence.capture()) === windowFailureBefore, "window errors must not commit settings");
+  assert(JSON.stringify(windowFailureLayout.documentPersistence.capture()) === windowFailureLayoutBefore, "window errors must restore the layout");
+  assert(windowFailureSettings.draft.rows.value === 2, "window errors must preserve the draft for retry");
+  assert(effectAttempts === 2, "failed effects must attempt restoration in case the host partially applied");
+  assert((await windowFailureSettings.applyEdit()).ok, "window failures must permit retry");
+
+  for (const stage of ["layout", "localeActivation", "liveDesktop"] as const) {
+    const transactionError = new Error(`${stage} failed`);
+    const transactionLayout = useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" });
+    transactionLayout.commitPages([Array.from({ length: 10 }, (_, index) => transactionLayout.operations.makeApp([`App ${index}`, "C:/fixture.exe"], index))]);
+    let locale = "system";
+    let activatedLocale = "zh-CN";
+    let startup = false;
+    let failOnce = true;
+    let desktopSyncs = 0;
+    const injectedFailure = () => { if (failOnce) { failOnce = false; throw transactionError; } };
+    const transaction = useLaunchpadSettings({
+      layout: transactionLayout, localizationText, liveDesktopSupport: { value: {} },
+      mainWindow: makeMainWindowRuntime(),
+      localeRuntime: { applyPreference: async preference => { locale = preference; return { ok: true, state: makeLocaleState(preference) }; } },
+      activateLocale: state => { activatedLocale = state.resolvedLocale; if (stage === "localeActivation") injectedFailure(); },
+      autostartPort: { isAvailable: () => true, getStatus: async () => startup, setEnabled: async enabled => { startup = enabled; return enabled; } },
+    });
+    await transaction.beginEdit();
+    const before = JSON.stringify(transaction.persistence.capture());
+    const layoutBefore = JSON.stringify(transactionLayout.documentPersistence.capture());
+    transaction.draft.rows.value = 2;
+    transaction.draft.cols.value = 3;
+    transaction.actions.setDraftLocalePreference("en-US");
+    transaction.actions.setDraftLaunchAtLogin(true);
+    const result = await transaction.applyEdit({
+      schedulePageGridMetrics: () => { if (stage === "layout") injectedFailure(); },
+      syncLiveDesktop: () => { desktopSyncs++; if (stage === "liveDesktop") injectedFailure(); },
+    });
+    assert(!result.ok && result.error === transactionError, `${stage} must return its original error`);
+    assert(JSON.stringify(transaction.persistence.capture()) === before, `${stage} must restore committed settings`);
+    assert(JSON.stringify(transactionLayout.documentPersistence.capture()) === layoutBefore, `${stage} must restore exact page partition after a smaller grid was applied`);
+    assert(transaction.draft.rows.value === 2 && transaction.draft.cols.value === 3, `${stage} must preserve retry inputs`);
+    assert(locale === "system" && activatedLocale === "zh-CN" && !startup, `${stage} must restore earlier native and UI side effects`);
+    assert(!transaction.presentation.isApplyingSettingsConfig.value, `${stage} must release the submission lock`);
+    if (stage === "liveDesktop") assert(desktopSyncs === 2, "live desktop rollback must synchronize restored settings");
+    assert((await transaction.applyEdit()).ok, `${stage} must support retry after recovery`);
+  }
+
+  const rollbackError = new Error("Window mode rollback denied");
+  let modeAttempts = 0;
+  const rollbackLocale: string[] = [];
+  const rollbackSettings = useLaunchpadSettings({
+    layout: useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" }),
+    localizationText, liveDesktopSupport: { value: {} },
+    localeRuntime: { applyPreference: async preference => { rollbackLocale.push(preference); return { ok: true, state: makeLocaleState(preference) }; } },
+    mainWindow: { ...makeMainWindowRuntime(),
+      setMode: async () => { if (++modeAttempts === 2) throw rollbackError; return { ok: true }; },
+      setEffectsEnabled: async () => { throw windowFailure; },
+    },
+  });
+  await rollbackSettings.beginEdit();
+  rollbackSettings.actions.setDraftLocalePreference("en-US");
+  const rollbackResult = await rollbackSettings.applyEdit();
+  assert(!rollbackResult.ok && rollbackResult.error === windowFailure, "rollback failure must not replace the initial error");
+  assert("rollbackErrors" in rollbackResult && Array.isArray(rollbackResult.rollbackErrors) && rollbackResult.rollbackErrors.includes(rollbackError), "rollback errors must remain available to the caller");
+  assert(rollbackLocale.join(",") === "en-US,system", "a failed window rollback must not prevent restoring language");
+
+  let resolveImage!: (value:{name:string;imagePath:string})=>void;
+  const imageSettings=useLaunchpadSettings({layout:useLaunchpadLayout({seedEnabled:false,getNewFolderName:()=>"Folder"}),localizationText,
+    liveDesktopSupport:{value:{supportsLiveDesktopBackground:false}},
+    mainWindow:makeMainWindowRuntime(),backgroundAssetPort:{toAssetUrl:path=>path??null,
+      pickImage:()=>new Promise(resolve=>{resolveImage=resolve;}),getDesktopWallpaper:async()=>null}});
+  imageSettings.beginEdit();
+  const choosing=imageSettings.actions.chooseDraftBackgroundImage();
+  imageSettings.cancelEdit();imageSettings.beginEdit();
+  resolveImage({name:"late.png",imagePath:"C:/Images/late.png"});await choosing;
+  assert(imageSettings.draft.backgroundImagePath.value===null,"a cancelled image request must not overwrite a new settings draft");
+  assert(!imageSettings.presentation.isChoosingBackgroundImage.value,"cancelled image selection must release its busy state");
 }

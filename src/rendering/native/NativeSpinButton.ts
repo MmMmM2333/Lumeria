@@ -2,7 +2,7 @@ import { Color, Container, Graphics, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { createNumericControlModel } from "../../domain/numericControl.js";
 import { NativeFluentButton, nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 
 export class NativeSpinButton extends Container {
   readonly input;

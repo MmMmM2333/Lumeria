@@ -296,6 +296,30 @@ export function createLaunchpadLayoutState(options: LaunchpadLayoutOptions, host
     return captureConfiguration();
   }
 
+  /** Restores the exact page partition and indices if a settings transaction fails. */
+  function createConfigurationRollback(): () => void {
+    const configuration = captureConfiguration();
+    const pages = layoutHelpers.clonePages(pagesState.value);
+    const pageIndex = pageIndexState.value;
+    const folderPageIndex = folderPageIndexState.value;
+    const searchPageIndex = searchPageIndexState.value;
+    const folderRequest = folderPageTurnRequestState.value;
+    return () => {
+      gridRowsState.value = configuration.rows;
+      gridColsState.value = configuration.cols;
+      folderRowsState.value = configuration.folderRows;
+      folderColsState.value = configuration.folderCols;
+      iconSizeState.value = configuration.iconSize;
+      folderIconSizeModeState.value = configuration.folderIconSizeMode;
+      folderIconSizeState.value = configuration.folderIconSize;
+      pagesState.value = layoutHelpers.clonePages(pages);
+      pageIndexState.value = pageIndex;
+      folderPageIndexState.value = folderPageIndex;
+      searchPageIndexState.value = searchPageIndex;
+      folderPageTurnRequestState.value = folderRequest;
+    };
+  }
+
   function restorePages(sourcePages: ReadonlyLaunchpadPages): LaunchpadPages {
     const next = layoutHelpers.compactPages(
       layoutHelpers.clonePages(Array.isArray(sourcePages) ? sourcePages : [[]]),
@@ -345,6 +369,7 @@ export function createLaunchpadLayoutState(options: LaunchpadLayoutOptions, host
   return {
     applyConfiguration,
     captureConfiguration,
+    createConfigurationRollback,
     clearFolderPageTurnRequest,
     commitFolderPageIndex,
     commitFolderPageTurnRequest,

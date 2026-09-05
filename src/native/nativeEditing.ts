@@ -2,6 +2,7 @@ import { t } from "./nativeLocalization.js";
 import { createAltEditMode } from "../application/altEditMode.js";
 import { createLaunchpadDrag, type LaunchpadDragOptions, type LaunchpadDragPointerEvent, type CompleteGroupReleaseResult } from "../application/launchpadDrag.js";
 import { createNativeStateHost } from "../application/stateHost.js";
+import { createLaunchpadPageCommands, type LaunchpadWarningDialogConfig } from "../application/launchpadPageCommands.js";
 import { createLaunchpadSelectionSession } from "../application/launchpadSelectionSession.js";
 import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
 import { createProvisionalFolderRollback } from "../application/provisionalFolderRollback.js";
@@ -15,11 +16,13 @@ type Options = {
   scene: NativeDesktopScene;
   folder: NativeFolderFlow;
   size(): { width: number; height: number };
+  chromeInset?():number;
   changed(): void;
   commit(pages: LaunchpadPages): void;
   open(id: string | null): void;
   page(index: number): void;
   folderPage(index: number): void;
+  confirm(config: LaunchpadWarningDialogConfig): void;
 };
 
 export function createNativeEditing(options: Options) {
@@ -43,7 +46,7 @@ export function createNativeEditing(options: Options) {
     isDragActive: () => drag.isDragActive(),
   }, state);
   const mode = alt.isEditMode;
-  const rect = () => { const { width, height } = options.size(); return { left: 0, top: 64, width, height: height - 136, right: width, bottom: height - 72 }; };
+  const rect = () => { const { width, height } = options.size(),inset=options.chromeInset?.()??0; return { left: 0, top: 64+inset, width, height: height - 136-inset, right: width, bottom: height - 72 }; };
   const folderRect = () => {
     const value = options.scene.getFolderPanelRect();
     return value ? { ...value, right: value.left + value.width, bottom: value.top + value.height } : rect();
@@ -65,7 +68,7 @@ export function createNativeEditing(options: Options) {
     folderViewportRef: state.derived(() => ({ getBoundingClientRect: folderRect })),
     visibleFolderRowCount: cells.folderRows,
     iconBoundsRegistry: options.scene.iconBoundsRegistry,
-    getBatchCancelZoneRect:()=>selection.isActive.value?{left:(options.size().width-Math.min(760,options.size().width-40))/2,top:14,width:Math.min(760,options.size().width-40),height:54}:null,
+    getBatchCancelZoneRect:()=>selection.isActive.value?{left:(options.size().width-Math.min(760,options.size().width-40))/2,top:14+(options.chromeInset?.()??0),width:Math.min(760,options.size().width-40),height:54}:null,
     isHomeRevealSettling: state.derived(() => false),
     isLaunchpadInteractionBlocked: () => false,
     finishHomeRevealSettleWindow: () => {},
@@ -101,8 +104,23 @@ export function createNativeEditing(options: Options) {
     addEventListener: () => {}, removeEventListener: () => {}, afterCommit: queueMicrotask,
   });
   const projectedPages = (): ReadonlyLaunchpadPages => rollback.projectedPages.value ?? drag.projectedPages.value ?? cells.pages.value;
+  const pageCommands=createLaunchpadPageCommands({
+    ...layout.operations,...cells,
+    localizationText:{t},isDragActive:()=>drag.isDragActive(),
+    cancelInputGesture:()=>options.page(cells.pageIndex.value),
+    commitPagesState:commit,commitPageIndex:options.page,
+    commitSearchPageIndex:layout.commitSearchPageIndex,
+    commitFolderPageIndex:options.folderPage,commitOpenFolder:options.open,
+    rebasePageIndices:index=>{layout.commitPageIndex(index);layout.commitSearchPageIndex(index);options.page(index);},
+    openFolderId:state.derived(()=>options.folder.snapshot().isClosing?null:options.folder.snapshot().renderedFolder?.id??null),
+    renderedFolder:state.derived(()=>{
+      const id=options.folder.snapshot().renderedFolder?.id;
+      return id?layout.operations.findFolder(cells.pages.value,id)?.item??null:null;
+    }),
+    openWarningDialog:options.confirm,schedulePageGridMetrics:options.changed,
+  });
   return {
-    drag, selection, mode, alt, projectedPages,rollback,
+    drag, selection, mode, alt, projectedPages,rollback,pageCommands,
     commit,
     beginDrag(id: string, event: LaunchpadDragPointerEvent): boolean {
       const pages = cells.pages.value;

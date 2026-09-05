@@ -15,7 +15,7 @@ import {
   type ScannedCatalogApp,
 } from "../domain/applicationCatalog.js";
 import { assertLayoutDocument, type LayoutDocument } from "../domain/layoutDocument.js";
-import type { AppIconChoice, CachedCustomIconResult } from "../api/launchpadApi.js";
+import type { AppIconChoice, CachedCustomIconResult, PickedBackgroundImage } from "../api/launchpadApi.js";
 
 const PROTOCOL_VERSION = 1;
 const SCAN_COUNT_FIELDS = [
@@ -182,6 +182,13 @@ export class NativeDataHost {
   }
   async cacheCustomIcon(dataUrl:string):Promise<CachedCustomIconResult> {
     return validateCachedIcon(await this.#request("cacheCustomIcon",{dataUrl}));
+  }
+  async background(request:{path:string}|{rect:readonly [number,number,number,number]}):Promise<PickedBackgroundImage|null>{
+    const value=await this.#request("path" in request?"cacheBackground":"wallpaper",request);
+    if(value===null)return null;
+    const result=requireRecord(value,"background result");
+    if(typeof result.name!=="string"||typeof result.imagePath!=="string"||!isAbsolute(result.imagePath))throw new TypeError("Invalid background result");
+    return {name:result.name,imagePath:result.imagePath};
   }
   async autostart(enabled?:boolean):Promise<boolean>{
     const value=await this.#request("autostart",enabled===undefined?{}:{enabled});

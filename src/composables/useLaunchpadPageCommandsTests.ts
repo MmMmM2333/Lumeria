@@ -263,14 +263,16 @@ export function runLaunchpadPageCommandsTests() {
   assert(readNumber(() => dragForceFill.calls.schedulePageGridMetrics) === 0, "drag-active forceFillAllPages should not refresh metrics");
 
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
   try {
+    for(const environment of [{},undefined]){
+    Object.defineProperty(globalThis, "window", { configurable: true, value: environment });
     const confirm = createPageCommands({ pageSize: 2, pages: [[appA], [appC]] });
     confirm.commands.confirmForceFillAllPages();
-    assert(readList(() => confirm.calls.openWarningDialog).length === 1, "confirmForceFillAllPages should open a warning dialog in a browser");
+    assert(readList(() => confirm.calls.openWarningDialog).length === 1, "compacting must require confirmation in browser and native hosts");
     assert(readRefValue(confirm.pages).length === 2, "confirmForceFillAllPages should wait for dialog confirmation");
     readList(() => confirm.calls.openWarningDialog)[0]?.onConfirm();
     assert(readRefValue(confirm.pages).length === 1, "confirmForceFillAllPages should force fill after confirmation");
+    }
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");

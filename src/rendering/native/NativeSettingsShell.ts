@@ -2,7 +2,7 @@ import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { createSettingsNavigation, SettingsTabId } from "../../application/settingsNavigation.js";
 import { NativeFluentButton, nativeFluentTheme, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeScrollView } from "./NativeScrollView.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
 
@@ -23,6 +23,7 @@ export type NativeSettingsShellOptions = {
   navigation:Navigation;
   theme():NativeTheme;
   size():{width:number;height:number};
+  topInset?():number;
   t(key:string):string;
   invalidate():void;
   close():void;
@@ -40,6 +41,7 @@ export class NativeSettingsShell extends Container {
   #scroll:NativeScrollView|null=null;
   #routeKey="";
   #applying=false;
+  #pendingApply:Promise<{error:unknown}|null>|null=null;
   #error="";
   #buttons:NativeFluentButton[]=[];
   #controls:readonly NativeSettingsControl[]=[];
@@ -53,6 +55,11 @@ export class NativeSettingsShell extends Container {
     this.alpha=0;motion(this).duration(0.16).to({alpha:1}).start();
   }
   get applying():boolean{return this.#applying;}
+  /** A close request observes the same transaction, including its failure. */
+  async waitForApply():Promise<void>{
+    const result=await this.#pendingApply;
+    if(result)throw result.error;
+  }
   redraw():void{
     const {options}=this, {width,height}=options.size(), theme=options.theme(), colors=nativeFluentTheme(theme);
     const style=nativeSettingsStyle(theme);
@@ -62,21 +69,25 @@ export class NativeSettingsShell extends Container {
     const routeChanged=this.#routeKey!==route.key;this.#routeKey=route.key;
     if(this.#page)killMotionOf(this.#page.node);
     this.#page?.dispose();this.#page=null;this.#scroll=null;this.#buttons=[];this.#focus=-1;
+    this.#panel.mask=null;
     for(const child of this.#panel.removeChildren())child.destroy({children:true});
-    const w=Math.min(1040,width*0.94),h=Math.min(780,Math.max(120,height-48));
+    const topInset=options.topInset?.()??0;
+    const w=Math.min(1040,width*0.94),h=Math.min(780,Math.max(120,height-topInset-48));
     const compact=options.navigation.isNavigationCompact.value;
     const navWidth=compact?68:220;
-    this.#panel.position.set((width-w)/2,(height-h)/2);
+    this.#panel.position.set((width-w)/2,topInset+(height-topInset-h)/2);
+    const panelClip=new Graphics({eventMode:"none"}).roundRect(0,0,w,h,18).fill(0xffffff);
+    this.#panel.addChild(panelClip);this.#panel.mask=panelClip;
     this.#panel.eventMode="static";this.#panel.hitArea=new Rectangle(0,0,w,h);
     this.#shade.clear().rect(0,0,width,height).fill({color:0,alpha:0.26});
-    this.#panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,8).fill(style.panel)
+    this.#panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,18).fill(style.panel)
       .rect(0,0,navWidth,h).fill(style.nav));
     const label=(text:string,x:number,y:number,size=14)=>{
       const node=new Text({text,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fill:colors.colorNeutralForeground1}});
       node.position.set(x,y);node.eventMode="none";this.#panel.addChild(node);return node;
     };
     const button=(text:string,x:number,y:number,bw:number,action:()=>void,primary=false,controlHeight=34)=>{
-      const node=new NativeFluentButton(text,bw,action,options.invalidate,theme,primary?"primary":"subtle",false,controlHeight);
+      const node=new NativeFluentButton(text,bw,action,options.invalidate,theme,primary?"primary":text===options.t("common.actions.cancel")?"outline":"subtle",false,controlHeight);
       node.position.set(x,y);node.disabled=this.#applying;this.#panel.addChild(node);this.#buttons.push(node);
       return node;
     };
@@ -86,7 +97,7 @@ export class NativeSettingsShell extends Container {
     };
     iconButton("navigation-24-regular",options.t(compact?"settings.shell.expandNavigation":"settings.shell.collapseNavigation"),16,16,36,()=>{options.navigation.isNavigationCompact.value=!compact;this.redraw();});
     if(route.depth)iconButton("arrow-left-20-regular",route.parentLabel,navWidth+12,16,34,()=>{options.navigation.closeSubPage();this.redraw();});
-    label(route.depth?`${route.parentLabel} › ${route.label}`:route.label,navWidth+(route.depth?54:20),22,20);
+    label(route.depth?`${route.parentLabel} › ${route.label}`:route.label,navWidth+(route.depth?54:20),22,20).style.fontWeight="600";
     iconButton("dismiss-16-regular",options.t("settings.shell.close"),w-52,16,36,()=>options.close());
     options.navigation.settingsTabs.value.filter(tab=>options.tabs.includes(tab.id)).forEach((tab,index)=>{
       const node=button(tab.label,8,72+index*52,navWidth-16,()=>{
@@ -136,11 +147,14 @@ export class NativeSettingsShell extends Container {
     if(this.#applying)this.#page.node.eventMode="none";
     options.invalidate();
   }
-  async #apply():Promise<void>{
+  #apply():void{
     if(this.#applying)return;this.#applying=true;this.#error="";this.redraw();
-    try{await this.options.apply();}
-    catch(error){this.#error=error instanceof Error?error.message:String(error);}
-    finally{this.#applying=false;if(!this.destroyed)this.redraw();}
+    this.#pendingApply=(async()=>{
+      try{await this.options.apply();return null;}
+      catch(error){this.#error=error instanceof Error?error.message:String(error);return {error};}
+    })().finally(()=>{
+      this.#applying=false;this.#pendingApply=null;if(!this.destroyed)this.redraw();
+    });
   }
   #setFocus(index:number):void{
     this.#controls.forEach((control,i)=>{if(i!==index)control.focus(false);});

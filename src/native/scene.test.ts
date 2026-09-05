@@ -38,11 +38,11 @@ import {
 
 installNativeCanvasTestAdapter();
 {
-  let activated=0,focused=false,finishApply!:()=>void;
+  let activated=0,focused=false,finishApply!:()=>void,rejectApply!:(error:Error)=>void;
   const shell=new NativeSettingsShell({
     navigation:createSettingsNavigation(createNativeStateHost(()=>{}),key=>key),tabs:["general"],
     theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,invalidate:()=>{},close:()=>{},
-    apply:()=>new Promise<void>(resolve=>{finishApply=resolve;}),
+    apply:()=>new Promise<void>((resolve,reject)=>{finishApply=resolve;rejectApply=reject;}),
     content:()=>{
       const node=new Container({label:"test-settings-control"});
       return {node,height:40,dispose:()=>{},controls:[{node,disabled:()=>false,
@@ -56,7 +56,18 @@ installNativeCanvasTestAdapter();
   apply.activate();assert.ok(shell.applying);
   shell.handleKey({type:"down",key:"Enter"});
   assert.equal(activated,0,"submitting settings blocks keyboard mutations");
-  finishApply();await Promise.resolve();await Promise.resolve();
+  let canClose=false;
+  const closing=shell.waitForApply().then(()=>{canClose=true;});
+  await Promise.resolve();assert.equal(canClose,false,"close must await the pending settings transaction");
+  finishApply();await closing;
+  assert.equal(canClose,true);
+  (shell.getChildByLabel("native-action:common.actions.apply",true) as NativeFluentButton).activate();
+  const failedClose=shell.waitForApply();
+  rejectApply(new Error("settings apply failed"));
+  await assert.rejects(failedClose,/settings apply failed/,"failed settings must veto the pending close");
+  assert.equal(shell.applying,false,"failure must permit a retry");
+  (shell.getChildByLabel("native-action:common.actions.apply",true) as NativeFluentButton).activate();
+  const retriedClose=shell.waitForApply();finishApply();await retriedClose;
   shell.destroy();
 }
 
@@ -78,7 +89,9 @@ installNativeCanvasTestAdapter();
   for(const name of ["settings-24-regular","navigation-24-regular","paint-brush-24-regular","apps-24-regular","info-24-regular","dismiss-16-regular","arrow-left-20-regular"] as const){
     const icon=nativeFluentIcon(name,0xffffff);
     assert.ok(icon.width>0&&icon.height>0,`Fluent path ${name} must render without a DOM`);
-    icon.destroy();
+    const texture=icon.texture;
+    assert.equal(texture.source.format,"rgba8unorm","Fluent pixels must retain RGBA channel order");
+    icon.destroy();assert.ok(texture.destroyed,"Fluent icon owns and releases its raster texture");
   }
 }
 {

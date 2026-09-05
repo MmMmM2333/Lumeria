@@ -1,4 +1,8 @@
 import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
+import { readErrorMessage } from "../application/errorMessage.js";
+import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
+import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
+import { dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -43,6 +47,10 @@ import { nativeGeneralSettingsPage } from "../rendering/native/nativeGeneralSett
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { createNativeStateHost } from "../application/stateHost.js";
 import { createSettingsNavigation } from "../application/settingsNavigation.js";
+import { NativeBackground } from "../rendering/native/NativeBackground.js";
+import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
+import { NativeFluentToggle } from "../rendering/native/NativeFluentToggle.js";
+import { nativeBackgroundSettings, nativeDraftBackground, type NativeBackgroundPanelState } from "../rendering/native/nativeBackgroundSettings.js";
 import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
 import { nativeLayoutSettingsPage } from "../rendering/native/nativeLayoutSettingsPage.js";
 import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
@@ -290,6 +298,8 @@ const folderLayout = Object.freeze({
 });
 
 const app = await createNativePixiApplication({
+  transparent:true,
+  titleBarStyle:"hidden",
   antialias: true,
   background: 0x090b14,
   height: 600,
@@ -308,6 +318,7 @@ const mainShortcut=createNativeShortcut(GlobalShortcut,()=>{
 const brandingTextures=new Map(await Promise.all(LAUNCHPAD_ICON_VARIANTS.map(async variant=>
   [variant,await loadNativeIconTexture(join(import.meta.dir,"branding",variant+".svg"))] as const)));
 const systemPreferences=readNativeSystemPreferences();
+setNativeUiFontFamily(systemPreferences.ok?systemPreferences.value.uiFontFamily:null);
 let systemAppearance=systemPreferences.ok?systemPreferences.value.appearance:"dark";
 const settingsTheme=()=>resolveAppearancePreference(settings.draft.settingsThemePreference.value,systemAppearance);
 const settings=createLaunchpadSettings({
@@ -321,15 +332,33 @@ const settings=createLaunchpadSettings({
   liveDesktopSupport:{value:{supportsLiveDesktopBackground:false}},
   backgroundAssetPort:{
     toAssetUrl:path=>path??null,
-    getDesktopWallpaper:async()=>{throw new Error("Native wallpaper integration is not yet available");},
-    pickImage:async()=>{throw new Error("Native background picker integration is not yet available");},
+    getDesktopWallpaper:async()=>{
+      const frame=app.getWindowFrame();
+      return nativeData.background({rect:[frame.x,frame.y,frame.x+frame.width,frame.y+frame.height]});
+    },
+    pickImage:async()=>{
+      const selected=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp",multiple:false});
+      if(!selected.ok){if(selected.error.code==="CANCELLED")return null;throw new Error(selected.error.message);}
+      return selected.value[0]?nativeData.background({path:selected.value[0]}):null;
+    },
   },
-  mainWindow:{support:{value:{}},registerShortcut:async value=>mainShortcut.apply(value),
-    setMode:()=>{throw new Error("Native window presentation settings are not yet available");},
-    setEffectsEnabled:()=>{throw new Error("Native window effects settings are not yet available");}},
+  mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},registerShortcut:async value=>mainShortcut.apply(value),
+    setMode:request=>{
+      app.setWindowMode(request.mode,request.fullscreenOverscanEnabled?1:0);return {ok:true};
+    },
+    setEffectsEnabled:request=>{
+      app.setWindowPresentation(request.enabled?request.material:"none",resolveAppearancePreference(request.appearance,systemAppearance));return {ok:true};
+    }},
 },createNativeStateHost(()=>{}));
 settings.persistence.restore(loadedLayout?.settings??{});
 const layoutSettings=settings.layoutSettings;
+const desktopBackground=new NativeBackground(app,()=>app.invalidate());
+app.stage.addChildAt(desktopBackground,0);
+const backgroundConfig=()=>({...loadedLayout?.settings,...settings.persistence.capture()});
+const refreshBackground=()=>desktopBackground.configure(backgroundConfig(),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+const backgroundPanelState:NativeBackgroundPanelState={layer:false,effect:false,profile:systemAppearance,error:""};
+const windowPanelState={mode:false,material:false,advanced:false};
+const chromeInset=()=>app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24;
 let recordingShortcut=false,expandedIcons=false;
 const stopShortcutRecording=()=>{
   if(!recordingShortcut)return true;
@@ -614,6 +643,8 @@ const settingsButton=management.button(t("settings.shell.title"),34,()=>openSett
 settingsButton.caption.visible=false;settingsButton.label="native-settings-button";
 const settingsIcon=nativeFluentIcon("settings-24-regular",0xffffff,20);settingsIcon.position.set(7,7);settingsButton.addChild(settingsIcon);
 app.stage.addChild(settingsButton);
+const windowChrome=new NativeWindowChrome(app,error=>setStatus(readErrorMessage(error),0xff7b72));
+app.stage.addChild(windowChrome);
 const onContext = (event: FederatedPointerEvent):void=>{
   const target=resolveNativePointerTarget(event.target);
   if(target.kind==="control")return;
@@ -633,9 +664,16 @@ let offWheel = (): void => {};
 let offWheelPointerInterrupt = (): void => {};
 let offTouch = (): void => {};
 let disconnectAnimationHost = (): void => {};
+let windowClosing=false;
 const offSaveBeforeClose = app.beforeClose(async () => {
-  try { await saves.flush(); }
-  catch (error) { setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72); throw error; }
+  windowClosing=true;app.stage.interactiveChildren=false;
+  try {
+    await settingsShell?.waitForApply();
+    await saves.flush();
+  } catch (error) {
+    windowClosing=false;app.stage.interactiveChildren=true;
+    setStatus(readErrorMessage(error),0xff7b72);throw error;
+  }
 });
 const wheelDeadlines = new Map<
   LaunchpadGestureDeadline["kind"],
@@ -645,12 +683,23 @@ const wheelDeadlines = new Map<
 try {
   offSystemPreferences=subscribeNativeSystemPreferences(result=>{
     if(!result.ok){setStatus(result.error.message,0xff7b72);return;}
-    if(systemAppearance!==result.value.appearance){systemAppearance=result.value.appearance;settingsShell?.redraw();app.invalidate();}
+    if(setNativeUiFontFamily(result.value.uiFontFamily))settingsShell?.redraw();
+    if(systemAppearance!==result.value.appearance){
+      systemAppearance=result.value.appearance;settingsShell?.redraw();
+      if(settings.presentation.windowEffectAppearance.value==="system"){
+        try{app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,systemAppearance);}
+        catch(error){setStatus(readErrorMessage(error),0xff7b72);}
+      }
+      void refreshBackground().catch(error=>setStatus(String(error),0xff7b72));app.invalidate();
+    }
   });
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
     if(!outcome.ok)setStatus(String(outcome.error),0xff7b72);
   }
+  app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
+  app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
+  await refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
   await present(app, "the native host startup frame");
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   if (iconTextureSnapshot.pending.length !== 0) {
@@ -677,6 +726,7 @@ try {
     viewport: Readonly<{ height: number; resolution: number; width: number }>,
     snapDesktopLayout: boolean,
   ) => scene.commit(currentFrame, viewport, {
+    chromeInset:chromeInset(),
     folderPageTrackScrub,
     folderPresentation: folderFlow.snapshot(),
     pageTrackScrub: desktopPageTrackScrub,
@@ -707,12 +757,13 @@ try {
       resolution: app.resolution,
       width: app.contentSize.width,
     }, false);
-    settingsButton.position.set(app.contentSize.width-54,14);
+    settingsButton.position.set(app.contentSize.width-54,14+chromeInset());
     settingsButton.visible=!settingsShell&&!editing?.selection.isActive.value&&!folderFlow.snapshot().renderedFolder;
     searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
+    searchBar.y=14+chromeInset();
     selectionToolbar.visible=Boolean(editing?.selection.isActive.value);
     const toolbarWidth=Math.min(760,app.contentSize.width-40);
-    selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14);
+    selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14+chromeInset());
     toolbarBackground.clear().roundRect(0,0,toolbarWidth,54,18).fill({color:0x292929,alpha:0.96}).stroke({color:0xffffff,alpha:0.16,width:1});
     const cancelling=Boolean(editing?.drag.groupDragState.value?.canCancel);
     toolbarSummary.text=cancelling
@@ -730,6 +781,8 @@ try {
     });
     if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
     if(settingsShell&&!management.modal)app.stage.setChildIndex(settingsShell,app.stage.children.length-1);
+    windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
+    app.stage.setChildIndex(windowChrome,app.stage.children.length-1);
     app.invalidate();
   };
   searchBar.update(app.contentSize.width, false);
@@ -737,7 +790,9 @@ try {
   let resizeLiveLogicalObserved = false;
   let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
   offResize = app.on("resize", ({ height, resolution, width }) => {
+    windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     settingsShell?.redraw();
+    void refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
     work = commitScene({ height, resolution, width }, true);
     setStatus(statusText.text);
     if (adaptiveResizeBaseline) {
@@ -826,7 +881,8 @@ try {
     requestSceneRender();
   };
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
-    size: () => app.contentSize, changed: requestSceneRender, commit: commitEditedPages,
+    size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
+    confirm:config=>management.form(config.title,[],config.confirmText,async()=>{config.onConfirm();await saves.flush();},config.message),
     page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
     open: id => {
       if(!id) { closeFolder(); return; }
@@ -856,7 +912,7 @@ try {
         settingsShell?.redraw();return true;
       },
       theme:()=>settingsTheme(),
-      size:()=>app.contentSize,invalidate:()=>app.invalidate(),close:closeSettings,
+      size:()=>app.contentSize,topInset:chromeInset,invalidate:()=>app.invalidate(),close:closeSettings,
       content:(tab,_subPage,width)=>tab==="general"
         ?nativeGeneralSettingsPage({settings,width,theme:settingsTheme(),
           management,invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),recording:recordingShortcut,
@@ -864,11 +920,30 @@ try {
         :tab==="about"
         ?nativeAboutSettingsPage(width,settingsTheme(),brandingTextures.get(settings.draft.launchpadIconVariant.value)!)
         :nativeLayoutSettingsPage(settings,searchBar.host,width,()=>app.invalidate(),
-          settingsTheme(),()=>settingsShell?.redraw()),
+          settingsTheme(),()=>settingsShell?.redraw(),{renderer:app.renderer,size:app.contentSize,state:backgroundPanelState,systemAppearance,
+            chooseColor:app.supportsColorDialog?async color=>{
+              const result=await app.chooseColor(color);
+              if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
+              return result.value;
+            }:undefined},windowPanelState,()=>editing!.pageCommands.confirmForceFillAllPages()),
       apply:async()=>{
         if(!stopShortcutRecording())throw new Error(settings.presentation.mainWindowShortcutError.value);
-        const outcome=await settings.applyEdit({applyWindowPresentation:false});
-        if(!outcome.ok)throw outcome.error;
+        if(settings.presentation.isChoosingBackgroundImage.value)throw new Error(t("settings.interface.background.layer.choosing"));
+        try{
+          await desktopBackground.configure(nativeDraftBackground(settings),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+        }catch(error){
+          try{await refreshBackground();}
+          catch(rollback){throw new AggregateError([error,rollback],`${readErrorMessage(error)}\n${readErrorMessage(rollback)}`);}
+          throw error;
+        }
+        const outcome=await settings.applyEdit();
+        if(!outcome.ok){
+          const errors:unknown[]=[outcome.error];
+          if("rollbackErrors" in outcome&&Array.isArray(outcome.rollbackErrors))errors.push(...outcome.rollbackErrors);
+          try{await refreshBackground();}catch(error){errors.push(error);}
+          throw new Error(errors.map(readErrorMessage).filter(Boolean).join("\n"));
+        }
+        await refreshBackground();
         const config=layoutState.captureConfiguration();
         currentFrame=Object.freeze({...currentFrame,viewport:Object.freeze({...currentFrame.viewport,
           gridRows:config.rows,gridCols:config.cols,iconSize:config.iconSize,
@@ -1096,6 +1171,7 @@ try {
   app.stage.on("pointerdowncapture", interruptWheel);
   offWheelPointerInterrupt = () => app.stage.off("pointerdowncapture", interruptWheel);
   const onKey = (event: NativeNavigationKey): boolean => {
+    if(windowClosing)return true;
     if(event.type==="up") {editing?.alt.handleAltKeyUp(event);return false;}
     if(management.modal) {
       const handled=management.handleKey(event);app.invalidate();return handled;
@@ -1215,6 +1291,16 @@ try {
       structuredLaunchFailureObserved = true;
     }
 
+    const backgroundBaseline=backgroundConfig();
+    const cachedBackground=await nativeData.background({path:join(import.meta.dir,"branding","light.png")});
+    assert.ok(cachedBackground);
+    for(const effect of ["none","dimmed","blur","acrylic"] as const){
+      await desktopBackground.configure({...backgroundBaseline,backgroundSource:"customImage",backgroundImagePath:cachedBackground.imagePath,
+        backgroundImageOpacity:100,backgroundEffect:effect},app.contentSize.width,app.contentSize.height);
+      await present(app,`native background ${effect}`);
+      await captureSmokeFrame(`background-${effect}`);
+    }
+    await refreshBackground();
     const baselinePages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
     const baselineConfig=layoutState.captureConfiguration();
     clickWithNativeInput(settingsButton);await present(app,"native settings opened");
@@ -1280,10 +1366,246 @@ try {
     settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
     await present(app,"settings theme restored");
 
+    const clickWindowControl=async(label:string)=>{
+      const control=app.stage.getChildByLabel(`native-window:${label}`,true);assert.ok(control instanceof NativeFluentButton);
+      for(let index=0;index<160&&!control.focused;index++)onKey({type:"down",key:"Tab"});
+      assert.ok(control.focused,`window settings keyboard must reach ${label}`);
+      await present(app,`window ${label} revealed`);clickWithNativeInput(control);await present(app,`window ${label} selected`);
+    };
+    const windowBefore=app.getWindowFrame(),materialBefore=settings.presentation.windowEffectMaterial.value;
+    const applyWindowSettings=async()=>{
+      clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+      await waitFor("window settings transaction completed",()=>Boolean(settingsShell&&!settingsShell.applying));
+      await present(app,"window settings presentation settled");
+    };
+    const titlebarBefore=settings.presentation.showCustomTitlebar.value;
+    await clickWindowControl("mode-expand");
+    const toggleTitlebar=async()=>{
+      await clickWindowControl("windowed");
+      onKey({type:"down",key:"Tab"});await present(app,"titlebar toggle revealed");
+      const toggle=app.stage.getChildByLabel("native-window:titlebar",true);assert.ok(toggle instanceof NativeFluentToggle);
+      clickWithNativeInput(toggle);await applyWindowSettings();
+    };
+    if(!titlebarBefore)await toggleTitlebar();
+    assert.equal(settings.presentation.showCustomTitlebar.value,true);
+    assert.equal((await nativeData.loadLayout())!.settings.showCustomTitlebar,true);
+    assert.ok(windowChrome.getChildByLabel("native-window-chrome:close"),"custom titlebar must expose a close action");
+    await captureSmokeFrame("settings-titlebar");
+    {
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      const testing=getNativePixiApplicationTesting(app),handle=testing.handles().inputWindow;
+      const screenPoint=(x:number,y:number)=>testing.clientToScreen(
+        Math.round(x*testing.diagnostics().window.snapshot.scaleFactor),Math.round(y*testing.diagnostics().window.snapshot.scaleFactor));
+      const initial={...app.window.getFrame()},initialContent={...app.contentSize};
+      const restore=async()=>{
+        await waitFor("OS move/size capture released",()=>!testing.diagnostics().input.captured&&!testing.diagnostics().input.nativeCaptured);
+        app.window.setSize(initial.width,initial.height);app.window.setPosition(initial.x,initial.y);
+        await waitFor("window restored after OS drag",()=>{
+          const frame=app.window.getFrame();return Math.abs(frame.x-initial.x)<2&&Math.abs(frame.y-initial.y)<2
+            &&Math.abs(frame.width-initial.width)<2&&Math.abs(frame.height-initial.height)<2
+            &&Math.abs(app.contentSize.width-initialContent.width)<1&&Math.abs(app.contentSize.height-initialContent.height)<1;
+        });
+        await present(app,"restored window geometry after OS drag");
+      };
+      const beforeDrag=app.getWindowFrame();
+      testing.resetInputEvents();
+      await dragOwnedNativeWindow(handle,screenPoint(100,20),{x:30,y:24});
+      console.log("Native OS titlebar observation",JSON.stringify({before:beforeDrag,after:app.getWindowFrame()}));
+      await waitFor("titlebar drag moves the actual HWND",()=>Math.abs(app.getWindowFrame().x-beforeDrag.x)>10);
+      await restore();
+      for(const direction of ["North","South","West","East","NorthWest","NorthEast","SouthWest","SouthEast"]){
+        const edge=windowChrome.getChildByLabel(`native-window-resize:${direction}`);assert.ok(edge);
+        const area=edge.hitArea as Rectangle;
+        const point=edge.toGlobal({x:area.x+area.width/2,y:area.y+area.height/2});
+        const delta={x:direction.includes("West")?18:direction.includes("East")?-18:0,
+          y:direction.includes("North")?18:direction.includes("South")?-18:0};
+        const before=app.getWindowFrame();
+        assert.equal(app.renderer.events.rootBoundary.hitTest(point.x,point.y),edge,`${direction} resize handle must own its actual coordinates`);
+        try{await dragOwnedNativeWindow(handle,screenPoint(point.x,point.y),delta);}
+        catch(error){console.error("Native OS resize failure",direction,testing.diagnostics().input);throw error;}
+        console.log("Native OS resize observation",direction,JSON.stringify({before,after:app.getWindowFrame(),point}));
+        await waitFor(`actual ${direction} resize`,()=>{
+          const frame=app.getWindowFrame();return (delta.x===0||frame.width<before.width-8)&&(delta.y===0||frame.height<before.height-8);
+        });
+        await restore();
+      }
+      console.log("Native window OS input: titlebar drag and all eight resize directions passed");
+    }
+    // Exercise the actual close guard while a settings transaction is in flight.
+    const applyingShell=settingsShell as NativeSettingsShell;
+    const applyNormally=applyingShell.options.apply;
+    let rejectPending!:(error:Error)=>void;
+    applyingShell.options.apply=()=>new Promise<void>((_resolve,reject)=>{rejectPending=reject;});
+    try{
+      clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+      assert.ok(applyingShell.applying);
+      app.window.requestClose();
+      await waitFor("close waits for settings",()=>windowClosing);
+      assert.equal(app.state,"running");assert.equal(app.stage.interactiveChildren,false);
+      rejectPending(new Error("smoke: settings apply failure must retain the window"));
+      await waitFor("failed apply restores window input",()=>!windowClosing&&!applyingShell.applying);
+      assert.equal(app.state,"running");assert.equal(app.stage.interactiveChildren,true);
+    }finally{applyingShell.options.apply=applyNormally;setStatus("");}
+    await applyWindowSettings();
+    console.log("Native close guard: pending settings wait, failure retention and retry passed");
+    await toggleTitlebar();
+    assert.equal(settings.presentation.showCustomTitlebar.value,false);
+    assert.equal(windowChrome.getChildByLabel("native-window-chrome:close"),null,"titlebar off must remove its controls");
+    assert.ok(windowChrome.getChildByLabel("native-window-drag"),"titlebar off must retain the drag strip");
+    if(titlebarBefore)await toggleTitlebar();
+    windowPanelState.mode=false;(settingsShell as NativeSettingsShell|null)?.redraw();
+    await present(app,"titlebar settings restored");
+    await clickWindowControl("material-expand");
+    if(settings.actions.canUseWindowEffectMaterial("mica")){
+      await clickWindowControl("preview-mica");
+      await applyWindowSettings();
+      assert.equal((await nativeData.loadLayout())!.settings.windowEffectMaterial,"mica");
+    }
+    await captureSmokeFrame("settings-window-material");
+    for(const theme of ["dark","light"] as const){
+      settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell|null)?.redraw();
+      await present(app,`window settings ${theme} theme`);
+      await captureSmokeFrame(`settings-window-${theme}`);
+    }
+    settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
+    await present(app,"window theme restored after comparison");
+    await clickWindowControl("fullscreen");await applyWindowSettings();
+    assert.equal(app.windowMode,"fullscreen");
+    assert.equal((await nativeData.loadLayout())!.settings.windowMode,"fullscreen");
+    assert.ok(app.getWindowFrame().width>=windowBefore.width);
+    await captureSmokeFrame("settings-window-fullscreen");
+    await clickWindowControl("windowed");settings.actions.setDraftWindowEffectMaterial(materialBefore);await applyWindowSettings();
+    assert.equal(app.windowMode,"windowed");
+    assert.deepEqual(app.getWindowFrame(),windowBefore,"window settings must restore the previous physical frame");
+    windowPanelState.material=false;(settingsShell as NativeSettingsShell|null)?.redraw();
+    await present(app,"window settings restored");
+
+    const clickBackgroundControl=async(label:string)=>{
+      const control=app.stage.getChildByLabel(`native-background:${label}`,true);
+      assert.ok(control instanceof NativeFluentButton);
+      for(let index=0;index<100&&!control.focused;index++)onKey({type:"down",key:"Tab"});
+      assert.ok(control.focused,`keyboard must reach ${label}`);
+      await present(app,`background ${label} revealed`);clickWithNativeInput(control);
+      await present(app,`background ${label} selected`);
+    };
+    for(const command of [1,2] as const){
+      const beforeColor=settings.draft.backgroundBaseColor.value;
+      const response=respondToOwnedColorDialog(command);
+      await clickBackgroundControl("base-color-picker");
+      await response;
+      await waitFor("native color picker released",()=>{
+        const picker=app.stage.getChildByLabel("native-background:base-color-picker",true);
+        return picker instanceof NativeFluentButton&&!picker.disabled;
+      });
+      assert.equal(settings.draft.backgroundBaseColor.value,beforeColor,"system color confirmation/cancel must roundtrip the requested color");
+    }
+    console.log("Native settings color picker: actual system confirmation and cancellation passed");
+    {
+      const initial=settings.draft.backgroundBaseColor.value;
+      let finishColor!:(value:number|null)=>void;
+      const createColorPage=()=>nativeBackgroundSettings({settings,host:searchBar.host,renderer:app.renderer,width:700,
+        size:app.contentSize,theme:settingsTheme(),systemAppearance,state:{layer:false,effect:false,profile:systemAppearance,error:""},
+        invalidate:()=>{},redraw:()=>{},chooseColor:()=>new Promise(resolve=>{finishColor=resolve;})});
+      const accepted=createColorPage();
+      (accepted.node.getChildByLabel("native-background:base-color-picker",true) as NativeFluentButton).activate();
+      finishColor(0x123456);await Promise.resolve();
+      assert.equal(settings.draft.backgroundBaseColor.value,"#123456","selected color must reach the shared draft");
+      accepted.dispose();accepted.node.destroy({children:true});
+      const cancelled=createColorPage();
+      (cancelled.node.getChildByLabel("native-background:base-color-picker",true) as NativeFluentButton).activate();
+      finishColor(null);await Promise.resolve();assert.equal(settings.draft.backgroundBaseColor.value,"#123456");
+      cancelled.dispose();cancelled.node.destroy({children:true});
+      const stale=createColorPage();
+      (stale.node.getChildByLabel("native-background:base-color-picker",true) as NativeFluentButton).activate();
+      stale.dispose();stale.node.destroy({children:true});
+      settings.actions.setDraftBackgroundBaseColor(initial);
+      finishColor(0xff0000);await Promise.resolve();
+      assert.equal(settings.draft.backgroundBaseColor.value,initial,"disposed color selection must not mutate the next draft");
+    }
+    await clickBackgroundControl("layer-expand");
+    settings.draft.backgroundImagePath.value=cachedBackground.imagePath;
+    await clickBackgroundControl("source-customImage");
+    await clickBackgroundControl("layout-fit");
+    assert.equal(settings.draft.backgroundImageLayout.value,"fit");
+    assert.equal(settings.persistence.capture().backgroundImagePath,backgroundBaseline.backgroundImagePath,"preview must not commit the image");
+    await waitFor("background layer preview loaded",()=>app.stage.getChildByLabel("native-background-preview:layer",true)?.visible===true);
+    await present(app,"background layer preview ready");
+    await captureSmokeFrame("settings-background-layer");
+    await clickBackgroundControl("effect-expand");
+    await clickBackgroundControl("effect-acrylic");
+    await clickBackgroundControl("appearance-light");
+    await waitFor("background effect preview loaded",()=>app.stage.getChildByLabel("native-background-preview:effect",true)?.visible===true);
+    await present(app,"background effect preview ready");
+    await captureSmokeFrame("settings-background-effect");
+    for(const theme of ["dark","light"] as const){
+      settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell|null)?.redraw();
+      await waitFor("theme background preview loaded",()=>app.stage.getChildByLabel("native-background-preview:effect",true)?.visible===true);
+      await present(app,`background settings ${theme} theme`);
+      await captureSmokeFrame(`settings-background-${theme}`);
+    }
+    settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
+    await present(app,"background theme restored after comparison");
+    await clickBackgroundControl("profile-light");
+    for(let index=0;index<4;index++)onKey({type:"down",key:"Tab"});
+    await present(app,"acrylic brightness control revealed");
+    onKey({type:"down",key:"End"});
+    assert.equal(settings.draft.backgroundAcrylicLightParams.value.brightness,1.2,"brightness keyboard control must use the original UI range");
+    onKey({type:"down",key:"Tab"});onKey({type:"down",key:"End"});
+    assert.equal(settings.draft.backgroundAcrylicLightParams.value.contrast,1.25,"contrast control must reach the shared profile");
+    await present(app,"acrylic parameter controls settled");await captureSmokeFrame("settings-acrylic-parameters");
+    clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+    await waitFor("background applied",()=>Boolean(settingsShell&&!settingsShell.applying));
+    const savedBackground=(await nativeData.loadLayout())!.settings;
+    assert.equal(savedBackground.backgroundImagePath,cachedBackground.imagePath);
+    assert.equal(savedBackground.backgroundImageLayout,"fit");
+    assert.equal(savedBackground.backgroundEffect,"acrylic");
+    assert.equal(savedBackground.backgroundAcrylicLightParams.brightness,1.2);
+    assert.equal(savedBackground.backgroundAcrylicLightParams.contrast,1.25);
+    settings.actions.clearDraftBackgroundImage();
+    clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+    await waitFor("background cleared",()=>Boolean(settingsShell&&!settingsShell.applying));
+    assert.equal((await nativeData.loadLayout())!.settings.backgroundImagePath,null);
+    backgroundPanelState.layer=backgroundPanelState.effect=false;
+    (settingsShell as NativeSettingsShell|null)?.redraw();await present(app,"background sections collapsed");
+    // A missing image must leave the committed document and desktop usable for retry.
+    {
+      const before=settings.persistence.capture();
+      settings.draft.backgroundImagePath.value=join(process.env.LUMERIA_NATIVE_DATA_DIR!,"missing-settings-background.png");
+      settings.actions.setDraftBackgroundSource("customImage");
+      await applyWindowSettings();
+      assert.deepEqual(settings.persistence.capture(),before,"failed background preparation must not commit the draft");
+      assert.equal((await nativeData.loadLayout())!.settings.backgroundImagePath,before.backgroundImagePath);
+      assert.ok((settingsShell as NativeSettingsShell).children.length>0,"settings must remain open after background failure");
+      settings.actions.clearDraftBackgroundImage();await applyWindowSettings();
+    }
+
+    const showCompact=async()=>{
+      const compact=app.stage.getChildByLabel("native-setting:compact",true);assert.ok(compact instanceof NativeFluentButton);
+      for(let index=0;index<160&&!compact.focused;index++)onKey({type:"down",key:"Tab"});
+      assert.ok(compact.focused);await present(app,"compact control revealed");
+      clickWithNativeInput(compact);await present(app,"compact confirmation visible");
+      assert.ok(management.modal);
+    };
+    await showCompact();
+    await waitFor("compact confirmation animation settled",()=>management.getChildByLabel("native-form-overlay")?.alpha===1);
+    await present(app,"compact confirmation settled frame");await captureSmokeFrame("settings-compact-confirm");
+    onKey({type:"down",key:"Escape"});
+    assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancelled compact must retain page boundaries");
+    await present(app,"compact cancellation settled");await showCompact();
+    const confirmCompact=management.getChildByLabel(`native-action:${t("commands.compact.confirm")}`,true);assert.ok(confirmCompact);
+    clickWithNativeInput(confirmCompact);await waitFor("compacted layout saved",()=>!management.modal);
+    assert.deepEqual(layoutState.presentation.pages.value.flat().map(item=>item.id),baselinePages.flat().map(item=>item.id));
+    assert.equal(layoutState.presentation.pages.value.length,Math.ceil(baselinePages.flat().length/layoutState.presentation.pageSize.value));
+    assert.deepEqual((await nativeData.loadLayout())!.pages.map(page=>page.map(item=>item.id)),
+      layoutState.presentation.pages.value.map(page=>page.map(item=>item.id)),"saved page boundaries and order must match the compacted layout");
+    commitEditedPages(baselinePages);await saves.flush();await present(app,"compact fixture restored");
+    console.log("Native settings compact: confirmation, cancellation, item order and persisted layout passed");
+
     const rowsControl=app.stage.getChildByLabel("native-setting:desktopRows",true);
     assert.ok(rowsControl);
-    for(let index=0;index<20&&!searchBar.host.focused;index++)onKey({type:"down",key:"Tab"});
-    assert.ok(searchBar.host.focused,"Tab must reach the first settings numeric input");
+    for(let index=0;index<60&&!rowsControl.children.includes(searchBar.host.focused!);index++)onKey({type:"down",key:"Tab"});
+    assert.ok(rowsControl.children.includes(searchBar.host.focused!),"Tab must reveal and focus the desktop row input");
+    await present(app,"desktop row focus scroll settled");
     onKey({type:"down",key:"ArrowUp"});
     assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1,"numeric keyboard handling must reach the shared draft");
     onKey({type:"down",key:"ArrowDown"});
@@ -1297,6 +1619,8 @@ try {
     await present(app,"settings close restores entry hit target");
     clickWithNativeInput(settingsButton);await present(app,"settings reopened");
     const reopenedRows=app.stage.getChildByLabel("native-setting:desktopRows",true);assert.ok(reopenedRows);
+    for(let index=0;index<60&&!reopenedRows.children.includes(searchBar.host.focused!);index++)onKey({type:"down",key:"Tab"});
+    await present(app,"reopened desktop row revealed");
     clickWithNativeInput(reopenedRows.getChildByLabel("native-action:+",true)!);
     const applyButton=app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true);assert.ok(applyButton);
     clickWithNativeInput(applyButton);
@@ -1363,12 +1687,12 @@ try {
     app.nativeInput.emitPointer("pointermove",sx+30,sy+30,0,0);
     await present(app,"selected group drag started");
     assert.ok(editing!.drag.isDragActive());
-    app.nativeInput.emitPointer("pointermove",app.contentSize.width/2,30,0,0);
+    app.nativeInput.emitPointer("pointermove",app.contentSize.width/2,30+chromeInset(),0,0);
     await present(app,"selected group over cancel zone");
     assert.equal(editing!.drag.groupDragState.value?.cancelArmed,true);
     assert.ok(toolbarSummary.text.includes(t("launchpad.batch.releaseToCancel")));
     await captureSmokeFrame("selection-cancel-zone");
-    app.nativeInput.emitPointer("pointerup",app.contentSize.width/2,30,0,0);
+    app.nativeInput.emitPointer("pointerup",app.contentSize.width/2,30+chromeInset(),0,0);
     await waitFor("selected group cancelled return",()=>!editing!.drag.isDragActive());
     assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancel-zone drop must preserve layout");
     assert.deepEqual([...editing!.selection.selectedIds.value],selectionBeforeCancel,"cancel-zone drop must preserve selection");
@@ -1413,6 +1737,7 @@ try {
     const dragNode=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(dragNode);
     const start=dragNode.getBounds();
     assert.ok(start.x >= 0 && start.x+start.width <= app.contentSize.width,"drag source must be on screen");
+    assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(start.x+start.width/2,start.y+start.height/2)).kind,"icon","mouse drag source must remain hit-testable after touch cancellation");
     app.nativeInput.emitPointer("pointermove",start.x+start.width/2,start.y+start.height/2,0);
     app.nativeInput.emitPointer("pointerdown",start.x+start.width/2,start.y+start.height/2,0);
     await new Promise<void>(resolve=>setTimeout(resolve,450));
@@ -1422,11 +1747,14 @@ try {
     editing!.drag.cancelDrag({userInitiatedCancel:true});
     app.nativeInput.emitPointer("pointerup",start.x+start.width/2+35,start.y+start.height/2+30,0);
     await waitFor("drag cancellation release",()=>!editing!.drag.isDragActive());
+    await waitFor("cancelled drag geometry settles",()=>!scene.getMotionSnapshot().active);
     await present(app,"drag source restored");
     const moveNode=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(moveNode);
     const moveBounds=moveNode.getBounds();const mx=moveBounds.x+moveBounds.width/2,my=moveBounds.y+moveBounds.height/2;
+    assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(mx,my)).kind,"icon","reorder source must be hit-testable after the return animation");
     app.nativeInput.emitPointer("pointerdown",mx,my,0);await new Promise<void>(resolve=>setTimeout(resolve,450));
     app.nativeInput.emitPointer("pointermove",mx+30,my+25,0);await present(app,"drag start for committed reorder");
+    assert.ok(editing!.drag.isDragActive(),"the second mouse gesture must start a new drag after cancellation");
     app.nativeInput.emitPointer("pointermove",app.contentSize.width-100,my+80,0);await present(app,"drag reorder destination");
     app.nativeInput.emitPointer("pointerup",app.contentSize.width-100,my+80,0);
     await waitFor("committed drag release",()=>!editing!.drag.isDragActive());await saves.flush();
@@ -1969,6 +2297,7 @@ try {
   }
 } finally {
   sceneDisposed=true;sceneRenderQueued=false;
+  desktopBackground.destroy();
   mainShortcut.dispose();
   (settingsShell as NativeSettingsShell|null)?.destroy();
   for(const texture of brandingTextures.values())texture.destroy(true);

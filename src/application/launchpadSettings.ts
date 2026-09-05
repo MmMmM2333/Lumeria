@@ -122,7 +122,7 @@ export type LaunchpadSettingsOptions = Readonly<{
   backgroundAssetPort: BackgroundAssetPort;
   isDragActive?: () => boolean;
   launchpadIconPort: LaunchpadIconPort;
-  layout: Pick<ReturnType<typeof createLaunchpadLayoutState>, "captureConfiguration" | "applyConfiguration">;
+  layout: Pick<ReturnType<typeof createLaunchpadLayoutState>, "captureConfiguration" | "applyConfiguration" | "createConfigurationRollback">;
   liveDesktopSupport: Readonly<{ value: Partial<NormalizedLiveDesktopBackgroundSupport> }>;
   localeRuntime: Pick<LocaleRuntimePort, "applyPreference">;
   localizationText: Pick<LocalizationText, "t">;
@@ -249,6 +249,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   const canCustomizeLaunchpadIconState = ref(Boolean(launchpadIcons.isAvailable()));
   const isApplyingSettingsConfigState = ref(false);
   const isChoosingBackgroundImageState = ref(false);
+  let backgroundRequestId = 0;
 
   function canUseLiveDesktopBackground() {
     return Boolean(
@@ -320,6 +321,8 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   }
 
   function beginEdit() {
+    backgroundRequestId++;
+    isChoosingBackgroundImageState.value = false;
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
@@ -329,6 +332,8 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   }
 
   function cancelEdit() {
+    backgroundRequestId++;
+    isChoosingBackgroundImageState.value = false;
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
@@ -449,9 +454,11 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
 
   async function chooseDraftBackgroundImage() {
     if (isChoosingBackgroundImageState.value) return { ok: true, skipped: true };
+    const requestId=++backgroundRequestId;
     isChoosingBackgroundImageState.value = true;
     try {
       const selected = await backgroundAssets.pickImage();
+      if(requestId!==backgroundRequestId)return {ok:true,skipped:true};
       const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
       if (!imagePath) return { ok: true, skipped: true };
       draftBackgroundImagePath.value = imagePath;
@@ -462,15 +469,17 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     } catch (error) {
       return explicitFailure(error);
     } finally {
-      isChoosingBackgroundImageState.value = false;
+      if(requestId===backgroundRequestId)isChoosingBackgroundImageState.value = false;
     }
   }
 
   async function useDraftDesktopWallpaper() {
     if (isChoosingBackgroundImageState.value) return { ok: true, skipped: true };
+    const requestId=++backgroundRequestId;
     isChoosingBackgroundImageState.value = true;
     try {
       const selected = await backgroundAssets.getDesktopWallpaper();
+      if(requestId!==backgroundRequestId)return {ok:true,skipped:true};
       const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
       if (!imagePath) return { ok: true, skipped: true };
       draftBackgroundImagePath.value = imagePath;
@@ -481,7 +490,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     } catch (error) {
       return explicitFailure(error);
     } finally {
-      isChoosingBackgroundImageState.value = false;
+      if(requestId===backgroundRequestId)isChoosingBackgroundImageState.value = false;
     }
   }
 
@@ -611,176 +620,150 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   }
 
   async function applyEdit(runtimeOptions: LaunchpadSettingsRuntimeOptions = {}) {
-    const currentShortcut = normalizeMainWindowShortcut(mainWindowShortcutState.value);
-    const nextShortcut = normalizeMainWindowShortcut(draftMainWindowShortcut.value);
-    const currentLocalePreference = normalizeLocalePreference(localePreferenceState.value);
-    const nextLocalePreference = normalizeLocalePreference(draftLocalePreference.value);
-    const currentLaunchpadIconVariant = normalizeLaunchpadIconVariant(launchpadIconVariantState.value);
-    const nextLaunchpadIconVariant = normalizeLaunchpadIconVariant(draftLaunchpadIconVariant.value);
+    if (isApplyingSettingsConfigState.value) return explicitFailure(new Error("Settings are already being applied"));
+    const committed = capture();
     const currentLaunchAtLogin = Boolean(launchAtLoginState.value);
+    const currentImageUrl = backgroundImageUrlState.value;
+    const restoreLayout = layout.createConfigurationRollback();
+    const restoreDraft = Object.values(draft).map(cell => {
+      const value = cell.value;
+      return () => { cell.value = value; };
+    });
+    const nextShortcut = normalizeMainWindowShortcut(draftMainWindowShortcut.value);
+    const nextLocalePreference = normalizeLocalePreference(draftLocalePreference.value);
+    const nextLaunchpadIconVariant = normalizeLaunchpadIconVariant(draftLaunchpadIconVariant.value);
     const nextLaunchAtLogin = Boolean(draftLaunchAtLogin.value);
+    const undo: Array<() => unknown | Promise<unknown>> = [];
+    let reportFailure: ((error: unknown) => void) | undefined;
+    let localeActivationAttempted = false;
+    let liveDesktopAttempted = false;
+    let commitAttempted = false;
+
+    // Host adapters may throw or return a structured failure. Neither is success.
+    function requireSuccess(outcome: unknown): void {
+      if (!outcome || typeof outcome !== "object") return;
+      if ("ok" in outcome && outcome.ok === false) {
+        throw "error" in outcome ? outcome.error : new Error("Platform settings operation failed");
+      }
+      if ("phase" in outcome && outcome.phase === "failed") {
+        throw new Error("detail" in outcome ? String(outcome.detail) : "Live desktop synchronization failed");
+      }
+    }
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
     launchAtLoginErrorState.value = "";
     isApplyingSettingsConfigState.value = true;
     try {
-      let appliedLocaleState = null;
-      if (nextLocalePreference !== currentLocalePreference) {
-        const localeOutcome = await localeRuntime.applyPreference(nextLocalePreference);
-        if (!localeOutcome?.ok) {
-          const localeError = localeOutcome?.error || new Error("Unable to apply language");
-          localePreferenceErrorState.value = localeError.message;
-          return explicitFailure(localeError);
-        }
-        appliedLocaleState = localeOutcome.state;
+      let appliedLocaleState: LocaleState | null = null;
+      if (nextLocalePreference !== committed.localePreference) {
+        reportFailure = error => { localePreferenceErrorState.value = errorMessage(error, "Unable to apply language"); };
+        undo.push(async () => {
+          const outcome = await localeRuntime.applyPreference(committed.localePreference);
+          if (!outcome.ok) throw outcome.error;
+          if (localeActivationAttempted) activateLocale(outcome.state);
+        });
+        const outcome = await localeRuntime.applyPreference(nextLocalePreference);
+        if (!outcome.ok) throw outcome.error;
+        appliedLocaleState = outcome.state;
       }
-
-      let shortcutApplied = false;
-      if (nextShortcut !== currentShortcut) {
-        let shortcutOutcome;
-        try {
-          shortcutOutcome = await mainWindow.registerShortcut(nextShortcut);
-        } catch (error) {
-          shortcutOutcome = explicitFailure(error);
-        }
-        if (!shortcutOutcome.ok) {
-          if (appliedLocaleState) {
-            const rollbackOutcome = await localeRuntime.applyPreference(currentLocalePreference);
-            if (!rollbackOutcome?.ok) {
-              const rollbackError = rollbackOutcome?.error || new Error("Unable to restore previous language");
-              localePreferenceErrorState.value = rollbackError.message;
-              return explicitFailure(shortcutOutcome.error, { rollbackError });
-            }
-          }
-          mainWindowShortcutErrorState.value = errorMessage(
-            shortcutOutcome.error,
-            t("settings.general.shortcut.unavailable"),
-          );
-          return explicitFailure(shortcutOutcome.error);
-        }
-        shortcutApplied = true;
+      if (nextShortcut !== committed.mainWindowShortcut) {
+        reportFailure = error => { mainWindowShortcutErrorState.value = errorMessage(error, t("settings.general.shortcut.unavailable")); };
+        undo.push(() => mainWindow.registerShortcut(committed.mainWindowShortcut));
+        requireSuccess(await mainWindow.registerShortcut(nextShortcut));
       }
-
-      let launchpadIconApplied = false;
-      if (nextLaunchpadIconVariant !== currentLaunchpadIconVariant) {
-        let iconError = null;
-        if (!launchpadIcons.isAvailable()) {
-          iconError = new Error(t("settings.general.launchpadIcon.unavailable"));
-        } else {
-          try {
-            const appliedVariant = await launchpadIcons.applyVariant(nextLaunchpadIconVariant);
-            if (appliedVariant !== nextLaunchpadIconVariant) {
-              throw new Error(`Native icon runtime returned an unexpected variant: ${String(appliedVariant)}`);
-            }
-          } catch (error) {
-            iconError = error;
+      if (nextLaunchpadIconVariant !== committed.launchpadIconVariant) {
+        reportFailure = error => { launchpadIconErrorState.value = errorMessage(error, t("settings.general.launchpadIcon.applyFailed")); };
+        if (!launchpadIcons.isAvailable()) throw new Error(t("settings.general.launchpadIcon.unavailable"));
+        undo.push(async () => {
+          if (await launchpadIcons.applyVariant(committed.launchpadIconVariant) !== committed.launchpadIconVariant) {
+            throw new Error("Native icon runtime did not restore the previous variant");
           }
+        });
+        if (await launchpadIcons.applyVariant(nextLaunchpadIconVariant) !== nextLaunchpadIconVariant) {
+          throw new Error("Native icon runtime returned an unexpected variant");
         }
-
-        if (iconError) {
-          const rollbackErrors = [];
-          if (shortcutApplied) {
-            const shortcutRollback = await mainWindow.registerShortcut(currentShortcut);
-            if (!shortcutRollback.ok) {
-              rollbackErrors.push(shortcutRollback.error);
-              mainWindowShortcutErrorState.value = errorMessage(shortcutRollback.error, t("settings.general.shortcut.unavailable"));
-            }
-          }
-          if (appliedLocaleState) {
-            const localeRollback = await localeRuntime.applyPreference(currentLocalePreference);
-            if (!localeRollback?.ok) {
-              const rollbackError = localeRollback?.error || new Error("Unable to restore previous language");
-              rollbackErrors.push(rollbackError);
-              localePreferenceErrorState.value = rollbackError.message;
-            }
-          }
-          launchpadIconErrorState.value = errorMessage(iconError, t("settings.general.launchpadIcon.applyFailed"));
-          return explicitFailure(iconError, rollbackErrors.length ? { rollbackErrors } : {});
-        }
-        launchpadIconApplied = true;
       }
-
-      let startupAttempted = false;
       if (nextLaunchAtLogin !== currentLaunchAtLogin) {
-        let startupError = null;
-        if (!autostart.isAvailable()) {
-          startupError = new Error(t("settings.general.startup.unavailable"));
-        } else {
-          startupAttempted = true;
-          try {
-            const appliedStatus = Boolean(await autostart.setEnabled(nextLaunchAtLogin));
-            if (appliedStatus !== nextLaunchAtLogin) {
-              throw new Error(`Autostart runtime returned an unexpected status: ${String(appliedStatus)}`);
-            }
-          } catch (error) {
-            startupError = error;
+        reportFailure = error => { launchAtLoginErrorState.value = errorMessage(error, t("settings.general.startup.applyFailed")); };
+        if (!autostart.isAvailable()) throw new Error(t("settings.general.startup.unavailable"));
+        undo.push(async () => {
+          if (Boolean(await autostart.setEnabled(currentLaunchAtLogin)) !== currentLaunchAtLogin) {
+            throw new Error("Autostart did not restore the previous status");
           }
-        }
-
-        if (startupError) {
-          const rollbackErrors = [];
-          if (startupAttempted) {
-            try {
-              await autostart.setEnabled(currentLaunchAtLogin);
-            } catch (error) {
-              rollbackErrors.push(error);
-            }
-          }
-          if (launchpadIconApplied) {
-            try {
-              const restoredVariant = await launchpadIcons.applyVariant(currentLaunchpadIconVariant);
-              if (restoredVariant !== currentLaunchpadIconVariant) {
-                throw new Error(`Native icon runtime returned an unexpected rollback variant: ${String(restoredVariant)}`);
-              }
-            } catch (error) {
-              rollbackErrors.push(error);
-              launchpadIconErrorState.value = errorMessage(error, t("settings.general.launchpadIcon.applyFailed"));
-            }
-          }
-          if (shortcutApplied) {
-            const shortcutRollback = await mainWindow.registerShortcut(currentShortcut);
-            if (!shortcutRollback.ok) {
-              rollbackErrors.push(shortcutRollback.error);
-              mainWindowShortcutErrorState.value = errorMessage(shortcutRollback.error, t("settings.general.shortcut.unavailable"));
-            }
-          }
-          if (appliedLocaleState) {
-            const localeRollback = await localeRuntime.applyPreference(currentLocalePreference);
-            if (!localeRollback?.ok) {
-              const rollbackError = localeRollback?.error || new Error("Unable to restore previous language");
-              rollbackErrors.push(rollbackError);
-              localePreferenceErrorState.value = rollbackError.message;
-            }
-          }
-          launchAtLoginErrorState.value = errorMessage(startupError, t("settings.general.startup.applyFailed"));
-          return explicitFailure(startupError, rollbackErrors.length ? { rollbackErrors } : {});
+        });
+        if (Boolean(await autostart.setEnabled(nextLaunchAtLogin)) !== nextLaunchAtLogin) {
+          throw new Error("Autostart runtime returned an unexpected status");
         }
       }
 
+      reportFailure = undefined;
+      let modeOutcome: unknown;
+      let effectsOutcome: unknown;
+      if (runtimeOptions.applyWindowPresentation !== false) {
+        // Register compensation before invoking: a failed host call may have partially applied.
+        undo.push(() => mainWindow.setMode({
+          mode: committed.windowMode, fullscreenOverscanEnabled: committed.fullscreenOverscanEnabled,
+        }));
+        modeOutcome = await mainWindow.setMode({
+          mode: normalizeWindowMode(draftWindowMode.value),
+          fullscreenOverscanEnabled: normalizeFullscreenOverscanEnabled(draftFullscreenOverscanEnabled.value),
+        });
+        requireSuccess(modeOutcome);
+        undo.push(() => mainWindow.setEffectsEnabled({
+          enabled: true, material: committed.windowEffectMaterial, appearance: committed.windowEffectAppearance,
+        }));
+        effectsOutcome = await mainWindow.setEffectsEnabled({
+          enabled: true,
+          material: resolveWindowEffectMaterialForSupport(draftWindowEffectMaterial.value, mainWindow.support.value),
+          appearance: normalizeWindowEffectAppearance(draftWindowEffectAppearance.value),
+        });
+        requireSuccess(effectsOutcome);
+      }
+
+      undo.push(restoreLayout);
+      undo.push(() => {
+        restore(committed);
+        launchAtLoginState.value = currentLaunchAtLogin;
+        backgroundImageUrlState.value = currentImageUrl;
+      });
+      commitAttempted = true;
       const appliedLayout = commitDraft(
-        nextShortcut,
-        nextLocalePreference,
-        nextLaunchpadIconVariant,
-        nextLaunchAtLogin,
-        runtimeOptions,
+        nextShortcut, nextLocalePreference, nextLaunchpadIconVariant, nextLaunchAtLogin, runtimeOptions,
       );
-      if (appliedLocaleState) activateLocale(appliedLocaleState);
-      const modeOutcome = runtimeOptions.applyWindowPresentation===false ? undefined : await mainWindow.setMode({
-        mode: windowModeState.value,
-        fullscreenOverscanEnabled: fullscreenOverscanEnabledState.value,
-      });
-      const effectsOutcome = runtimeOptions.applyWindowPresentation===false ? undefined : await mainWindow.setEffectsEnabled({
-        enabled: true,
-        material: windowEffectMaterialState.value,
-        appearance: windowEffectAppearanceState.value,
-      });
-      const liveDesktopOutcome = await runtimeOptions.syncLiveDesktop?.();
+      if (appliedLocaleState) {
+        localeActivationAttempted = true;
+        activateLocale(appliedLocaleState);
+      }
+      let liveDesktopOutcome: unknown;
+      if (runtimeOptions.syncLiveDesktop) {
+        liveDesktopAttempted = true;
+        liveDesktopOutcome = await runtimeOptions.syncLiveDesktop();
+        requireSuccess(liveDesktopOutcome);
+      }
       return {
         ok: true as const,
         appliedLayout,
         platform: { effects: effectsOutcome, liveDesktop: liveDesktopOutcome, mode: modeOutcome },
       };
+    } catch (error) {
+      const rollbackErrors: unknown[] = [];
+      for (const restoreOperation of undo.reverse()) {
+        try { requireSuccess(await restoreOperation()); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      // Re-sync only after committed values have been restored, and keep the user's draft for retry.
+      for (const restoreCell of restoreDraft) restoreCell();
+      if (commitAttempted) {
+        try { runtimeOptions.schedulePageGridMetrics?.(); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      if (liveDesktopAttempted) {
+        try { requireSuccess(await runtimeOptions.syncLiveDesktop?.()); }
+        catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      }
+      reportFailure?.(error);
+      return explicitFailure(error, { rollbackErrors });
     } finally {
       isApplyingSettingsConfigState.value = false;
     }

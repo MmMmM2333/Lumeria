@@ -1,6 +1,12 @@
-import { Graphics, GraphicsPath, type ColorSource } from "pixi.js";
+import { BufferImageSource, Color, Sprite, Texture, type ColorSource } from "pixi.js";
+import { createCanvas, Path2D } from "@napi-rs/canvas";
 // Fluent icons from the installed @iconify-json/fluent package (MIT), shared with Web.
 const icons = {
+  "window-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M6.25 3A3.25 3.25 0 0 0 3 6.25v11.5A3.25 3.25 0 0 0 6.25 21h11.5A3.25 3.25 0 0 0 21 17.75V6.25A3.25 3.25 0 0 0 17.75 3zM19.5 7h-15v-.75c0-.966.784-1.75 1.75-1.75h11.5c.966 0 1.75.784 1.75 1.75zm-15 1.5h15v9.25a1.75 1.75 0 0 1-1.75 1.75H6.25a1.75 1.75 0 0 1-1.75-1.75z\"/>"},
+  "color-background-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M11.342 12.994c-.188.409-.342.888-.342 1.381c0 .735.287 1.426.775 1.914A2.4 2.4 0 0 0 13.5 17c1.471 0 2.5-1.234 2.5-2.625c0-.493-.154-.972-.342-1.381a7 7 0 0 0-.674-1.134c-.237-.33-.473-.613-.649-.812l-.305-.328l-.002-.002a.75.75 0 0 0-1.059.002l-.005.005c-.058.062-.214.226-.3.323c-.175.199-.411.48-.649.812a7 7 0 0 0-.673 1.134m2.423-.26c.202.281.392.586.53.886c.14.305.205.56.205.755c0 .691-.481 1.125-1 1.125c-.25 0-.492-.1-.675-.283c-.196-.195-.325-.484-.325-.842c0-.194.065-.45.205-.755c.137-.3.328-.605.53-.885q.135-.189.265-.35q.13.16.265.35M6.75 1a.75.75 0 0 0-.75.75v1.756l-.093.087l-4.243 4.243a2 2 0 0 0 0 2.828L5.199 14.2a2 2 0 0 0 2.829 0l4.243-4.243a2 2 0 0 0 0-2.828L8.735 3.593A2 2 0 0 0 7.5 3.015V1.75A.75.75 0 0 0 6.75 1M6 5.621v.629a.75.75 0 1 0 1.5 0V4.54a.5.5 0 0 1 .174.114l3.536 3.535a.5.5 0 0 1 .144.311H3.121zm.26 7.518l-3.128-3.128h6.964l-3.129 3.128a.5.5 0 0 1-.707 0M2 17.5v-5.088l1.5 1.5V17.5a1 1 0 0 0 1 1h15a1 1 0 0 0 1-1v-11a1 1 0 0 0-1-1h-7.441l-1.5-1.5H19.5A2.5 2.5 0 0 1 22 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 2 17.5\"/>"},
+  "dark-theme-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2S2 6.477 2 12s4.477 10 10 10m0-1.5v-17a8.5 8.5 0 0 1 0 17\"/>"},
+  "image-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M17.75 3A3.25 3.25 0 0 1 21 6.25v11.5A3.25 3.25 0 0 1 17.75 21H6.25A3.25 3.25 0 0 1 3 17.75V6.25A3.25 3.25 0 0 1 6.25 3zm.58 16.401l-5.805-5.686a.75.75 0 0 0-.966-.071l-.084.07l-5.807 5.687q.274.097.582.099h11.5c.203 0 .399-.035.58-.099l-5.805-5.686zM17.75 4.5H6.25A1.75 1.75 0 0 0 4.5 6.25v11.5q.001.313.103.594l5.823-5.701a2.25 2.25 0 0 1 3.02-.116l.128.116l5.822 5.702q.102-.28.104-.595V6.25a1.75 1.75 0 0 0-1.75-1.75m-2.498 2a2.252 2.252 0 1 1 0 4.504a2.252 2.252 0 0 1 0-4.504m0 1.5a.752.752 0 1 0 0 1.504a.752.752 0 0 0 0-1.504\"/>"},
+  "blur-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M3 12a9 9 0 0 1 13.977-7.5H12a7.5 7.5 0 1 0 0 15V18h6.708A9 9 0 0 1 3 12m15.225-6.5H12V7h7.485a9 9 0 0 0-1.26-1.5M12 8h8.064q.358.717.584 1.5H12zm8.876 2.5H12V12h9q-.001-.767-.124-1.5M12 13h8.945a9 9 0 0 1-.297 1.5H12zm8.294 2.5H12V17h7.485a9 9 0 0 0 .81-1.5\"/>"},
 
   "power-24-regular": {
     "width": 24,
@@ -64,25 +70,16 @@ const icons = {
     "body": "<path fill=\"currentColor\" d=\"M9.159 16.867a.5.5 0 1 0 .674-.739l-6.168-5.63h13.831a.5.5 0 0 0 0-1H3.668l6.165-5.629a.5.5 0 0 0-.674-.738L2.243 9.445a.75.75 0 0 0-.24.631a.75.75 0 0 0 .24.477z\"/>"
   }
 } as const;
-export function nativeFluentIcon(name:keyof typeof icons,color:ColorSource,size=20):Graphics {
-  const icon=icons[name];
-  if(name==="info-24-regular"){
-    const graphic=new Graphics({eventMode:"none"})
-      .circle(12,12,9.25).stroke({color,width:1.5})
-      .roundRect(11.25,10.5,1.5,6.5,0.75).fill(color)
-      .circle(12,8,1).fill(color);
-    graphic.scale.set(size/24);return graphic;
-  }
-  if(name==="navigation-24-regular"){
-    // This icon consists of three bars. Its SVG close-then-relative commands are
-    // misinterpreted by Pixi's path parser; preserve the same geometry directly.
-    const graphic=new Graphics({eventMode:"none"});
-    for(const y of [5.003,11.503,18])graphic.roundRect(2.003,y,20,1.5,0.75).fill(color);
-    graphic.scale.set(size/24);return graphic;
-  }
-  const path=icon.body.match(/ d="([^"]+)"/)?.[1];
+export function nativeFluentIcon(name:keyof typeof icons,color:ColorSource,size=20):Sprite {
+  const icon=icons[name],path=icon.body.match(/ d="([^"]+)"/)?.[1];
   if(!path)throw new Error(`Fluent icon ${name} must contain a vector path`);
-  const graphic=new Graphics({eventMode:"none"}).path(new GraphicsPath(path,true)).fill(color);
-  graphic.scale.set(size/icon.width,size/icon.height);
-  return graphic;
+  // Skia preserves the original SVG winding and close/relative commands.
+  const resolution=4,canvas=createCanvas(size*resolution,size*resolution),context=canvas.getContext("2d");
+  context.scale(size*resolution/icon.width,size*resolution/icon.height);
+  context.fillStyle=new Color(color).toHex();context.fill(new Path2D(path));
+  const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+  const texture=new Texture({source:new BufferImageSource({resource:new Uint8Array(pixels),width:canvas.width,height:canvas.height,
+    format:"rgba8unorm",alphaMode:"no-premultiply-alpha"})});
+  const sprite=new Sprite({texture,eventMode:"none"});sprite.width=sprite.height=size;
+  sprite.on("destroyed",()=>texture.destroy(true));return sprite;
 }

@@ -633,6 +633,14 @@ fn cache_background_image(
     selected_path: &Path,
     fallback_name: &str,
 ) -> Result<PickedBackgroundImage, String> {
+    cache_background_image_to_dir(&background_cache_dir(app)?, selected_path, fallback_name)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn cache_background_image_to_dir(
+    background_dir: &Path, selected_path: &Path, fallback_name: &str,
+) -> Result<PickedBackgroundImage, String> {
+    if !selected_path.is_absolute() { return Err("Background image path must be absolute".into()); }
     let metadata = fs::metadata(selected_path).map_err(|error| {
         format!(
             "Failed to read background image {}: {error}",
@@ -655,8 +663,8 @@ fn cache_background_image(
     let extension = detect_background_image_extension(selected_path, &bytes).ok_or_else(|| {
         "Background image must be a PNG, JPG, JPEG, WEBP, or BMP file".to_string()
     })?;
-    let background_dir = background_cache_dir(app)?;
-    let background_path = cache_content_addressed(&background_dir, "background", extension, &bytes)
+    fs::create_dir_all(background_dir).map_err(|error| error.to_string())?;
+    let background_path = cache_content_addressed(background_dir, "background", extension, &bytes)
         .map_err(|error| {
             format!(
                 "Failed to cache background image {}: {error}",
@@ -729,6 +737,11 @@ fn current_desktop_wallpaper_path(app: &AppHandle) -> Result<String, String> {
 fn current_desktop_wallpaper_path_for_window(
     app: &AppHandle,
 ) -> Result<Option<String>, NativeError> {
+    desktop_wallpaper_for_rect(main_window_monitor_rect(app))
+}
+
+#[cfg(target_os = "windows")]
+fn desktop_wallpaper_for_rect(target_rect: Option<RECT>) -> Result<Option<String>, NativeError> {
     let _com_guard = ComGuard::new()?;
     let desktop_wallpaper: IDesktopWallpaper = unsafe {
         CoCreateInstance(&DesktopWallpaper, None, CLSCTX_ALL)
@@ -737,7 +750,6 @@ fn current_desktop_wallpaper_path_for_window(
         context: "CoCreateInstance(DesktopWallpaper)",
         source,
     })?;
-    let target_rect = main_window_monitor_rect(app);
     let monitor_count =
         unsafe { desktop_wallpaper.GetMonitorDevicePathCount() }.map_err(|source| {
             NativeError::Com {
@@ -787,6 +799,18 @@ fn current_desktop_wallpaper_path_for_window(
     }
 
     Ok(best.map(|(_, path)| path))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn cache_native_wallpaper(background_dir:&Path, rect:[i32;4]) -> Result<Option<PickedBackgroundImage>,String> {
+    let target=RECT{left:rect[0],top:rect[1],right:rect[2],bottom:rect[3]};
+    if target.right<=target.left||target.bottom<=target.top{return Err("Invalid wallpaper monitor bounds".into());}
+    let path=match desktop_wallpaper_for_rect(Some(target)) {
+        Ok(Some(path)) if !path.trim().is_empty()=>path,
+        _=>current_desktop_wallpaper_path_from_system_parameters()?,
+    };
+    if path.trim().is_empty(){return Ok(None);}
+    cache_background_image_to_dir(background_dir,Path::new(&path),"Windows desktop wallpaper").map(Some)
 }
 
 #[cfg(target_os = "windows")]

@@ -1,7 +1,7 @@
 import { t } from "../../native/nativeLocalization.js";
 import { Color, Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { NativeFluentButton, nativeFluentTheme, type NativeTheme, type NativeButtonAppearance } from "./NativeFluentButton.js";
 import { NativeScrollView } from "./NativeScrollView.js";
@@ -115,7 +115,7 @@ export class NativeManagement extends Container {
     }
     this.invalidate();
   }
-  form(title: string, fields: NativeFormField[], confirm: string, submit: (values: string[]) => void | Promise<void>): void {
+  form(title: string, fields: NativeFormField[], confirm: string, submit: (values: string[]) => void | Promise<void>, message?:string): void {
     if(!this.#begin())return;
     const {width,height}=this.size();
     const colors=nativeFluentTheme(this.theme);
@@ -124,21 +124,27 @@ export class NativeManagement extends Container {
     overlay.addChild(shade); overlay.hitArea=new Rectangle(0,0,width,height);
     overlay.on("pointerdown",event=>event.stopPropagation());
     const panel=new Container({eventMode:"static",label:"native-form-panel"});
-    const w=Math.min(540,width-48), h=130+fields.length*70;
+    const w=Math.min(540,width-48);
+    const description=message?new Text({text:message,eventMode:"none",style:{
+      fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:colors.colorNeutralForeground2,wordWrap:true,wordWrapWidth:w-40,
+    }}):null;
+    const messageHeight=description?description.height+20:0;
+    const h=130+fields.length*70+messageHeight;
     panel.position.set((width-w)/2,Math.max(24,(height-h)/2));
     panel.addChild(new Graphics().roundRect(0,0,w,h,8).fill(colors.colorNeutralBackground2).stroke({color:colors.colorNeutralStroke2,width:1}));
     const heading=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:20,fontWeight:"600",fill:colors.colorNeutralForeground1}});
     heading.position.set(20,20);panel.addChild(heading);
+    if(description){description.position.set(20,58);panel.addChild(description);}
     fields.forEach((field,index)=>{
       const label=new Text({text:field.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorNeutralForeground2}});
-      label.position.set(20,58+index*70);panel.addChild(label);
+      label.position.set(20,58+messageHeight+index*70);panel.addChild(label);
       const input=this.host.create({width:w-40-(field.browse?86:0),height:34,value:field.value,readOnly:field.readOnly,
         style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18,padding:8,
           backgroundColor:new Color(colors.colorNeutralBackground3).toNumber(),
           borderColor:new Color(colors.colorNeutralStroke1).toNumber(),
           focusColor:new Color(colors.colorBrandStroke1).toNumber(),
           textColor:new Color(colors.colorNeutralForeground1).toNumber()}});
-      input.position.set(20,78+index*70);panel.addChild(input);this.#fields.push(input);
+      input.position.set(20,78+messageHeight+index*70);panel.addChild(input);this.#fields.push(input);
       this.#controls.push({node:input});
       input.on("focus",()=>{
         this.#focusIndex=this.#controls.findIndex(control=>control.node===input);
@@ -146,7 +152,7 @@ export class NativeManagement extends Container {
       });
       if(field.browse){const browse=this.#modalButton(t("common.actions.browse"),76,()=>{
         void field.browse!().then(value=>{if(value!==null)input.value=value;},reason=>{error.text=String(reason);});
-      });browse.position.set(w-96,78+index*70);panel.addChild(browse);}
+      });browse.position.set(w-96,78+messageHeight+index*70);panel.addChild(browse);}
     });
     const error=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorPaletteRedForeground1}});
     error.position.set(20,h-42);panel.addChild(error);

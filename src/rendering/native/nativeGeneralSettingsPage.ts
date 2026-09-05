@@ -5,7 +5,7 @@ import { nativeFluentIcon } from "./nativeFluentIcons.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
 import type { NativeManagement } from "./NativeManagement.js";
 import type { NativeSettingsContent, NativeSettingsControl } from "./NativeSettingsShell.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { t, nativeLocaleOptions } from "../../native/nativeLocalization.js";
 import { formatMainWindowShortcut, DEFAULT_MAIN_WINDOW_SHORTCUT } from "../../domain/mainWindowShortcut.js";
 import { LAUNCHPAD_ICON_VARIANTS, type LaunchpadIconVariant } from "../../domain/launchpadIconVariant.js";
@@ -54,30 +54,32 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   const toggleFocus=new Graphics({eventMode:"none"});startup.addChild(toggleFocus);
   controls.push({node:toggle,focus:active=>{toggleFocus.clear();if(active)toggleFocus.roundRect(width-60,22,48,28,4).stroke({color:style.accent,width:2});options.invalidate();},
     disabled:()=>toggle.disabled,handleKey:key=>{if(key!==" "&&key!=="Enter")return false;toggle.toggle();return true;}});
-  const shortcut=row(t("settings.general.shortcut.title"),settings.presentation.mainWindowShortcutError.value||t(options.recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),88);
+  const shortcut=row(t("settings.general.shortcut.title"),settings.presentation.mainWindowShortcutError.value||t(options.recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),72);
   const shortcutValue=settings.draft.mainWindowShortcut.value;
   const value=shortcutValue===null?t("settings.general.shortcut.notSet"):formatMainWindowShortcut(shortcutValue);
-  const keyField=button(shortcut,value,width-342,27,154,options.record);
-  keyField.label="native-setting:shortcut";
-  button(shortcut,t(options.recording?"settings.general.shortcut.recording":"settings.general.shortcut.record"),width-180,27,78,options.record);
-  button(shortcut,t("common.actions.reset"),width-94,27,78,()=>{settings.actions.setDraftMainWindowShortcut(DEFAULT_MAIN_WINDOW_SHORTCUT);options.redraw();});
+  const keyMeasure=new Text({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12}});
+  const keyWidth=Math.max(112,keyMeasure.width+44);keyMeasure.destroy();
+  const keyField=button(shortcut,value,width-222-keyWidth,19,keyWidth,options.record);
+  keyField.label="native-setting:shortcut";keyField.caption.x-=10;keyField.caption.style.fontSize=12;
+  button(shortcut,t(options.recording?"settings.general.shortcut.recording":"settings.general.shortcut.record"),width-214,19,94,options.record);
+  button(shortcut,t("common.actions.reset"),width-112,19,94,()=>{settings.actions.setDraftMainWindowShortcut(DEFAULT_MAIN_WINDOW_SHORTCUT);options.redraw();}).disabled=shortcutValue===DEFAULT_MAIN_WINDOW_SHORTCUT;
   if(settings.draft.mainWindowShortcut.value!==null){
-    const clear=button(shortcut,"×",width-215,29,24,()=>{settings.actions.setDraftMainWindowShortcut(null);options.redraw();});clear.label="native-setting:clear-shortcut";
+    const clear=button(shortcut,"×",width-246,19,20,()=>{settings.actions.setDraftMainWindowShortcut(null);options.redraw();});clear.label="native-setting:clear-shortcut";
   }
   const language=row(t("settings.general.language.title"),settings.presentation.localePreferenceError.value);
   const languages=[{value:"system",label:t("settings.general.language.system")},...nativeLocaleOptions];
   const current=languages.find(item=>item.value===settings.draft.localePreference.value)!;
-  const selector=button(language,current.label,width-232,19,216,()=>{
+  const selector=button(language,current.label,width-188,19,172,()=>{
     const point=selector.toGlobal({x:0,y:36});
     options.management.menu(point.x,point.y,languages.map(item=>({label:item.label,selected:item.value===settings.draft.localePreference.value,run:()=>{
       settings.actions.setDraftLocalePreference(item.value);options.redraw();
-    }})),216);
+    }})),172);
   });
   selector.label="native-setting:language";
-  selector.caption.x-=10;chevron(selector,200,17);
-  const iconRow=row(t("settings.general.launchpadIcon.title"),t("settings.general.launchpadIcon.description"),88);
+  selector.caption.x-=10;chevron(selector,156,17);
+  const iconRow=row(t("settings.general.launchpadIcon.title"),t("settings.general.launchpadIcon.description"),72);
   const iconLabel=t(`settings.general.launchpadIcon.options.${settings.draft.launchpadIconVariant.value}`);
-  const expandButton=button(iconRow,iconLabel,width-196,27,180,options.expand);
+  const expandButton=button(iconRow,iconLabel,width-196,19,180,options.expand);
   expandButton.label="native-setting:icon-expand";expandButton.caption.x-=10;chevron(expandButton,164,17,options.expanded);
   if(options.expanded){
     const gap=8,tileWidth=(width-28-gap*3)/4;
@@ -95,7 +97,7 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
     }
     y+=160;
   }
-  y+=20;const advanced=text(t("settings.general.advanced.title"),0,y,13,true);node.addChild(advanced);y+=30;
+  y+=20;const advanced=text(t("settings.general.advanced.title"),0,y,18,true);node.addChild(advanced);y+=30;
   const developer=row(t("settings.general.advanced.developerConsole"),t("settings.general.advanced.openUnavailable"));
   button(developer,t("settings.general.advanced.open"),width-132,19,116,()=>{}).disabled=true;
   return {node,height:y,controls,dispose:()=>{}};

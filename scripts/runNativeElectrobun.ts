@@ -133,6 +133,11 @@ fixture.pages = [[
     launchTarget: { kind: "url", path: "https://example.invalid/third-page" },
   },
 ]];
+fixture.settings.backgroundSource = "systemMaterial";
+fixture.settings.windowMode = "windowed";
+fixture.settings.backgroundImagePath = null;
+fixture.settings.backgroundBaseColor = "#090b14";
+fixture.settings.backgroundBaseOpacity = 100;
 fixture.settings.gridRows = 4;
 if(process.argv.includes("--light"))fixture.settings.settingsThemePreference="light";
 fixture.pages[0]!.push({

@@ -1,6 +1,6 @@
 import { Color, Container, Graphics, Rectangle, Text } from "pixi.js";
 import * as fluentTokens from "@fluentui/tokens";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 // Package exports select CommonJS in Node (default namespace) and ESM in the bundler.
 const {webDarkTheme,webLightTheme}="default" in fluentTokens
   ? fluentTokens.default as typeof fluentTokens : fluentTokens;
@@ -60,6 +60,7 @@ export class NativeFluentButton extends Container {
     this.#disabled=value;this.#pressed=false;
     this.eventMode=value?"none":"static";this.cursor=value?"default":"pointer";this.#draw();
   }
+  get focused():boolean{return this.#focused;}
   set focused(value:boolean) {this.#focused=value;this.#draw();}
   set theme(value:NativeTheme) {this.#theme=value;this.#draw();}
   #draw():void {

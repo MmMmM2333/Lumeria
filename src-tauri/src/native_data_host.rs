@@ -22,6 +22,8 @@ const APP_IDENTIFIER: &str = "com.lumeria.app";
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    CacheBackground { version:u32, id:u64, path:String },
+    Wallpaper { version:u32, id:u64, rect:[i32;4] },
     Autostart { version: u32, id: u64, enabled: Option<bool> },
     LoadIconChoices { version: u32, id: u64, #[serde(rename = "targetPath")] target_path: String },
     CacheCustomIcon { version: u32, id: u64, #[serde(rename = "dataUrl")] data_url: String },
@@ -53,6 +55,8 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::CacheBackground { id, .. }
+            | Self::Wallpaper { id, .. }
             | Self::Autostart { id, .. }
             | Self::LoadIconChoices { id, .. }
             | Self::CacheCustomIcon { id, .. }
@@ -66,6 +70,8 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::CacheBackground { version, .. }
+            | Self::Wallpaper { version, .. }
             | Self::Autostart { version, .. }
             | Self::LoadIconChoices { version, .. }
             | Self::CacheCustomIcon { version, .. }
@@ -185,6 +191,8 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::CacheBackground {path,..} => cache_background(data_dir,&path),
+        Request::Wallpaper {rect,..} => cache_wallpaper(data_dir,rect),
         Request::Autostart { enabled, .. } => crate::autostart::native_autostart(enabled).map(Value::Bool),
         Request::LoadIconChoices { target_path, .. } => icon_cache_dir(data_dir)
             .and_then(|dir| crate::load_app_icon_choices_from_dir(&target_path, &dir))
@@ -218,6 +226,21 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 }
 
+#[cfg(target_os="windows")]
+fn cache_background(data_dir:&Path,path:&str)->Result<Value,String>{
+    crate::file_dialog::cache_background_image_to_dir(&data_dir.join("backgrounds"),Path::new(path),"Background image")
+        .and_then(|value|serde_json::to_value(value).map_err(|error|error.to_string()))
+}
+#[cfg(target_os="windows")]
+fn cache_wallpaper(data_dir:&Path,rect:[i32;4])->Result<Value,String>{
+    crate::file_dialog::cache_native_wallpaper(&data_dir.join("backgrounds"),rect)
+        .and_then(|value|serde_json::to_value(value).map_err(|error|error.to_string()))
+}
+#[cfg(not(target_os="windows"))]
+fn cache_background(_data_dir:&Path,_path:&str)->Result<Value,String>{Err("Background cache is unavailable on this platform".into())}
+#[cfg(not(target_os="windows"))]
+fn cache_wallpaper(_data_dir:&Path,_rect:[i32;4])->Result<Value,String>{Err("Wallpaper is unavailable on this platform".into())}
+
 fn icon_cache_dir(data_dir: &Path) -> Result<PathBuf, String> {
     let icon_dir = data_dir.join("icons");
     fs::create_dir_all(&icon_dir).map_err(|error| {
@@ -243,6 +266,22 @@ fn launch_app(app_id: &str, data_dir: &Path, state: &HostState) -> Result<(), La
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_cache_reuses_original_validation_and_content_addressing() {
+        let dir=env::temp_dir().join(format!("lumeria-native-background-{}",std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let image=dir.join("source.png");
+        fs::write(&image,crate::encoding::decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1sAAAAASUVORK5CYII=").unwrap()).unwrap();
+        let value=cache_background(&dir,image.to_str().unwrap()).unwrap();
+        let cached=PathBuf::from(value["imagePath"].as_str().unwrap());
+        assert!(cached.starts_with(dir.join("backgrounds")));
+        assert_eq!(fs::read(&image).unwrap(),fs::read(&cached).unwrap());
+        assert_eq!(cache_background(&dir,image.to_str().unwrap()).unwrap(),value);
+        assert!(cache_background(&dir,"relative.png").is_err());
+        assert!(cache_wallpaper(&dir,[0,0,0,0]).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn save_protocol_roundtrips_and_rejects_invalid_layout_without_overwrite() {

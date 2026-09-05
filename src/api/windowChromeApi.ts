@@ -1,18 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isNativeBridgeAvailable } from "./launchpadApi.js";
 
-export const WINDOW_RESIZE_DIRECTIONS = Object.freeze([
-  "North",
-  "South",
-  "West",
-  "East",
-  "NorthWest",
-  "NorthEast",
-  "SouthWest",
-  "SouthEast",
-] as const);
-
-export type WindowResizeDirection = (typeof WINDOW_RESIZE_DIRECTIONS)[number];
+import { WINDOW_RESIZE_DIRECTIONS, type WindowResizeDirection } from "../platform/windowChromeContracts.js";
+export { WINDOW_RESIZE_DIRECTIONS, type WindowResizeDirection } from "../platform/windowChromeContracts.js";
 type WindowChromeBridge = Readonly<{
   startDragging?: () => void | Promise<void>;
   startResizeDragging?: (direction: WindowResizeDirection) => void | Promise<void>;

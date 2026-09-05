@@ -26,6 +26,7 @@ export class NativeFluentSlider extends Container {
     return Math.min(this.max,Math.max(this.min,Number((this.min+Math.round((value-this.min)/this.step)*this.step).toPrecision(12))));
   }
   get value():number{return this.#value;}
+  get disabled():boolean{return this.#disabled;}
   set value(value:number){if(!Number.isFinite(value))throw new TypeError("Slider value must be finite");this.#value=this.#normalize(value);this.#draw();}
   set disabled(value:boolean){this.#disabled=value;this.#pointer=null;this.eventMode=value?"none":"static";this.#draw();}
   handleKey(key:string):boolean {

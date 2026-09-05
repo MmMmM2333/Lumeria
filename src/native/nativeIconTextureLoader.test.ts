@@ -26,6 +26,8 @@ try {
     texture.destroy(true);
   }
 
+  await assert.rejects(loadNativeIconTexture(join(fixtureDirectory, "missing.png")), { code: "ENOENT" });
+
   await assert.rejects(
     loadNativeIconTexture("https://example.com/icon.png"),
     /image data URL or absolute file path/,

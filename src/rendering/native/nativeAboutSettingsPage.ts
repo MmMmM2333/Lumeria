@@ -1,7 +1,7 @@
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import { nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
 import type { NativeSettingsContent } from "./NativeSettingsShell.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { t } from "../../native/nativeLocalization.js";
 import packageInfo from "../../../package.json";
 

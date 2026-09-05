@@ -1,6 +1,6 @@
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import { createTextInputHost, nativeHost, type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
-import { PIXI_UI_FONT_FAMILY } from "../typography.js";
+import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import type { NativeNavigationKey } from "../../native/nativeStartup.js";
 

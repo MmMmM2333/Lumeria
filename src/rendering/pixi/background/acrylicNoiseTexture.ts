@@ -1,4 +1,4 @@
-import { Texture, type TextureSource } from "pixi.js";
+import { Texture, BufferImageSource, type TextureSource } from "pixi.js";
 
 type AcrylicNoisePixels = Readonly<{
   pixels: Uint8ClampedArray;
@@ -53,24 +53,12 @@ export function generateAcrylicNoisePixels(
   };
 }
 
-function createAcrylicNoiseCanvas(size: unknown, seed: unknown): HTMLCanvasElement {
-  const { pixels, size: textureSize } = generateAcrylicNoisePixels(size, seed);
-  const canvas = document.createElement("canvas");
-  canvas.width = textureSize;
-  canvas.height = textureSize;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Failed to create Acrylic noise canvas context");
-  const imageData = context.createImageData(textureSize, textureSize);
-  imageData.data.set(pixels);
-  context.putImageData(imageData, 0, 0);
-  return canvas;
-}
-
 export function createAcrylicNoiseTexture(
   size: unknown = DEFAULT_ACRYLIC_NOISE_TEXTURE_SIZE,
   seed: unknown = 0,
 ): Texture {
-  const texture = Texture.from(createAcrylicNoiseCanvas(size, seed), true);
+  const data=generateAcrylicNoisePixels(size,seed);
+  const texture=new Texture({source:new BufferImageSource({resource:new Uint8Array(data.pixels),width:data.size,height:data.size,format:"rgba8unorm",alphaMode:"no-premultiply-alpha"})});
   const source: TextureSource | undefined = texture.source;
   const style = source?.style;
   if (style) {
