@@ -32,7 +32,7 @@ function premultiply(pixels: Uint8ClampedArray) {
 	}
 }
 
-const nativeCanvasUploader = {
+export const nativeCanvasUploader = {
 	extension: { type: ExtensionType.TextureUploaderWebGPU, name: "image" },
 	upload(source: any, gpuTexture: GPUTexture, gpu: any, originZOverride = 0) {
 		const canvas = source.resource;
@@ -41,6 +41,14 @@ const nativeCanvasUploader = {
 		const height = Math.min(gpuTexture.height, canvas.height);
 		const pixels = canvas.getContext("2d").getImageData(0, 0, width, height).data;
 		if (source.alphaMode === "premultiply-alpha-on-upload") premultiply(pixels);
+		// Skia ImageData is RGBA, while Pixi ImageSource defaults to BGRA.
+		// writeTexture copies bytes without the conversion copyExternalImageToTexture provides.
+		// Native GPUTexture.format is a WGPU numeric enum; source keeps Pixi's string format.
+		if (source.format === "bgra8unorm" || source.format === "bgra8unorm-srgb") {
+			for (let i = 0; i < pixels.length; i += 4) {
+				const red = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = red;
+			}
+		}
 		gpu.device.queue.writeTexture(
 			{ texture: gpuTexture, origin: { x: 0, y: 0, z: originZOverride } },
 			pixels,

@@ -11,6 +11,17 @@ PixiJS scene → WebGPURenderer → Electrobun adapter → Dawn/WebGPU → GpuWi
 
 ## 运行
 
+0.2.4 新增系统界面字体 `readNativeSystemPreferences().value.uiFontFamily`（读取失败为 null），以及以下公开窗口能力：
+
+- `getWindowFrame()` 返回只读外框物理像素及缩放比例，无需使用 testing 入口。
+- `setWindowMode("fullscreen" | "windowed", overscanPixels = 0)` 和只读 `windowMode` 使用拥有的 Win32 窗口样式/矩形完成切换和恢复；0.2.5 修复 Electrobun 将隐藏标题栏窗口误判为全屏的问题。可扩展全屏外框每边 0–16 个物理像素，渲染内容随客户区扩展。
+- 0.2.6 修复 Canvas/ImageSource 上传到 BGRA 纹理时的红蓝通道互换；原生渐变颜色已通过实际 GPU 像素读回验证。
+- `titleBarStyle` 创建选项、`startWindowDrag()`、`startWindowResize(direction)` 用于自定义窗口栏；移动/缩放仅投递到当前应用窗口。
+- `transparent: true` 与 `setWindowPresentation(material, appearance)` 提供透明 surface 和系统材质；先检查 `windowMaterialSupport`，Acrylic/Mica/Mica Alt 仅支持 Windows 11 build 22621+。
+- `supportsColorDialog` / `chooseColor(0xRRGGBB)` 打开当前窗口所属的 Windows 颜色对话框，返回 `NativePlatformResult<number>`；取消为 `CANCELLED`，不改变调用方颜色。
+
+实际宿主验证：`$env:PIXI_PRESENTED_SMOKE='1'; $env:PIXI_COLOR_DIALOG_SMOKE='1'; npm start`。颜色验证需要 Python，仅定位本次测试 PID 的对话框；确认/取消、全屏/overscan往返、窗口外框、材质、图标及关闭守卫均有断言。此版本未增加 UIA Provider，也未增加 Win10 的旧 Acrylic 回退。
+
 0.2.2 公开 `createTextInputHost`/`TextInput`/相关类型；`chrome:false` 仅绘制编辑内容，由消费者提供外观，保留 IME、选择、撤销、剪贴板及既有 focus/blur/change 事件。`focused`/`composing` 可供宿主路由键盘。`app.beforeClose(async () => save())` 在正常窗口关闭前等待；reject 保留窗口，成功才清理并关闭。直接 dispose 为强制清理接口，不运行 guard。
 
 Starter 0.2.1 新增 `app.on("presented", listener)`：在普通渲染或 fast-bundle 成功提交后同步通知，早于 `nextPresent()` Promise 的 continuation 和动画排入的微任务。事件包含 `frameNumber/deviceGeneration/surfaceGeneration`；失败帧不通知。回调只保存已呈现的场景快照或 invalidate，不可重入渲染；监听器抛错会进入 fatal 状态。返回的函数用于取消订阅，dispose 清理所有订阅。DLL ABI 保持 4。

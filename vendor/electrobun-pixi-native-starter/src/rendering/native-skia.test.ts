@@ -4,8 +4,25 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlobalFonts, createCanvas } from "@napi-rs/canvas";
-import { installNativeSkia, registerNativeFont, registerNativeFontData } from "./native-skia";
+import { installNativeSkia, nativeCanvasUploader, registerNativeFont, registerNativeFontData } from "./native-skia";
 import { TextEditor } from "../input/text-editor";
+
+test("native canvas upload preserves RGB in RGBA and Pixi default BGRA textures", () => {
+	const canvas=createCanvas(3,1),context=canvas.getContext("2d");
+	for(const [x,color] of ["#ff0000","#00ff00","#0000ff"].entries()){
+		context.fillStyle=color;context.fillRect(x,0,1,1);
+	}
+	for(const format of ["rgba8unorm","bgra8unorm","bgra8unorm-srgb"] as const){
+		let uploaded:Uint8Array|null=null;
+		nativeCanvasUploader.upload({resource:canvas,format,alphaMode:"premultiply-alpha-on-upload"},
+			{width:3,height:1,format:format.startsWith("bgra")?27:22} as unknown as GPUTexture,
+			{device:{queue:{writeTexture:(_destination:unknown,pixels:Uint8Array)=>{uploaded=new Uint8Array(pixels);}}}});
+		expect(Array.from(uploaded!)).toEqual(format.startsWith("bgra")
+			?[0,0,255,255,0,255,0,255,255,0,0,255]
+			:[255,0,0,255,0,255,0,255,0,0,255,255]);
+	}
+	expect(Array.from(context.getImageData(0,0,1,1).data)).toEqual([255,0,0,255]);
+});
 
 const glyphFingerprint = (fontFamilies: readonly string[], text: string) => {
 	const canvas = createCanvas(96, 64);

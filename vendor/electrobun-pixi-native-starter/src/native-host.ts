@@ -19,6 +19,7 @@ export {
 	type NativePixiApplicationOptions,
 	type NativePresentationMode,
 	type NativeResizeMode,
+  type NativeWindowFrame,
 } from "./runtime/native-app";
 export { registerNativeFont, registerNativeFontData } from "./rendering/native-skia";
 export { createTextInputHost, TextInput, TextInputHost } from "./input/text-input";
@@ -49,3 +50,5 @@ export type {
 	NativeJobOptions,
 	NativeJobProgress,
 } from "./platform/native-jobs";
+
+export type {NativeWindowMaterial,NativeWindowAppearance,NativeResizeDirection} from "./platform/native-window-presentation";

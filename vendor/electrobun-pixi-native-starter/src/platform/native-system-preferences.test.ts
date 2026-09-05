@@ -10,6 +10,8 @@ test("system preferences expose actual read-only Windows values and a disposable
     expect(typeof result.value.highContrast).toBe("boolean");
     expect(result.value.windowColor).toBeGreaterThanOrEqual(0);
     expect(result.value.textColor).toBeLessThanOrEqual(0xffffff);
+    expect(typeof result.value.uiFontFamily).toBe("string");
+    expect(result.value.uiFontFamily!.length).toBeGreaterThan(0);
   }
   let called=0;
   const stop=subscribeNativeSystemPreferences(()=>called++);

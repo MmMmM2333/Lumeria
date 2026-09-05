@@ -47,7 +47,10 @@ import {
 import { nativeFrameHost, nativeInputKinds, type NativeCursorKind } from "../platform/native-frame-host";
 import { installNativeExtract } from "../rendering/native-pixi";
 import { installNativeSkia } from "../rendering/native-skia";
+import { createNativeWindowPresentation, type NativeWindowMaterial, type NativeWindowAppearance, type NativeResizeDirection } from "../platform/native-window-presentation";
 import { createNativeWindowIcon } from "../platform/native-window-icon";
+import { createNativeColorDialog } from "../platform/native-color-dialog";
+import type { NativePlatformResult } from "../platform/native-platform";
 import {
 	registerNativePixiApplicationTesting,
 	type NativeAppDiagnostics,
@@ -65,6 +68,8 @@ export interface NativePixiApplicationOptions {
 	width?: number;
 	height?: number;
 	background?: number;
+  transparent?: boolean;
+  titleBarStyle?: "default" | "hidden" | "hiddenInset";
 	antialias?: boolean;
 	maxFps?: number;
 	resizeMode?: NativeResizeMode;
@@ -99,6 +104,15 @@ export interface NativeAppPresentedEvent {
 	readonly surfaceGeneration: number;
 }
 
+/** Outer window bounds in physical pixels, including non-client borders. */
+export interface NativeWindowFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly scaleFactor: number;
+}
+
 type NativeInput = ReturnType<typeof attachNativePixiEvents>;
 type NativeTextInput = ReturnType<typeof createNativeTextInputSession>;
 type NativeAppEvents = {
@@ -119,12 +133,21 @@ export interface NativePixiApplication {
 	readonly state: NativeAppState;
 	readonly nativeInput: NativeInput;
 	readonly textInput: NativeTextInput;
+  getWindowFrame(): Readonly<NativeWindowFrame>;
+  readonly supportsColorDialog: boolean;
+  chooseColor(color: number): Promise<NativePlatformResult<number>>;
+  setWindowMode(mode: "fullscreen" | "windowed", overscanPixels?: number): void;
+  readonly windowMode: "fullscreen" | "windowed";
+  startWindowDrag(): void;
+  startWindowResize(direction: NativeResizeDirection): void;
 	invalidate(): void;
 	nextPresent(): Promise<void>;
 	animate(update: (deltaMs: number) => void): () => void;
 	on<K extends keyof NativeAppEvents>(type: K, listener: (event: NativeAppEvents[K]) => void): () => void;
 	dispose(): Promise<void>;
 	beforeClose(listener: () => Promise<void>): () => void;
+  readonly windowMaterialSupport: ReturnType<typeof import("../platform/native-window-presentation").nativeWindowMaterialSupport>;
+  setWindowPresentation(material:NativeWindowMaterial,appearance:NativeWindowAppearance):void;
   readonly supportsWindowIcon: boolean;
   setWindowIcon(png: Uint8Array): void;
 }
@@ -197,7 +220,7 @@ export async function createNativePixiApplication(
 	const startupCleanup: Array<() => void | Promise<void>> = [];
 	try {
 		await initializePlatform();
-		const window = new GpuWindow({ title: options.title ?? "PixiJS · Native WebGPU", frame: { width, height } });
+		const window = new GpuWindow({ title: options.title ?? "PixiJS · Native WebGPU", frame: { width, height }, transparent:options.transparent??false, titleBarStyle:options.titleBarStyle??"default" });
 		startupCleanup.push(() => window.close());
 		let runtimeContext: NativeWebGpuContext = createContext(window);
 		startupCleanup.push(() => { releaseContext(runtimeContext); });
@@ -205,7 +228,12 @@ export async function createNativePixiApplication(
 		const surfaceWindow = electrobunNativeAdapter.getWgpuNativeHandle(window);
 		if (!surfaceWindow) throw new Error("WGPU child window has no native handle");
 		const inputWindow = nativeFrameHost.resolveInputWindow(surfaceWindow);
+    const windowPresentation=createNativeWindowPresentation(inputWindow,()=>{
+      if(nativeFrameHost.releaseMouseCapture(inputWindow)<0)throw new Error("Cannot release pointer capture");
+    });
+    startupCleanup.push(()=>windowPresentation?.dispose());
     const windowIcon=createNativeWindowIcon(inputWindow);
+    const colorDialog=createNativeColorDialog(inputWindow);
     startupCleanup.push(()=>windowIcon?.dispose());
 		const route = BigInt(window.wgpuViewId);
 		let snapshot = nativeFrameHost.getWindowSnapshot(inputWindow);
@@ -258,7 +286,7 @@ export async function createNativePixiApplication(
 			const result = new WebGPURenderer();
 			await result.init({
 				canvas: canvas as any, width: contentSize.width, height: contentSize.height, resolution,
-				antialias: options.antialias ?? true, backgroundColor: options.background ?? 0x090b14,
+				antialias: options.antialias ?? true, backgroundColor: options.background ?? 0x090b14, backgroundAlpha:options.transparent?0:1,
 				gpu: { adapter, device } as any, skipExtensionImports: true,
 			});
 			const uniformBatch = (result.renderPipes as any).uniformBatch;
@@ -685,6 +713,7 @@ export async function createNativePixiApplication(
 		const dispose = () => disposePromise ??= (async () => {
 			if (closed) return;
 			closed = true; inputPollingEnabled = false; setState("closing"); clearInterval(monitor);
+      windowPresentation?.dispose();
       windowIcon?.dispose();
 			rejectPresentWaiters(new Error("Native Pixi application is closing"));
 			if (windowSyncTimer !== null) clearTimeout(windowSyncTimer);
@@ -704,6 +733,32 @@ export async function createNativePixiApplication(
 
 		const application: NativePixiApplication = {
 			stage, window,
+      get windowMode(){return windowPresentation?.fullscreen?"fullscreen":"windowed";},
+      setWindowMode(mode, pixels=0) {
+        if(mode!=="fullscreen"&&mode!=="windowed")throw new TypeError("Invalid window mode");
+        if(!Number.isInteger(pixels)||pixels<0||pixels>16)throw new RangeError("Invalid fullscreen overscan");
+        if(closed||state==="closing"||state==="closed")throw new Error("Window is closed");
+        if(!windowPresentation)throw new Error("Window mode control is unavailable");
+        windowPresentation.setMode(mode==="fullscreen",pixels);
+        requestWindowSync(true);
+      },
+      startWindowDrag(){if(!windowPresentation)throw new Error("Window dragging is unavailable");windowPresentation.startDrag();},
+      startWindowResize(direction){if(!windowPresentation)throw new Error("Window resizing is unavailable");windowPresentation.startResize(direction);},
+      supportsColorDialog: colorDialog !== null,
+      chooseColor(color) {
+        if (closed || state === "closing" || state === "closed") return Promise.resolve({ ok: false,
+          error: { code: "PLATFORM_ERROR", message: "Window is closed" } });
+        return colorDialog ? colorDialog(color) : Promise.resolve({ ok: false,
+          error: { code: "UNAVAILABLE", message: "System color selection is unavailable" } });
+      },
+      getWindowFrame() {
+        if (closed || state === "closing" || state === "closed") throw new Error("Window is closed");
+        const frame = nativeFrameHost.getWindowSnapshot(inputWindow);
+        return Object.freeze({ x: frame.frameX, y: frame.frameY, width: frame.frameWidth,
+          height: frame.frameHeight, scaleFactor: frame.scaleFactor });
+      },
+      windowMaterialSupport:windowPresentation?.support??{platform:process.platform,supportsAcrylic:false,supportsMica:false,supportsMicaAlt:false},
+      setWindowPresentation(material,appearance){if(!windowPresentation)throw new Error("Window presentation is unavailable");windowPresentation.set(material,appearance);},
       supportsWindowIcon:windowIcon!==null,
       setWindowIcon(png){if(!windowIcon)throw new Error("Window icons are unavailable on this platform");windowIcon.set(png);},
 			get renderer() {

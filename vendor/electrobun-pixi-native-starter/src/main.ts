@@ -40,6 +40,8 @@ const app = await createNativePixiApplication({
 	width: 900,
 	height: 600,
 	background: 0x090b14,
+  transparent:process.env.PIXI_PRESENTED_SMOKE==="1",
+  titleBarStyle:process.env.PIXI_PRESENTED_SMOKE==="1"?"hidden":"default",
 	antialias: !bunnyCount,
 	maxFps,
 	resizeMode,

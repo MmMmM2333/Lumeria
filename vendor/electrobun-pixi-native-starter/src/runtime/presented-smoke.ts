@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { Graphics, Sprite, Texture } from "pixi.js";
+import { FillGradient, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
 import type { NativePixiApplication } from "./native-app";
 import { getNativePixiApplicationTesting } from "./native-app-testing";
 import { createCanvas } from "@napi-rs/canvas";
+import { runColorDialogSmoke } from "./color-dialog-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
 	const testing = getNativePixiApplicationTesting(app);
+  assert.equal(app.windowMode,"windowed","a newly created hidden-titlebar window is windowed");
+  app.setWindowMode("windowed");
 	let updates = 0;
 	let microtaskUpdates = 0;
 	let observed = 0;
@@ -30,6 +33,51 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    const frame = app.getWindowFrame();
+    assert.ok(Object.isFrozen(frame));
+    assert.ok(Number.isFinite(frame.x) && Number.isFinite(frame.y));
+    assert.ok(frame.width > 0 && frame.height > 0 && frame.scaleFactor > 0);
+    const diagnosticFrame = testing.diagnostics().window.snapshot;
+    assert.equal(frame.x, diagnosticFrame.frameX);
+    assert.equal(frame.y, diagnosticFrame.frameY);
+    assert.equal(frame.width, diagnosticFrame.frameWidth);
+    assert.equal(frame.height, diagnosticFrame.frameHeight);
+    if (app.supportsColorDialog) await assert.rejects(app.chooseColor(-1), /RGB integer/);
+    if (process.env.PIXI_COLOR_DIALOG_SMOKE === "1") await runColorDialogSmoke(app);
+    const previousMode = app.windowMode;
+    try {
+      app.setWindowMode("fullscreen");
+      await new Promise(resolve => setTimeout(resolve, 120));
+      assert.equal(app.windowMode, "fullscreen");
+      await next();
+      const fullscreenFrame = app.getWindowFrame();
+      assert.ok(fullscreenFrame.width >= frame.width && fullscreenFrame.height >= frame.height);
+      app.setWindowMode("fullscreen", 1);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      await next();
+      const overscan = app.getWindowFrame();
+      assert.equal(overscan.x, fullscreenFrame.x - 1);
+      assert.equal(overscan.y, fullscreenFrame.y - 1);
+      assert.equal(overscan.width, fullscreenFrame.width + 2);
+      assert.equal(overscan.height, fullscreenFrame.height + 2);
+      app.setWindowMode("fullscreen", 0);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      await next();
+      assert.deepEqual(app.getWindowFrame(), fullscreenFrame);
+    } finally {
+      app.setWindowMode(previousMode);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      await next();
+    }
+    assert.deepEqual(app.getWindowFrame(), frame, "fullscreen must restore the previous window bounds");
+    console.log("Native window modes passed: physical frame, fullscreen overscan and windowed restore");
+    if(app.windowMaterialSupport.supportsAcrylic){
+      for(const material of ["acrylic","mica","micaAlt","none"] as const){
+        app.setWindowPresentation(material,"dark");await next();
+      }
+      app.setWindowPresentation("none","light");
+      console.log("Native transparent surface and system backdrop changes passed");
+    }
     if(process.platform==="win32"){
       assert.equal(app.supportsWindowIcon,true);
       const iconCanvas=createCanvas(32,32),iconContext=iconCanvas.getContext("2d");
@@ -50,6 +98,15 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		await next();
 		assert.equal(testing.diagnostics().frame.renderCount, frameNumber);
 		off(); stop();
+		const gradient=new FillGradient({start:{x:0,y:0},end:{x:1,y:0},
+			colorStops:[{offset:0,color:0x1234dc},{offset:1,color:0x1234dc}]});
+		const sample=new Graphics().rect(120,0,20,20).fill(gradient);app.stage.addChild(sample);
+		const gradientFrame=app.nextPresent();app.invalidate();await gradientFrame;
+		const capture=await app.renderer.extract.pixels({target:app.stage,frame:new Rectangle(120,0,20,20),resolution:1});
+		const middle=(10*capture.width+10)*4;
+		assert.deepEqual(Array.from(capture.pixels.slice(middle,middle+4)),[18,52,220,255],"gradient canvas RGB must survive BGRA GPU upload");
+		sample.destroy();gradient.destroy();
+		console.log("Native canvas gradient GPU color readback passed");
 		const count = observed;
 		const waiter = app.nextPresent(); app.invalidate(); await waiter;
 		assert.equal(observed, count, "unsubscribe must stop notifications");
