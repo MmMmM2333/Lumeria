@@ -41,6 +41,7 @@ export type NativeSceneAnimationHost = Readonly<{
 }>;
 
 export type NativeSceneCommitOptions = Readonly<{
+  openingIconId?:string|null;
   chromeInset?: number;
   folderPageTrackScrub?: ScenePageTrackScrub | null;
   folderPresentation?: NativeFolderPresentation | null;
@@ -73,8 +74,6 @@ export type NativeDesktopSceneOptions = Readonly<{
 function assertStaticFrame(frame: CompleteDesktopSceneFrame): void {
   const unsupported = [
     [frame.viewport.pageTrackScrub !== null, "viewport.pageTrackScrub"],
-    [frame.visual.appLaunchCloseSessionId !== null, "visual.appLaunchCloseSessionId"],
-    [frame.interaction.isDesktopClosing, "interaction.isDesktopClosing"],
     [frame.interaction.isHomeRevealSettling, "interaction.isHomeRevealSettling"],
     [frame.folder.folderClosingHandoffId !== null, "folder.folderClosingHandoffId"],
     [frame.folder.folderSourceGhostedId !== null, "folder.folderSourceGhostedId"],
@@ -111,6 +110,7 @@ function makeNativeFolderFrame(
   setFolderPageRef: (element: unknown, pageIndex: number) => void,
   onFolderPageIndexCommit: (pageIndex: number) => void,
   chromeInset: number,
+  openingIconId:string|null,
 ): FolderOverlayFrame | null {
   const folder = presentation?.renderedFolder;
   if (!folder) return null;
@@ -133,13 +133,13 @@ function makeNativeFolderFrame(
         return "static-real";
       },
       getVisibleFolderPage: visibleItems,
-      isIconOpening: () => false,
+      isIconOpening: (_area,itemId) => itemId===openingIconId,
       setFolderPageRef,
     },
     drag: { groupDragState: desktopFrame.interaction.groupDragState, meta: desktopFrame.interaction.dragMeta },
     folder: {
       closeIconGhosts: null,
-      desktopClosing: false,
+      desktopClosing: desktopFrame.interaction.isDesktopClosing,
       gridStyle: {
         gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
         gridTemplateRows: `repeat(${visibleRowCount}, var(--folder-icon-cell-height))`,
@@ -274,6 +274,7 @@ export class NativeDesktopScene {
       },
       this.#onFolderPageIndexCommit,
       options.chromeInset??0,
+      options.openingIconId??null,
     );
     const folderId = folderState?.renderedFolder?.id ?? null;
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
@@ -288,7 +289,7 @@ export class NativeDesktopScene {
       desktopGridDebugOptions: null,
       desktopTrackMotionKey: frame.viewport.desktopTrackMotionKey,
       desktopVisualAlpha: folderOpen ? 0 : frame.visual.desktopVisualAlpha,
-      desktopVisualTransform: folderOpen ? FOLDER_OPEN_DESKTOP_TRANSFORM : frame.visual.desktopVisualTransform,
+      desktopVisualTransform: folderOpen && !frame.interaction.isDesktopClosing ? FOLDER_OPEN_DESKTOP_TRANSFORM : frame.visual.desktopVisualTransform,
       deviceResolution: viewport.resolution,
       dragFolderHoverState: frame.interaction.dragFolderHoverState,
       dragFolderTargetId: frame.interaction.dragFolderTargetId,
@@ -319,7 +320,7 @@ export class NativeDesktopScene {
       isEditMode: frame.interaction.isEditMode,
       isFolderOpeningPreviewFrameGhosted: () => false,
       isHomeRevealSettling: false,
-      isIconOpening: () => false,
+      isIconOpening: (_area,itemId) => itemId===options.openingIconId,
       isSearchMode: frame.interaction.isSearchMode,
       isTextlessMode: frame.interaction.isTextlessMode,
       launchTargetStatusById: frame.diagnostics.launchTargetStatusById,

@@ -22,6 +22,7 @@ export type NativeFolderPresentation = Readonly<{
 }>;
 
 export type NativeFolderFlow = Readonly<{
+  reset():void;
   close(): boolean;
   destroy(): void;
   notifyInternalActivity(active: boolean, folderId: string | null): void;
@@ -202,6 +203,12 @@ export function createNativeFolderFlow(
   };
 
   return Object.freeze({
+    reset(){
+      epoch++;control?.cancel("retargeted");control=null;
+      renderedFolder=null;pendingOpen=null;openingCancelRequest=null;progress.value=0;openProgressTarget=0;
+      isClosing=false;internalActivity=false;closingPresented=false;closeProgressArrived=false;
+      closingHandoffStarted=false;closingHandoffFinished=false;closeFinishScheduled=false;publish();
+    },
     close,
     destroy,
     notifyInternalActivity,
