@@ -5,6 +5,7 @@ import { getNativePixiApplicationTesting } from "./native-app-testing";
 import { createCanvas } from "@napi-rs/canvas";
 import { runColorDialogSmoke } from "./color-dialog-smoke";
 import { assertWindowInputCoverage } from "./window-input-smoke";
+import { runShortcutSmoke } from "./shortcut-smoke";
 
 /** Actual-host regression: npm start with PIXI_PRESENTED_SMOKE=1. */
 export async function runPresentedSmoke(app: NativePixiApplication): Promise<void> {
@@ -34,6 +35,7 @@ export async function runPresentedSmoke(app: NativePixiApplication): Promise<voi
 		assert.ok(observed > before, "presented must precede nextPresent continuation");
 	};
 	try {
+    await runShortcutSmoke();
     await assertWindowInputCoverage(app);
     const frame = app.getWindowFrame();
     assert.ok(Object.isFrozen(frame));

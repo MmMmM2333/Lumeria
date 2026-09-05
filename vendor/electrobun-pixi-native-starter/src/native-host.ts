@@ -1,6 +1,8 @@
 import { nativeFrameHost } from "./platform/native-frame-host";
 import { NativeJobs } from "./platform/native-jobs";
 import { nativePlatform } from "./platform/native-platform";
+// Keep registrations on the same module instance that owns the native callback.
+export { GlobalShortcut as NativeGlobalShortcut } from "../.hutch/devkit-dcomp-2.0.1/api/sdks/main/proc/native";
 
 process.once("exit", () => {
 	try { NativeJobs.shutdown(); } catch (error) { console.error("[jobs] shutdown failed", error); }

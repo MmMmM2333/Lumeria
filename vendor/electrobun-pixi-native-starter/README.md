@@ -17,6 +17,7 @@ PixiJS scene → WebGPURenderer → Electrobun adapter → Dawn/WebGPU → GpuWi
 - `setWindowMode("fullscreen" | "windowed", overscanPixels = 0)` 和只读 `windowMode` 使用拥有的 Win32 窗口样式/矩形完成切换和恢复；0.2.5 修复 Electrobun 将隐藏标题栏窗口误判为全屏的问题。可扩展全屏外框每边 0–16 个物理像素，渲染内容随客户区扩展。
 - 0.2.6 修复 Canvas/ImageSource 上传到 BGRA 纹理时的红蓝通道互换；原生渐变颜色已通过实际 GPU 像素读回验证。
 - 0.2.7 为透明 GPU 窗口初始化完整的顶层 layered 输入覆盖，避免扩大窗口/全屏后原始区域外点击透传；透明像素继续由子视图 DirectComposition 合成。窗口、全屏、补偿全屏和恢复各验证 25 个 Windows 实际命中点。
+- 0.2.8 公开 `NativeGlobalShortcut`，注册与 Starter 的原生回调模块使用同一实例，避免混用 `electrobun/main` 时出现已注册但回调丢失。实际 Alt+Space 输入已验收。
 - `titleBarStyle` 创建选项、`startWindowDrag()`、`startWindowResize(direction)` 用于自定义窗口栏；移动/缩放仅投递到当前应用窗口。
 - `transparent: true` 与 `setWindowPresentation(material, appearance)` 提供透明 surface 和系统材质；先检查 `windowMaterialSupport`，Acrylic/Mica/Mica Alt 仅支持 Windows 11 build 22621+。
 - `supportsColorDialog` / `chooseColor(0xRRGGBB)` 打开当前窗口所属的 Windows 颜色对话框，返回 `NativePlatformResult<number>`；取消为 `CANCELLED`，不改变调用方颜色。
