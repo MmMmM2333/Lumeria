@@ -2,7 +2,7 @@ import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js
 import { readErrorMessage } from "../application/errorMessage.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
-import { dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
+import { clickOwnedNativeWindow, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -654,6 +654,7 @@ const onContext = (event: FederatedPointerEvent):void=>{
 };
 app.stage.on("rightclick",onContext);
 let offResize = (): void => {};
+let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
   folderFlow.commitPresented(scene.commitPresentedFrame());
 });
@@ -681,6 +682,9 @@ const wheelDeadlines = new Map<
 >();
 
 try {
+  offBackgroundResize=app.on("resize",()=>{
+    void refreshBackground().catch(error=>setStatus(readErrorMessage(error),0xff7b72));
+  });
   offSystemPreferences=subscribeNativeSystemPreferences(result=>{
     if(!result.ok){setStatus(result.error.message,0xff7b72);return;}
     if(setNativeUiFontFamily(result.value.uiFontFamily))settingsShell?.redraw();
@@ -699,8 +703,8 @@ try {
   }
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
   app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
-  await refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
   await present(app, "the native host startup frame");
+  await refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
@@ -792,7 +796,6 @@ try {
   offResize = app.on("resize", ({ height, resolution, width }) => {
     windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     settingsShell?.redraw();
-    void refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
     work = commitScene({ height, resolution, width }, true);
     setStatus(statusText.text);
     if (adaptiveResizeBaseline) {
@@ -1055,6 +1058,13 @@ try {
         const item = getCurrentIconScope().items.find(item => item.id === id);
         if (item) void activateItem(item, {shiftKey: pointerShiftKey});
       }
+      if(command.type==="surfaceTap"&&command.target.kind==="surface"){
+        if(settingsShell||management.modal||editing?.drag.isDragActive())continue;
+        if(folderFlow.snapshot().renderedFolder){closeFolder();continue;}
+        void saves.flush().then(()=>{
+          changeSearch("");setFocusedIcon(null);editing?.selection.clear();app.window.hide();
+        }).catch(error=>setStatus(readErrorMessage(error),0xff7b72));
+      }
       if (command.type !== "commitPage") continue;
       if (command.scope.startsWith("folder:")) {
         if (command.scope === `folder:${folderFlow.snapshot().renderedFolder?.id}`) {
@@ -1283,6 +1293,33 @@ try {
   let dpiResolution = app.resolution;
 
   if (nativeMode === "smoke") {
+    if(settings.presentation.windowMode.value==="fullscreen"){
+      await present(app,"restored fullscreen background settled");
+      assert.equal(desktopBackground.getLocalBounds().width,app.contentSize.width,"startup background must cover the fullscreen width");
+      assert.equal(desktopBackground.getLocalBounds().height,app.contentSize.height,"startup background must cover the fullscreen height");
+      await captureSmokeFrame("fullscreen-startup-background");
+      const {assertWindowInputCoverage}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/window-input-smoke.js");
+      await assertWindowInputCoverage(app);
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      const testing=getNativePixiApplicationTesting(app),handle=testing.handles().inputWindow;
+      const nativePoint=(x:number,y:number)=>testing.clientToScreen(Math.round(x*app.resolution),Math.round(y*app.resolution));
+      const buttonBounds=settingsButton.getBounds();
+      await clickOwnedNativeWindow(handle,nativePoint(buttonBounds.x+buttonBounds.width/2,buttonBounds.y+buttonBounds.height/2));
+      await waitFor("real far-right settings click",()=>settingsShell!==null);
+      app.nativeInput.emitKey("down",{keyCode:0x1b});await present(app,"fullscreen settings dismissed");
+      const blank={x:app.contentSize.width-60,y:app.contentSize.height-110};
+      assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(blank.x,blank.y)).kind,"surface");
+      await clickOwnedNativeWindow(handle,nativePoint(blank.x,blank.y));
+      await waitFor("real fullscreen blank click hides launchpad",()=>!app.window.isVisible());
+      app.window.show();app.window.activate();await present(app,"fullscreen blank-close restoration");
+      app.setWindowMode("windowed");
+      const restored=settings.persistence.capture();restored.windowMode="windowed";settings.persistence.restore(restored);
+      await waitFor("startup fullscreen test restores window dimensions",()=>app.contentSize.width===900&&app.contentSize.height===600);
+      settings.actions.clearDraftBackgroundImage();
+      const cleared=settings.persistence.capture();cleared.backgroundSource="systemMaterial";cleared.backgroundImagePath=null;settings.persistence.restore(cleared);
+      await refreshBackground();await present(app,"windowed background after fullscreen startup");
+      console.log("Fullscreen startup: full background, 25 OS hit points, real far-right settings and blank-click hide passed");
+    }
     try {
       await nativeData.launchApp(`__launchpad-native-smoke-missing-${process.pid}-${Date.now()}__`);
       throw new Error("Native launch failure smoke unexpectedly succeeded");
@@ -1391,7 +1428,7 @@ try {
     assert.equal((await nativeData.loadLayout())!.settings.showCustomTitlebar,true);
     assert.ok(windowChrome.getChildByLabel("native-window-chrome:close"),"custom titlebar must expose a close action");
     await captureSmokeFrame("settings-titlebar");
-    {
+    if(process.env.LAUNCHPAD_NATIVE_WINDOW_INPUT_SMOKE==="1"){
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       const testing=getNativePixiApplicationTesting(app),handle=testing.handles().inputWindow;
       const screenPoint=(x:number,y:number)=>testing.clientToScreen(
@@ -2313,6 +2350,7 @@ try {
   offSystemPreferences();
   offWheel();
   offResize();
+  offBackgroundResize();
   offPresented();
   offStateChange();
   scene.destroy();

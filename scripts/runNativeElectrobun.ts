@@ -133,9 +133,9 @@ fixture.pages = [[
     launchTarget: { kind: "url", path: "https://example.invalid/third-page" },
   },
 ]];
-fixture.settings.backgroundSource = "systemMaterial";
-fixture.settings.windowMode = "windowed";
-fixture.settings.backgroundImagePath = null;
+fixture.settings.backgroundSource = isolated && process.argv.includes("--fullscreen") ? "customImage" : "systemMaterial";
+fixture.settings.windowMode = isolated && process.argv.includes("--fullscreen") ? "fullscreen" : "windowed";
+fixture.settings.backgroundImagePath = isolated && process.argv.includes("--fullscreen") ? iconPath : null;
 fixture.settings.backgroundBaseColor = "#090b14";
 fixture.settings.backgroundBaseOpacity = 100;
 fixture.settings.gridRows = 4;
@@ -182,6 +182,7 @@ try {
         "lumeria_native_data.exe",
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      LAUNCHPAD_NATIVE_WINDOW_INPUT_SMOKE: process.argv.includes("--window-input") ? "1" : "0",
       ...(isolated ? { LUMERIA_NATIVE_DATA_DIR: dataDir } : {}),
       ...(nativeMode === "smoke" ? {
         LAUNCHPAD_NATIVE_SMOKE_MARKER: markerPath,

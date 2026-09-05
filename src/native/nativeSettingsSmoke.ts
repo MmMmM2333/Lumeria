@@ -52,7 +52,8 @@ export function respondToOwnedColorDialog(command:1|2):Promise<void>{
 const mouseDrag=String.raw`
 import ctypes as c, sys, time
 from ctypes import wintypes as w
-target, handle, x, y, dx, dy = map(int, sys.argv[1:])
+target, handle, x, y, dx, dy = map(int, sys.argv[1:7])
+click = len(sys.argv)>7 and sys.argv[7]=='click'
 user=c.WinDLL('user32',use_last_error=True)
 user.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p]
 user.SetThreadDpiAwarenessContext(c.c_void_p(-4))
@@ -92,14 +93,17 @@ def button(flags):
 user.SetCursorPos(x,y);time.sleep(.06)
 button(2)
 try:
- deadline=time.monotonic()+3
- while not moving():
-  if time.monotonic()>deadline:raise RuntimeError('Owned window did not enter the OS move/size loop')
-  time.sleep(.01)
- for step in range(1,13):
-  if user.GetForegroundWindow()!=root: raise RuntimeError('Foreground changed during the test drag')
-  if not user.SetCursorPos(x+round(dx*step/12),y+round(dy*step/12)): raise c.WinError(c.get_last_error())
-  time.sleep(.025)
+ if click:
+  time.sleep(.05)
+ else:
+  deadline=time.monotonic()+3
+  while not moving():
+   if time.monotonic()>deadline:raise RuntimeError('Owned window did not enter the OS move/size loop')
+   time.sleep(.01)
+  for step in range(1,13):
+   if user.GetForegroundWindow()!=root: raise RuntimeError('Foreground changed during the test drag')
+   if not user.SetCursorPos(x+round(dx*step/12),y+round(dy*step/12)): raise c.WinError(c.get_last_error())
+   time.sleep(.025)
 finally: button(4)
 deadline=time.monotonic()+3
 while moving():
@@ -107,9 +111,9 @@ while moving():
  time.sleep(.01)
 `;
 
-export async function dragOwnedNativeWindow(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number}):Promise<void>{
+async function sendOwnedMouse(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number},operation:"drag"|"click"):Promise<void>{
   const child=spawn("python",["-c",mouseDrag,String(process.pid),String(inputWindow),
-    ...[point.x,point.y,delta.x,delta.y].map(value=>String(Math.round(value)))],{
+    ...[point.x,point.y,delta.x,delta.y].map(value=>String(Math.round(value))),operation],{
     windowsHide:true,stdio:["ignore","pipe","pipe"],
   });
   let errors="";child.stderr.on("data",chunk=>{errors+=chunk;});
@@ -118,3 +122,6 @@ export async function dragOwnedNativeWindow(inputWindow:number,point:{x:number;y
     child.once("exit",code=>code===0?resolve():reject(new Error(`Owned window mouse drag failed (${code}): ${errors}`)));
   });
 }
+
+export const dragOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,delta,"drag");
+export const clickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,{x:0,y:0},"click");
