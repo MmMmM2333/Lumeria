@@ -42,7 +42,7 @@ await presented;
 版本化 release 本身就是完整项目，不需要旁边存在本仓库、兄弟仓库、原仓库 `node_modules` 或全局 Electrobun devkit。解压后直接：
 
 ```powershell
-cd C:\path\to\electrobun-pixi-native-starter-0.1.0-win-x64
+cd C:\path\to\electrobun-pixi-native-starter-0.1.1-win-x64
 npm install
 npm run dev
 npm run build
@@ -312,6 +312,9 @@ await renderer.extract.download({ target: stage, filename: "capture.png" });
 - 正式模式使用 FIFO + dirty frame；BunnyMark 使用 Mailbox + continuous frame。窗口最小化会停帧。
 - 纯 root batch（包括多 batch）会编译为有序 render bundles，并在原生层一次 acquire、一次 submit、一次 present；filter/mask/RenderTexture 等复杂 pass 自动回退标准 `renderer.render()`。
 - HWND ring 是启用后的唯一 pointer/keyboard/lifecycle 权威源；Windows 输入包含 capture/cancel、窗口外 move/up、pointerId、client/screen 坐标、完整 buttons、横纵滚轮、修饰键、物理 `code`、逻辑 `key`、repeat、focus/blur 和系统 cursor。
+- 对应用公开的 Pixi `FederatedWheelEvent` 固定为 `deltaMode = 0`：一个 Win32 `WHEEL_DELTA` 映射为 100 个逻辑像素，纵向符号与浏览器一致；小于一格的触控板/高精度滚轮增量按比例保留，delta 不随窗口 DPI 缩放。
+- `onHostEvent` 仅用于底层诊断，保留 Win32 原始 wheel delta，不是 DOM/Pixi 兼容事件；业务手势必须监听 Pixi `wheel`。
+- 100px 标定与 Chromium 在 Windows 默认“三行/格”设置下的换算一致；Starter 将它固定为手势强度，不把系统滚动行数伪装成 DOM `line` 单位。需要传统文本滚动的控件仍应按最终 `deltaMode` 处理。[Chromium Windows wheel builder](https://chromium.googlesource.com/chromium/src/+/e22d04949d069f7184b3233d1b83e26fe79e1bcc/ui/events/blink/web_input_event_builders_win.cc)
 - input/text/file ring 由 Win32 empty→nonempty 回调主动唤醒 Bun，不再使用 8ms Screen polling；诊断可查询 queued/dropped/coalesced/duplicates、当前 capture 和最后 cursor。
 - Device lost、uncaptured error 与 surface timeout/outdated/lost/OOM 都有独立状态和恢复策略。
 - IME bridge 提供 composition/commit、caret/candidate 定位与会话生命周期；剪贴板、打开/保存文件、拖入/拖出和异步文件读取/目录扫描已有稳定 API。
@@ -326,6 +329,7 @@ await renderer.extract.download({ target: stage, filename: "capture.png" });
 | `<video>`、摄像头、MediaStream | 依赖浏览器媒体栈；用原生解码器逐帧写入 `BufferImageSource` |
 | DOM SVG/`parseAsGraphicsContext` 完整语义 | 普通 SVG 图片已由 Skia 栅格化；需要可编辑矢量时直接构造 `Graphics` |
 | 压缩 GPU texture 与 WebGPU 3D texture | 当前 native feature/adapter 没有可靠暴露；保持禁用，避免产生“创建成功但渲染错误”的假能力 |
+| 原生触屏、多点触控和笔输入 | 当前只支持 Windows 提升为鼠标的主触点；尚未接入 `WM_POINTER`，不会把它标记成真正的 touch/pen 支持 |
 | macOS/Linux 原生宿主 | 当前原生输入、IME、surface 与 DLL 是 Windows 实现；待 Windows 路径稳定后再拆平台层 |
 
 这里没有实现大而全的 DOM polyfill。Pixi 真正只缺一小块 Canvas2D 的地方交给 Skia，GPU 路径直接补 adapter/device 命令；浏览器独有能力则留在明确的平台边界之外。

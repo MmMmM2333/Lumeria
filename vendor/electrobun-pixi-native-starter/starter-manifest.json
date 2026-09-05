@@ -2,11 +2,11 @@
   "schemaVersion": 2,
   "starter": {
     "name": "electrobun-pixi-native-starter",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "product": {
     "name": "electrobun-pixijs-webgpu",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "target": {
     "platform": "win32",
@@ -14,14 +14,14 @@
     "minimumWindows": "10.0.19041"
   },
   "source": {
-    "commit": "019c945d289c54a5d3b9a38d76f2d0968a35c34c",
+    "commit": "7ee8a40bfeedba24e17944444cecda340334cf04",
     "dirty": false,
-    "sourceDateEpoch": 1788333290
+    "sourceDateEpoch": 1788385318
   },
   "build": {
-    "commit": "019c945d289c54a5d3b9a38d76f2d0968a35c34c",
-    "sourceDateEpoch": 1788333290,
-    "timestamp": "2026-09-02T07:14:50.000Z"
+    "commit": "7ee8a40bfeedba24e17944444cecda340334cf04",
+    "sourceDateEpoch": 1788385318,
+    "timestamp": "2026-09-02T21:41:58.000Z"
   },
   "dependencies": {
     "electrobun": "2.0.1",
@@ -41,7 +41,7 @@
     },
     "nativeFrame": {
       "abiVersion": 3,
-      "sourceSha256": "169cd6268364529d04e02641434fbe508899ef64f30806e9bfed37ba29cfe857",
+      "sourceSha256": "edd47097703ca591cebe46221e99e4b302097861716411b395d1caae765c78e8",
       "capabilities": {
         "mask": "0x0000000000000fbf",
         "requiredMask": "0x0000000000000fbf",
@@ -2851,8 +2851,8 @@
     {
       "path": ".hutch/native-frame/native-frame.dll",
       "role": "native-frame-runtime",
-      "size": 275456,
-      "sha256": "806a25be4b7acd9b2178bfdc283fa8788081188465f865c5acedd97ccef73736"
+      "size": 281600,
+      "sha256": "503a3fb7490250d454f15c2cb57d318ddaa1a9b3291d889c88e5a99e0f9b9e4d"
     },
     {
       "path": "assets/bunnies/rabbitv3_ash.png",
@@ -2948,19 +2948,19 @@
       "path": "electrobun.config.ts",
       "role": "starter-config",
       "size": 630,
-      "sha256": "ba609b44a8ba01ef2f50e7d9b301475d7e1a7fe159a055b19456d78720c15450"
+      "sha256": "a4c213791dd1c45a010da0902d045329167b450e77c633a5070c0196d18ed5e4"
     },
     {
       "path": "package-lock.json",
       "role": "starter-config",
       "size": 15318,
-      "sha256": "b829b29ddbae7fa2ccea76f656a9a8b3a1f10c379b0a28269d192923f2cb3794"
+      "sha256": "36a5754f1c21a9f2483550d85f6d204472c613d54cc9cc5245b5f118f40dcc59"
     },
     {
       "path": "package.json",
       "role": "starter-config",
-      "size": 1760,
-      "sha256": "d0a2d0987a5c30f210c7ffca2a498c693a4dc2a5b69c99ff649d6143d8d72da6"
+      "size": 1792,
+      "sha256": "3d3b3322f57aa6ab5270ebbe420ae71b23041c311f81f1adb6d5bf7b2da549d8"
     },
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.md",
@@ -2977,14 +2977,14 @@
     {
       "path": "README.md",
       "role": "documentation",
-      "size": 21813,
-      "sha256": "5fc272f833d4eac56853047ad196cfe8aeab94807a1f3af9ff47216a0390ac8e"
+      "size": 22822,
+      "sha256": "b60a3f09bb1259ffd271913c04fbc9f4dfcc621e9faa4060f5d47acdc0409d83"
     },
     {
       "path": "src/demo/demo.ts",
       "role": "starter-source",
-      "size": 28841,
-      "sha256": "065f35de349a0f61fee45ae55b1c2edc505a22000ada23b8d390cd8cadd6a919"
+      "size": 29272,
+      "sha256": "50e7ca7c36c657bd919eef7b04042b2050c2288c34a3795f1a3c91e72a16e521"
     },
     {
       "path": "src/diagnostics/agent-debug.ts",
@@ -2993,10 +2993,16 @@
       "sha256": "1cc27e4065f7e5686df36a434d9d136ae05102ff7359a07e76e34d3e866f95f8"
     },
     {
+      "path": "src/input/native-events.test.ts",
+      "role": "starter-source",
+      "size": 686,
+      "sha256": "75212e563e366054da7811ea91f713d9599d5bc83925eb01e282d5160ff48477"
+    },
+    {
       "path": "src/input/native-events.ts",
       "role": "starter-source",
-      "size": 22382,
-      "sha256": "cef28a47c4f623608875fa2a34caca706841bae85321fc73988d6ad3f64b8b9c"
+      "size": 23236,
+      "sha256": "bdfb257694c1c24bfad6f46cac1a9ee14b783b1ede12ac20151a4774dfde3b25"
     },
     {
       "path": "src/input/native-text-input.test.ts",
@@ -3025,14 +3031,14 @@
     {
       "path": "src/input/text-input.test.ts",
       "role": "starter-source",
-      "size": 7270,
-      "sha256": "84268667b58a8a81f7fb2012fc4a4f9c73766a591d6df57ff3e877b8dffa90fd"
+      "size": 7850,
+      "sha256": "13ffd1608b7d041d0ef89f747ba2fa4df7f30777da9cfc5bdb9965741ce8d1c9"
     },
     {
       "path": "src/input/text-input.ts",
       "role": "starter-source",
-      "size": 25945,
-      "sha256": "67322e071c3ebc54b173637924f2ec8ecde2dd0ba005e519d95eeef3b6ca3905"
+      "size": 26091,
+      "sha256": "9f8307bc80a99aaf98fe13b3bae2021d47dd8aa8a5c1098386f48dcad0cd0947"
     },
     {
       "path": "src/main.ts",
@@ -3067,8 +3073,8 @@
     {
       "path": "src/platform/native-frame.rs",
       "role": "starter-source",
-      "size": 142101,
-      "sha256": "169cd6268364529d04e02641434fbe508899ef64f30806e9bfed37ba29cfe857"
+      "size": 142810,
+      "sha256": "edd47097703ca591cebe46221e99e4b302097861716411b395d1caae765c78e8"
     },
     {
       "path": "src/platform/native-jobs.ts",
@@ -3157,8 +3163,8 @@
     {
       "path": "src/runtime/native-app.ts",
       "role": "starter-source",
-      "size": 44446,
-      "sha256": "af5bf55f7b02c03ecf63bc203e7c2f7eeb54d707e5ab3b122d7ef538e4e41007"
+      "size": 44552,
+      "sha256": "b02c0e38d0ff5ac6f2780c10dba8439558b997b998326faada4cdbb367308fb1"
     },
     {
       "path": "src/runtime/native-scheduler.test.ts",
@@ -3182,7 +3188,7 @@
       "path": "starter-consumer-smoke/smoke.mjs",
       "role": "consumer-smoke",
       "size": 26431,
-      "sha256": "5a4588885dd19e420b84bb1b70ea7d2b8be8c4d859748cde1ad246cdcb04e5ab"
+      "sha256": "9b320ff9f59719891505084516b67afab5da024b6ff260728f37f601361beaea"
     },
     {
       "path": "tools/electrobun-dcomp-patch.mjs",
@@ -3199,8 +3205,8 @@
     {
       "path": "tools/pixi-debug.mjs",
       "role": "starter-tool",
-      "size": 29018,
-      "sha256": "23218c764f49359a80674080a4de9078be1644b83e0d06f7b3c51234c4d466a7"
+      "size": 32578,
+      "sha256": "470ff522e71fae742828da14f0c7003071d4de443111474ce3aec06073c8b734"
     },
     {
       "path": "tools/run-bunnymark.mjs",

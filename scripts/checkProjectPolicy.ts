@@ -39,6 +39,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".claude",
   ".codex",
   ".codex-dev",
+  ".cottontail-tmp",
   ".git",
   ".idea",
   ".vscode",

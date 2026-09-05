@@ -4,7 +4,7 @@ export default {
 	app: {
 		name: "PixiJS Native WebGPU",
 		identifier: "dev.example.electrobun-pixijs-webgpu",
-		version: "0.1.0",
+		version: "0.1.1",
 	},
 	build: {
 		mainProcess: "bun",

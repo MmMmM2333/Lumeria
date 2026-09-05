@@ -1,4 +1,5 @@
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Screen } from "electrobun/main";
 import {
   Container,
@@ -11,11 +12,22 @@ import {
   createNativePixiApplication,
   type NativePixiApplication,
 } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import {
+  createLaunchpadGestureEngine,
+  type LaunchpadGestureDeadline,
+  type LaunchpadGestureOutput,
+  type LaunchpadPagePresentation,
+} from "../domain/input/launchpadGestureEngine.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
-import type { SceneItem } from "../rendering/sceneFrame.js";
+import {
+  createNativeFolderFlow,
+  type NativeFolderItem,
+} from "../rendering/native/nativeFolderFlow.js";
+import type { SceneItem, ScenePageTrackScrub } from "../rendering/sceneFrame.js";
 import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import type { LayoutDocument } from "../domain/layoutDocument.js";
+import { DEFAULT_FOLDER_COLS, DEFAULT_FOLDER_ROWS } from "../domain/launchpadGridDefaults.js";
 import {
   NativeDataHost,
   NativeLaunchError,
@@ -24,7 +36,6 @@ import {
 import {
   getNativeActivePageItems,
   getNativePageTurnFromKey,
-  getNativePageTurnFromWheel,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
   turnNativeDesktopPage,
@@ -47,6 +58,12 @@ type NativeFrameProof = Readonly<{
   height: number;
   loadedLayout: boolean;
   pageCount: number;
+  desktopPageMotionObserved: boolean;
+  folderChildLaunchObserved: boolean;
+  folderCloseMotionObserved: boolean;
+  folderOpenMotionObserved: boolean;
+  folderPageMotionObserved: boolean;
+  folderPageNavigation: "verified";
   pageNavigation: "skipped-single-page" | "verified";
   presentCount: number;
   presented: true;
@@ -119,7 +136,10 @@ async function waitFor(
   }
 }
 
-async function present(app: NativePixiApplication, description: string): Promise<void> {
+async function present(
+  app: NativePixiApplication,
+  description: string,
+): Promise<void> {
   let timeout: ReturnType<typeof setTimeout> | null = null;
   const presented = app.nextPresent();
   app.invalidate();
@@ -136,6 +156,25 @@ async function present(app: NativePixiApplication, description: string): Promise
   } finally {
     if (timeout !== null) clearTimeout(timeout);
   }
+}
+
+function collectTextureItems(
+  frame: Readonly<{ viewport: Readonly<{ activePageIndex: number; activePages: readonly (readonly (SceneItem | null)[])[] }> }>,
+): readonly SceneItem[] {
+  const result: SceneItem[] = [];
+  const seen = new Set<string>();
+  const append = (item: SceneItem | null): void => {
+    if (!item || seen.has(item.id)) return;
+    seen.add(item.id);
+    result.push(item);
+    if (item.type !== "folder" || !Array.isArray(item.childPages)) return;
+    for (const page of item.childPages) for (const child of page) append(child as SceneItem | null);
+  };
+  frame.viewport.activePages.forEach((page) => {
+    // ponytail: retain layout textures for the scene lifetime; add scene-owned leases only if catalog-scale GPU memory becomes measurable.
+    for (const item of page) append(item);
+  });
+  return result;
 }
 
 function toPixelRegion(
@@ -170,6 +209,19 @@ async function captureScenePixels(
   }) as unknown as NativePixelData;
 }
 
+async function captureSmokeFrame(name: string): Promise<void> {
+  const directory = process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR;
+  if (!directory) throw new Error("LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR is required in smoke mode");
+  const dataUrl = await app.renderer.extract.base64({
+    target: app.stage,
+    frame: new Rectangle(0, 0, app.contentSize.width, app.contentSize.height),
+    resolution: 1,
+    clearColor: 0x090b14,
+    format: "png",
+  });
+  writeFileSync(join(directory, `${name}.png`), Buffer.from(dataUrl.split(",")[1]!, "base64"));
+}
+
 const nativeData = new NativeDataHost();
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
@@ -184,6 +236,13 @@ try {
 }
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps);
 let activePageItems = getNativeActivePageItems(currentFrame);
+const folderLayout = Object.freeze({
+  cols: loadedLayout?.settings.folderCols ?? DEFAULT_FOLDER_COLS,
+  iconSize: loadedLayout?.settings.folderIconSizeMode === "custom"
+    ? loadedLayout.settings.folderIconSize
+    : currentFrame.viewport.iconSize,
+  rows: loadedLayout?.settings.folderRows ?? DEFAULT_FOLDER_ROWS,
+});
 
 const app = await createNativePixiApplication({
   antialias: true,
@@ -218,14 +277,58 @@ function setStatus(message: string, color = 0xd8dee9): void {
   app.invalidate();
 }
 
+function clickWithNativeInput(target: Container): void {
+  const hitArea = target.hitArea as Readonly<{
+    height?: number;
+    width?: number;
+    x?: number;
+    y?: number;
+  }> | null;
+  const bounds = target.getBounds();
+  const point = hitArea && Number(hitArea.width) > 0 && Number(hitArea.height) > 0
+    ? target.toGlobal({
+      x: Number(hitArea.x) + Number(hitArea.width) / 2,
+      y: Number(hitArea.y) + Number(hitArea.height) / 2,
+    })
+    : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  const { x, y } = point;
+  app.nativeInput.emitPointer("pointermove", x, y, 0);
+  if (nativeMode === "smoke") {
+    const boundary = app.renderer.events.rootBoundary;
+    const hit = boundary.hitTest(x, y);
+    let current: Container | null = hit;
+    while (current && current !== target) current = current.parent;
+    if (!current) {
+      throw new Error(
+        `Native pointer target ${target.label || target.constructor.name} was obscured by ${hit?.label || hit?.constructor.name || "nothing"}`,
+      );
+    }
+  }
+  app.nativeInput.emitPointer("pointerdown", x, y, 0);
+  app.nativeInput.emitPointer("pointerup", x, y, 0);
+}
+
 let launchInFlight = false;
+let renderScene: () => void;
+let sceneRenderQueued = false;
+const requestSceneRender = (): void => {
+  if (sceneRenderQueued) return;
+  sceneRenderQueued = true;
+  queueMicrotask(() => {
+    sceneRenderQueued = false;
+    renderScene();
+  });
+};
+const folderFlow = createNativeFolderFlow(() => requestSceneRender());
+
 async function activateItem(item: SceneItem): Promise<void> {
   const name = typeof item.name === "string" ? item.name : item.id;
   if (item.type === "folder") {
-    setStatus(`Folder opening is not migrated yet: ${name}`, 0xf0b86e);
+    if (folderFlow.open(item)) setStatus("");
     return;
   }
   if (launchInFlight) return;
+  if (folderFlow.snapshot().renderedFolder && !folderFlow.close()) return;
   launchInFlight = true;
   setStatus(`Launching ${name}...`);
   try {
@@ -243,7 +346,14 @@ async function activateItem(item: SceneItem): Promise<void> {
 }
 
 const scene = new NativeDesktopScene(app.stage, {
+  folderLayout,
   iconTextures,
+  onFolderCloseRequest: () => folderFlow.close(),
+  onFolderInternalActivityChange: (active, folderId) => {
+    folderFlow.notifyInternalActivity(active, folderId);
+  },
+  onFolderPageIndexCommit: (pageIndex) => folderFlow.setPageIndex(pageIndex),
+  onFolderRenderRequest: requestSceneRender,
   onIconActivate: (item) => void activateItem(item),
 });
 app.stage.addChild(statusText);
@@ -251,11 +361,16 @@ let offResize = (): void => {};
 let offStateChange = (): void => {};
 let offKey = (): void => {};
 let offWheel = (): void => {};
+let offWheelPointerInterrupt = (): void => {};
 let disconnectAnimationHost = (): void => {};
+const wheelDeadlines = new Map<
+  LaunchpadGestureDeadline["kind"],
+  ReturnType<typeof setTimeout>
+>();
 
 try {
   await present(app, "the native host startup frame");
-  const iconTextureSnapshot = await iconTextures.synchronize(activePageItems);
+  const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
@@ -273,16 +388,35 @@ try {
     invalidate: () => app.invalidate(),
   });
 
-  let work = scene.commit(currentFrame, {
+  let desktopPageTrackScrub: ScenePageTrackScrub | null = null;
+  let folderPageTrackScrub: ScenePageTrackScrub | null = null;
+  const commitScene = (
+    viewport: Readonly<{ height: number; resolution: number; width: number }>,
+    snapDesktopLayout: boolean,
+  ) => scene.commit(currentFrame, viewport, {
+    folderPageTrackScrub,
+    folderPresentation: folderFlow.snapshot(),
+    pageTrackScrub: desktopPageTrackScrub,
+    snapDesktopLayout,
+  });
+  let work = commitScene({
     height: app.contentSize.height,
     resolution: app.resolution,
     width: app.contentSize.width,
-  });
+  }, true);
+  renderScene = () => {
+    work = commitScene({
+      height: app.contentSize.height,
+      resolution: app.resolution,
+      width: app.contentSize.width,
+    }, false);
+    app.invalidate();
+  };
   let resizeEvents = 0;
   let resizeLiveLogicalObserved = false;
   let adaptiveResizeBaseline: Readonly<{ height: number; width: number }> | null = null;
   offResize = app.on("resize", ({ height, resolution, width }) => {
-    work = scene.commit(currentFrame, { height, resolution, width });
+    work = commitScene({ height, resolution, width }, true);
     setStatus(statusText.text);
     if (adaptiveResizeBaseline) {
       const source = app.renderer.view.texture.source;
@@ -309,6 +443,8 @@ try {
 
   let presentCount = 0;
   let pageTurnInFlight = false;
+  let desktopPageMotionObserved = false;
+  let folderPageMotionObserved = false;
   async function turnPage(direction: Exclude<NativePageTurn, 0>): Promise<boolean> {
     if (pageTurnInFlight) return false;
     const nextFrame = turnNativeDesktopPage(currentFrame, direction);
@@ -316,7 +452,7 @@ try {
     pageTurnInFlight = true;
     try {
       const nextItems = getNativeActivePageItems(nextFrame);
-      const snapshot = await iconTextures.synchronize([...activePageItems, ...nextItems]);
+      const snapshot = await iconTextures.synchronize(collectTextureItems(nextFrame));
       if (snapshot.pending.length !== 0) {
         throw new Error(`Native page icon textures remained pending: ${JSON.stringify(snapshot)}`);
       }
@@ -325,15 +461,26 @@ try {
       }
       currentFrame = nextFrame;
       activePageItems = nextItems;
-      work = scene.commit(currentFrame, {
+      work = commitScene({
         height: app.contentSize.height,
         resolution: app.resolution,
         width: app.contentSize.width,
-      });
+      }, false);
+      const committedMotion = scene.getMotionSnapshot();
+      desktopPageMotionObserved ||= Math.abs(
+        committedMotion.desktopPageTrackX - committedMotion.desktopPageTrackTargetX,
+      ) > 0.5;
       iconNodes = collectActiveIconNodes();
       setStatus("");
       await present(app, `desktop page ${currentFrame.viewport.activePageIndex + 1}`);
       presentCount += 1;
+      await waitFor(
+        `desktop page ${currentFrame.viewport.activePageIndex + 1} motion to settle`,
+        () => {
+          const motion = scene.getMotionSnapshot();
+          return Math.abs(motion.desktopPageTrackX - motion.desktopPageTrackTargetX) < 0.05;
+        },
+      );
       return true;
     } finally {
       pageTurnInFlight = false;
@@ -345,17 +492,153 @@ try {
     console.error("Native desktop page turn failed", error);
     setStatus(`Page turn failed: ${message}`, 0xff7b72);
   };
+  const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
+    if (!folderFlow.turnPage(direction)) return false;
+    setStatus("");
+    return true;
+  };
+  const wheelGestures = createLaunchpadGestureEngine();
+  let lastWheelGestureTime = 0;
+  const clearWheelDeadline = (kind: LaunchpadGestureDeadline["kind"]): void => {
+    const timer = wheelDeadlines.get(kind);
+    if (timer) clearTimeout(timer);
+    wheelDeadlines.delete(kind);
+  };
+  const clearWheelPresentation = (): void => {
+    desktopPageTrackScrub = null;
+    folderPageTrackScrub = null;
+    requestSceneRender();
+  };
+  const toPageTrackScrub = (
+    presentation: LaunchpadPagePresentation,
+  ): ScenePageTrackScrub => ({
+    edge: presentation.edge,
+    fromIndex: presentation.fromIndex,
+    progress: presentation.progress,
+    scope: presentation.scope,
+    ...(presentation.settle ? {
+      settle: true,
+      settleToken: presentation.settleToken,
+      targetProgress: presentation.targetProgress,
+      velocity: presentation.velocity,
+    } : {}),
+    toIndex: presentation.toIndex,
+  });
+  let applyWheelOutput: (
+    output: LaunchpadGestureOutput,
+    event: FederatedWheelEvent | null,
+    time: number,
+  ) => void;
+  const scheduleWheelDeadline = (
+    deadline: LaunchpadGestureDeadline | null | undefined,
+  ): void => {
+    if (!deadline) {
+      clearWheelDeadline("wheelEnd");
+      return;
+    }
+    clearWheelDeadline(deadline.kind);
+    const timer = setTimeout(() => {
+      wheelDeadlines.delete(deadline.kind);
+      if (deadline.kind === "clearPresentation") {
+        clearWheelPresentation();
+        return;
+      }
+      applyWheelOutput(
+        wheelGestures.dispatch({ type: "deadline", kind: deadline.kind, time: deadline.at }),
+        null,
+        deadline.at,
+      );
+    }, Math.max(0, deadline.at - lastWheelGestureTime));
+    wheelDeadlines.set(deadline.kind, timer);
+  };
+  applyWheelOutput = (output, event, time): void => {
+    lastWheelGestureTime = time;
+    if (output.presentation) {
+      const scrub = toPageTrackScrub(output.presentation);
+      if (scrub.scope.startsWith("folder:")) {
+        desktopPageTrackScrub = null;
+        folderPageTrackScrub = scrub;
+      } else {
+        desktopPageTrackScrub = scrub;
+        folderPageTrackScrub = null;
+      }
+      requestSceneRender();
+    }
+    for (const command of output.commands) {
+      if (command.type !== "commitPage") continue;
+      if (command.scope.startsWith("folder:")) {
+        folderFlow.setPageIndex(command.pageIndex);
+      } else {
+        const direction = Math.sign(command.pageIndex - currentFrame.viewport.activePageIndex) as NativePageTurn;
+        if (direction !== 0) void turnPage(direction).catch(reportPageTurnFailure);
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(output, "deadline")) {
+      scheduleWheelDeadline(output.deadline);
+    }
+    if (output.handled) event?.preventDefault();
+  };
   const onWheel = (event: FederatedWheelEvent): void => {
-    const direction = getNativePageTurnFromWheel(event);
-    if (direction === 0) return;
-    event.preventDefault();
-    void turnPage(direction).catch(reportPageTurnFailure);
+    const folder = folderFlow.snapshot();
+    if (folder.renderedFolder && folder.isClosing) {
+      event.preventDefault();
+      return;
+    }
+    const scope = folder.renderedFolder ? `folder:${folder.renderedFolder.id}` : "desktop";
+    const pageIndex = folder.renderedFolder
+      ? folder.folderPageIndex
+      : currentFrame.viewport.activePageIndex;
+    const pageCount = folder.renderedFolder
+      ? folder.renderedFolder.childPages.length
+      : currentFrame.viewport.activePages.length;
+    const timeStamp = Number(event.timeStamp);
+    const time = Number.isFinite(timeStamp) && timeStamp >= 0 ? timeStamp : performance.now();
+    applyWheelOutput(wheelGestures.dispatch({
+      type: "wheel",
+      time,
+      ctrlKey: event.ctrlKey,
+      deltaMode: event.deltaMode,
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      metaKey: event.metaKey,
+      momentum: null,
+      viewport: {
+        scope,
+        pageIndex,
+        pageCount,
+        pageWidth: scene.getPageWidth(scope, pageIndex, app.contentSize.width),
+      },
+    }), event, time);
   };
   app.stage.on("wheel", onWheel);
   offWheel = () => app.stage.off("wheel", onWheel);
+  const interruptWheel = (event: Readonly<{ timeStamp?: unknown }>): void => {
+    const timestamp = Number(event.timeStamp);
+    const time = Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : performance.now();
+    applyWheelOutput(wheelGestures.dispatch({ type: "cancel", time }), null, time);
+  };
+  app.stage.on("pointerdown", interruptWheel);
+  offWheelPointerInterrupt = () => app.stage.off("pointerdown", interruptWheel);
   offKey = app.nativeInput.onKey((event) => {
+    if (
+      event.type === "down"
+      && !event.repeat
+      && !event.altKey
+      && !event.ctrlKey
+      && !event.metaKey
+      && event.key === "Escape"
+      && folderFlow.snapshot().renderedFolder
+    ) {
+      folderFlow.close();
+      return;
+    }
     const direction = getNativePageTurnFromKey(event);
     if (direction !== 0) {
+      const folder = folderFlow.snapshot();
+      if (folder.renderedFolder) {
+        if (!folder.isClosing) turnFolderPage(direction);
+        return;
+      }
       void turnPage(direction).catch(reportPageTurnFailure);
       return;
     }
@@ -368,8 +651,11 @@ try {
       || event.isComposing
       || (event.key !== "Enter" && event.key !== " " && event.code !== "Space")
     ) return;
-    const focusedId = currentFrame.interaction.focusedIcon?.id;
-    const focused = activePageItems.find((item) => item.id === focusedId);
+    const folder = folderFlow.snapshot();
+    const focusedId = folder.focusedIcon?.id ?? currentFrame.interaction.focusedIcon?.id;
+    const focused = folder.renderedFolder
+      ? folder.renderedFolder.childPages[folder.folderPageIndex]?.find((item) => item?.id === focusedId)
+      : activePageItems.find((item) => item.id === focusedId);
     if (focused) void activateItem(focused);
   });
 
@@ -389,6 +675,9 @@ try {
   let restorePresentCount = 0;
   let pageNavigation: NativeFrameProof["pageNavigation"] = "skipped-single-page";
   let structuredLaunchFailureObserved = false;
+  let folderOpenMotionObserved = false;
+  let folderCloseMotionObserved = false;
+  let folderChildLaunchObserved = false;
   let dpiTransition: NativeHostLifecycleProof["dpiTransition"] = "skipped-no-mixed-dpi-display";
   let dpiResolution = app.resolution;
 
@@ -401,23 +690,118 @@ try {
       structuredLaunchFailureObserved = true;
     }
 
+    await captureSmokeFrame("desktop-page-1");
     if (currentFrame.viewport.activePages.length > 1) {
-      if (!await turnPage(1)) throw new Error("Native smoke could not turn to the second desktop page");
-      await waitFor(
-        "the second native desktop page to become visible",
-        () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
-      );
-      await present(app, "the settled second desktop page");
-      presentCount += 1;
-      if (!await turnPage(-1)) throw new Error("Native smoke could not return to the first desktop page");
-      await waitFor(
-        "the first native desktop page to become visible again",
-        () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
-      );
-      await present(app, "the restored first desktop page");
-      presentCount += 1;
+      while (currentFrame.viewport.activePageIndex < currentFrame.viewport.activePages.length - 1) {
+        if (!await turnPage(1)) throw new Error("Native smoke could not turn to the next desktop page");
+        await waitFor(
+          "the next native desktop page to become visible",
+          () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
+        );
+        await present(app, "the settled next desktop page");
+        await captureSmokeFrame(`desktop-page-${currentFrame.viewport.activePageIndex + 1}`);
+        presentCount += 1;
+      }
+      if (await turnPage(1)) throw new Error("Native desktop paging advanced past its last page");
+      while (currentFrame.viewport.activePageIndex > 0) {
+        if (!await turnPage(-1)) throw new Error("Native smoke could not turn to the previous desktop page");
+        await waitFor(
+          "the previous native desktop page to become visible",
+          () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
+        );
+        await present(app, "the settled previous desktop page");
+        presentCount += 1;
+      }
+      if (!desktopPageMotionObserved) {
+        throw new Error("Native desktop page changed without an observable intermediate track position");
+      }
       pageNavigation = "verified";
     }
+
+    const smokeFolder = activePageItems.find((item) => (
+      item.type === "folder" && Array.isArray(item.childPages) && item.childPages.length > 1
+    )) as NativeFolderItem | undefined;
+    if (!smokeFolder) throw new Error("Native smoke fixture must contain a multi-page folder on page one");
+    const folderNode = app.stage.getChildByLabel(`launchpad-item:${smokeFolder.id}`, true);
+    if (!folderNode) throw new Error(`Native smoke folder node ${smokeFolder.id} was not rendered`);
+    clickWithNativeInput(folderNode);
+    if (folderFlow.close()) {
+      throw new Error("Native folder close should be rejected until opening settles");
+    }
+    await waitFor(
+      "an intermediate native folder opening frame",
+      () => {
+        const progress = folderFlow.snapshot().openProgress;
+        return progress > 0.001 && progress < 0.999;
+      },
+    );
+    folderOpenMotionObserved = true;
+    await waitFor(
+      "the native folder opening motion to settle",
+      () => folderFlow.snapshot().openProgress >= 0.999,
+    );
+    await present(app, "the opened native folder");
+    await captureSmokeFrame("folder-page-1");
+    presentCount += 1;
+
+    if (!turnFolderPage(1)) throw new Error("Native smoke could not turn to the second folder page");
+    await waitFor(
+      "an intermediate native folder page frame",
+      () => {
+        const motion = scene.getMotionSnapshot();
+        return motion.folderPageTrackX !== null
+          && motion.folderPageTrackTargetX !== null
+          && Math.abs(motion.folderPageTrackX - motion.folderPageTrackTargetX) > 0.5;
+      },
+    );
+    folderPageMotionObserved = true;
+    await waitFor(
+      "the native folder page motion to settle",
+      () => {
+        const motion = scene.getMotionSnapshot();
+        return motion.folderPageTrackX !== null
+          && motion.folderPageTrackTargetX !== null
+          && Math.abs(motion.folderPageTrackX - motion.folderPageTrackTargetX) < 0.05;
+      },
+    );
+    if (!folderPageMotionObserved || folderFlow.snapshot().folderPageIndex !== 1) {
+      throw new Error("Native folder page navigation did not expose a real track animation");
+    }
+    await present(app, "the settled second native folder page");
+    await captureSmokeFrame("folder-page-2");
+    presentCount += 1;
+    if (turnFolderPage(1)) throw new Error("Native folder paging advanced past its last page");
+
+    const child = smokeFolder.childPages[1]?.find((item): item is SceneItem => item !== null);
+    if (!child) throw new Error("Native smoke folder second page must contain a launchable child");
+    const childNode = app.stage.getChildByLabel(`launchpad-item:${child.id}`, true);
+    if (!childNode) throw new Error(`Native smoke folder child ${child.id} was not rendered`);
+    if (childNode.eventMode !== "static") {
+      throw new Error(`Native smoke folder child ${child.id} was not interactive`);
+    }
+    const childLaunchMarker = process.env.LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER;
+    if (!childLaunchMarker) {
+      throw new Error("LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER is required in smoke mode");
+    }
+    clickWithNativeInput(childNode);
+    await waitFor(
+      "an intermediate native folder closing frame",
+      () => {
+        const folder = folderFlow.snapshot();
+        return folder.isClosing && folder.openProgress > 0.001 && folder.openProgress < 0.999;
+      },
+    );
+    folderCloseMotionObserved = true;
+    await waitFor("the native folder child process", () => existsSync(childLaunchMarker));
+    folderChildLaunchObserved = true;
+    await waitFor(
+      "the native folder closing handoff",
+      () => folderFlow.snapshot().renderedFolder === null,
+    );
+    setStatus("");
+    await present(app, "the closed native folder");
+    await captureSmokeFrame("folder-closed");
+    presentCount += 1;
 
     const initialSize = app.contentSize;
     const initialResizeEvents = resizeEvents;
@@ -468,11 +852,16 @@ try {
         "the public resolution to follow the mixed-DPI display",
         () => app.resolution === alternateDisplay.scaleFactor,
       );
-      work = scene.commit(currentFrame, {
+      work = commitScene({
         height: app.contentSize.height,
         resolution: app.resolution,
         width: app.contentSize.width,
-      });
+      }, true);
+      if (iconNodes.some((node) => (
+        node.emojiText.resolution !== app.resolution || node.labelText.resolution !== app.resolution
+      ))) {
+        throw new Error("Native Pixi text resolution did not follow the mixed-DPI display");
+      }
       await present(app, "the mixed-DPI LaunchPad scene frame");
       presentCount += 1;
       dpiTransition = "verified-display-fallback";
@@ -489,11 +878,11 @@ try {
       "the native application to resume after restoration",
       () => !app.window.isMinimized() && app.state === "running",
     );
-    work = scene.commit(currentFrame, {
+    work = commitScene({
       height: app.contentSize.height,
       resolution: app.resolution,
       width: app.contentSize.width,
-    });
+    }, true);
     await present(app, "the restored LaunchPad scene frame");
     presentCount += 1;
     restoreObserved = true;
@@ -528,6 +917,7 @@ try {
   }
 
   if (nativeMode === "smoke") {
+    await captureSmokeFrame("desktop-restored-resized");
     const pixels = await captureScenePixels(app, contentSize.width, contentSize.height);
     const iconRegions = iconNodes
       .filter((node) => node.iconSprite.visible)
@@ -556,8 +946,14 @@ try {
       backingWidth,
       catalogApps: catalogResult.apps.length,
       cjkLabelPixels,
+      desktopPageMotionObserved,
       dpiResolution,
       dpiTransition,
+      folderChildLaunchObserved,
+      folderCloseMotionObserved,
+      folderOpenMotionObserved,
+      folderPageMotionObserved,
+      folderPageNavigation: "verified",
       height: contentSize.height,
       loadedLayout: loadedLayout !== null,
       pageCount: currentFrame.viewport.activePages.length,
@@ -593,7 +989,11 @@ try {
     await closed;
   }
 } finally {
+  offWheelPointerInterrupt();
+  for (const timer of wheelDeadlines.values()) clearTimeout(timer);
+  wheelDeadlines.clear();
   disconnectAnimationHost();
+  folderFlow.destroy();
   offKey();
   offWheel();
   offResize();

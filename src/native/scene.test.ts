@@ -11,11 +11,15 @@ import {
 import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
+import {
+  createNativeFolderFlow,
+  type NativeFolderItem,
+  type NativeFolderPresentation,
+} from "../rendering/native/nativeFolderFlow.js";
 import { PIXI_UI_FONT_FAMILY } from "../rendering/typography.js";
 import {
   getNativeActivePageItems,
   getNativePageTurnFromKey,
-  getNativePageTurnFromWheel,
   makeNativeStartupFrame,
   makeNativeStartupScanRequest,
   turnNativeDesktopPage,
@@ -63,11 +67,6 @@ assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageDown" }), 1);
 assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowLeft" }), -1);
 assert.equal(getNativePageTurnFromKey({ type: "down", key: "ArrowRight", repeat: true }), 0);
 assert.equal(getNativePageTurnFromKey({ type: "down", key: "PageUp", ctrlKey: true }), 0);
-assert.equal(getNativePageTurnFromWheel({ deltaX: 0, deltaY: 120 }), 1);
-assert.equal(getNativePageTurnFromWheel({ deltaX: -120, deltaY: 10 }), -1);
-assert.equal(getNativePageTurnFromWheel({ deltaX: 0, deltaY: 0 }), 0);
-assert.equal(getNativePageTurnFromWheel({ deltaX: 120, metaKey: true }), 0);
-
 const secondSavedPage = turnNativeDesktopPage(savedStartupFrame, 1);
 assert.equal(secondSavedPage.viewport.activePageIndex, 1);
 assert.equal(secondSavedPage.interaction.focusedIcon?.id, getNativeActivePageItems(secondSavedPage)[0]?.id);
@@ -125,6 +124,21 @@ const activations: string[] = [];
 const scene = new NativeDesktopScene(stage, {
   onIconActivate: (item) => activations.push(item.id),
 });
+let animationUpdate: ((deltaMs: number) => void) | null = null;
+const disconnectAnimationHost = scene.connectAnimationHost({
+  animate: (update) => {
+    animationUpdate = update;
+    return () => {
+      if (animationUpdate === update) animationUpdate = null;
+    };
+  },
+  invalidate: () => {},
+});
+function stepSceneAnimations(): void {
+  const update = animationUpdate;
+  assert.ok(update, "the native scene should request animation frames while motion is active");
+  update(1000 / 60);
+}
 const frame = makeCompleteFrame();
 const work = scene.commit(frame, { height: 600, resolution: 1.25, width: 900 });
 
@@ -201,12 +215,55 @@ const pagedFrame = makeCompleteFrame({
     [{ emoji: "3️⃣", id: "page-3", name: "第三页", type: "app" }],
   ],
 });
+scene.commit(pagedFrame, { height: 760, resolution: 2.5, width: 1180 }, { snapDesktopLayout: true });
+const desktopLayer = stage.getChildByLabel("launchpad-native-desktop") as Container & {
+  pageTrack: Container;
+};
+const firstPageNode = stage.getChildByLabel("launchpad-item:page-1", true);
+const prefetchedSecondPageNode = stage.getChildByLabel("launchpad-item:page-2", true);
+assert.ok(firstPageNode, "the active desktop page should remain rendered");
+assert.ok(prefetchedSecondPageNode, "the adjacent desktop page should be rendered before a turn");
+assert.equal(firstPageNode.eventMode, "static", "the active desktop page should be interactive");
+assert.equal(prefetchedSecondPageNode.eventMode, "none", "the adjacent desktop page should stay static");
+assert.equal(stage.getChildByLabel("launchpad-item:page-3", true), null, "distant pages should remain empty");
 const pageTwoFrame = turnNativeDesktopPage(pagedFrame, 1);
-scene.commit(pageTwoFrame, { height: 760, resolution: 2.5, width: 1180 });
-assert.ok(stage.getChildByLabel("launchpad-item:page-2", true), "turning should materialize the next desktop page");
-assert.equal(stage.getChildByLabel("launchpad-item:page-1", true), null, "the previous page should not remain a second live scene");
+scene.commit(
+  pageTwoFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  { snapDesktopLayout: false },
+);
+assert.equal(
+  stage.getChildByLabel("launchpad-item:page-1", true),
+  firstPageNode,
+  "the source desktop page should remain mounted while the track moves",
+);
+assert.equal(
+  stage.getChildByLabel("launchpad-item:page-2", true),
+  prefetchedSecondPageNode,
+  "the target desktop page should reuse its prefetched node",
+);
+assert.equal(firstPageNode.eventMode, "none", "the source desktop page should become static after the turn");
+assert.equal(prefetchedSecondPageNode.eventMode, "static", "the target desktop page should become interactive");
+assert.equal(desktopLayer.pageTrack.x, 0, "a desktop page turn must not snap directly to its target");
+stepSceneAnimations();
+assert.ok(
+  desktopLayer.pageTrack.x < 0 && desktopLayer.pageTrack.x > -1180,
+  "the first desktop page-turn frame should lie between its source and target",
+);
+for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x + 1180) > 0.01; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.ok(Math.abs(desktopLayer.pageTrack.x + 1180) <= 0.01, "the desktop page track should settle at page two");
 const pageThreeFrame = turnNativeDesktopPage(pageTwoFrame, 1);
-scene.commit(pageThreeFrame, { height: 760, resolution: 2.5, width: 1180 });
+scene.commit(
+  pageThreeFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  { snapDesktopLayout: false },
+);
+for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x + 2360) > 0.01; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.ok(Math.abs(desktopLayer.pageTrack.x + 2360) <= 0.01, "the desktop page track should settle at page three");
 const thirdPageNode = stage.getChildByLabel("launchpad-item:page-3", true);
 assert.ok(thirdPageNode, "three-page layouts should reach their final page");
 const thirdPageBounds = thirdPageNode.getBounds();
@@ -217,6 +274,166 @@ assert.ok(
     && thirdPageBounds.y + thirdPageBounds.height <= 760,
   "the turned page icon should remain inside the native viewport",
 );
+scene.commit(
+  pageThreeFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  {
+    pageTrackScrub: {
+      edge: false,
+      fromIndex: 2,
+      progress: 0.25,
+      scope: "desktop",
+      toIndex: 1,
+    },
+    snapDesktopLayout: false,
+  },
+);
+assert.ok(
+  desktopLayer.pageTrack.x > -2360 && desktopLayer.pageTrack.x < -1180,
+  "the native desktop scene should apply the gesture engine's live page scrub",
+);
+
+const folderItem: NativeFolderItem = {
+  childPages: [
+    [{ emoji: "1️⃣", id: "folder-child-1", name: "子项一", type: "app" }],
+    [{ emoji: "2️⃣", id: "folder-child-2", name: "子项二", type: "app" }],
+    [{ emoji: "3️⃣", id: "folder-child-3", name: "子项三", type: "app" }],
+  ],
+  id: "folder-1",
+  name: "原生文件夹",
+  type: "folder",
+};
+const folderFrame = makeCompleteFrame({ activePages: [[folderItem]] });
+const folderPresentation = (folderPageIndex: number): NativeFolderPresentation => Object.freeze({
+  focusedIcon: Object.freeze({
+    area: "folder" as const,
+    folderId: folderItem.id,
+    id: `folder-child-${folderPageIndex + 1}`,
+    pageIndex: folderPageIndex,
+  }),
+  folderPageIndex,
+  isClosing: false,
+  openProgress: 1,
+  openProgressTarget: 1,
+  renderedFolder: folderItem,
+});
+scene.commit(
+  folderFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  { folderPresentation: folderPresentation(0), snapDesktopLayout: true },
+);
+const firstFolderChild = stage.getChildByLabel("launchpad-item:folder-child-1", true);
+const folderIcon = stage.getChildByLabel(`launchpad-item:${folderItem.id}`, true) as Container & {
+  folderChildNodes: Container[];
+  emojiText: Text;
+};
+const folderPreviewEmoji = folderIcon.folderChildNodes[0]?.children[1] as Text;
+assert.ok(folderPreviewEmoji, "the folder thumbnail should contain a child emoji");
+assert.deepEqual(
+  folderPreviewEmoji.style.fontFamily,
+  folderIcon.emojiText.style.fontFamily,
+  "folder thumbnail emoji must use the same native font fallback as full-size icons",
+);
+const thirdFolderChild = stage.getChildByLabel("launchpad-item:folder-child-3", true);
+assert.ok(firstFolderChild && thirdFolderChild, "all real folder pages should stay mounted for distant page turns");
+assert.equal(firstFolderChild.eventMode, "static", "the active folder page should accept pointer input");
+assert.equal(thirdFolderChild.eventMode, "none", "inactive folder pages should remain non-interactive");
+scene.commit(
+  folderFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  {
+    folderPageTrackScrub: {
+      edge: false,
+      fromIndex: 0,
+      progress: 0.25,
+      scope: `folder:${folderItem.id}`,
+      toIndex: 1,
+    },
+    folderPresentation: folderPresentation(0),
+    snapDesktopLayout: false,
+  },
+);
+const scrubbedFolderMotion = scene.getMotionSnapshot();
+assert.ok(
+  scrubbedFolderMotion.folderPageTrackX !== null && scrubbedFolderMotion.folderPageTrackX < 0,
+  "the native folder scene should apply the gesture engine's live page scrub",
+);
+scene.commit(
+  folderFrame,
+  { height: 760, resolution: 2.5, width: 1180 },
+  { folderPresentation: folderPresentation(2), snapDesktopLayout: false },
+);
+const committedFolderMotion = scene.getMotionSnapshot();
+assert.ok(
+  committedFolderMotion.folderPageTrackX !== null
+    && committedFolderMotion.folderPageTrackTargetX !== null
+    && Math.abs(committedFolderMotion.folderPageTrackX - committedFolderMotion.folderPageTrackTargetX) > 0.5,
+  "a distant folder page turn must expose an intermediate track position",
+);
+for (let frameIndex = 0; frameIndex < 600; frameIndex += 1) {
+  const motion = scene.getMotionSnapshot();
+  if (
+    motion.folderPageTrackX !== null
+    && motion.folderPageTrackTargetX !== null
+    && Math.abs(motion.folderPageTrackX - motion.folderPageTrackTargetX) <= 0.01
+  ) break;
+  stepSceneAnimations();
+}
+const settledFolderMotion = scene.getMotionSnapshot();
+assert.ok(
+  settledFolderMotion.folderPageTrackX !== null
+    && settledFolderMotion.folderPageTrackTargetX !== null
+    && Math.abs(settledFolderMotion.folderPageTrackX - settledFolderMotion.folderPageTrackTargetX) <= 0.01,
+  "the folder page track should settle on the distant target",
+);
+const thirdFolderEvents = thirdFolderChild as unknown as { emit(type: string, event: unknown): boolean };
+thirdFolderEvents.emit("pointertap", {});
+assert.equal(activations.at(-1), "folder-child-3", "the current folder child should activate exactly once");
+
+let flowSnapshot: NativeFolderPresentation | null = null;
+const folderFlow = createNativeFolderFlow((snapshot) => {
+  flowSnapshot = snapshot;
+});
+assert.equal(folderFlow.open(folderItem), true);
+assert.equal(folderFlow.close(), false, "folder close must wait for the opening spring to settle");
+for (let frameIndex = 0; frameIndex < 600 && folderFlow.snapshot().openProgress < 0.999; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.ok(folderFlow.snapshot().openProgress >= 0.999, "the native folder opening spring should settle");
+assert.equal(folderFlow.setPageIndex(Number.NaN), false, "folder paging must reject non-finite indexes");
+assert.equal(folderFlow.setPageIndex(0.5), false, "folder paging must reject fractional indexes");
+assert.equal(folderFlow.close(), true);
+folderFlow.notifyInternalActivity(true, folderItem.id);
+for (let frameIndex = 0; frameIndex < 600 && folderFlow.snapshot().openProgress > 0.001; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.equal(folderFlow.snapshot().renderedFolder?.id, folderItem.id, "close progress alone must not clear the folder");
+folderFlow.notifyInternalActivity(false, null);
+for (let frameIndex = 0; frameIndex < 5 && folderFlow.snapshot().renderedFolder; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.equal(folderFlow.snapshot().renderedFolder, null, "folder close should finish after progress and handoff settle");
+assert.ok(flowSnapshot, "folder flow should publish presentation changes");
+folderFlow.destroy();
+
+const earlyHandoffFlow = createNativeFolderFlow(() => {});
+earlyHandoffFlow.open(folderItem);
+for (let frameIndex = 0; frameIndex < 600 && earlyHandoffFlow.snapshot().openProgress < 0.999; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.equal(earlyHandoffFlow.close(), true);
+earlyHandoffFlow.notifyInternalActivity(true, folderItem.id);
+earlyHandoffFlow.notifyInternalActivity(false, null);
+assert.equal(
+  earlyHandoffFlow.snapshot().renderedFolder?.id,
+  folderItem.id,
+  "handoff completion alone must not clear the folder before close progress arrives",
+);
+for (let frameIndex = 0; frameIndex < 600 && earlyHandoffFlow.snapshot().renderedFolder; frameIndex += 1) {
+  stepSceneAnimations();
+}
+assert.equal(earlyHandoffFlow.snapshot().renderedFolder, null, "close should also finish when handoff settles first");
+earlyHandoffFlow.destroy();
 
 const background = [9, 11, 20, 255] as const;
 const contaminatedPixels = new Uint8ClampedArray(8 * 8 * 4);
@@ -307,6 +524,7 @@ assert.throws(
   "native viewport validation must reject a zero device resolution",
 );
 
+disconnectAnimationHost();
 scene.destroy();
 scene.destroy();
 assert.equal(stage.children.length, 0);

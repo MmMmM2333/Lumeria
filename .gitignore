@@ -5,6 +5,7 @@ node_modules/
 dist/
 /build/
 /.hutch/
+/.cottontail-tmp/
 /artifacts/
 
 # Tauri/Rust build output

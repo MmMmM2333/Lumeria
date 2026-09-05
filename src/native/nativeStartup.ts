@@ -57,13 +57,6 @@ type NativeNavigationKey = Readonly<{
   type?: string;
 }>;
 
-type NativeNavigationWheel = Readonly<{
-  ctrlKey?: boolean;
-  deltaX?: number;
-  deltaY?: number;
-  metaKey?: boolean;
-}>;
-
 export function getNativeActivePageItems(
   frame: CompleteDesktopSceneFrame,
 ): readonly SceneItem[] {
@@ -83,14 +76,6 @@ export function getNativePageTurnFromKey(event: NativeNavigationKey): NativePage
   if (key === "ArrowRight" || key === "PageDown") return 1;
   if (key === "ArrowLeft" || key === "PageUp") return -1;
   return 0;
-}
-
-export function getNativePageTurnFromWheel(event: NativeNavigationWheel): NativePageTurn {
-  if (event.ctrlKey || event.metaKey) return 0;
-  const x = Number(event.deltaX) || 0;
-  const y = Number(event.deltaY) || 0;
-  const delta = Math.abs(x) >= Math.abs(y) ? x : y;
-  return delta === 0 ? 0 : delta > 0 ? 1 : -1;
 }
 
 export function turnNativeDesktopPage(

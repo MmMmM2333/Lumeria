@@ -138,6 +138,7 @@ interface DesktopLayerOptions {
     newFolderName?: unknown;
     searchEmpty?: unknown;
   }> | undefined;
+  showFolderTitle?: boolean | undefined;
   visualCommitQueue?: FolderVisualCommitQueue | undefined;
   visualOwnership?: VisualOwnershipRegistry | undefined;
 }
@@ -1151,6 +1152,7 @@ export class DesktopLayer extends Container {
     this.singleStageFolderLayer = new FolderOverlayLayer({
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
       iconBoundsRegistry: this.iconBoundsRegistry,
+      iconTextures: this.iconTextures,
       onDesktopSourceGhostingChange: () => this.onFolderRenderRequest("desktop-source-ownership-committed"),
       onClosingFolderPointerDown: (folderId: string | null, event: unknown) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId: string | null, prepareOptions = {}) => this.startClosingFolderHandoffNow(folderId, {
@@ -1176,7 +1178,7 @@ export class DesktopLayer extends Container {
       onOutsidePointerDown: (event: unknown) => this.onFolderOutsidePointerDown(event),
       onPanelPointerDown: (event: unknown) => this.onFolderPanelPointerDown(event),
       renderCopy: this.renderCopy,
-      showFolderTitle: false,
+      showFolderTitle: options.showFolderTitle === true,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
       visualCommitQueue: this.visualCommitQueue,
       visualOwnership: this.visualOwnership,

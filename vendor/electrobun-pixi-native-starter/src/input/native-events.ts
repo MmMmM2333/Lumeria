@@ -8,6 +8,15 @@ const MOD_ALT = 1 << 2;
 const MOD_META = 1 << 3;
 const MOD_COMPOSING = 1 << 4;
 const BUTTON_BITS = [1, 4, 2, 8, 16] as const;
+const WHEEL_PIXELS_PER_NOTCH = 100;
+
+export function normalizeNativeWheel(wheelX: number, wheelY: number) {
+	return {
+		deltaX: wheelX * WHEEL_PIXELS_PER_NOTCH / 120,
+		deltaY: wheelY === 0 ? 0 : -wheelY * WHEEL_PIXELS_PER_NOTCH / 120,
+		deltaMode: 0 as const,
+	};
+}
 
 export interface NativeKeyEvent {
 	type: "down" | "up";
@@ -52,6 +61,7 @@ export interface NativeHostInputEvent {
 	buttons: number;
 	wheelX: number;
 	wheelY: number;
+	/** Target Pixi mode; wheelX/Y remain signed Win32 WHEEL_DELTA units until adapted. */
 	deltaMode: number;
 	keyCode: number;
 	scanCode: number;
@@ -264,6 +274,12 @@ class NativeEventSystem extends EventSystem {
 		point.y = y;
 	}
 
+	protected normalizeWheelEvent(nativeEvent: WheelEvent) {
+		const event = super.normalizeWheelEvent(nativeEvent);
+		event.timeStamp = nativeEvent.timeStamp;
+		return event;
+	}
+
 	setCursor(mode: string) {
 		mode ||= "default";
 		if ((this as any)._currentCursor === mode) return;
@@ -303,6 +319,7 @@ export function attachNativePixiEvents(
 	let clickTime = 0;
 	let clickX = 0;
 	let clickY = 0;
+	let lastWheelTimestamp = Number.NEGATIVE_INFINITY;
 
 	const notify = <T>(listeners: Set<(value: T) => void>, value: T) => {
 		if (!closed) for (const listener of [...listeners]) listener(value);
@@ -411,6 +428,8 @@ export function attachNativePixiEvents(
 		if (closed) return;
 		currentModifiers = modifiers;
 		const now = performance.now();
+		const eventTimestamp = Math.max(timestamp || now, lastWheelTimestamp + 0.001);
+		lastWheelTimestamp = eventTimestamp;
 		events.onWheel({
 			type: "wheel",
 			button: 0,
@@ -426,7 +445,7 @@ export function attachNativePixiEvents(
 			deltaZ: 0,
 			deltaMode,
 			isTrusted: true,
-			timeStamp: timestamp || now,
+			timeStamp: eventTimestamp,
 			...modifiersFor(modifiers),
 		});
 		hooks.onActivity?.();
@@ -562,9 +581,10 @@ export function attachNativePixiEvents(
 				captured = true;
 				emitPointer("gotpointercapture", event.x, event.y, -1, event.modifiers, capturePath, event);
 			} else if (event.kind === 9) {
+				const wheel = normalizeNativeWheel(event.wheelX, event.wheelY);
 				emitWheel(
-					event.x, event.y, event.wheelX / 120, -event.wheelY / 120,
-					event.modifiers, event.deltaMode, Number(event.timestamp),
+					event.x, event.y, wheel.deltaX, wheel.deltaY,
+					event.modifiers, wheel.deltaMode, Number(event.timestamp),
 				);
 			} else if (event.kind === 10) onFocus();
 			else if (event.kind === 11) onBlur();
@@ -592,6 +612,7 @@ export function attachNativePixiEvents(
 		onKey: (listener: (event: NativeKeyEvent) => void) => subscribe(keyListeners, listener),
 		onFocusChange: (listener: (focused: boolean) => void) => subscribe(focusListeners, listener),
 		onTextCommit: (listener: (text: string) => void) => subscribe(textListeners, listener),
+		// Low-level diagnostics preserve host/raw units. Application gestures should use Pixi events.
 		onHostEvent: (listener: (event: NativeHostInputEvent) => void) => subscribe(hostEventListeners, listener),
 		capturePointer: acquirePointerCapture,
 		releasePointerCapture,

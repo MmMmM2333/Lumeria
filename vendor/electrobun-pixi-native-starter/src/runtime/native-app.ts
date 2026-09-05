@@ -360,7 +360,8 @@ export async function createNativePixiApplication(
 					nativeInputEvents.push({
 						kind: event.kind, x: event.x, y: event.y, screenX: event.screenX, screenY: event.screenY,
 						pointerId: event.pointerId, button: event.button, buttons: event.buttons,
-						keyCode: event.keyCode, timestamp: event.timestamp.toString(),
+						wheelX: event.wheelX, wheelY: event.wheelY, deltaMode: event.deltaMode,
+						modifiers: event.modifiers, keyCode: event.keyCode, timestamp: event.timestamp.toString(),
 					});
 					if (nativeInputEvents.length > 128) nativeInputEvents.shift();
 				}

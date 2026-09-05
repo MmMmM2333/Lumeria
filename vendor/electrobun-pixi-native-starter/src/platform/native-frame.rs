@@ -14,6 +14,7 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 type Handle = *mut c_void;
 
@@ -761,6 +762,7 @@ static INPUT_EVENTS: OnceLock<Mutex<VecDeque<InputEvent>>> = OnceLock::new();
 static INPUT_DROPPED: AtomicU64 = AtomicU64::new(0);
 static INPUT_COALESCED: AtomicU64 = AtomicU64::new(0);
 static INPUT_DUPLICATES: AtomicU64 = AtomicU64::new(0);
+static INPUT_CLOCK: OnceLock<(Instant, u64)> = OnceLock::new();
 static TEXT_EVENTS: OnceLock<Mutex<VecDeque<QueuedTextEvent>>> = OnceLock::new();
 static FILE_DROP_EVENTS: OnceLock<Mutex<VecDeque<QueuedFileDrop>>> = OnceLock::new();
 static RESIZING_WINDOWS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
@@ -988,7 +990,7 @@ unsafe fn accessibility_subclass_proc_inner(
 fn blank_input_event(route_id: u64, kind: u32) -> InputEvent {
     InputEvent {
         route_id,
-        timestamp: unsafe { GetTickCount64() },
+        timestamp: input_timestamp_millis(),
         kind,
         modifiers: 0,
         x: 0,
@@ -1008,6 +1010,11 @@ fn blank_input_event(route_id: u64, kind: u32) -> InputEvent {
         screen_x: 0,
         screen_y: 0,
     }
+}
+
+fn input_timestamp_millis() -> u64 {
+    let (started, base) = INPUT_CLOCK.get_or_init(|| (Instant::now(), unsafe { GetTickCount64() }));
+    base.saturating_add(started.elapsed().as_millis() as u64)
 }
 
 fn protected_input(kind: u32) -> bool {
@@ -1730,6 +1737,13 @@ fn input_modifiers() -> u32 {
     }
 }
 
+fn wheel_message_modifiers(w_param: usize, keyboard_modifiers: u32) -> u32 {
+    let keys = w_param as u16;
+    u32::from(keys & 0x0004 != 0)
+        | (u32::from(keys & 0x0008 != 0) << 1)
+        | (keyboard_modifiers & 0b1100)
+}
+
 fn mouse_button(message: u32, w_param: usize) -> i32 {
     match message {
         0x0201 | 0x0202 | 0x0203 => 0,
@@ -2121,12 +2135,13 @@ unsafe fn input_subclass_proc_inner(
             unsafe { (*state).buttons = mouse_buttons(w_param) };
             let delta = signed_high_word(w_param as isize);
             let mut event = blank_input_event(unsafe { (*state).route_id }, INPUT_WHEEL);
-            event.modifiers = input_modifiers();
+            event.modifiers = wheel_message_modifiers(w_param, input_modifiers());
             unsafe { set_event_coordinates(window, &mut event, point, Some(screen)) };
             event.buttons = unsafe { (*state).buttons };
             if message == 0x020a { event.wheel_y = delta; } else { event.wheel_x = delta; }
-            event.delta_mode = 1;
+            event.delta_mode = 0;
             push_input_event(event);
+            return 0;
         }
         0x02a3 => {
             unsafe { (*state).tracking_leave = false };
@@ -3877,6 +3892,8 @@ mod tests {
         assert_eq!(signed_low_word(0x0000_ffff), -1);
         assert_eq!(signed_high_word(0xffff_0000u32 as isize), -1);
         assert_eq!(mouse_buttons(0x0073), 0b1_1111);
+        assert_eq!(wheel_message_modifiers(0x000c, 0b1100), 0b1111);
+        assert_eq!(wheel_message_modifiers(0, 0b1111), 0b1100);
 
         let path = std::env::current_dir().unwrap();
         let mut drag_paths: Vec<u16> = path.to_string_lossy().encode_utf16().collect();

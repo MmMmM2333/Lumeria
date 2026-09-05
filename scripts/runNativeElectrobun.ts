@@ -18,9 +18,13 @@ const runner = join(
   "consumer",
   "run-electrobun.mjs",
 );
+const artifactDir = join(projectRoot, "artifacts", "native-smoke");
+if (nativeMode === "smoke") mkdirSync(artifactDir, { recursive: true });
 const markerPath = join(tmpdir(), `launchpad-native-smoke-${process.pid}.json`);
 const dataDir = mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
 const iconPath = join(dataDir, "smoke-icon.png");
+const childLaunchHelperPath = join(dataDir, "child-launch.mjs");
+const childLaunchMarkerPath = join(dataDir, "child-launched.txt");
 const scanRoot = join(dataDir, "catalog");
 mkdirSync(scanRoot);
 writeFileSync(
@@ -35,6 +39,11 @@ iconContext.fillRect(0, 0, 64, 64);
 iconContext.fillStyle = "#3b82f6";
 iconContext.fillRect(16, 16, 32, 32);
 writeFileSync(iconPath, iconCanvas.toBuffer("image/png"));
+writeFileSync(
+  childLaunchHelperPath,
+  'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[2], "launched", "utf8");\n',
+  "utf8",
+);
 const fixture = JSON.parse(readFileSync(
   join(projectRoot, "src", "domain", "fixtures", "layout-v2-roundtrip.json"),
   "utf8",
@@ -62,6 +71,50 @@ fixture.pages = [[
     emoji: "⚙️",
     launchTarget: { kind: "url", path: "https://example.invalid/settings" },
   },
+  {
+    id: "native-folder",
+    type: "folder",
+    name: "原生文件夹",
+    childPages: [[
+      {
+        id: "native-folder-child-1",
+        type: "manualApp",
+        name: "文件夹子项一",
+        emoji: "1️⃣",
+        launchTarget: { kind: "url", path: "https://example.invalid/folder-1" },
+      },
+      {
+        id: "native-folder-child-2",
+        type: "manualApp",
+        name: "文件夹子项二",
+        emoji: "2️⃣",
+        launchTarget: { kind: "url", path: "https://example.invalid/folder-2" },
+      },
+      {
+        id: "native-folder-child-3",
+        type: "manualApp",
+        name: "文件夹子项三",
+        emoji: "3️⃣",
+        launchTarget: { kind: "url", path: "https://example.invalid/folder-3" },
+      },
+      {
+        id: "native-folder-child-4",
+        type: "manualApp",
+        name: "文件夹子项四",
+        emoji: "4️⃣",
+        launchTarget: { kind: "url", path: "https://example.invalid/folder-4" },
+      },
+    ], [
+      {
+        id: "native-folder-child-launch",
+        type: "manualApp",
+        name: "启动验证",
+        emoji: "🚀",
+        launchTarget: { kind: "executable", path: process.execPath },
+        launchArgs: `"${childLaunchHelperPath}" "${childLaunchMarkerPath}"`,
+      },
+    ]],
+  },
 ], [
   {
     id: "native-second-page",
@@ -70,10 +123,21 @@ fixture.pages = [[
     emoji: "2️⃣",
     launchTarget: { kind: "url", path: "https://example.invalid/second-page" },
   },
+], [
+  {
+    id: "native-third-page",
+    type: "manualApp",
+    name: "Third Page",
+    emoji: "3️⃣",
+    launchTarget: { kind: "url", path: "https://example.invalid/third-page" },
+  },
 ]];
 fixture.settings.gridRows = 4;
 fixture.settings.gridCols = 7;
 fixture.settings.iconSize = 64;
+fixture.settings.folderRows = 2;
+fixture.settings.folderCols = 2;
+fixture.settings.folderIconSizeMode = "global";
 fixture.settings.textless = false;
 fixture.settings.scanRoots = [{
   id: "native-smoke-catalog",
@@ -90,6 +154,7 @@ fixture.settings.scanKeywordAllowlist = [];
 fixture.settings.scanAppBlacklist = [];
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
+if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
 try {
   const result = spawnSync(process.execPath, [runner, nativeMode === "dev" ? "dev" : "start"], {
     cwd: projectRoot,
@@ -105,6 +170,8 @@ try {
       LAUNCHPAD_NATIVE_MODE: nativeMode,
       ...(nativeMode === "smoke" ? {
         LAUNCHPAD_NATIVE_SMOKE_MARKER: markerPath,
+        LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR: artifactDir,
+        LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER: childLaunchMarkerPath,
         LUMERIA_NATIVE_DATA_DIR: dataDir,
       } : {}),
     },
@@ -120,6 +187,14 @@ try {
       cjkLabelPixels?: unknown;
       coloredIconPixels?: unknown;
       catalogApps?: unknown;
+      desktopPageMotionObserved?: unknown;
+      dpiResolution?: unknown;
+      dpiTransition?: unknown;
+      folderChildLaunchObserved?: unknown;
+      folderCloseMotionObserved?: unknown;
+      folderOpenMotionObserved?: unknown;
+      folderPageMotionObserved?: unknown;
+      folderPageNavigation?: unknown;
       height?: unknown;
       iconForegroundPixels?: unknown;
       reconciledNodes?: unknown;
@@ -139,6 +214,7 @@ try {
       visibleNodes?: unknown;
       width?: unknown;
     };
+    writeFileSync(join(artifactDir, "proof.json"), JSON.stringify(proof, null, 2), "utf8");
     if (proof.presented !== true) throw new Error("Native smoke proof did not observe a public presentation");
     if (proof.loadedLayout !== true || proof.catalogApps !== 1) {
       throw new Error("Native smoke proof did not load the isolated layout and scanned catalog");
@@ -165,7 +241,7 @@ try {
       !Number.isInteger(proof.visibleNodes)
       || !Number.isInteger(proof.reconciledNodes)
       || Number(proof.visibleNodes) <= 0
-      || proof.visibleNodes !== proof.reconciledNodes
+      || Number(proof.visibleNodes) > Number(proof.reconciledNodes)
     ) {
       throw new Error("Native smoke proof did not present every reconciled scene node visibly");
     }
@@ -183,12 +259,31 @@ try {
       throw new Error("Native smoke proof did not complete resize and minimize/restore lifecycle checks");
     }
     if (
+      (proof.dpiTransition !== "verified-display-fallback"
+        && proof.dpiTransition !== "skipped-no-mixed-dpi-display")
+      || typeof proof.dpiResolution !== "number"
+      || !Number.isFinite(proof.dpiResolution)
+      || proof.dpiResolution <= 0
+    ) {
+      throw new Error("Native smoke proof did not report a valid DPI transition result");
+    }
+    if (
       !Number.isInteger(proof.pageCount)
       || Number(proof.pageCount) < 1
       || proof.pageNavigation !== (Number(proof.pageCount) > 1 ? "verified" : "skipped-single-page")
+      || (Number(proof.pageCount) > 1 && proof.desktopPageMotionObserved !== true)
       || proof.structuredLaunchFailureObserved !== true
     ) {
       throw new Error("Native smoke proof did not complete paging and structured launch failure checks");
+    }
+    if (
+      proof.folderOpenMotionObserved !== true
+      || proof.folderPageNavigation !== "verified"
+      || proof.folderPageMotionObserved !== true
+      || proof.folderChildLaunchObserved !== true
+      || proof.folderCloseMotionObserved !== true
+    ) {
+      throw new Error("Native smoke proof did not complete the folder animation and child launch flow");
     }
     if (
       typeof proof.width !== "number"

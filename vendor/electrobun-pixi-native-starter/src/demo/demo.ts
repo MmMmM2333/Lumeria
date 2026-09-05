@@ -152,6 +152,7 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	mark.label = "interactive-mark"; mark.eventMode = "static"; mark.cursor = "pointer";
 	let activationCount = 0;
 	const pointerEvents: Array<Record<string, unknown>> = [];
+	const wheelEvents: Array<Record<string, unknown>> = [];
 	const recordPointer = (event: any) => {
 		pointerEvents.push({ type: event.type, x: event.clientX, y: event.clientY, button: event.button, buttons: event.buttons });
 		if (pointerEvents.length > 128) pointerEvents.shift();
@@ -159,6 +160,14 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel", "gotpointercapture", "lostpointercapture"]) {
 		mark.on(type, recordPointer);
 	}
+	root.on("wheel", (event: any) => {
+		wheelEvents.push({
+			deltaX: event.deltaX, deltaY: event.deltaY, deltaMode: event.deltaMode,
+			timeStamp: event.timeStamp, ctrlKey: event.ctrlKey, altKey: event.altKey,
+			shiftKey: event.shiftKey, metaKey: event.metaKey,
+		});
+		if (wheelEvents.length > 128) wheelEvents.shift();
+	});
 	mark.on("pointertap", () => { activationCount++; mark.rotation += Math.PI / 4; requestFrame(); });
 	mark.on("pointerdown", () => {
 		if (!debugDragOutPath) return;
@@ -494,10 +503,13 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 					captured: input.captured, activationCount, nativeCaptured: input.nativeCaptured,
 					lastCursor: input.lastCursor,
 					diagnostics: { queued: input.queued, dropped: input.dropped, coalesced: input.coalesced, duplicates: input.duplicates },
-					events: input.nativeEvents, pointerEvents,
+					events: input.nativeEvents, pointerEvents, wheelEvents,
 				};
 			}
-			if (action === "input-reset") { testing.resetInputEvents(); pointerEvents.length = 0; return { reset: true }; }
+			if (action === "input-reset") {
+				testing.resetInputEvents(); pointerEvents.length = 0; wheelEvents.length = 0;
+				return { reset: true };
+			}
 			if (action === "text-status") {
 				return {
 					active: Boolean((app.textInput as any).active),

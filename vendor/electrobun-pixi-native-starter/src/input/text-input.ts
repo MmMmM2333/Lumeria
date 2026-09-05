@@ -642,8 +642,11 @@ export class TextInput extends Container {
 	private onPointerEnd = () => this.stopDragging();
 	private onWheel = (event: any) => {
 		if (!this.multiline || this._disabled) return;
-		this.editor.scrollBy(0, Number(event.deltaY ?? 0) * this.inputStyle.lineHeight * 3,
-			this.layoutSnapshot, this.innerSize());
+		const inner = this.innerSize();
+		const delta = Number(event.deltaY ?? 0);
+		const pixels = event.deltaMode === 1 ? delta * this.inputStyle.lineHeight
+			: event.deltaMode === 2 ? delta * inner.height : delta;
+		this.editor.scrollBy(0, pixels, this.layoutSnapshot, inner);
 		this.refresh(false);
 		this.host.syncFocused();
 	};

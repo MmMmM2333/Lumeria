@@ -1109,7 +1109,7 @@ export class IconNode extends Container {
       const childSprite = new Sprite();
       const childEmoji = createPixiText({
         text: "",
-        style: { align: "center", fill: 0xffffff, fontSize: 14, lineHeight: 0 },
+        style: { align: "center", fill: 0xffffff, fontFamily: EMOJI_FONT_FAMILY, fontSize: 14, lineHeight: 0 },
       });
       childSprite.anchor.set(0.5);
       childEmoji.anchor.set(0.5);

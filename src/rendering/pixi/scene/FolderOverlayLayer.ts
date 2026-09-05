@@ -1,5 +1,5 @@
 import { Container, Graphics, Matrix, Rectangle, RenderLayer, Sprite } from "pixi.js";
-import type { ContainerChild, FederatedPointerEvent, TextStyleFontWeight } from "pixi.js";
+import type { ContainerChild, FederatedPointerEvent } from "pixi.js";
 import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
@@ -134,6 +134,7 @@ import { resolveFolderIconRenderSize } from "./folderIconSizing.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import type { IconNodeAction, IconNodeActionHandler } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import { getIconCellTopInteractionOverflow } from "../nodes/iconInteractionGeometry.js";
 import { makeIconVisualSpec, makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import type { IconVisualSpec } from "./iconVisualSpec.js";
@@ -419,6 +420,7 @@ interface ClosingHandoffPrepareOptions {
 interface FolderOverlayLayerOptions {
   detachedClosingVisualLayer?: Container | undefined;
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures?: IconTextureRepository | undefined;
   isHandoffSourceVisible?: ((folderId: string | null) => boolean) | undefined;
   onClosingFolderPointerDown?: ((folderId: string | null, event: unknown) => void) | undefined;
   onClosingHandoffPrepare?: ((
@@ -1620,6 +1622,7 @@ export interface FolderOverlayLayer {
   showFolderTitle: boolean;
   renderCopy: { newFolderName: string };
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures: IconTextureRepository | undefined;
   visualCommitQueue: FolderVisualCommitQueue;
   visualOwnership: VisualOwnershipRegistry;
   ownedVisualTokens: Set<unknown>;
@@ -1706,16 +1709,18 @@ export class FolderOverlayLayer extends Container {
       style: {
         fill: 0xffffff,
         fontSize: 18,
-        fontWeight: "620" as TextStyleFontWeight,
+        fontWeight: "600",
         fontFamily: [...PIXI_UI_FONT_FAMILY],
       },
     });
+    this.folderTitle.eventMode = "none";
     this.iconNodes = new Map();
     this.folderIconLayoutTargets = new Map();
     this.iconBoundsRefreshers = new Map();
     this.openingGhostBoundsRefreshers = new Map();
     this.registeredBoundsDirty = false;
     this.registeredBoundsFlushQueued = false;
+    this.iconTextures = options.iconTextures;
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
@@ -1744,23 +1749,23 @@ export class FolderOverlayLayer extends Container {
     this.openingGhosts = new FolderOpeningGhostController(
       this as FolderOverlayLayer & FolderOpeningGhostControllerLayer,
       {
-      ghostFactory: () => new IconNode() as FolderGhostNode,
-    });
+        ghostFactory: () => new IconNode({ iconTextures: this.iconTextures }) as FolderGhostNode,
+      });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController<FolderClosingState>(
       this as FolderOverlayLayer & FolderClosingPreviewSwapLayer,
       {
-      containerFactory: () => new Container() as ClosingPreviewContainerNode,
-      getIconTexture: (item, render, ghost) => iconTextureRepository.resolve(item, render, ghost),
-      graphicsFactory: () => new Graphics() as ClosingPreviewGraphicsNode,
-      spriteFactory: () => new Sprite() as ClosingPreviewSpriteNode,
-      textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }) as ClosingPreviewTextNode,
-    });
+        containerFactory: () => new Container() as ClosingPreviewContainerNode,
+        getIconTexture: (item, render, ghost) => (this.iconTextures ?? iconTextureRepository).resolve(item, render, ghost),
+        graphicsFactory: () => new Graphics() as ClosingPreviewGraphicsNode,
+        spriteFactory: () => new Sprite() as ClosingPreviewSpriteNode,
+        textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }) as ClosingPreviewTextNode,
+      });
     this.closingGhosts = new FolderClosingGhostController(
       this as FolderOverlayLayer & FolderClosingGhostControllerLayer,
       {
-      ghostFactory: () => new IconNode() as FolderGhostNode,
-      previewSwap: this.closingPreviewSwap,
-    });
+        ghostFactory: () => new IconNode({ iconTextures: this.iconTextures }) as FolderGhostNode,
+        previewSwap: this.closingPreviewSwap,
+      });
     this.folderVisualSession = new FolderVisualSession<
       FolderOpeningControllerVisualPlan,
       FolderClosingControllerVisualPlan
@@ -2431,6 +2436,7 @@ export class FolderOverlayLayer extends Container {
       const isNewNode = !node;
       if (!node) {
         node = new IconNode({
+          iconTextures: this.iconTextures,
           onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
             this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
         });

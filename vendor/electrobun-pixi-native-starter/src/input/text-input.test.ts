@@ -151,5 +151,20 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	expect(readOnly.value).toBe("locked");
 	expect(readOnly.editor.view.composition).toBeUndefined();
 
+	const scrollInput = host.create({
+		width: 180,
+		height: 72,
+		value: Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n"),
+		multiline: true,
+		style: { lineHeight: 20 },
+	});
+	root.addChild(scrollInput);
+	(scrollInput as any).emit("wheel", { deltaY: 20, deltaMode: 0 });
+	expect(scrollInput.editor.state.scrollY).toBe(20);
+	(scrollInput as any).emit("wheel", { deltaY: 1, deltaMode: 1 });
+	expect(scrollInput.editor.state.scrollY).toBe(40);
+	(scrollInput as any).emit("wheel", { deltaY: 1, deltaMode: 2 });
+	expect(scrollInput.editor.state.scrollY).toBe(92);
+
 	host.destroy();
 });

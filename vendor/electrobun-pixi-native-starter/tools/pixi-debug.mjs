@@ -30,11 +30,11 @@ const waitForStatus = async (predicate, message, timeout = 15_000) => {
 	}
 	throw new Error(message);
 };
-const sendMouseGesture = ({ windowHandle, screen, frame }, dragOutside = false) => {
+const sendMouseGesture = ({ windowHandle, screen, frame }, gesture = "click") => {
 	for (const value of [windowHandle, screen.x, screen.y, frame.x, frame.y]) {
 		if (!Number.isSafeInteger(value)) throw new Error("native mouse target contains an invalid coordinate");
 	}
-	const destination = dragOutside ? { x: frame.x - 24, y: frame.y - 24 } : screen;
+	const destination = gesture === "drag-outside" ? { x: frame.x - 24, y: frame.y - 24 } : screen;
 	const script = String.raw`
 $ErrorActionPreference = "Stop"
 $source = @'
@@ -58,9 +58,10 @@ public static class NativeMouse {
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr window, uint flags);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] public static extern void keybd_event(byte virtualKey, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, Input[] inputs, int size);
-    static Input MouseEvent(int x, int y, uint flags) {
-        return new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { X = x, Y = y, Flags = flags } } };
+    static Input MouseEvent(int x, int y, uint flags, uint data = 0) {
+        return new Input { Type = 0, Data = new InputUnion { Mouse = new MouseInput { X = x, Y = y, Data = data, Flags = flags } } };
     }
     static Input Move(int x, int y) {
         int left = GetSystemMetrics(76), top = GetSystemMetrics(77);
@@ -81,6 +82,35 @@ public static class NativeMouse {
         Input[] release = { Move(destinationX, destinationY), MouseEvent(0, 0, 0x0004) };
         return SendInput((uint)release.Length, release, size) == release.Length;
     }
+    public static bool SendWheelContract(int x, int y) {
+        int size = Marshal.SizeOf(typeof(Input));
+        Input[] input = {
+            Move(x, y),
+            MouseEvent(0, 0, 0x0800, 120), MouseEvent(0, 0, 0x0800, unchecked((uint)-120)),
+            MouseEvent(0, 0, 0x1000, 120), MouseEvent(0, 0, 0x1000, unchecked((uint)-120)),
+            MouseEvent(0, 0, 0x1000, 30), MouseEvent(0, 0, 0x1000, 30),
+            MouseEvent(0, 0, 0x1000, 30), MouseEvent(0, 0, 0x1000, 30)
+        };
+        return SendInput((uint)input.Length, input, size) == input.Length;
+    }
+    public static bool SendModifiedWheelContract(int x, int y) {
+        int size = Marshal.SizeOf(typeof(Input));
+        keybd_event(0x11, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(20);
+        bool control;
+        try {
+            Input[] input = { Move(x, y), MouseEvent(0, 0, 0x0800, 120) };
+            control = SendInput((uint)input.Length, input, size) == input.Length;
+        } finally { keybd_event(0x11, 0, 2, UIntPtr.Zero); }
+        keybd_event(0x10, 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(20);
+        bool shift;
+        try {
+            Input[] input = { MouseEvent(0, 0, 0x0800, 120) };
+            shift = SendInput((uint)input.Length, input, size) == input.Length;
+        } finally { keybd_event(0x10, 0, 2, UIntPtr.Zero); }
+        return control && shift;
+    }
 }
 '@
 Add-Type -TypeDefinition $source
@@ -95,7 +125,11 @@ $point.X = ${screen.x}
 $point.Y = ${screen.y}
 $hit = [NativeMouse]::GetAncestor([NativeMouse]::WindowFromPoint($point), 2)
 if ($hit -ne $window) { throw "native mouse target is obscured by HWND $hit" }
-if (-not [NativeMouse]::SendGesture(${screen.x}, ${screen.y}, ${destination.x}, ${destination.y}, ${dragOutside ? "$true" : "$false"})) {
+if (-not ${gesture === "wheel"
+		? `[NativeMouse]::SendWheelContract(${screen.x}, ${screen.y})`
+		: gesture === "modified-wheel"
+			? `[NativeMouse]::SendModifiedWheelContract(${screen.x}, ${screen.y})`
+			: `[NativeMouse]::SendGesture(${screen.x}, ${screen.y}, ${destination.x}, ${destination.y}, ${gesture === "drag-outside" ? "$true" : "$false"})`}) {
     throw "SendInput did not accept the complete native mouse gesture"
 }
 `;
@@ -119,8 +153,38 @@ const realInputCheck = async () => {
 	}
 
 	await command({ action: "input-reset" });
+	sendMouseGesture(target, "wheel");
+	await sleep(250);
+	const wheel = await command({ action: "input-status" });
+	const rawWheel = wheel.events.filter(({ kind }) => kind === 9);
+	const expected = [
+		[0, -100], [0, 100], [100, 0], [-100, 0],
+		[25, 0], [25, 0], [25, 0], [25, 0],
+	];
+	const actual = wheel.wheelEvents.map(({ deltaX, deltaY, deltaMode }) => [deltaX, deltaY, deltaMode]);
+	const publicTimes = wheel.wheelEvents.map(({ timeStamp }) => timeStamp);
+	if (rawWheel.length !== expected.length
+		|| JSON.stringify(actual) !== JSON.stringify(expected.map(([x, y]) => [x, y, 0]))
+		|| publicTimes.some((timestamp, index) => index > 0 && timestamp <= publicTimes[index - 1])
+		|| publicTimes.some((timestamp, index) => Math.abs(timestamp - Number(rawWheel[index]?.timestamp)) >= 0.01)) {
+		throw new Error(`real Win32 wheel contract failed: raw=${rawWheel.length}, public=${JSON.stringify(actual)}`);
+	}
+
+	await command({ action: "input-reset" });
+	sendMouseGesture(target, "modified-wheel");
+	await sleep(250);
+	const modified = await command({ action: "input-status" });
+	const rawModified = modified.events.filter(({ kind }) => kind === 9);
+	if (rawModified.length !== 2 || rawModified[0].modifiers !== 2 || rawModified[1].modifiers !== 1
+		|| modified.wheelEvents.length !== 2
+		|| !modified.wheelEvents[0].ctrlKey || modified.wheelEvents[0].shiftKey
+		|| modified.wheelEvents[1].ctrlKey || !modified.wheelEvents[1].shiftKey) {
+		throw new Error(`real Win32 wheel modifiers failed: ${JSON.stringify({ rawModified, public: modified.wheelEvents })}`);
+	}
+
+	await command({ action: "input-reset" });
 	const beforeDrag = await command({ action: "input-status" });
-	sendMouseGesture(target, true);
+	sendMouseGesture(target, "drag-outside");
 	await sleep(250);
 	const drag = await command({ action: "input-status" });
 	const dragDown = drag.events.filter(({ kind }) => kind === 2).length;
@@ -133,6 +197,8 @@ const realInputCheck = async () => {
 		passed: true,
 		click: { down: clickDown, up: clickUp, activations: 1 },
 		outsideRelease: { down: dragDown, up: dragUp, captured: false },
+		wheel: { events: actual },
+		modifiers: { control: true, shift: true },
 	};
 };
 const injectRecoverableFault = async (kind) => {
@@ -265,6 +331,7 @@ const dpiLifecycleCheck = async () => {
 		&& status.runtime.deviceGeneration === before.runtime.deviceGeneration
 		&& status.runtime.surfaceGeneration === before.runtime.surfaceGeneration;
 	let moved;
+	let inputAtTarget;
 	try {
 		const event = before.events.at(-1)?.sequence ?? 0;
 		await command({ action: "move", ...targetPosition });
@@ -293,6 +360,7 @@ const dpiLifecycleCheck = async () => {
 				throw new Error("cross-DPI move produced an invalid standard RenderTexture");
 			}
 		}
+		inputAtTarget = await realInputCheck();
 	} finally {
 		const current = await request("/status");
 		const event = current.events.at(-1)?.sequence ?? 0;
@@ -316,6 +384,7 @@ const dpiLifecycleCheck = async () => {
 		from: { display: before.window.display.id, resolution: before.window.resolution },
 		to: { display: moved.window.display.id, resolution: moved.window.resolution },
 		runtime: moved.runtime,
+		input: inputAtTarget,
 	};
 };
 
