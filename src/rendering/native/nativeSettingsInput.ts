@@ -5,10 +5,10 @@ import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 
 /** Draw RGBA chrome ourselves; the text host accepts opaque numeric colors only. */
 export function createNativeSettingsInput(host:TextInputHost,options:{width:number;height?:number;value:string;theme:NativeTheme;
-  variant?:"normal"|"label";readOnly?:boolean;disabled?:boolean;placeholder?:string;leadingInset?:number;invalidate():void}):TextInput{
+  variant?:"normal"|"label";readOnly?:boolean;disabled?:boolean;placeholder?:string;leadingInset?:number;maxLength?:number;invalidate():void}):TextInput{
   const {width,theme,invalidate}=options,height=options.height??34,label=options.variant==="label",style=nativeSettingsStyle(theme);
   const inset=options.leadingInset??0;
-  const input=host.create({width:width-inset,height,value:options.value,chrome:false,readOnly:options.readOnly??false,placeholder:options.placeholder??"",
+  const input=host.create({width:width-inset,height,value:options.value,chrome:false,readOnly:options.readOnly??false,placeholder:options.placeholder??"",...(options.maxLength?{maxLength:options.maxLength}:{}),
     style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:label?13:12,lineHeight:16,padding:label?4:6,
       textColor:new Color(style.text).toNumber(),caretColor:new Color(style.text).toNumber(),
       // Same opaque token as the original Fluent text input. Converting the

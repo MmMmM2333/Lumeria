@@ -153,6 +153,8 @@ for(const theme of ["light","dark"] as const){
   const unlabelled = new Container();
   root.addChild(chrome); chrome.addChild(unlabelled);
   assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "control" }, "unlabelled search children must belong to the input, not desktop gestures");
+  const notice=new Container({label:"native-notice"});root.addChild(notice);notice.addChild(unlabelled);
+  assert.deepEqual(resolveNativePointerTarget(unlabelled),{kind:"control"},"notification descendants must not dismiss the desktop through captured blank-click gestures");
   const icon = new Container({ label: "launchpad-item:app" });
   icon.addChild(unlabelled); root.addChild(icon);
   assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "icon", id: "app" });

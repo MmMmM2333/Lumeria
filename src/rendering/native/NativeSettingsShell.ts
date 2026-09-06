@@ -89,6 +89,10 @@ export class NativeSettingsShell extends Container {
   get closing():boolean{return this.#closing;}
   get transitionProgress():number{return this.#reveal.value;}
   get navigationWidth():number{return this.#navigation.width;}
+  captureFocus():()=>void{
+    const control=this.#controls[this.#focus],key=control?.virtualKey??control?.node.label,keyboard=this.#keyboardFocus;
+    return ()=>{if(this.destroyed||!key)return;const index=this.#controls.findIndex(item=>(item.virtualKey??item.node.label)===key&&!item.disabled());if(index>=0){this.#keyboardFocus=keyboard;this.#setFocus(index);}};
+  }
   toggleNavigation():void{
     if(this.#closing||this.#applying)return;
     const previous=this.#page?captureSettingsGeometry(this.#page.node):null;

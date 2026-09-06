@@ -1,5 +1,6 @@
 import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { readErrorMessage } from "../application/errorMessage.js";
+import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
 import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.js";
@@ -39,6 +40,9 @@ import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
 import { NativeSearchBar } from "../rendering/native/NativeSearchBar.js";
 import { NativeManagement } from "../rendering/native/NativeManagement.js";
+import { createLaunchpadNotices } from "../application/launchpadNotices.js";
+import { NativeNotice } from "../rendering/native/NativeNotice.js";
+import { NativeAppDialogs } from "../rendering/native/NativeAppDialogs.js";
 import { nativeHost } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { snapshotContractValue } from "../rendering/contractSnapshot.js";
@@ -279,15 +283,53 @@ async function captureSmokeFrame(name: string): Promise<void> {
 }
 
 const nativeData = new NativeDataHost();
+const app = await createNativePixiApplication({
+  transparent:true,
+  titleBarStyle:"hidden",
+  antialias: true,
+  background: 0x090b14,
+  height: 600,
+  resizeMode: "live",
+  title: nativeMode === "app" ? "LaunchPad" : process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
+  width: 900,
+}).catch(async (error: unknown) => {
+  await nativeData.dispose();
+  throw error;
+});
+app.stage.label = "launchpad-native-stage";
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
+let startupLoadRecovered=false;
 try {
   await nativeData.connect();
-  loadedLayout = await nativeData.loadLayout();
+  if(nativeMode==="smoke"){
+    const cancelled=loadNativeLayoutWithRetry(app,async()=>{throw new Error("smoke: cancelled layout read");});
+    await waitFor("cancellable startup notice",()=>Boolean(app.stage.getChildByLabel("native-notice:close",true)));
+    await present(app,"startup notice cancellation");clickWithNativeInput(app.stage.getChildByLabel("native-notice:close",true)!);
+    assert.deepEqual(await cancelled,{cancelled:true});assert.equal(app.stage.getChildByLabel("native-notice",true),null);
+  }
+  let loadAttempts=0;
+  const loading=loadNativeLayoutWithRetry(app,async()=>{
+    if(nativeMode==="smoke"&&++loadAttempts<=2)throw new Error("smoke: layout read temporarily unavailable");
+    return nativeData.loadLayout();
+  });
+  if(nativeMode==="smoke"){
+    for(let attempt=1;attempt<=2;attempt++){
+      await waitFor("startup layout retry notice",()=>loadAttempts===attempt&&Boolean(app.stage.getChildByLabel("native-notice:action",true)));
+      await present(app,"startup layout retry hit target");
+      if(attempt===2)await captureSmokeFrame("layout-load-retry");
+      if(attempt===1)clickWithNativeInput(app.stage.getChildByLabel("native-notice:action",true)!);
+      else{app.nativeInput.emitKey("down",{keyCode:13});app.nativeInput.emitKey("up",{keyCode:13});}
+    }
+  }
+  const result=await loading;
+  if(result.cancelled){await nativeData.dispose();await app.dispose();process.exit(0);}
+  loadedLayout=result.layout;startupLoadRecovered=result.recovered;
   const scanRequest = makeNativeStartupScanRequest(loadedLayout);
   catalogResult = await nativeData.scanApps(scanRequest.roots, scanRequest.filters);
 } catch (error) {
   await nativeData.dispose();
+  await app.dispose();
   throw error;
 }
 setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
@@ -297,8 +339,10 @@ settingsNavigation.selectTab("general");
 let settingsShell:NativeSettingsShell|null=null;
 let openSettings:()=>void;
 let apps:ReturnType<typeof createLaunchpadApps>|null=null;
+let appDialogs:NativeAppDialogs|null=null;
 let refreshTargetChecks=()=>{};
-const saves = createLayoutSaveQueue(document => nativeData.saveLayout(document));
+let saveFailed=(error:unknown)=>{logNativeRuntime("save-error",String(error));},saveRecovered=()=>{};
+const saves = createLayoutSaveQueue(async document=>{try{await nativeData.saveLayout(document);saveRecovered();}catch(error){saveFailed(error);throw error;}});
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
 let activePageItems = getNativeActivePageItems(currentFrame);
 let searchQuery = "";
@@ -316,20 +360,6 @@ const folderLayout = Object.freeze({
   get rows(){return layoutState.presentation.folderRows.value;},
 });
 
-const app = await createNativePixiApplication({
-  transparent:true,
-  titleBarStyle:"hidden",
-  antialias: true,
-  background: 0x090b14,
-  height: 600,
-  resizeMode: "live",
-  title: nativeMode === "app" ? "LaunchPad" : process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
-  width: 900,
-}).catch(async (error: unknown) => {
-  await nativeData.dispose();
-  throw error;
-});
-app.stage.label = "launchpad-native-stage";
 let toggleLaunchpad=()=>{};
 const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
   logNativeRuntime("shortcut",{state:app.state,visible:app.window.isVisible(),minimized:app.window.isMinimized()});
@@ -397,24 +427,10 @@ const management = new NativeManagement(searchBar.host, () => app.contentSize, (
   settingsTheme);
 
 const iconTextures = createNativeIconTextureRepository();
-const statusText = new Text({
-  resolution: app.resolution,
-  style: {
-    fill: 0xd8dee9,
-    fontFamily: [...PIXI_UI_FONT_FAMILY],
-    fontSize: 14,
-  },
-});
-statusText.anchor.set(0.5, 1);
-statusText.eventMode = "none";
-
-function setStatus(message: string, color = 0xd8dee9): void {
-  if(message&&color===0xff7b72)logNativeRuntime("error",message);
-  statusText.text = message;
-  statusText.style.fill = color;
-  statusText.position.set(app.contentSize.width / 2, app.contentSize.height - 16);
-  statusText.resolution = app.resolution;
-  app.invalidate();
+function reportNativeError(error: unknown): void {
+  const message=readErrorMessage(error);
+  logNativeRuntime("error",message);
+  notices.showTransientNotice({title:t("errors.launch.genericTitle"),message,intent:"error"});
 }
 
 function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
@@ -440,7 +456,7 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
     while (current && current !== target) current = current.parent;
     if (!current) {
       throw new Error(
-        `Native pointer target ${target.label || target.constructor.name} was obscured by ${hit?.label || hit?.constructor.name || "nothing"}`,
+        `Native pointer target ${target.label || target.constructor.name} was obscured by ${hit?.label || hit?.constructor.name || "nothing"}; ancestors=${[hit,hit?.parent,hit?.parent?.parent].map(node=>node?.label||node?.constructor.name).join("/")}; modal=${management.activeId}; point=${x},${y}`,
       );
     }
   }
@@ -514,7 +530,6 @@ async function activateItem(item: SceneItem, event: {shiftKey?:boolean} = {}): P
   if (item.type === "folder") {
     if (folderFlow.open(item)) {
       setFocusedIcon(null);
-      setStatus("");
     }
     return;
   }
@@ -534,54 +549,50 @@ function editItem(item: SceneItem | null): void {
   if(!apps)return;
   const editor=apps.editorModel;
   if(appItem)editor.actions.openEdit(appItem);else editor.actions.openCreate();
-  management.form(item?t("dialogs.appEditor.editTitle"):t("dialogs.appEditor.addTitle"),[
-    {label:t("dialogs.appEditor.name"),value:editor.name.value},
-    {label:editor.targetReadOnly.value?t("dialogs.appEditor.windowsId"):t("dialogs.appEditor.target"),value:editor.target.value,readOnly:editor.targetReadOnly.value,
-      ...(!editor.targetReadOnly.value?{browse:async()=>{const selected=await createNativeCatalogPort(nativeData).pickLaunchFile();return selected?.path??null;}}:{})},
-    {label:t("dialogs.appEditor.args"),value:editor.args.value,readOnly:!editor.canEditArgs.value&&editor.targetReadOnly.value},
-  ],t("common.actions.save"),async values=>{
-    editor.name.value=values[0]??"";editor.target.value=values[1]??"";editor.args.value=values[2]??"";
-    if(!editor.actions.save())throw new Error(t("dialogs.appEditor.name")+" / "+t("dialogs.appEditor.target"));
-    await saves.flush();settingsShell?.redraw();
-  });
+  appDialogs?.sync();
 }
+
+const noticeView=new NativeNotice(()=>app.contentSize,()=>app.invalidate());app.stage.addChild(noticeView);
+const notices=createLaunchpadNotices({localizationText:{t}},createNativeStateHost(()=>{
+  queueMicrotask(()=>{if(!noticeView.destroyed){noticeView.show(notices.transientNotice.value,notices.closeTransientNotice);requestSceneRender();}});
+}));
+let saveFailureCount=0;
+saveFailed=error=>{saveFailureCount++;logNativeRuntime("save-error",String(error));notices.showLayoutSaveFailed({error,retryCount:saveFailureCount,onRetry:()=>{void saves.flush().catch(()=>{});}});};
+saveRecovered=()=>{if(saveFailureCount){saveFailureCount=0;notices.showLayoutSaveRecovered();}};
 function removeItems(ids: readonly string[]): void {
-  management.form(t("settings.apps.manager.remove"), [],t("launchpad.batch.remove"),async()=>{
+  management.warning({title:t("settings.apps.manager.remove"),message:t("launchpad.batch.removeMessage",{count:ids.length}),intent:"warning",cancelText:t("common.actions.cancel"),confirmText:t("launchpad.batch.remove"),confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{
     if(apps)apps.removeManagedAppsFromLaunchpad(ids);
     const folders=ids.filter(id=>layoutState.operations.findFolder(layoutState.presentation.pages.value,id));
     if(folders.length)editing!.remove(folders);
     await saves.flush();
-  },t("launchpad.batch.removeMessage",{count:ids.length}));
+  }});
 }
-function contextMenu(item: SceneItem | null,x:number,y:number):void {
-  const actions = item ? [
-    {label:item.type==="folder"?t("common.actions.rename"):t("dialogs.appEditor.editTitle"),run:()=>editItem(item)},
-    {label:t("settings.apps.manager.remove"),run:()=>removeItems([item.id])},
-    ...item.type==="app" ? [
-      {label:t("dialogs.appEditor.changeIcon"),run:()=>{void updateIcon(item,false).catch(error=>setStatus(String(error),0xff7b72));}},
-      {label:t("common.actions.restoreDefault"),run:()=>{void updateIcon(item,true).catch(error=>setStatus(String(error),0xff7b72));}},
-    ] : [],
-  ] : [{label:t("dialogs.appEditor.addTitle"),run:()=>editItem(null)}];
-  if(!item)actions.push({label:t("settings.shell.title"),run:()=>openSettings()});
-  if(item?.type === "folder")actions.push({label:t("commands.dissolve.confirm"),run:()=>{
-    editing!.commit(layoutState.operations.dissolveFolder(layoutState.presentation.pages.value,item.id,layoutState.presentation.pageSize.value));
-  }});
-  if(!editing!.mode.value)actions.push({label:t("launchpad.batch.toolbarLabel"),run:()=>{
-    editing!.alt.cancelAltEditMode();
-    editing!.selection.begin({initialIds:item?.type==="app"?[item.id]:[]});
-  }});
+function contextMenu(item:SceneItem|null,x:number,y:number):void{
+  const actions:import("../rendering/native/NativeManagement.js").NativeMenuAction[]=[];
+  const beginBatch=()=>{editing!.alt.cancelAltEditMode();editing!.selection.begin({});};
+  if(item){
+    actions.push({label:t("common.actions.open"),icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
+    actions.push({label:t(item.type==="folder"?"common.actions.rename":"common.actions.edit"),icon:item.type==="folder"?"rename-20-regular":"edit-20-regular",run:()=>editItem(item)});
+    if(item.type==="folder")actions.push({label:t("launchpad.contextMenu.dissolve"),icon:"folder-arrow-right-20-regular",separatorBefore:true,danger:true,run:()=>editing!.pageCommands.confirmDissolveFolder(item.id)});
+    else {
+      actions.push({label:t("launchpad.contextMenu.remove"),icon:"delete-20-regular",separatorBefore:true,run:()=>apps!.removeManagedAppFromLaunchpad(item.id)});
+      const appItem=apps?.managedApps.value.find(app=>app.id===item.id);
+      if(appItem&&apps!.canExcludeManagedAppFromScan(appItem))actions.push({label:t("launchpad.contextMenu.exclude"),icon:"delete-dismiss-20-regular",danger:true,run:()=>apps!.excludeManagedAppFromScan(appItem)});
+    }
+  }else{
+    actions.push({label:t("launchpad.contextMenu.batchManage"),icon:"select-all-on-20-regular",run:beginBatch});
+    if(!folderFlow.snapshot().renderedFolder){
+      actions.push({label:t("settings.interface.layout.compactAction"),icon:"arrow-sort-20-regular",separatorBefore:true,run:()=>editing!.pageCommands.confirmForceFillAllPages()});
+      if(apps?.canScanManagedApps.value)actions.push({label:t(apps.isScanningApps.value?"settings.apps.manager.scanning":"settings.apps.manager.scanApps"),icon:"scan-object-20-regular",disabled:apps.isScanningApps.value,run:()=>{void apps!.rescanManagedApps({announceStart:true});}});
+      actions.push({label:t("launchpad.openSettings"),icon:"settings-20-regular",separatorBefore:Boolean(apps?.canScanManagedApps.value),run:()=>openSettings()});
+    }
+  }
   management.menu(x,y,actions);
 }
 async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
-  let icon:import("../application/launchpadApps.js").ManagedAppIcon|null=null;
-  if(!reset) {
-    const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp",multiple:false});
-    if(!result.ok) {if(result.error.code==="CANCELLED")return;throw new Error(result.error.message);}
-    const path=result.value[0];if(!path)return;
-    icon=await nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path));
-  }
+  if(!reset){apps?.openExistingAppIconChooser(item.id);appDialogs?.sync();return;}
   if(!apps?.managedApps.value.some(app=>app.id===item.id))throw new Error("Application no longer exists");
-  apps.updateAppCustomIcon(item.id,icon);await saves.flush();
+  apps.updateAppCustomIcon(item.id,null);await saves.flush();
   const result=await iconTextures.synchronize(collectTextureItems(currentFrame));
   if(result.failed.length)throw new Error("Icon loading failed");
   requestSceneRender();
@@ -605,10 +616,9 @@ const scene = new NativeDesktopScene(app.stage, {
   onRollbackComplete: token => {editing?.rollback.complete(token);},
   onIconEditAction:(action,item)=>{
     if(action==="remove")removeItems([item.id]);
-    else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(error=>setStatus(String(error),0xff7b72));
+    else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(reportNativeError);
   },
 });
-app.stage.addChild(statusText);
 app.stage.addChild(searchBar);
 app.stage.addChild(management);
 const selectionToolbar = new Container({label:"native-selection-toolbar"});
@@ -626,7 +636,7 @@ selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButto
 app.stage.addChild(selectionToolbar);
 const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
 app.stage.addChild(settingsButton);
-const windowChrome=new NativeWindowChrome(app,error=>setStatus(readErrorMessage(error),0xff7b72));
+const windowChrome=new NativeWindowChrome(app,reportNativeError);
 app.stage.addChild(windowChrome);
 const launchGhostView=new NativeLaunchGhost();app.stage.addChild(launchGhostView);
 const onContext = (event: FederatedPointerEvent):void=>{
@@ -637,6 +647,8 @@ const onContext = (event: FederatedPointerEvent):void=>{
   contextMenu(item,event.global.x,event.global.y);event.stopPropagation();
 };
 app.stage.on("rightclick",onContext);
+management.on("context-request",(x:number,y:number)=>{const hit=app.renderer.events.rootBoundary.hitTest(x,y);const target=resolveNativePointerTarget(hit);const item=target.kind==="icon"?getCurrentIconScope().items.find(item=>item.id===target.id)??null:null;contextMenu(item,x,y);});
+management.captureReturnFocus=()=>settingsShell?.captureFocus()??(()=>app.invalidate());
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
@@ -682,7 +694,8 @@ const offSaveBeforeClose = app.beforeClose(async () => {
     restartRequested=false;
     quitRequested=false;
     windowClosing=false;app.stage.interactiveChildren=true;
-    setStatus(readErrorMessage(error),0xff7b72);throw error;
+    // Saving already supplies an actionable retry notice; preserve it on close failure.
+    if(!saveFailureCount)reportNativeError(error);throw error;
   }
 });
 const wheelDeadlines = new Map<
@@ -692,24 +705,24 @@ const wheelDeadlines = new Map<
 
 try {
   offBackgroundResize=app.on("resize",()=>{
-    void refreshBackground().catch(error=>setStatus(readErrorMessage(error),0xff7b72));
+    void refreshBackground().catch(reportNativeError);
   });
   offSystemPreferences=subscribeNativeSystemPreferences(result=>{
-    if(!result.ok){setStatus(result.error.message,0xff7b72);return;}
+    if(!result.ok){reportNativeError(result.error.message);return;}
     if(setNativeUiFontFamily(result.value.uiFontFamily))settingsShell?.redraw();
     if(systemAppearance!==result.value.appearance){
       systemAppearance=result.value.appearance;settingsShell?.redraw();
       if(settings.presentation.windowEffectAppearance.value==="system"&&(!launchFlow||launchFlow.isDesktopOpen.value)){
         try{app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,systemAppearance);}
-        catch(error){setStatus(readErrorMessage(error),0xff7b72);}
+        catch(error){reportNativeError(error);}
       }
-      void refreshBackground().catch(error=>setStatus(String(error),0xff7b72));app.invalidate();
+      void refreshBackground().catch(reportNativeError);app.invalidate();
     }
   });
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
   app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
   await present(app, "the native host startup frame");
-  await refreshBackground().catch(error=>setStatus(String(error),0xff7b72));
+  await refreshBackground().catch(reportNativeError);
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
@@ -804,8 +817,9 @@ try {
         || ((button===removeButton || button===clearSelectionButton) && !editing?.selection.selectedCount.value);
       button.eventMode=disabled?"none":"static";button.alpha=disabled?0.4:1;
     });
+    app.stage.setChildIndex(noticeView,app.stage.children.length-1);
+    if(settingsShell)app.stage.setChildIndex(settingsShell,app.stage.children.length-1);
     if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
-    if(settingsShell&&!management.modal)app.stage.setChildIndex(settingsShell,app.stage.children.length-1);
     windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     app.stage.setChildIndex(windowChrome,app.stage.children.length-1);
     app.invalidate();
@@ -818,7 +832,7 @@ try {
     settingsShell?.redraw();
     // Resize must update controls as well as icons without depending on a later animation commit.
     renderScene(true);
-    setStatus(statusText.text);
+    management.resize();noticeView.redraw();
     if (observeLiveResize) {
       const source = app.renderer.view.texture.source;
       resizeLiveBackingObserved ||= source.pixelWidth === Math.round(width * resolution)
@@ -879,7 +893,6 @@ try {
       committedMotion.desktopPageTrackX - committedMotion.desktopPageTrackTargetX,
     ) > 0.5;
     iconNodes = collectActiveIconNodes();
-    setStatus("");
     return true;
   }
   const turnPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
@@ -901,14 +914,14 @@ try {
       iconSize: config.iconSize, folderIconSize: config.folderIconSize, folderIconSizeMode: config.folderIconSizeMode,
       textless: layoutSettings.isTextlessModeState.value,hiddenAppIds:[...(apps?.presentation.hiddenAppIds.value??loadedLayout?.settings.hiddenAppIds??[])] });
     saves.enqueue(document);
-    void saves.flush().catch(error => setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72));
+    void saves.flush().catch(()=>{}); // The serialized writer reports failures and exposes retry through the notice.
     changeSearch(searchQuery);
     refreshTargetChecks();
     requestSceneRender();
   };
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
     size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
-    confirm:config=>management.form(config.title,[],config.confirmText,async()=>{config.onConfirm();await saves.flush();},config.message),
+    confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
     page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
     open: id => {
       if(!id) { closeFolder(); return; }
@@ -934,7 +947,8 @@ try {
       // page on blur would flash it while focus is moving to the next source field.
       const sourceFieldFocused=searchBar.host.focused?.label?.startsWith("native-apps:source-");
       const keywordDraftFocused=searchBar.host.focused?.label==="native-apps:keyword"&&!persistedChange;
-      if(settingsShell&&settingsNavigation.activeRoute.value.tabId==="apps"&&!sourceFieldFocused&&!keywordDraftFocused)settingsShell.redraw();
+      if(settingsShell&&settingsNavigation.activeRoute.value.tabId==="apps"&&!sourceFieldFocused&&!keywordDraftFocused&&!management.modal)settingsShell.redraw();
+      appDialogs?.sync();
       refreshTargetChecks();
       requestSceneRender();
     });
@@ -946,12 +960,17 @@ try {
     commitOpenFolder:id=>{if(!id)closeFolder();},openFolderId:{get value(){return folderFlow.snapshot().renderedFolder?.id??null;}},
     renderedFolder:{get value(){return folderFlow.snapshot().renderedFolder as import("../domain/launchpadLayout.js").ReadonlyLaunchpadFolder|null;}},
     reclampPageIndices:()=>layoutState.commitPageIndex(layoutState.presentation.pageIndex.value),schedulePageGridMetrics:requestSceneRender,
-    openScanKeywordSettings:()=>{settingsNavigation.selectTab("apps");settingsShell?.redraw();},
+    openScanKeywordSettings:()=>{settingsNavigation.selectTab("apps");appsPageState.keywords=true;if(settingsShell)settingsShell.redraw();else openSettings();},
     clearFocusedIcon:()=>setFocusedIcon(null),
-    openWarningDialog:config=>management.form(config.title,[],config.confirmText??t("common.actions.close"),async()=>{config.onConfirm?.();await saves.flush();},[config.message,config.suggestion].filter(Boolean).join("\n")),
-    showTransientNotice:notice=>setStatus(notice.message),
+    openWarningDialog:config=>management.warning({...config,onConfirm:async()=>{config.onConfirm?.();await saves.flush();}}),
+    showTransientNotice:notice=>notices.showTransientNotice(notice),
   },createNativeStateHost(changedApps));
   apps.persistence.restore(loadedLayout?.settings??{});appsPersistenceKey=JSON.stringify(apps.persistence.capture());
+  appDialogs=new NativeAppDialogs({apps,management,host:searchBar.host,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),pickIcon:async()=>{
+    const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp,bmp,gif,svg,ico",multiple:false});
+    if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
+    const path=result.value[0];return path?nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path)):null;
+  }});
   let targetCheckKey="",targetCheckGeneration=0;
   refreshTargetChecks=()=>{
     if(!apps||sceneDisposed)return;
@@ -994,19 +1013,19 @@ try {
     hasFolderLayer:()=>Boolean(folderFlow.snapshot().renderedFolder),isFolderAppLaunchClosing:flowState.derived(()=>false),
     isDragActive:()=>editing?.drag.isDragActive()??false,isSearchMode:()=>Boolean(searchQuery.trim()),
     normalizeLaunchSource:item=>({id:item.id,area:folderFlow.snapshot().renderedFolder?"folder":searchQuery?"search":"desktop",pageIndex:getCurrentIconScope().pageIndex}),
-    prepareNativeLaunch:async()=>{try{await saves.flush();return true;}catch(error){setStatus(readErrorMessage(error),0xff7b72);return false;}},
+    prepareNativeLaunch:async()=>{try{await saves.flush();return true;}catch{return false;}},
     launchNativeAppIfAvailable:async item=>{
       try{await nativeData.launchApp(item.id);return true;}
       catch(error){const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};}
     },
-    showNativeLaunchError:error=>{showLaunchpad();management.form(error.title,[],t("common.actions.close"),()=>{},error.message);},
+    showNativeLaunchError:error=>{showLaunchpad();management.warning({...error,intent:"error",confirmText:t("notices.acknowledge")});},
     beginNativeWindowClose:()=>{
       visibilityGeneration++;
       app.setWindowPresentation("none",resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
       desktopBackground.alpha=0;
       fadeNativeLaunchpadChrome([searchBar,settingsButton,windowChrome,management,...(settingsShell?[settingsShell]:[])],false);
     },
-    hideNativeWindow:hideAfterPresented,onDesktopCloseComplete:()=>{void hideAfterPresented().catch(error=>setStatus(readErrorMessage(error),0xff7b72));},
+    hideNativeWindow:hideAfterPresented,onDesktopCloseComplete:()=>{void hideAfterPresented().catch(reportNativeError);},
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{
     setTimeout:(callback,delay)=>{const id=++nextLaunchTimer;launchTimers.set(id,setTimeout(()=>{launchTimers.delete(id);callback();},delay));return id;},
@@ -1036,7 +1055,7 @@ try {
     void saves.flush().then(()=>{
       if(generation!==visibilityGeneration)return;
       visibilityPreparing=false;closeSettings();launchFlow!.closeDesktop({clearSearch:true});
-    }).catch(error=>{visibilityPreparing=false;setStatus(readErrorMessage(error),0xff7b72);});
+    }).catch(error=>{visibilityPreparing=false;reportNativeError(error);});
   };
   toggleLaunchpad=()=>{
     if(windowClosing)return;
@@ -1047,7 +1066,7 @@ try {
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
     if(!outcome.ok){
       const message=readErrorMessage(outcome.error);console.error("Native shortcut registration failed:",message);
-      settings.actions.setMainWindowShortcutError(message);setStatus(message,0xff7b72);
+      settings.actions.setMainWindowShortcutError(message);reportNativeError(message);
     }
   }
   openSettings=()=>{
@@ -1071,9 +1090,9 @@ try {
       content:(tab,subPage,width)=>tab==="apps"
         ?nativeAppsSettingsPage({apps:apps!,host:searchBar.host,width,theme:settingsTheme(),state:appsPageState,subPage,management,icons:iconTextures,
           invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),
-          navigate:page=>{settingsNavigation.openSubPage({id:page==="manager"?"apps.appManager":page==="excluded"?"apps.excludedApps":"apps.scanResults",parentTabId:"apps",
-            labelKey:page==="manager"?"settings.apps.manager.title":page==="excluded"?"settings.apps.excluded.title":"dialogs.scanResults.title"});settingsShell?.redraw();},
-          edit:item=>editItem(item as SceneItem|null),icon:(item,reset)=>{void updateIcon(item as SceneItem,reset).catch(error=>setStatus(String(error),0xff7b72));}})
+          navigate:page=>{settingsNavigation.openSubPage({id:page==="manager"?"apps.appManager":"apps.excludedApps",parentTabId:"apps",
+            labelKey:page==="manager"?"settings.apps.manager.title":"settings.apps.excluded.title"});settingsShell?.redraw();},
+          edit:item=>editItem(item as SceneItem|null)})
         :tab==="general"
         ?nativeGeneralSettingsPage({settings,width,theme:settingsTheme(),
           management,invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),recording:recordingShortcut,
@@ -1132,7 +1151,6 @@ try {
   logNativeRuntime("ready",{version:"0.1.0",state:app.state,logDirectory:nativeLogDirectory});
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
-    setStatus("");
     return true;
   };
   const wheelGestures = createLaunchpadGestureEngine();
@@ -1363,6 +1381,11 @@ try {
       return settingsShell.handleKey(event);
     }
     if (searchBar.input.composing || event.isComposing) return false;
+    if(noticeView.hasFocus){
+      if(noticeView.handleKey(event.key??"",Boolean(event.shiftKey)))return true;
+      if(event.key==="Tab")searchBar.input.focus();
+      return true;
+    }
     if(editing?.drag.isDragActive()){
       if(event.key==="Escape")editing.drag.cancelDrag({userInitiatedCancel:true});
       return true;
@@ -1376,7 +1399,7 @@ try {
       if(event.key==="Tab" || event.key?.startsWith("Arrow") || event.key==="Enter") {
         if((event.key==="ArrowLeft" || event.key==="ArrowRight") && event.shiftKey)return false;
         searchBar.input.blur();
-        if(event.key==="Tab"){setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));return true;}
+        if(event.key==="Tab"){if(event.shiftKey&&noticeView.focusEdge(true))return true;setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));return true;}
       } else return false;
     }
     editing?.alt.handleAltKeyDown(event);
@@ -1394,6 +1417,7 @@ try {
     }
     if(editing?.selection.isActive.value && (event.key==="Enter" || event.key==="Backspace" || (!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key?.length===1)))return true;
     if(event.type==="down" && event.key==="Tab") {
+      if(noticeView.focusEdge(Boolean(event.shiftKey))){setFocusedIcon(null);return true;}
       if(folderFlow.snapshot().renderedFolder || editing?.selection.isActive.value)setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));
       else searchBar.input.focus();
       return true;
@@ -1437,6 +1461,7 @@ try {
     return true;
   };
   searchBar.handleKey=onKey;
+  if(startupLoadRecovered)notices.showLayoutLoadRecovered();
   offFocus=app.nativeInput.onFocusChange(focused=>{if(!focused)editing?.alt.handleWindowBlur();});
   searchBar.input.on("submit", () => {
     const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, getCurrentIconScope());
@@ -1670,7 +1695,7 @@ try {
     await (settingsShell as NativeSettingsShell).waitForApply();
     await waitFor("general settings restored",()=>Boolean(settingsShell&&!settingsShell.applying));
     assert.equal((await nativeData.loadLayout())!.settings.localePreference,localeBefore);
-
+    await present(app,"restored settings navigation hit targets");
     clickWithNativeInput(app.stage.getChildByLabel("native-settings-tab:apps",true)!);
     await waitFor("apps overview transition",()=>!scene.getMotionSnapshot().active);await present(app,"apps overview rendered");
     await captureSmokeFrame("settings-apps-overview");
@@ -1711,6 +1736,7 @@ try {
         clickWithNativeInput(badge());
         await waitFor("switch animation intermediate after page rebuild",()=>{const value=(badge() as NativeFluentToggle).transitionProgress;return value>0.05&&value<0.95;});
         await captureSmokeFrame("settings-switch-animation-middle");
+        await present(app,"switch hit geometry after asynchronous target checks");
         clickWithNativeInput(badge());
         await waitFor("switch rapid reversal settled",()=>Math.abs((badge() as NativeFluentToggle).transitionProgress-from)<0.001&&!scene.getMotionSnapshot().active);
         assert.equal(scroll().offset,offset);
@@ -1798,10 +1824,22 @@ try {
     clickWithNativeInput(app.stage.getChildByLabel(`native-apps:restore-${firstManaged.id}`,true)!);await present(app,"exclusion removed");await saves.flush();
     assert.equal(apps!.presentation.scanAppBlacklist.value.length,appSettingsBefore.scanAppBlacklist.length);
     await apps!.rescanManagedApps();
-    settingsNavigation.openSubPage({id:"apps.scanResults",parentTabId:"apps",labelKey:"dialogs.scanResults.title"});(settingsShell as NativeSettingsShell).redraw();
-    await waitFor("scan result page transition",()=>!scene.getMotionSnapshot().active);await present(app,"scan results rendered");
+    await waitFor("scan result modal",()=>management.activeId==="scan-results");await present(app,"scan results rendered");
     assert.ok(apps!.scanResultModel.apps.value.some(item=>item.id===firstManaged.id));await captureSmokeFrame("settings-apps-scan-results");
-    apps!.scanResultModel.actions.addSelected();await present(app,"scan selection added");await saves.flush();
+    {
+      const saveNormally=appDialogs!.options.save;
+      appDialogs!.options.save=async()=>{throw new Error("smoke: scan save unavailable");};
+      try{
+        clickWithNativeInput(management.getChildByLabel("native-modal:scan-results:confirm",true)!);
+        await present(app,"scan save failure retained");
+        assert.equal(apps!.scanResultModel.isOpen.value,true,"scan persistence failure must retain its model and dialog");
+        assert.equal(management.activeId,"scan-results");
+        await captureSmokeFrame("scan-save-failure");
+      }finally{appDialogs!.options.save=saveNormally;}
+      clickWithNativeInput(management.getChildByLabel("native-modal:scan-results:confirm",true)!);
+      await waitFor("scan selection saved after retry",()=>!management.modal);await present(app,"scan selection added");await saves.flush();
+      assert.equal(apps!.managedApps.value.filter(item=>item.id===firstManaged.id).length,1,"retry must not append the scanned app twice");
+    }
     assert.ok(apps!.managedApps.value.some(item=>item.id===firstManaged.id));
     apps!.persistence.restore(appSettingsBefore);commitEditedPages(baselinePages);await present(app,"apps roundtrip fixture restored");await saves.flush();
     console.log("Native apps settings: overview, multi-selection animation, persistence, target checks and editor cancellation passed");
@@ -1970,7 +2008,7 @@ try {
       rejectPending(new Error("smoke: settings apply failure must retain the window"));
       await waitFor("failed apply restores window input",()=>!windowClosing&&!applyingShell.applying);
       assert.equal(app.state,"running");assert.equal(app.stage.interactiveChildren,true);
-    }finally{applyingShell.options.apply=applyNormally;setStatus("");}
+    }finally{applyingShell.options.apply=applyNormally;notices.closeTransientNotice();}
     await applyWindowSettings();
     console.log("Native close guard: pending settings wait, failure retention and retry passed");
     await toggleTitlebar();
@@ -2116,8 +2154,8 @@ try {
     await present(app,"compact confirmation settled frame");await captureSmokeFrame("settings-compact-confirm");
     onKey({type:"down",key:"Escape"});
     assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancelled compact must retain page boundaries");
-    await present(app,"compact cancellation settled");await showCompact();
-    const confirmCompact=management.getChildByLabel(`native-action:${t("commands.compact.confirm")}`,true);assert.ok(confirmCompact);
+    await waitFor("compact cancellation settled",()=>!management.modal);await present(app,"compact cancellation settled");await showCompact();
+    const confirmCompact=management.getChildByLabel("native-modal:warning:confirm",true);assert.ok(confirmCompact);
     clickWithNativeInput(confirmCompact);await waitFor("compacted layout saved",()=>!management.modal);
     assert.deepEqual(layoutState.presentation.pages.value.flat().map(item=>item.id),baselinePages.flat().map(item=>item.id));
     assert.equal(layoutState.presentation.pages.value.length,Math.ceil(baselinePages.flat().length/layoutState.presentation.pageSize.value));
@@ -2142,6 +2180,24 @@ try {
     await waitFor("settings close animation complete",()=>settingsShell===null);
     assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"Cancel must retain the committed configuration");
     await present(app,"settings close restores entry hit target");
+    {
+      let noticeActions=0;
+      notices.showTransientNotice({title:"Temporary",message:"Replaced notice",durationMs:60});
+      notices.showTransientNotice({title:"Layout could not be saved",message:"Your changes are kept in this session. Retry saving when the destination is available.",detail:"Smoke fixture: a deliberately unavailable destination.",intent:"error",actionText:"Retry",onAction:()=>{noticeActions++;}});
+      await new Promise<void>(resolve=>setTimeout(resolve,90));await present(app,"persistent notice replaces timer");
+      assert.equal(noticeView.visible,true,"replacing a timed notice must cancel its previous timer");
+      await captureSmokeFrame("notice-error-action");
+      clickWithNativeInput(noticeView.getChildByLabel("native-notice:action",true)!);assert.equal(noticeActions,1);
+      searchBar.input.blur();onKey({type:"down",key:"Tab"});assert.equal(noticeView.hasFocus,true);
+      onKey({type:"down",key:"Enter"});assert.equal(noticeActions,2,"notice action must be reachable from desktop keyboard navigation");
+      onKey({type:"down",key:"Tab"});onKey({type:"down",key:"Tab"});assert.equal(noticeView.hasFocus,false,"notification keyboard navigation must return to the desktop");searchBar.input.blur();
+      clickWithNativeInput(noticeView.getChildByLabel("native-notice:close",true)!);await present(app,"notice dismissed");assert.equal(noticeView.visible,false);
+      notices.showTransientNotice({title:"Saved",message:"The latest layout is saved.",intent:"success",durationMs:60});
+      await waitFor("notice expires",()=>!noticeView.visible);
+      await present(app,"notice expiry restores desktop hit targets");
+      assert.equal(launchFlow!.isDesktopOpen.value,true,"notice clicks must not enter the desktop blank-click dismissal gesture");
+      await captureSmokeFrame("notice-expired-desktop");await present(app,"notice desktop presented");
+    }
     clickWithNativeInput(settingsButton);await present(app,"settings reopened");
     const reopenedRows=app.stage.getChildByLabel("native-setting:desktopRows",true);assert.ok(reopenedRows);
     for(let index=0;index<60&&!(reopenedRows as import("../rendering/native/NativeSpinButton.js").NativeSpinButton).input.focused;index++)onKey({type:"down",key:"Tab"});
@@ -2168,6 +2224,80 @@ try {
     assert.ok(existsSync(cachedIcon.iconPath),"normalized icon must be cached by the real Rust host");
     assert.equal(cachedIcon.iconDataUrl,normalizedIcon);
     assert.deepEqual(await nativeData.loadIconChoices(""),[],"empty target has no embedded icon choices");
+    {
+      const editor=apps!.editorModel,chooser=apps!.iconChooserModel;
+      const loadNormally=nativeData.loadIconChoices,saveNormally=appDialogs!.options.save,pickNormally=appDialogs!.options.pickIcon;
+      const candidates=Array.from({length:121},(_,index)=>({id:`fixture-${index}`,...cachedIcon}));
+      nativeData.loadIconChoices=async()=>candidates;
+      try{
+        editor.actions.openCreate();appDialogs!.sync();await present(app,"new app editor rendered");
+        const editField=(id:string,value:string)=>{
+          const input=management.getChildByLabel(`native-editor:${id}`,true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
+          assert.ok(input);clickWithNativeInput(input);input.selectAll();input.commitText(value);
+        };
+        editField("name","Native dialog fixture");editField("target","C:\\Windows\\System32\\notepad.exe");
+        await present(app,"editor executable args appear");assert.ok(management.getChildByLabel("native-editor:args",true));
+        editField("args","--fixture");await present(app,"editor live draft");assert.equal(editor.args.value,"--fixture");
+        await captureSmokeFrame("editor-reference-match");
+        nativeData.loadIconChoices=async()=>{throw new Error("Embedded icon fixture could not be read.");};
+        clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
+        await waitFor("embedded icon load failure",()=>Boolean(chooser.error.value)&&management.activeId==="icon-chooser");await present(app,"embedded icon error visible");
+        assert.ok(management.getChildByLabel("native-dialog:icon-upload",true),"local image selection remains available after embedded icon failure");
+        await captureSmokeFrame("icon-candidate-load-error");onKey({type:"down",key:"Escape"});await present(app,"failed chooser closed");
+        nativeData.loadIconChoices=async()=>candidates;
+        clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
+        await waitFor("embedded icon candidates loaded",()=>management.activeId==="icon-chooser"&&chooser.choices.value.length===candidates.length);await present(app,"candidate grid visible");
+        const list=management.getChildByLabel("native-virtual-list",true) as import("../rendering/native/ui/NativeVirtualList.js").NativeVirtualList;
+        assert.ok(list.mountedCount<list.count,"candidate grid must virtualize offscreen rows");
+        await captureSmokeFrame("icon-candidate-grid");await present(app,"candidate selection hit target");
+        clickWithNativeInput(management.getChildByLabel("native-dialog:icon-choice-0",true)!);
+        await waitFor("candidate returns to editor",()=>management.activeId==="editor");await present(app,"selected editor icon");
+        assert.equal(editor.iconDataUrl.value,cachedIcon.iconDataUrl);
+        // A delayed upload result belongs to the chooser session that initiated it.
+        let finishUpload!:(value:typeof cachedIcon|null)=>void;
+        appDialogs!.options.pickIcon=()=>new Promise(resolve=>{finishUpload=resolve;});
+        clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
+        await waitFor("upload chooser",()=>management.activeId==="icon-chooser"&&chooser.choices.value.length===candidates.length);await present(app,"upload action visible");
+        const upload=management.getChildByLabel("native-dialog:icon-upload",true)!;
+        // The upload control follows the virtualized candidates and must be revealed by keyboard.
+        for(let index=0;index<150&&!(upload as NativeFluentButton).focused;index++)onKey({type:"down",key:"Tab"});
+        assert.equal((upload as NativeFluentButton).focused,true);await present(app,"upload action revealed");clickWithNativeInput(upload);
+        onKey({type:"down",key:"Escape"});await present(app,"upload chooser cancelled");
+        editor.actions.resetIcon();finishUpload(cachedIcon);await present(app,"stale upload ignored");assert.equal(editor.iconDataUrl.value,null);
+        nativeData.loadIconChoices=async()=>[];
+        clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
+        await waitFor("empty icon chooser ready",()=>management.activeId==="icon-chooser"&&!chooser.isLoading.value);await present(app,"empty icon chooser");
+        await captureSmokeFrame("icon-chooser-empty-reference-match");onKey({type:"down",key:"Escape"});await present(app,"empty chooser cancelled");
+        assert.equal(editor.name.value,"Native dialog fixture","chooser cancellation preserves the editor draft");
+        appDialogs!.options.save=async()=>{throw new Error("smoke: editor save unavailable. ".repeat(24));};
+        const countBefore=apps!.managedApps.value.length;
+        clickWithNativeInput(management.getChildByLabel("native-modal:editor:confirm",true)!);await present(app,"editor save failed");
+        assert.equal(management.activeId,"editor");assert.equal(editor.name.value,"Native dialog fixture");assert.equal(apps!.managedApps.value.length,countBefore+1);
+        await captureSmokeFrame("editor-save-failure");
+        const editorWindow={...app.window.getFrame()};
+        try{
+          app.window.setSize(480,420);
+          await waitFor("narrow editor resized",()=>app.contentSize.width<=480&&app.contentSize.height<=420);
+          await present(app,"narrow editor with long error");
+          const confirm=management.getChildByLabel("native-modal:editor:confirm",true)!;
+          const cancel=management.getChildByLabel("native-modal:editor:cancel",true)!;
+          for(const button of [confirm,cancel]){const bounds=button.getBounds();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=app.contentSize.width&&bounds.y+bounds.height<=app.contentSize.height,"error details must not displace footer controls outside a narrow viewport");}
+          await captureSmokeFrame("editor-narrow-long-error");
+        }finally{
+          app.window.setSize(editorWindow.width,editorWindow.height);
+          await waitFor("editor window restored",()=>app.contentSize.width>480);
+          await present(app,"editor retry hit target");
+        }
+        appDialogs!.options.save=saveNormally;clickWithNativeInput(management.getChildByLabel("native-modal:editor:confirm",true)!);
+        await waitFor("editor retry saved",()=>!management.modal);
+        assert.equal(apps!.managedApps.value.length,countBefore+1,"retrying a newly created app must preserve its original id");
+        const savedFixture=apps!.managedApps.value.find(item=>item.name==="Native dialog fixture")!;
+        assert.equal((await nativeData.loadLayout())!.pages.flat().filter(item=>item.id===savedFixture.id).length,1);
+      }finally{
+        nativeData.loadIconChoices=loadNormally;appDialogs!.options.save=saveNormally;appDialogs!.options.pickIcon=pickNormally;
+        while(management.modal)management.close(true);commitEditedPages(baselinePages);await saves.flush();await present(app,"editor fixture restored");
+      }
+    }
     clickWithNativeInput(searchBar);
     assert.equal(searchBar.input.focused,true,"pointer click on search chrome must focus without exiting");
     searchBar.input.blur();
@@ -2194,11 +2324,29 @@ try {
     const firstApp=app.stage.getChildByLabel("launchpad-item:native-layout-icon",true);assert.ok(firstApp);
     clickWithNativeInput(firstApp,2);await present(app,"native context menu hit targets");
     assert.equal(management.modal,true);
-    const batchAction=management.getChildByLabel(`native-action:${t("launchpad.batch.toolbarLabel")}`,true);assert.ok(batchAction);
+    assert.ok(management.getChildByLabel(`native-action:${t("common.actions.open")}`,true));
+    await captureSmokeFrame("context-menu-app");management.close();
+    {
+      let activated="",returned=0;
+      const restore=management.captureReturnFocus;management.captureReturnFocus=()=>()=>{returned++;};
+      management.menu(app.contentSize.width,app.contentSize.height,[{label:"Unavailable",disabled:true,run:()=>{activated="disabled";}},{label:"First enabled",run:()=>{activated="first";}},{label:"Last enabled",run:()=>{activated="last";}}]);
+      await present(app,"menu bottom right clamped");
+      for(const label of ["Unavailable","First enabled","Last enabled"]){const button=management.getChildByLabel(`native-action:${label}`,true)!;const b=button.getBounds();assert.ok(b.x>=0&&b.y>=0&&b.x+b.width<=app.contentSize.width&&b.y+b.height<=app.contentSize.height);}
+      onKey({type:"down",key:"Home"});onKey({type:"down",key:"Enter"});assert.equal(activated,"first");assert.equal(returned,1);
+      management.menu(1,1,[{label:"Unavailable",disabled:true,run:()=>{activated="disabled";}},{label:"Last enabled",run:()=>{activated="last";}}]);
+      onKey({type:"down",key:"End"});onKey({type:"down",key:"Enter"});assert.equal(activated,"last");assert.equal(returned,2);
+      management.captureReturnFocus=restore;
+      contextMenu(null,app.contentSize.width-1,app.contentSize.height-1);await present(app,"menu before relocation");
+      app.nativeInput.emitPointer("pointerdown",40,200,2,0);app.nativeInput.emitPointer("pointerup",40,200,2,0);
+      await present(app,"outside right click relocates menu");assert.equal(management.modal,true);
+      await captureSmokeFrame("context-menu-relocated");
+      management.resize();assert.equal(management.modal,false,"viewport changes must dismiss stale menu geometry");
+    }
+    contextMenu(null,880,570);await present(app,"surface context menu");await captureSmokeFrame("context-menu-surface");
+    const batchAction=management.getChildByLabel(`native-action:${t("launchpad.contextMenu.batchManage")}`,true);assert.ok(batchAction);
     clickWithNativeInput(batchAction);await present(app,"native selection from context menu");
     assert.equal(editing!.selection.isActive.value,true);
-    assert.deepEqual([...editing!.selection.selectedIds.value],["native-layout-icon"]);
-    clickWithNativeInput(firstApp);clickWithNativeInput(firstApp);
+    clickWithNativeInput(firstApp);assert.deepEqual([...editing!.selection.selectedIds.value],["native-layout-icon"]);
     const thirdApp=app.stage.getChildByLabel("launchpad-item:native-settings",true);assert.ok(thirdApp);
     clickWithNativeInput(thirdApp,0,1);
     assert.deepEqual([...editing!.selection.selectedIds.value],["native-layout-icon","native-webgpu","native-settings"],"Shift pointer range must include the intermediate app");
@@ -2304,23 +2452,18 @@ try {
     editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after editing");
     editItem(activePageItems.find(item=>item.id==="native-settings")??null);
     await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await captureSmokeFrame("application-edit-dialog");
-    const initialField=searchBar.host.focused;assert.ok(initialField);
+    const initialField=management.getChildByLabel("native-editor:name",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;assert.ok(initialField);clickWithNativeInput(initialField);
     management.form(t("dialogs.appEditor.changeIcon"),[],t("common.actions.cancel"),()=>{});
     assert.equal(management.modal,true,"nested form must retain the parent editing session");
     onKey({type:"down",key:"Escape"});
     assert.equal(searchBar.host.focused,initialField,"closing nested form must restore the parent field focus");
     assert.equal(management.modal,true,"closing nested form must not close its parent");
-    onKey({type:"down",key:"Tab",shiftKey:true});
-    assert.equal(searchBar.host.focused,null,"reverse Tab from first field must focus the last dialog button");
-    onKey({type:"down",key:"Tab"});
-    assert.equal(searchBar.host.focused,initialField,"Tab from the last button must wrap to the first field");
-    onKey({type:"down",key:"Tab",shiftKey:true});
-    onKey({type:"down",key:"Tab",shiftKey:true});
-    onKey({type:"down",key:" "});
+    clickWithNativeInput(management.getChildByLabel("native-modal:editor:cancel",true)!);
     assert.equal(management.modal,false,"Space on the focused Cancel button must close the dialog");
     await present(app,"edit dialog cancelled");
     editItem(activePageItems.find(item=>item.id==="native-settings")??null);
-    onKey({type:"down",key:"Enter"});
+    await present(app,"reopened application editor hit targets");
+    clickWithNativeInput(management.getChildByLabel("native-modal:editor:confirm",true)!);
     onKey({type:"down",key:"Escape"});
     assert.equal(management.modal,true,"Escape cannot destroy an in-flight form submission");
     await waitFor("Enter submits native edit form",()=>!management.modal);
@@ -2632,7 +2775,6 @@ try {
       "the native folder closing handoff",
       () => folderFlow.snapshot().renderedFolder === null,
     );
-    setStatus("");
     await present(app, "the closed native folder");
     await captureSmokeFrame("folder-closed");
     presentCount += 1;
@@ -2853,7 +2995,7 @@ try {
     if(process.env.LAUNCHPAD_MEMORY_BENCH){
       const {runNativeAppsMemoryBenchmark}=await import("./nativeAppsMemoryBenchmark.js");
       await runNativeAppsMemoryBenchmark({apps:apps!,host:searchBar.host,width:740,theme:"dark",state:appsPageState,subPage:"apps.appManager",management,icons:iconTextures,
-        invalidate:()=>app.invalidate(),redraw:()=>{},navigate:()=>{},edit:()=>{},icon:()=>{}},app.stage,()=>present(app,"memory benchmark frame"));
+        invalidate:()=>app.invalidate(),redraw:()=>{},navigate:()=>{},edit:()=>{}},app.stage,()=>present(app,"memory benchmark frame"));
       await app.dispose();
     }else await closed;
   }
@@ -2884,6 +3026,7 @@ try {
   scene.destroy();
   app.stage.off("rightclick",onContext);
   management.destroy();
+  notices.clearTransientNoticeTimer();notices.clearWarningDialogTimer();noticeView.destroy({children:true});
   searchBar.destroy();
   iconTextures.dispose();
   await app.dispose();

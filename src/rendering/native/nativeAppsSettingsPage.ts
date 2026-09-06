@@ -6,7 +6,6 @@ import type { IconTextureRepository } from "../pixi/assets/iconTextureRepository
 import { t } from "../../native/nativeLocalization.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
-import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
 import { NativeSettingsLayout, nativeSettingsChevron } from "./nativeSettingsLayout.js";
 import type { NativeSettingsContent, NativeSettingsControl } from "./NativeSettingsShell.js";
 import type { NativeManagement } from "./NativeManagement.js";
@@ -21,7 +20,7 @@ import type { NativeButtonAppearance } from "./NativeFluentButton.js";
 export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>;scrollOffsets?:Record<string,number>};
 type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;width:number;theme:NativeTheme;state:NativeAppsPageState;
   subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;
-  navigate(page:"manager"|"excluded"|"scan"):void;edit(app:ReadonlyLaunchpadApp|null):void;icon(app:ReadonlyLaunchpadApp,reset:boolean):void;};
+  navigate(page:"manager"|"excluded"):void;edit(app:ReadonlyLaunchpadApp|null):void;};
 
 /** Uses the same scan, exclusion and selection commands as the original settings page. */
 export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
@@ -86,7 +85,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     controls.push({node:control,disabled:()=>control.disabled,focus:active=>{control.focused=active;},handleKey:key=>{if(key!==" "&&key!=="Enter")return false;control.activate();return true;}});
     y+=72;return {control,chevron};
   };
-  const scan=()=>{void apps.rescanManagedApps().then(()=>{if(apps.scanResultModel.isOpen.value)options.navigate("scan");redraw();});};
+  const scan=()=>{void apps.rescanManagedApps();};
   const buttonIcon=(b:NativeFluentButton,icon:Parameters<typeof nativeFluentIcon>[0])=>{
     const mark=nativeFluentIcon(icon,b.appearance==="primary"?"#ffffff":style.text,16);mark.position.set(10,8);b.addChild(mark);mark.alpha=b.disabled?0.38:1;b.caption.x+=9;
   };
@@ -129,10 +128,9 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const managed=apps.filteredManagedApps.value;
     virtualRows(managed.length,2,index=>{const app=managed[index]!;appRow(app,apps.appManagerSelectedIds.value.includes(app.id),checked=>apps.toggleManagedAppSelection(app.id,checked),()=>{
       const control=node.getChildByLabel(`native-apps:more-${app.id}`,true)!;const p=control.toGlobal({x:0,y:34});
-      options.management.menu(p.x,p.y,[{label:t("dialogs.appEditor.editTitle"),run:()=>options.edit(app)},
-        {label:key("icon.change"),run:()=>options.icon(app,false)},{label:t("common.actions.restoreDefault"),run:()=>options.icon(app,true)},
-        {label:key("manager.remove"),run:()=>apps.removeManagedAppFromLaunchpad(app.id)},
-        ...(apps.canExcludeManagedAppFromScan(app)?[{label:key("manager.exclude"),run:()=>apps.excludeManagedAppFromScan(app)}]:[])]);
+      options.management.menu(p.x,p.y,[{label:t("common.actions.edit"),run:()=>options.edit(app)},
+        {label:key("manager.remove"),separatorBefore:true,run:()=>apps.removeManagedAppFromLaunchpad(app.id)},
+        ...(apps.canExcludeManagedAppFromScan(app)?[{label:key("manager.exclude"),danger:true,run:()=>apps.excludeManagedAppFromScan(app)}]:[])]);
     });},index=>managed[index]!.id);
     if(!apps.filteredManagedApps.value.length){text(key("manager.noMatch"),14,y+24,13,true);y+=80;}
   }else if(options.subPage==="apps.excludedApps"){
@@ -154,15 +152,6 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
     },index=>filtered[index]!.key);
     if(!filtered.length){text(key(entries.length?"excluded.noMatch":"excluded.empty"),14,y+24,13,true);y+=80;}
-  }else if(options.subPage==="apps.scanResults"){
-    const result=apps.scanResultModel;
-    const tabs=new NativeSegmentedControl([{value:"available",label:t("dialogs.scanResults.tabs.available",{count:result.apps.value.length}),id:"native-apps:available"},{value:"ignored",label:t("dialogs.scanResults.tabs.ignored",{count:result.keywordExcludedApps.value.length}),id:"native-apps:ignored"}],result.activeTab.value,value=>{result.actions.selectTab(value);redraw();},invalidate,theme);node.addChild(tabs);controls.push(...tabs.controls);y+=48;
-    button("all",t("common.actions.selectAll"),0,y,88,()=>result.actions.selectAll());button("clear",t("common.actions.clearSelection"),98,y,100,()=>result.actions.clearSelection());
-    button("add-selected",t("dialogs.scanResults.addSelected"),width-130,y,130,()=>{result.actions.addSelected();options.navigate("manager");},!result.canAdd.value);y+=46;
-    const list=result.activeTab.value==="available"?result.apps.value:result.keywordExcludedApps.value.map(entry=>entry.app);
-    virtualRows(list.length,2,index=>{const app=list[index]!;appRow(app,result.selectedIds.value.includes(app.id),checked=>result.actions.toggleSelection(app.id,checked),()=>options.edit(app));},index=>list[index]!.id);
-    if(!list.length){text(key("manager.noMatch"),14,y+24,13,true);y+=80;}
-    for(const warning of result.warnings.value){const label=text(`${warning.rootLabel}: ${warning.message}`,14,y,12,true);label.style.wordWrap=true;label.style.wordWrapWidth=width-28;y+=label.height+8;}
   }else{
     const roots=apps.presentation.scanRoots.value;
     const title=text(key("sources.title"),0,y+7,18);title.style.fontWeight="600";

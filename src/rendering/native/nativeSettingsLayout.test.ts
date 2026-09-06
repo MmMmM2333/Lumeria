@@ -17,8 +17,11 @@ import { nativeRowSummary } from "./ui/nativeRowSummary.js";
 import { NativeVirtualList } from "./ui/NativeVirtualList.js";
 import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
+import { NativeFluentSlider } from "./NativeFluentSlider.js";
 
 export function runNativeSettingsLayoutTests():void{
+  const resizedButton=new NativeFluentButton("Change icon",136,()=>{},()=>{});
+  resizedButton.resizeWidth(104);assert.equal(resizedButton.caption.x,52,"button caption follows its measured width");resizedButton.destroy({children:true});
   const segmented=new NativeSegmentedControl([{value:"a",label:"A",id:"a"},{value:"b",label:"B",id:"b"},{value:"c",label:"C",id:"c"}],"c",()=>{},()=>{},"dark");
   const middle=segmented.controls[1]!.node as NativeFluentButton,selected=segmented.controls[2]!.node as NativeFluentButton;
   middle.hovered=true;assert.ok(middle.background.containsPoint({x:0.5,y:0.5}),"middle segment hover must have square corners");
@@ -35,6 +38,9 @@ export function runNativeSettingsLayoutTests():void{
   virtual.controls[999]!.focus(true);assert.equal(focused,999);
   virtual.viewport(999*78,450);assert.ok(virtual.mountedCount<=5);assert.equal(virtual.controls[999]!.revealRect!().top,999*78);
   virtual.controls[999]!.focus(false);virtual.viewport(0,450);assert.ok(virtual.mountedCount<=8);virtual.destroy();
+  const candidates=new NativeVirtualList(2,80,3,()=>({node:new Container(),controls:[]}),index=>String(index),(index,part)=>index*3+part>=4);
+  assert.deepEqual(candidates.controls.map(control=>control.disabled()),[false,false,false,false,true,true],"incomplete candidate rows must exclude empty cells from keyboard navigation");
+  assert.equal(candidates.mountedCount,0,"checking disabled states must not instantiate offscreen rows");candidates.destroy();
   const summaryRoot=new Container();
   for(const value of ["Pastel dark","经典亮色","Acrylic · 跟随系统 · 100%"]){
     const summary=nativeRowSummary(summaryRoot,value,738,28,"dark","summary");
@@ -77,6 +83,14 @@ export function runNativeSettingsLayoutTests():void{
   layout.reflow(progress);assert.equal(following.y,0,"reflow cannot accumulate offsets");root.destroy({children:true});
 
   motionRuntime.reset();motionRuntime.suspendAutoTicker();
+  {
+    const slider=new NativeFluentSlider(200,0,100,1,0,()=>{},()=>{},"dark");
+    slider.handleKey("End");assert.equal(slider.value,100);assert.equal(slider.presentationValue,0);
+    motionRuntime.step(0.05);assert.ok(slider.presentationValue>0&&slider.presentationValue<100);
+    const middle=slider.presentationValue;slider.handleKey("Home");assert.equal(slider.presentationValue,middle,"keyboard reversal preserves the presented thumb position");
+    for(let frame=0;frame<20;frame++)motionRuntime.step(1/60);
+    assert.equal(slider.presentationValue,0);slider.handleKey("End");slider.disabled=true;assert.equal(slider.presentationValue,100);slider.destroy();
+  }
   {
     const toggle=new NativeFluentToggle("switch",()=>{},()=>{},"dark");
     toggle.toggle();assert.equal(toggle.transitionProgress,0);

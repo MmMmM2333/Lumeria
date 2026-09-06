@@ -8,7 +8,7 @@ export function resolveNativePointerTarget(target: Container | null): NativePoin
     const label = node.label;
     if (typeof label !== "string") continue;
     if (label.startsWith("launchpad-item:")) return { kind: "icon", id: label.slice("launchpad-item:".length) };
-    if (label === "native-search-bar" || label === "native-management" || label === "native-selection-toolbar"
+    if (label === "native-search-bar" || label === "native-management" || label === "native-notice" || label === "native-selection-toolbar"
       || label === "native-desktop-page-dots" || label === "native-settings" || label === "native-settings-button" || label === "native-window-chrome") return { kind: "control" };
   }
   return { kind: "surface" };

@@ -6,7 +6,7 @@ const {webDarkTheme,webLightTheme}="default" in fluentTokens
   ? fluentTokens.default as typeof fluentTokens : fluentTokens;
 
 export type NativeTheme = "dark" | "light";
-export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row" | "segment" | "link" | "list-row" | "option" | "preview" | "chip-remove";
+export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row" | "segment" | "link" | "list-row" | "option" | "preview" | "chip-remove" | "secondary";
 
 export function nativeFluentTheme(theme: NativeTheme) {
   return theme === "light" ? webLightTheme : webDarkTheme;
@@ -64,7 +64,7 @@ export class NativeFluentButton extends Container {
     this.#stateGraphics.push({node,paint:color=>paint(node,color)});this.#draw();return node;
   }
   resizeWidth(width:number):void{
-    this.controlWidth=width;this.hitArea=new Rectangle(0,0,width,this.controlHeight);this.#draw();
+    this.controlWidth=width;this.caption.x=width/2;this.hitArea=new Rectangle(0,0,width,this.controlHeight);this.#draw();
   }
   get disabled():boolean {return this.#disabled;}
   set disabled(value:boolean) {
@@ -80,6 +80,13 @@ export class NativeFluentButton extends Container {
   set theme(value:NativeTheme) {if(this.#theme===value)return;this.#theme=value;this.#draw();}
   #draw():void {
     const theme=nativeFluentTheme(this.#theme);
+    if(this.appearance==="secondary"){
+      const dark=this.#theme==="dark";
+      this.background.clear().roundRect(0.5,0.5,this.controlWidth-1,this.controlHeight-1,12).fill(dark?"rgba(255,255,255,0.1)":theme.colorNeutralBackground1).stroke({color:dark?"rgba(255,255,255,0.18)":theme.colorNeutralStroke1,width:1});
+      this.caption.style.fill=dark?"#ffffff":theme.colorNeutralForeground1;this.caption.style.fontWeight="600";this.alpha=this.#disabled?0.45:1;
+      this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,10).stroke({color:theme.colorStrokeFocus2,width:2});
+      this.invalidate();return;
+    }
     if(this.appearance==="chip-remove"){
       const dark=this.#theme==="dark",active=!this.#disabled&&(this.#hovered||this.#pressed);
       const fill=active?(dark?`rgba(196,43,28,${this.#pressed?0.24:0.18})`:theme.colorPaletteRedBackground1):dark?"rgba(255,255,255,0.12)":theme.colorNeutralBackground1Hover;

@@ -1071,7 +1071,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     }
   }
 
-  function addSelectedScannedApps() {
+  function addSelectedScannedApps({keepOpen=false}: {keepOpen?:boolean} = {}) {
     if (options.isDragActive() || !canAddScannedApps.value) return;
     const selectedIds = new Set(scanResultSelectedIds.value);
     const existingApps = options.collectAppsFromPages(options.pages.value);
@@ -1098,19 +1098,19 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     const selectedApps = selectableApps
       .filter((app) => selectedIds.has(app.id) && !existingIds.has(app.id));
     if (!selectedApps.length) {
-      closeScanResultDialog();
+      if (!keepOpen) closeScanResultDialog();
       syncManagedAppState();
       return;
     }
 
     options.commitPages(options.appendAppsToPages(options.pages.value, selectedApps));
     options.reclampPageIndices();
-    closeScanResultDialog();
+    if (!keepOpen) closeScanResultDialog();
     syncManagedAppState();
     options.schedulePageGridMetrics();
   }
 
-  function createManagedAppFromEditor() {
+  function createManagedAppFromEditor(keepOpen=false) {
     const name = editorName.value.trim().slice(0, 64);
     if (!name) return false;
     const launchTarget = makeLaunchTarget(editorTarget.value);
@@ -1130,16 +1130,17 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
     options.reclampPageIndices();
     options.markLaunchCriticalLayoutDirty?.(app.id);
+    if(keepOpen)editorSession.value={mode:"edit",originalAppId:app.id,originalTargetKind:launchTarget.kind};
     options.schedulePageGridMetrics();
     return true;
   }
 
-  function saveManagedAppEditor() {
+  function saveManagedAppEditor(saveOptions:{keepOpen?:boolean}={}) {
     if (options.isDragActive() || !editorSession.value || !canSaveManagedAppEditor.value) return false;
     const saved = editorSession.value.mode === "edit"
       ? updateManagedAppFromEditor()
-      : createManagedAppFromEditor();
-    if (saved) closeManagedAppEditor();
+      : createManagedAppFromEditor(saveOptions.keepOpen);
+    if (saved&&!saveOptions.keepOpen) closeManagedAppEditor();
     return saved;
   }
 

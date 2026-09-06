@@ -1,26 +1,31 @@
 import { t } from "../../native/nativeLocalization.js";
-import { Color, Container, Graphics, Rectangle, Text } from "pixi.js";
+import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { NativeFluentButton, nativeFluentTheme, type NativeTheme, type NativeButtonAppearance } from "./NativeFluentButton.js";
 import { NativeScrollView } from "./NativeScrollView.js";
+import { NativeModalPanel, type NativeModalSpec } from "./NativeModalPanel.js";
+import type { LaunchpadWarningDialog } from "../../application/launchpadNotices.js";
+import { nativeSettingsStyle } from "./NativeFluentButton.js";
+import { nativeFluentIcon } from "./nativeFluentIcons.js";
+import { createNativeSettingsInput } from "./nativeSettingsInput.js";
+import type { NativeSettingsControl } from "./NativeSettingsShell.js";
+import { clampIconContextMenuPosition } from "../../components/iconContextMenuGeometry.js";
+import { nativePanelShadow } from "./ui/nativePanelShadow.js";
 
 export type NativeFormField = { label: string; value: string; readOnly?: boolean; browse?:()=>Promise<string|null> };
+export type NativeMenuAction={label:string;run:()=>void;selected?:boolean;disabled?:boolean;danger?:boolean;separatorBefore?:boolean;icon?:Parameters<typeof nativeFluentIcon>[0]};
 type ModalFrame = {
   panel:Container;
-  fields:TextInput[];
-  submit:(()=>void)|null;
   controls:{node:Container;activate?:()=>void}[];
   focusIndex:number;
   menu:boolean;
   scroll:NativeScrollView|null;
+  custom:NativeModalPanel|null;
 };
 export class NativeManagement extends Container {
   #panel: Container | null = null;
-  #fields: TextInput[] = [];
-  #submit: (() => void) | null = null;
-  #busy = false;
   #controls: { node: Container; activate?: () => void }[] = [];
   #focusIndex = -1;
   readonly #focusRing = new Graphics({ eventMode: "none" });
@@ -30,14 +35,22 @@ export class NativeManagement extends Container {
   #restoreInput:TextInput|null=null;
   #menuRestore:(()=>void)|null=null;
   #selectionMenu=false;
+  #custom:NativeModalPanel|null=null;
+  captureReturnFocus:(()=>()=>void)|null=null;
+  #returnFocus:(()=>void)|null=null;
   constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void, readonly themeSource:NativeTheme|(()=>NativeTheme)="dark") {
     super({ label: "native-management", eventMode: "passive" });
   }
   get theme():NativeTheme{return typeof this.themeSource==="function"?this.themeSource():this.themeSource;}
   get modal(): boolean { return this.#panel !== null; }
+  get activeId():string|null{return this.#custom?.spec.id??null;}
+  hasDialog(id:string):boolean{return this.activeId===id||this.#parents.some(frame=>frame.custom?.spec.id===id);}
+  refresh():void{this.#custom?.refresh();}
+  resize():void{if(this.#menu)this.close();for(const parent of this.#parents)parent.custom?.redraw();this.#custom?.redraw();}
   focusNext(reverse=false):void {
     if(!this.#controls.length)return;
-    this.#focus((this.#focusIndex+(reverse?-1:1)+this.#controls.length)%this.#controls.length);
+    let index=this.#focusIndex;
+    for(let count=0;count<this.#controls.length;count++){index=(index+(reverse?-1:1)+this.#controls.length)%this.#controls.length;if(!(this.#controls[index]!.node as NativeFluentButton).disabled){this.#focus(index);break;}}
   }
   #focus(index:number,visible=true):void {
     this.#focusIndex=index;
@@ -56,6 +69,7 @@ export class NativeManagement extends Container {
     control.node.addChild(this.#focusRing);
   }
   handleKey(event: {type?:string;key?:string;shiftKey?:boolean;isComposing?:boolean}):boolean {
+    if(this.#custom)return this.#custom.handleKey(event);
     if(event.isComposing || this.host.focused?.composing)return false;
     if(event.type!=="down")return true;
     if(event.key==="Escape"){this.close();return true;}
@@ -63,10 +77,9 @@ export class NativeManagement extends Container {
     if(this.#menu && (event.key==="ArrowDown" || event.key==="ArrowUp")){
       this.focusNext(event.key==="ArrowUp");return true;
     }
-    if(this.#menu&&(event.key==="Home"||event.key==="End")){this.#focus(event.key==="Home"?0:this.#controls.length-1);return true;}
+    if(this.#menu&&(event.key==="Home"||event.key==="End")){this.#focusIndex=event.key==="Home"?-1:0;this.focusNext(event.key==="End");return true;}
     const action=this.#controls[this.#focusIndex]?.activate;
     if(action && (event.key==="Enter" || event.key===" ")){action();return true;}
-    if(event.key==="Enter" && this.#submit){this.#submit();return true;}
     return !this.host.focused;
   }
   button(label: string, width: number, action: () => void, appearance:NativeButtonAppearance="outline"): NativeFluentButton {
@@ -78,134 +91,127 @@ export class NativeManagement extends Container {
     });
     return button;
   }
-  #modalButton(label:string,width:number,action:()=>void,appearance:NativeButtonAppearance="outline"):Container {
-    const button=this.button(label,width,action,appearance);
-    this.#controls.push({node:button,activate:action});
-    return button;
-  }
   #begin():boolean {
-    if(this.#busy)return false;
+    if(this.#custom?.busy)return false;
     this.parent?.setChildIndex(this,this.parent.children.length-1);
     if(this.#menu)this.close();
     if(this.#panel){
       this.#focusRing.removeFromParent();
-      this.#parents.push({panel:this.#panel,fields:this.#fields,submit:this.#submit,controls:this.#controls,
-        focusIndex:this.#focusIndex,menu:this.#menu,scroll:this.#scroll});
+      this.#parents.push({panel:this.#panel,controls:this.#controls,
+        focusIndex:this.#focusIndex,menu:this.#menu,scroll:this.#scroll,custom:this.#custom});
       this.#panel.eventMode="none";
       this.host.blur();
-      this.#panel=null;this.#fields=[];this.#controls=[];this.#submit=null;this.#focusIndex=-1;this.#scroll=null;
+      this.#panel=null;this.#controls=[];this.#focusIndex=-1;this.#scroll=null;this.#custom=null;
     }else{
+      this.#returnFocus=this.captureReturnFocus?.()??null;
       this.#restoreInput=this.host.focused;this.host.blur();
     }
     return true;
   }
   close(force=false): void {
-    if(this.#busy && !force)return;
+    if(this.#custom&&!force){this.#custom.requestClose();return;}
     this.#focusRing.removeFromParent();
     const restoreMenu=this.#menuRestore;this.#menuRestore=null;this.#selectionMenu=false;
     this.#controls=[];this.#focusIndex=-1;this.#menu=false;
     this.host.blur();
-    this.#submit=null;
     this.#scroll=null;
-    for(const input of this.#fields) input.destroy();
-    this.#fields=[];
+    const onClose=this.#custom?.spec.onClose;this.#custom=null;
     if(this.#panel) {killMotionOf(this.#panel);this.#panel.destroy({children:true});this.#panel=null;}
     const parent=this.#parents.pop();
     if(parent){
-      this.#panel=parent.panel;this.#fields=parent.fields;this.#controls=parent.controls;this.#submit=parent.submit;
-      this.#menu=parent.menu;this.#scroll=parent.scroll;this.#panel.eventMode="static";this.#focus(parent.focusIndex);
+      this.#panel=parent.panel;this.#controls=parent.controls;
+      this.#menu=parent.menu;this.#scroll=parent.scroll;this.#custom=parent.custom;this.#panel.eventMode="static";if(this.#custom){this.#custom.refresh();this.#custom.resumeFocus();}else this.#focus(parent.focusIndex);
     }else{
       if(this.#restoreInput&&!this.#restoreInput.destroyed)this.#restoreInput.focus();
       this.#restoreInput=null;
+      this.#returnFocus?.();this.#returnFocus=null;
     }
     this.invalidate();
     restoreMenu?.();
+    onClose?.();
   }
-  form(title: string, fields: NativeFormField[], confirm: string, submit: (values: string[]) => void | Promise<void>, message?:string): void {
+  dialog(spec:NativeModalSpec):void{
     if(!this.#begin())return;
-    const {width,height}=this.size();
-    const colors=nativeFluentTheme(this.theme);
-    const overlay=new Container({eventMode:"static",label:"native-form-overlay"});
-    const shade=new Graphics().rect(0,0,width,height).fill({color:0,alpha:0.5});
-    overlay.addChild(shade); overlay.hitArea=new Rectangle(0,0,width,height);
-    overlay.on("pointerdown",event=>event.stopPropagation());
-    const panel=new Container({eventMode:"static",label:"native-form-panel"});
-    const w=Math.min(540,width-48);
-    const description=message?new Text({text:message,eventMode:"none",style:{
-      fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:colors.colorNeutralForeground2,wordWrap:true,wordWrapWidth:w-40,
-    }}):null;
-    const messageHeight=description?description.height+20:0;
-    const h=130+fields.length*70+messageHeight;
-    panel.position.set((width-w)/2,Math.max(24,(height-h)/2));
-    panel.addChild(new Graphics().roundRect(0,0,w,h,8).fill(colors.colorNeutralBackground2).stroke({color:colors.colorNeutralStroke2,width:1}));
-    const heading=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:20,fontWeight:"600",fill:colors.colorNeutralForeground1}});
-    heading.position.set(20,20);panel.addChild(heading);
-    if(description){description.position.set(20,58);panel.addChild(description);}
-    fields.forEach((field,index)=>{
-      const label=new Text({text:field.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorNeutralForeground2}});
-      label.position.set(20,58+messageHeight+index*70);panel.addChild(label);
-      const input=this.host.create({width:w-40-(field.browse?86:0),height:34,value:field.value,readOnly:field.readOnly,
-        style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18,padding:8,
-          backgroundColor:new Color(colors.colorNeutralBackground3).toNumber(),
-          borderColor:new Color(colors.colorNeutralStroke1).toNumber(),
-          focusColor:new Color(colors.colorBrandStroke1).toNumber(),
-          textColor:new Color(colors.colorNeutralForeground1).toNumber()}});
-      input.position.set(20,78+messageHeight+index*70);panel.addChild(input);this.#fields.push(input);
-      this.#controls.push({node:input});
-      input.on("focus",()=>{
-        this.#focusIndex=this.#controls.findIndex(control=>control.node===input);
-        this.#focusRing.removeFromParent();
-      });
-      if(field.browse){const browse=this.#modalButton(t("common.actions.browse"),76,()=>{
-        void field.browse!().then(value=>{if(value!==null)input.value=value;},reason=>{error.text=String(reason);});
-      });browse.position.set(w-96,78+messageHeight+index*70);panel.addChild(browse);}
-    });
-    const error=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorPaletteRedForeground1}});
-    error.position.set(20,h-42);panel.addChild(error);
-    const saveAction=()=>{
-      if(this.#busy)return;this.#busy=true;
-      const values=this.#fields.map(input=>input.value);
-      Promise.resolve().then(()=>submit(values)).then(()=>{this.#busy=false;this.close();this.invalidate();},reason=>{
-        this.#busy=false;error.text=reason instanceof Error?reason.message:String(reason);this.invalidate();
-      });
-    };
-    this.#submit=saveAction;
-    const cancel=this.#modalButton(t("common.actions.cancel"),76,()=>this.close());cancel.position.set(w-182,h-48);
-    const save=this.#modalButton(confirm,76,saveAction,"primary");save.position.set(w-96,h-48);
-    panel.addChild(cancel,save);overlay.addChild(panel);this.addChild(overlay);this.#panel=overlay;
-    this.#focus(0);
-    overlay.alpha=0;motion(overlay).preset("fade").to({alpha:1}).start();
+    const modal=new NativeModalPanel(spec,this.host,this.size,()=>this.theme,this.invalidate,()=>{if(this.#custom===modal)this.close(true);});
+    this.#custom=modal;this.#panel=modal;this.addChild(modal);this.invalidate();
   }
-  menu(x:number,y:number,actions:readonly {label:string;run:()=>void;selected?:boolean}[],minimumWidth=210,selection?:{restore():void}):void {
+  warning(config:LaunchpadWarningDialog & {onConfirm?:()=>void|Promise<void>}):void{
+    const intent=config.intent??"warning",style=nativeSettingsStyle(this.theme);
+    const color={error:"#ffb4a9",warning:"#f2b24a",success:"#8fd9a8",info:"#4ba3f6"}[intent];
+    this.dialog({id:"warning",title:config.title,width:420,showClose:false,warningAnimation:true,
+      headerIcon:{name:intent==="error"?"error-circle-20-regular":intent==="success"?"checkmark-circle-20-regular":intent==="info"?"info-20-regular":"warning-20-regular",color},
+      ...(config.cancelText?{cancelText:config.cancelText}:{}),...(config.confirmText?{confirmText:config.confirmText}:{}),
+      danger:config.confirmTone==="danger",outlineConfirm:config.confirmAppearance==="outline",confirm:async()=>{await config.onConfirm?.();},
+      build:width=>{const node=new Container();
+        const message=new Text({text:config.message,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});message.x=52;node.addChild(message);
+        let height=message.height;
+        if(config.suggestion){const hint=new Text({text:t("dialogs.warning.suggestion",{suggestion:config.suggestion}),eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});hint.position.set(52,height+10);node.addChild(hint);height+=hint.height+10;}
+        return {node,height,controls:[]};}});
+  }
+  form(title:string,fields:NativeFormField[],confirm:string,submit:(values:string[])=>void|Promise<void>,message?:string):void{
+    const values=fields.map(field=>field.value);
+    this.dialog({id:"form",title,width:540,subtitle:message??"",cancelText:t("common.actions.cancel"),confirmText:confirm,enterSubmit:true,
+      confirm:()=>submit(values),build:width=>{
+        const node=new Container(),controls:NativeSettingsControl[]=[];
+        const style=nativeSettingsStyle(this.theme);let y=0;
+        fields.forEach((field,index)=>{
+          const label=new Text({text:field.label,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
+          label.y=y;node.addChild(label);y+=20;
+          const input=createNativeSettingsInput(this.host,{width:width-(field.browse?86:0),height:34,value:values[index]!,readOnly:field.readOnly??false,theme:this.theme,invalidate:this.invalidate});
+          input.label=`native-form:field-${index}`;input.y=y;node.addChild(input);
+          input.on("input",()=>{values[index]=input.value;});
+          controls.push({node:input,disabled:()=>input.disabled,focus:value=>{if(value)input.focus();else input.blur();},handleKey:()=>false,restoreFocus:true,selection:()=>input.selection,restoreSelection:value=>input.setSelectionRange(value.anchor,value.focus)});
+          if(field.browse){
+            const browse=new NativeFluentButton(t("common.actions.browse"),76,()=>{
+              browse.disabled=true;void field.browse!().then(value=>{if(!input.destroyed&&value!==null){values[index]=value;input.value=value;}},error=>{if(!node.destroyed)this.warning({title:t("errors.launch.genericTitle"),message:String(error),intent:"error",confirmText:t("common.actions.close")});}).finally(()=>{if(!browse.destroyed)browse.disabled=false;});
+            },this.invalidate,this.theme);browse.position.set(width-76,y);node.addChild(browse);
+            controls.push({node:browse,disabled:()=>browse.disabled,focus:value=>{browse.focused=value;},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;browse.activate();return true;}});
+          }
+          y+=50;
+        });
+        return {node,height:y,controls,update:()=>false};
+      }});
+  }
+  menu(x:number,y:number,actions:readonly NativeMenuAction[],minimumWidth=204,selection?:{restore():void}):void {
     if(!this.#begin())return;
     const {width,height}=this.size();
     const layer=new Container({eventMode:"static",label:"native-context-menu"});
-    layer.hitArea=new Rectangle(0,0,width,height);layer.on("pointerdown",event=>{event.stopPropagation();if(event.target===layer)this.close();});
+    layer.hitArea=new Rectangle(0,0,width,height);layer.on("pointerdown",event=>{event.stopPropagation();if(event.button===0&&event.target===layer)this.close();});
+    layer.on("wheelcapture",()=>this.close());
+    layer.on("rightclick",event=>{if(event.target===layer){this.close();this.emit("context-request",event.global.x,event.global.y);}event.stopPropagation();});
     const panel=new Container();
     this.#selectionMenu=Boolean(selection);this.#menuRestore=selection?.restore??null;
-    const panelWidth=Math.min(selection?Math.max(176,minimumWidth):minimumWidth,Math.max(1,width-16));
+    const measured=actions.map(action=>{const label=new Text({text:action.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:14}});const w=label.width+(action.icon?52:32);label.destroy();return w;});
+    const panelWidth=Math.min(selection?Math.max(176,minimumWidth):Math.max(minimumWidth,Math.min(240,...[Math.max(...measured)])),Math.max(1,width-16));
     const stride=selection?38:36;
-    const panelHeight=Math.min(actions.length*stride+8,Math.max(1,height-16));
-    panel.position.set(Math.max(8,Math.min(x,width-panelWidth-8)),Math.max(8,Math.min(y,height-panelHeight-8)));
+    const contentHeight=actions.length*stride+actions.filter(action=>action.separatorBefore).length*9;
+    const panelHeight=Math.min(contentHeight+8,Math.max(1,height-16));
+    const position=clampIconContextMenuPosition({anchorX:x,anchorY:y,menuWidth:panelWidth,menuHeight:panelHeight,viewportWidth:width,viewportHeight:height});panel.position.set(position.x,position.y);
     const colors=nativeFluentTheme(this.theme);
     panel.addChild(new Graphics().roundRect(0,0,panelWidth,panelHeight,8).fill(colors.colorNeutralBackground1).stroke({color:colors.colorNeutralStroke2,width:1}));
     this.#scroll=new NativeScrollView(this.invalidate,()=>{},this.theme);
-    if(selection){
-      const shadow=new Graphics({eventMode:"none"}).roundRect(-3,4,panelWidth+6,panelHeight+6,10).fill({color:0,alpha:0.15});panel.addChildAt(shadow,0);
+    {
+      panel.addChildAt(nativePanelShadow(panelWidth,panelHeight,selection?colors.shadow16:"0 18px 42px rgba(0, 0, 0, 0.32)"),0);
     }
-    this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,actions.length*stride);
+    this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,contentHeight);
     panel.addChild(this.#scroll);
-    actions.forEach((action,index)=>{
-      const button=this.#modalButton(action.label,panelWidth-10,()=>{this.close();action.run();},"subtle") as NativeFluentButton;
-      button.position.set(0,index*stride);this.#scroll!.content.addChild(button);
-      if(selection){button.caption.anchor.x=0;button.caption.x=19;button.caption.style.fontSize=14;}
+    let rowY=0;
+    actions.forEach(action=>{
+      if(action.separatorBefore){this.#scroll!.content.addChild(new Graphics({eventMode:"none"}).rect(8,rowY+4,panelWidth-24,1).fill({color:colors.colorNeutralStroke2,alpha:0.56}));rowY+=9;}
+      const button=new NativeFluentButton(action.label,panelWidth-10,()=>{this.close();action.run();},this.invalidate,this.theme,"subtle",Boolean(action.danger));
+      button.on("pointerdown",()=>{const index=this.#controls.findIndex(control=>control.node===button);if(index>=0)this.#focus(index,false);});
+      this.#controls.push({node:button,activate:()=>button.activate()});button.disabled=Boolean(action.disabled);
+      button.position.set(0,rowY);rowY+=stride;this.#scroll!.content.addChild(button);
+      button.caption.anchor.x=0;button.caption.x=selection?19:action.icon?38:12;button.caption.style.fontSize=14;
+      if(button.caption.width>panelWidth-button.caption.x-18){let label=action.label;while(label.length&&button.caption.width>panelWidth-button.caption.x-18){label=label.slice(0,-1);button.caption.text=label+"…";}}
+      if(action.icon){const icon=nativeFluentIcon(action.icon,action.danger?(this.theme==="dark"?"#ffb4a9":colors.colorPaletteRedForeground1):colors.colorNeutralForeground1,18);icon.position.set(10,8);icon.alpha=action.disabled?0.38:1;button.addChild(icon);}
       if(action.selected){
         if(selection)button.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,panelWidth-10,36,4).fill(colors.colorNeutralBackground1Selected),0);
         button.addChild(new Graphics({eventMode:"none",label:"native-menu:selected-indicator"}).roundRect(selection?8:4,selection?10:8,3,selection?16:18,1.5).fill(0x4ba3f6));
       }
     });
     layer.addChild(panel);this.addChild(layer);this.#panel=layer;
-    this.#menu=true;this.#focus(Math.max(0,actions.findIndex(action=>action.selected)),!selection);
+    this.#menu=true;const first=actions.findIndex(action=>action.selected&&!action.disabled);const focus=first>=0?first:actions.findIndex(action=>!action.disabled);if(focus>=0)this.#focus(focus,!selection);
     if(selection){layer.alpha=0;layer.y=-3;motion(layer).duration(0.1).ease("power2.out").to({alpha:1,y:0}).start();}
   }
   override destroy():void {
