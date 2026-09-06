@@ -12,6 +12,8 @@ import { ICON_SIZE_MIN, ICON_SIZE_MAX } from "../../domain/launchpadGridDefaults
 import { nativeBackgroundSettings } from "./nativeBackgroundSettings.js";
 import { nativeWindowSettings, nativeAdvancedWindowSettings, type NativeWindowPanelState } from "./nativeWindowSettings.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
+import { NativeSettingsLayout } from "./nativeSettingsLayout.js";
+import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 
 export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLaunchpadSettings>,host:TextInputHost,
   width:number,invalidate:()=>void,theme:NativeTheme,redraw:()=>void,
@@ -19,6 +21,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   windowState:NativeWindowPanelState,compact:()=>void):NativeSettingsContent{
   const settings=fullSettings.layoutSettings;
   const node=new Container(),controls:NativeSettingsControl[]=[],inputs:NativeSpinButton[]=[];
+  const layout=new NativeSettingsLayout(node,width);
   const colors=nativeFluentTheme(theme),style=nativeSettingsStyle(theme);
   let y=0;
   const row=(title:string,description:string)=>{
@@ -26,7 +29,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
     rowNode.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,width,72,8).fill(style.row).stroke({color:style.border,width:1}));
     const label=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:style.text}});
     label.position.set(14,description?17:27);rowNode.addChild(label);
-    const detail=new Text({text:description,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:colors.colorNeutralForeground2,wordWrap:true,wordWrapWidth:Math.max(60,width-260)}});
+    const detail=new NativeSingleLineText(description,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,lineHeight:16.2,fill:style.muted},Math.max(60,width-260));
     detail.position.set(14,38);rowNode.addChild(detail);
     return rowNode;
   };
@@ -40,7 +43,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   const themeHeading=new Text({text:t("settings.interface.theme.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
   node.addChild(themeHeading);y=30;
   const themeRow=row(t("settings.interface.theme.mode"),t("settings.interface.theme.description"));
-  for(const child of themeRow.children)if(child instanceof Text)child.x=62;
+  for(const child of themeRow.children)if(child instanceof Text)child.x=70;
   const themeIcon=nativeFluentIcon("dark-theme-24-regular",style.accent,22);themeIcon.position.set(25,25);themeRow.addChild(themeIcon);
   const themes=new NativeSegmentedControl(["system","light","dark"].map(value=>({value,
     label:t(`settings.interface.theme.${value}`),id:`native-setting:theme-${value}`})),
@@ -49,8 +52,10 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   const windowOptions={settings:fullSettings,width,theme,state:windowState,invalidate,redraw,systemAppearance:backgroundOptions.systemAppearance};
   const windowPage=nativeWindowSettings(windowOptions);
   y+=14;windowPage.node.y=y;node.addChild(windowPage.node);y+=windowPage.height;controls.push(...windowPage.controls);
+  layout.child(windowPage);
   const background=nativeBackgroundSettings({...backgroundOptions,settings:fullSettings,host,width,invalidate,theme,redraw});
   y+=14;background.node.y=y;node.addChild(background.node);y+=background.height;controls.push(...background.controls);
+  layout.child(background);
   const layoutHeading=new Text({text:t("settings.interface.layout.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
   y+=14;layoutHeading.y=y;node.addChild(layoutHeading);y+=30;
   for(const [name,rows,cols,maxRows,minCols,maxCols] of [
@@ -86,7 +91,8 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
     handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;compactButton.activate();return true;}});
   const advanced=nativeAdvancedWindowSettings(windowOptions);
   y+=14;advanced.node.y=y;node.addChild(advanced.node);y+=advanced.height;controls.push(...advanced.controls);
-  return {node,height:y,controls,dispose:()=>{
+  layout.child(advanced);
+  return {node,height:y,controls,layout:layout.finish(y),dispose:()=>{
     windowPage.dispose();advanced.dispose();
     background.dispose();
     for(const input of inputs){input.input.removeAllListeners("blur");input.destroy();}

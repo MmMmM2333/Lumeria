@@ -28,6 +28,8 @@ export class NativeManagement extends Container {
   #scroll:NativeScrollView|null=null;
   readonly #parents:ModalFrame[]=[];
   #restoreInput:TextInput|null=null;
+  #menuRestore:(()=>void)|null=null;
+  #selectionMenu=false;
   constructor(readonly host: TextInputHost, readonly size: () => { width: number; height: number }, readonly invalidate:()=>void, readonly themeSource:NativeTheme|(()=>NativeTheme)="dark") {
     super({ label: "native-management", eventMode: "passive" });
   }
@@ -37,7 +39,7 @@ export class NativeManagement extends Container {
     if(!this.#controls.length)return;
     this.#focus((this.#focusIndex+(reverse?-1:1)+this.#controls.length)%this.#controls.length);
   }
-  #focus(index:number):void {
+  #focus(index:number,visible=true):void {
     this.#focusIndex=index;
     this.#focusRing.removeFromParent();
     const control=this.#controls[index];
@@ -48,6 +50,7 @@ export class NativeManagement extends Container {
     }
     if(!control.activate) {(control.node as TextInput).focus();return;}
     this.host.blur();
+    if(!visible)return;
     const area=control.node.hitArea as Rectangle;
     this.#focusRing.clear().roundRect(1,1,area.width-2,area.height-2,4).stroke({color:0x60aaff,width:2});
     control.node.addChild(this.#focusRing);
@@ -60,6 +63,7 @@ export class NativeManagement extends Container {
     if(this.#menu && (event.key==="ArrowDown" || event.key==="ArrowUp")){
       this.focusNext(event.key==="ArrowUp");return true;
     }
+    if(this.#menu&&(event.key==="Home"||event.key==="End")){this.#focus(event.key==="Home"?0:this.#controls.length-1);return true;}
     const action=this.#controls[this.#focusIndex]?.activate;
     if(action && (event.key==="Enter" || event.key===" ")){action();return true;}
     if(event.key==="Enter" && this.#submit){this.#submit();return true;}
@@ -70,7 +74,7 @@ export class NativeManagement extends Container {
     button.on("pointerdown", event=>{
       event.stopPropagation();
       const index=this.#controls.findIndex(control=>control.node===button);
-      if(index>=0)this.#focus(index);
+      if(index>=0)this.#focus(index,!this.#selectionMenu);
     });
     return button;
   }
@@ -98,6 +102,7 @@ export class NativeManagement extends Container {
   close(force=false): void {
     if(this.#busy && !force)return;
     this.#focusRing.removeFromParent();
+    const restoreMenu=this.#menuRestore;this.#menuRestore=null;this.#selectionMenu=false;
     this.#controls=[];this.#focusIndex=-1;this.#menu=false;
     this.host.blur();
     this.#submit=null;
@@ -114,6 +119,7 @@ export class NativeManagement extends Container {
       this.#restoreInput=null;
     }
     this.invalidate();
+    restoreMenu?.();
   }
   form(title: string, fields: NativeFormField[], confirm: string, submit: (values: string[]) => void | Promise<void>, message?:string): void {
     if(!this.#begin())return;
@@ -170,27 +176,37 @@ export class NativeManagement extends Container {
     this.#focus(0);
     overlay.alpha=0;motion(overlay).preset("fade").to({alpha:1}).start();
   }
-  menu(x:number,y:number,actions:readonly {label:string;run:()=>void;selected?:boolean}[],minimumWidth=210):void {
+  menu(x:number,y:number,actions:readonly {label:string;run:()=>void;selected?:boolean}[],minimumWidth=210,selection?:{restore():void}):void {
     if(!this.#begin())return;
     const {width,height}=this.size();
     const layer=new Container({eventMode:"static",label:"native-context-menu"});
     layer.hitArea=new Rectangle(0,0,width,height);layer.on("pointerdown",event=>{event.stopPropagation();if(event.target===layer)this.close();});
     const panel=new Container();
-    const panelWidth=Math.min(minimumWidth,Math.max(1,width-16));
-    const panelHeight=Math.min(actions.length*36+8,Math.max(1,height-16));
+    this.#selectionMenu=Boolean(selection);this.#menuRestore=selection?.restore??null;
+    const panelWidth=Math.min(selection?Math.max(176,minimumWidth):minimumWidth,Math.max(1,width-16));
+    const stride=selection?38:36;
+    const panelHeight=Math.min(actions.length*stride+8,Math.max(1,height-16));
     panel.position.set(Math.max(8,Math.min(x,width-panelWidth-8)),Math.max(8,Math.min(y,height-panelHeight-8)));
     const colors=nativeFluentTheme(this.theme);
     panel.addChild(new Graphics().roundRect(0,0,panelWidth,panelHeight,8).fill(colors.colorNeutralBackground1).stroke({color:colors.colorNeutralStroke2,width:1}));
     this.#scroll=new NativeScrollView(this.invalidate,()=>{},this.theme);
-    this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,actions.length*36);
+    if(selection){
+      const shadow=new Graphics({eventMode:"none"}).roundRect(-3,4,panelWidth+6,panelHeight+6,10).fill({color:0,alpha:0.15});panel.addChildAt(shadow,0);
+    }
+    this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,actions.length*stride);
     panel.addChild(this.#scroll);
     actions.forEach((action,index)=>{
-      const button=this.#modalButton(action.label,panelWidth-12,()=>{this.close();action.run();},"subtle");
-      button.position.set(0,index*36);this.#scroll!.content.addChild(button);
-      if(action.selected)button.addChild(new Graphics({eventMode:"none"}).roundRect(4,8,3,18,1.5).fill(0x4ba3f6));
+      const button=this.#modalButton(action.label,panelWidth-10,()=>{this.close();action.run();},"subtle") as NativeFluentButton;
+      button.position.set(0,index*stride);this.#scroll!.content.addChild(button);
+      if(selection){button.caption.anchor.x=0;button.caption.x=19;button.caption.style.fontSize=14;}
+      if(action.selected){
+        if(selection)button.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,panelWidth-10,36,4).fill(colors.colorNeutralBackground1Selected),0);
+        button.addChild(new Graphics({eventMode:"none",label:"native-menu:selected-indicator"}).roundRect(selection?8:4,selection?10:8,3,selection?16:18,1.5).fill(0x4ba3f6));
+      }
     });
     layer.addChild(panel);this.addChild(layer);this.#panel=layer;
-    this.#menu=true;this.#focus(Math.max(0,actions.findIndex(action=>action.selected)));
+    this.#menu=true;this.#focus(Math.max(0,actions.findIndex(action=>action.selected)),!selection);
+    if(selection){layer.alpha=0;layer.y=-3;motion(layer).duration(0.1).ease("power2.out").to({alpha:1,y:0}).start();}
   }
   override destroy():void {
     this.#restoreInput=null;

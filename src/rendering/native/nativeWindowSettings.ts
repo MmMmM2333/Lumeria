@@ -7,6 +7,9 @@ import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import type { NativeSettingsContent, NativeSettingsControl } from "./NativeSettingsShell.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
+import { NativeSettingsLayout, nativeSettingsChevron } from "./nativeSettingsLayout.js";
+import { nativeRowSummary } from "./ui/nativeRowSummary.js";
+import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 
 export type NativeWindowPanelState = { mode: boolean; material: boolean; advanced: boolean };
 export function nativeWindowSettings(options: {
@@ -15,6 +18,7 @@ export function nativeWindowSettings(options: {
 }): NativeSettingsContent {
   const { settings, width, theme, state, invalidate, redraw } = options;
   const node = new Container(), controls: NativeSettingsControl[] = [];
+  const layout=new NativeSettingsLayout(node,width,theme);
   const gradients:FillGradient[]=[];
   const previewFilters:(BlurFilter|ColorMatrixFilter)[]=[];
   const style = nativeSettingsStyle(theme), d = settings.draft, a = settings.actions;
@@ -26,7 +30,7 @@ export function nativeWindowSettings(options: {
     label.position.set(x, top); node.addChild(label); return label;
   };
   const button = (title: string, id: string, x: number, top: number, w: number, run: () => void, active=false, h=34) => {
-    const control = new NativeFluentButton(title, w, run, invalidate, theme, "subtle", false, h);
+    const control = new NativeFluentButton(title, w, run, invalidate, theme, h===72?"settings-row":"subtle", false, h);
     control.label = `native-window:${id}`; control.position.set(x, top); node.addChild(control);
     if (active) control.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,8).fill(style.selected),1);
     controls.push({node:control,focus:value=>{control.focused=value;},disabled:()=>control.disabled,
@@ -34,40 +38,44 @@ export function nativeWindowSettings(options: {
     return control;
   };
   const toggle = (title: string, description: string, id: string, value: boolean, change: (value:boolean)=>void, disabled=false) => {
-    text(title,14,y+12,13,true);
-    const detail=text(description,14,y+34,12);detail.style.fill=style.muted;detail.style.wordWrap=true;detail.style.wordWrapWidth=width-95;
+    const start=node.children.length,top=y;
+    text(title,26,y+12,13,true);
+    const detail=text(description,26,y+32,12);detail.style.fill=style.muted;detail.style.wordWrap=true;detail.style.wordWrapWidth=width-122;
+    const rowHeight=Math.max(62,detail.height+44);
+    const background=new Graphics({eventMode:"none"}).roundRect(14,y,width-28,rowHeight,6).fill(style.row).stroke({color:style.border,width:1});node.addChildAt(background,start);
     const control=new NativeFluentToggle("switch",change,invalidate,theme);
-    control.label=`native-window:${id}`;control.checked=value;control.disabled=disabled;control.position.set(width-64,y+18);node.addChild(control);
-    const focus=new Graphics({eventMode:"none"});node.addChild(focus);const top=y;
+    control.label=`native-window:${id}`;control.checked=value;control.disabled=disabled;control.position.set(width-66,y+(rowHeight-32)/2);node.addChild(control);
+    const focus=new Graphics({eventMode:"none"});node.addChild(focus);
     controls.push({node:control,disabled:()=>control.disabled,handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;control.toggle();return true;},
       focus:active=>{focus.clear();if(active)focus.roundRect(width-68,top+14,48,32,4).stroke({color:style.accent,width:2});invalidate();}});
-    y+=Math.max(72,detail.height+44);
+    const row=new Container({label:`native-window:${id}-row`,eventMode:"passive"});row.addChild(...node.removeChildren(start));row.alpha=disabled?0.68:1;node.addChild(row);
+    y+=rowHeight;
   };
   text(key("title"),0,0,18,true);y=32;
   const modeTop=y;
-  node.addChild(new Graphics({eventMode:"none"}).roundRect(0,y,width,72,8).fill(style.row).stroke({color:style.border,width:1}));
-  const modeButton=button(key("mode"),"mode-expand",0,y,width-230,()=>{state.mode=!state.mode;redraw();},false,72);
-  modeButton.caption.anchor.x=0;modeButton.caption.position.set(62,25);modeButton.caption.style.fontWeight="600";
+  const modeButton=button(key("mode"),"mode-expand",0,y,width,()=>{state.mode=!state.mode;redraw();},false,72);
+  modeButton.caption.anchor.x=0;modeButton.caption.position.set(70,25);modeButton.caption.style.fontWeight="600";
   const modeIcon=nativeFluentIcon("window-24-regular",style.accent,22);modeIcon.position.set(25,y+25);node.addChild(modeIcon);
-  const description=text(key("modeDescription"),62,y+40,12);description.style.fill=style.muted;
-  description.style.wordWrap=true;description.style.wordWrapWidth=width-305;
+  const description=new NativeSingleLineText(key("modeDescription"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,lineHeight:16.2,fill:style.muted},Math.max(80,width-305));description.position.set(70,y+40);node.addChild(description);
   const modes=new NativeSegmentedControl(["fullscreen","windowed"].map(value=>({value,label:key(value),id:`native-window:${value}`})),
     d.windowMode.value,value=>{a.setDraftWindowMode(value);redraw();},invalidate,theme);
   modes.position.set(width-modes.controlWidth-48,modeTop+19);node.addChild(modes);controls.push(...modes.controls);
-  const chevron=(top:number,expanded:boolean)=>node.addChild(new Graphics({eventMode:"none"})
-    .moveTo(width-30,top+34).lineTo(width-25,top+(expanded?29:39)).lineTo(width-20,top+34).stroke({color:style.muted,width:1}));
-  chevron(modeTop,state.mode);
-  y+=78;
-  if(state.mode)toggle(key("titlebar"),key("titlebarDescription"),"titlebar",d.showCustomTitlebar.value,a.setDraftShowCustomTitlebar,d.windowMode.value!=="windowed");
+  modes.on("pointerover",()=>{modeButton.hovered=true;});modes.on("pointerout",()=>{modeButton.hovered=false;});
+  const modeChevron=nativeSettingsChevron(node,width-25,modeTop+36,style.muted);
+  y+=72;
+  const modeStart=node.children.length,modeBody=y,modeControls=controls.length;
+  toggle(key("titlebar"),key("titlebarDescription"),"titlebar",d.showCustomTitlebar.value,a.setDraftShowCustomTitlebar,d.windowMode.value!=="windowed");
+  layout.disclosure("window.mode",state.mode,modeStart,modeBody,y-modeBody,controls.slice(modeControls),modeChevron,true,modeButton);
+  y+=6;
   const expand=button(key("material"),"material-expand",0,y,width,()=>{state.material=!state.material;redraw();},false,72);
-  expand.caption.anchor.x=0;expand.caption.x=62;expand.caption.style.fontWeight="600";
+  expand.caption.anchor.x=0;expand.caption.x=70;expand.caption.style.fontWeight="600";
   const materialIcon=nativeFluentIcon("color-background-24-regular",style.accent,22);materialIcon.position.set(25,y+25);node.addChild(materialIcon);
-  expand.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,width,72,8).fill(style.row).stroke({color:style.border,width:1}),0);
   const summary=`${d.windowEffectMaterial.value==="none"?key("materialNone"):d.windowEffectMaterial.value==="micaAlt"?"Mica Alt":d.windowEffectMaterial.value==="mica"?"Mica":"Acrylic"} · ${key(d.windowEffectAppearance.value)}`;
-  const summaryText=text(summary,0,y+28,12);summaryText.style.fill=style.muted;summaryText.x=width-summaryText.width-48;
-  chevron(y,state.material);
-  y+=78;
-  if(state.material){
+  nativeRowSummary(node,summary,width,y+28,theme,"native-window:material-summary");
+  const materialChevron=nativeSettingsChevron(node,width-25,y+36,style.muted);
+  y+=72;
+  const materialStart=node.children.length,materialTop=y,materialControls=controls.length;
+  {
     const materials=new NativeSegmentedControl(["none","acrylic","mica","micaAlt"].map(value=>({value,
       label:value==="none"?key("materialNone"):value==="micaAlt"?"Mica Alt":value==="mica"?"Mica":"Acrylic",
       id:`native-window:${value}`,disabled:!a.canUseWindowEffectMaterial(value)})),
@@ -131,7 +139,9 @@ export function nativeWindowSettings(options: {
     }
     y+=cardsHeight+14;
   }
-  return {node,height:y,controls,dispose:()=>{
+  layout.disclosure("window.material",state.material,materialStart,materialTop,y-materialTop,controls.slice(materialControls),materialChevron,true,expand);
+  y+=6;
+  return {node,height:y,controls,layout:layout.finish(y),dispose:()=>{
     for(const filter of previewFilters){
       // Pixi 8.20's composite BlurFilter does not release its two owned passes.
       if(filter instanceof BlurFilter){filter.blurXFilter.destroy();filter.blurYFilter.destroy();}
@@ -144,23 +154,26 @@ export function nativeWindowSettings(options: {
 export function nativeAdvancedWindowSettings(options: Parameters<typeof nativeWindowSettings>[0]): NativeSettingsContent {
   const {settings,width,theme,invalidate,redraw,state}=options,style=nativeSettingsStyle(theme);
   const node=new Container();
+  const layout=new NativeSettingsLayout(node,width,theme);
   const title=new Text({text:t("settings.interface.advanced.title"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:style.text}});node.addChild(title);
-  const expand=new NativeFluentButton(t("settings.interface.advanced.options"),width,()=>{state.advanced=!state.advanced;redraw();},invalidate,theme,"outline",false,72);
+  const expand=new NativeFluentButton(t("settings.interface.advanced.options"),width,()=>{state.advanced=!state.advanced;redraw();},invalidate,theme,"settings-row",false,72);
   expand.label="native-window:advanced-expand";expand.y=32;node.addChild(expand);
   expand.caption.anchor.x=0;expand.caption.position.set(62,25);expand.caption.style.fontWeight="600";
   const advancedIcon=nativeFluentIcon("settings-24-regular",style.accent,22);advancedIcon.position.set(25,25);expand.addChild(advancedIcon);
   const advancedDescription=new Text({text:t("settings.interface.advanced.description"),eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
   advancedDescription.position.set(62,40);expand.addChild(advancedDescription);
-  expand.addChild(new Graphics({eventMode:"none"}).moveTo(width-30,34).lineTo(width-25,state.advanced?29:39).lineTo(width-20,34).stroke({color:style.muted,width:1}));
+  const chevron=nativeSettingsChevron(expand,width-25,36,style.muted);
   const controls:NativeSettingsControl[]=[{node:expand,focus:value=>{expand.focused=value;},disabled:()=>false,handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;expand.activate();return true;}}];
-  if(state.advanced){
+  const start=node.children.length;
+  {
     const label=new Text({text:t("settings.interface.advanced.overscan"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text}});label.position.set(14,123);node.addChild(label);
     const toggle=new NativeFluentToggle("switch",settings.actions.setDraftFullscreenOverscanEnabled,invalidate,theme);
     toggle.label="native-window:overscan";toggle.checked=settings.draft.fullscreenOverscanEnabled.value;toggle.position.set(width-64,117);node.addChild(toggle);
     const detail=new Text({text:t("settings.interface.advanced.overscanDescription"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-100}});detail.position.set(14,148);node.addChild(detail);
     const focus=new Graphics({eventMode:"none"});node.addChild(focus);
     controls.push({node:toggle,disabled:()=>toggle.disabled,focus:active=>{focus.clear();if(active)focus.roundRect(width-68,113,48,32,4).stroke({color:style.accent,width:2});invalidate();},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;toggle.toggle();return true;}});
-    return {node,height:158+detail.height,controls,dispose:()=>{}};
+    const height=158+detail.height;
+    layout.disclosure("window.advanced",state.advanced,start,110,height-110,controls.slice(1),chevron);
+    return {node,height,controls,layout:layout.finish(height),dispose:()=>{}};
   }
-  return {node,height:110,controls,dispose:()=>{}};
 }

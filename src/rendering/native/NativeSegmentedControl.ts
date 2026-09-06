@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from "pixi.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import type { NativeSettingsControl } from "./NativeSettingsShell.js";
+import { nativeUiTheme } from "./ui/nativeUiTheme.js";
 
 /** Mirrors settings-segmented-control: one clipped border and an active underline. */
 export class NativeSegmentedControl extends Container {
@@ -25,7 +26,7 @@ export class NativeSegmentedControl extends Container {
     entries.forEach((entry,index)=>{
       const width=widths[index]!*scale;
       if(entry.value===selected)content.addChild(new Graphics({eventMode:"none"})
-        .rect(x,1,width,32).fill(style.selected).rect(x,32,width,2).fill(style.accent));
+        .rect(x,1,width,32).fill(nativeUiTheme(theme).optionSelected).rect(x,32,width,2).fill(style.accent));
       if(index)content.addChild(new Graphics({eventMode:"none"}).rect(x,1,1,31).fill(style.border));
       const button=new NativeFluentButton(entry.label,width,()=>change(entry.value),invalidate,theme,"subtle",false,32);
       button.label=entry.id;button.position.set(x,1);button.caption.style.fontSize=12;

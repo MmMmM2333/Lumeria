@@ -1,4 +1,4 @@
-import { Color, Container, Graphics, Text, type Renderer } from "pixi.js";
+import { Container, Graphics, Text, type Renderer } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
 import { rgbArrayToHex, ACRYLIC_PARAM_STEP, ACRYLIC_TINT_STRENGTH_MIN, ACRYLIC_TINT_STRENGTH_MAX,
@@ -12,6 +12,10 @@ import { NativeFluentSlider } from "./NativeFluentSlider.js";
 import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
 import type { NativeSettingsContent, NativeSettingsControl } from "./NativeSettingsShell.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
+import { NativeSettingsLayout, nativeSettingsChevron } from "./nativeSettingsLayout.js";
+import { createNativeSettingsInput } from "./nativeSettingsInput.js";
+import { nativeRowSummary } from "./ui/nativeRowSummary.js";
+import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 
 type Settings = ReturnType<typeof createLaunchpadSettings>;
 export type NativeBackgroundPanelState = { layer:boolean; effect:boolean; profile:"light"|"dark"; error:string };
@@ -37,6 +41,7 @@ export function nativeBackgroundSettings(options:{
   const {settings,host,width,theme,state,invalidate,redraw}=options;
   const d=settings.draft,a=settings.actions,style=nativeSettingsStyle(theme);
   const node=new Container(),controls:NativeSettingsControl[]=[],cleanup:(()=>void)[]=[];
+  const layout=new NativeSettingsLayout(node,width,theme);
   const previews:{view:NativeBackground;effect:boolean}[]=[];
   let y=0,disposed=false,fieldWidth=width;
   const text=(value:string,x:number,top:number,size=13,bold=false)=>{
@@ -57,8 +62,7 @@ export function nativeBackgroundSettings(options:{
     }
   };
   const button=(label:string,id:string,x:number,top:number,w:number,run:()=>void,selected=false,height=34)=>{
-    const b=new NativeFluentButton(label,w,run,invalidate,theme,height===72?"subtle":"outline",false,height);
-    if(height===72)b.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,w,height,8).fill(style.row).stroke({color:style.border,width:1}),0);
+    const b=new NativeFluentButton(label,w,run,invalidate,theme,height===72?"settings-row":"outline",false,height);
     if(selected)b.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,w,height,4).fill(style.selected),1);
     b.label=`native-background:${id}`;b.position.set(x,top);node.addChild(b);
     controls.push({node:b,focus:value=>{b.focused=value;},disabled:()=>b.disabled,
@@ -91,9 +95,7 @@ export function nativeBackgroundSettings(options:{
     swatch.disabled=!options.chooseColor;
     const fill=new Graphics({eventMode:"none"});swatch.addChild(fill);
     const paint=(hex:string)=>fill.clear().roundRect(1,1,26,26,3).fill(hex).stroke({color:style.border,width:1});paint(value);
-    const input=host.create({width:126,height:34,value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,padding:8,
-      textColor:new Color(style.text).toNumber(),backgroundColor:new Color(style.row).toNumber(),
-      borderColor:new Color(style.border).toNumber(),focusColor:new Color(style.accent).toNumber()}});
+    const input=createNativeSettingsInput(host,{width:126,height:34,value,theme,invalidate});
     input.label=`native-background:${id}`;input.position.set(fieldWidth-140,y);node.addChild(input);
     async function chooseColor(){
       if(!options.chooseColor||disposed||swatch.disabled)return;
@@ -110,14 +112,17 @@ export function nativeBackgroundSettings(options:{
     controls.push({node:input,disabled:()=>input.disabled,focus:active=>{if(active)input.focus();else if(input.focused)input.blur();},
       handleKey:k=>{if(k==="Enter"){commit();return true;}if(k==="Escape"){input.value=value;input.blur();return true;}return false;}});y+=42;
   };
-  const expandable=(title:string,id:"layer"|"effect",summary:string)=>{
+  const expandable=(title:string,id:"layer"|"effect",description:string,summary:string)=>{
     const top=y;
     const b=button(title,`${id}-expand`,0,top,width,()=>{state[id]=!state[id];redraw();},false,72);
-    b.caption.anchor.set(0,0.5);b.caption.position.set(62,25);b.caption.style.fontWeight="600";
+    b.caption.anchor.set(0,0.5);b.caption.position.set(70,25);b.caption.style.fontWeight="600";
     const icon=nativeFluentIcon(id==="layer"?"image-24-regular":"blur-24-regular",style.accent,22);icon.position.set(25,25);b.addChild(icon);
-    b.addChild(new Graphics({eventMode:"none"}).moveTo(width-24,34).lineTo(width-20,state[id]?30:38).lineTo(width-16,34).stroke({color:style.text,width:1}));
-    const detail=text(summary,62,top+40,12);detail.style.fill=style.muted;detail.style.wordWrap=true;detail.style.wordWrapWidth=width-104;
-    y+=78;
+    const chevron=nativeSettingsChevron(b,width-26,36,style.muted);
+    const value=nativeRowSummary(b,summary,width,28,theme,`native-background:${id}-summary`);
+    const detail=new NativeSingleLineText(description,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,lineHeight:16.2,fill:style.muted},Math.max(80,width-70-value.width-59));
+    detail.position.set(70,top+40);node.addChild(detail);
+    y+=72;
+    return {chevron,header:b};
   };
   const preview=(effect:boolean,top:number)=>{
     const view=new NativeBackground({renderer:options.renderer},invalidate);
@@ -149,8 +154,11 @@ export function nativeBackgroundSettings(options:{
   baseOpacity.addChild(...node.removeChildren(start));baseOpacity.x=width-226;node.addChild(baseOpacity);
   fieldWidth=width;y=baseTop+78;
   const source=d.backgroundSource.value,usesImage=source==="customImage"||source==="windowsWallpaper";
-  expandable(key("layer.title"),"layer",key(`layer.${source==="customImage"?"hintCustom":source==="windowsWallpaper"?"hintWallpaper":"hintNone"}`));
-  if(state.layer){
+  const layerName=key(source==="customImage"?"layer.custom":source==="windowsWallpaper"?"layer.wallpaper":"layer.none");
+  const layerSummary=usesImage?`${layerName} · ${key(`layer.layout.${d.backgroundImageLayout.value}`)} · ${d.backgroundImageOpacity.value}%`:layerName;
+  const layerRow=expandable(key("layer.title"),"layer",key(`layer.${source==="customImage"?"hintCustom":source==="windowsWallpaper"?"hintWallpaper":"hintNone"}`),layerSummary);
+  const layerStart=node.children.length,layerTop=y,layerControls=controls.length;
+  {
     const detailTop=y;fieldWidth=width-Math.min(320,width*0.43)-30;
     const busy=settings.presentation.isChoosingBackgroundImage.value;
     choices(key("layer.source"),"source",[["systemMaterial",key("layer.none")],["customImage",key("layer.custom")],["windowsWallpaper",key("layer.wallpaper")]],source,value=>{
@@ -168,8 +176,13 @@ export function nativeBackgroundSettings(options:{
     }
     preview(false,detailTop);fieldWidth=width;
   }
-  expandable(key("effect.title"),"effect",usesImage?key(`effect.${d.backgroundEffect.value==="none"?"hintOriginal":d.backgroundEffect.value==="dimmed"?"hintDim":d.backgroundEffect.value==="blur"?"hintBlur":"hintAcrylic"}`):key("effect.unavailable"));
-  if(state.effect){
+  layout.disclosure("background.layer",state.layer,layerStart,layerTop,y-layerTop,controls.slice(layerControls),layerRow.chevron,true,layerRow.header);y+=6;
+  const effectSummary=!usesImage?key("effect.unavailable"):d.backgroundEffect.value==="blur"?`${key("effect.blur")} · ${d.backgroundBlurStrength.value}%`
+    :d.backgroundEffect.value==="dimmed"?`${key("effect.dim")} · ${d.backgroundDarkenStrength.value}%`
+    :d.backgroundEffect.value==="acrylic"?`Acrylic · ${d.backgroundAcrylicAppearance.value==="system"?key("effect.system"):t(`settings.interface.window.${d.backgroundAcrylicAppearance.value}`)} · ${d.backgroundAcrylicBlurStrength.value}%`:key("effect.original");
+  const effectRow=expandable(key("effect.title"),"effect",usesImage?key(`effect.${d.backgroundEffect.value==="none"?"hintOriginal":d.backgroundEffect.value==="dimmed"?"hintDim":d.backgroundEffect.value==="blur"?"hintBlur":"hintAcrylic"}`):key("effect.unavailable"),effectSummary);
+  const effectStart=node.children.length,effectTop=y,effectControls=controls.length;
+  {
     const detailTop=y;fieldWidth=width-Math.min(320,width*0.43)-30;
     choices(key("effect.effect"),"effect",[["none",key("effect.original")],["dimmed",key("effect.dim")],["blur",key("effect.blur")],["acrylic","Acrylic"]],d.backgroundEffect.value,a.setDraftBackgroundEffect,!usesImage);
     if(usesImage){
@@ -194,7 +207,8 @@ export function nativeBackgroundSettings(options:{
     }
     fieldWidth=width;
   }
+  layout.disclosure("background.effect",state.effect,effectStart,effectTop,y-effectTop,controls.slice(effectControls),effectRow.chevron,true,effectRow.header);y+=6;
   if(state.error){const error=text(state.error,14,y,12);error.style.wordWrap=true;error.style.wordWrapWidth=width-28;y+=error.height+12;}
   refreshPreviews();
-  return {node,height:y,controls,dispose:()=>{disposed=true;for(const run of cleanup)run();}};
+  return {node,height:y,controls,layout:layout.finish(y),dispose:()=>{disposed=true;for(const run of cleanup)run();}};
 }

@@ -319,27 +319,31 @@ async fn scan_apps(
 async fn check_launch_targets(
     targets: Vec<LaunchTargetCheckRequest>,
 ) -> Result<Vec<LaunchTargetCheckResult>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let needs_app_user_model_ids = targets
-            .iter()
-            .any(|target| target.launch_target.kind == "appUserModelId");
-        let installed_app_user_model_ids = needs_app_user_model_ids
-            .then(installed_app_user_model_ids_for_status)
-            .transpose()?;
-
-        Ok(targets
-            .into_iter()
-            .map(|target| LaunchTargetCheckResult {
-                id: target.id,
-                status: check_launch_target_status(
-                    &target.launch_target,
-                    installed_app_user_model_ids.as_ref(),
-                ),
-            })
-            .collect())
-    })
+    tauri::async_runtime::spawn_blocking(move || check_launch_targets_sync(targets))
     .await
     .map_err(|error| format!("Launch target status worker failed: {error}"))?
+}
+
+fn check_launch_targets_sync(
+    targets: Vec<LaunchTargetCheckRequest>,
+) -> Result<Vec<LaunchTargetCheckResult>, String> {
+    let needs_app_user_model_ids = targets
+        .iter()
+        .any(|target| target.launch_target.kind == "appUserModelId");
+    let installed_app_user_model_ids = needs_app_user_model_ids
+        .then(installed_app_user_model_ids_for_status)
+        .transpose()?;
+
+    Ok(targets
+        .into_iter()
+        .map(|target| LaunchTargetCheckResult {
+            id: target.id,
+            status: check_launch_target_status(
+                &target.launch_target,
+                installed_app_user_model_ids.as_ref(),
+            ),
+        })
+        .collect())
 }
 
 #[tauri::command]

@@ -22,6 +22,7 @@ const APP_IDENTIFIER: &str = "com.lumeria.app";
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    CheckLaunchTargets { version:u32, id:u64, targets:Vec<crate::LaunchTargetCheckRequest> },
     CacheBackground { version:u32, id:u64, path:String },
     Wallpaper { version:u32, id:u64, rect:[i32;4] },
     Autostart { version: u32, id: u64, enabled: Option<bool> },
@@ -55,6 +56,7 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::CheckLaunchTargets { id, .. }
             | Self::CacheBackground { id, .. }
             | Self::Wallpaper { id, .. }
             | Self::Autostart { id, .. }
@@ -70,6 +72,7 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::CheckLaunchTargets { version, .. }
             | Self::CacheBackground { version, .. }
             | Self::Wallpaper { version, .. }
             | Self::Autostart { version, .. }
@@ -191,6 +194,8 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::CheckLaunchTargets { targets, .. } => crate::check_launch_targets_sync(targets)
+            .and_then(|value|serde_json::to_value(value).map_err(|error|error.to_string())),
         Request::CacheBackground {path,..} => cache_background(data_dir,&path),
         Request::Wallpaper {rect,..} => cache_wallpaper(data_dir,rect),
         Request::Autostart { enabled, .. } => crate::autostart::native_autostart(enabled).map(Value::Bool),

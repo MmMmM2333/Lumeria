@@ -6,7 +6,7 @@ const {webDarkTheme,webLightTheme}="default" in fluentTokens
   ? fluentTokens.default as typeof fluentTokens : fluentTokens;
 
 export type NativeTheme = "dark" | "light";
-export type NativeButtonAppearance = "outline" | "primary" | "subtle";
+export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row";
 
 export function nativeFluentTheme(theme: NativeTheme) {
   return theme === "light" ? webLightTheme : webDarkTheme;
@@ -31,10 +31,13 @@ export class NativeFluentButton extends Container {
   #hovered = false;
   #pressed = false;
   #disabled = false;
+  #busy=false;
   #focused = false;
+  #disclosureHeader=false;
+  readonly #stateGraphics:{node:Graphics;paint:(color:string)=>void}[]=[];
   #theme: NativeTheme;
 
-  constructor(label:string, readonly controlWidth:number, readonly action:()=>void,
+  constructor(label:string, public controlWidth:number, readonly action:()=>void,
     readonly invalidate:()=>void, theme:NativeTheme="dark",
     readonly appearance:NativeButtonAppearance="outline",
     readonly danger=false, readonly controlHeight=34) {
@@ -53,20 +56,42 @@ export class NativeFluentButton extends Container {
     this.on("pointertap",event=>{event.stopPropagation();if(event.button===0)this.activate();});
     this.#draw();
   }
-  activate():void {if(!this.#disabled)this.action();}
+  activate():void {if(!this.#disabled&&!this.#busy)this.action();}
+  set busy(value:boolean){this.#busy=value;}
+  addStateGraphic(paint:(node:Graphics,color:string)=>void):Graphics{
+    const node=new Graphics({eventMode:"none"});this.addChild(node);
+    this.#stateGraphics.push({node,paint:color=>paint(node,color)});this.#draw();return node;
+  }
+  resizeWidth(width:number):void{
+    this.controlWidth=width;this.hitArea=new Rectangle(0,0,width,this.controlHeight);this.#draw();
+  }
   get disabled():boolean {return this.#disabled;}
   set disabled(value:boolean) {
     if(value===this.#disabled)return;
-    this.#disabled=value;this.#pressed=false;
+    this.#disabled=value;this.#pressed=false;this.#hovered=false;
     this.eventMode=value?"none":"static";this.cursor=value?"default":"pointer";this.#draw();
   }
   get focused():boolean{return this.#focused;}
-  set focused(value:boolean) {this.#focused=value;this.#draw();}
-  set theme(value:NativeTheme) {this.#theme=value;this.#draw();}
+  set hovered(value:boolean){this.#hovered=value;this.#draw();}
+  set disclosureHeader(value:boolean){this.#disclosureHeader=value;this.#draw();}
+  set focused(value:boolean) {if(this.#focused===value)return;this.#focused=value;this.#draw();}
+  set theme(value:NativeTheme) {if(this.#theme===value)return;this.#theme=value;this.#draw();}
   #draw():void {
     const theme=nativeFluentTheme(this.#theme);
+    if(this.appearance==="settings-row"){
+      const style=nativeSettingsStyle(this.#theme);
+      const fill=this.#theme==="dark"?`rgba(255,255,255,${this.#pressed?0.085:this.#hovered?0.065:0.045})`
+        :this.#pressed?theme.colorNeutralBackground1Pressed:this.#hovered?theme.colorNeutralBackground1Hover:style.row;
+      this.background.clear();
+      if(this.#disclosureHeader){
+        if(this.#hovered||this.#pressed)this.background.rect(1,1,this.controlWidth-2,this.controlHeight-1).fill(fill);
+      }else this.background.roundRect(0,0,this.controlWidth,this.controlHeight,8).fill(fill).stroke({color:style.border,width:1});
+      this.caption.style.fill=style.text;
+      this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,6).stroke({color:style.accent,width:2});
+      this.invalidate();return;
+    }
     const primary=this.appearance==="primary", subtle=this.appearance==="subtle";
-    const fill=this.#disabled?theme.colorNeutralBackgroundDisabled
+    const fill=this.#disabled?(subtle?"transparent":theme.colorNeutralBackgroundDisabled)
       :primary?(this.#pressed?theme.colorBrandBackgroundPressed:this.#hovered?theme.colorBrandBackgroundHover:theme.colorBrandBackground)
       :subtle?(this.#pressed?theme.colorSubtleBackgroundPressed:this.#hovered?theme.colorSubtleBackgroundHover:theme.colorSubtleBackground)
       :(this.#pressed?theme.colorNeutralBackground1Pressed:this.#hovered?theme.colorNeutralBackground1Hover:theme.colorNeutralBackground1);
@@ -76,6 +101,8 @@ export class NativeFluentButton extends Container {
     this.caption.style.fill=this.#disabled?theme.colorNeutralForegroundDisabled
       :this.danger?(this.#theme==="dark"?"#ffb4a9":theme.colorPaletteRedForeground1)
       :primary?theme.colorNeutralForegroundOnBrand:theme.colorNeutralForeground1;
+    const iconColor=this.#disabled?theme.colorNeutralForegroundDisabled:theme.colorNeutralForeground3;
+    for(const graphic of this.#stateGraphics)graphic.paint(iconColor);
     this.focusRing.clear();
     if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,3).stroke({color:theme.colorStrokeFocus2,width:2});
     this.invalidate();

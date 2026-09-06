@@ -39,7 +39,6 @@ import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
 import { NativeSearchBar } from "../rendering/native/NativeSearchBar.js";
 import { NativeManagement } from "../rendering/native/NativeManagement.js";
-import { makeLaunchTarget } from "../domain/launchpadData.js";
 import { nativeHost } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { snapshotContractValue } from "../rendering/contractSnapshot.js";
@@ -61,6 +60,9 @@ import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
 import { NativeFluentToggle } from "../rendering/native/NativeFluentToggle.js";
 import { nativeBackgroundSettings, nativeDraftBackground, type NativeBackgroundPanelState } from "../rendering/native/nativeBackgroundSettings.js";
 import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
+import { createLaunchpadApps } from "../application/launchpadApps.js";
+import { createNativeCatalogPort } from "./nativeCatalogPort.js";
+import { nativeAppsSettingsPage, type NativeAppsPageState } from "../rendering/native/nativeAppsSettingsPage.js";
 import { nativeLayoutSettingsPage } from "../rendering/native/nativeLayoutSettingsPage.js";
 import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
 import { nativeAboutSettingsPage } from "../rendering/native/nativeAboutSettingsPage.js";
@@ -291,10 +293,11 @@ try {
 setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
 const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
 const settingsNavigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>t(key));
-settingsNavigation.selectTab("interface");
+settingsNavigation.selectTab("general");
 let settingsShell:NativeSettingsShell|null=null;
 let openSettings:()=>void;
-let hiddenAppIds=[...(loadedLayout?.settings.hiddenAppIds ?? [])];
+let apps:ReturnType<typeof createLaunchpadApps>|null=null;
+let refreshTargetChecks=()=>{};
 const saves = createLayoutSaveQueue(document => nativeData.saveLayout(document));
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
 let activePageItems = getNativeActivePageItems(currentFrame);
@@ -320,7 +323,7 @@ const app = await createNativePixiApplication({
   background: 0x090b14,
   height: 600,
   resizeMode: "live",
-  title: nativeMode === "app" ? "LaunchPad" : `LaunchPad · Native WebGPU ${nativeMode}`,
+  title: nativeMode === "app" ? "LaunchPad" : process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"?"LaunchPad · Apply button preview":`LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
 }).catch(async (error: unknown) => {
   await nativeData.dispose();
@@ -375,6 +378,7 @@ const backgroundConfig=()=>({...loadedLayout?.settings,...settings.persistence.c
 const refreshBackground=()=>desktopBackground.configure(backgroundConfig(),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
 const backgroundPanelState:NativeBackgroundPanelState={layer:false,effect:false,profile:systemAppearance,error:""};
 const windowPanelState={mode:false,material:false,advanced:false};
+const appsPageState:NativeAppsPageState={keywords:false,excludedQuery:"",excludedKeys:new Set()};
 const chromeInset=()=>app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24;
 let recordingShortcut=false,expandedIcons=false;
 const stopShortcutRecording=()=>{
@@ -527,41 +531,27 @@ function editItem(item: SceneItem | null): void {
     });
     return;
   }
-  const target=appItem?.launchTarget;
-  management.form(item ? t("dialogs.appEditor.editTitle") : t("dialogs.appEditor.addTitle"), [
-    {label:t("dialogs.appEditor.name"),value:appItem?.name ?? ""},
-    {label:target?.kind === "appUserModelId" ? t("dialogs.appEditor.windowsId") : t("dialogs.appEditor.target"),value:target?.path ?? target?.appUserModelId ?? "",readOnly:target?.kind === "appUserModelId",
-      ...(target?.kind!=="appUserModelId"?{browse:async()=>{const result=await nativeHost.platform.dialogs.openFiles({multiple:false});if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}return result.value[0]??null;}}:{})},
-    {label:t("dialogs.appEditor.args"),value:appItem?.launchArgs ?? ""},
-  ],t("common.actions.save"), async values=>{
-    const [name,path,args]=values;
-    if(!name?.trim())throw new Error("Name is required");
-    const nextTarget=target?.kind === "appUserModelId" ? target : makeLaunchTarget(path);
-    if(!nextTarget)throw new Error("Launch target is required");
-    const pages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
-    if(appItem) {
-      const app=pages.flatMap(page=>page.flatMap(item=>item.type==="folder"?item.childPages.flat():[item])).find(item=>item?.id===appItem.id);
-      if(!app || app.type!=="app")throw new Error("Application no longer exists");
-      if(app.origin==="catalog" && (JSON.stringify(app.launchTarget)!==JSON.stringify(nextTarget) || (app.launchArgs??"")!==(args??""))) {
-        hiddenAppIds=[...new Set([...hiddenAppIds,app.id])];
-        app.id=layoutState.operations.makeId("manual");app.origin="manual";
-        delete app.presentationOverrides;delete app.catalogPresentation;
-      }
-      app.name=name.trim();app.launchTarget=nextTarget;app.launchArgs=args ?? "";
-      if(app.origin==="catalog")app.presentationOverrides={...app.presentationOverrides,name:app.name};
-    } else {
-      const app={id:layoutState.operations.makeId("manual"),type:"app" as const,origin:"manual" as const,name:name.trim(),emoji:"◼",launchTarget:nextTarget,launchArgs:args ?? ""};
-      const next=layoutState.operations.appendAppsToPages(pages,[app]);pages.splice(0,pages.length,...next);
-    }
-    editing!.commit(pages);await saves.flush();
+  if(!apps)return;
+  const editor=apps.editorModel;
+  if(appItem)editor.actions.openEdit(appItem);else editor.actions.openCreate();
+  management.form(item?t("dialogs.appEditor.editTitle"):t("dialogs.appEditor.addTitle"),[
+    {label:t("dialogs.appEditor.name"),value:editor.name.value},
+    {label:editor.targetReadOnly.value?t("dialogs.appEditor.windowsId"):t("dialogs.appEditor.target"),value:editor.target.value,readOnly:editor.targetReadOnly.value,
+      ...(!editor.targetReadOnly.value?{browse:async()=>{const selected=await createNativeCatalogPort(nativeData).pickLaunchFile();return selected?.path??null;}}:{})},
+    {label:t("dialogs.appEditor.args"),value:editor.args.value,readOnly:!editor.canEditArgs.value&&editor.targetReadOnly.value},
+  ],t("common.actions.save"),async values=>{
+    editor.name.value=values[0]??"";editor.target.value=values[1]??"";editor.args.value=values[2]??"";
+    if(!editor.actions.save())throw new Error(t("dialogs.appEditor.name")+" / "+t("dialogs.appEditor.target"));
+    await saves.flush();settingsShell?.redraw();
   });
 }
 function removeItems(ids: readonly string[]): void {
-  management.form(t("settings.apps.manager.remove"), [{label:t("launchpad.batch.removeMessage",{count:ids.length}),value:"",readOnly:true}],t("launchpad.batch.remove"),async()=>{
-    const catalogIds=layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value).filter(app=>ids.includes(app.id)&&app.origin==="catalog").map(app=>app.id);
-    hiddenAppIds=[...new Set([...hiddenAppIds,...catalogIds])];
-    editing!.remove(ids);await saves.flush();
-  });
+  management.form(t("settings.apps.manager.remove"), [],t("launchpad.batch.remove"),async()=>{
+    if(apps)apps.removeManagedAppsFromLaunchpad(ids);
+    const folders=ids.filter(id=>layoutState.operations.findFolder(layoutState.presentation.pages.value,id));
+    if(folders.length)editing!.remove(folders);
+    await saves.flush();
+  },t("launchpad.batch.removeMessage",{count:ids.length}));
 }
 function contextMenu(item: SceneItem | null,x:number,y:number):void {
   const actions = item ? [
@@ -583,20 +573,15 @@ function contextMenu(item: SceneItem | null,x:number,y:number):void {
   management.menu(x,y,actions);
 }
 async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
-  let path:string|null=null;
+  let icon:import("../application/launchpadApps.js").ManagedAppIcon|null=null;
   if(!reset) {
     const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp",multiple:false});
     if(!result.ok) {if(result.error.code==="CANCELLED")return;throw new Error(result.error.message);}
-    path=result.value[0]??null;if(!path)return;
-    const cached=await nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path));
-    path=cached.iconPath;
+    const path=result.value[0];if(!path)return;
+    icon=await nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path));
   }
-  const pages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
-  const app=pages.flatMap(page=>page.flatMap(item=>item.type==="folder"?item.childPages.flat():[item])).find(app=>app?.id===item.id);
-  if(!app || app.type!=="app")throw new Error("Application no longer exists");
-  if(reset) {delete app.customIconPath;delete app.customIconDataUrl;if(app.presentationOverrides)delete app.presentationOverrides.customIconPath;}
-  else {app.customIconPath=path;if(app.origin==="catalog")app.presentationOverrides={...app.presentationOverrides,customIconPath:path!};}
-  editing!.commit(pages);await saves.flush();
+  if(!apps?.managedApps.value.some(app=>app.id===item.id))throw new Error("Application no longer exists");
+  apps.updateAppCustomIcon(item.id,icon);await saves.flush();
   const result=await iconTextures.synchronize(collectTextureItems(currentFrame));
   if(result.failed.length)throw new Error("Icon loading failed");
   requestSceneRender();
@@ -785,6 +770,8 @@ try {
       }) as typeof currentFrame.interaction;
       const pages = searchQuery.trim() ? currentFrame.viewport.activePages : snapshotContractValue(editing.projectedPages()) as typeof currentFrame.viewport.activePages;
       currentFrame = Object.freeze({ ...currentFrame, interaction,
+        diagnostics:Object.freeze({...currentFrame.diagnostics,showMissingLaunchTargetBadge:apps?.presentation.showMissingLaunchTargetBadge.value??currentFrame.diagnostics.showMissingLaunchTargetBadge,
+          launchTargetStatusById:snapshotContractValue(apps?.presentation.launchTargetStatusById.value??currentFrame.diagnostics.launchTargetStatusById)}),
         viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) });
       activePageItems = getNativeActivePageItems(currentFrame);
     }
@@ -909,13 +896,14 @@ try {
     layoutState.commitPages(pages);
     layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
     const config = layoutState.captureConfiguration();
-    const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),
+    const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),...apps?.persistence.capture(),
       pages, gridRows: config.rows, gridCols: config.cols, folderRows: config.folderRows, folderCols: config.folderCols,
       iconSize: config.iconSize, folderIconSize: config.folderIconSize, folderIconSizeMode: config.folderIconSizeMode,
-      textless: layoutSettings.isTextlessModeState.value, hiddenAppIds });
+      textless: layoutSettings.isTextlessModeState.value,hiddenAppIds:[...(apps?.presentation.hiddenAppIds.value??loadedLayout?.settings.hiddenAppIds??[])] });
     saves.enqueue(document);
     void saves.flush().catch(error => setStatus(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 0xff7b72));
     changeSearch(searchQuery);
+    refreshTargetChecks();
     requestSceneRender();
   };
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
@@ -934,6 +922,46 @@ try {
     searchBar.host.blur();settingsShell?.destroy();settingsShell=null;
     settings.cancelEdit();requestSceneRender();
   };
+  let appsChangeQueued=false,appsPersistenceKey="";
+  const changedApps=()=>{
+    if(appsChangeQueued)return;appsChangeQueued=true;
+    queueMicrotask(()=>{
+      appsChangeQueued=false;if(!apps||sceneDisposed)return;
+      const key=JSON.stringify(apps.persistence.capture());
+      if(key!==appsPersistenceKey){appsPersistenceKey=key;commitEditedPages(layoutState.operations.clonePages(layoutState.presentation.pages.value));}
+      // Source edits are already visible in their live input. Recreating the whole
+      // page on blur would flash it while focus is moving to the next source field.
+      const sourceFieldFocused=searchBar.host.focused?.label?.startsWith("native-apps:source-");
+      if(settingsShell&&settingsNavigation.activeRoute.value.tabId==="apps"&&!sourceFieldFocused)settingsShell.redraw();
+      refreshTargetChecks();
+      requestSceneRender();
+    });
+  };
+  apps=createLaunchpadApps({
+    ...layoutState.operations,pages:layoutState.presentation.pages,
+    catalogPort:createNativeCatalogPort(nativeData),localizationText:{t},shouldUseNativeCatalog:()=>true,
+    isDragActive:()=>editing!.drag.isDragActive(),commitPages:pages=>editing!.commit(pages),commitPagesAfterDeletion:pages=>editing!.commit(pages),
+    commitOpenFolder:id=>{if(!id)closeFolder();},openFolderId:{get value(){return folderFlow.snapshot().renderedFolder?.id??null;}},
+    renderedFolder:{get value(){return folderFlow.snapshot().renderedFolder as import("../domain/launchpadLayout.js").ReadonlyLaunchpadFolder|null;}},
+    reclampPageIndices:()=>layoutState.commitPageIndex(layoutState.presentation.pageIndex.value),schedulePageGridMetrics:requestSceneRender,
+    openScanKeywordSettings:()=>{settingsNavigation.selectTab("apps");settingsShell?.redraw();},
+    clearFocusedIcon:()=>setFocusedIcon(null),
+    openWarningDialog:config=>management.form(config.title,[],config.confirmText??t("common.actions.close"),async()=>{config.onConfirm?.();await saves.flush();},[config.message,config.suggestion].filter(Boolean).join("\n")),
+    showTransientNotice:notice=>setStatus(notice.message),
+  },createNativeStateHost(changedApps));
+  apps.persistence.restore(loadedLayout?.settings??{});appsPersistenceKey=JSON.stringify(apps.persistence.capture());
+  let targetCheckKey="",targetCheckGeneration=0;
+  refreshTargetChecks=()=>{
+    if(!apps||sceneDisposed)return;
+    const checks=apps.nativeIntegration.listLaunchTargets();
+    const key=apps.nativeIntegration.shouldCheckLaunchTargets()?apps.nativeIntegration.launchTargetCheckSignature(checks):"off";
+    if(key===targetCheckKey)return;targetCheckKey=key;const generation=++targetCheckGeneration;
+    if(key==="off"){apps.nativeIntegration.clearLaunchTargetStatuses();return;}
+    void nativeData.checkLaunchTargets(checks.map(({id,launchTarget})=>({id,launchTarget}))).then(results=>{
+      if(generation===targetCheckGeneration&&!sceneDisposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,checks);
+    }).catch(error=>{if(!sceneDisposed)logNativeRuntime("launch-target-check-error",error);});
+  };
+  refreshTargetChecks();
   const flowState=createNativeStateHost(requestSceneRender),openingIcon=flowState.cell<import("../application/launchpadLaunchFlow.js").LaunchIconFocus|null>(null);
   const launchTimers=new Map<number,ReturnType<typeof setTimeout>>();let nextLaunchTimer=0;
   disposeLaunchFlow=()=>{for(const timer of launchTimers.values())clearTimeout(timer);launchTimers.clear();};
@@ -1025,7 +1053,7 @@ try {
     closeFolder();editing!.selection.clear();editing!.alt.cancelAltEditMode();searchBar.host.blur();
     const startupStatus=settings.beginEdit();
     settingsShell=new NativeSettingsShell({
-      navigation:settingsNavigation,t:key=>t(key),tabs:["general","interface","about"],
+      navigation:settingsNavigation,t:key=>t(key),tabs:["general","interface","apps","about"],
       beforeKey:event=>{
         if(!recordingShortcut)return false;
         if(event.type!=="down")return true;
@@ -1037,7 +1065,14 @@ try {
       },
       theme:()=>settingsTheme(),
       size:()=>app.contentSize,topInset:chromeInset,invalidate:()=>app.invalidate(),close:closeSettings,
-      content:(tab,_subPage,width)=>tab==="general"
+      anchor:()=>({x:settingsButton.x,y:settingsButton.y,width:34,height:34}),
+      content:(tab,subPage,width)=>tab==="apps"
+        ?nativeAppsSettingsPage({apps:apps!,host:searchBar.host,width,theme:settingsTheme(),state:appsPageState,subPage,management,icons:iconTextures,
+          invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),
+          navigate:page=>{settingsNavigation.openSubPage({id:page==="manager"?"apps.appManager":page==="excluded"?"apps.excludedApps":"apps.scanResults",parentTabId:"apps",
+            labelKey:page==="manager"?"settings.apps.manager.title":page==="excluded"?"settings.apps.excluded.title":"dialogs.scanResults.title"});settingsShell?.redraw();},
+          edit:item=>editItem(item as SceneItem|null),icon:(item,reset)=>{void updateIcon(item as SceneItem,reset).catch(error=>setStatus(String(error),0xff7b72));}})
+        :tab==="general"
         ?nativeGeneralSettingsPage({settings,width,theme:settingsTheme(),
           management,invalidate:()=>app.invalidate(),redraw:()=>settingsShell?.redraw(),recording:recordingShortcut,
           record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;settingsShell?.redraw();},icons:brandingTextures})
@@ -1429,7 +1464,7 @@ try {
   let dpiResolution = app.resolution;
 
   if (nativeMode === "smoke") {
-    {
+    if(process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY!=="1"){
       const {sendAltSpace}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js");
       assert.ok(mainShortcut.apply("alt+Space").ok,"Alt+Space must register for the isolated physical input test");
       try{
@@ -1462,6 +1497,7 @@ try {
         console.log("Physical Alt+Space: animated close, hidden reopen and close interruption passed");
       }finally{mainShortcut.apply(null);}
     }
+    else console.log("Settings-focused smoke: skipped physical Alt+Space to preserve the running user instance");
     {
       const {sendTrayTestAction}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
       assert.ok(tray);
@@ -1528,19 +1564,75 @@ try {
     await waitFor("settings entrance settles",()=>!scene.getMotionSnapshot().active);
     await present(app,"settings layout settled");
     await captureSmokeFrame("settings-layout");
-    const aboutTab=app.stage.getChildByLabel(`native-action:${t("settings.about.title")}`,true);assert.ok(aboutTab);
+    const aboutTab=app.stage.getChildByLabel("native-settings-tab:about",true);assert.ok(aboutTab);
     clickWithNativeInput(aboutTab);await present(app,"native about route");
     await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
     await captureSmokeFrame("settings-about");
-    const generalTab=app.stage.getChildByLabel(`native-action:${t("settings.general.title")}`,true);assert.ok(generalTab);
+    const generalTab=app.stage.getChildByLabel("native-settings-tab:general",true);assert.ok(generalTab);
     clickWithNativeInput(generalTab);await present(app,"native general settings");
     await waitFor("general entrance settles",()=>!scene.getMotionSnapshot().active);
     await captureSmokeFrame("settings-general");
+    const iconSummary=app.stage.getChildByLabel("native-setting:icon-summary",true) as Text;
+    const iconSummaryRow=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
+    assert.equal(iconSummary.anchor.x,1);assert.equal(iconSummary.x,iconSummaryRow.controlWidth-47,"summary right edge must track arrow column, not fixed text start");
+    {
+      const {nativeUiGallery}=await import("../rendering/native/ui/nativeUiGallery.js");
+      for(const theme of ["dark","light"] as const){
+        const gallery=nativeUiGallery(searchBar.host,theme,()=>app.invalidate());app.stage.addChild(gallery);
+        await present(app,`UI gallery ${theme}`);await captureSmokeFrame(`native-ui-gallery-${theme}`);gallery.destroy({children:true});
+      }
+      await present(app,"UI gallery disposed");
+    }
+    const styleThemeBefore=settings.draft.settingsThemePreference.value;
+    for(const theme of ["dark","light"] as const){
+      settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell).redraw();await present(app,`style ${theme} ready`);
+      const hoverRow=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
+      assert.equal(hoverRow.parent!.getChildIndex(hoverRow),0,"hover paint must be behind row icon and title");
+      const p=hoverRow.toGlobal({x:Math.min(220,hoverRow.controlWidth/2),y:36});app.nativeInput.emitPointer("pointermove",p.x,p.y,0);
+      await present(app,`style ${theme} hover`);await captureSmokeFrame(`settings-style-${theme}-hover`);
+      clickWithNativeInput(app.stage.getChildByLabel("native-setting:language",true)!);
+      await waitFor("language popup entrance",()=>!scene.getMotionSnapshot().active);await present(app,`style ${theme} popup`);
+      assert.ok(management.getChildByLabel("native-menu:selected-indicator",true));await captureSmokeFrame(`settings-style-${theme}-dropdown`);
+      onKey({type:"down",key:"Escape"});await present(app,"style dropdown dismissed");
+    }
+    settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"style theme restored");
+    const sidebar=settingsShell as NativeSettingsShell;
+    const languageBefore=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();
+    const beforeLanguage={x:languageBefore.x,y:languageBefore.y,width:languageBefore.width,height:languageBefore.height};
+    sidebar.toggleNavigation();
+    const languageStart=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();
+    assert.ok(Math.abs(languageStart.x-beforeLanguage.x)<0.1&&Math.abs(languageStart.y-beforeLanguage.y)<0.1,"sidebar toggle must not jump right-aligned controls before the first animation frame");
+    await waitFor("sidebar intermediate width",()=>sidebar.navigationWidth>72&&sidebar.navigationWidth<215);
+    await captureSmokeFrame("settings-sidebar-expanding");
+    const languageMid=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();const midpoint={x:languageMid.x,y:languageMid.y};
+    sidebar.toggleNavigation();
+    const languageReverse=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();
+    assert.ok(Math.abs(languageReverse.x-midpoint.x)<0.1&&Math.abs(languageReverse.y-midpoint.y)<0.1,"reversing sidebar keeps current content geometry");
+    await present(app,"sidebar reverse");sidebar.toggleNavigation();
+    await waitFor("sidebar expanded width",()=>sidebar.navigationWidth===220&&!scene.getMotionSnapshot().active);await captureSmokeFrame("settings-sidebar-expanded");
+    sidebar.toggleNavigation();await waitFor("sidebar collapsed width",()=>sidebar.navigationWidth===68&&!scene.getMotionSnapshot().active);
+    const disclosureButton=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
+    assert.ok(disclosureButton);clickWithNativeInput(disclosureButton);
+    assert.equal(disclosureButton.focused,false,"mouse selection must not paint a keyboard focus ring");
+    await waitFor("icon disclosure intermediate",()=>{
+      const body=app.stage.getChildByLabel("native-disclosure:general.icons",true)?.getChildByLabel("native-disclosure-content");return Boolean(body&&body.alpha>0.05&&body.alpha<0.95);
+    });
+    await captureSmokeFrame("settings-icons-expanding");
+    clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
+    await present(app,"icon disclosure closing interruption");
+    clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
+    await waitFor("icon disclosure reopened",()=>app.stage.getChildByLabel("native-disclosure:general.icons",true)?.getChildByLabel("native-disclosure-content")?.alpha===1&&!scene.getMotionSnapshot().active);
+    await captureSmokeFrame("settings-icons-expanded");
+    clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
+    await waitFor("icon disclosure collapsed",()=>app.stage.getChildByLabel("native-disclosure:general.icons",true)?.visible===false);
     const originalShortcut=settings.draft.mainWindowShortcut.value;
     const shortcutControl=app.stage.getChildByLabel("native-setting:shortcut",true);assert.ok(shortcutControl);
     clickWithNativeInput(shortcutControl);
     app.nativeInput.emitKey("down",{keyCode:0x77,modifiers:6});
     assert.equal(settings.draft.mainWindowShortcut.value,"control+alt+F8","native shortcut recording must reach the shared draft");
+    const clearShortcut=app.stage.getChildByLabel("native-setting:clear-shortcut",true) as NativeFluentButton;
+    assert.equal(clearShortcut.controlWidth,22);assert.equal(clearShortcut.controlHeight,22);assert.equal(clearShortcut.appearance,"subtle");
+    await captureSmokeFrame("settings-shortcut-clear");
     assert.equal(recordingShortcut,false);
     settings.actions.setDraftMainWindowShortcut(originalShortcut);
     await present(app,"shortcut recording settles refreshed controls");
@@ -1571,10 +1663,80 @@ try {
     settings.actions.setDraftLocalePreference(localeBefore);settings.actions.setDraftLaunchpadIconVariant(iconBefore);
     await present(app,"general restore ready");
     clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
+    await (settingsShell as NativeSettingsShell).waitForApply();
     await waitFor("general settings restored",()=>Boolean(settingsShell&&!settingsShell.applying));
     assert.equal((await nativeData.loadLayout())!.settings.localePreference,localeBefore);
 
-    const appearanceTab=app.stage.getChildByLabel(`native-action:${t("settings.interface.title")}`,true);assert.ok(appearanceTab);
+    clickWithNativeInput(app.stage.getChildByLabel("native-settings-tab:apps",true)!);
+    await waitFor("apps overview transition",()=>!scene.getMotionSnapshot().active);await present(app,"apps overview rendered");
+    await captureSmokeFrame("settings-apps-overview");
+    {
+      const shell=settingsShell as NativeSettingsShell,root=apps!.presentation.scanRoots.value[0]!;
+      const field=app.stage.getChildByLabel(`native-apps:source-path-${root.id}`,true)!;
+      const revision=shell.redrawCount;
+      clickWithNativeInput(field);await present(app,"source path focused");
+      assert.equal(shell.redrawCount,revision,"focusing an unchanged source path must not rebuild settings");
+      assert.equal(app.stage.getChildByLabel(`native-apps:source-path-${root.id}`,true),field,"focus must retain the input session");
+      await captureSmokeFrame("settings-source-focused");
+      const sourceName=app.stage.getChildByLabel(`native-apps:source-label-${root.id}`,true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
+      clickWithNativeInput(sourceName);sourceName.selectAll();sourceName.commitText(root.label+" test");
+      clickWithNativeInput(field);await present(app,"source blur saved without page rebuild");await saves.flush();
+      assert.equal(shell.redrawCount,revision,"saving a source label while moving focus must not rebuild the page");
+      assert.equal((await nativeData.loadLayout())!.settings.scanRoots[0]?.label,root.label+" test");
+      clickWithNativeInput(sourceName);sourceName.selectAll();sourceName.commitText(root.label);clickWithNativeInput(field);
+      await present(app,"source label restored");await saves.flush();
+    }
+    for(const theme of ["dark","light"] as const){
+      settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell).redraw();await present(app,`sources ${theme}`);
+      await captureSmokeFrame(`settings-sources-${theme}`);
+    }
+    settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"sources theme restored");
+    const managerLink=app.stage.getChildByLabel("native-apps:manager",true) as NativeFluentButton;
+    for(let index=0;index<100&&!managerLink.focused;index++)onKey({type:"down",key:"Tab"});
+    assert.ok(managerLink.focused);await present(app,"apps manager link revealed");clickWithNativeInput(managerLink);
+    await waitFor("apps manager transition",()=>!scene.getMotionSnapshot().active);await present(app,"apps manager rendered");
+    const firstManaged=apps!.filteredManagedApps.value[0]!;
+    clickWithNativeInput(app.stage.getChildByLabel(`native-apps:select-${firstManaged.id}`,true)!);
+    await waitFor("apps selection bar expands",()=>app.stage.getChildByLabel("native-disclosure:apps.selection.apps.appManager",true)?.getChildByLabel("native-disclosure-content")?.alpha===1);
+    assert.deepEqual(apps!.appManagerSelectedIds.value,[firstManaged.id]);
+    await captureSmokeFrame("settings-apps-selected");
+    clickWithNativeInput(app.stage.getChildByLabel("native-apps:clear",true)!);
+    await waitFor("apps selection cleared",()=>apps!.selectedManagedAppCount.value===0&&!scene.getMotionSnapshot().active);
+    const appSettingsBefore=apps!.persistence.capture();
+    apps!.newScanKeyword.value="native-settings-test";apps!.addScanKeywordBlacklistItem();
+    await present(app,"apps keyword changed");await saves.flush();
+    assert.ok((await nativeData.loadLayout())!.settings.scanKeywordBlacklist.includes("native-settings-test"));
+    const newTargets=await nativeData.checkLaunchTargets([{id:"missing",launchTarget:{kind:"executable",path:join(process.env.LUMERIA_NATIVE_DATA_DIR!,"does-not-exist.exe")}}]);
+    assert.equal(newTargets[0]?.status,"missing");
+    apps!.persistence.restore(appSettingsBefore);await present(app,"apps settings restored");await saves.flush();
+    clickWithNativeInput(app.stage.getChildByLabel("native-apps:add",true)!);
+    await waitFor("apps editor transition",()=>management.getChildByLabel("native-form-overlay")?.alpha===1);
+    assert.ok(management.modal);onKey({type:"down",key:"Escape"});
+    await present(app,"apps editor cancelled");
+    assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancelled app editor cannot alter layout");
+    const managerSearch=app.stage.getChildByLabel("native-apps:search",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
+    managerSearch.focus();managerSearch.selectAll();managerSearch.commitText("No matching application");
+    await waitFor("apps search filters",()=>apps!.filteredManagedApps.value.length===0);await present(app,"apps empty search");
+    assert.equal(searchBar.host.focused?.value,"No matching application","live search redraw must preserve focused text");
+    searchBar.host.focused!.selectAll();searchBar.host.focused!.commitText("");await waitFor("apps search restores",()=>apps!.filteredManagedApps.value.length===apps!.managedApps.value.length);
+    await present(app,"apps search restored");
+    assert.ok(apps!.canExcludeManagedAppFromScan(firstManaged));apps!.excludeManagedAppFromScan(firstManaged);
+    await present(app,"app excluded");await saves.flush();assert.equal(apps!.managedApps.value.some(item=>item.id===firstManaged.id),false);
+    settingsNavigation.openSubPage(settingsNavigation.settingsSubPages.value.appsExcludedApps!);(settingsShell as NativeSettingsShell).redraw();
+    await waitFor("excluded page transition",()=>!scene.getMotionSnapshot().active);await present(app,"excluded page rendered");
+    await captureSmokeFrame("settings-apps-excluded");
+    clickWithNativeInput(app.stage.getChildByLabel(`native-apps:restore-${firstManaged.id}`,true)!);await present(app,"exclusion removed");await saves.flush();
+    assert.equal(apps!.presentation.scanAppBlacklist.value.length,appSettingsBefore.scanAppBlacklist.length);
+    await apps!.rescanManagedApps();
+    settingsNavigation.openSubPage({id:"apps.scanResults",parentTabId:"apps",labelKey:"dialogs.scanResults.title"});(settingsShell as NativeSettingsShell).redraw();
+    await waitFor("scan result page transition",()=>!scene.getMotionSnapshot().active);await present(app,"scan results rendered");
+    assert.ok(apps!.scanResultModel.apps.value.some(item=>item.id===firstManaged.id));await captureSmokeFrame("settings-apps-scan-results");
+    apps!.scanResultModel.actions.addSelected();await present(app,"scan selection added");await saves.flush();
+    assert.ok(apps!.managedApps.value.some(item=>item.id===firstManaged.id));
+    apps!.persistence.restore(appSettingsBefore);commitEditedPages(baselinePages);await present(app,"apps roundtrip fixture restored");await saves.flush();
+    console.log("Native apps settings: overview, multi-selection animation, persistence, target checks and editor cancellation passed");
+
+    const appearanceTab=app.stage.getChildByLabel("native-settings-tab:interface",true);assert.ok(appearanceTab);
     clickWithNativeInput(appearanceTab);await present(app,"back to native layout settings");
     const committedTheme=settings.persistence.capture().settingsThemePreference;
     const previewTheme=settingsTheme()==="dark"?"light":"dark";
@@ -1593,6 +1755,9 @@ try {
       await present(app,`window ${label} revealed`);clickWithNativeInput(control);await present(app,`window ${label} selected`);
     };
     const windowBefore=app.getWindowFrame(),materialBefore=settings.presentation.windowEffectMaterial.value;
+    const modeRow=app.stage.getChildByLabel("native-window:mode-expand",true) as NativeFluentButton;
+    const arrowPoint=modeRow.toGlobal({x:modeRow.controlWidth-25,y:36});
+    assert.equal(app.renderer.events.rootBoundary.hitTest(arrowPoint.x,arrowPoint.y),modeRow,"mode arrow must hit the whole-row expander");
     const applyWindowSettings=async()=>{
       clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
       await waitFor("window settings transaction completed",()=>Boolean(settingsShell&&!settingsShell.applying));
@@ -1600,6 +1765,21 @@ try {
     };
     const titlebarBefore=settings.presentation.showCustomTitlebar.value;
     await clickWindowControl("mode-expand");
+    {
+      const themeBefore=settings.draft.settingsThemePreference.value,modeBefore=settings.draft.windowMode.value;
+      settings.actions.setDraftSettingsThemePreference("dark");
+      for(const mode of ["windowed","fullscreen"] as const){
+        settings.actions.setDraftWindowMode(mode);(settingsShell as NativeSettingsShell).redraw();
+        await waitFor("window disclosure settles",()=>!scene.getMotionSnapshot().active);await present(app,`window disclosure ${mode}`);
+        const detailRow=app.stage.getChildByLabel("native-window:titlebar-row",true)!;
+        assert.equal(detailRow.alpha,mode==="fullscreen"?0.68:1);
+        const disclosure=app.stage.getChildByLabel("native-disclosure:window.mode",true)!;
+        const header=app.stage.getChildByLabel("native-window:mode-expand",true)!;
+        assert.ok(Math.abs(disclosure.y-header.y-72)<0.01,"header and detail must share a seam without a row gap");
+        await captureSmokeFrame(`settings-window-disclosure-${mode}`);
+      }
+      settings.actions.setDraftWindowMode(modeBefore);settings.actions.setDraftSettingsThemePreference(themeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"window disclosure draft restored");
+    }
     const toggleTitlebar=async()=>{
       await clickWindowControl("windowed");
       onKey({type:"down",key:"Tab"});await present(app,"titlebar toggle revealed");
@@ -1678,11 +1858,34 @@ try {
     // Exercise the actual close guard while a settings transaction is in flight.
     const applyingShell=settingsShell as NativeSettingsShell;
     const applyNormally=applyingShell.options.apply;
+    {
+      const applyButton=app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true) as NativeFluentButton;
+      const cancelButton=app.stage.getChildByLabel(`native-action:${t("common.actions.cancel")}`,true)!;
+      let finish!:()=>void,calls=0;
+      applyingShell.options.apply=()=>{calls++;return new Promise<void>(resolve=>{finish=resolve;});};
+      try{
+        clickWithNativeInput(applyButton);
+        const p=applyButton.toGlobal({x:44,y:17});
+        for(let click=0;click<12;click++){app.nativeInput.emitPointer("pointerdown",p.x,p.y,0);app.nativeInput.emitPointer("pointerup",p.x,p.y,0);}
+        assert.equal(calls,1);assert.equal(applyButton.disabled,false);assert.equal(applyingShell.closing,false);
+        app.nativeInput.emitPointer("pointerdown",p.x,p.y,0);finish();await applyingShell.waitForApply();
+        app.nativeInput.emitPointer("pointerup",p.x,p.y,0);await present(app,"rapid apply across save completion");
+        if(applyingShell.applying){finish();await applyingShell.waitForApply();}
+        assert.equal(settingsShell,applyingShell);assert.equal(applyingShell.closing,false);
+        assert.equal(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true),applyButton);
+        assert.equal(app.stage.getChildByLabel(`native-action:${t("common.actions.cancel")}`,true),cancelButton);
+        await captureSmokeFrame("settings-rapid-apply-stable");
+        console.log("Rapid apply: duplicate save blocked, footer nodes preserved, no settings close");
+      }finally{applyingShell.options.apply=applyNormally;}
+    }
     let rejectPending!:(error:Error)=>void;
     applyingShell.options.apply=()=>new Promise<void>((_resolve,reject)=>{rejectPending=reject;});
     try{
+      const beforeApply=applyingShell.redrawCount;
       clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
       assert.ok(applyingShell.applying);
+      assert.equal(applyingShell.redrawCount,beforeApply,"pending apply must preserve the rendered controls");
+      await present(app,"pending apply visual");await captureSmokeFrame("settings-apply-pending");
       quitRequested=true;
       app.window.requestClose();
       await waitFor("close waits for settings",()=>windowClosing);
@@ -1848,8 +2051,8 @@ try {
 
     const rowsControl=app.stage.getChildByLabel("native-setting:desktopRows",true);
     assert.ok(rowsControl);
-    for(let index=0;index<60&&!rowsControl.children.includes(searchBar.host.focused!);index++)onKey({type:"down",key:"Tab"});
-    assert.ok(rowsControl.children.includes(searchBar.host.focused!),"Tab must reveal and focus the desktop row input");
+    for(let index=0;index<60&&!(rowsControl as import("../rendering/native/NativeSpinButton.js").NativeSpinButton).input.focused;index++)onKey({type:"down",key:"Tab"});
+    assert.ok((rowsControl as import("../rendering/native/NativeSpinButton.js").NativeSpinButton).input.focused,"Tab must reveal and focus the desktop row input");
     await present(app,"desktop row focus scroll settled");
     onKey({type:"down",key:"ArrowUp"});
     assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1,"numeric keyboard handling must reach the shared draft");
@@ -1859,12 +2062,12 @@ try {
     assert.equal(layoutSettings.draftRows.value,baselineConfig.rows+1);
     assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"draft edits must not change desktop configuration");
     onKey({type:"down",key:"Escape"});
-    assert.equal(settingsShell,null);
+    await waitFor("settings close animation complete",()=>settingsShell===null);
     assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"Cancel must retain the committed configuration");
     await present(app,"settings close restores entry hit target");
     clickWithNativeInput(settingsButton);await present(app,"settings reopened");
     const reopenedRows=app.stage.getChildByLabel("native-setting:desktopRows",true);assert.ok(reopenedRows);
-    for(let index=0;index<60&&!reopenedRows.children.includes(searchBar.host.focused!);index++)onKey({type:"down",key:"Tab"});
+    for(let index=0;index<60&&!(reopenedRows as import("../rendering/native/NativeSpinButton.js").NativeSpinButton).input.focused;index++)onKey({type:"down",key:"Tab"});
     await present(app,"reopened desktop row revealed");
     clickWithNativeInput(reopenedRows.getChildByLabel("native-action:+",true)!);
     const applyButton=app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true);assert.ok(applyButton);
@@ -2545,6 +2748,10 @@ try {
       resolution,
       visibleNodes,
     }, null, 2));
+    if(process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"){
+      if(process.env.LAUNCHPAD_NATIVE_WINDOW_CARD_PREVIEW==="1"){settingsNavigation.selectTab("interface");windowPanelState.mode=true;}
+      openSettings();
+    }
     if(process.env.LAUNCHPAD_NATIVE_RESTART_SMOKE==="1"){
       const {sendTrayTestAction}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
       assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR,"restart smoke must use isolated data");

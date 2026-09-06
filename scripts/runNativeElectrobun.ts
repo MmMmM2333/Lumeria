@@ -12,6 +12,9 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
 }
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
 const isolated = nativeMode === "smoke" || process.argv.includes("--isolated");
+const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
+const isolatedRuntime=runtimeArgument?resolve(runtimeArgument):null;
+if(isolatedRuntime&&!isolated)throw new Error("A separate runtime requires isolated data");
 const runner = join(
   projectRoot,
   "vendor",
@@ -142,6 +145,7 @@ fixture.settings.backgroundBaseColor = "#090b14";
 fixture.settings.backgroundBaseOpacity = 100;
 fixture.settings.gridRows = 4;
 if(process.argv.includes("--light"))fixture.settings.settingsThemePreference="light";
+if(process.argv.includes("--dark"))fixture.settings.settingsThemePreference="dark";
 fixture.pages[0]!.push({
   id: "native-folder-other", type: "folder", name: "另一个文件夹",
   childPages: [[{ id: "native-other-child", type: "manualApp", name: "另一个子项", emoji: "🌟",
@@ -166,6 +170,7 @@ fixture.settings.scanRoots = [{
 fixture.settings.scanKeywordBlacklist = [];
 fixture.settings.scanKeywordAllowlist = [];
 fixture.settings.scanAppBlacklist = [];
+if(process.argv.includes("--settings-only"))fixture.settings.mainWindowShortcut=null;
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
@@ -175,11 +180,11 @@ try {
   let status:number;
   do {
   rmSync(restartPath,{force:true});
-  status = await runNativeProcess(process.execPath, [runner, "start"], {
-    cwd: projectRoot,
+  status = await runNativeProcess(isolatedRuntime?join(isolatedRuntime,"bin","launcher.exe"):process.execPath, isolatedRuntime?[]:[runner, "start"], {
+    cwd: isolatedRuntime?join(isolatedRuntime,"bin"):projectRoot,
     env: {
       ...process.env,
-      LAUNCHPAD_NATIVE_DATA_HOST: join(
+      LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
         projectRoot,
         "src-tauri",
         "target",
@@ -187,6 +192,7 @@ try {
         "lumeria_native_data.exe",
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
       LAUNCHPAD_NATIVE_RESTART_FILE:restartPath,
       LAUNCHPAD_NATIVE_RESTART_ATTEMPT:String(restartAttempt++),
       LAUNCHPAD_NATIVE_RESTART_SMOKE:process.argv.includes("--restart-smoke")?"1":"0",

@@ -209,6 +209,15 @@ export class NativeDataHost {
     if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
     await this.#request("launchApp", { appId });
   }
+  async checkLaunchTargets(targets:readonly import("../api/launchpadApi.js").LaunchTargetCheckRequest[]):Promise<readonly import("../api/launchpadApi.js").LaunchTargetCheckResult[]>{
+    const value=await this.#request("checkLaunchTargets",{targets});
+    if(!Array.isArray(value))throw new TypeError("Launch target checks must return an array");
+    return value.map(item=>{
+      const entry=requireRecord(item,"launch target check");
+      if(typeof entry.id!=="string"||!["ok","missing","unknown"].includes(String(entry.status)))throw new TypeError("Invalid launch target check");
+      return {id:entry.id,status:entry.status as "ok"|"missing"|"unknown"};
+    });
+  }
 
   async dispose(): Promise<void> {
     if (this.#closed) return;
