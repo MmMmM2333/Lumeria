@@ -53,8 +53,10 @@ import {
 } from "./iconFolderHoverState.js";
 import type { IconFolderHoverState } from "./iconFolderHoverState.js";
 import { getIconLabelRenderState } from "./iconLabelLayout.js";
+import { resolveLabelRasterWidth } from "./iconLabelRaster.js";
 import {
   drawFocusFrame,
+  shouldDrawFocusFrame,
   getFocusFrameRect as getFocusFrameRectForIcon,
 } from "./iconFocusFrame.js";
 import {
@@ -891,11 +893,17 @@ export class IconNode extends Container {
   }
 
   renderFrame(state: IconVisualState): void {
+    const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
+    const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
+    if (!shouldDrawFocusFrame({ focused: state.focused, batchSelected: state.batchSelected,
+      dropTarget: state.dropTarget, isFolderDropHover, isAppFolderCreateHover })) {
+      if (this.focusFrameSig !== "hidden") this.focusFrame.clear();
+      this.focusFrameSig = "hidden";
+      return;
+    }
     const rect = state.batchSelected
       ? this.getBatchSelectionFrameRect(state)
       : this.getFocusFrameRect(state);
-    const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
-    const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     const sig = [
       numberSig(rect.left),
       numberSig(rect.top),
@@ -1535,7 +1543,7 @@ export class IconNode extends Container {
   }
 
   renderLabel(state: IconVisualState): void {
-    const labelState = getIconLabelRenderState({
+    const requestedLabelState = getIconLabelRenderState({
       cellWidth: state.cellWidth,
       compact: state.compact,
       iconSize: this.iconSize,
@@ -1543,6 +1551,9 @@ export class IconNode extends Container {
       singleLineLabel: state.singleLineLabel,
       textless: this.textless,
     });
+    const labelState = requestedLabelState.visible
+      ? { ...requestedLabelState, wordWrapWidth: resolveLabelRasterWidth(this.labelText, requestedLabelState) }
+      : requestedLabelState;
     const sig = [
       boolSig(labelState.visible),
       (labelState as VisibleIconLabelState).text || "",

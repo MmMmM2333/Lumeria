@@ -13,6 +13,7 @@ import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { runNativeDesktopResizeTests } from "../rendering/native/nativeDesktopSceneResize.test.js";
+import { runNativeLabelRasterTests } from "../rendering/native/nativeLabelRaster.test.js";
 import { NativePageDots } from "../rendering/native/NativePageDots.js";
 import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
 import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
@@ -717,4 +718,5 @@ stage.destroy();
   off();subject.destroy();root.destroy();
 }
 runNativeDesktopResizeTests(makeCompleteFrame());
+runNativeLabelRasterTests();
 console.log("Native desktop scene tests passed");
