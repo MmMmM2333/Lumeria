@@ -14,8 +14,11 @@ import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { createNativeSettingsInput } from "./nativeSettingsInput.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
+import { NativeVirtualList } from "./ui/NativeVirtualList.js";
+import { NativeScrollView } from "./NativeScrollView.js";
+import type { NativeButtonAppearance } from "./NativeFluentButton.js";
 
-export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>};
+export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>;scrollOffsets?:Record<string,number>};
 type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;width:number;theme:NativeTheme;state:NativeAppsPageState;
   subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;
   navigate(page:"manager"|"excluded"|"scan"):void;edit(app:ReadonlyLaunchpadApp|null):void;icon(app:ReadonlyLaunchpadApp,reset:boolean):void;};
@@ -25,29 +28,50 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
   const {apps,host,width,theme,state,invalidate,redraw}=options,style=nativeSettingsStyle(theme);
   const node=new Container(),controls:NativeSettingsControl[]=[],cleanup:(()=>void)[]=[];
   const layout=new NativeSettingsLayout(node,width,theme);let y=0;
+  let resizeList=(_height:number)=>{};
+  const virtualRows=(count:number,controlCount:number,build:(index:number)=>void,key:(index:number)=>string)=>{
+    const top=y;
+    const list=new NativeVirtualList(count,70,controlCount,index=>{
+      const savedY=y,start=node.children.length,controlStart=controls.length;y=0;
+      build(index);y=savedY;
+      const row=new Container();const children=node.children.slice(start);node.removeChildren(start);row.addChild(...children);return {node:row,controls:controls.splice(controlStart)};
+    },key);
+    const route=options.subPage??"";let listHeight=450;
+    const scroll=new NativeScrollView(invalidate,offset=>{(state.scrollOffsets??={})[route]=offset;list.viewport(offset,listHeight);},theme);
+    scroll.label="native-apps:list-scroll";scroll.y=top;scroll.content.addChild(list);node.addChild(scroll);
+    for(const control of list.controls){
+      const focus=control.focus,rect=control.revealRect!;
+      control.focus=active=>{if(active){const target=rect();scroll.reveal(target.top,target.height);}focus(active);};
+      control.revealRect=()=>({top:scroll.y,height:Math.min(70,listHeight)});
+    }
+    resizeList=height=>{const offset=state.scrollOffsets?.[route]??0;listHeight=Math.max(1,height-scroll.y);scroll.resize(width,listHeight,count*70);scroll.scrollTo(offset);list.viewport(scroll.offset,listHeight);};
+    controls.push(...list.controls);y+=1;
+  };
   const key=(value:string,params:Record<string,string|number>={})=>t(`settings.apps.${value}`,params);
   const text=(value:string,x:number,top:number,size=13,muted=false)=>{
     const label=new Text({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fill:muted?style.muted:style.text}});
     label.position.set(x,top);node.addChild(label);return label;
   };
-  const button=(id:string,label:string,x:number,top:number,w:number,action:()=>void,disabled=false,appearance:"outline"|"primary"="outline",danger=false)=>{
-    const b=new NativeFluentButton(label,w,action,invalidate,theme,appearance,danger);b.label=`native-apps:${id}`;b.position.set(x,top);b.disabled=disabled;node.addChild(b);
+  const button=(id:string,label:string,x:number,top:number,w:number,action:()=>void,disabled=false,appearance:NativeButtonAppearance="outline",danger=false,height=32)=>{
+    const b=new NativeFluentButton(label,w,action,invalidate,theme,appearance,danger,height);b.label=`native-apps:${id}`;b.position.set(x,top);b.disabled=disabled;node.addChild(b);
     b.caption.style.fontSize=12;
-    if(b.caption.width>w-16)b.caption.scale.x=(w-16)/b.caption.width;
+    if(appearance!=="link"&&b.caption.width>w-16)b.caption.scale.x=(w-16)/b.caption.width;
     controls.push({node:b,disabled:()=>b.disabled,focus:active=>{b.focused=active;},handleKey:k=>{if(k!=="Enter"&&k!==" ")return false;b.activate();return true;}});return b;
   };
   const input=(id:string,value:string,x:number,top:number,w:number,change:(value:string)=>void,readOnly=false,live=false)=>{
     const label=id.startsWith("source-label-"),path=id.startsWith("source-path-");
-    const field=createNativeSettingsInput(host,{width:w,height:label?26:path?30:34,value,theme,readOnly,disabled:readOnly&&path,
-      variant:label?"label":"normal",placeholder:id==="search"?key("manager.search"):id==="excluded-search"?key("excluded.search"):"",invalidate});
-    field.label=`native-apps:${id}`;field.position.set(x,top);node.addChild(field);
+    const search=id==="search"||id==="excluded-search",inset=search?26:0;
+    const field=createNativeSettingsInput(host,{width:w,height:label?26:path?30:search?36:34,value,theme,readOnly,disabled:readOnly&&path,leadingInset:inset,
+      variant:label?"label":"normal",placeholder:id==="search"?key("manager.search"):id==="excluded-search"?key("excluded.search"):id==="keyword"?key("filters.keywordInput"):"",invalidate});
+    field.label=`native-apps:${id}`;field.position.set(x+inset,top);node.addChild(field);
+    if(search){const icon=nativeFluentIcon("search-20-regular",style.muted,16);icon.position.set(-16,10);field.addChild(icon);}
     let committed=value;
     const commit=()=>{if(!readOnly&&!field.composing&&field.value!==committed){committed=field.value;change(committed);}};field.on(live?"input":"blur",commit);
-    controls.push({node:field,disabled:()=>field.disabled,restoreFocus:true,selection:()=>field.selection,restoreSelection:selection=>field.setSelectionRange(selection.anchor,selection.focus),focus:active=>{if(active)field.focus();else if(field.focused)field.blur();},handleKey:k=>{if(k!=="Enter")return false;commit();return true;}});
+    controls.push({node:field,disabled:()=>field.disabled,restoreFocus:true,selection:()=>field.selection,restoreSelection:selection=>field.setSelectionRange(selection.anchor,selection.focus),focus:active=>{if(active)field.focus();else if(field.focused)field.blur();},handleKey:k=>{if(k!=="Enter"||field.composing)return false;commit();if(id==="keyword")apps.addScanKeywordBlacklistItem();return true;}});
     cleanup.push(()=>{field.removeAllListeners("blur");field.removeAllListeners("input");field.destroy();});return field;
   };
   const toggle=(id:string,checked:boolean,x:number,top:number,action:(value:boolean)=>void,kind:"checkbox"|"switch"="switch")=>{
-    const b=new NativeFluentToggle(kind,action,invalidate,theme);b.label=`native-apps:${id}`;b.checked=checked;b.position.set(x,top);node.addChild(b);
+    const b=new NativeFluentToggle(kind,action,invalidate,theme,16);b.label=`native-apps:${id}`;b.checked=checked;b.position.set(x,top);node.addChild(b);
     const ring=new Graphics({eventMode:"none"});b.addChild(ring);
     controls.push({node:b,disabled:()=>b.disabled,focus:active=>{ring.clear();if(active)ring.roundRect(0,1,kind==="switch"?40:32,30,4).stroke({color:style.accent,width:2});invalidate();},handleKey:k=>{if(k!==" "&&k!=="Enter")return false;b.toggle();return true;}});return b;
   };
@@ -63,43 +87,53 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     y+=72;return {control,chevron};
   };
   const scan=()=>{void apps.rescanManagedApps().then(()=>{if(apps.scanResultModel.isOpen.value)options.navigate("scan");redraw();});};
+  const buttonIcon=(b:NativeFluentButton,icon:Parameters<typeof nativeFluentIcon>[0])=>{
+    const mark=nativeFluentIcon(icon,b.appearance==="primary"?"#ffffff":style.text,16);mark.position.set(10,8);b.addChild(mark);mark.alpha=b.disabled?0.38:1;b.caption.x+=9;
+  };
+  const listActions=(total:string,all:()=>void,clear:()=>void)=>{
+    text(total,0,y+2,12,true);
+    const clearButton=button("clear",t("common.actions.clearSelection"),0,y,96,clear,false,"link",false,18);
+    const allButton=button("all",t("common.actions.selectAll"),0,y,88,all,false,"link",false,18);
+    clearButton.resizeWidth(Math.ceil(clearButton.caption.width));clearButton.caption.x=clearButton.controlWidth/2;clearButton.x=width-clearButton.controlWidth;
+    allButton.resizeWidth(Math.ceil(allButton.caption.width));allButton.caption.x=allButton.controlWidth/2;allButton.x=clearButton.x-10-allButton.controlWidth;
+    y+=26;
+  };
   const appRow=(app:ReadonlyLaunchpadApp,selected:boolean,select:(checked:boolean)=>void,more:()=>void)=>{
-    const top=row();
-    const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"subtle",false,72);background.label=`native-apps:row-${app.id}`;background.y=top;
+    const top=y;y+=70;
+    const background=new NativeFluentButton("",width-12,()=>select(!selected),invalidate,theme,"list-row",false,64);background.label=`native-apps:row-${app.id}`;background.y=top;
     node.addChild(background);
-    if(selected)background.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,width,72,8).fill(style.selected).stroke({color:style.accent,alpha:0.4,width:1}),0);
-    toggle(`select-${app.id}`,selected,8,top+20,select,"checkbox");
-    const texture=options.icons.resolve(app);if(texture){const icon=new Sprite({texture,eventMode:"none"});icon.position.set(50,top+18);icon.width=icon.height=36;node.addChild(icon);}
-    else text(app.emoji||"▣",52,top+20,26);
-    const name=text(app.name,100,top+14);name.style.fontWeight="600";
-    const target=text(apps.getLaunchTargetPath(app)||key("manager.targetMissing"),100,top+39,11,true);
-    target.style.wordWrap=true;target.style.wordWrapWidth=Math.max(80,width-164);target.style.breakWords=true;
-    const clip=new Graphics({eventMode:"none"}).rect(100,top+8,Math.max(80,width-160),55).fill(0xffffff);node.addChild(clip);target.mask=clip;name.mask=clip;
-    const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-50,top+19,36,more);moreButton.caption.visible=false;
-    const dots=new Graphics({eventMode:"none"});for(const x of [12,18,24])dots.circle(x,17,1.25).fill(style.text);moreButton.addChild(dots);
+    background.selected=selected;
+    toggle(`select-${app.id}`,selected,5,top+16,select,"checkbox");
+    const texture=options.icons.resolve(app);if(texture){const icon=new Sprite({texture,eventMode:"none"});icon.position.set(45,top+19);icon.width=icon.height=26;node.addChild(icon);}
+    else {const emoji=text(app.emoji||"▣",58,top+32,15);emoji.anchor.set(0.5);}
+    const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,width-156));name.position.set(87,top+16);node.addChild(name);
+    const target=new NativeSingleLineText(apps.getLaunchTargetPath(app)||key("manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:theme==="dark"?"rgba(255,255,255,0.48)":style.muted},Math.max(1,width-156));target.position.set(87,top+33);node.addChild(target);
+    const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-56,top+16,32,more,false,"subtle");moreButton.caption.visible=false;
+    const dots=new Graphics({eventMode:"none"});for(const x of [11,16,21])dots.circle(x,16,1).fill(style.text);moreButton.addChild(dots);
   };
   const selectionBar=(count:number,actions:()=>void)=>{
     const start=node.children.length,top=y,first=controls.length;
-    text(key("manager.selected",{count}),14,y+9);actions();y+=46;
-    layout.disclosure(`apps.selection.${options.subPage}`,count>0,start,top,46,controls.slice(first),undefined,false);
+    node.addChild(new Graphics({eventMode:"none"}).roundRect(0,y,width,48,8).fill(theme==="dark"?"rgba(75,163,246,0.16)":style.selected).stroke({color:style.accent,alpha:0.22,width:1}));
+    text(key("manager.selected",{count}),12,y+16,12);y+=8;actions();y+=48;
+    layout.disclosure(`apps.selection.${options.subPage}`,count>0,start,top,56,controls.slice(first),undefined,false);
   };
   if(options.subPage==="apps.appManager"){
-    input("search",apps.appManagerSearchQuery.value,0,y,Math.max(100,width-254),value=>{apps.appManagerSearchQuery.value=value;},false,true);
-    button("scan",key(apps.isScanningApps.value?"manager.scanning":"manager.scanApps"),width-242,y,116,scan,!apps.canScanManagedApps.value||apps.isScanningApps.value);
-    button("add",key("manager.addApp"),width-116,y,116,()=>options.edit(null));y+=48;
+    input("search",apps.appManagerSearchQuery.value,0,y,Math.max(100,width-232),value=>{apps.appManagerSearchQuery.value=value;},false,true);
+    buttonIcon(button("scan",key(apps.isScanningApps.value?"manager.scanning":"manager.scanApps"),width-222,y+2,112,scan,!apps.canScanManagedApps.value||apps.isScanningApps.value),"arrow-sync-20-regular");
+    buttonIcon(button("add",key("manager.addApp"),width-102,y+2,102,()=>options.edit(null),false,"primary"),"add-20-regular");y+=44;
     selectionBar(apps.selectedManagedAppCount.value,()=>{
       button("remove-selected",key("manager.remove"),width-360,y,150,()=>apps.removeSelectedManagedAppsFromLaunchpad());
       button("exclude-selected",key("manager.exclude"),width-200,y,200,()=>apps.excludeSelectedManagedAppsFromScan(),!apps.canExcludeSelectedManagedAppsFromScan.value);
     });
-    text(key("manager.count",{filtered:apps.filteredManagedApps.value.length,total:apps.managedApps.value.length}),0,y+9,12,true);
-    button("all",t("common.actions.selectAll"),width-188,y,88,apps.selectAllManagedApps);button("clear",t("common.actions.clearSelection"),width-96,y,96,apps.clearManagedAppSelection);y+=46;
-    for(const app of apps.filteredManagedApps.value)appRow(app,apps.appManagerSelectedIds.value.includes(app.id),checked=>apps.toggleManagedAppSelection(app.id,checked),()=>{
+    listActions(key("manager.count",{filtered:apps.filteredManagedApps.value.length,total:apps.managedApps.value.length}),apps.selectAllManagedApps,apps.clearManagedAppSelection);
+    const managed=apps.filteredManagedApps.value;
+    virtualRows(managed.length,2,index=>{const app=managed[index]!;appRow(app,apps.appManagerSelectedIds.value.includes(app.id),checked=>apps.toggleManagedAppSelection(app.id,checked),()=>{
       const control=node.getChildByLabel(`native-apps:more-${app.id}`,true)!;const p=control.toGlobal({x:0,y:34});
       options.management.menu(p.x,p.y,[{label:t("dialogs.appEditor.editTitle"),run:()=>options.edit(app)},
         {label:key("icon.change"),run:()=>options.icon(app,false)},{label:t("common.actions.restoreDefault"),run:()=>options.icon(app,true)},
         {label:key("manager.remove"),run:()=>apps.removeManagedAppFromLaunchpad(app.id)},
         ...(apps.canExcludeManagedAppFromScan(app)?[{label:key("manager.exclude"),run:()=>apps.excludeManagedAppFromScan(app)}]:[])]);
-    });
+    });},index=>managed[index]!.id);
     if(!apps.filteredManagedApps.value.length){text(key("manager.noMatch"),14,y+24,13,true);y+=80;}
   }else if(options.subPage==="apps.excludedApps"){
     input("excluded-search",state.excludedQuery,0,y,width,value=>{state.excludedQuery=value;redraw();},false,true);y+=48;
@@ -108,16 +142,17 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const valid=new Set(entries.map(item=>item.key));for(const id of state.excludedKeys)if(!valid.has(id))state.excludedKeys.delete(id);
     const filtered=entries.filter(item=>`${item.app.name??""} ${item.key}`.toLowerCase().includes(state.excludedQuery.toLowerCase().trim()));
     selectionBar(state.excludedKeys.size,()=>{button("restore-selected",key("excluded.removeSelected"),width-160,y,160,()=>{apps.cancelScanAppExclusions(entries.filter(item=>state.excludedKeys.has(item.key)).map(item=>item.index));state.excludedKeys.clear();redraw();});});
-    text(key("excluded.results",{count:filtered.length}),0,y+9,12,true);
-    button("all",t("common.actions.selectAll"),width-188,y,88,()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));redraw();});button("clear",t("common.actions.clearSelection"),width-96,y,96,()=>{state.excludedKeys.clear();redraw();});y+=46;
-    for(const entry of filtered){
-      const top=row(),name=entry.app.name||entry.key,selected=state.excludedKeys.has(entry.key);
+    listActions(key("excluded.results",{count:filtered.length}),()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));redraw();},()=>{state.excludedKeys.clear();redraw();});
+    virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
+      const top=y,name=entry.app.name||entry.key,selected=state.excludedKeys.has(entry.key);y+=70;
       const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);redraw();};
-      const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"subtle",false,72);background.y=top;node.addChild(background);
-      if(selected)background.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,width,72,8).fill(style.selected).stroke({color:style.accent,alpha:0.4,width:1}),0);
-      toggle(`excluded-${entry.key}`,selected,8,top+20,select,"checkbox");text(name,52,top+17);text(entry.key.slice(0,70),52,top+40,11,true);
-      button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-142,top+19,128,()=>{apps.cancelScanAppExclusion(entry.index);redraw();});
-    }
+      const background=new NativeFluentButton("",width-12,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
+      toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
+      const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-116);nameLabel.position.set(45,top+16);node.addChild(nameLabel);
+      const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-116);subtitle.position.set(45,top+33);node.addChild(subtitle);
+      const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-56,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
+      const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
+    },index=>filtered[index]!.key);
     if(!filtered.length){text(key(entries.length?"excluded.noMatch":"excluded.empty"),14,y+24,13,true);y+=80;}
   }else if(options.subPage==="apps.scanResults"){
     const result=apps.scanResultModel;
@@ -125,7 +160,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     button("all",t("common.actions.selectAll"),0,y,88,()=>result.actions.selectAll());button("clear",t("common.actions.clearSelection"),98,y,100,()=>result.actions.clearSelection());
     button("add-selected",t("dialogs.scanResults.addSelected"),width-130,y,130,()=>{result.actions.addSelected();options.navigate("manager");},!result.canAdd.value);y+=46;
     const list=result.activeTab.value==="available"?result.apps.value:result.keywordExcludedApps.value.map(entry=>entry.app);
-    for(const app of list)appRow(app,result.selectedIds.value.includes(app.id),checked=>result.actions.toggleSelection(app.id,checked),()=>options.edit(app));
+    virtualRows(list.length,2,index=>{const app=list[index]!;appRow(app,result.selectedIds.value.includes(app.id),checked=>result.actions.toggleSelection(app.id,checked),()=>options.edit(app));},index=>list[index]!.id);
     if(!list.length){text(key("manager.noMatch"),14,y+24,13,true);y+=80;}
     for(const warning of result.warnings.value){const label=text(`${warning.rootLabel}: ${warning.message}`,14,y,12,true);label.style.wordWrap=true;label.style.wordWrapWidth=width-28;y+=label.height+8;}
   }else{
@@ -154,14 +189,32 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     y+=16;heading(key("filters.title"));
     const keywordRow=navigationRow("keywords-expand",key("filters.keywords"),key("filters.keywordCount",{count:apps.presentation.scanKeywordBlacklist.value.length}),"filter-24-regular",()=>{state.keywords=!state.keywords;redraw();},true);
     const first=node.children.length,top=y,firstControl=controls.length;
-    input("keyword",apps.newScanKeyword.value,14,y,width-142,value=>{apps.newScanKeyword.value=value;});button("add-keyword",t("common.actions.add"),width-112,y,98,apps.addScanKeywordBlacklistItem);y+=46;
-    for(const [index,word] of apps.presentation.scanKeywordBlacklist.value.entries()){text(word,14,y+9);button(`remove-keyword-${index}`,t("common.actions.delete"),width-100,y,86,()=>apps.removeScanKeywordBlacklistItem(index));y+=42;}
+    input("keyword",apps.newScanKeyword.value,14,y,width-142,value=>{apps.newScanKeyword.value=value;},false,true);button("add-keyword",t("common.actions.add"),width-112,y,98,apps.addScanKeywordBlacklistItem);y+=46;
+    let chipX=14;
+    for(const [index,word] of apps.presentation.scanKeywordBlacklist.value.entries()){
+      const label=new NativeSingleLineText(word,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.text},Math.max(1,width-76));
+      const chipWidth=label.width+45;
+      if(chipX>14&&chipX+chipWidth>width-14){chipX=14;y+=38;}
+      node.addChild(new Graphics({eventMode:"none"}).roundRect(chipX,y,chipWidth,30,15).fill(theme==="dark"?"rgba(255,255,255,0.1)":style.row).stroke({color:style.border,width:1}));
+      label.position.set(chipX+10,y+7);node.addChild(label);
+      const remove=button(`remove-keyword-${index}`,key("filters.keywordRemove",{keyword:word}),chipX+chipWidth-26,y+6,18,()=>apps.removeScanKeywordBlacklistItem(index),false,"chip-remove",true,18);remove.caption.visible=false;
+      remove.addStateGraphic((g,color)=>{g.clear().moveTo(6,6).lineTo(12,12).moveTo(12,6).lineTo(6,12).stroke({color,width:1});});
+      chipX+=chipWidth+8;
+    }
+    if(chipX>14)y+=30;else {text(key("filters.keywordEmpty"),14,y+8,12,true);y+=34;}
     layout.disclosure("apps.keywords",state.keywords,first,top,y-top,controls.slice(firstControl),keywordRow.chevron,true,keywordRow.control);y+=6;
     navigationRow("excluded",key("excluded.title"),key("filters.appCount",{count:apps.presentation.scanAppBlacklist.value.length}),"apps-list-detail-24-regular",()=>options.navigate("excluded"));y+=22;
     heading(key("manager.title"));
-    navigationRow("manager",key("manager.title"),key("overview.appCount",{count:apps.managedApps.value.length}),"apps-24-regular",()=>options.navigate("manager"));y+=6;
-    button("scan",key(apps.isScanningApps.value?"manager.scanning":"manager.scanApps"),0,y,140,scan,!apps.canScanManagedApps.value||apps.isScanningApps.value);button("add",key("manager.addApp"),152,y,140,()=>options.edit(null));y+=52;
-    const topBadge=row();text(key("overview.missingTarget"),14,topBadge+14);text(key("overview.missingTargetDescription"),14,topBadge+39,12,true);toggle("missing-badge",apps.presentation.showMissingLaunchTargetBadge.value,width-60,topBadge+20,apps.toggleMissingLaunchTargetBadge);
+    navigationRow("manager",key("manager.title"),key("overview.appCount",{count:apps.managedApps.value.length}),"apps-list-24-regular",()=>options.navigate("manager"));y+=6;
+    const actionRow=(title:string,description:string,icon:Parameters<typeof nativeFluentIcon>[0])=>{
+      const top=row();const mark=nativeFluentIcon(icon,style.accent,22);mark.position.set(25,top+25);node.addChild(mark);
+      const name=new NativeSingleLineText(title,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:style.text},Math.max(1,width-200));name.position.set(70,top+17);node.addChild(name);
+      const detail=new NativeSingleLineText(description,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted},Math.max(1,width-200));detail.position.set(70,top+38);node.addChild(detail);return top;
+    };
+    const scanTop=actionRow(key(apps.isScanningApps.value?"manager.scanning":"manager.scanApps"),key(apps.canScanManagedApps.value?"overview.scanReady":"overview.scanDisabled"),"arrow-sync-20-regular");
+    button("scan",key(apps.isScanningApps.value?"manager.scanning":"overview.scan"),width-110,scanTop+20,96,scan,!apps.canScanManagedApps.value||apps.isScanningApps.value);
+    const addTop=actionRow(key("manager.addApp"),key("overview.addDescription"),"add-20-regular");button("add",key("overview.add"),width-110,addTop+20,96,()=>options.edit(null));
+    const topBadge=actionRow(key("overview.missingTarget"),key("overview.missingTargetDescription"),"folder-prohibited-24-regular");toggle("missing-badge",apps.presentation.showMissingLaunchTargetBadge.value,width-54,topBadge+20,apps.toggleMissingLaunchTargetBadge);
   }
-  return {node,height:y,controls,layout:layout.finish(y),dispose:()=>{for(const run of cleanup)run();}};
+  return {node,height:y,controls,layout:layout.finish(y),viewport:(_top,height)=>resizeList(height-38),dispose:()=>{for(const run of cleanup)run();}};
 }

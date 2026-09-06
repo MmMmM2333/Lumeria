@@ -148,10 +148,10 @@ export function nativeBackgroundSettings(options:{
   baseDescription.style.wordWrap=true;baseDescription.style.wordWrapWidth=Math.max(100,width-425);
   const baseColors=new Container();let start=node.children.length;fieldWidth=180;y=baseTop+19;
   color("","base-color",d.backgroundBaseColor.value,a.setDraftBackgroundBaseColor);
-  baseColors.addChild(...node.removeChildren(start));baseColors.x=width-408;node.addChild(baseColors);
+  const colorChildren=node.children.slice(start);node.removeChildren(start);baseColors.addChild(...colorChildren);baseColors.x=width-408;node.addChild(baseColors);
   const baseOpacity=new Container();start=node.children.length;fieldWidth=226;y=baseTop+19;
   slider(key("base.opacity"),"base-opacity",d.backgroundBaseOpacity.value,a.setDraftBackgroundBaseOpacity);
-  baseOpacity.addChild(...node.removeChildren(start));baseOpacity.x=width-226;node.addChild(baseOpacity);
+  const opacityChildren=node.children.slice(start);node.removeChildren(start);baseOpacity.addChild(...opacityChildren);baseOpacity.x=width-226;node.addChild(baseOpacity);
   fieldWidth=width;y=baseTop+78;
   const source=d.backgroundSource.value,usesImage=source==="customImage"||source==="windowsWallpaper";
   const layerName=key(source==="customImage"?"layer.custom":source==="windowsWallpaper"?"layer.wallpaper":"layer.none");

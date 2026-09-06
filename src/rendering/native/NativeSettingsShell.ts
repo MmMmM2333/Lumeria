@@ -7,6 +7,8 @@ import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
 import type { NativeSettingsLayout } from "./nativeSettingsLayout.js";
 import { captureSettingsGeometry,createSettingsTransition } from "./ui/nativeSettingsTransition.js";
+import { NativeVirtualList } from "./ui/NativeVirtualList.js";
+import { NativeFluentToggle } from "./NativeFluentToggle.js";
 
 type Navigation=ReturnType<typeof createSettingsNavigation>;
 export type NativeSettingsContent = {
@@ -15,6 +17,7 @@ export type NativeSettingsContent = {
   controls:readonly NativeSettingsControl[];
   dispose():void;
   layout?:NativeSettingsLayout;
+  viewport?(top:number,height:number):void;
 };
 export type NativeSettingsControl = {
   node:Container;
@@ -24,6 +27,8 @@ export type NativeSettingsControl = {
   restoreFocus?:boolean;
   selection?():{anchor:number;focus:number};
   restoreSelection?(selection:{anchor:number;focus:number}):void;
+  virtualKey?:string;
+  revealRect?():{top:number;height:number};
 };
 export type NativeSettingsShellOptions = {
   navigation:Navigation;
@@ -134,10 +139,14 @@ export class NativeSettingsShell extends Container {
     const {options}=this, {width,height}=options.size(), theme=options.theme(), colors=nativeFluentTheme(theme);
     const style=nativeSettingsStyle(theme);
     const route=options.navigation.activeRoute.value;
-    const focusLabel=this.#routeKey===route.key?this.#controls[this.#focus]?.node.label:null;
+    const focusLabel=this.#routeKey===route.key?(this.#controls[this.#focus]?.virtualKey??this.#controls[this.#focus]?.node.label):null;
     const selection=focusLabel?this.#controls[this.#focus]?.selection?.():undefined;
     const previousScroll=this.#routeKey===route.key?this.#scroll?.offset??0:0;
     const routeChanged=this.#routeKey!==route.key;this.#routeKey=route.key;
+    const switches=new Map<string,ReturnType<NativeFluentToggle["captureTransition"]>>();
+    if(!routeChanged)for(const control of this.#page?.controls??[]){
+      if(control.node instanceof NativeFluentToggle&&control.node.kind==="switch"&&control.node.label)switches.set(control.node.label,control.node.captureTransition());
+    }
     this.#clearLeaving();
     if(routeChanged&&this.#page&&this.#scroll){
       this.#leaving={scroll:this.#scroll,page:this.#page};this.#scroll.removeFromParent();this.#scroll.eventMode="none";
@@ -177,7 +186,11 @@ export class NativeSettingsShell extends Container {
     };
     iconButton("navigation-24-regular",options.t(compact?"settings.shell.expandNavigation":"settings.shell.collapseNavigation"),16,16,36,()=>this.toggleNavigation());
     const back=route.depth?iconButton("arrow-left-20-regular",route.parentLabel,navWidth+12,16,34,()=>{options.navigation.closeSubPage();this.redraw();}):null;
-    const heading=label(route.depth?`${route.parentLabel} › ${route.label}`:route.label,navWidth+(route.depth?54:20),22,20);heading.style.fontWeight="600";
+    const parent=route.depth?button(route.parentLabel,navWidth+54,16,74,()=>{options.navigation.closeSubPage();this.redraw();}):null;
+    if(parent){parent.caption.style.fontSize=20;parent.caption.style.fill=style.muted;parent.resizeWidth(parent.caption.width);parent.caption.anchor.x=0;parent.caption.x=0;}
+    const separator=parent?label("›",parent.x+parent.controlWidth+12,21,20):null;if(separator)separator.style.fill=style.muted;
+    const headingOffset=parent?54+parent.controlWidth+32:20;
+    const heading=label(route.label,navWidth+headingOffset,22,20);heading.style.fontWeight="600";
     iconButton("dismiss-16-regular",options.t("settings.shell.close"),w-52,16,36,()=>this.requestClose());
     const navEntries:{button:NativeFluentButton;indicator:Graphics|null;clip:Graphics}[]=[];
     options.navigation.settingsTabs.value.filter(tab=>options.tabs.includes(tab.id)).forEach((tab,index)=>{
@@ -201,13 +214,14 @@ export class NativeSettingsShell extends Container {
     });
     const footer=route.depth===0&&(route.tabId==="general"||route.tabId==="interface");
     const bodyWidth=Math.max(80,w-navWidth-40),bodyHeight=Math.max(1,h-58-(footer?56:0));
-    this.#scroll=new NativeScrollView(options.invalidate,()=>{},theme,{left:20,right:20,top:18,bottom:20});
+    this.#scroll=new NativeScrollView(options.invalidate,()=>this.#updateViewport(),theme,{left:20,right:20,top:18,bottom:20});
     this.#scroll.position.set(navWidth,58);this.#panel.addChild(this.#scroll);
     this.#page=options.content(route.tabId,route.subPageId,bodyWidth);
+    for(const control of this.#page.controls){
+      if(control.node instanceof NativeFluentToggle){const previous=switches.get(control.node.label);if(previous)control.node.restoreTransition(previous);}
+    }
     this.#bodySize={width:w-navWidth,height:bodyHeight};
     this.#scroll.content.addChild(this.#page.node);
-    this.#scroll.resize(w-navWidth,bodyHeight,this.#page.height);
-    this.#scroll.scrollTo(previousScroll);
     for(const entry of this.#page.layout?.disclosures??[]){
       let state=this.#disclosures.get(entry.id);
       if(!state){state={height:entry.expanded?1:0,opacity:entry.expanded?1:0,expanded:entry.expanded};this.#disclosures.set(entry.id,state);}
@@ -219,11 +233,14 @@ export class NativeSettingsShell extends Container {
       }
     }
     this.#reflow();
+    // Expanded surfaces add padding during reflow. Restoring against the raw
+    // page height first would permanently clamp a valid bottom scroll offset.
+    this.#scroll.scrollTo(previousScroll);
     this.#navigationPaint=()=>{
       if(this.destroyed)return;
       const current=this.#navigation.width;
       navBackground.clear().rect(0,0,current,h).fill(style.nav);
-      heading.x=current+(route.depth?54:20);if(back)back.x=current+12;
+      heading.x=current+headingOffset;if(back)back.x=current+12;if(parent)parent.x=current+54;if(separator)separator.x=current+54+parent!.controlWidth+12;
       this.#scroll!.x=current;
       this.#bodySize.width=Math.max(80,w-current);
       const pageHeight=this.#page?.layout?.reflow(this.#disclosures)??this.#page?.height??0;
@@ -276,6 +293,12 @@ export class NativeSettingsShell extends Container {
     const footerCount=footer?2:0;
     this.#controls=[...chromeControls.slice(0,chromeControls.length-footerCount),...this.#page.controls,...chromeControls.slice(chromeControls.length-footerCount)];
     this.#controls.forEach((control,index)=>{
+      if(control.virtualKey){
+        if(control.node instanceof NativeVirtualList)control.node.onControlFocus(key=>{
+          this.#keyboardFocus=false;const current=this.#controls.findIndex(item=>item.node===control.node&&item.virtualKey===key);if(current>=0)this.#setFocus(current);
+        });
+        return;
+      }
       if(!this.#focusBound.has(control.node)){
         this.#focusBound.add(control.node);
         control.node.on("pointerdown",()=>{this.#keyboardFocus=false;const current=this.#controls.findIndex(item=>item.node===control.node);if(current>=0)this.#setFocus(current);});
@@ -285,7 +308,7 @@ export class NativeSettingsShell extends Container {
         this.#focus=index;
       });
     });
-    if(focusLabel){const index=this.#controls.findIndex(control=>control.node.label===focusLabel&&!control.disabled());if(index>=0){this.#setFocus(index);if(this.#controls[index]?.restoreFocus)this.#controls[index]!.focus(true);if(selection)this.#controls[index]?.restoreSelection?.(selection);}}
+    if(focusLabel){const index=this.#controls.findIndex(control=>(control.virtualKey??control.node.label)===focusLabel&&!control.disabled());if(index>=0){this.#setFocus(index);if(this.#controls[index]?.restoreFocus)this.#controls[index]!.focus(true);if(selection)this.#controls[index]?.restoreSelection?.(selection);}}
     if(this.#applying)this.#page.node.eventMode="none";
     options.invalidate();
   }
@@ -294,9 +317,11 @@ export class NativeSettingsShell extends Container {
     const height=this.#page.layout?.reflow(this.#disclosures)??this.#page.height;
     this.#contentHeight=height;
     this.#scroll.resize(this.#bodySize.width,this.#bodySize.height,height);
+    this.#updateViewport();
     this.#paintContentTransition();
     this.options.invalidate();
   }
+  #updateViewport():void{if(this.#page&&this.#scroll)this.#page.viewport?.(this.#scroll.offset-this.#scroll.padding.top,this.#bodySize.height);}
   #paintContentTransition():void{
     this.#contentTransition?.update(this.#contentProgress.value);
     if(this.#contentHeights&&this.#scroll){
@@ -330,8 +355,9 @@ export class NativeSettingsShell extends Container {
     this.#focus=index;
     const control=this.#controls[index];
     if(this.#keyboardFocus&&control&&this.#page?.controls.includes(control)&&this.#scroll){
-      const point=this.#scroll.content.toLocal(control.node.toGlobal({x:0,y:0}));
-      this.#scroll.reveal(point.y,control.node.height);
+      const rect=control.revealRect?.();
+      const point=rect?null:this.#scroll.content.toLocal(control.node.toGlobal({x:0,y:0}));
+      this.#scroll.reveal(rect?.top??point!.y,rect?.height??control.node.height);
     }
   }
   handleKey(event:{key?:string;code?:string;type?:string;shiftKey?:boolean;ctrlKey?:boolean;altKey?:boolean;metaKey?:boolean}):boolean{

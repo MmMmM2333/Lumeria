@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle } from "pixi.js";
+import { Color, Container, Graphics, Rectangle } from "pixi.js";
 import { nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
 import { motion, killMotionOf } from "../pixi/animation/motionTween.js";
 import { nativeUiTheme } from "./ui/nativeUiTheme.js";
@@ -10,9 +10,9 @@ export class NativeFluentToggle extends Container {
   #disabled=false;
   #hover=false;
   #pressed=false;
-  #thumbTarget=-1;
+  readonly #transition={value:0};
   constructor(readonly kind:"switch"|"checkbox",readonly onChange:(checked:boolean)=>void,
-    readonly invalidate:()=>void,readonly theme:NativeTheme="dark") {
+    readonly invalidate:()=>void,readonly theme:NativeTheme="dark",readonly checkboxSize=20) {
     super({eventMode:"static",cursor:"pointer"});
     this.hitArea=new Rectangle(0,0,kind==="switch"?40:32,32);
     this.addChild(this.#track,this.#mark);
@@ -24,11 +24,23 @@ export class NativeFluentToggle extends Container {
     this.#draw();
   }
   get checked():boolean{return this.#checked;}
-  set checked(value:boolean){this.#checked=value;this.#draw();}
+  set checked(value:boolean){this.#checked=value;killMotionOf(this.#transition);this.#transition.value=value?1:0;this.#draw();}
+  get transitionProgress():number{return this.#transition.value;}
+  captureTransition():{value:number;hover:boolean;pressed:boolean}{return {value:this.#transition.value,hover:this.#hover,pressed:this.#pressed};}
+  restoreTransition(previous:{value:number;hover:boolean;pressed:boolean}):void{
+    if(this.kind!=="switch")return;
+    this.#transition.value=previous.value;this.#hover=previous.hover;this.#pressed=previous.pressed;this.#animate();
+  }
   get disabled():boolean{return this.#disabled;}
   set disabled(value:boolean){this.#disabled=value;this.eventMode=value?"none":"static";this.#draw();}
-  toggle():void {if(this.#disabled)return;this.#checked=!this.#checked;this.#draw(true);this.onChange(this.#checked);}
-  #draw(animate=false):void {
+  toggle():void {if(this.#disabled)return;this.#checked=!this.#checked;if(this.kind==="switch")this.#animate();else this.#draw();this.onChange(this.#checked);}
+  #animate():void{
+    killMotionOf(this.#transition);this.#draw();
+    const target=this.#checked?1:0;
+    if(Math.abs(this.#transition.value-target)<0.001){this.#transition.value=target;this.#draw();return;}
+    motion(this.#transition).duration(0.16).ease("power2.out").to({value:target,onUpdate:()=>this.#draw()}).start();
+  }
+  #draw():void {
     const colors=nativeFluentTheme(this.theme);
     const fill=this.#disabled?colors.colorNeutralBackgroundDisabled
       :this.#checked?(this.#hover?colors.colorBrandBackgroundHover:colors.colorBrandBackground):colors.colorNeutralBackground1;
@@ -37,20 +49,20 @@ export class NativeFluentToggle extends Container {
     this.#track.clear();this.#mark.clear();
     if(this.kind==="switch"){
       const state=nativeUiTheme(this.theme);
-      const track=this.#disabled?colors.colorNeutralBackgroundDisabled:this.#checked?(this.#pressed?state.switchOnPressed:this.#hover?state.switchOnHover:state.switchOn):state.switchOff;
-      const border=this.#disabled?colors.colorNeutralStrokeDisabled:this.#checked?track:colors.colorNeutralStrokeAccessible;
-      this.#track.roundRect(0.5,6.5,39,19,9.5).fill(track).stroke({color:border,width:1});
-      this.#mark.circle(0,16,7).fill(this.#disabled?colors.colorNeutralForegroundDisabled:this.#checked?state.switchThumb:state.switchOffThumb);
-      const target=this.#checked?30:10;
-      if(target!==this.#thumbTarget){this.#thumbTarget=target;
-        if(animate)motion(this.#mark).duration(0.12).to({x:target}).start();
-        else {killMotionOf(this.#mark);this.#mark.x=target;}
-      }
+      const progress=this.#transition.value;
+      const mix=(from:string,to:string)=>{const a=new Color(from),b=new Color(to);return {color:new Color([a.red+(b.red-a.red)*progress,a.green+(b.green-a.green)*progress,a.blue+(b.blue-a.blue)*progress]).toNumber(),alpha:a.alpha+(b.alpha-a.alpha)*progress};};
+      const on=this.#pressed?state.switchOnPressed:this.#hover?state.switchOnHover:state.switchOn;
+      const track=this.#disabled?{color:colors.colorNeutralBackgroundDisabled}:mix(state.switchOff,on);
+      const border=this.#disabled?{color:colors.colorNeutralStrokeDisabled}:mix(colors.colorNeutralStrokeAccessible,on);
+      this.#track.roundRect(0.5,6.5,39,19,9.5).fill(track).stroke({...border,width:1});
+      this.#mark.circle(0,16,7).fill(this.#disabled?{color:colors.colorNeutralForegroundDisabled}:mix(state.switchOffThumb,state.switchThumb));
+      this.#mark.x=10+20*progress;
     }else{
-      this.#track.roundRect(6,6,20,20,4).fill(fill).stroke({color:colors.colorNeutralStrokeAccessible,width:1});
-      if(this.#checked)this.#mark.moveTo(10,16).lineTo(14,20).lineTo(22,12).stroke({color:foreground,width:2});
+      const size=this.checkboxSize,inset=(32-size)/2,compact=size===16;
+      this.#track.roundRect(inset+0.5,inset+0.5,size-1,size-1,compact?2:4).fill(compact&&!this.#checked?"transparent":fill).stroke({color:colors.colorNeutralStrokeAccessible,width:1});
+      if(this.#checked)this.#mark.moveTo(inset+size*0.2,16).lineTo(inset+size*0.4,inset+size*0.7).lineTo(inset+size*0.8,inset+size*0.3).stroke({color:foreground,width:compact?1.6:2});
     }
     this.invalidate();
   }
-  override destroy():void{killMotionOf(this.#mark);super.destroy({children:true});}
+  override destroy():void{killMotionOf(this.#transition);super.destroy({children:true});}
 }

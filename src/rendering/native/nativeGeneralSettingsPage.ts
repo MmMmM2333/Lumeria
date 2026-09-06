@@ -10,7 +10,7 @@ import { t, nativeLocaleOptions } from "../../native/nativeLocalization.js";
 import { formatMainWindowShortcut, DEFAULT_MAIN_WINDOW_SHORTCUT } from "../../domain/mainWindowShortcut.js";
 import { LAUNCHPAD_ICON_VARIANTS, type LaunchpadIconVariant } from "../../domain/launchpadIconVariant.js";
 import { NativeSettingsLayout, nativeSettingsChevron } from "./nativeSettingsLayout.js";
-import { nativeUiMetrics,nativeUiTheme } from "./ui/nativeUiTheme.js";
+import { nativeUiMetrics } from "./ui/nativeUiTheme.js";
 import { nativeRowSummary } from "./ui/nativeRowSummary.js";
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 
@@ -105,15 +105,14 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   {
     const gap=8,tileWidth=(width-28-gap*3)/4;
     for(const [index,variant] of LAUNCHPAD_ICON_VARIANTS.entries()){
-      const tile=new NativeFluentButton("",tileWidth,()=>select(),options.invalidate,theme,"subtle",false,152);
+      const tile=new NativeFluentButton("",tileWidth,()=>select(),options.invalidate,theme,"option",false,152);
       tile.label=`native-setting:icon-${variant}`;
       tile.position.set(14+index*(tileWidth+gap),y);
       const selected=variant===settings.draft.launchpadIconVariant.value;
-      const colors=nativeUiTheme(theme);
-      tile.addChildAt(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,tileWidth-1,151,8).fill(selected?colors.optionSelected:colors.option).stroke({color:selected?style.accent:style.border,width:selected?2:1}),0);
+      tile.selected=selected;
       const icon=new Sprite(options.icons.get(variant));icon.width=icon.height=Math.min(128,tileWidth-16);icon.position.set((tileWidth-icon.width)/2,(152-icon.height)/2);tile.addChild(icon);
       const select=()=>{if(!settings.presentation.canCustomizeLaunchpadIcon.value)return;settings.actions.setDraftLaunchpadIconVariant(variant);options.redraw();};
-      tile.disabled=!settings.presentation.canCustomizeLaunchpadIcon.value;node.addChild(tile);
+      tile.disabled=!settings.presentation.canCustomizeLaunchpadIcon.value;tile.alpha=tile.disabled?0.52:1;node.addChild(tile);
       const ring=new Graphics({eventMode:"none"});tile.addChild(ring);
       controls.push({node:tile,focus:active=>{ring.clear();if(active)ring.roundRect(2,2,tileWidth-4,148,6).stroke({color:style.accent,width:2});options.invalidate();},
         disabled:()=>!settings.presentation.canCustomizeLaunchpadIcon.value,handleKey:key=>{if(key!==" "&&key!=="Enter")return false;select();return true;}});

@@ -14,8 +14,27 @@ import { NativeDisclosureCard } from "./ui/NativeDisclosureCard.js";
 import { captureSettingsGeometry,createSettingsTransition } from "./ui/nativeSettingsTransition.js";
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 import { nativeRowSummary } from "./ui/nativeRowSummary.js";
+import { NativeVirtualList } from "./ui/NativeVirtualList.js";
+import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
+import { NativeFluentToggle } from "./NativeFluentToggle.js";
 
 export function runNativeSettingsLayoutTests():void{
+  const segmented=new NativeSegmentedControl([{value:"a",label:"A",id:"a"},{value:"b",label:"B",id:"b"},{value:"c",label:"C",id:"c"}],"c",()=>{},()=>{},"dark");
+  const middle=segmented.controls[1]!.node as NativeFluentButton,selected=segmented.controls[2]!.node as NativeFluentButton;
+  middle.hovered=true;assert.ok(middle.background.containsPoint({x:0.5,y:0.5}),"middle segment hover must have square corners");
+  selected.hovered=true;assert.equal(selected.background.context.instructions.length,2,"selected underline must remain above hovered fill");
+  segmented.destroy({children:true});
+  const orderRoot=new Container(),orderLayout=new NativeSettingsLayout(orderRoot,300);
+  const orderBackground=new Graphics().rect(0,0,300,40).fill(0xffffff),orderLabel=new Text({text:"Foreground"});orderRoot.addChild(orderBackground,orderLabel);
+  orderLayout.disclosure("order",true,0,0,40,[],undefined,false);
+  const ordered=orderRoot.getChildByLabel("native-disclosure-content",true)!;
+  assert.equal(ordered.children[0],orderBackground);assert.equal(ordered.children[1],orderLabel);orderRoot.destroy({children:true});
+  let focused=-1;
+  const virtual=new NativeVirtualList(1000,78,1,index=>({node:new Container(),controls:[{node:new Container(),disabled:()=>false,focus:active=>{if(active)focused=index;},handleKey:()=>true}]}));
+  virtual.viewport(0,450);assert.ok(virtual.mountedCount<=8);
+  virtual.controls[999]!.focus(true);assert.equal(focused,999);
+  virtual.viewport(999*78,450);assert.ok(virtual.mountedCount<=5);assert.equal(virtual.controls[999]!.revealRect!().top,999*78);
+  virtual.controls[999]!.focus(false);virtual.viewport(0,450);assert.ok(virtual.mountedCount<=8);virtual.destroy();
   const summaryRoot=new Container();
   for(const value of ["Pastel dark","经典亮色","Acrylic · 跟随系统 · 100%"]){
     const summary=nativeRowSummary(summaryRoot,value,738,28,"dark","summary");
@@ -58,6 +77,34 @@ export function runNativeSettingsLayoutTests():void{
   layout.reflow(progress);assert.equal(following.y,0,"reflow cannot accumulate offsets");root.destroy({children:true});
 
   motionRuntime.reset();motionRuntime.suspendAutoTicker();
+  {
+    const toggle=new NativeFluentToggle("switch",()=>{},()=>{},"dark");
+    toggle.toggle();assert.equal(toggle.transitionProgress,0);
+    motionRuntime.step(0.04);assert.ok(toggle.transitionProgress>0&&toggle.transitionProgress<1);
+    const middle=toggle.transitionProgress;toggle.toggle();assert.equal(toggle.transitionProgress,middle,"rapid reversal starts from the presented position");
+    const snapshot=toggle.captureTransition();toggle.destroy();
+    const replacement=new NativeFluentToggle("switch",()=>{},()=>{},"dark");replacement.restoreTransition(snapshot);
+    assert.equal(replacement.transitionProgress,middle,"rebuild resumes the presented position");
+    for(let frame=0;frame<20;frame++)motionRuntime.step(1/60);
+    assert.equal(replacement.transitionProgress,0);replacement.destroy();
+  }
+  {
+    const nav=createSettingsNavigation(createNativeStateHost(()=>{}),key=>key);
+    nav.selectTab("apps");
+    const bottomShell=new NativeSettingsShell({navigation:nav,theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,
+      tabs:["apps"],invalidate:()=>{},close:()=>{},apply:async()=>{},content:()=>{
+        const node=new Container(),layout=new NativeSettingsLayout(node,700);
+        node.addChild(new Graphics().rect(0,0,700,100).fill(0xffffff));
+        layout.disclosure("expanded",true,0,0,100,[],undefined,true);
+        node.addChild(new Graphics().rect(0,100,700,600).fill(0xffffff));
+        return {node,height:700,layout:layout.finish(700),controls:[],dispose:()=>{}};
+      }});
+    try{
+      const scroller=()=>bottomShell.getChildByLabel("native-scroll-view",true) as NativeScrollView;
+      scroller().scrollTo(scroller().maxOffset);const bottom=scroller().offset;
+      bottomShell.redraw();assert.equal(scroller().offset,bottom,"redraw must preserve the bottom offset including expanded padding");
+    }finally{bottomShell.destroy();}
+  }
   let expanded=false,closed=0;
   const navigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>key);
   const shell=new NativeSettingsShell({navigation,theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,

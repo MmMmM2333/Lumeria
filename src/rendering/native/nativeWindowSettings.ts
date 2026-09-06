@@ -30,9 +30,9 @@ export function nativeWindowSettings(options: {
     label.position.set(x, top); node.addChild(label); return label;
   };
   const button = (title: string, id: string, x: number, top: number, w: number, run: () => void, active=false, h=34) => {
-    const control = new NativeFluentButton(title, w, run, invalidate, theme, h===72?"settings-row":"subtle", false, h);
+    const control = new NativeFluentButton(title, w, run, invalidate, theme, id.startsWith("preview-")?"preview":h===72?"settings-row":"subtle", false, h);
     control.label = `native-window:${id}`; control.position.set(x, top); node.addChild(control);
-    if (active) control.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,8).fill(style.selected),1);
+    control.selected=active;
     controls.push({node:control,focus:value=>{control.focused=value;},disabled:()=>control.disabled,
       handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;control.activate();return true;}});
     return control;
@@ -48,7 +48,7 @@ export function nativeWindowSettings(options: {
     const focus=new Graphics({eventMode:"none"});node.addChild(focus);
     controls.push({node:control,disabled:()=>control.disabled,handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;control.toggle();return true;},
       focus:active=>{focus.clear();if(active)focus.roundRect(width-68,top+14,48,32,4).stroke({color:style.accent,width:2});invalidate();}});
-    const row=new Container({label:`native-window:${id}-row`,eventMode:"passive"});row.addChild(...node.removeChildren(start));row.alpha=disabled?0.68:1;node.addChild(row);
+    const row=new Container({label:`native-window:${id}-row`,eventMode:"passive"});const children=node.children.slice(start);node.removeChildren(start);row.addChild(...children);row.alpha=disabled?0.68:1;node.addChild(row);
     y+=rowHeight;
   };
   text(key("title"),0,0,18,true);y=32;
@@ -101,9 +101,7 @@ export function nativeWindowSettings(options: {
       const active=d.windowEffectMaterial.value===material;
       const card=button(title,`preview-${material}`,x,cardsTop,cardWidth,()=>{a.setDraftWindowEffectMaterial(material);redraw();},active,cardsHeight);
       card.disabled=!a.canUseWindowEffectMaterial(material);card.caption.visible=false;
-      card.addChildAt(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,cardWidth-1,cardsHeight-1,8)
-        .fill(active?style.selected:style.row).stroke({color:active?style.accent:style.border,alpha:active?0.42:1,width:1}),1);
-      if(card.disabled)card.alpha=0.38;
+      if(card.disabled)card.alpha=0.48;
       const preview=new Container({eventMode:"none"});preview.position.set(8,8);card.addChild(preview);
       const clip=new Graphics().roundRect(0,0,sceneWidth,sceneHeight,6).fill(0xffffff);preview.addChild(clip);preview.mask=clip;
       const g=new Graphics();preview.addChild(g);

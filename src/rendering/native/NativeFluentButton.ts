@@ -6,7 +6,7 @@ const {webDarkTheme,webLightTheme}="default" in fluentTokens
   ? fluentTokens.default as typeof fluentTokens : fluentTokens;
 
 export type NativeTheme = "dark" | "light";
-export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row";
+export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row" | "segment" | "link" | "list-row" | "option" | "preview" | "chip-remove";
 
 export function nativeFluentTheme(theme: NativeTheme) {
   return theme === "light" ? webLightTheme : webDarkTheme;
@@ -33,6 +33,7 @@ export class NativeFluentButton extends Container {
   #disabled = false;
   #busy=false;
   #focused = false;
+  #selected = false;
   #disclosureHeader=false;
   readonly #stateGraphics:{node:Graphics;paint:(color:string)=>void}[]=[];
   #theme: NativeTheme;
@@ -73,11 +74,51 @@ export class NativeFluentButton extends Container {
   }
   get focused():boolean{return this.#focused;}
   set hovered(value:boolean){this.#hovered=value;this.#draw();}
+  set selected(value:boolean){this.#selected=value;this.#draw();}
   set disclosureHeader(value:boolean){this.#disclosureHeader=value;this.#draw();}
   set focused(value:boolean) {if(this.#focused===value)return;this.#focused=value;this.#draw();}
   set theme(value:NativeTheme) {if(this.#theme===value)return;this.#theme=value;this.#draw();}
   #draw():void {
     const theme=nativeFluentTheme(this.#theme);
+    if(this.appearance==="chip-remove"){
+      const dark=this.#theme==="dark",active=!this.#disabled&&(this.#hovered||this.#pressed);
+      const fill=active?(dark?`rgba(196,43,28,${this.#pressed?0.24:0.18})`:theme.colorPaletteRedBackground1):dark?"rgba(255,255,255,0.12)":theme.colorNeutralBackground1Hover;
+      this.background.clear().roundRect(0,0,this.controlWidth,this.controlHeight,this.controlHeight/2).fill(fill);
+      const color=active?(dark?"#ffb4a9":theme.colorPaletteRedForeground1):dark?"rgba(255,255,255,0.74)":theme.colorNeutralForeground2;
+      for(const graphic of this.#stateGraphics)graphic.paint(color);
+      this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(-1,-1,this.controlWidth+2,this.controlHeight+2,(this.controlHeight+2)/2).stroke({color:theme.colorStrokeFocus2,width:2});
+      this.invalidate();return;
+    }
+    if(this.appearance==="option"||this.appearance==="preview"){
+      const style=nativeSettingsStyle(this.#theme),dark=this.#theme==="dark",hover=!this.#disabled&&this.#hovered;
+      const fill=hover?(dark?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover)
+        :this.#selected?(dark?"rgba(75,163,246,0.16)":theme.colorBrandBackground2):dark?"rgba(0,0,0,0.1)":theme.colorNeutralBackground1;
+      const border=this.#selected?(this.appearance==="preview"&&dark?"rgba(75,163,246,0.42)":style.accent):hover?theme.colorNeutralStroke1:style.border;
+      this.background.clear().roundRect(0.5,0.5,this.controlWidth-1,this.controlHeight-1,8).fill(fill).stroke({color:border,width:1});
+      if(this.#selected)this.background.roundRect(1.5,1.5,this.controlWidth-3,this.controlHeight-3,7).stroke({color:this.appearance==="preview"&&dark?"rgba(75,163,246,0.18)":style.accent,width:1});
+      this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,6).stroke({color:style.accent,width:2});
+      this.invalidate();return;
+    }
+    if(this.appearance==="segment"||this.appearance==="link"||this.appearance==="list-row"){
+      const style=nativeSettingsStyle(this.#theme),active=!this.#disabled&&(this.#hovered||this.#pressed);
+      this.background.clear();
+      if(this.appearance==="segment"){
+        const fill=active?(this.#theme==="dark"?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover)
+          :this.#selected?(this.#theme==="dark"?"rgba(75,163,246,0.16)":theme.colorBrandBackground2):"transparent";
+        this.background.rect(0,0,this.controlWidth,this.controlHeight).fill(fill);
+        if(this.#selected)this.background.rect(0,this.controlHeight-2,this.controlWidth,2).fill(style.accent);
+      }else if(this.appearance==="list-row"){
+        const fill=this.#selected?(this.#theme==="dark"?`rgba(75,163,246,${active?0.16:0.12})`:theme.colorBrandBackground2)
+          :active?(this.#theme==="dark"?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover):style.row;
+        this.background.roundRect(0.5,0.5,this.controlWidth-1,this.controlHeight-1,8).fill(fill)
+          .stroke({color:this.#selected?`rgba(75,163,246,${active?0.42:0.32})`:style.border,width:1});
+      }
+      this.caption.style.fill=this.#disabled?theme.colorNeutralForegroundDisabled
+        :active||this.#selected?style.text:this.appearance==="link"&&this.#theme==="dark"?"rgba(255,255,255,0.76)":style.muted;
+      this.focusRing.clear();
+      if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,this.appearance==="segment"?0:3).stroke({color:theme.colorStrokeFocus2,width:2});
+      this.invalidate();return;
+    }
     if(this.appearance==="settings-row"){
       const style=nativeSettingsStyle(this.#theme);
       const fill=this.#theme==="dark"?`rgba(255,255,255,${this.#pressed?0.085:this.#hovered?0.065:0.045})`
@@ -91,7 +132,7 @@ export class NativeFluentButton extends Container {
       this.invalidate();return;
     }
     const primary=this.appearance==="primary", subtle=this.appearance==="subtle";
-    const fill=this.#disabled?(subtle?"transparent":theme.colorNeutralBackgroundDisabled)
+    const fill=this.#disabled?(!primary?"transparent":theme.colorNeutralBackgroundDisabled)
       :primary?(this.#pressed?theme.colorBrandBackgroundPressed:this.#hovered?theme.colorBrandBackgroundHover:theme.colorBrandBackground)
       :subtle?(this.#pressed?theme.colorSubtleBackgroundPressed:this.#hovered?theme.colorSubtleBackgroundHover:theme.colorSubtleBackground)
       :(this.#pressed?theme.colorNeutralBackground1Pressed:this.#hovered?theme.colorNeutralBackground1Hover:theme.colorNeutralBackground1);

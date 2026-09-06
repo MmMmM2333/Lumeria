@@ -100,6 +100,13 @@ installNativeCanvasTestAdapter();
     assert.equal(texture.source.format,"rgba8unorm","Fluent pixels must retain RGBA channel order");
     icon.destroy();assert.ok(texture.destroyed,"Fluent icon owns and releases its raster texture");
   }
+  const thin=nativeFluentIcon("add-20-regular","rgba(255,255,255,0.56)",16);
+  const source=thin.texture.source;
+  assert.equal(source.autoGenerateMipmaps,true,"downscaled thin strokes need coverage-preserving mip levels");
+  assert.equal(source.alphaMode,"premultiplied-alpha");
+  const rgba=source.resource as Uint8Array;let covered=0;
+  for(let i=0;i<rgba.length;i+=4){assert.ok(rgba[i]!<=rgba[i+3]!,"filtered RGB must already contain alpha");if(rgba[i+3]!>0)covered++;}
+  assert.ok(covered>0);thin.destroy();
 }
 {
   const number=createNumericControlModel({min:0,max:1,step:0.01});

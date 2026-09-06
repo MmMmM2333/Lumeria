@@ -16,7 +16,7 @@ export class NativeSettingsLayout {
   #height=0;
   constructor(readonly node:Container,readonly width:number,readonly theme:NativeTheme="dark"){}
   disclosure(id:string,expanded:boolean,start:number,top:number,height:number,controls:readonly NativeSettingsControl[],chevron?:Container,decorated=true,header?:NativeFluentButton):void{
-    const children=this.node.removeChildren(start);
+    const children=this.node.children.slice(start);this.node.removeChildren(start);
     const wrapper=new NativeDisclosureSurface(this.width,height,this.theme,decorated);wrapper.label=`native-disclosure:${id}`;wrapper.y=top;
     const content=wrapper.content;
     for(const child of children){child.y-=top;content.addChild(child);}

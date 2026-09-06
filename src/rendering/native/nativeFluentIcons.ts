@@ -2,6 +2,12 @@ import { BufferImageSource, Color, Sprite, Texture, type ColorSource } from "pix
 import { createCanvas, Path2D } from "@napi-rs/canvas";
 // Fluent icons from the installed @iconify-json/fluent package (MIT), shared with Web.
 const icons = {
+"apps-list-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M6.248 16.002c.966 0 1.75.784 1.75 1.75v2.498A1.75 1.75 0 0 1 6.248 22H3.75A1.75 1.75 0 0 1 2 20.25v-2.498c0-.966.784-1.75 1.75-1.75zm0 1.5H3.75a.25.25 0 0 0-.25.25v2.498c0 .138.112.25.25.25h2.498a.25.25 0 0 0 .25-.25v-2.498a.25.25 0 0 0-.25-.25m3.5.498h11.505a.75.75 0 0 1 .102 1.493l-.102.007H9.748a.75.75 0 0 1-.102-1.493zh11.505zm-3.5-8.999c.966 0 1.75.784 1.75 1.75v2.498a1.75 1.75 0 0 1-1.75 1.75H3.75A1.75 1.75 0 0 1 2 13.249V10.75C2 9.784 2.784 9 3.75 9zm0 1.5H3.75a.25.25 0 0 0-.25.25v2.498c0 .138.112.25.25.25h2.498a.25.25 0 0 0 .25-.25V10.75a.25.25 0 0 0-.25-.25m3.5.499h11.505a.75.75 0 0 1 .102 1.493l-.102.007H9.748a.75.75 0 0 1-.102-1.493zh11.505zm-3.5-9c.966 0 1.75.784 1.75 1.75v2.498a1.75 1.75 0 0 1-1.75 1.75H3.75A1.75 1.75 0 0 1 2 6.248V3.75C2 2.784 2.784 2 3.75 2zm0 1.5H3.75a.25.25 0 0 0-.25.25v2.498c0 .138.112.25.25.25h2.498a.25.25 0 0 0 .25-.25V3.75a.25.25 0 0 0-.25-.25m3.5.5h11.505a.75.75 0 0 1 .102 1.493l-.102.007H9.748a.75.75 0 0 1-.102-1.493zh11.505z\"/>"},
+"arrow-sync-20-regular": {"width":20,"height":20,"body":"<path fill=\"currentColor\" d=\"M11.414 3.635a.5.5 0 0 0 0-.707L9.293.807a.5.5 0 0 0-.707.707l.997.997a7.5 7.5 0 0 0-4.075 13.495a.5.5 0 0 0 .6-.8A6.5 6.5 0 0 1 10.066 3.5q.037 0 .073-.005L8.586 5.049a.5.5 0 0 0 .707.707zM8.586 16.363a.5.5 0 0 0 0 .707l2.121 2.121a.5.5 0 0 0 .707-.707l-.997-.997a7.5 7.5 0 0 0 4.075-13.495a.5.5 0 1 0-.6.8q.369.277.704.61A6.5 6.5 0 0 1 9.934 16.5l-.074.004l1.554-1.554a.5.5 0 1 0-.707-.707z\"/>"},
+"add-20-regular": {"width":20,"height":20,"body":"<path fill=\"currentColor\" d=\"M10 2.5a.5.5 0 0 1 .5.5v6.5H17a.5.5 0 0 1 0 1h-6.5V17a.5.5 0 0 1-1 0v-6.5H3a.5.5 0 0 1 0-1h6.5V3a.5.5 0 0 1 .5-.5\"/>"},
+"folder-prohibited-24-regular": {"width":24,"height":24,"body":"<path fill=\"currentColor\" d=\"M3.5 6.25V8h4.629a.75.75 0 0 0 .53-.22l1.53-1.53l-1.53-1.53a.75.75 0 0 0-.53-.22H5.25A1.75 1.75 0 0 0 3.5 6.25m-1.5 0A3.25 3.25 0 0 1 5.25 3h2.879a2.25 2.25 0 0 1 1.59.659L11.562 5.5h7.189A3.25 3.25 0 0 1 22 8.75v4.06a6.5 6.5 0 0 0-1.5-1.078V8.75A1.75 1.75 0 0 0 18.75 7h-7.19L9.72 8.841a2.25 2.25 0 0 1-1.591.659H3.5v8.25c0 .966.784 1.75 1.75 1.75h6.063c.173.534.412 1.037.709 1.5H5.25A3.25 3.25 0 0 1 2 17.75zM23 17.5a5.5 5.5 0 1 1-11 0a5.5 5.5 0 0 1 11 0m-9.5 0c0 .834.255 1.608.691 2.248l5.557-5.557A4 4 0 0 0 13.5 17.5m4 4a4 4 0 0 0 3.309-6.248l-5.557 5.557a4 4 0 0 0 2.248.691\"/>"},
+"search-20-regular": {"width":20,"height":20,"body":"<path fill=\"currentColor\" d=\"M13.73 14.436a6.5 6.5 0 1 1 .707-.707l3.416 3.418a.5.5 0 0 1-.637.764l-.07-.057zm-.71-.71q.385-.32.707-.706a5.5 5.5 0 1 0-.707.707\"/>"},
+"arrow-counterclockwise-20-regular": {"width":20,"height":20,"body":"<path fill=\"currentColor\" d=\"M16 10A6 6 0 0 0 5.528 6H7.5a.5.5 0 0 1 0 1h-3a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 1 0v1.601a7 7 0 1 1-1.98 4.361a.5.5 0 0 1 .998.076A6 6 0 1 0 16 10\"/>"},
 "filter-24-regular": {"body":"<path fill=\"currentColor\" d=\"M13.5 16a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5zm3-5a.75.75 0 0 1 0 1.5h-9a.75.75 0 0 1 0-1.5zm3-5a.75.75 0 0 1 0 1.5h-15a.75.75 0 0 1 0-1.5z\"/>","width":24,"height":24},
 "apps-list-detail-24-regular": {"body":"<path fill=\"currentColor\" d=\"M4.25 4A2.25 2.25 0 0 0 2 6.25v2.5A2.25 2.25 0 0 0 4.25 11h2.5A2.25 2.25 0 0 0 9 8.75v-2.5A2.25 2.25 0 0 0 6.75 4zM3.5 6.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 .75.75v2.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1-.75-.75zM11.25 5a.75.75 0 0 0 0 1.5h10a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h7a.75.75 0 0 0 0-1.5zm-7 5A2.25 2.25 0 0 0 2 15.25v2.5A2.25 2.25 0 0 0 4.25 20h2.5A2.25 2.25 0 0 0 9 17.75v-2.5A2.25 2.25 0 0 0 6.75 13zm-.75 2.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 .75.75v2.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1-.75-.75zM11.25 14a.75.75 0 0 0 0 1.5h10a.75.75 0 0 0 0-1.5zm0 3a.75.75 0 0 0 0 1.5h7a.75.75 0 0 0 0-1.5z\"/>","width":24,"height":24},
 "maximize-24-regular": {"body":"<path fill=\"currentColor\" d=\"M5.75 3h12.5A2.75 2.75 0 0 1 21 5.75v12.5A2.75 2.75 0 0 1 18.25 21H5.75A2.75 2.75 0 0 1 3 18.25V5.75A2.75 2.75 0 0 1 5.75 3m0 1.5c-.69 0-1.25.56-1.25 1.25v12.5c0 .69.56 1.25 1.25 1.25h12.5c.69 0 1.25-.56 1.25-1.25V5.75c0-.69-.56-1.25-1.25-1.25z\"/>","width":24,"height":24},
@@ -82,10 +88,19 @@ export function nativeFluentIcon(name:keyof typeof icons,color:ColorSource,size=
   // Skia preserves the original SVG winding and close/relative commands.
   const resolution=4,canvas=createCanvas(size*resolution,size*resolution),context=canvas.getContext("2d");
   context.scale(size*resolution/icon.width,size*resolution/icon.height);
-  context.fillStyle=new Color(color).toHex();context.fill(new Path2D(path));
+  context.fillStyle=new Color(color).toRgbaString();context.fill(new Path2D(path));
   const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
+  // Filter coverage and color together before downsampling thin SVG strokes.
+  // Buffer uploads do not premultiply for us; transparent RGB must not bleed
+  // into the generated mip levels or get multiplied a second time when blended.
+  for(let offset=0;offset<pixels.length;offset+=4){
+    const alpha=pixels[offset+3]!/255;
+    pixels[offset]=Math.round(pixels[offset]!*alpha);
+    pixels[offset+1]=Math.round(pixels[offset+1]!*alpha);
+    pixels[offset+2]=Math.round(pixels[offset+2]!*alpha);
+  }
   const texture=new Texture({source:new BufferImageSource({resource:new Uint8Array(pixels),width:canvas.width,height:canvas.height,
-    format:"rgba8unorm",alphaMode:"no-premultiply-alpha"})});
+    format:"rgba8unorm",alphaMode:"premultiplied-alpha",autoGenerateMipmaps:true,scaleMode:"linear"})});
   const sprite=new Sprite({texture,eventMode:"none"});sprite.width=sprite.height=size;
   sprite.on("destroyed",()=>texture.destroy(true));return sprite;
 }
