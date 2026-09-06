@@ -444,7 +444,7 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
   app.nativeInput.emitPointer("pointerup", x, y, button, modifiers);
 }
 
-let renderScene: () => void;
+let renderScene: (snapDesktopLayout?: boolean) => void;
 let sceneRenderQueued = false;
 let sceneDisposed = false;
 const requestSceneRender = (): void => {
@@ -762,7 +762,7 @@ try {
     resolution: app.resolution,
     width: app.contentSize.width,
   }, true);
-  renderScene = () => {
+  renderScene = (snapDesktopLayout = false) => {
     sceneRenderQueued = false;
     if(launchFlow){
       const closed=!launchFlow.isDesktopOpen.value;
@@ -792,7 +792,7 @@ try {
       height: app.contentSize.height,
       resolution: app.resolution,
       width: app.contentSize.width,
-    }, false);
+    }, snapDesktopLayout);
     settingsButton.position.set(app.contentSize.width-54,14+chromeInset());
     const folderHeader=folderFlow.snapshot();
     const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
@@ -828,9 +828,9 @@ try {
   let resizeLiveBackingObserved = false;
   let observeLiveResize = false;
   offResize = app.on("resize", ({ height, resolution, width }) => {
-    windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     settingsShell?.redraw();
-    work = commitScene({ height, resolution, width }, true);
+    // Resize must update controls as well as icons without depending on a later animation commit.
+    renderScene(true);
     setStatus(statusText.text);
     if (observeLiveResize) {
       const source = app.renderer.view.texture.source;
@@ -2383,6 +2383,13 @@ try {
     observeLiveResize = false;
     resizeSettledBackingObserved = true;
     await present(app, "the resized LaunchPad scene frame");
+    const resizedSearchWidth = Math.min(348, Math.max(180, app.contentSize.width - 40));
+    assert.equal(searchBar.x, (app.contentSize.width - resizedSearchWidth) / 2,
+      "resize must recenter the search bar without waiting for an animation commit");
+    assert.equal(settingsButton.x, app.contentSize.width - 54,
+      "resize must keep the settings button anchored to the current right edge");
+    assert.equal(selectionToolbar.x, (app.contentSize.width - Math.min(760, app.contentSize.width - 40)) / 2,
+      "resize must update the selection toolbar even while it is hidden");
     presentCount += 1;
     resizeObserved = true;
     resizePresentCount = 1;

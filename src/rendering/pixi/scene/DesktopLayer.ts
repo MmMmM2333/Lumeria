@@ -1067,6 +1067,7 @@ function shouldSkipMotionSpring(
 }
 
 export class DesktopLayer extends Container {
+  private boundsUpdateDepth = 0;
   declare boundsDirty: boolean;
   declare boundsFlushQueued: boolean;
   declare boundsRegistration: DesktopBoundsRegistration<DesktopBoundsEntry, DesktopRect> | null;
@@ -1405,10 +1406,18 @@ export class DesktopLayer extends Container {
     options: DesktopUpdateOptions = {},
   ): Partial<DesktopLayerFrameWork> {
     if (options.boundsTransaction !== false && typeof this.iconBoundsRegistry.transaction === "function") {
-      return this.iconBoundsRegistry.transaction(() => this.updateScene(state, {
-        ...options,
-        boundsTransaction: false,
-      }));
+      this.boundsUpdateDepth = (this.boundsUpdateDepth || 0) + 1;
+      try {
+        return this.iconBoundsRegistry.transaction(() => this.updateScene(state, {
+          ...options,
+          boundsTransaction: false,
+        }));
+      } finally {
+        this.boundsUpdateDepth -= 1;
+        // Structural updates flush their bounds synchronously. Only schedule
+        // another frame if something remains dirty when the transaction ends.
+        if (this.boundsUpdateDepth === 0 && this.boundsDirty) this.markInteractiveBoundsDirty();
+      }
     }
     const groupTransferOwnership = this.groupDragLayer?.syncVisualOwnership?.(normalizeGroupDragOwnershipGroup(state.groupDragState)) || {
       folderShellIds: new Set(),
@@ -1550,7 +1559,9 @@ export class DesktopLayer extends Container {
           });
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
-        } else if ((shouldSnapDragHandoffLayout || shouldSnapResizeLayout) && shouldSpringLayout) {
+        } else if (shouldSnapResizeLayout || (shouldSnapDragHandoffLayout && shouldSpringLayout)) {
+          // Resize must reach the current target even when consecutive plans differ
+          // by less than the animation threshold; skipped deltas otherwise accumulate.
           snapIconLayoutPosition(
             node as DesktopIconNode,
             layoutTarget,
@@ -2851,6 +2862,7 @@ export class DesktopLayer extends Container {
 
   markInteractiveBoundsDirty(): void {
     this.boundsDirty = true;
+    if (this.boundsUpdateDepth > 0) return;
     if (this.boundsFlushQueued) return;
     this.boundsFlushQueued = true;
     const flush = () => {
