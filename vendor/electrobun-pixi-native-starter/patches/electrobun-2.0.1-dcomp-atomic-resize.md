@@ -41,8 +41,8 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,062,336 bytes with SHA-256
-`59CEEC977F5922FE4D0904C325057D590897D38D0268BA9F0A81BEEAE01C6730`.
+The staged native DLL is 2,067,456 bytes with SHA-256
+`561697DA848F7DDE405F73BAC8B47B90A1C3BC53CFCD243EAD7900303D556D35`.
 Starter 0.2.11 primes replacement visuals with a zero-opacity effect, then removes
 that effect and the old visual in the same commit. This prevents translucent
 generations from blending together during live resize. Real screen-pixel sampling
@@ -55,10 +55,13 @@ Starter 0.2.9 also separates tray primary activation from the right-click menu.
 The primary callback copies its id/function before asynchronous dispatch so tray
 destruction cannot invalidate the captured tray object.
 
-The same DLL hash was verified in `package/src/native/win/build`,
-`package/dist`, and `package/dist-win-x64`. The official `build.ts` completed
-with exit code 0 on Windows x64; `native-devkit.json` identifies Electrobun
-2.0.1 and maps `layout.runtime.nativeWrapper` to `libNativeWrapper.dll`.
+The base devkit was produced by the official `build.ts`. For 0.2.13, the native
+wrapper was recompiled from the official source with this patch using the
+official Windows compile/link flags and existing pinned vendor libraries, then
+staged in that devkit. Its hash was verified against the native build output
+and the application's copied DLL. This was a wrapper rebuild, not a new full
+devkit build. `native-devkit.json` identifies Electrobun 2.0.1 and maps
+`layout.runtime.nativeWrapper` to `libNativeWrapper.dll`.
 
 The patch keeps one persistent DComp target/root visual per WGPU child HWND.
 The HWND subclass immediately scales the committed active frame on `WM_SIZE`
@@ -83,3 +86,5 @@ reserved for the explicit non-DComp fallback, and the bridge records that
 state so unconfigure is called exactly once. This prevents replacement
 surfaces from failing `IDXGISwapChain1` creation with `0x80070005` and removes
 the duplicate `Surface is not configured` teardown diagnostic.
+
+Starter 0.2.13 adds an opt-in `capacity` resize mode. It queries Dawn device limits, keeps padded backing resources within capacity, and uses DXGI source size plus compensating matrix transforms. Reclaim occurs after one second of settled resize with a 1.5x area threshold. The product default remains `live` pending mixed-DPI and scanout validation. See `docs/native-resize-progress.md` in the consumer for verification status.

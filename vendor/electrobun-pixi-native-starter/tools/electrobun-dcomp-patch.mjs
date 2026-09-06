@@ -65,6 +65,11 @@ if (alreadyApplied || apply) {
 		"WGPUViewWindowProc",
 		"WS_EX_NOREDIRECTIONBITMAP",
 		"A resize gets a fresh pending swap chain",
+    "wgpuDeviceMaxTextureDimension2D",
+    "wgpuSurfaceSetPresentExtent",
+    "g_retainedPresentExtents",
+    "SetSourceSize",
+    "SetMatrixTransform",
 	]) {
 		if (!wrapper.includes(marker)) throw new Error(`patched wrapper is missing ${marker}`);
 	}

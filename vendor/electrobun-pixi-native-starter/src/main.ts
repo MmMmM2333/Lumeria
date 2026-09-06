@@ -20,8 +20,8 @@ if (!Number.isFinite(maxFps) || maxFps < 0) {
 	throw new Error("PIXI_MAX_FPS must be a non-negative number; use 0 for unlimited");
 }
 const resizeMode = (process.env.PIXI_RESIZE_MODE ?? "smooth").toLowerCase() as NativeResizeMode;
-if (!(["smooth", "live", "adaptive"] as const).includes(resizeMode)) {
-	throw new Error("PIXI_RESIZE_MODE must be smooth, live, or adaptive");
+if (!(["smooth", "live", "adaptive", "capacity"] as const).includes(resizeMode)) {
+	throw new Error("PIXI_RESIZE_MODE must be smooth, live, adaptive, or capacity");
 }
 const gpuPreference = (process.env.PIXI_GPU ?? "default").toLowerCase() as NativeGpuPreference;
 if (!(["default", "integrated", "discrete"] as const).includes(gpuPreference)) {

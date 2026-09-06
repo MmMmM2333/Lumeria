@@ -30,6 +30,7 @@ import {
 } from "../input/native-events";
 import { createNativeTextInputSession } from "../input/native-text-input";
 import { createFrameScheduler, type FrameScheduler } from "./native-scheduler";
+import { chooseSurfaceCapacity, shouldReclaimSurfaceCapacity } from "./native-surface-capacity";
 import {
 	installNativeRender,
 	type FastRenderBundle,
@@ -40,6 +41,7 @@ import {
 	createContext,
 	present as presentContext,
 	reconfigure as reconfigureContext,
+  setPresentExtent,
 	releaseContext,
 	type NativePresentStatus,
 	type NativeWebGpuContext,
@@ -58,7 +60,7 @@ import {
 	type NativeAppFrameCounters,
 } from "./native-app-testing";
 
-export type NativeResizeMode = "smooth" | "live" | "adaptive";
+export type NativeResizeMode = "smooth" | "live" | "adaptive" | "capacity";
 export type NativeGpuPreference = "default" | "integrated" | "discrete";
 export type NativePresentationMode = "fifo" | "mailbox";
 export type NativeAppState = "running" | "suspended" | "recovering" | "failed" | "closing" | "closed";
@@ -213,7 +215,8 @@ export async function createNativePixiApplication(
 	const maxFps = options.maxFps ?? 60;
 	if (!Number.isFinite(maxFps) || maxFps < 0) { activeApplication = false; throw new RangeError("maxFps must be non-negative"); }
 	const resizeMode = options.resizeMode ?? "smooth";
-	if (!["smooth", "live", "adaptive"].includes(resizeMode)) { activeApplication = false; throw new RangeError("resizeMode is invalid"); }
+	if (!["smooth", "live", "adaptive", "capacity"].includes(resizeMode)) { activeApplication = false; throw new RangeError("resizeMode is invalid"); }
+  if (resizeMode === "capacity" && process.platform !== "win32") { activeApplication = false; throw new Error("Capacity resize requires Windows"); }
 	const startupPreference = options.gpuPreference ?? "default";
 	if (!(startupPreference in gpuPowerPreferences)) { activeApplication = false; throw new RangeError("gpuPreference is invalid"); }
 
@@ -282,14 +285,24 @@ export async function createNativePixiApplication(
 			(target as any).filter?._globalFilterBindGroup?.destroy();
 			target.destroy();
 		};
+    let capacityLimit = 0;
 		const createRenderer = async (adapter: any, device: any) => {
 			const result = new WebGPURenderer();
+      let renderSize = contentSize;
+      if (resizeMode === "capacity") {
+        capacityLimit = electrobunNativeAdapter.getMaxTextureDimension2D(device);
+        const required = { width: Math.round(contentSize.width * resolution), height: Math.round(contentSize.height * resolution) };
+        const capacity = chooseSurfaceCapacity(required.width, required.height, capacityLimit);
+        setPresentExtent(runtimeContext, required.width, required.height);
+        renderSize = { width: capacity.width / resolution, height: capacity.height / resolution };
+      }
 			await result.init({
-				canvas: canvas as any, width: contentSize.width, height: contentSize.height, resolution,
+				canvas: canvas as any, width: renderSize.width, height: renderSize.height, resolution,
 				// DComp consumes premultiplied pixels: alpha zero also requires RGB zero.
 				antialias: options.antialias ?? true, backgroundColor: options.transparent ? 0 : options.background ?? 0x090b14, backgroundAlpha:options.transparent?0:1,
 				gpu: { adapter, device } as any, skipExtensionImports: true,
 			});
+      if (resizeMode === "capacity") { result.view.screen.width = contentSize.width; result.view.screen.height = contentSize.height; }
 			const uniformBatch = (result.renderPipes as any).uniformBatch;
 			let lastUpload = new Uint8Array();
 			uniformBatch._uploadBindGroups = () => {
@@ -488,7 +501,7 @@ export async function createNativePixiApplication(
 			batchPipe.execute = (batch: any) => {
 				// The current native bundle ABI clears to opaque #090b14. Transparent
 				// windows must use Pixi's normal pass, which carries backgroundAlpha.
-				if(options.transparent){fastFallback="transparent-surface";return executeBatch(batch);}
+				if(options.transparent || resizeMode === "capacity"){fastFallback=options.transparent?"transparent-surface":"capacity-surface";return executeBatch(batch);}
 				if (target.renderTarget.renderTarget !== target.renderTarget.rootRenderTarget || !stage.renderGroup) {
 					return executeBatch(batch);
 				}
@@ -512,7 +525,8 @@ export async function createNativePixiApplication(
 		const renderTransform = new Matrix();
 		const renderStage = () => {
 			const source = renderer.view.texture.source;
-			renderTransform.set(source.width / Math.max(1, contentSize.width), 0, 0, source.height / Math.max(1, contentSize.height), 0, 0);
+      if (resizeMode === "capacity") setPresentExtent(runtimeContext, Math.round(contentSize.width * resolution), Math.round(contentSize.height * resolution));
+			renderTransform.set(resizeMode === "capacity" ? 1 : source.width / Math.max(1, contentSize.width), 0, 0, resizeMode === "capacity" ? 1 : source.height / Math.max(1, contentSize.height), 0, 0);
 			renderer.render({ container: stage, transform: renderTransform });
 		};
 		installFastPath(renderer);
@@ -639,10 +653,20 @@ export async function createNativePixiApplication(
 				const logicalChanged = nextSize.width !== contentSize.width || nextSize.height !== contentSize.height || nextResolution !== resolution;
 				const source = renderer.view.texture.source;
 				const backingChanged = source.pixelWidth !== Math.round(nextSize.width * nextResolution) || source.pixelHeight !== Math.round(nextSize.height * nextResolution) || source.resolution !== nextResolution;
-				const resizeBacking = backingChanged && (resizeMode !== "adaptive" || syncBacking || nextResolution !== resolution);
+        const requiredWidth = Math.round(nextSize.width * nextResolution), requiredHeight = Math.round(nextSize.height * nextResolution);
+        const capacity = resizeMode === "capacity" ? chooseSurfaceCapacity(requiredWidth, requiredHeight, capacityLimit) : null;
+        const growCapacity = requiredWidth > source.pixelWidth || requiredHeight > source.pixelHeight || nextResolution !== resolution;
+        const reclaimCapacity = capacity && syncBacking && !logicalChanged && shouldReclaimSurfaceCapacity(
+          { width: source.pixelWidth, height: source.pixelHeight }, capacity);
+				const resizeBacking = capacity ? growCapacity || Boolean(reclaimCapacity)
+          : backingChanged && (resizeMode !== "adaptive" || syncBacking || nextResolution !== resolution);
 				if (logicalChanged || resizeBacking) invalidateFastPath();
 				contentSize = nextSize; resolution = nextResolution;
-				if (resizeBacking) { renderer.resize(nextSize.width, nextSize.height, nextResolution); reconfigureSurface("window resize"); }
+        if (resizeBacking) {
+          renderer.resize(capacity ? capacity.width / nextResolution : nextSize.width, capacity ? capacity.height / nextResolution : nextSize.height, nextResolution);
+          if (capacity) { renderer.view.screen.width = nextSize.width; renderer.view.screen.height = nextSize.height; }
+          reconfigureSurface(capacity ? (growCapacity ? "capacity growth" : "capacity reclaim") : "window resize");
+        }
 				else if (logicalChanged) {
 					renderer.view.screen.width = nextSize.width; renderer.view.screen.height = nextSize.height;
 					renderer.emit("resize", nextSize.width, nextSize.height, nextResolution);
@@ -662,10 +686,11 @@ export async function createNativePixiApplication(
 				if (nativeFrameHost.isWindowResizing(inputWindow)) { windowSyncTimer = setTimeout(settle, 16); return; }
 				windowSyncTimer = null; requestWindowSync(true);
 			};
-			windowSyncTimer = setTimeout(settle, 120);
+			windowSyncTimer = setTimeout(settle, resizeMode === "capacity" ? 1000 : 120);
 		};
 		const handleWindowChange = () => {
-			if (resizeMode === "smooth") requestSettledSync();
+			if (resizeMode === "capacity") { requestWindowSync(false); requestSettledSync(); }
+      else if (resizeMode === "smooth") requestSettledSync();
 			else if (resizeMode === "adaptive") { requestWindowSync(false); requestSettledSync(); }
 			else requestWindowSync(true);
 		};
@@ -674,7 +699,7 @@ export async function createNativePixiApplication(
 		syncInputLayout = () => {
 			if (state !== "running") return;
 			const currentScale = nativeFrameHost.getWindowScaleFactor(inputWindow);
-			if (currentScale !== resolution || resizeMode === "adaptive") { requestWindowSync(currentScale !== resolution); syncWindow(); }
+			if (currentScale !== resolution || resizeMode === "adaptive" || resizeMode === "capacity") { requestWindowSync(currentScale !== resolution); syncWindow(); }
 		};
 
 		const tick = () => {

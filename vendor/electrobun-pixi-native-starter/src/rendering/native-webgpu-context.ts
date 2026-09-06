@@ -51,6 +51,10 @@ export function reconfigure(context: NativeWebGpuContext) {
 	electrobunNativeAdapter.reconfigureWebgpuContext(state.raw);
 }
 
+export function setPresentExtent(context: NativeWebGpuContext, width: number, height: number): void {
+  electrobunNativeAdapter.setPresentExtent(stateFor(context).raw, width, height);
+}
+
 export function present(
 	context: NativeWebGpuContext,
 	submit?: (nativeSurface: number) => unknown,
