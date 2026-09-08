@@ -1,4 +1,5 @@
 import { shallowRef, type Ref } from "vue";
+import { activeTouchpadCapture } from "../debug/touchpadCapture.js";
 import type {
   ReadonlyLaunchpadApp,
   ReadonlyLaunchpadFolder,
@@ -504,6 +505,7 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     commandContext: CancelInteractionOptions = {},
   ): LaunchpadGestureOutput {
     lastDispatchTime = readNumber(input?.time, lastDispatchTime);
+    activeTouchpadCapture?.decision(output);
     applyPresentation(output?.presentation);
     if (Object.prototype.hasOwnProperty.call(output || {}, "targetPresentation")) {
       iconGesturePresentation.value = output.targetPresentation ?? null;

@@ -134,6 +134,7 @@ export interface NativePixiApplication {
 	readonly contentSize: Readonly<{ width: number; height: number }>;
 	readonly state: NativeAppState;
 	readonly nativeInput: NativeInput;
+  readonly supportsTouchpadGestures:boolean;
 	readonly textInput: NativeTextInput;
   getWindowFrame(): Readonly<NativeWindowFrame>;
   readonly supportsColorDialog: boolean;
@@ -409,10 +410,20 @@ export async function createNativePixiApplication(
 		let requestFrame = () => {};
 		let pollTextInput = () => {};
 		let syncInputLayout = () => {};
+    let wakeTouchpad=()=>{};
+    // Direct Manipulation registration must belong to the hit-tested surface
+    // HWND, unlike keyboard/window lifecycle which belongs to the root HWND.
+    const touchpad=attachNativeTouchpad(surfaceWindow,route,()=>wakeTouchpad());
+    startupCleanup.push(()=>touchpad?.destroy());
+    let pendingTouchpad:import("../input/native-events").NativeHostInputEvent|null=null;
+    let pendingRaw:import("../input/native-events").NativeHostInputEvent|null=null;
 		const inputHooks: NativeInputHostHooks = {
 			route,
 			pollEvent: () => {
-				const event = nativeFrameHost.pollInputEvent(route);
+        pendingTouchpad??=touchpad?.poll()??null;pendingRaw??=nativeFrameHost.pollInputEvent(route);
+        const useTouchpad=Boolean(pendingTouchpad&&(!pendingRaw||pendingTouchpad.timestamp<=pendingRaw.timestamp));
+        const event=useTouchpad?pendingTouchpad:pendingRaw;
+        if(useTouchpad)pendingTouchpad=null;else pendingRaw=null;
 				if (event) {
 					nativeInputEvents.push({
 						kind: event.kind, x: event.x, y: event.y, screenX: event.screenX, screenY: event.screenY,
@@ -431,7 +442,8 @@ export async function createNativePixiApplication(
 					...event,
 					x: event.x / resolution, y: event.y / resolution,
 					movementX: event.movementX / resolution, movementY: event.movementY / resolution,
-					width: event.width / resolution, height: event.height / resolution,
+					width: (event.width??1) / resolution, height: (event.height??1) / resolution,
+          ...(event.touchpad?{wheelX:event.wheelX/resolution,wheelY:event.wheelY/resolution}:{}),
 				};
 			},
 			setPointerCapture: (captured) => (captured ? nativeFrameHost.setMouseCapture(inputWindow) : nativeFrameHost.releaseMouseCapture(inputWindow)) > 0,
@@ -444,6 +456,7 @@ export async function createNativePixiApplication(
 			onActivity: () => { if (inputPollingEnabled) { pollTextInput(); requestFrame(); } },
 		};
 		let nativeInput = attachNativePixiEvents(window, renderer, inputHooks);
+    wakeTouchpad=()=>{if(inputPollingEnabled){nativeInput.poll();requestFrame();}};
 		startupCleanup.push(() => { nativeInput.destroy(); });
 		const textInput = createNativeTextInputSession({
 			windowHandle: inputWindow, route,
@@ -742,6 +755,7 @@ export async function createNativePixiApplication(
 		const dispose = () => disposePromise ??= (async () => {
 			if (closed) return;
 			closed = true; inputPollingEnabled = false; setState("closing"); clearInterval(monitor);
+      touchpad?.destroy();
       windowPresentation?.dispose();
       windowIcon?.dispose();
 			rejectPresentWaiters(new Error("Native Pixi application is closing"));
@@ -774,6 +788,7 @@ export async function createNativePixiApplication(
       startWindowDrag(){if(!windowPresentation)throw new Error("Window dragging is unavailable");windowPresentation.startDrag();},
       startWindowResize(direction){if(!windowPresentation)throw new Error("Window resizing is unavailable");windowPresentation.startResize(direction);},
       supportsColorDialog: colorDialog !== null,
+      supportsTouchpadGestures:touchpad!==null,
       chooseColor(color) {
         if (closed || state === "closing" || state === "closed") return Promise.resolve({ ok: false,
           error: { code: "PLATFORM_ERROR", message: "Window is closed" } });
@@ -900,3 +915,4 @@ export async function createNativePixiApplication(
 		throw error;
 	}
 }
+import { attachNativeTouchpad } from "../platform/native-touchpad";

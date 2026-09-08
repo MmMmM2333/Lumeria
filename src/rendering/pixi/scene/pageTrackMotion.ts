@@ -15,6 +15,20 @@ const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
 const PAGE_TRACK_SNAP_REASON = "page-track-snap";
 const PAGE_TRACK_TARGET_EPSILON = 0.5;
 
+/** Bound release speed by the distance still visible on this page, not raw input travel.
+ * The slow pole of a non-oscillating spring gives a monotonic approach to its target.
+ * This is page-local: icon layout, drag and folder springs retain their own behavior.
+ */
+export function pageSettleVelocity(progress:number,target:number,velocity:number,config:Readonly<MotionSpringConfig>):number{
+  const remaining=target-progress;
+  if(Math.abs(remaining)<0.000001)return 0;
+  const mass=Math.max(0.0001,config.mass??1),stiffness=Math.max(0,config.stiffness??190);
+  if(stiffness===0)return 0;
+  const damping=Math.max(config.damping??28,2*Math.sqrt(stiffness*mass));
+  const rate=(2*stiffness)/(damping+Math.sqrt(Math.max(0,damping*damping-4*mass*stiffness)));
+  return Math.sign(remaining)*Math.min(Math.max(0,Math.sign(remaining)*velocity),Math.abs(remaining)*rate);
+}
+
 type PageTrackMotionScrubInput = Readonly<
   Pick<ScenePageTrackScrub, "fromIndex" | "progress" | "toIndex"> &
   Partial<Omit<ScenePageTrackScrub, "fromIndex" | "progress" | "toIndex">> & {
@@ -301,12 +315,19 @@ export function updatePageTrackMotion(
 
     if (motionState.settleToken !== settleToken) {
       motionState.control?.setProgress?.(progress);
+      const settleSpring=normalizedScrub.spring||springConfig;
+      const targetProgress=normalizedScrub.targetProgress??normalizedScrub.settleProgress;
+      const distance=normalizedScrub.toX-normalizedScrub.fromX;
+      const rawVelocity=normalizedScrub.valueVelocity===undefined?readNumber(normalizedScrub.velocity,0)
+        :Math.abs(distance)<0.001?0:normalizedScrub.valueVelocity/distance;
+      const releaseVelocity=targetProgress===undefined?normalizedScrub.velocity
+        :pageSettleVelocity(progress,targetProgress,rawVelocity,settleSpring);
       motionState.control?.settle?.({
         midpoint: normalizedScrub.midpoint,
         progress: normalizedScrub.targetProgress ?? normalizedScrub.settleProgress,
-        spring: normalizedScrub.spring || springConfig,
-        valueVelocity: normalizedScrub.valueVelocity,
-        velocity: normalizedScrub.velocity,
+        spring: settleSpring,
+        valueVelocity: targetProgress===undefined?normalizedScrub.valueVelocity:undefined,
+        velocity: releaseVelocity,
         velocityThreshold: normalizedScrub.velocityThreshold,
       } as MotionSettleOptions);
       motionState.settleToken = settleToken;

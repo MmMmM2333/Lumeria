@@ -23,6 +23,22 @@ function nearlyEqual(a: number, b: number, epsilon = 0.001): boolean {
 }
 
 export function runPageTrackMotionTests(): void {
+  // Release states reconstructed from the user's fast touchpad recordings.
+  for(const [progress,velocity] of [[1,20.309367],[0.850115,19.498307],[0.999712,23.329792],[0.61565,16.457004]] as const){
+    for(const sign of [1,-1]){
+      const runtime=createMotionRuntime({autoStart:false}),state=createPageTrackMotionState(),track={x:0};
+      const fromIndex=sign===1?0:1,toIndex=sign===1?1:0,span=695.2;
+      updatePageTrackMotion(state,track,{runtime,pageSpan:span,scrub:{fromIndex,toIndex,progress}});
+      updatePageTrackMotion(state,track,{runtime,pageSpan:span,scrub:{fromIndex,toIndex,progress,settle:true,settleToken:"touchpad-release",targetProgress:1,velocity}});
+      let previous=track.x;
+      for(let frame=0;frame<360;frame++){
+        runtime.step(1/120);
+        assert(sign*(track.x+toIndex*span)>=-0.01,"release must not cross the target page");
+        assert(sign*(track.x-previous)<=0.01,"release must approach the page monotonically");previous=track.x;
+      }
+      assert(nearlyEqual(track.x,-toIndex*span),"release must finish at its page");state.control?.cancel();
+    }
+  }
   {
     assert(getPageTrackX(2, 320) === -640, "page index should project to negative track offset");
   }

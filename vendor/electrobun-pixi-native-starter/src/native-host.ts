@@ -28,6 +28,7 @@ export {
 export { registerNativeFont, registerNativeFontData } from "./rendering/native-skia";
 export { createTextInputHost, TextInput, TextInputHost } from "./input/text-input";
 export { readNativeSystemPreferences, subscribeNativeSystemPreferences } from "./platform/native-system-preferences";
+export { readNativeTouchpad,type NativeTouchpadMetadata } from "./platform/native-touchpad";
 export type { NativeSystemPreferences } from "./platform/native-system-preferences";
 export type { TextInputOptions, TextInputStyle, TextInputHostOptions } from "./input/text-input";
 

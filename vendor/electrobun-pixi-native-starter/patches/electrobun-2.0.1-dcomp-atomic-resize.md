@@ -41,8 +41,14 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,066,944 bytes with SHA-256
-`E21A0D4A1BDE4D63AE0214DBD50129FEA0A3D23EA3013517FA6EF9191E4342C3`.
+The staged native DLL is 2,090,496 bytes with SHA-256
+`22A30E5A31ED3E95C4005D63605DC91E2498C3732BEF0A022D92EC27650F1CB4`.
+Starter 0.2.16 includes native_touchpad.h in the reconstructible patch, with
+nativeTouchpadAbi/Attach/Poll/Detach exports (touchpad ABI 1). Direct Manipulation
+registers on the GPU surface HWND; registering only its root does not receive
+DM_POINTERHITTEST on the tested Windows system. Parent subclassing owns focus/hide
+cancellation while the surface owns viewport dimensions. Polling preserves phases,
+physical pixel deltas and the native-frame GetTickCount64 clock epoch.
 Starter 0.2.14 forwards WM_NCPAINT to default processing: suppressing it leaves
 DWM non-client rendering inactive after disabling/re-enabling Acrylic and
 produces an opaque gray fallback. Custom full-client windows omit WS_SYSMENU

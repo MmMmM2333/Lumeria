@@ -10,6 +10,17 @@ test("native wheel exposes browser-compatible pixel deltas without losing precis
 		.reduce((sum, delta) => sum + delta, 0)).toBe(100);
 });
 
+test("touchpad pixels and explicit phases bypass notch normalization without contaminating mouse wheel",()=>{
+  const pending:any[]=[],delivered:any[]=[];
+  const input=attachNativePixiEvents({id:1,wgpuViewId:1,on:()=>()=>{}} as any,{events:{onWheel:(e:any)=>delivered.push(e),rootBoundary:{mappingState:{trackingData:{}}}}} as any,{pollEvent:()=>pending.shift()??null});
+  for(const phase of ["begin","update","inertia","end","cancel"]){
+    pending.push({kind:9,route:1n,timestamp:BigInt(100+pending.length*16),x:10,y:20,wheelX:12.5,wheelY:-4.25,modifiers:0,touchpad:{source:"touchpad",phase,sequence:1}});
+  }
+  pending.push({kind:9,route:1n,timestamp:200n,x:10,y:20,wheelX:0,wheelY:120,modifiers:0});input.poll();
+  expect(delivered.length).toBe(6);expect(delivered[1]).toMatchObject({deltaX:12.5,deltaY:-4.25,nativeTouchpad:{phase:"update"},momentum:false});
+  expect(delivered[2].momentum).toBe(true);expect(delivered[5]).toMatchObject({deltaX:0,deltaY:-100});expect(delivered[5].nativeTouchpad).toBeUndefined();input.destroy();
+});
+
 test("public key wheel and focus replay uses host normalization and resets repeat on blur", () => {
   const wheels:any[]=[];
   const events={rootBoundary:{mappingState:{trackingData:{}}},onWheel:(event:any)=>wheels.push(event)};

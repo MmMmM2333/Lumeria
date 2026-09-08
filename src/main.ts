@@ -34,6 +34,9 @@ async function mountApp(): Promise<void> {
   const app = createApp(appModule.default, { startupContext });
   app.use(localization.plugin);
   app.mount("#app");
+  if(import.meta.env.DEV&&new URLSearchParams(search).get("touchpadCapture")==="1"){
+    const {installWebTouchpadCapture}=await import("./debug/touchpadCaptureWeb.js");installWebTouchpadCapture();
+  }
 }
 
 mountApp().catch(renderBootstrapFailure);

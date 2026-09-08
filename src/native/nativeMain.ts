@@ -1,5 +1,6 @@
 import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { readErrorMessage } from "../application/errorMessage.js";
+import { createTouchpadCapture,setTouchpadCapture,activeTouchpadCapture } from "../debug/touchpadCapture.js";
 import { createNativeWindowEffects } from "./nativeWindowEffects.js";
 import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
@@ -9,7 +10,7 @@ import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRun
 import { createLaunchpadTray } from "./nativeTray.js";
 import { prepareNativeRestart } from "./nativeRestart.js";
 import { captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { Screen } from "electrobun/main";
@@ -26,6 +27,7 @@ import {
   createNativePixiApplication,
   NativeGlobalShortcut,
   NativeTray,openNativePath,
+  readNativeTouchpad,
   readNativeSystemPreferences,
   subscribeNativeSystemPreferences,
   type NativePixiApplication,
@@ -1217,6 +1219,7 @@ try {
     wheelDeadlines.set(deadline.kind, timer);
   };
   applyWheelOutput = (output, event, time): void => {
+    activeTouchpadCapture?.decision(output);
     lastWheelGestureTime = time;
     if (output.presentation) {
       clearWheelDeadline("clearPresentation");
@@ -1294,6 +1297,7 @@ try {
       : currentFrame.viewport.activePages.length;
     const timeStamp = Number(event.timeStamp);
     const time = Number.isFinite(timeStamp) && timeStamp >= 0 ? timeStamp : performance.now();
+    const touchpad=readNativeTouchpad(event);
     applyWheelOutput(wheelGestures.dispatch({
       type: "wheel",
       time,
@@ -1302,7 +1306,8 @@ try {
       deltaX: event.deltaX,
       deltaY: event.deltaY,
       metaKey: event.metaKey,
-      momentum: null,
+      momentum: touchpad?touchpad.phase==="inertia":null,
+      ...(touchpad?{wheelSource:"touchpad" as const,wheelPhase:touchpad.phase}:{}),
       viewport: {
         scope,
         pageIndex,
@@ -1311,8 +1316,18 @@ try {
       },
     }), event, time);
   };
+  let touchpadOwner:{sequence:number;settings:NativeSettingsShell|null;dialog:string|null;folder:string|null}|null=null;
+  const guardTouchpadRoute=(event:FederatedWheelEvent)=>{
+    const meta=readNativeTouchpad(event);
+    if(!meta)return;
+    if(meta.phase==="begin")touchpadOwner={sequence:meta.sequence,settings:settingsShell,dialog:management.activeId,folder:folderFlow.snapshot().renderedFolder?.id??null};
+    const valid=touchpadOwner?.sequence===meta.sequence&&touchpadOwner.settings===settingsShell&&touchpadOwner.dialog===management.activeId&&touchpadOwner.folder===(folderFlow.snapshot().renderedFolder?.id??null);
+    if(!valid){event.preventDefault();event.stopPropagation();touchpadOwner=null;interruptWheel(event);}
+    if(meta.phase==="end"||meta.phase==="cancel")touchpadOwner=null;
+  };
+  app.stage.on("wheelcapture",guardTouchpadRoute);
   app.stage.on("wheel", onWheel);
-  offWheel = () => app.stage.off("wheel", onWheel);
+  offWheel = () => {app.stage.off("wheel", onWheel);app.stage.off("wheelcapture",guardTouchpadRoute);};
   const interruptWheel = (event: Readonly<{ timeStamp?: unknown }>): void => {
     if (touchId !== null) return;
     const timestamp = Number(event.timeStamp);
@@ -1469,6 +1484,54 @@ try {
     return true;
   };
   searchBar.handleKey=onKey;
+  if(nativeMode==="dev"&&process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR){
+    app.window.setTitle("LaunchPad · Touchpad preview");
+    const directory=process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR;
+    mkdirSync(directory,{recursive:true});
+    const outputPath=join(directory,`touchpad-native-${Date.now()}.json`);
+    const status=new Text({text:"",eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:"#ffffff"}});
+    const panel=new Container({label:"native-touchpad-capture",eventMode:"static"});
+    panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,480,100,8).fill("#20242e"),status);status.position.set(10,8);
+    let detail=t("touchpadCapture.hint");
+    const paint=()=>{if(panel.destroyed)return;status.text=`${t("touchpadCapture.title")}: ${t(capture.recording?"touchpadCapture.recording":capture.overflow?"touchpadCapture.full":"touchpadCapture.stopped")}\n${detail}`;panel.position.set(8,app.contentSize.height-108);app.stage.setChildIndex(panel,app.stage.children.length-1);app.invalidate();};
+    const capture=createTouchpadCapture("native",()=>({...app.contentSize,resolution:app.resolution}),paint);
+    setTouchpadCapture(capture);app.stage.addChild(panel);paint();
+    for(const type of ["pointerdown","pointertap","wheel"] as const)panel.on(type,event=>event.stopPropagation());
+    const exportFile=()=>{capture.stop();try{writeFileSync(outputPath,capture.serialize(),"utf8");detail=t("touchpadCapture.saved");}catch(error){detail=t("touchpadCapture.failed",{error:readErrorMessage(error)});}paint();};
+    const toggle=()=>capture.recording?capture.stop():capture.start();
+    const mark=()=>{capture.mark();detail=t("touchpadCapture.marked",{count:capture.count});paint();};
+    for(const [index,[label,action]] of ([[t("touchpadCapture.toggle"),toggle],[t("touchpadCapture.mark"),mark],[t("touchpadCapture.export"),exportFile]] as const).entries()){
+      const button=new NativeFluentButton(label,146,action,()=>app.invalidate(),"dark");button.position.set(10+index*156,58);panel.addChild(button);
+    }
+    searchBar.handleKey=event=>{
+      if(event.type==="down"&&!event.isComposing&&!event.repeat&&["F6","F7","F8"].includes(event.key??"")){
+        if(event.key==="F6")toggle();
+        if(event.key==="F7")mark();
+        if(event.key==="F8")exportFile();return true;
+      }
+      return onKey(event);
+    };
+    app.stage.on("wheelcapture",event=>{let node=event.target as Container|null;let list=false;while(node){if(node===panel)return;if(node.label==="native-scroll-view")list=true;node=node.parent;}capture.wheel(event,list?"list":settingsShell||management.modal?"control":folderFlow.snapshot().renderedFolder?"folder":"desktop");});
+    const offCaptureResize=app.on("resize",paint);
+    app.beforeClose(async()=>{exportFile();});
+    panel.on("destroyed",()=>{offCaptureResize();setTouchpadCapture(null);});
+    console.log("Touchpad capture ready",outputPath);
+    if(process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_SELFTEST==="1"){
+      await present(app,"capture controls ready");
+      searchBar.handleKey({type:"down",key:"F6"});assert.equal(capture.recording,true);
+      const sample=new FederatedWheelEvent(app.renderer.events.rootBoundary);sample.deltaX=5;sample.deltaY=0;sample.deltaMode=0;sample.timeStamp=performance.now();
+      app.stage.emit("wheelcapture",sample);
+      searchBar.handleKey({type:"down",key:"F7"});
+      await present(app,"capture recording and marker");
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      await captureOwnedWindow(getNativePixiApplicationTesting(app).handles().inputWindow,join(directory,"capture-ui.png"));
+      searchBar.handleKey({type:"down",key:"F8"});
+      const saved=JSON.parse(readFileSync(outputPath,"utf8")) as {events:{kind:string}[]};
+      assert.ok(saved.events.some(event=>event.kind==="wheel"));assert.ok(saved.events.some(event=>event.kind==="mark"));assert.equal(capture.recording,false);
+      console.log("Touchpad capture UI/export selftest passed");
+      setTimeout(()=>{quitRequested=true;app.window.requestClose();},1500);
+    }
+  }
   if(startupLoadRecovered)notices.showLayoutLoadRecovered();
   offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else editing?.alt.handleWindowBlur();});
   searchBar.input.on("submit", () => {
@@ -2556,6 +2619,32 @@ try {
     // Inject at the same Pixi event boundary consumed by native wheel input.
     // This verifies application integration; physical touchpad fidelity needs hardware acceptance.
     let wheelTime = performance.now();
+    {
+      assert.equal(app.supportsTouchpadGestures,true,"Direct Manipulation must initialize on the actual GPU HWND");
+      let sequence=1000,time=performance.now();
+      const emit=(phase:"begin"|"update"|"inertia"|"end"|"cancel",dx=0,dy=0)=>{
+        time+=16;app.nativeInput.emitWheel(400,250,dx,dy,0,0,time,{source:"touchpad",phase,sequence});
+      };
+      emit("begin");emit("update",120);emit("update",160);await present(app,"touchpad direct scrub");
+      assert.equal(currentFrame.viewport.activePageIndex,0,"touchpad update does not commit a discrete notch");
+      emit("inertia");assert.equal(currentFrame.viewport.activePageIndex,1);
+      for(let i=0;i<40;i++)emit("inertia",100);
+      assert.equal(currentFrame.viewport.activePageIndex,1,"inertia tail cannot repeat a page");emit("end");await settleDesktop();
+      sequence++;emit("begin");emit("update",100);openSettings();await present(app,"touchpad modal route change");emit("inertia",100);
+      assert.equal(currentFrame.viewport.activePageIndex,1,"old desktop gesture cannot continue after opening settings");emit("end");closeSettings();await waitFor("touchpad settings close",()=>!settingsShell);await settleDesktop();
+      commitDesktopPage(0);await settleDesktop();
+      const {NativeScrollView}=await import("../rendering/native/NativeScrollView.js");
+      const scrollProbe=new NativeScrollView(()=>app.invalidate());scrollProbe.position.set(430,170);scrollProbe.resize(240,160,800);
+      scrollProbe.content.addChild(new Graphics({eventMode:"none"}).rect(0,0,240,800).fill(0x334455));app.stage.addChild(scrollProbe);
+      try{
+        await present(app,"touchpad list scroll probe");sequence++;
+        const listWheel=(phase:"begin"|"update"|"inertia"|"end",dy=0)=>{time+=16;app.nativeInput.emitWheel(480,220,0,dy,0,0,time,{source:"touchpad",phase,sequence});};
+        listWheel("begin");listWheel("update",28);listWheel("inertia",40);listWheel("end");
+        assert.equal(scrollProbe.offset,68,"list consumes active and OS inertia pixels once, without an extra inertia driver");
+        assert.equal(currentFrame.viewport.activePageIndex,0,"list wheel must not reach desktop paging");
+      }finally{scrollProbe.destroy();await present(app,"touchpad list probe cleanup");}
+      console.log("Touchpad Pixi integration: explicit phases, one-page inertia drain and modal route cancellation passed");
+    }
     const wheel = (deltaY: number, elapsedMs = 16): void => {
       const event = new FederatedWheelEvent(app.renderer.events.rootBoundary);
       event.deltaY = deltaY;

@@ -3,6 +3,19 @@
   "displayName": "English",
   "direction": "ltr",
   "messages": {
+    "touchpadCapture": {
+      "title": "Touchpad capture",
+      "recording": "● Recording",
+      "stopped": "Stopped / ready",
+      "full": "Limit reached; export now",
+      "toggle": "F6 Start / stop",
+      "mark": "F7 Mark issue",
+      "export": "F8 Export",
+      "hint": "Repeat each gesture 3 times, with 2 seconds between gestures",
+      "marked": "Issue marked (event {count})",
+      "saved": "Exported to project artifacts; F6 resumes recording",
+      "failed": "Export failed: {error}"
+    },
     "common": {
       "actions": {
         "apply": "Apply",

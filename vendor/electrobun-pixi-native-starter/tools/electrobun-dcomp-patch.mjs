@@ -25,6 +25,7 @@ if (refresh) {
 	const diff = runGit(
 		"diff", "--",
 		"package/src/native/win/nativeWrapper.cpp",
+    "package/src/native/win/native_touchpad.h",
 		"package/src/native/win/dcomp_compositor.h",
 		"package/src/sdks/main/proc/native.ts",
 		"package/src/sdks/main/webgpuAdapter.ts",

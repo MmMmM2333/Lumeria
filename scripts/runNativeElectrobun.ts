@@ -198,6 +198,7 @@ try {
         "lumeria_native_data.exe",
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
       LAUNCHPAD_NATIVE_RESTART_FILE:restartPath,
       LAUNCHPAD_NATIVE_RESTART_ATTEMPT:String(restartAttempt++),

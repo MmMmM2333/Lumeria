@@ -1,6 +1,7 @@
 import { Container, Graphics, Rectangle, type FederatedPointerEvent } from "pixi.js";
 import { nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
 import { nativeUiMetrics } from "./ui/nativeUiTheme.js";
+import { activeTouchpadCapture } from "../../debug/touchpadCapture.js";
 
 export type NativeScrollPadding=Readonly<{left:number;right:number;top:number;bottom:number}>;
 
@@ -22,6 +23,7 @@ export class NativeScrollView extends Container {
       event.stopPropagation();event.preventDefault();
       if(event.ctrlKey||event.metaKey)return;
       this.scrollTo(this.#offset+event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?this.#height:1));
+      activeTouchpadCapture?.scroll(this.#offset);
     });
     this.#thumb.on("pointerdown",(event:FederatedPointerEvent)=>{
       event.stopPropagation();

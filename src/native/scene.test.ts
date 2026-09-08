@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createLaunchpadGestureEngine } from "../domain/input/launchpadGestureEngine.js";
+import { runTouchpadCaptureTests } from "../debug/touchpadCapture.test.js";
 import { runNativeWindowEffectsTests } from "./nativeWindowEffects.test.js";
 import { readFileSync } from "node:fs";
 import { Container, type Text } from "pixi.js";
@@ -741,3 +743,18 @@ runNativeLabelRasterTests();
 runNativeSettingsLayoutTests();
 console.log("Native desktop scene tests passed");
 runNativeWindowEffectsTests();
+runTouchpadCaptureTests();
+{
+  const engine=createLaunchpadGestureEngine(),viewport={scope:"desktop",pageIndex:0,pageCount:3,pageWidth:900};
+  const dispatch=(time:number,deltaX:number,wheelPhase:"begin"|"update"|"inertia"|"end"|"cancel")=>engine.dispatch({type:"wheel",time,deltaX,deltaY:0,deltaMode:0,wheelSource:"touchpad",wheelPhase,momentum:wheelPhase==="inertia",viewport});
+  dispatch(0,0,"begin");
+  for(const time of [10,320,550]){
+    const out=dispatch(time,100,"update");assert.equal(out.commands.length,0,"known touchpad cannot enter discrete repeat even with a coarse first delta");assert.equal(out.deadline,null,"explicit touchpad phase owns gesture end");
+  }
+  const released=dispatch(560,0,"inertia");assert.equal(released.commands.filter(c=>c.type==="commitPage").length,1);
+  for(const time of [570,800,1100])assert.equal(dispatch(time,100,"inertia").commands.length,0);
+  dispatch(1200,0,"end");assert.equal(dispatch(1300,100,"inertia").commands.length,0,"orphan inertia cannot start another page");
+  dispatch(1400,0,"begin");dispatch(1410,30,"update");assert.equal(dispatch(1420,0,"cancel").commands.length,0);
+  dispatch(1500,0,"begin");dispatch(1510,800,"update");dispatch(1520,800,"update");
+  const reversed=dispatch(1530,-50,"update");assert.ok(reversed.presentation&&reversed.presentation.progress<1,"reversal does not repay invisible travel past the target page");
+}

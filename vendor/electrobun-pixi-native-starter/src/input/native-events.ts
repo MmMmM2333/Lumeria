@@ -46,6 +46,7 @@ export interface NativeInputHostHooks {
 }
 
 export interface NativeHostInputEvent {
+  touchpad?:import("../platform/native-touchpad").NativeTouchpadMetadata;
 	route: bigint;
 	timestamp: bigint;
 	kind: number;
@@ -463,7 +464,7 @@ export function attachNativePixiEvents(
 
 	const emitWheel = (
 		x: number, y: number, dx: number, dy: number, modifiers = currentModifiers,
-		deltaMode = 0, timestamp = performance.now(),
+		deltaMode = 0, timestamp = performance.now(),nativeTouchpad?:import("../platform/native-touchpad").NativeTouchpadMetadata,
 	) => {
 		if (closed) return;
 		currentModifiers = modifiers;
@@ -486,6 +487,7 @@ export function attachNativePixiEvents(
 			deltaMode,
 			isTrusted: true,
 			timeStamp: eventTimestamp,
+      ...(nativeTouchpad?{nativeTouchpad,momentum:nativeTouchpad.phase==="inertia"}:{}),
 			...modifiersFor(modifiers),
 		});
 		hooks.onActivity?.();
@@ -627,10 +629,10 @@ export function attachNativePixiEvents(
 				capturedPointers.add(pointerId);
 				emitPointer("gotpointercapture", event.x, event.y, -1, event.modifiers, path, event);
 			} else if (event.kind === 9) {
-				const wheel = normalizeNativeWheel(event.wheelX, event.wheelY);
+				const wheel = event.touchpad?{deltaX:event.wheelX,deltaY:event.wheelY,deltaMode:0}:normalizeNativeWheel(event.wheelX,event.wheelY);
 				emitWheel(
 					event.x, event.y, wheel.deltaX, wheel.deltaY,
-					event.modifiers, wheel.deltaMode, Number(event.timestamp),
+					event.modifiers, wheel.deltaMode, Number(event.timestamp),event.touchpad,
 				);
 			} else if (event.kind === 10) onFocus();
 			else if (event.kind === 11) onBlur();
