@@ -4,6 +4,9 @@
   "direction": "ltr",
   "messages": {
     "touchpadCapture": {
+      "speed": "F9 Page speed: {mode}",
+      "baseline": "Baseline",
+      "rate": "{rate} pages/s",
       "title": "Touchpad capture",
       "recording": "● Recording",
       "stopped": "Stopped / ready",

@@ -1,6 +1,7 @@
 import type { LaunchpadGestureOutput } from "../domain/input/launchpadGestureEngine.js";
+import { getPageSwipeSpeed } from "../rendering/pageSwipePreview.js";
 
-export type TouchpadEvent=Readonly<{kind:"wheel"|"decision"|"scroll"|"mark"|"start"|"stop";at:number;eventTime?:number;dx?:number;dy?:number;mode?:number;momentum?:boolean|null;source?:"touchpad"|"unknown";phase?:string;area?:"desktop"|"folder"|"list"|"control";page?:number;progress?:number;target?:number;offset?:number;ctrl?:boolean;meta?:boolean}>;
+export type TouchpadEvent=Readonly<{kind:"wheel"|"decision"|"scroll"|"mark"|"start"|"stop"|"speed";at:number;speed?:number;eventTime?:number;dx?:number;dy?:number;mode?:number;momentum?:boolean|null;source?:"touchpad"|"unknown";phase?:string;area?:"desktop"|"folder"|"list"|"control";page?:number;progress?:number;target?:number;offset?:number;ctrl?:boolean;meta?:boolean}>;
 export function createTouchpadCapture(runtime:"native"|"web",environment:()=>{width:number;height:number;resolution:number},changed:()=>void=()=>{}){
   let recording=false,started=performance.now(),overflow=false,session=0;
   const rows:TouchpadEvent[]=[];
@@ -11,7 +12,8 @@ export function createTouchpadCapture(runtime:"native"|"web",environment:()=>{wi
   };
   return {
     get recording(){return recording;},get count(){return rows.length;},get overflow(){return overflow;},get session(){return session;},
-    start(){if(recording||overflow)return;if(!rows.length)started=performance.now();session++;recording=true;add({kind:"start"});changed();},
+    start(){if(recording||overflow)return;if(!rows.length)started=performance.now();session++;recording=true;add({kind:"start",speed:getPageSwipeSpeed()});changed();},
+    speed(){add({kind:"speed",speed:getPageSwipeSpeed()});},
     stop(){if(!recording)return;add({kind:"stop"});recording=false;changed();},
     mark(){add({kind:"mark"});changed();},
     wheel(event:{deltaX:number;deltaY:number;deltaMode:number;timeStamp:number;ctrlKey:boolean;metaKey:boolean;momentum?:boolean|null;nativeEvent?:unknown},area:TouchpadEvent["area"]){

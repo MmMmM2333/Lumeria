@@ -394,6 +394,7 @@ function prepareLayerForDesktopQuiescenceTest(
   });
   layer.updateSingleStageFolderLayer = () => {};
   layer.pageTrackMotion = {
+    swipeSample:null,
     control: null,
     grabProgressOffset: 0,
     grabToken: null,

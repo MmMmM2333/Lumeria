@@ -10,6 +10,7 @@ import type {
   MotionSpringConfig,
 } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
+import { getPageSwipeSpeed } from "../../pageSwipePreview.js";
 
 const PAGE_TRACK_REPLACE_REASON = "page-track-replace";
 const PAGE_TRACK_SNAP_REASON = "page-track-snap";
@@ -68,6 +69,7 @@ interface PageTrackTarget {
 export type PageTrackMotionMode = "scrub" | "settle" | "spring" | null;
 
 export interface PageTrackMotionState {
+  swipeSample:{time:number;target:number;key:string;limited:boolean;rate:number}|null;
   control: MotionControl | null;
   grabProgressOffset: number;
   grabToken: unknown;
@@ -210,6 +212,7 @@ function describePageTrackTarget(
 
 export function createPageTrackMotionState(): PageTrackMotionState {
   return {
+    swipeSample:null,
     control: null,
     grabProgressOffset: 0,
     grabToken: null,
@@ -227,6 +230,7 @@ export function cancelPageTrackMotion(
   if (!motionState) return;
   motionState.control?.cancel?.(reason);
   motionState.control = null;
+  motionState.swipeSample=null;
   motionState.grabProgressOffset = 0;
   motionState.grabToken = null;
   motionState.key = null;
@@ -274,6 +278,35 @@ export function updatePageTrackMotion(
     const key = makeScrubKey(normalizedScrub, pageSpan);
     const settling = isSettlingScrub(normalizedScrub);
     const settleToken = settling ? makeSettleToken(normalizedScrub, key) : null;
+    const speed=getPageSwipeSpeed();
+    if(speed>0&&normalizedScrub.continuousWheel&&!normalizedScrub.edge&&!normalizedScrub.grab){
+      const interruptedSettle=motionState.mode==="settle"&&!settling;
+      const prior=interruptedSettle?null:motionState.swipeSample;
+      const inputTarget=normalizedScrub.fromX+(normalizedScrub.toX-normalizedScrub.fromX)*normalizedScrub.progress;
+      const target=settling?normalizedScrub.fromX+(normalizedScrub.toX-normalizedScrub.fromX)*(normalizedScrub.targetProgress??0):inputTarget;
+      const time=readNumber(normalizedScrub.sampleTime,0),rate=readPageSpan(pageSpan)*speed;
+      const sameSample=prior?.time===time&&prior.key===key&&prior.target===target&&prior.rate===rate;
+      if(sameSample&&motionState.mode===(settling?"settle":"scrub")&&(!settling||motionState.settleToken===settleToken))return {control:motionState.control,mode:settling?"settle":"scrub",targetX:target};
+      const elapsed=prior?Math.min(0.08,Math.max(0.001,(time-prior.time)/1000)):1/60;
+      const fast=Math.abs(inputTarget-(prior?.target??pageTrack.x))>rate*elapsed;
+      // Input and release may arrive in one rendered frame. Compare the input
+      // position too, so coalescing cannot bypass the visual limit on release.
+      const limited=Boolean(prior?.limited||fast||(interruptedSettle&&motionState.control&&!motionState.control.completed));
+      if(limited){
+        // Re-target from the actual displayed position. Never replay queued deltas,
+        // and never snap to the input target when the fingers leave the trackpad.
+        const from=pageTrack.x,distance=Math.abs(target-from);
+        motionState.control?.cancel(PAGE_TRACK_REPLACE_REASON);
+        const duration=distance/rate*(settling?2:1);
+        motionState.control=motion(pageTrack).layout().interrupt("replace")
+          .from({x:from}).duration(duration).ease(settling?((p:number)=>1-(1-p)*(1-p)):"linear")
+          .to({x:target,onUpdate:onFrame,onComplete:onFrame}).start({runtime});
+        motionState.key=key;motionState.mode=settling?"settle":"scrub";motionState.settleToken=settleToken;motionState.targetX=target;
+        motionState.swipeSample={time,target,key,limited:true,rate};
+        return {control:motionState.control,mode:settling?"settle":"scrub",targetX:target};
+      }
+      motionState.swipeSample={time,target,key,limited:false,rate};
+    }else motionState.swipeSample=null;
     if (settling &&
       motionState.control &&
       motionState.key === key &&
@@ -336,6 +369,13 @@ export function updatePageTrackMotion(
     return { control: motionState.control, mode: "settle", targetX: normalizedScrub.toX };
   }
 
+  if(!snap&&motionState.mode==="settle"&&motionState.swipeSample?.limited
+    &&motionState.control&&!motionState.control.completed&&!motionState.control.released
+    &&isSameTrackTarget(motionState.targetX,targetX)){
+    // The input engine can release its presentation before a visually delayed
+    // page finishes. Preserve this one destination instead of jumping to a spring.
+    return {control:motionState.control,mode:"settle",targetX};
+  }
   if (motionState.mode === "scrub" || motionState.mode === "settle") {
     cancelPageTrackMotion(motionState, PAGE_TRACK_REPLACE_REASON);
   }

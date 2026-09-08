@@ -44,6 +44,8 @@ export type LaunchpadGestureInput = Readonly<{
 }>;
 
 export type LaunchpadPagePresentation = Readonly<{
+  continuousWheel?:boolean;
+  sampleTime?:number;
   direction: -1 | 1;
   edge: boolean;
   fromIndex: number;
@@ -388,6 +390,7 @@ export function createLaunchpadGestureEngine(
     const edge = toIndex < 0 || toIndex >= session.viewport.pageCount;
     const rawProgress = Math.abs(session.travel) / session.viewport.pageWidth;
     return {
+      ...(session.classification!=="discrete"?{continuousWheel:true,sampleTime:session.lastTime}:{}),
       direction,
       edge,
       fromIndex: session.viewport.pageIndex,

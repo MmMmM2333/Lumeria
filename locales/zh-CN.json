@@ -4,6 +4,9 @@
   "direction": "ltr",
   "messages": {
     "touchpadCapture": {
+      "speed": "F9 翻页速度：{mode}",
+      "baseline": "基线（不限速）",
+      "rate": "{rate} 页/秒",
       "title": "触控板采集",
       "recording": "● 正在录制",
       "stopped": "已停止／等待开始",

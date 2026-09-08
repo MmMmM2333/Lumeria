@@ -176,6 +176,8 @@ export type LaunchpadInputGesturesOptions = Readonly<{
 }>;
 
 export type LaunchpadPageTrackScrub = Readonly<{
+  continuousWheel?:boolean;
+  sampleTime?:number;
   edge: boolean;
   fromIndex: number;
   progress: number;
@@ -371,6 +373,7 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     lastPresentationScope = presentation.scope;
     clearDeadline("clearPresentation");
     const scrub: LaunchpadPageTrackScrub = {
+      ...(presentation.continuousWheel?{continuousWheel:true,sampleTime:presentation.sampleTime}:{}),
       edge: presentation.edge,
       fromIndex: presentation.fromIndex,
       progress: presentation.progress,

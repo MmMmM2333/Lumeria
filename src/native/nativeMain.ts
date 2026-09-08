@@ -1,6 +1,7 @@
 import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { readErrorMessage } from "../application/errorMessage.js";
 import { createTouchpadCapture,setTouchpadCapture,activeTouchpadCapture } from "../debug/touchpadCapture.js";
+import { DEFAULT_PAGE_SWIPE_SPEED,getPageSwipeSpeed,setPageSwipeSpeed,cyclePageSwipeSpeed } from "../rendering/pageSwipePreview.js";
 import { createNativeWindowEffects } from "./nativeWindowEffects.js";
 import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
@@ -1178,6 +1179,7 @@ try {
   const toPageTrackScrub = (
     presentation: LaunchpadPagePresentation,
   ): ScenePageTrackScrub => ({
+    ...(presentation.continuousWheel?{continuousWheel:true,sampleTime:presentation.sampleTime}:{}),
     edge: presentation.edge,
     fromIndex: presentation.fromIndex,
     progress: presentation.progress,
@@ -1485,28 +1487,32 @@ try {
   };
   searchBar.handleKey=onKey;
   if(nativeMode==="dev"&&process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR){
-    app.window.setTitle("LaunchPad · Touchpad preview");
+    app.window.setTitle("LaunchPad · Swipe speed preview");
     const directory=process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR;
     mkdirSync(directory,{recursive:true});
     const outputPath=join(directory,`touchpad-native-${Date.now()}.json`);
     const status=new Text({text:"",eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:"#ffffff"}});
     const panel=new Container({label:"native-touchpad-capture",eventMode:"static"});
-    panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,480,100,8).fill("#20242e"),status);status.position.set(10,8);
+    panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,480,140,8).fill("#20242e"),status);status.position.set(10,8);
     let detail=t("touchpadCapture.hint");
-    const paint=()=>{if(panel.destroyed)return;status.text=`${t("touchpadCapture.title")}: ${t(capture.recording?"touchpadCapture.recording":capture.overflow?"touchpadCapture.full":"touchpadCapture.stopped")}\n${detail}`;panel.position.set(8,app.contentSize.height-108);app.stage.setChildIndex(panel,app.stage.children.length-1);app.invalidate();};
+    const paint=()=>{if(panel.destroyed)return;status.text=`${t("touchpadCapture.title")}: ${t(capture.recording?"touchpadCapture.recording":capture.overflow?"touchpadCapture.full":"touchpadCapture.stopped")}\n${detail}`;panel.position.set(8,app.contentSize.height-148);app.stage.setChildIndex(panel,app.stage.children.length-1);app.invalidate();};
     const capture=createTouchpadCapture("native",()=>({...app.contentSize,resolution:app.resolution}),paint);
     setTouchpadCapture(capture);app.stage.addChild(panel);paint();
     for(const type of ["pointerdown","pointertap","wheel"] as const)panel.on(type,event=>event.stopPropagation());
     const exportFile=()=>{capture.stop();try{writeFileSync(outputPath,capture.serialize(),"utf8");detail=t("touchpadCapture.saved");}catch(error){detail=t("touchpadCapture.failed",{error:readErrorMessage(error)});}paint();};
     const toggle=()=>capture.recording?capture.stop():capture.start();
     const mark=()=>{capture.mark();detail=t("touchpadCapture.marked",{count:capture.count});paint();};
+    const speedLabel=()=>t("touchpadCapture.speed",{mode:getPageSwipeSpeed()?t("touchpadCapture.rate",{rate:getPageSwipeSpeed()}):t("touchpadCapture.baseline")});
+    const changeSpeed=()=>{interruptWheel({timeStamp:performance.now()});clearWheelPresentation();cyclePageSwipeSpeed();capture.speed();speedButton.caption.text=speedLabel();paint();};
+    const speedButton=new NativeFluentButton(speedLabel(),458,changeSpeed,()=>app.invalidate(),"dark");speedButton.position.set(10,98);panel.addChild(speedButton);
     for(const [index,[label,action]] of ([[t("touchpadCapture.toggle"),toggle],[t("touchpadCapture.mark"),mark],[t("touchpadCapture.export"),exportFile]] as const).entries()){
       const button=new NativeFluentButton(label,146,action,()=>app.invalidate(),"dark");button.position.set(10+index*156,58);panel.addChild(button);
     }
     searchBar.handleKey=event=>{
-      if(event.type==="down"&&!event.isComposing&&!event.repeat&&["F6","F7","F8"].includes(event.key??"")){
+      if(event.type==="down"&&!event.isComposing&&!event.repeat&&["F6","F7","F8","F9"].includes(event.key??"")){
         if(event.key==="F6")toggle();
         if(event.key==="F7")mark();
+        if(event.key==="F9")changeSpeed();
         if(event.key==="F8")exportFile();return true;
       }
       return onKey(event);
@@ -1519,6 +1525,7 @@ try {
     if(process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_SELFTEST==="1"){
       await present(app,"capture controls ready");
       searchBar.handleKey({type:"down",key:"F6"});assert.equal(capture.recording,true);
+      for(const expected of [0,6,4]){searchBar.handleKey({type:"down",key:"F9"});assert.equal(getPageSwipeSpeed(),expected);}
       const sample=new FederatedWheelEvent(app.renderer.events.rootBoundary);sample.deltaX=5;sample.deltaY=0;sample.deltaMode=0;sample.timeStamp=performance.now();
       app.stage.emit("wheelcapture",sample);
       searchBar.handleKey({type:"down",key:"F7"});
@@ -2634,6 +2641,19 @@ try {
       assert.equal(currentFrame.viewport.activePageIndex,1,"old desktop gesture cannot continue after opening settings");emit("end");closeSettings();await waitFor("touchpad settings close",()=>!settingsShell);await settleDesktop();
       commitDesktopPage(0);await settleDesktop();
       const {NativeScrollView}=await import("../rendering/native/NativeScrollView.js");
+      for(const speed of [6,4] as const){
+        setPageSwipeSpeed(speed);
+        try{
+          sequence++;emit("begin");emit("update",600);emit("update",600);emit("inertia");
+          assert.equal(currentFrame.viewport.activePageIndex,1);
+          const span=scene.getPageWidth("desktop",0,app.contentSize.width);
+          await waitFor("limited swipe visible intermediate frame",()=>{const x=scene.getMotionSnapshot().desktopPageTrackX;return x < -span*.02&&x > -span*.9;});
+          await present(app,"speed-limited page visible");await captureSmokeFrame(`swipe-speed-${speed}-middle`);
+          emit("end");await settleDesktop();
+          const settled=scene.getMotionSnapshot();
+          assert.ok(settled.desktopPageTrackTargetX<0&&Math.abs(settled.desktopPageTrackX-settled.desktopPageTrackTargetX)<1,"limited swipe reaches the rendered page target, including the page gap");
+        }finally{setPageSwipeSpeed(DEFAULT_PAGE_SWIPE_SPEED);interruptWheel({timeStamp:time+1});commitDesktopPage(0);await settleDesktop();}
+      }
       const scrollProbe=new NativeScrollView(()=>app.invalidate());scrollProbe.position.set(430,170);scrollProbe.resize(240,160,800);
       scrollProbe.content.addChild(new Graphics({eventMode:"none"}).rect(0,0,240,800).fill(0x334455));app.stage.addChild(scrollProbe);
       try{

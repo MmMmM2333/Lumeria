@@ -31,6 +31,8 @@ export type ScenePageGridMeasureStyle = Readonly<{
 }>;
 
 export type ScenePageTrackScrub = Readonly<{
+  continuousWheel?:boolean;
+  sampleTime?:number;
   edge: boolean;
   fromIndex: number;
   progress: number;
@@ -287,6 +289,8 @@ function requirePageTrackScrub(value: unknown, path: string): void {
   requireBoolean(value.edge, `${path}.edge`);
   requireString(value.scope, `${path}.scope`);
   if (value.settle !== undefined) requireBoolean(value.settle, `${path}.settle`);
+  if(value.continuousWheel!==undefined)requireBoolean(value.continuousWheel,`${path}.continuousWheel`);
+  if(value.sampleTime!==undefined)requireNumber(value.sampleTime,`${path}.sampleTime`);
   for (const key of ["targetProgress", "velocity"] as const) {
     if (value[key] !== undefined) requireNumber(value[key], `${path}.${key}`);
   }
