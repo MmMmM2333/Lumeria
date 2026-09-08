@@ -1,10 +1,13 @@
-import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
+import { createNativeText } from "../rendering/native/nativeTypography.js";
+import { t, setNativeLocale, getNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
+import { createDefaultScanRoots } from "../domain/launchpadData.js";
+import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import { readErrorMessage } from "../application/errorMessage.js";
 import { createTouchpadCapture,setTouchpadCapture,activeTouchpadCapture } from "../debug/touchpadCapture.js";
 import { DEFAULT_PAGE_SWIPE_SPEED,getPageSwipeSpeed,setPageSwipeSpeed,cyclePageSwipeSpeed } from "../rendering/pageSwipePreview.js";
 import { createNativeWindowEffects } from "./nativeWindowEffects.js";
 import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
-import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
+import { configureNativeTextResolution, setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
 import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.js";
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
@@ -17,6 +20,7 @@ import { join } from "node:path";
 import { Screen } from "electrobun/main";
 import {
   Container,
+  AlphaFilter,
   Graphics,
   Rectangle,
   Text,
@@ -44,6 +48,7 @@ import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
 import { NativeSearchBar } from "../rendering/native/NativeSearchBar.js";
 import { NativeManagement } from "../rendering/native/NativeManagement.js";
+import { NativeSelectionToolbar } from "../rendering/native/NativeSelectionToolbar.js";
 import { createLaunchpadNotices } from "../application/launchpadNotices.js";
 import { NativeNotice } from "../rendering/native/NativeNotice.js";
 import { NativeAppDialogs } from "../rendering/native/NativeAppDialogs.js";
@@ -301,6 +306,7 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
+configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
 let startupLoadRecovered=false;
@@ -630,19 +636,25 @@ const scene = new NativeDesktopScene(app.stage, {
 });
 app.stage.addChild(searchBar);
 app.stage.addChild(management);
-const selectionToolbar = new Container({label:"native-selection-toolbar"});
-selectionToolbar.visible=false;
-const toolbarBackground=new Graphics();
-const toolbarSummary=new Text({text:"",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:0xffffff}});
-toolbarSummary.eventMode="none";
-selectionToolbar.addChild(toolbarBackground,toolbarSummary);
-const selectAllButton=management.button(t("common.actions.selectAll"),88,()=>editing!.selection.selectScope(getSelectionScope()));
-const clearSelectionButton=management.button(t("common.actions.clearSelection"),116,()=>editing!.selection.deselectAll());
-const createFolderButton=management.button(t("launchpad.batch.createFolder"),116,()=>editing!.createFolder());
-const removeButton=management.button(t("launchpad.batch.remove"),80,()=>removeItems([...editing!.selection.selectedIds.value]));
-const doneButton=management.button(t("launchpad.batch.done"),68,()=>{if(!editing!.selection.isFrozen.value)editing!.selection.clear();});
-selectionToolbar.addChild(selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton);
+const selectionToolbar = new NativeSelectionToolbar({
+  invalidate:()=>app.invalidate(),selectScope:()=>editing!.selection.selectScope(getSelectionScope()),
+  clear:()=>editing!.selection.deselectAll(),createFolder:()=>{editing!.createFolder();},
+  done:()=>{if(!editing!.selection.isFrozen.value)editing!.selection.clear();},
+  removeMenu:(x,y,restore)=>{
+    const ids=[...editing!.selection.selectedIds.value];
+    const selected=apps?.managedApps.value.filter(item=>ids.includes(item.id))??[];
+    const canExclude=Boolean(apps&&selected.length===ids.length&&ids.length&&selected.every(item=>apps!.canExcludeManagedAppFromScan(item)));
+    management.menu(x,y,[
+      {label:t("settings.apps.manager.remove"),icon:"delete-20-regular",run:()=>removeItems(ids)},
+      {label:t("settings.apps.manager.exclude"),icon:"delete-dismiss-20-regular",danger:true,disabled:!canExclude,run:()=>{apps?.excludeManagedAppsFromScan(selected);}},
+    ],248,{restore});
+  },
+});
+// The native presentation surface is not COPY_SRC. While the toolbar needs
+// backdrop sampling, render the stage through Pixi's sampleable intermediate.
+const selectionBackdropSurface=new AlphaFilter({alpha:1,resolution:"inherit"});
 app.stage.addChild(selectionToolbar);
+app.stage.on("pointerdowncapture",event=>{let node=event.target as Container|null;while(node&&node!==selectionToolbar)node=node.parent;if(!node)selectionToolbar.clearFocus();});
 const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
 app.stage.addChild(settingsButton);
 const windowChrome=new NativeWindowChrome(app,reportNativeError);
@@ -808,24 +820,13 @@ try {
     settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
     searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
     searchBar.y=14+chromeInset();
-    selectionToolbar.visible=Boolean(editing?.selection.isActive.value);
-    const toolbarWidth=Math.min(760,app.contentSize.width-40);
-    selectionToolbar.position.set((app.contentSize.width-toolbarWidth)/2,14+chromeInset());
-    toolbarBackground.clear().roundRect(0,0,toolbarWidth,54,18).fill({color:0x292929,alpha:0.96}).stroke({color:0xffffff,alpha:0.16,width:1});
-    const cancelling=Boolean(editing?.drag.groupDragState.value?.canCancel);
-    toolbarSummary.text=cancelling
-      ?t(editing?.drag.groupDragState.value?.cancelArmed?"launchpad.batch.releaseToCancel":"launchpad.batch.cancelDrag")+"\n"+t("launchpad.batch.cancelDragHint")
-      :t("launchpad.batch.selectedCount",{count:editing?.selection.selectedCount.value??0});
     const hiddenCount=(editing?.selection.selectedCount.value??0)-getSelectionScope().orderedIds.filter(id=>editing?.selection.isSelected(id)).length;
-    if(!cancelling && hiddenCount>0)toolbarSummary.text+="\n"+t("launchpad.batch.hiddenCount",{count:hiddenCount});
-    toolbarSummary.position.set(14,hiddenCount>0||cancelling?10:19);
-    [selectAllButton,clearSelectionButton,createFolderButton,removeButton,doneButton].forEach((button,index)=>{
-      button.visible=!cancelling;button.y=10;button.x=toolbarWidth-510+[0,96,220,344,432][index]!;
-      const disabled=Boolean(editing?.selection.isFrozen.value)
-        || (button===createFolderButton && (editing?.selection.selectedCount.value??0)<2)
-        || ((button===removeButton || button===clearSelectionButton) && !editing?.selection.selectedCount.value);
-      button.eventMode=disabled?"none":"static";button.alpha=disabled?0.4:1;
-    });
+    selectionToolbar.update({width:app.contentSize.width,chromeInset:chromeInset(),theme:settingsTheme(),
+      active:Boolean(editing?.selection.isActive.value),count:editing?.selection.selectedCount.value??0,hiddenCount,
+      frozen:Boolean(editing?.selection.isFrozen.value),canCancel:Boolean(editing?.drag.groupDragState.value?.canCancel),
+      cancelArmed:Boolean(editing?.drag.groupDragState.value?.cancelArmed)});
+    const needsBackdrop=selectionToolbar.visible&&!editing?.drag.groupDragState.value?.canCancel;
+    if(Boolean(app.stage.filters?.length)!==needsBackdrop)app.stage.filters=needsBackdrop?[selectionBackdropSurface]:[];
     app.stage.setChildIndex(noticeView,app.stage.children.length-1);
     if(settingsShell)app.stage.setChildIndex(settingsShell,app.stage.children.length-1);
     if(management.modal)app.stage.setChildIndex(management,app.stage.children.length-1);
@@ -838,6 +839,7 @@ try {
   let resizeLiveBackingObserved = false;
   let observeLiveResize = false;
   offResize = app.on("resize", ({ height, resolution, width }) => {
+    configureNativeTextResolution(resolution,app.stage);
     settingsShell?.redraw();
     // Resize must update controls as well as icons without depending on a later animation commit.
     renderScene(true);
@@ -931,6 +933,7 @@ try {
   };
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
     size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
+    selectionToolbarRect:()=>selectionToolbar.cancelZoneRect(),
     confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
     page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
     open: id => {
@@ -1237,14 +1240,13 @@ try {
     }
     for (const command of output.commands) {
       if(command.type === "startDrag" && command.target.kind === "icon" && command.target.id) {
-        const node=app.stage.getChildByLabel(`launchpad-item:${command.target.id}`,true);
-        if(!node)throw new Error("Drag target is not rendered");
-        editing?.beginDrag(command.target.id, { clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
-          pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType,
-          button: 0, buttons: 1, dragAnchor: command.dragAnchor,
-          dragStartedFromThreshold: command.dragStartedFromThreshold,
-          type:"pointermove",currentTarget:{getBoundingClientRect:()=>{const b=node.getBounds();return {left:b.x,top:b.y,width:b.width,height:b.height};}},
-          preventDefault: () => {}, stopPropagation: () => {} });
+        editing?.beginDrag(command.target.id, {
+          ...scene.createDragPointerEvent(command.target.id,{clientX:Number(command.pointer.x),clientY:Number(command.pointer.y),
+            pointerId:command.pointer.pointerId??undefined,pointerType:command.pointer.pointerType,
+            button:0,buttons:1,type:"pointermove"}),
+          isPrimary:true,pointerType:command.pointer.pointerType??undefined,
+          dragAnchor:command.dragAnchor,dragStartedFromThreshold:command.dragStartedFromThreshold,
+        });
       }
       if(command.type === "updateDrag") editing?.drag.updateDragPointer({ clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
         pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType, buttons: command.pointer.buttons, preventDefault: () => {} });
@@ -1415,6 +1417,7 @@ try {
       if(event.key==="Escape")editing.drag.cancelDrag({userInitiatedCancel:true});
       return true;
     }
+    if(editing?.selection.isActive.value&&(event.key==="Tab"||selectionToolbar.hasFocus)&&selectionToolbar.handleKey(event.key??"",Boolean(event.shiftKey))){setFocusedIcon(null);return true;}
     if(event.key==="Escape" && editing?.selection.isActive.value){
       if(!editing.selection.isFrozen.value)editing.selection.clear();
       return true;
@@ -1491,7 +1494,7 @@ try {
     const directory=process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR;
     mkdirSync(directory,{recursive:true});
     const outputPath=join(directory,`touchpad-native-${Date.now()}.json`);
-    const status=new Text({text:"",eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:"#ffffff"}});
+    const status=createNativeText({text:"",eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fill:"#ffffff"}});
     const panel=new Container({label:"native-touchpad-capture",eventMode:"static"});
     panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,480,140,8).fill("#20242e"),status);status.position.set(10,8);
     let detail=t("touchpadCapture.hint");
@@ -1889,6 +1892,30 @@ try {
       await captureSmokeFrame(`settings-sources-${theme}`);
     }
     settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"sources theme restored");
+    {
+      const savedSources=apps!.persistence.capture(),savedLocale=getNativeLocale();
+      try{
+        setNativeLocale("zh-CN");
+        const roots=createDefaultScanRoots({roots:DEFAULT_SCAN_ROOTS,translate:t}).map(root=>({...root,lastScannedAt:"2026-09-08T19:05:00.000Z"}));
+        apps!.persistence.restore({...savedSources,scanRoots:roots});
+        for(const theme of ["dark","light"] as const){
+          settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell).redraw();
+          await present(app,`default sources ${theme}`);
+          for(const root of roots){
+            const path=app.stage.getChildByLabel(`native-apps:source-path-${root.id}`,true)!;
+            const description=app.stage.getChildByLabel(`native-apps:source-description-${root.id}`,true);
+            const status=app.stage.getChildByLabel(`native-apps:source-last-scan-${root.id}`,true)!;
+            const previous=description??path;
+            assert.ok(status.y>=previous.y+previous.height+4,"scan metadata must clear the preceding input or description");
+            if(description)assert.ok(description.y>=path.y+path.height+4,"Windows source description must clear the path input");
+          }
+          await captureSmokeFrame(`settings-default-sources-${theme}`);
+        }
+      }finally{
+        apps!.persistence.restore(savedSources);setNativeLocale(savedLocale);
+        settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"default source fixtures restored");
+      }
+    }
     const managerLink=app.stage.getChildByLabel("native-apps:manager",true) as NativeFluentButton;
     for(let index=0;index<100&&!managerLink.focused;index++)onKey({type:"down",key:"Tab"});
     assert.ok(managerLink.focused);await present(app,"apps manager link revealed");
@@ -2470,6 +2497,11 @@ try {
     await waitFor("selected pointer range settles",()=>!scene.getMotionSnapshot().active);
     await present(app,"selected pointer range committed");
     const selectionBeforeCancel=[...editing!.selection.selectedIds.value];
+    {
+      const {runNativeToolbarVisualSmoke}=await import("../rendering/native/nativeToolbarVisualSmoke.test.js");
+      const proof=await runNativeToolbarVisualSmoke(app,()=>present(app,"toolbar visual parity"),captureSmokeFrame);
+      console.log("Native toolbar backdrop GPU proof",proof);
+    }
     const sourceBounds=firstApp.getBounds(), sx=sourceBounds.x+sourceBounds.width/2,sy=sourceBounds.y+sourceBounds.height/2;
     assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(sx,sy)).kind,"icon","group drag must start on an icon");
     app.nativeInput.emitPointer("pointerdown",sx,sy,0,0);
@@ -2480,7 +2512,7 @@ try {
     app.nativeInput.emitPointer("pointermove",app.contentSize.width/2,30+chromeInset(),0,0);
     await present(app,"selected group over cancel zone");
     assert.equal(editing!.drag.groupDragState.value?.cancelArmed,true);
-    assert.ok(toolbarSummary.text.includes(t("launchpad.batch.releaseToCancel")));
+    assert.ok(selectionToolbar.summaryText.includes(t("launchpad.batch.releaseToCancel")));
     await captureSmokeFrame("selection-cancel-zone");
     app.nativeInput.emitPointer("pointerup",app.contentSize.width/2,30+chromeInset(),0,0);
     await waitFor("selected group cancelled return",()=>!editing!.drag.isDragActive());
@@ -2495,7 +2527,7 @@ try {
     assert.equal(management.modal,false,"selection Enter must not launch or edit");
     const secondDot=app.stage.getChildByLabel("native-page-dot:1",true);assert.ok(secondDot);
     clickWithNativeInput(secondDot);await present(app,"selection hidden on second page");
-    assert.ok(toolbarSummary.text.includes(t("launchpad.batch.hiddenCount",{count:3})));
+    assert.ok(selectionToolbar.summaryText.includes(t("launchpad.batch.hiddenCount",{count:3})));
     await captureSmokeFrame("selection-hidden-count");
     onKey({type:"down",key:"Escape"});await present(app,"selection escaped");
     assert.equal(editing!.selection.isActive.value,false);
@@ -2550,6 +2582,14 @@ try {
     await waitFor("committed drag release",()=>!editing!.drag.isDragActive());await saves.flush();
     assert.notDeepEqual(layoutState.presentation.pages.value,baselinePages,"a drop into an empty desktop slot must change layout");
     editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after reorder");
+    {
+      const {runNativeDragVisualSmoke}=await import("../rendering/native/nativeDragVisualSmoke.test.js");
+      const proof=await runNativeDragVisualSmoke({app,scene,editing:editing!,folder:folderFlow,
+        pages:()=>layoutState.presentation.pages.value,clone:layoutState.operations.clonePages,
+        present:reason=>present(app,reason),capture:captureSmokeFrame});
+      writeFileSync(join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"drag-visual-parity.json"),JSON.stringify(proof,null,2));
+      console.log(`Native drag visual parity: ${proof.samples.length} presented white-frame samples across ${proof.hoverReentries} reentries passed`);
+    }
     editing!.rename("native-layout-icon","Save roundtrip");await saves.flush();
     const persisted=await nativeData.loadLayout();assert.ok(persisted);
     assert.equal(makeNativeStartupFrame(persisted,catalogResult.apps).viewport.activePages[0]?.[0]?.name,"Save roundtrip");
@@ -2966,7 +3006,7 @@ try {
       "resize must recenter the search bar without waiting for an animation commit");
     assert.equal(settingsButton.x, app.contentSize.width - 54,
       "resize must keep the settings button anchored to the current right edge");
-    assert.equal(selectionToolbar.x, (app.contentSize.width - Math.min(760, app.contentSize.width - 40)) / 2,
+    assert.equal(selectionToolbar.x, (app.contentSize.width - Math.min(760, app.contentSize.width - (app.contentSize.width<=760?20:40))) / 2,
       "resize must update the selection toolbar even while it is hidden");
     presentCount += 1;
     resizeObserved = true;
@@ -2991,7 +3031,7 @@ try {
         width: app.contentSize.width,
       }, true);
       if (iconNodes.some((node) => (
-        node.emojiText.resolution !== app.resolution || node.labelText.resolution !== app.resolution
+        node.emojiText.resolution !== Math.max(2,app.resolution) || node.labelText.resolution !== Math.max(2,app.resolution)
       ))) {
         throw new Error("Native Pixi text resolution did not follow the mixed-DPI display");
       }
@@ -3185,6 +3225,7 @@ try {
   management.destroy();
   notices.clearTransientNoticeTimer();notices.clearWarningDialogTimer();noticeView.destroy({children:true});
   searchBar.destroy();
+  selectionToolbar.destroy();app.stage.filters=[];selectionBackdropSurface.destroy();
   iconTextures.dispose();
   await app.dispose();
   await nativeData.dispose();

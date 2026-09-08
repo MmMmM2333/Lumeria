@@ -17,6 +17,7 @@ import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { runNativeDesktopResizeTests } from "../rendering/native/nativeDesktopSceneResize.test.js";
 import { runNativeLabelRasterTests } from "../rendering/native/nativeLabelRaster.test.js";
+import { runNativeVisualParityTests } from "../rendering/native/nativeVisualParity.test.js";
 import { runNativeSettingsLayoutTests } from "../rendering/native/nativeSettingsLayout.test.js";
 import { NativePageDots } from "../rendering/native/NativePageDots.js";
 import { NativeSettingsShell } from "../rendering/native/NativeSettingsShell.js";
@@ -341,7 +342,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   (Array.isArray(emojiFontFamily) ? emojiFontFamily : [emojiFontFamily])
-    .map((fontFamily) => fontFamily.replaceAll('"', "")),
+    .map((fontFamily) => fontFamily.replaceAll('"', "")).slice(0,3),
   ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"],
   "native emoji text should request a color emoji font before the platform default",
 );
@@ -740,6 +741,7 @@ stage.destroy();
 }
 runNativeDesktopResizeTests(makeCompleteFrame());
 runNativeLabelRasterTests();
+await runNativeVisualParityTests(makeCompleteFrame());
 runNativeSettingsLayoutTests();
 console.log("Native desktop scene tests passed");
 runNativeWindowEffectsTests();

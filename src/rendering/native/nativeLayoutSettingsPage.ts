@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
@@ -27,7 +28,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   const row=(title:string,description:string)=>{
     const rowNode=new Container();rowNode.y=y;node.addChild(rowNode);y+=78;
     rowNode.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,width,72,8).fill(style.row).stroke({color:style.border,width:1}));
-    const label=new Text({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:style.text}});
+    const label=createNativeText({text:title,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:style.text}});
     label.position.set(14,description?17:27);rowNode.addChild(label);
     const detail=new NativeSingleLineText(description,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,lineHeight:16.2,fill:style.muted},Math.max(60,width-260));
     detail.position.set(14,38);rowNode.addChild(detail);
@@ -40,7 +41,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
       handleKey:key=>spin.handleKey(key),disabled:()=>spin.input.disabled});
     return spin;
   };
-  const themeHeading=new Text({text:t("settings.interface.theme.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
+  const themeHeading=createNativeText({text:t("settings.interface.theme.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
   node.addChild(themeHeading);y=30;
   const themeRow=row(t("settings.interface.theme.mode"),t("settings.interface.theme.description"));
   for(const child of themeRow.children)if(child instanceof Text)child.x=70;
@@ -56,7 +57,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   const background=nativeBackgroundSettings({...backgroundOptions,settings:fullSettings,host,width,invalidate,theme,redraw});
   y+=14;background.node.y=y;node.addChild(background.node);y+=background.height;controls.push(...background.controls);
   layout.child(background);
-  const layoutHeading=new Text({text:t("settings.interface.layout.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
+  const layoutHeading=createNativeText({text:t("settings.interface.layout.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});
   y+=14;layoutHeading.y=y;node.addChild(layoutHeading);y+=30;
   for(const [name,rows,cols,maxRows,minCols,maxCols] of [
     ["desktop",settings.draftRows,settings.draftCols,8,3,10],
@@ -64,7 +65,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
   ] as const){
     const parent=row(t(`settings.interface.layout.${name}`),t(`settings.interface.layout.${name}Description`));
     number(parent,name+"Rows",rows,2,maxRows,1,width-214);
-    const separator=new Text({text:"x",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});separator.position.set(width-119,27);parent.addChild(separator);
+    const separator=createNativeText({text:"x",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});separator.position.set(width-119,27);parent.addChild(separator);
     number(parent,name+"Cols",cols,minCols,maxCols,1,width-100);
   }
   const sizeRow=row(t("settings.interface.layout.iconSize"),t("settings.interface.layout.iconSizeDescription"));

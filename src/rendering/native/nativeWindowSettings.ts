@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { BlurFilter, ColorMatrixFilter, Container, FillGradient, Graphics, Text } from "pixi.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
 import { t } from "../../native/nativeLocalization.js";
@@ -25,7 +26,7 @@ export function nativeWindowSettings(options: {
   let y = 0;
   const key = (name: string) => t(`settings.interface.window.${name}`);
   const text = (value: string, x: number, top: number, size=13, bold=false) => {
-    const label = new Text({ text: value, eventMode: "none", style: { fontFamily: [...NATIVE_UI_FONT_FAMILY],
+    const label = createNativeText({ text: value, eventMode: "none", style: { fontFamily: [...NATIVE_UI_FONT_FAMILY],
       fontSize: size, fontWeight: bold ? "600" : "400", fill: style.text } });
     label.position.set(x, top); node.addChild(label); return label;
   };
@@ -91,7 +92,7 @@ export function nativeWindowSettings(options: {
     const appearance=d.windowEffectAppearance.value==="system"?options.systemAppearance:d.windowEffectAppearance.value;
     const light=appearance==="light",cardWidth=(width-52)/4,sceneWidth=cardWidth-16,sceneHeight=sceneWidth/1.48;
     const cardsTop=y;
-    const cardDescriptions=["none","acrylic","mica","micaAlt"].map(material=>new Text({text:key(`materials.${material}`),eventMode:"none",
+    const cardDescriptions=["none","acrylic","mica","micaAlt"].map(material=>createNativeText({text:key(`materials.${material}`),eventMode:"none",
       style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,lineHeight:15,fill:style.muted,wordWrap:true,wordWrapWidth:sceneWidth}}));
     const cardsHeight=sceneHeight+Math.max(...cardDescriptions.map(description=>description.height))+50;
     for(const [index,material] of (["none","acrylic","mica","micaAlt"] as const).entries()){
@@ -128,10 +129,10 @@ export function nativeWindowSettings(options: {
       pane.roundRect(px+8,py+8,(paneWidth-16)*0.48,6,3).fill({color:ink,alpha:0.74});
       pane.roundRect(px+8,py+20,(paneWidth-16)*0.82,4,2).fill({color:ink,alpha:0.74});
       pane.roundRect(px+8,py+30,(paneWidth-16)*0.54,4,2).fill({color:ink,alpha:0.74});
-      const label=new Text({text:title,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fontWeight:"600",fill:style.text}});
+      const label=createNativeText({text:title,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fontWeight:"600",fill:style.text}});
       label.position.set(8,sceneHeight+16);description.position.set(8,sceneHeight+34);card.addChild(label,description);
       if(material!=="none"){
-        const appearanceLabel=new Text({text:key(appearance),eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:10,fill:style.muted}});
+        const appearanceLabel=createNativeText({text:key(appearance),eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:10,fill:style.muted}});
         appearanceLabel.position.set(cardWidth-8-appearanceLabel.width,sceneHeight+17);card.addChild(appearanceLabel);
       }
     }
@@ -153,21 +154,21 @@ export function nativeAdvancedWindowSettings(options: Parameters<typeof nativeWi
   const {settings,width,theme,invalidate,redraw,state}=options,style=nativeSettingsStyle(theme);
   const node=new Container();
   const layout=new NativeSettingsLayout(node,width,theme);
-  const title=new Text({text:t("settings.interface.advanced.title"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:style.text}});node.addChild(title);
+  const title=createNativeText({text:t("settings.interface.advanced.title"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:style.text}});node.addChild(title);
   const expand=new NativeFluentButton(t("settings.interface.advanced.options"),width,()=>{state.advanced=!state.advanced;redraw();},invalidate,theme,"settings-row",false,72);
   expand.label="native-window:advanced-expand";expand.y=32;node.addChild(expand);
   expand.caption.anchor.x=0;expand.caption.position.set(62,25);expand.caption.style.fontWeight="600";
   const advancedIcon=nativeFluentIcon("settings-24-regular",style.accent,22);advancedIcon.position.set(25,25);expand.addChild(advancedIcon);
-  const advancedDescription=new Text({text:t("settings.interface.advanced.description"),eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
+  const advancedDescription=createNativeText({text:t("settings.interface.advanced.description"),eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
   advancedDescription.position.set(62,40);expand.addChild(advancedDescription);
   const chevron=nativeSettingsChevron(expand,width-25,36,style.muted);
   const controls:NativeSettingsControl[]=[{node:expand,focus:value=>{expand.focused=value;},disabled:()=>false,handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;expand.activate();return true;}}];
   const start=node.children.length;
   {
-    const label=new Text({text:t("settings.interface.advanced.overscan"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text}});label.position.set(14,123);node.addChild(label);
+    const label=createNativeText({text:t("settings.interface.advanced.overscan"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text}});label.position.set(14,123);node.addChild(label);
     const toggle=new NativeFluentToggle("switch",settings.actions.setDraftFullscreenOverscanEnabled,invalidate,theme);
     toggle.label="native-window:overscan";toggle.checked=settings.draft.fullscreenOverscanEnabled.value;toggle.position.set(width-64,117);node.addChild(toggle);
-    const detail=new Text({text:t("settings.interface.advanced.overscanDescription"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-100}});detail.position.set(14,148);node.addChild(detail);
+    const detail=createNativeText({text:t("settings.interface.advanced.overscanDescription"),style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-100}});detail.position.set(14,148);node.addChild(detail);
     const focus=new Graphics({eventMode:"none"});node.addChild(focus);
     controls.push({node:toggle,disabled:()=>toggle.disabled,focus:active=>{focus.clear();if(active)focus.roundRect(width-68,113,48,32,4).stroke({color:style.accent,width:2});invalidate();},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;toggle.toggle();return true;}});
     const height=158+detail.height;

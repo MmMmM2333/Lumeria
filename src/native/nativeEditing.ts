@@ -17,6 +17,7 @@ type Options = {
   folder: NativeFolderFlow;
   size(): { width: number; height: number };
   chromeInset?():number;
+  selectionToolbarRect?():{left:number;top:number;width:number;height:number}|null;
   changed(): void;
   commit(pages: LaunchpadPages): void;
   open(id: string | null): void;
@@ -68,7 +69,7 @@ export function createNativeEditing(options: Options) {
     folderViewportRef: state.derived(() => ({ getBoundingClientRect: folderRect })),
     visibleFolderRowCount: cells.folderRows,
     iconBoundsRegistry: options.scene.iconBoundsRegistry,
-    getBatchCancelZoneRect:()=>selection.isActive.value?{left:(options.size().width-Math.min(760,options.size().width-40))/2,top:14+(options.chromeInset?.()??0),width:Math.min(760,options.size().width-40),height:54}:null,
+    getBatchCancelZoneRect:()=>selection.isActive.value?options.selectionToolbarRect?.()??null:null,
     isHomeRevealSettling: state.derived(() => false),
     isLaunchpadInteractionBlocked: () => false,
     finishHomeRevealSettleWindow: () => {},

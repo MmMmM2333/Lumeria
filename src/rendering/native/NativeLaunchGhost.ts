@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Sprite, Text } from "pixi.js";
 import type { LaunchGhost } from "../../application/launchpadLaunchFlow.js";
 import { APP_LAUNCH_DURATION } from "../../composables/launchpadConstants.js";
@@ -19,7 +20,7 @@ export class NativeLaunchGhost extends Container {
     const icon=source as (Container & {iconSprite?:Sprite;emojiText?:Text})|null;
     let visual:Sprite|Text;
     if(icon?.iconSprite?.visible)visual=new Sprite(icon.iconSprite.texture);
-    else visual=new Text({text:icon?.emojiText?.text??ghost.app.emoji??"",...(icon?.emojiText?{style:icon.emojiText.style.clone()}:{})});
+    else visual=createNativeText({text:icon?.emojiText?.text??ghost.app.emoji??"",...(icon?.emojiText?{style:icon.emojiText.style.clone()}:{})});
     visual.anchor.set(0.5);visual.width=ghost.rect.width;visual.height=ghost.rect.height;
     this.addChild(visual);this.position.set(ghost.rect.left+ghost.rect.width/2,ghost.rect.top+ghost.rect.height/2);
     this.alpha=1;this.scale.set(1);

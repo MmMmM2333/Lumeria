@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, FillGradient, Graphics, Rectangle, Text } from "pixi.js";
 import type { WindowResizeDirection } from "../../platform/windowChromeContracts.js";
 import { t } from "../../native/nativeLocalization.js";
@@ -45,9 +46,9 @@ export class NativeWindowChrome extends Container {
       this.addChildAt(background,0);
       this.#logoGradient=new FillGradient({start:{x:0,y:0},end:{x:1,y:1},colorStops:[{offset:0,color:0x8b5cf6},{offset:1,color:0xef5da8}]});
       const logo=new Graphics({eventMode:"none"}).roundRect(14,13,18,18,5).fill(this.#logoGradient);
-      const brand=new Text({text:"L",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fontWeight:"700",fill:0xffffff}});
+      const brand=createNativeText({text:"L",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fontWeight:"700",fill:0xffffff}});
       brand.anchor.set(0.5);brand.position.set(23,22);
-      const title=new Text({text:"Lumeria",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:0xffffff}});title.position.set(40,13);
+      const title=createNativeText({text:"Lumeria",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:0xffffff}});title.position.set(40,13);
       this.addChild(logo,brand,title);
       const maximized=this.app.window.isMaximized();
       for(const [index,name,action] of [

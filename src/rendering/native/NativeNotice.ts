@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Text } from "pixi.js";
 import type { LaunchpadTransientNotice } from "../../application/launchpadNotices.js";
 import { NativeFluentButton } from "./NativeFluentButton.js";
@@ -34,7 +35,7 @@ export class NativeNotice extends Container{
     const size=this.size(),width=Math.max(160,Math.min(430,size.width-40)),copyWidth=width-106;
     const colors={error:["rgba(96,35,31,0.96)","rgba(255,180,169,0.32)","rgba(255,218,212,0.92)","error-circle-20-regular"],warning:["rgba(93,64,24,0.96)","rgba(242,178,74,0.32)","rgba(255,221,169,0.92)","warning-20-regular"],success:["rgba(33,85,52,0.96)","rgba(117,194,138,0.32)","rgba(194,235,205,0.92)","checkmark-circle-20-regular"],info:["rgba(24,48,74,0.96)","rgba(75,163,246,0.3)","rgba(179,220,255,0.92)","info-20-regular"]} as const;
     const [fill,border,iconColor,iconName]=colors[notice.intent];let y=14;
-    const copy=(value:string,size:number,color:string,bold=false)=>{const label=new Text({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fontWeight:bold?"700":"400",fill:color,wordWrap:true,wordWrapWidth:copyWidth,breakWords:true,lineHeight:size*(bold?1.25:1.45)}});label.position.set(50,y);this.addChild(label);y+=label.height+5;};
+    const copy=(value:string,size:number,color:string,bold=false)=>{const label=createNativeText({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fontWeight:bold?"700":"400",fill:color,wordWrap:true,wordWrapWidth:copyWidth,breakWords:true,lineHeight:size*(bold?1.25:1.45)}});label.position.set(50,y);this.addChild(label);y+=label.height+5;};
     copy(notice.title,14,"rgba(255,255,255,0.94)",true);copy(notice.message,12,"rgba(255,255,255,0.72)");if(notice.detail)copy(notice.detail,11,"rgba(255,255,255,0.48)");
     if(notice.actionText){const action=new NativeFluentButton(notice.actionText,Math.max(80,Math.min(width-64,notice.actionText.length*9+24)),()=>notice.onAction?.(),this.invalidate,"dark","outline",false,28);action.label="native-notice:action";action.position.set(width-14-action.controlWidth,y+7);this.addChild(action);this.#buttons.push(action);y+=47;}
     const height=Math.max(60,y+9);this.position.set(Math.max(8,size.width-width-20),Math.max(8,size.height-height-20));

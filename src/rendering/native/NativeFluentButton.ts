@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Color, Container, Graphics, Rectangle, Text } from "pixi.js";
 import * as fluentTokens from "@fluentui/tokens";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
@@ -6,7 +7,7 @@ const {webDarkTheme,webLightTheme}="default" in fluentTokens
   ? fluentTokens.default as typeof fluentTokens : fluentTokens;
 
 export type NativeTheme = "dark" | "light";
-export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row" | "segment" | "link" | "list-row" | "option" | "preview" | "chip-remove" | "secondary";
+export type NativeButtonAppearance = "outline" | "primary" | "subtle" | "settings-row" | "segment" | "link" | "list-row" | "option" | "preview" | "chip-remove" | "secondary" | "toolbar" | "toolbar-primary";
 
 export function nativeFluentTheme(theme: NativeTheme) {
   return theme === "light" ? webLightTheme : webDarkTheme;
@@ -45,7 +46,7 @@ export class NativeFluentButton extends Container {
     super({label:`native-action:${label}`,eventMode:"static",cursor:"pointer"});
     this.#theme=theme;
     this.hitArea=new Rectangle(0,0,controlWidth,controlHeight);
-    this.caption=new Text({text:label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13}});
+    this.caption=createNativeText({text:label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13}});
     this.caption.anchor.set(0.5);this.caption.position.set(controlWidth/2,controlHeight/2);this.caption.eventMode="none";
     this.addChild(this.background,this.caption,this.focusRing);
     this.on("pointerover",()=>{this.#hovered=true;this.#draw();});
@@ -80,6 +81,17 @@ export class NativeFluentButton extends Container {
   set theme(value:NativeTheme) {if(this.#theme===value)return;this.#theme=value;this.#draw();}
   #draw():void {
     const theme=nativeFluentTheme(this.#theme);
+    if(this.appearance==="toolbar"||this.appearance==="toolbar-primary"){
+      const primary=this.appearance==="toolbar-primary",active=!this.#disabled&&(this.#hovered||this.#pressed),dark=this.#theme==="dark";
+      const fill=primary?(active?theme.colorBrandBackgroundHover:theme.colorBrandBackground)
+        :active?(this.danger?(dark?"rgba(255,82,82,0.14)":theme.colorPaletteRedBackground1):(dark?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover)):"transparent";
+      this.background.clear().roundRect(0,0,this.controlWidth,this.controlHeight,11).fill(fill);
+      this.caption.style.fill=primary?theme.colorNeutralForegroundOnBrand:this.danger?(dark?"#ffaaa5":theme.colorPaletteRedForeground1):nativeSettingsStyle(this.#theme).text;
+      this.caption.style.fontSize=12;this.caption.style.fontWeight=primary?"600":"normal";
+      this.alpha=this.#disabled?0.34:1;this.scale.set(this.#pressed&&!this.#disabled?0.97:1);
+      this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(-1,-1,this.controlWidth+2,this.controlHeight+2,12).stroke({color:nativeSettingsStyle(this.#theme).accent,width:2});
+      this.invalidate();return;
+    }
     if(this.appearance==="secondary"){
       const dark=this.#theme==="dark";
       this.background.clear().roundRect(0.5,0.5,this.controlWidth-1,this.controlHeight-1,12).fill(dark?"rgba(255,255,255,0.1)":theme.colorNeutralBackground1).stroke({color:dark?"rgba(255,255,255,0.18)":theme.colorNeutralStroke1,width:1});

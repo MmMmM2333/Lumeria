@@ -1,3 +1,4 @@
+import { createNativeText } from "../nativeTypography.js";
 import { Container,EventBoundary,FederatedPointerEvent,Graphics,Text } from "pixi.js";
 import type { TextInputHost } from "../../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { NativeFluentToggle } from "../NativeFluentToggle.js";
@@ -9,7 +10,7 @@ import { NATIVE_UI_FONT_FAMILY } from "../nativeTypography.js";
 export function nativeUiGallery(host:TextInputHost,theme:NativeTheme,invalidate:()=>void):Container{
   const root=new Container({label:"native-ui-gallery"}),style=nativeSettingsStyle(theme);
   root.addChild(new Graphics().rect(0,0,760,380).fill(style.panel));
-  const text=(value:string,x:number,y:number)=>{const label=new Text({text:value,style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:14,fill:style.text}});label.position.set(x,y);root.addChild(label);};
+  const text=(value:string,x:number,y:number)=>{const label=createNativeText({text:value,style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:14,fill:style.text}});label.position.set(x,y);root.addChild(label);};
   text(`Native UI · ${theme}`,20,16);
   for(const [index,name] of ["Off","On","Disabled","Hover"].entries()){
     const x=20+index*180;text(name,x,56);

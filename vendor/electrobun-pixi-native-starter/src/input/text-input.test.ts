@@ -38,6 +38,7 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	const root = new Container();
 	const host = createTextInputHost({
 		root,
+		textResolution:()=>2.5,
 		nativeInput,
 		nativeTextInput,
 		clipboard: {
@@ -178,5 +179,14 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	expect(plain.composing).toBe(false);
 	plain.blur();
 	expect(plain.focused).toBe(false);
+	const compact=host.create({width:220,height:30,value:"应用路径",style:{fontFamily:["Segoe UI","Microsoft YaHei"],fontSize:13,fontWeight:"600",lineHeight:16,padding:6,paddingHorizontal:10}});
+	root.addChild(compact);compact.focus();
+	expect((compact as any).textNode.resolution).toBe(2.5);
+	expect((compact as any).placeholderNode.resolution).toBe(2.5);
+	expect((compact as any).textNode.style.fontWeight).toBe("600");
+	expect((compact as any).innerSize()).toEqual({width:200,height:18});
+	const local=(compact as any).layoutToLocal(25,0);
+	expect(local).toEqual({x:35,y:7});
+	expect((compact as any).localToLayout(local.x,local.y)).toEqual({x:25,y:0});
 	host.destroy();
 });

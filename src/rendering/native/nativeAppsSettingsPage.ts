@@ -1,9 +1,10 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadApps } from "../../application/launchpadApps.js";
 import type { ReadonlyLaunchpadApp } from "../../domain/launchpadLayout.js";
 import type { IconTextureRepository } from "../pixi/assets/iconTextureRepository.js";
-import { t } from "../../native/nativeLocalization.js";
+import { t, formatNativeScanTime } from "../../native/nativeLocalization.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
 import { NativeSettingsLayout, nativeSettingsChevron } from "./nativeSettingsLayout.js";
@@ -48,7 +49,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
   };
   const key=(value:string,params:Record<string,string|number>={})=>t(`settings.apps.${value}`,params);
   const text=(value:string,x:number,top:number,size=13,muted=false)=>{
-    const label=new Text({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fill:muted?style.muted:style.text}});
+    const label=createNativeText({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fill:muted?style.muted:style.text}});
     label.position.set(x,top);node.addChild(label);return label;
   };
   const button=(id:string,label:string,x:number,top:number,w:number,action:()=>void,disabled=false,appearance:NativeButtonAppearance="outline",danger=false,height=32)=>{
@@ -156,22 +157,33 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const roots=apps.presentation.scanRoots.value;
     const title=text(key("sources.title"),0,y+7,18);title.style.fontWeight="600";
     const summary=text(key("sources.summary",{total:roots.length,enabled:roots.filter(root=>root.enabled).length}),title.width+12,y+11,12,true);
-    const headerWrap=summary.x+summary.width>width-272;
+    const reset=button("reset-sources",key("sources.reset"),0,y,110,apps.confirmResetScanRoots);
+    const add=button("add-source",`+ ${key("sources.add")}`,0,y,104,apps.addScanRoot,false,"primary");
+    for(const b of [reset,add]){b.caption.scale.x=1;b.resizeWidth(Math.max(b.controlWidth,b.caption.width+24));}
+    add.x=width-add.controlWidth;reset.x=add.x-8-reset.controlWidth;
+    const headerWrap=summary.x+summary.width>reset.x-12;
     if(headerWrap)summary.position.set(0,y+35);
-    button("reset-sources",key("sources.reset"),width-260,y,144,apps.confirmResetScanRoots);
-    button("add-source",`+ ${key("sources.add")}`,width-108,y,108,apps.addScanRoot,false,"primary");y+=headerWrap?66:48;
+    y+=headerWrap?66:46;
     for(const root of roots){
-      const locked=root.type==="windowsAppCatalog",top=y,detailsX=66,detailsWidth=Math.max(100,width-66-174);
-      const meta:Text[]=[];let height=82;
-      if(locked){const description=text(key("sources.windowsManaged"),detailsX+10,top+75,11,true);description.style.wordWrap=true;description.style.wordWrapWidth=detailsWidth-10;meta.push(description);height=85+description.height;}
-      if(root.lastScannedAt){const status=text(key("sources.lastScan",{time:new Date(root.lastScannedAt).toLocaleString()}),detailsX+10,top+height-15,11,true);meta.push(status);height+=18;}
-      const background=new Graphics({eventMode:"none"});node.addChildAt(background,node.children.length-meta.length);
+      const locked=root.type==="windowsAppCatalog",top=y,detailsX=66;
+      const background=new Graphics({eventMode:"none",label:`native-apps:source-card-${root.id}`});node.addChild(background);
+      const browse=button(`browse-${root.id}`,t("common.actions.browse"),0,0,64,()=>{void apps.browseScanRootDirectory(root.id);},locked||apps.isBrowsingScanRoot(root.id));
+      const remove=button(`delete-${root.id}`,t("common.actions.delete"),0,0,64,()=>apps.removeScanRoot(root.id),root.removable===false,"outline",true);
+      for(const b of [browse,remove]){b.caption.scale.x=1;b.resizeWidth(Math.max(64,b.caption.width+24));}
+      remove.x=width-12-remove.controlWidth;browse.x=remove.x-8-browse.controlWidth;
+      const stacked=browse.x-detailsX-14<120;
+      const detailsWidth=Math.max(1,(stacked?width-12:browse.x-14)-detailsX);
+      const name=input(`source-label-${root.id}`,root.label,detailsX,top+10,Math.min(320,detailsWidth),value=>apps.changeScanRootLabel(root.id,value));
+      const path=input(`source-path-${root.id}`,root.path,detailsX,top+41,detailsWidth,value=>apps.changeScanRootPath(root.id,value),locked);
+      let bottom=top+71;
+      const metadata=(id:string,value:string)=>{const label=text(value,detailsX+10,bottom+5,11,true);label.label=`native-apps:source-${id}-${root.id}`;label.style.lineHeight=13.2;label.style.wordWrap=true;label.style.wordWrapWidth=Math.max(1,detailsWidth-10);bottom=label.y+label.height;return label;};
+      if(locked)metadata("description",key("sources.windowsManaged"));
+      if(root.lastScannedAt)metadata("last-scan",key("sources.lastScan",{time:formatNativeScanTime(root.lastScannedAt)}));
+      if(stacked){browse.y=remove.y=bottom+10;bottom+=42;}
+      const height=Math.max(100,bottom-top+10);
       const draw=(hover:boolean)=>{background.clear().roundRect(0,top,width,height,8).fill(hover?(theme==="dark"?"rgba(255,255,255,0.065)":style.row):style.row).stroke({color:style.border,width:1});invalidate();};draw(false);
       const switchControl=toggle(`source-enabled-${root.id}`,root.enabled,12,top+(height-32)/2,checked=>apps.toggleScanRootEnabled(root.id,checked));
-      const name=input(`source-label-${root.id}`,root.label,detailsX,top+9,Math.min(320,detailsWidth),value=>apps.changeScanRootLabel(root.id,value));
-      const path=input(`source-path-${root.id}`,root.path,detailsX,top+40,detailsWidth,value=>apps.changeScanRootPath(root.id,value),locked);
-      const browse=button(`browse-${root.id}`,t("common.actions.browse"),width-164,top+(height-34)/2,72,()=>{void apps.browseScanRootDirectory(root.id);},locked||apps.isBrowsingScanRoot(root.id));
-      const remove=button(`delete-${root.id}`,t("common.actions.delete"),width-84,top+(height-34)/2,72,()=>apps.removeScanRoot(root.id),root.removable===false,"outline",true);
+      if(!stacked)browse.y=remove.y=top+(height-32)/2;
       for(const control of [switchControl,name,path,browse,remove]){control.on("pointerover",()=>draw(true));control.on("pointerout",()=>draw(false));}
       y+=height+8;
     }

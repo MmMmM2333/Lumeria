@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Text } from "pixi.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
@@ -12,7 +13,7 @@ export class NativeSegmentedControl extends Container {
     super({eventMode:"passive"});
     const style=nativeSettingsStyle(theme);
     const widths=entries.map(entry=>{
-      const text=new Text({text:entry.label,style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12}});
+      const text=createNativeText({text:entry.label,style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12}});
       const width=Math.max(74,Math.ceil(text.width)+24);text.destroy();return width;
     });
     const naturalWidth=widths.reduce((sum,width)=>sum+width,0),scale=Math.min(1,maxWidth/naturalWidth);

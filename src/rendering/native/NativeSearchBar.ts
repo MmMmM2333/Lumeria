@@ -1,3 +1,4 @@
+import { createNativeText, getNativeTextResolution } from "./nativeTypography.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import { createTextInputHost, nativeHost, type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
@@ -19,7 +20,7 @@ export class NativeSearchBar extends Container {
   #hidden = false;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
-    this.host = createTextInputHost({ root: app.stage, nativeInput: {
+    this.host = createTextInputHost({ root: app.stage, textResolution:getNativeTextResolution, nativeInput: {
       ...app.nativeInput,
       onKey: listener => app.nativeInput.onKey(event => {
         if (!this.handleKey(event)) listener(event);
@@ -39,7 +40,7 @@ export class NativeSearchBar extends Container {
         textColor: 0xffffff, caretColor: 0xffffff, selectionColor: 0x3268ad } });
     this.input.label = "native-search-input";
     this.input.position.set(19, -5);
-    this.#placeholder = new Text({ text: placeholder, style: { fontFamily: [...PIXI_UI_FONT_FAMILY], fontSize: 13, fill: 0xffffff } });
+    this.#placeholder = createNativeText({ text: placeholder, style: { fontFamily: [...PIXI_UI_FONT_FAMILY], fontSize: 13, fill: 0xffffff } });
     this.#placeholder.alpha = 0.46;
     this.#placeholder.position.set(21, 0);
     this.#placeholder.eventMode = this.#icon.eventMode = "none";

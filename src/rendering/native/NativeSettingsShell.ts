@@ -1,9 +1,11 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { createSettingsNavigation, SettingsTabId } from "../../application/settingsNavigation.js";
 import { NativeFluentButton, nativeFluentTheme, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeScrollView } from "./NativeScrollView.js";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
+import { cubicBezier } from "../pixi/animation/motionRuntime.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
 import type { NativeSettingsLayout } from "./nativeSettingsLayout.js";
 import { captureSettingsGeometry,createSettingsTransition } from "./ui/nativeSettingsTransition.js";
@@ -176,7 +178,7 @@ export class NativeSettingsShell extends Container {
     this.#panel.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,w,h,18).fill(style.panel));
     const navBackground=new Graphics({eventMode:"none"});this.#panel.addChild(navBackground);
     const label=(text:string,x:number,y:number,size=14)=>{
-      const node=new Text({text,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fill:colors.colorNeutralForeground1}});
+      const node=createNativeText({text,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fill:colors.colorNeutralForeground1}});
       node.position.set(x,y);node.eventMode="none";this.#panel.addChild(node);return node;
     };
     const button=(text:string,x:number,y:number,bw:number,action:()=>void,primary=false,controlHeight=34)=>{
@@ -265,12 +267,15 @@ export class NativeSettingsShell extends Container {
       const direction=options.navigation.routeTransitionName.value;
       this.#page.node.x=direction.endsWith("forward")?14:direction.endsWith("back")?-14:0;
       this.#page.node.y=direction.endsWith("switch")?4:0;
-      motion(this.#page.node).duration(direction.endsWith("switch")?0.14:0.16).ease("power2.out").to({alpha:1,x:0,y:0}).start();
+      const switching=direction.endsWith("switch");
+      const enterEase=switching?cubicBezier(0.33,0,0.67,1):cubicBezier(0.33,0,0.1,1);
+      const leaveEase=switching?enterEase:cubicBezier(0.8,0,0.78,1);
+      motion(this.#page.node).duration(switching?0.14:0.16).ease(enterEase).to({alpha:1,x:0,y:0}).start();
       if(this.#leaving){
         this.#panel.addChild(this.#leaving.scroll);
         const previous=this.#leaving.page.node;
         killMotionOf(previous);
-        motion(previous).duration(direction.endsWith("switch")?0.14:0.09).ease("power2.in").to({alpha:0,x:direction.endsWith("forward")?-8:direction.endsWith("back")?8:0,onComplete:()=>this.#clearLeaving()}).start();
+        motion(previous).duration(switching?0.14:0.09).ease(leaveEase).to({alpha:0,x:direction.endsWith("forward")?-8:direction.endsWith("back")?8:0,y:switching?-3:0,onComplete:()=>this.#clearLeaving()}).start();
       }
     }
     if(footer){

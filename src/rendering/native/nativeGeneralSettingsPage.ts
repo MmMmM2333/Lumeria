@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
@@ -26,7 +27,7 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   const layout=new NativeSettingsLayout(node,width,theme);
   let y=0;
   const text=(value:string,x:number,y:number,size=13,bold=false)=>{
-    const result=new Text({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fontWeight:bold?"600":"400",fill:style.text}});
+    const result=createNativeText({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,fontWeight:bold?"600":"400",fill:style.text}});
     result.position.set(x,y);result.eventMode="none";return result;
   };
   const rowIcons=["power-24-regular","keyboard-24-regular","local-language-24-regular","rocket-24-regular","window-dev-tools-24-regular"] as const;
@@ -62,7 +63,7 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   const shortcut=row(t("settings.general.shortcut.title"),settings.presentation.mainWindowShortcutError.value||t(options.recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),72);
   const shortcutValue=settings.draft.mainWindowShortcut.value;
   const value=shortcutValue===null?t("settings.general.shortcut.notSet"):formatMainWindowShortcut(shortcutValue);
-  const keyMeasure=new Text({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12}});
+  const keyMeasure=createNativeText({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12}});
   const keyWidth=Math.max(112,keyMeasure.width+44);keyMeasure.destroy();
   const keyField=button(shortcut,value,width-222-keyWidth,19,keyWidth,options.record);
   keyField.label="native-setting:shortcut";keyField.caption.x-=10;keyField.caption.style.fontSize=12;

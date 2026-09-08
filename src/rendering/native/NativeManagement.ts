@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { t } from "../../native/nativeLocalization.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -143,9 +144,9 @@ export class NativeManagement extends Container {
       ...(config.cancelText?{cancelText:config.cancelText}:{}),...(config.confirmText?{confirmText:config.confirmText}:{}),
       danger:config.confirmTone==="danger",outlineConfirm:config.confirmAppearance==="outline",confirm:async()=>{await config.onConfirm?.();},
       build:width=>{const node=new Container();
-        const message=new Text({text:config.message,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});message.x=52;node.addChild(message);
+        const message=createNativeText({text:config.message,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});message.x=52;node.addChild(message);
         let height=message.height;
-        if(config.suggestion){const hint=new Text({text:t("dialogs.warning.suggestion",{suggestion:config.suggestion}),eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});hint.position.set(52,height+10);node.addChild(hint);height+=hint.height+10;}
+        if(config.suggestion){const hint=createNativeText({text:t("dialogs.warning.suggestion",{suggestion:config.suggestion}),eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});hint.position.set(52,height+10);node.addChild(hint);height+=hint.height+10;}
         return {node,height,controls:[]};}});
   }
   form(title:string,fields:NativeFormField[],confirm:string,submit:(values:string[])=>void|Promise<void>,message?:string):void{
@@ -155,7 +156,7 @@ export class NativeManagement extends Container {
         const node=new Container(),controls:NativeSettingsControl[]=[];
         const style=nativeSettingsStyle(this.theme);let y=0;
         fields.forEach((field,index)=>{
-          const label=new Text({text:field.label,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
+          const label=createNativeText({text:field.label,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted}});
           label.y=y;node.addChild(label);y+=20;
           const input=createNativeSettingsInput(this.host,{width:width-(field.browse?86:0),height:34,value:values[index]!,readOnly:field.readOnly??false,theme:this.theme,invalidate:this.invalidate});
           input.label=`native-form:field-${index}`;input.y=y;node.addChild(input);
@@ -181,7 +182,7 @@ export class NativeManagement extends Container {
     layer.on("rightclick",event=>{if(event.target===layer){this.close();this.emit("context-request",event.global.x,event.global.y);}event.stopPropagation();});
     const panel=new Container();
     this.#selectionMenu=Boolean(selection);this.#menuRestore=selection?.restore??null;
-    const measured=actions.map(action=>{const label=new Text({text:action.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:14}});const w=label.width+(action.icon?52:32);label.destroy();return w;});
+    const measured=actions.map(action=>{const label=createNativeText({text:action.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:14}});const w=label.width+(action.icon?52:32);label.destroy();return w;});
     const panelWidth=Math.min(selection?Math.max(176,minimumWidth):Math.max(minimumWidth,Math.min(240,...[Math.max(...measured)])),Math.max(1,width-16));
     const stride=selection?38:36;
     const contentHeight=actions.length*stride+actions.filter(action=>action.separatorBefore).length*9;

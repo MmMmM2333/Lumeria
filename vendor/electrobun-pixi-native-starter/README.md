@@ -133,6 +133,8 @@ npm run release:smoke
 
 ### 版本化制品
 
+0.2.17：TextInputHost 可通过 `textResolution` 为新输入框提供文字纹理分辨率；已有文字仍由消费方在 DPI 变化时同步。TextInputStyle 新增可选 `fontWeight` 和 `paddingHorizontal`，字宽测量、光标、选择与裁剪使用同一字重及内边距，默认行为保持兼容。
+
 ```powershell
 npm run release:generate # 生成 ABI/capability/逐文件 SHA-256 manifest
 npm run release:verify   # 校验当前 manifest 与本地 payload

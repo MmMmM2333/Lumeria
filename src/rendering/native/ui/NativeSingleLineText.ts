@@ -1,15 +1,24 @@
 import { CanvasTextMetrics, Text, type TextOptions } from "pixi.js";
+import { getNativeTextResolution } from "../nativeTypography.js";
 
 /** Single-line CSS-like ellipsis without stretching glyphs or changing the full value. */
 export class NativeSingleLineText extends Text {
   #availableWidth=-1;
-  readonly #parts:string[];
-  constructor(readonly fullText:string,style:NonNullable<TextOptions["style"]>,width:number){
-    super({text:fullText,eventMode:"none",style});
-    this.#parts=Array.from(new Intl.Segmenter(undefined,{granularity:"grapheme"}).segment(fullText),part=>part.segment);
+  #parts:string[]=[];
+  #fullText="";
+  constructor(fullText:string,style:NonNullable<TextOptions["style"]>,width:number){
+    super({text:fullText,eventMode:"none",style,resolution:getNativeTextResolution()});
+    this.setValue(fullText,width);
+  }
+  get fullText():string{return this.#fullText;}
+  get availableWidth():number{return this.#availableWidth;}
+  setValue(value:string,width=this.#availableWidth):void{
+    if(value!==this.#fullText){
+      this.#fullText=value;this.#parts=Array.from(new Intl.Segmenter(undefined,{granularity:"grapheme"}).segment(value),part=>part.segment);
+      this.#availableWidth=-1;
+    }
     this.setAvailableWidth(width);
   }
-  get availableWidth():number{return this.#availableWidth;}
   setAvailableWidth(width:number):void{
     const next=Math.max(0,width);if(next===this.#availableWidth)return;this.#availableWidth=next;
     const fits=(value:string)=>CanvasTextMetrics.measureText(value,this.style,undefined,false).width<=next;

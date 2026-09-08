@@ -119,6 +119,26 @@ export function runNativeSettingsLayoutTests():void{
       bottomShell.redraw();assert.equal(scroller().offset,bottom,"redraw must preserve the bottom offset including expanded padding");
     }finally{bottomShell.destroy();}
   }
+  {
+    const navigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>key),pages:Container[]=[];
+    const shell=new NativeSettingsShell({navigation,theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,
+      tabs:["general","interface","apps","about"],invalidate:()=>{},close:()=>{},apply:async()=>{},content:()=>{
+        const node=new Container();pages.push(node);return {node,height:200,controls:[],dispose:()=>{}};
+      }});
+    const step=(seconds:number)=>{for(let elapsed=0;elapsed<seconds-0.00001;elapsed+=0.01)motionRuntime.step(0.01);};
+    try{
+      step(0.5);const previous=pages.at(-1)!;
+      navigation.selectTab("apps");shell.redraw();const next=pages.at(-1)!;
+      assert.equal(next.y,4);step(0.07);
+      assert.ok(Math.abs(next.y-2)<0.03&&Math.abs(previous.y+1.5)<0.03,"same-level pages enter and leave vertically with the original symmetric curve");
+      step(0.1);assert.equal(next.y,0);assert.equal(previous.destroyed,true);
+      navigation.openSubPage({id:"apps.appManager",parentTabId:"apps",labelKey:"settings.apps.manager.title"});shell.redraw();const child=pages.at(-1)!;
+      assert.equal(child.x,14);step(0.04);assert.ok(child.x>0&&child.x<14);assert.ok(next.x<0);
+      navigation.closeSubPage();shell.redraw();const parent=pages.at(-1)!;assert.equal(parent.x,-14);
+      step(0.02);navigation.selectTab("about");shell.redraw();const last=pages.at(-1)!;step(0.2);
+      assert.equal(last.alpha,1);assert.equal(last.x,0);assert.equal(last.y,0);assert.equal(parent.destroyed,true);
+    }finally{shell.destroy();motionRuntime.reset();motionRuntime.suspendAutoTicker();}
+  }
   let expanded=false,closed=0;
   const navigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>key);
   const shell=new NativeSettingsShell({navigation,theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,

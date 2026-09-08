@@ -17,6 +17,8 @@ import {
 import { createIconBoundsRegistry } from "../pixi/geometry/iconBoundsRegistry.js";
 import { motionRuntime } from "../pixi/animation/motionRuntime.js";
 import { DesktopLayer } from "../pixi/scene/DesktopLayer.js";
+import { IconNode } from "../pixi/nodes/IconNode.js";
+import { makeSyntheticPointerEvent } from "../pixi/scene/iconSceneHelpers.js";
 import type { IconTextureRepository } from "../pixi/assets/iconTextureRepository.js";
 import { syncPixiTextResolution } from "../pixi/pixiText.js";
 import { createFolderLayerState, type FolderOverlayFrame } from "../pixi/folderLayerState.js";
@@ -377,6 +379,14 @@ export class NativeDesktopScene {
     }
     syncPixiTextResolution(this.#layer, viewport.resolution);
     return work;
+  }
+
+  createDragPointerEvent(id:string,pointer:Parameters<typeof makeSyntheticPointerEvent>[0]) {
+    const node=this.#layer.getChildByLabel(`launchpad-item:${id}`,true);
+    if(!(node instanceof IconNode))throw new Error("Drag target is not a rendered icon");
+    const event=makeSyntheticPointerEvent(pointer,node as Parameters<typeof makeSyntheticPointerEvent>[1]);
+    if(!event.currentTarget.getBoundingClientRect())throw new Error("Drag target has no rendered bounds");
+    return event;
   }
 
   connectAnimationHost(host: NativeSceneAnimationHost): () => void {

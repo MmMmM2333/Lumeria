@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadApps, ManagedAppIcon } from "../../application/launchpadApps.js";
@@ -29,7 +30,7 @@ export class NativeAppDialogs{
     management.refresh();
   }
   #text(value:string,size=13,muted=false,width=1000):Text{
-    return new Text({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fill:muted?nativeSettingsStyle(this.options.theme()).muted:nativeSettingsStyle(this.options.theme()).text,wordWrap:true,wordWrapWidth:Math.max(1,width),breakWords:true}});
+    return createNativeText({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fill:muted?nativeSettingsStyle(this.options.theme()).muted:nativeSettingsStyle(this.options.theme()).text,wordWrap:true,wordWrapWidth:Math.max(1,width),breakWords:true}});
   }
   #button(node:Container,controls:NativeSettingsControl[],id:string,label:string,x:number,y:number,width:number,action:()=>void,appearance:"outline"|"subtle"|"primary"|"list-row"|"secondary"="outline",height=32):NativeFluentButton{
     const button=new NativeFluentButton(label,width,action,this.options.invalidate,this.options.theme(),appearance,false,height);button.label=`native-dialog:${id}`;button.position.set(x,y);node.addChild(button);

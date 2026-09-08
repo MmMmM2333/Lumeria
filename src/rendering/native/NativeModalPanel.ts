@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { t } from "../../native/nativeLocalization.js";
@@ -59,7 +60,7 @@ export class NativeModalPanel extends Container{
     this.#body?.dispose?.();this.#body=null;this.#scroll=null;this.#controls=[];this.#footer=[];this.#confirm=null;this.#focus=-1;
     for(const child of this.panel.removeChildren())child.destroy({children:true});
     const size=this.size(),width=Math.max(120,Math.min(this.spec.width,size.width*0.92)),style=nativeSettingsStyle(this.theme());
-    const text=(value:string,fontSize:number,muted=false)=>new Text({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize,fill:muted?style.muted:style.text,wordWrap:true,wordWrapWidth:width-80,breakWords:true}});
+    const text=(value:string,fontSize:number,muted=false)=>createNativeText({text:value,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize,fill:muted?style.muted:style.text,wordWrap:true,wordWrapWidth:width-80,breakWords:true}});
     this.hitArea=new Rectangle(0,0,size.width,size.height);this.#shade.clear().rect(0,0,size.width,size.height).fill({color:0,alpha:0.5});
     const title=text(this.spec.title,this.spec.headerIcon?16:20);title.style.fontWeight="600";title.position.set(this.spec.headerIcon?72:20,20);
     if(this.spec.headerIcon)title.style.wordWrapWidth=width-92;

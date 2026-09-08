@@ -9,7 +9,7 @@ export function createNativeSettingsInput(host:TextInputHost,options:{width:numb
   const {width,theme,invalidate}=options,height=options.height??34,label=options.variant==="label",style=nativeSettingsStyle(theme);
   const inset=options.leadingInset??0;
   const input=host.create({width:width-inset,height,value:options.value,chrome:false,readOnly:options.readOnly??false,placeholder:options.placeholder??"",...(options.maxLength?{maxLength:options.maxLength}:{}),
-    style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:label?13:12,lineHeight:16,padding:label?4:6,
+    style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:label?13:12,fontWeight:label?"600":"normal",lineHeight:16,padding:label?4:6,paddingHorizontal:label?6:10,
       textColor:new Color(style.text).toNumber(),caretColor:new Color(style.text).toNumber(),
       // Same opaque token as the original Fluent text input. Converting the
       // settings RGBA white/muted color to RGB would discard its alpha.

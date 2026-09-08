@@ -17,6 +17,7 @@ import type {
 } from "../../../domain/groupTransferPresentation.js";
 import type { GroupTransferEffects } from "../../../domain/groupTransferPlanner.js";
 import { IconNode } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import { clientPointToStageVisualPoint } from "../geometry/stageCoordinates.js";
 import type { StagePoint, StageRect } from "../geometry/stageCoordinates.js";
 import type { SceneDataRecord, SceneItem } from "../../sceneFrame.js";
@@ -187,6 +188,7 @@ export type GroupDragFolderClipGeometry = Readonly<{
 export type GroupDragReleasePayload = Partial<GroupReleaseSettlementPayload>;
 
 export type GroupDragLayerOptions = Readonly<{
+  iconTextures?: IconTextureRepository | undefined;
   onPrewarmRequest?: ((reason: string) => void) | undefined;
   onReleaseAborted?: ((payload: GroupDragReleasePayload) => void) | undefined;
   onReleaseSettled?: ((payload: GroupDragReleasePayload) => void) | undefined;
@@ -701,8 +703,11 @@ export class GroupDragLayer extends Container {
   declare visualSpecTransition: GroupDragVisualSpecTransition;
   declare releaseController: GroupReleaseController | null;
 
+  readonly iconTextures: IconTextureRepository | undefined;
+
   constructor(options: GroupDragLayerOptions = {}) {
     super();
+    this.iconTextures = options.iconTextures;
     this.eventMode = "none";
     this.sortableChildren = true;
     this.badge = new Container();
@@ -1154,7 +1159,7 @@ export class GroupDragLayer extends Container {
 
   acquireNode(index: number): GroupDragActorNode {
     while (this.nodes.length <= index) {
-      const node = new IconNode({ onAction: () => {} });
+      const node = new IconNode({ onAction: () => {}, iconTextures: this.iconTextures });
       node.eventMode = "none";
       const badge = new Container();
       badge.eventMode = "none";

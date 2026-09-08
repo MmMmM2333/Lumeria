@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Text, type Renderer } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
@@ -45,7 +46,7 @@ export function nativeBackgroundSettings(options:{
   const previews:{view:NativeBackground;effect:boolean}[]=[];
   let y=0,disposed=false,fieldWidth=width;
   const text=(value:string,x:number,top:number,size=13,bold=false)=>{
-    const label=new Text({text:value,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,
+    const label=createNativeText({text:value,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:size,
       fontWeight:bold?"600":"400",fill:style.text}});
     label.position.set(x,top);node.addChild(label);return label;
   };

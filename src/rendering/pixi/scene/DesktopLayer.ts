@@ -1192,6 +1192,7 @@ export class DesktopLayer extends Container {
       onTargetActive: (folderId: string) => this.holdFolderDropFrameSuppression(folderId),
     });
     this.groupDragLayer = new GroupDragLayer({
+      iconTextures: this.iconTextures,
       onPrewarmRequest: (reason: string) => this.onFolderRenderRequest(reason),
       onRenderRequest: (reason: string) => this.onFolderRenderRequest(reason),
       onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),

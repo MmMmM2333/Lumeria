@@ -50,8 +50,10 @@ export interface TextInputClipboard {
 export interface TextInputStyle {
 	fontFamily: string | readonly string[];
 	fontSize: number;
+	fontWeight?: "normal" | "bold" | "600";
 	lineHeight: number;
 	padding: number;
+	paddingHorizontal?: number;
 	textColor: number;
 	placeholderColor: number;
 	backgroundColor: number;
@@ -75,6 +77,7 @@ export interface TextInputOptions {
 }
 
 export interface TextInputHostOptions {
+	textResolution?: () => number;
 	root: Container;
 	nativeInput: TextInputNativeEvents;
 	nativeTextInput: TextInputNativeSession;
@@ -97,6 +100,7 @@ const defaultStyle: TextInputStyle = {
 };
 
 export class TextInputHost {
+	readonly textResolution: () => number | undefined;
 	private readonly nativeTextInput: TextInputNativeSession;
 	private readonly clipboard: TextInputClipboard;
 	private readonly root: Container;
@@ -110,6 +114,7 @@ export class TextInputHost {
 	focused: TextInput | null = null;
 
 	constructor(options: TextInputHostOptions) {
+		this.textResolution=options.textResolution ?? (()=>undefined);
 		this.root = options.root;
 		this.nativeTextInput = options.nativeTextInput;
 		this.clipboard = options.clipboard;
@@ -380,7 +385,7 @@ export class TextInput extends Container {
 		const fontFamily = typeof this.inputStyle.fontFamily === "string"
 			? this.inputStyle.fontFamily
 			: this.inputStyle.fontFamily.join(", ");
-		this.font = `${this.inputStyle.fontSize}px ${fontFamily}`;
+		this.font = `${this.inputStyle.fontWeight ?? "normal"} ${this.inputStyle.fontSize}px ${fontFamily}`;
 		const context = (DOMAdapter.get().createCanvas(1, 1) as any).getContext("2d");
 		this.measure = (text) => { context.font = this.font; return context.measureText(text).width; };
 		this.editor = new TextEditor({
@@ -391,11 +396,12 @@ export class TextInput extends Container {
 		const textStyle = {
 			fontFamily,
 			fontSize: this.inputStyle.fontSize,
+			fontWeight: this.inputStyle.fontWeight ?? "normal",
 			lineHeight: this.inputStyle.lineHeight,
 			fill: this.inputStyle.textColor,
 		};
-		this.textNode = new Text({ text: "", style: textStyle });
-		this.placeholderNode = new Text({ text: this.placeholder, style: {
+		this.textNode = new Text({ text: "", resolution:host.textResolution(), style: textStyle });
+		this.placeholderNode = new Text({ text: this.placeholder, resolution:host.textResolution(), style: {
 			...textStyle, fill: this.inputStyle.placeholderColor,
 		} });
 		this.content.addChild(this.selectionLayer, this.textNode, this.compositionLayer, this.caretLayer, this.placeholderNode);
@@ -541,19 +547,19 @@ export class TextInput extends Container {
 	private syncView(): void { this.refresh(true); this.host.syncFocused(); }
 	private innerSize() {
 		const padding = this.inputStyle.padding;
-		return { width: Math.max(1, this.inputWidth - padding * 2), height: Math.max(1, this.inputHeight - padding * 2) };
+		return { width: Math.max(1, this.inputWidth - (this.inputStyle.paddingHorizontal ?? padding) * 2), height: Math.max(1, this.inputHeight - padding * 2) };
 	}
 	private updateHitArea(): void { this.hitArea = new Rectangle(0, 0, this.inputWidth, this.inputHeight); }
 	private layoutToLocal(x: number, y: number) {
 		const inner = this.innerSize();
 		const vertical = this.multiline ? 0 : Math.max(0, (inner.height - this.inputStyle.lineHeight) / 2);
-		return { x: this.inputStyle.padding + x - this.editor.state.scrollX,
+		return { x: (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) + x - this.editor.state.scrollX,
 			y: this.inputStyle.padding + vertical + y - this.editor.state.scrollY };
 	}
 	private localToLayout(x: number, y: number) {
 		const inner = this.innerSize();
 		const vertical = this.multiline ? 0 : Math.max(0, (inner.height - this.inputStyle.lineHeight) / 2);
-		return { x: x - this.inputStyle.padding + this.editor.state.scrollX,
+		return { x: x - (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) + this.editor.state.scrollX,
 			y: y - this.inputStyle.padding - vertical + this.editor.state.scrollY };
 	}
 	private draw(): void {
@@ -565,7 +571,7 @@ export class TextInput extends Container {
 		this.focusLayer.clear();
 		if (this.chrome && this.focusedState) this.focusLayer.roundRect(0, 0, this.inputWidth, this.inputHeight, 8)
 			.stroke({ color: style.focusColor, width: 2 });
-		this.clip.clear().rect(style.padding, style.padding, inner.width, inner.height).fill({ color: 0xffffff });
+		this.clip.clear().rect(style.paddingHorizontal ?? style.padding, style.padding, inner.width, inner.height).fill({ color: 0xffffff });
 		this.alpha = this._disabled ? 0.55 : 1;
 		const view = this.editor.view;
 		if (this.multiline) {

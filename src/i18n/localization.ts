@@ -10,6 +10,7 @@ import {
   type Ref,
 } from "vue";
 import { createI18n } from "vue-i18n";
+import { datetimeFormats } from "./dateTimeFormats.js";
 import {
   getBundledMessages,
   getLocaleMetadata,
@@ -46,26 +47,6 @@ export type LocalizationRuntime = Readonly<{
 const LOCALIZATION_KEY: InjectionKey<LocalizationText> = Symbol("lumeria-localization");
 const LOCALIZATION_RUNTIME_KEY: InjectionKey<LocalizationRuntime> = Symbol("lumeria-localization-runtime");
 
-const datetimeFormats = Object.freeze({
-  "zh-CN": {
-    scanTimestamp: {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  },
-  "en-US": {
-    scanTimestamp: {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  },
-} as const);
 
 const numberFormats = Object.freeze({
   "zh-CN": { decimal: { maximumFractionDigits: 2 } },

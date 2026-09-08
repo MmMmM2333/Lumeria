@@ -1,3 +1,4 @@
+import { createNativeText } from "./nativeTypography.js";
 import { Color, Container, Graphics, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { createNumericControlModel } from "../../domain/numericControl.js";
@@ -33,7 +34,7 @@ export class NativeSpinButton extends Container {
       button.addStateGraphic((mark,color)=>mark.clear().moveTo(8,up?10:6).lineTo(12,up?6:10).lineTo(16,up?10:6).stroke({color,width:1}));
     }
     this.#frame.content.addChild(this.input,this.#decrease,this.#increase);
-    if(unit){const suffix=new Text({text:unit,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:11,fill:colors.colorNeutralForeground3}});suffix.eventMode="none";suffix.position.set(width-43,9);this.#frame.content.addChild(suffix);}
+    if(unit){const suffix=createNativeText({text:unit,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:11,fill:colors.colorNeutralForeground3}});suffix.eventMode="none";suffix.position.set(width-43,9);this.#frame.content.addChild(suffix);}
     const paint=()=>{this.#frame.paint(this.#hover,this.input.focused,this.#disabled);invalidate();};
     this.on("pointerover",()=>{this.#hover=true;paint();});this.on("pointerout",()=>{this.#hover=false;paint();});
     this.input.on("focus",paint);this.input.on("blur",paint);
