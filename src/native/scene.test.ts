@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runNativeWindowEffectsTests } from "./nativeWindowEffects.test.js";
 import { readFileSync } from "node:fs";
 import { Container, type Text } from "pixi.js";
 import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
@@ -739,3 +740,4 @@ runNativeDesktopResizeTests(makeCompleteFrame());
 runNativeLabelRasterTests();
 runNativeSettingsLayoutTests();
 console.log("Native desktop scene tests passed");
+runNativeWindowEffectsTests();

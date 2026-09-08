@@ -41,8 +41,13 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,067,456 bytes with SHA-256
-`561697DA848F7DDE405F73BAC8B47B90A1C3BC53CFCD243EAD7900303D556D35`.
+The staged native DLL is 2,066,944 bytes with SHA-256
+`E21A0D4A1BDE4D63AE0214DBD50129FEA0A3D23EA3013517FA6EF9191E4342C3`.
+Starter 0.2.14 forwards WM_NCPAINT to default processing: suppressing it leaves
+DWM non-client rendering inactive after disabling/re-enabling Acrylic and
+produces an opaque gray fallback. Custom full-client windows omit WS_SYSMENU
+to suppress DWM caption buttons while keeping caption/thickframe and the app's
+explicit minimize/maximize/close commands. Fullscreen preserves that contract.
 Starter 0.2.11 primes replacement visuals with a zero-opacity effect, then removes
 that effect and the old visual in the same commit. This prevents translucent
 generations from blending together during live resize. Real screen-pixel sampling
@@ -55,7 +60,7 @@ Starter 0.2.9 also separates tray primary activation from the right-click menu.
 The primary callback copies its id/function before asynchronous dispatch so tray
 destruction cannot invalidate the captured tray object.
 
-The base devkit was produced by the official `build.ts`. For 0.2.13, the native
+The base devkit was produced by the official `build.ts`. For 0.2.14, the native
 wrapper was recompiled from the official source with this patch using the
 official Windows compile/link flags and existing pinned vendor libraries, then
 staged in that devkit. Its hash was verified against the native build output

@@ -143,6 +143,12 @@ fixture.settings.windowMode = isolated && process.argv.includes("--fullscreen") 
 fixture.settings.backgroundImagePath = isolated && process.argv.includes("--fullscreen") ? iconPath : null;
 fixture.settings.backgroundBaseColor = "#090b14";
 fixture.settings.backgroundBaseOpacity = 100;
+if(isolated&&process.argv.includes("--acrylic")){
+  fixture.settings.backgroundSource="systemMaterial";
+  fixture.settings.backgroundBaseOpacity=0;
+  fixture.settings.windowEffectMaterial="acrylic";
+  fixture.settings.windowEffectAppearance=process.argv.includes("--light")?"light":"dark";
+}
 fixture.settings.gridRows = 4;
 if(process.argv.includes("--light"))fixture.settings.settingsThemePreference="light";
 if(process.argv.includes("--dark"))fixture.settings.settingsThemePreference="dark";

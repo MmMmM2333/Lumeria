@@ -1,5 +1,9 @@
 # Electrobun + PixiJS Native Starter
 
+0.2.15 修复关闭系统材质后仍保留整窗DWM glass扩展而产生的黑色底：none时撤销扩展，Acrylic/Mica时恢复。LaunchPad专用红蓝背景探针检查实际屏幕像素与无覆盖背景颜色一致，避免仅检查GPU alpha或DWM材质枚举漏掉黑底。
+
+0.2.14 修复自定义无标题栏窗口在移除 Acrylic、隐藏并重新打开后停留纯灰底材的问题：让 WM_NCPAINT 完成默认 DWM 状态更新，保留 caption/thickframe 与最小最大化能力，去掉自定义窗口的系统菜单装饰位，避免额外系统按钮露出。全屏切换沿用同一装饰契约。实际 LaunchPad OS 截图以红蓝底图验证透明模糊，不能仅以材质枚举3作为成功证据。
+
 这是一个固定版本、可直接替换业务场景的 Windows Starter。它完全不创建 WebView、`BrowserWindow` 或 HTML canvas：
 
 ```text

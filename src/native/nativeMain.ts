@@ -1,5 +1,6 @@
 import { t, setNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { readErrorMessage } from "../application/errorMessage.js";
+import { createNativeWindowEffects } from "./nativeWindowEffects.js";
 import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
 import { setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
@@ -7,7 +8,7 @@ import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.j
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
 import { createLaunchpadTray } from "./nativeTray.js";
 import { prepareNativeRestart } from "./nativeRestart.js";
-import { captureOwnedWindow, clickOwnedNativeWindow, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
+import { captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -370,6 +371,11 @@ const brandingTextures=new Map(await Promise.all(LAUNCHPAD_ICON_VARIANTS.map(asy
 const systemPreferences=readNativeSystemPreferences();
 setNativeUiFontFamily(systemPreferences.ok?systemPreferences.value.uiFontFamily:null);
 let systemAppearance=systemPreferences.ok?systemPreferences.value.appearance:"dark";
+const windowEffects=createNativeWindowEffects({
+  apply:(material,appearance)=>app.setWindowPresentation(material,appearance),
+  visible:()=>app.state==="running"&&app.window.isVisible()&&!app.window.isMinimized(),
+  onError:error=>logNativeRuntime("window-effects-reapply-error",readErrorMessage(error)),
+});
 const settingsTheme=()=>resolveAppearancePreference(settings.draft.settingsThemePreference.value,systemAppearance);
 const settings=createLaunchpadSettings({
   layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false,localizationText:{t},
@@ -397,7 +403,7 @@ const settings=createLaunchpadSettings({
       app.setWindowMode(request.mode,request.fullscreenOverscanEnabled?1:0);return {ok:true};
     },
     setEffectsEnabled:request=>{
-      app.setWindowPresentation(request.enabled?request.material:"none",resolveAppearancePreference(request.appearance,systemAppearance));return {ok:true};
+      windowEffects.set(request.enabled?request.material:"none",resolveAppearancePreference(request.appearance,systemAppearance));return {ok:true};
     }},
 },createNativeStateHost(()=>{}));
 settings.persistence.restore(loadedLayout?.settings??{});
@@ -661,7 +667,7 @@ const offPresented = app.on("presented", () => {
 });
 let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
-const offRecovered=app.on("recovered",event=>logNativeRuntime("recovered",event));
+const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);windowEffects.refresh();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -713,14 +719,14 @@ try {
     if(systemAppearance!==result.value.appearance){
       systemAppearance=result.value.appearance;settingsShell?.redraw();
       if(settings.presentation.windowEffectAppearance.value==="system"&&(!launchFlow||launchFlow.isDesktopOpen.value)){
-        try{app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,systemAppearance);}
+        try{windowEffects.set(settings.presentation.windowEffectMaterial.value,systemAppearance);}
         catch(error){reportNativeError(error);}
       }
       void refreshBackground().catch(reportNativeError);app.invalidate();
     }
   });
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
-  app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
+  windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
   await present(app, "the native host startup frame");
   await refreshBackground().catch(reportNativeError);
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
@@ -874,6 +880,7 @@ try {
   });
   offStateChange = app.on("statechange", ({ state,previous,reason }) => {
     logNativeRuntime("state",{state,previous,reason});
+    if(state==="running"&&previous!=="running")windowEffects.refresh();
     if (state === "closing" || state === "closed") resolveClosed();
   });
 
@@ -1021,7 +1028,7 @@ try {
     showNativeLaunchError:error=>{showLaunchpad();management.warning({...error,intent:"error",confirmText:t("notices.acknowledge")});},
     beginNativeWindowClose:()=>{
       visibilityGeneration++;
-      app.setWindowPresentation("none",resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
+      windowEffects.set("none",resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
       desktopBackground.alpha=0;
       fadeNativeLaunchpadChrome([searchBar,settingsButton,windowChrome,management,...(settingsShell?[settingsShell]:[])],false);
     },
@@ -1038,10 +1045,11 @@ try {
     if(app.state==="failed"){logNativeRuntime("show-failed","Renderer failed; use tray restart to recover");return;}
     if(folderFlow.snapshot().renderedFolder)folderFlow.reset();
     if(app.window.isMinimized())app.window.unminimize();
-    app.setWindowPresentation(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
+    windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
     app.window.show();app.window.activate();
     const reveal=()=>{
       if(generation!==visibilityGeneration||windowClosing)return;
+      windowEffects.refresh();
       launchFlow!.openDesktop();fadeNativeLaunchpadChrome([desktopBackground,searchBar,windowChrome,management],true);
       requestSceneRender();logNativeRuntime("shown",{state:app.state});
     };
@@ -1462,7 +1470,7 @@ try {
   };
   searchBar.handleKey=onKey;
   if(startupLoadRecovered)notices.showLayoutLoadRecovered();
-  offFocus=app.nativeInput.onFocusChange(focused=>{if(!focused)editing?.alt.handleWindowBlur();});
+  offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else editing?.alt.handleWindowBlur();});
   searchBar.input.on("submit", () => {
     const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, getCurrentIconScope());
     if(focused) void activateItem(focused);
@@ -1491,6 +1499,45 @@ try {
   let dpiResolution = app.resolution;
 
   if (nativeMode === "smoke") {
+    if(process.env.LAUNCHPAD_ACRYLIC_RECOVERY_SMOKE==="1"){
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      const handle=getNativePixiApplicationTesting(app).handles().inputWindow;
+      const savedSettings=settings.persistence.capture();
+      const backgroundVisible=desktopBackground.visible;
+      const savedMaterial=settings.presentation.windowEffectMaterial.value,savedAppearance=settings.presentation.windowEffectAppearance.value;
+      const samples:unknown[]=[];
+      try{
+        desktopBackground.visible=false;
+        for(const appearance of ["dark","light"] as const){
+          settings.persistence.restore({...savedSettings,windowEffectMaterial:"acrylic",windowEffectAppearance:appearance});
+          for(let i=0;i<3;i++){
+            dismissLaunchpad();await waitFor("acrylic close hides",()=>!app.window.isVisible());
+            await new Promise(resolve=>setTimeout(resolve,220));
+            assert.equal((await captureOwnedWindow(handle)).material,1,"old settle callbacks must not re-enable a hidden backdrop");
+            showLaunchpad();await waitFor("acrylic reopen settles",()=>app.state==="running"&&scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+            await new Promise(resolve=>setTimeout(resolve,240));await cycleOwnedWindowFocus(handle,join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,`acrylic-${appearance}-${i}.png`));
+            const sample=await captureOwnedWindow(handle);
+            assert.equal(sample.material,3);samples.push({appearance,i,...sample});
+          }
+        }
+        // Controlled DWM state loss verifies focus recovery without claiming an intermittent OS reproduction.
+        windowEffects.set("none","light");await present(app,"transparent close material");
+        await cycleOwnedWindowFocus(handle,join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"acrylic-close-transparent.png"),true);
+        windowEffects.set("acrylic","light");
+        app.setWindowPresentation("none","light");
+        assert.equal((await captureOwnedWindow(handle)).material,1);await cycleOwnedWindowFocus(handle);
+        assert.equal((await captureOwnedWindow(handle)).material,3,"focus must restore the requested material after native state loss");
+        app.window.minimize();await waitFor("acrylic minimized",()=>app.state==="suspended");showLaunchpad();
+        await waitFor("acrylic minimized recovery",()=>app.state==="running"&&!app.window.isMinimized());
+        await new Promise(resolve=>setTimeout(resolve,240));assert.equal((await captureOwnedWindow(handle)).material,3);
+        writeFileSync(join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"acrylic-recovery.json"),JSON.stringify(samples,null,2));
+        console.log("Acrylic recovery: 6 dark/light hide-show/focus cycles, stale timer cancellation, DWM fault recovery and minimized restore passed");
+      }finally{
+        settings.persistence.restore(savedSettings);
+        desktopBackground.visible=backgroundVisible;
+        windowEffects.set(savedMaterial,resolveAppearancePreference(savedAppearance,systemAppearance));
+      }
+    }
     if(process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY!=="1"){
       const {sendAltSpace}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js");
       assert.ok(mainShortcut.apply("alt+Space").ok,"Alt+Space must register for the isolated physical input test");
@@ -1918,7 +1965,7 @@ try {
       showLaunchpad();await waitFor("caption X reopen settles",()=>app.window.isVisible()&&scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
       openSettings();await present(app,"settings reopened after X");
       await captureOwnedWindow(handle,join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"caption-system.png"));
-      const beforeMaximize=app.getWindowFrame();
+      const beforeMaximize={...app.contentSize};
       const maximize=windowChrome.getChildByLabel("native-window-chrome:maximize");assert.ok(maximize);
       clickWithNativeInput(maximize);await waitFor("caption maximize",()=>app.window.isMaximized());await present(app,"maximized caption settled");
       await waitFor("restore caption presented and hit-testable",()=>{
@@ -3000,6 +3047,7 @@ try {
     }else await closed;
   }
 } finally {
+  windowEffects.dispose();
   tray?.remove();tray=null;
   disposeLaunchFlow();
   sceneDisposed=true;sceneRenderQueued=false;

@@ -1,5 +1,57 @@
 import { spawn } from "node:child_process";
 
+/** Acrylic-only probe: supplies a red/blue backdrop, cycles focus and checks native composition. */
+export async function cycleOwnedWindowFocus(handle:number,path?:string,transparent=false):Promise<void>{
+  const script=String.raw`
+import ctypes as c,sys,time
+from ctypes import wintypes as w
+pid,h=map(int,sys.argv[1:3]);u=c.WinDLL('user32',use_last_error=True)
+u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
+u.GetWindowThreadProcessId.argtypes=[w.HWND,c.POINTER(w.DWORD)]
+u.GetAncestor.argtypes=[w.HWND,w.UINT];u.GetAncestor.restype=w.HWND
+u.GetForegroundWindow.restype=w.HWND;u.SetForegroundWindow.argtypes=[w.HWND]
+u.CreateWindowExW.argtypes=[w.DWORD,w.LPCWSTR,w.LPCWSTR,w.DWORD,c.c_int,c.c_int,c.c_int,c.c_int,w.HWND,w.HMENU,w.HINSTANCE,c.c_void_p];u.CreateWindowExW.restype=w.HWND
+u.ShowWindow.argtypes=[w.HWND,c.c_int];u.DestroyWindow.argtypes=[w.HWND]
+owner=w.DWORD();u.GetWindowThreadProcessId(h,c.byref(owner))
+if owner.value!=pid:raise RuntimeError('Focus probe target owner changed')
+root=u.GetAncestor(h,2)
+u.GetWindowRect.argtypes=[w.HWND,c.POINTER(w.RECT)];r=w.RECT();u.GetWindowRect(root,c.byref(r))
+probe=u.CreateWindowExW(0,'STATIC','Acrylic focus regression',0x90000000,r.left,r.top,r.right-r.left,r.bottom-r.top,None,None,None,None)
+if not probe:raise c.WinError(c.get_last_error())
+try:
+ u.ShowWindow(probe,5);u.SetForegroundWindow(probe);time.sleep(.3)
+ if u.GetForegroundWindow()!=probe:raise RuntimeError('Test window did not acquire foreground')
+ g=c.WinDLL('gdi32');u.GetDC.argtypes=[w.HWND];u.GetDC.restype=w.HDC;u.ReleaseDC.argtypes=[w.HWND,w.HDC]
+ u.FillRect.argtypes=[w.HDC,c.POINTER(w.RECT),w.HBRUSH];g.CreateSolidBrush.argtypes=[w.DWORD];g.CreateSolidBrush.restype=w.HBRUSH;g.DeleteObject.argtypes=[w.HGDIOBJ]
+ dc=u.GetDC(probe)
+ if not dc:raise RuntimeError('Test background DC unavailable')
+ try:
+  for box,color in [(w.RECT(0,0,(r.right-r.left)//2,r.bottom-r.top),0x302ce7),(w.RECT((r.right-r.left)//2,0,r.right-r.left,r.bottom-r.top),0xe97623)]:
+   brush=g.CreateSolidBrush(color)
+   if not brush:raise RuntimeError('Test background brush unavailable')
+   try:
+    if not u.FillRect(dc,c.byref(box),brush):raise RuntimeError('Test background draw failed')
+   finally:g.DeleteObject(brush)
+ finally:u.ReleaseDC(probe,dc)
+ u.SetForegroundWindow(root);time.sleep(.35)
+ if u.GetForegroundWindow()!=root:raise RuntimeError('Native window did not reacquire foreground')
+ if len(sys.argv)>3:
+  from PIL import ImageGrab,ImageStat
+  image=ImageGrab.grab(bbox=(r.left,r.top,r.right,r.bottom),all_screens=True,include_layered_windows=True).convert('RGB');image.save(sys.argv[3])
+  width,height=image.size
+  left=ImageStat.Stat(image.crop((width//8,height//2,width//3,height*3//4))).mean
+  right=ImageStat.Stat(image.crop((width*2//3,height//2,width*7//8,height*3//4))).mean
+  if left[0]-left[2]<20 or right[2]-right[0]<20:raise RuntimeError(f'Acrylic reverted to opaque fallback: {left}, {right}')
+  if len(sys.argv)>4:
+   for actual,expected in [(left,[231,44,48]),(right,[35,118,233])]:
+    if max(abs(a-b) for a,b in zip(actual,expected))>3:raise RuntimeError(f'Transparent window changed background pixels: {actual}, expected {expected}')
+finally:u.DestroyWindow(probe)
+`;
+  const child=spawn("python",["-c",script,String(process.pid),String(handle),...(path?[path]:[]),...(transparent?["transparent"]:[])],{windowsHide:true,stdio:["ignore","ignore","pipe"]});
+  let errors="";child.stderr.on("data",chunk=>{errors+=chunk;});
+  await new Promise<void>((resolve,reject)=>{child.once("error",reject);child.once("exit",code=>code===0?resolve():reject(new Error(errors)));});
+}
+
 // Common-dialog interaction is scoped to the smoke worker's PID and window class.
 // This helper never searches for or dismisses another application's dialog.
 const colorResponse=String.raw`
@@ -141,7 +193,9 @@ if len(sys.argv)>3:
  from PIL import ImageGrab
  u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
  r=w.RECT();u.GetWindowRect(h,c.byref(r));ImageGrab.grab(bbox=(r.left,r.top,r.right,r.bottom),all_screens=True,include_layered_windows=True).save(sys.argv[3])
-print(json.dumps(dict(material=material.value,style=hex(u.GetWindowLongPtrW(h,-16)&0xffffffff))))
+u.GetForegroundWindow.restype=w.HWND
+dark=c.c_int();nc=c.c_int();d.DwmGetWindowAttribute(h,20,c.byref(dark),4);d.DwmGetWindowAttribute(h,1,c.byref(nc),4)
+print(json.dumps(dict(material=material.value,style=hex(u.GetWindowLongPtrW(h,-16)&0xffffffff),exStyle=hex(u.GetWindowLongPtrW(h,-20)&0xffffffff),foreground=u.GetForegroundWindow()==h,dark=dark.value,ncRendering=nc.value)))
 `;
   const child=spawn("python",["-c",script,String(process.pid),String(inputWindow),...(path?[path]:[])],{windowsHide:true,stdio:["ignore","pipe","pipe"]});
   let output="",errors="";child.stdout.on("data",chunk=>{output+=chunk;});child.stderr.on("data",chunk=>{errors+=chunk;});
