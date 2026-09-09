@@ -34,6 +34,27 @@ try {
     loadNativeIconTexture("https://example.com/icon.png"),
     /image data URL or absolute file path/,
   );
+
+  // Separate decoded images must own stable storage after the loader's Image,
+  // Canvas and ImageData wrappers have gone out of scope.
+  const stableTexture = await loadNativeIconTexture(fixturePath);
+  const stablePixels = stableTexture.source.resource as Uint8Array;
+  const stableCopy = Uint8Array.from(stablePixels);
+  const otherTextures = await Promise.all(Array.from({ length: 12 }, () => loadNativeIconTexture(fixturePath)));
+  try {
+    for (const other of otherTextures) {
+      const otherPixels = other.source.resource as Uint8Array;
+      assert.notEqual(otherPixels.buffer, stablePixels.buffer);
+      otherPixels.fill(0);
+      other.destroy(true);
+    }
+    if (typeof globalThis.gc === "function") globalThis.gc();
+    assert.deepEqual(stablePixels, stableCopy);
+    assert.equal(stablePixels.byteLength, 8 * 8 * 4);
+  } finally {
+    for (const other of otherTextures) if (!other.destroyed) other.destroy(true);
+    stableTexture.destroy(true);
+  }
 } finally {
   rmSync(fixtureDirectory, { force: true, recursive: true });
 }

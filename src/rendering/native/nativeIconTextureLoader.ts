@@ -27,7 +27,8 @@ export async function loadNativeIconTexture(source: string): Promise<Texture> {
       autoGenerateMipmaps: true,
       format: "rgba8unorm",
       height: image.height,
-      resource: new Uint8Array(pixels),
+      // Retain the ImageData buffer through its view instead of copying the RGBA bytes.
+      resource: new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
       width: image.width,
     }),
   });
@@ -36,6 +37,8 @@ export async function loadNativeIconTexture(source: string): Promise<Texture> {
 export function createNativeIconTextureRepository(): IconTextureRepository {
   return createIconTextureRepository({
     loadTexture: loadNativeIconTexture,
+    // Bound file IO and Skia decoding together during whole-layout loading.
+    maxConcurrentLoads: 4,
     resolveSource: getNativeIconTextureSource,
   });
 }

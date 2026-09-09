@@ -48,6 +48,7 @@ export type IconTextureRepository = Readonly<{
 
 type RepositoryOptions = Readonly<{
   loadTexture?: (source: string) => Promise<Texture>;
+  maxConcurrentLoads?: number;
   resolveSource?: (item: IconTextureItem | null | undefined) => string | null;
   scheduleAfterFrame?: (callback: () => void) => void;
 }>;
@@ -123,6 +124,13 @@ function makeItemKey(item: IconTextureItem, source: string): string {
 
 export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository {
   const loadTexture = options.loadTexture || loadTextureFromImage;
+  const maxConcurrentLoads = options.maxConcurrentLoads ?? Infinity;
+  if (maxConcurrentLoads !== Infinity && (!Number.isInteger(maxConcurrentLoads) || maxConcurrentLoads < 1)) {
+    throw new RangeError("Texture load concurrency must be a positive integer");
+  }
+  let activeLoads = 0;
+  let drainingLoads = false;
+  const queuedLoads: { start: () => void; cancel: () => void }[] = [];
   const resolveSource = options.resolveSource || getPixiIconTextureSource;
   const scheduleAfterFrame = options.scheduleAfterFrame || scheduleAfterRenderFrame;
   const cachedTextures = new Map<string, Texture>();
@@ -225,37 +233,66 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     }
   }
 
+  function drainLoads(): void {
+    if (drainingLoads) return;
+    drainingLoads = true;
+    try {
+      while (activeLoads < maxConcurrentLoads && queuedLoads.length) queuedLoads.shift()!.start();
+    } finally {
+      drainingLoads = false;
+    }
+  }
+
   function requestTextureLoad(source: string): Promise<void> {
     if (cachedTextures.has(source) || failedTextureSources.has(source)) return Promise.resolve();
     const existing = pendingTextureLoads.get(source);
     if (existing) return existing;
     const loadGeneration = generation;
-    let pending: Promise<void>;
-    pending = loadTexture(source)
-      .then((texture) => {
+    let settle!: () => void;
+    const pending = new Promise<void>((resolve) => { settle = resolve; });
+    const finish = () => {
+      if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
+      settle();
+    };
+    pendingTextureLoads.set(source, pending);
+    queuedLoads.push({
+      cancel: finish,
+      start: () => {
+        // Layout replacement and disposal can obsolete work before it reaches IO.
         if (loadGeneration !== generation || (!isSourceRetained(source) && !textureLoadListeners.has(source))) {
-          destroyTexture(texture);
+          finish();
           return;
         }
-        cachedTextures.set(source, texture);
-        failedTextureSources.delete(source);
-        textureLoadFailureCounts.delete(source);
-        promoteReadyReplacements(source);
-        notifyTextureLoadSettled(source);
-      })
-      .catch((error: unknown) => {
-        if (loadGeneration !== generation) return;
-        const diagnostic = recordTextureError(source, error);
-        console.error("Failed to load icon texture", diagnostic);
-        const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
-        textureLoadFailureCounts.set(source, failureCount);
-        if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
-        notifyTextureLoadSettled(source);
-      })
-      .finally(() => {
-        if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
-      });
-    pendingTextureLoads.set(source, pending);
+        activeLoads += 1;
+        void (async () => {
+          try {
+            const texture = await loadTexture(source);
+            if (loadGeneration !== generation || (!isSourceRetained(source) && !textureLoadListeners.has(source))) {
+              destroyTexture(texture);
+              return;
+            }
+            cachedTextures.set(source, texture);
+            failedTextureSources.delete(source);
+            textureLoadFailureCounts.delete(source);
+            promoteReadyReplacements(source);
+            notifyTextureLoadSettled(source);
+          } catch (error: unknown) {
+            if (loadGeneration !== generation) return;
+            const diagnostic = recordTextureError(source, error);
+            console.error("Failed to load icon texture", diagnostic);
+            const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
+            textureLoadFailureCounts.set(source, failureCount);
+            if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
+            notifyTextureLoadSettled(source);
+          } finally {
+            activeLoads -= 1;
+            finish();
+            drainLoads();
+          }
+        })();
+      },
+    });
+    drainLoads();
     return pending;
   }
 
@@ -347,6 +384,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
 
   function dispose(): void {
     generation += 1;
+    for (const load of queuedLoads.splice(0)) load.cancel();
     for (const texture of cachedTextures.values()) destroyTexture(texture);
     cachedTextures.clear();
     failedTextureSources.clear();
