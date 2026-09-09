@@ -87,6 +87,7 @@ import { createNativeShortcut } from "./nativeShortcut.js";
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
 import type { LaunchpadPages, ReadonlyLaunchpadApp } from "../domain/launchpadLayout.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
+import { prepareNativeIconTextures } from "../rendering/native/nativeRecoverableIconSource.js";
 import {
   createNativeFolderFlow,
   type NativeFolderItem,
@@ -271,6 +272,7 @@ async function captureScenePixels(
   width: number,
   height: number,
 ): Promise<NativePixelData> {
+  await prepareNativeIconTextures(app.stage, app.renderer);
   return await app.renderer.extract.pixels({
     antialias: true,
     clearColor: 0x090b14,
@@ -283,6 +285,7 @@ async function captureScenePixels(
 async function captureSmokeFrame(name: string): Promise<void> {
   const directory = process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR;
   if (!directory) throw new Error("LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR is required in smoke mode");
+  await prepareNativeIconTextures(app.stage, app.renderer);
   const dataUrl = await app.renderer.extract.base64({
     target: app.stage,
     frame: new Rectangle(0, 0, app.contentSize.width, app.contentSize.height),
@@ -308,6 +311,7 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
+app.beforeRender(() => prepareNativeIconTextures(app.stage, app.renderer));
 configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
@@ -685,7 +689,8 @@ const offPresented = app.on("presented", () => {
 });
 let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
-const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);windowEffects.refresh();});
+let bindApplicationFocus = () => {};
+const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);windowEffects.refresh();bindApplicationFocus();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -1547,7 +1552,11 @@ try {
     }
   }
   if(startupLoadRecovered)notices.showLayoutLoadRecovered();
-  offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else editing?.alt.handleWindowBlur();});
+  bindApplicationFocus = () => {
+    offFocus();
+    offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else editing?.alt.handleWindowBlur();});
+  };
+  bindApplicationFocus();
   searchBar.input.on("submit", () => {
     const focused = findFocusedIcon(currentFrame.interaction.focusedIcon, getCurrentIconScope());
     if(focused) void activateItem(focused);
@@ -1593,6 +1602,7 @@ try {
 
 
   if (nativeMode === "smoke") {
+    await (await import("./nativeIconRecoverySmoke.test.js")).runNativeIconRecoverySmoke(app);
     if(process.env.LAUNCHPAD_ACRYLIC_RECOVERY_SMOKE==="1"){
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       const handle=getNativePixiApplicationTesting(app).handles().inputWindow;

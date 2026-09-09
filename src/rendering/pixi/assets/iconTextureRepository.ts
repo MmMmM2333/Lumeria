@@ -26,6 +26,8 @@ export type IconTextureRepositorySnapshot = Readonly<{
     sourceDestroyed: boolean;
     sourcePixelHeight: number | null;
     sourcePixelWidth: number | null;
+    retainedPixelBytes: number | null;
+    retainedEncodedBytes: number;
     sourceUid: number | null;
     textureDestroyed: boolean;
     textureUid: number | null;
@@ -365,6 +367,8 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
       sourceDestroyed: texture.source?.destroyed === true,
       sourcePixelHeight: texture.source?.pixelHeight ?? null,
       sourcePixelWidth: texture.source?.pixelWidth ?? null,
+      retainedPixelBytes: ArrayBuffer.isView(texture.source?.resource) ? texture.source.resource.byteLength : null,
+      retainedEncodedBytes: (texture.source as { retainedEncodedBytes?: number } | undefined)?.retainedEncodedBytes ?? 0,
       sourceUid: texture.source?.uid ?? null,
       textureDestroyed: texture.destroyed === true,
       textureUid: texture.uid ?? null,

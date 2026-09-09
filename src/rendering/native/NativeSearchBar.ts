@@ -18,14 +18,16 @@ export class NativeSearchBar extends Container {
   readonly #clear = new Graphics({label:"native-search-clear"});
   #width = 348;
   #hidden = false;
+  readonly #offRecovered: () => void;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
-    this.host = createTextInputHost({ root: app.stage, textResolution:getNativeTextResolution, nativeInput: {
+    const nativeEvents = (): Parameters<typeof createTextInputHost>[0]["nativeInput"] => ({
       ...app.nativeInput,
       onKey: listener => app.nativeInput.onKey(event => {
         if (!this.handleKey(event)) listener(event);
       }),
-    },
+    });
+    this.host = createTextInputHost({ root: app.stage, textResolution:getNativeTextResolution, nativeInput: nativeEvents(),
       nativeTextInput: app.textInput, clipboard: {
         writeText: text => nativeHost.platform.clipboard.writeText(text),
         readText: async () => {
@@ -35,6 +37,7 @@ export class NativeSearchBar extends Container {
           return { ok: true as const, value: result.value };
         },
       }, requestFrame: () => app.invalidate() });
+    this.#offRecovered = app.on("recovered", () => this.host.rebindNativeInput(nativeEvents()));
     this.input = this.host.create({ width: 285, height: 27, chrome: false,
       style: { fontFamily: [...PIXI_UI_FONT_FAMILY], fontSize: 13, lineHeight: 19, padding: 4,
         textColor: 0xffffff, caretColor: 0xffffff, selectionColor: 0x3268ad } });
@@ -83,6 +86,7 @@ export class NativeSearchBar extends Container {
     motion(this.#content).duration(0.18).to({ x: left ? 12 : (this.#width - this.#placeholder.width - 21) / 2, y: 10 }).start();
   }
   override destroy(): void {
+    this.#offRecovered();
     killMotionOf(this); killMotionOf(this.#content);
     this.host.destroy();
     super.destroy({ children: true });

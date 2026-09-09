@@ -1,6 +1,6 @@
 {
   "name": "electrobun-pixijs-webgpu",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "type": "module",
   "electrobunPixiStarter": {
@@ -20,6 +20,7 @@
     "dev": "node tools/run-electrobun.mjs dev",
     "build": "node tools/run-electrobun.mjs build",
     "typecheck": "tsc --noEmit",
+    "test:preparation": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-frame-preparation.test.ts",
     "release:generate": "node tools/starter-release.mjs generate",
     "release:verify": "node tools/starter-release.mjs verify",
     "release:package": "node tools/starter-release.mjs package",

@@ -21,7 +21,7 @@
     "prenative:smoke": "npm run native:data:build",
     "native:smoke": "tsx scripts/runNativeElectrobun.ts",
     "postinstall": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root .",
-    "test": "tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/persistence.test.ts",
+    "test": "tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/nativeRecoverableIconSource.test.ts && tsx src/native/persistence.test.ts",
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.ts --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.ts --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.ts --project=chromium --workers=1",

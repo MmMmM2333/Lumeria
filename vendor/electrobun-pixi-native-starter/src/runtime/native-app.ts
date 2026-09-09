@@ -1,4 +1,5 @@
 import "./runtime-shim";
+import { NativeFramePreparation } from "./native-frame-preparation";
 import { GpuWindow, Screen, webgpu } from "electrobun/main";
 import {
 	AlphaMask,
@@ -146,6 +147,8 @@ export interface NativePixiApplication {
 	invalidate(): void;
 	nextPresent(): Promise<void>;
 	animate(update: (deltaMs: number) => void): () => void;
+	/** Runs after animation updates. A pending promise defers presentation until resources are ready. */
+	beforeRender(prepare: () => void | Promise<void>): () => void;
 	on<K extends keyof NativeAppEvents>(type: K, listener: (event: NativeAppEvents[K]) => void): () => void;
 	dispose(): Promise<void>;
 	beforeClose(listener: () => Promise<void | boolean>): () => void;
@@ -364,6 +367,9 @@ export async function createNativePixiApplication(
 		const recoveryTimes: number[] = [];
 		const retiredGenerations = new Set<number>();
 		const animations = new Set<(deltaMs: number) => void>();
+		const framePreparation = new NativeFramePreparation(() => {
+			lastFrameAt = performance.now(); requestFrame();
+		}, error => fail("resource-preparation", error instanceof Error ? error.message : String(error), error));
 		const runtimeEvents: Array<{ sequence: number; at: number; type: string; data?: unknown }> = [];
 		let runtimeEventSequence = 0;
 		const recordEvent = (type: string, data?: unknown) => {
@@ -717,11 +723,13 @@ export async function createNativePixiApplication(
 
 		const tick = () => {
 			if (closed || state !== "running" || (paused && stepFrames <= 0)) return;
+			if (framePreparation.pending) { lastFrameAt = performance.now(); return; }
 			try {
 				pollGpu(); if (state !== "running") return;
 				if (pendingWindowSync) syncWindow(); if (state !== "running") return;
 				const now = performance.now(); const delta = Math.max(0, now - lastFrameAt); lastFrameAt = now;
 				for (const update of [...animations]) { try { update(delta); } catch (error) { fail("animation", error instanceof Error ? error.message : String(error), error); return; } }
+				if (!framePreparation.prepare()) return;
 				if (rootFastPlan && stage.renderGroup?.structureDidChange) invalidateFastPath();
 				if (stage.renderGroup) updateRenderGroupTransforms(stage.renderGroup);
 				if (!rootFastPlan) {
@@ -748,7 +756,7 @@ export async function createNativePixiApplication(
 		if (!minimized) { syncWindow(); requestFrame(); } else frameScheduler.suspend();
 
 		const frameCounters = (): NativeAppFrameCounters => { const counters = nativeFrameHost.readCounters(); return { submitCount: Number(counters.submitCount), presentCount: Number(counters.presentCount), renderCount, lastStatus: counters.lastStatus }; };
-		const monitor = setInterval(() => { if (!closed) { pollGpu(); if (state === "running" && !minimized && performance.now() - lastPresentedAt > 5000 && animations.size) void requestRecovery("presentation stalled", "surface"); } }, 500);
+		const monitor = setInterval(() => { if (!closed) { pollGpu(); if (state === "running" && !minimized && !framePreparation.pending && performance.now() - lastPresentedAt > 5000 && animations.size) void requestRecovery("presentation stalled", "surface"); } }, 500);
 		let disposePromise: Promise<void> | null = null;
 		let unregisterTesting = () => {};
 		let allowClose = false;
@@ -760,7 +768,7 @@ export async function createNativePixiApplication(
       windowIcon?.dispose();
 			rejectPresentWaiters(new Error("Native Pixi application is closing"));
 			if (windowSyncTimer !== null) clearTimeout(windowSyncTimer);
-			frameScheduler?.close(); animations.clear(); offFocus(); offLifecycle();
+			frameScheduler?.close(); animations.clear(); framePreparation.close(); offFocus(); offLifecycle();
 			for (const cleanup of [...cleanups].reverse()) { try { await cleanup(); } catch (error) { console.error("[native-app] cleanup failed", error); } }
 			cleanups.clear(); unregisterTesting();
 			await Promise.race([recoveryPromise ?? Promise.resolve(), new Promise((resolve) => setTimeout(resolve, 1000))]);
@@ -830,6 +838,10 @@ export async function createNativePixiApplication(
 				if (closed) return () => {};
 				animations.add(update); const release = frameScheduler!.animate(); let stopped = false;
 				return () => { if (stopped) return; stopped = true; animations.delete(update); release(); };
+			},
+			beforeRender(prepare) {
+				if (closed) return () => {};
+				const remove = framePreparation.add(prepare); requestFrame(); return remove;
 			},
 			on(type, listener) { if (closed) return () => {}; (listeners[type] as Set<any>).add(listener); return () => { (listeners[type] as Set<any>).delete(listener); }; },
 			dispose,

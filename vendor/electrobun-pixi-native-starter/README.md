@@ -79,6 +79,8 @@ await presented;
 
 返回对象提供动态 `renderer`、`screen`、`resolution`、原生输入/文本会话、`invalidate()`、`nextPresent()`、`animate()`、生命周期事件和逆序 `dispose()`。Runtime 内部统一负责窗口、WebGPU/Pixi 初始化、输入 wake、resize/DPI、帧调度、surface/device 恢复和资源销毁。`nextPresent()` 等待调用之后下一次成功或 suboptimal 的真实 surface present；timeout、outdated 和恢复过程会继续等待，应用进入 failed/closing/closed 时拒绝。它不会主动请求绘制，因此应先取得 Promise 再调用 `invalidate()`。
 
+Starter 0.3.2 提供 `app.beforeRender(prepare)`，在动画更新后、普通或 fast-bundle 呈现前检查资源。资源已就绪时回调必须同步返回 `void`；需要准备时返回 `Promise<void>`，准备期间保留上一帧并暂停动画推进，完成后重新检查当前场景再绘制（因此不要无条件返回 Promise）。同步抛错或 Promise 拒绝进入 `resource-preparation` fatal 状态；dispose 后忽略异步结果。注册返回取消函数，dispose 自动清理。该入口也在设备恢复后的首帧执行；直接调用 Pixi extraction/render 的应用代码须先自行准备其目标资源。
+
 版本化 release 本身就是完整项目，不需要旁边存在本仓库、兄弟仓库、原仓库 `node_modules` 或全局 Electrobun devkit。解压后直接：
 
 ```powershell
