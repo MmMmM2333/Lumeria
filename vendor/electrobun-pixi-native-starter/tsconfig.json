@@ -4,5 +4,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "electrobun.config.ts"]
+  "include": ["src", "electrobun.config.ts", "consumer/bytecode-builder.ts"]
 }

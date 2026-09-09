@@ -2,11 +2,11 @@
   "schemaVersion": 2,
   "starter": {
     "name": "electrobun-pixi-native-starter",
-    "version": "0.3.3"
+    "version": "0.3.4"
   },
   "product": {
     "name": "electrobun-pixijs-webgpu",
-    "version": "0.3.3"
+    "version": "0.3.4"
   },
   "target": {
     "platform": "win32",
@@ -14,14 +14,14 @@
     "minimumWindows": "10.0.19041"
   },
   "source": {
-    "commit": "5f2b04f1ac3bd1f9d98f6db0ab37426b6ff847f8",
+    "commit": "0ae821017b77cc0d3ff56d862ffe979c1b6b36ff",
     "dirty": false,
-    "sourceDateEpoch": 1788971626
+    "sourceDateEpoch": 1788978013
   },
   "build": {
-    "commit": "5f2b04f1ac3bd1f9d98f6db0ab37426b6ff847f8",
-    "sourceDateEpoch": 1788971626,
-    "timestamp": "2026-09-09T16:33:46.000Z"
+    "commit": "0ae821017b77cc0d3ff56d862ffe979c1b6b36ff",
+    "sourceDateEpoch": 1788978013,
+    "timestamp": "2026-09-09T18:20:13.000Z"
   },
   "dependencies": {
     "electrobun": "2.0.1",
@@ -2934,6 +2934,36 @@
       "sha256": "df88b1026a1b1b6402a483fa63b05b74b631b12eef3f68d3de0d83db5bf4ab11"
     },
     {
+      "path": "consumer/bytecode-builder.ts",
+      "role": "consumer-integration",
+      "size": 3842,
+      "sha256": "a278a8161b1880246a06453a490305157e484763422adcb106660da12d146ab0"
+    },
+    {
+      "path": "consumer/bytecode-postbuild.d.mts",
+      "role": "consumer-integration",
+      "size": 94,
+      "sha256": "0b4e7d53f3a7120736ea695165c6a4abeda0ba941554e9360da0ae21142200c2"
+    },
+    {
+      "path": "consumer/bytecode-postbuild.mjs",
+      "role": "consumer-integration",
+      "size": 2399,
+      "sha256": "48c6f7be8b8bd62bcb0ba860c6a28d933a9757e9d9d51fde611eb0e7d36dd279"
+    },
+    {
+      "path": "consumer/bytecode-postbuild.test.mjs",
+      "role": "consumer-integration",
+      "size": 1141,
+      "sha256": "f3e8a2336b65dc8c3826aa6f6bef64a8e500f5fc9ee78902c3f704a9732ebaa3"
+    },
+    {
+      "path": "consumer/bytecode.md",
+      "role": "consumer-integration",
+      "size": 2333,
+      "sha256": "b042365c527484000c6c0af692925dd855e2e806e0ba0f93bd61c0e8dc426625"
+    },
+    {
       "path": "consumer/DEVTOOLS.md",
       "role": "consumer-integration",
       "size": 3158,
@@ -2948,8 +2978,8 @@
     {
       "path": "consumer/run-electrobun.mjs",
       "role": "consumer-integration",
-      "size": 2787,
-      "sha256": "4f6251456c231d4a4f880ede5d77fbc82a87561159c4f4cbd1cf462ff93ebe16"
+      "size": 3509,
+      "sha256": "f2bd4ec9dede0621895b435dab2babb185f49dfa173c0f98c4e9b8da7d38616a"
     },
     {
       "path": "consumer/tsconfig.json",
@@ -2967,13 +2997,13 @@
       "path": "package-lock.json",
       "role": "starter-config",
       "size": 59114,
-      "sha256": "3920a3fffa5ecff61da497d506703283417cd484346fd6a23da2f0abc56d87e6"
+      "sha256": "4fa98bafb4031169be069c54f1b58698424b314fd2a3a80417e104a763df6006"
     },
     {
       "path": "package.json",
       "role": "starter-config",
-      "size": 2327,
-      "sha256": "a0ff398f40c1bfa1e11d410ab4f4c208ba654102b62189bb426b6a149a5cee87"
+      "size": 2400,
+      "sha256": "bce476816e1abc13b22766150379a89dac4d42ce82d751bd031cacd8b556f1ac"
     },
     {
       "path": "patches/bun-1.4.2-runtime.md",
@@ -2996,8 +3026,8 @@
     {
       "path": "README.md",
       "role": "documentation",
-      "size": 32384,
-      "sha256": "dbb019b14fc52e5d3c5a4d31ebaed210745dedc41df59355f483f693fd84fa9f"
+      "size": 32565,
+      "sha256": "c53a3aa976745dac96b3422e1bb5d6a9df366dd45310680da0eee68afbfccdc4"
     },
     {
       "path": "src/demo/demo.ts",
@@ -3374,8 +3404,8 @@
     {
       "path": "starter-consumer-smoke/smoke.mjs",
       "role": "consumer-smoke",
-      "size": 27861,
-      "sha256": "4dbe4811e1d55b931e43535a4b1916d076f91082545d7599279709237b767204"
+      "size": 29720,
+      "sha256": "050faf850dc2a588fec0e2134c7b3cfaf8b1400898dbf7f7396ea15b0a2f48e2"
     },
     {
       "path": "tools/bun-runtime-pin.mjs",
@@ -3405,7 +3435,7 @@
       "path": "tools/devtools-mcp.mjs",
       "role": "starter-tool",
       "size": 5635,
-      "sha256": "c83d4529bcae6ea8b4e5a11ced6c806d81dc1a046655d2ca89fb068867786cef"
+      "sha256": "8410992d555f14acf15dc2ee0ff7a77bd604dccdc7dffad91ad351d736c64c75"
     },
     {
       "path": "tools/devtools-mcp.test.mjs",
@@ -3452,8 +3482,8 @@
     {
       "path": "tsconfig.json",
       "role": "starter-config",
-      "size": 177,
-      "sha256": "ac160a15968f484cf26bd73397c694e0472569092f0d89747cc7a1768faf7f3d"
+      "size": 209,
+      "sha256": "a017214c1545f8d3874e70f1949f9fa1522079f2374928149ab169ede5af5797"
     }
   ]
 }

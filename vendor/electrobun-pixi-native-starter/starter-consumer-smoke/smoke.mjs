@@ -23,7 +23,7 @@ import { zstdDecompressSync } from "node:zlib";
 const EXPECTED = {
 	starter: "electrobun-pixi-native-starter",
 	product: "electrobun-pixijs-webgpu",
-	version: "0.3.3",
+	version: "0.3.4",
 	electrobun: "2.0.1",
 	pixi: "8.20.1",
 	bun: "1.4.2",
@@ -352,18 +352,22 @@ const createExternalConsumer = () => {
 		' app: { name: "LaunchPad Consumer Smoke", identifier: "dev.example.launchpad-consumer-smoke", version: "0.1.0" },',
 		' build: { mainProcess: "bun", bun: { entrypoint: "src/main.ts" }, cottontail: { entrypoint: "src/main.ts" },',
 		'  copy: nativePixiElectrobunCopy, win: { bundleWGPU: true } },',
+		' scripts: { postBuild: "src/post-build.ts" },',
 		'} satisfies ElectrobunConfig;',
 	].join("\n") + "\n");
+	writeFileSync(join(consumer, "src", "post-build.ts"), 'import { buildNativeBytecode } from "../vendor/electrobun-pixi-native-starter/consumer/bytecode-postbuild.mjs";\nbuildNativeBytecode({entrypoint:"src/main.ts",tsconfig:"tsconfig.json"});\n');
 	writeFileSync(join(consumer, "src", "main.ts"), [
 		'import { createDemo } from "../vendor/electrobun-pixi-native-starter/src/demo/demo";',
 		'import { createNativePixiApplication, registerNativeFont, registerNativeFontData } from "../vendor/electrobun-pixi-native-starter/src/native-host";',
 		'if (typeof registerNativeFont !== "function" || typeof registerNativeFontData !== "function") throw new Error("font registration API is missing");',
+		'async function main() {',
 		'const app = await createNativePixiApplication({ title: "External Consumer", width: 900, height: 600 });',
 		'try {',
 		' await createDemo(app, { bunnyCount: 0, fastBundleSmokeBatches: 0, fpsHudScale: 2 });',
 		' const presented = app.nextPresent(); app.invalidate(); await presented;',
 		' if (process.env.PIXI_PRESENT_MARKER) await Bun.write(process.env.PIXI_PRESENT_MARKER, JSON.stringify({ presented: true }));',
 		'} catch (error) { await app.dispose(); throw error; }',
+		'} void main().catch(error=>{queueMicrotask(()=>{throw error;});});',
 	].join("\n") + "\n");
 	runSync(process.execPath, [process.env.npm_execpath, "ci", "--no-audit", "--no-fund"], { cwd: consumer });
 	const installer = join(release, "tools", "starter-release.mjs");
@@ -379,7 +383,9 @@ const createExternalConsumer = () => {
 	if (conflict.status === 0) fail("install-consumer overwrote a conflicting vendored Starter");
 	copyFileSync(join(release, "starter-manifest.json"), installedManifest);
 	runSync(process.execPath, [process.env.npm_execpath, "run", "typecheck"], { cwd: consumer });
-	runSync(process.execPath, [process.env.npm_execpath, "run", "build"], { cwd: consumer });
+	if (process.env.STARTER_BYTECODE_SMOKE === "1") {
+		runSync(process.execPath, [join(vendor, "consumer/run-electrobun.mjs"), "build-bytecode"], { cwd: consumer });
+	} else runSync(process.execPath, [process.env.npm_execpath, "run", "build"], { cwd: consumer });
 	const stableRoot = join(consumer, "build", "stable-win-x64");
 	const payloads = walk(stableRoot).filter(path => path.includes(`${sep}Resources${sep}`) && path.endsWith(".tar.zst"));
 	if (payloads.length !== 1) fail("expected exactly one stable runtime archive");
@@ -393,7 +399,16 @@ const createExternalConsumer = () => {
 	const bunProbe = spawnSync(bundledBun[0], ["--version"], { encoding: "utf8", windowsHide: true });
 	if (bunProbe.status !== 0 || bunProbe.stdout.trim() !== EXPECTED.bun) fail("bundled Bun runtime version mismatch");
 	console.log(`consumer bundled Bun verified: ${EXPECTED.bun}`);
-	return { consumer, vendor };
+	if (process.env.STARTER_BYTECODE_SMOKE === "1") {
+		const output = join(dirname(dirname(bundledBun[0])), "Resources/app/bun");
+		const receipt = JSON.parse(readFileSync(join(output, "bytecode-manifest.json"), "utf8"));
+		if (receipt.bun !== EXPECTED.bun || !receipt.bytecode) fail("bytecode receipt mismatch");
+		for (const file of receipt.files) {
+			const bytes = readFileSync(join(output, file.name));
+			if (bytes.length !== file.size || createHash("sha256").update(bytes).digest("hex") !== file.sha256) fail("packaged bytecode hash mismatch");
+		}
+	}
+	return { consumer, vendor, bundledBun: bundledBun[0] };
 };
 
 const sleep = (milliseconds) => new Promise((accept) => setTimeout(accept, milliseconds));
@@ -476,17 +491,19 @@ const runAppSmoke = async () => {
 	await assertNoSourcePathLeak();
 	const npmExecPath = process.env.npm_execpath;
 	if (!npmExecPath || !existsSync(npmExecPath)) fail("app smoke must be launched through an npm script");
-	const { consumer, vendor } = createExternalConsumer();
+	const { consumer, vendor, bundledBun } = createExternalConsumer();
 	applicationRoot = consumer;
 
 	const discoveryPath = join(consumer, ".electrobun-pixi-debug.json");
 	const presentMarker = join(consumer, "presented.json");
 	if (existsSync(discoveryPath)) fail(`debug discovery already exists: ${discoveryPath}`);
 	const debugEnvironment = { ...cleanEnvironment(), PIXI_AGENT_DEBUG_DISCOVERY: discoveryPath };
-	const start = spawn(process.execPath, [npmExecPath, "start"], {
-		cwd: consumer,
+	const bytecodeSmoke = process.env.STARTER_BYTECODE_SMOKE === "1";
+	const start = spawn(bytecodeSmoke ? bundledBun : process.execPath, bytecodeSmoke ? [join(dirname(dirname(bundledBun)), "Resources/main.js")] : [npmExecPath, "start"], {
+		cwd: bytecodeSmoke ? dirname(bundledBun) : consumer,
 		env: {
 			...debugEnvironment,
+			BUN_JSC_verboseDiskCache: bytecodeSmoke ? "1" : "0",
 			PIXI_AGENT_DEBUG: "1",
 			PIXI_MAX_FPS: "60",
 			PIXI_RESIZE_MODE: "smooth",
@@ -494,9 +511,14 @@ const runAppSmoke = async () => {
 			PIXI_FAST_BUNDLE_SMOKE: "0",
 			PIXI_PRESENT_MARKER: presentMarker,
 		},
-		stdio: "inherit",
+		stdio: bytecodeSmoke ? ["ignore", "pipe", "pipe"] : "inherit",
 		windowsHide: true,
 	});
+	let runtimeOutput = "";
+	if (bytecodeSmoke) {
+		start.stdout.on("data", data => { runtimeOutput += data; process.stdout.write(data); });
+		start.stderr.on("data", data => { runtimeOutput += data; process.stderr.write(data); });
+	}
 	start.spawnError = null;
 	start.once("error", (error) => { start.spawnError = error; });
 	let failure = null;
@@ -545,6 +567,7 @@ const runAppSmoke = async () => {
 		await assertNoResidualProcesses().catch((error) => { failure ??= error; });
 	}
 	if (failure) throw failure;
+	if (bytecodeSmoke && !runtimeOutput.includes("[Disk Cache] Cache hit for sourceCode")) fail("packaged Worker did not report a bytecode cache hit");
 	console.log(`external consumer app smoke passed: PID ${discovery.pid}`);
 };
 

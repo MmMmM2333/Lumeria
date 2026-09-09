@@ -2,6 +2,7 @@ import type { ElectrobunConfig } from "electrobun";
 import { nativePixiElectrobunCopy } from "./vendor/electrobun-pixi-native-starter/consumer/electrobun";
 
 export default {
+  scripts: { postBuild: "scripts/nativePostBuild.ts" },
   app: {
     identifier: "dev.lumeria.launchpad-native",
     name: "LaunchPad Native",

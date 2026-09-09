@@ -16,6 +16,8 @@
     "native:data:build": "cargo build --manifest-path src-tauri/Cargo.toml --bin lumeria_native_data --release",
     "prenative:build": "npm run native:data:build",
     "native:build": "node vendor/electrobun-pixi-native-starter/consumer/run-electrobun.mjs build",
+    "prenative:build:bytecode": "npm run native:data:build",
+    "native:build:bytecode": "node vendor/electrobun-pixi-native-starter/consumer/run-electrobun.mjs build-bytecode",
     "prenative:dev": "npm run native:data:build",
     "native:dev": "tsx scripts/runNativeElectrobun.ts --dev",
     "prenative:smoke": "npm run native:data:build",

@@ -1564,6 +1564,7 @@ try {
   });
 
   await present(app, "the first LaunchPad scene frame");
+  logNativeRuntime("first-scene-presented");
   presentCount += 1;
   await waitFor(
     "the LaunchPad entrance motion to make every node visible",

@@ -1,5 +1,8 @@
 # Electrobun + PixiJS Native Starter
 
+0.3.4 adds an optional [CommonJS bytecode build](consumer/bytecode.md), with packaged
+JS/JSC integrity checks and an independent consumer cache-hit smoke. ESM remains the default.
+
 0.3.3 pins the bundled Bun runtime to 1.4.2. The upstream prepare step migrates the
 supported devkit declarations together; consumer builds and release validation reject
 version drift. External consumer smoke also extracts the stable runtime archive and
