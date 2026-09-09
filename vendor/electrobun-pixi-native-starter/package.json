@@ -1,9 +1,10 @@
 {
   "name": "electrobun-pixijs-webgpu",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "electrobunPixiStarter": {
+    "bunVersion": "1.4.2",
     "nativeWrapperSha256": "22a30e5a31ed3e95c4005d63605dc91e2498c3732bef0a022d92ec27650f1cb4"
   },
   "scripts": {
@@ -21,6 +22,7 @@
     "build": "node tools/run-electrobun.mjs build",
     "typecheck": "tsc --noEmit",
     "test:preparation": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-frame-preparation.test.ts",
+    "test:bun-pin": "node --test tools/bun-runtime-pin.test.mjs",
     "release:generate": "node tools/starter-release.mjs generate",
     "release:verify": "node tools/starter-release.mjs verify",
     "release:package": "node tools/starter-release.mjs package",

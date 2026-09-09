@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { verifyBunRuntimePin } from "./bun-runtime-pin.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const consumerRootIndex = process.argv.indexOf("--consumer-root");
@@ -14,6 +15,7 @@ const selectedDevkit = process.env.HUTCH_ELECTROBUN_DEVKIT_ROOT
 	: join(root, ".hutch", "devkit-dcomp-2.0.1");
 const adapterPath = join(selectedDevkit, "api", "sdks", "main", "webgpuAdapter.ts");
 const checkOnly = process.argv.includes("--check");
+const bunVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).electrobunPixiStarter?.bunVersion;
 const electrobunVersion = JSON.parse(readFileSync(join(dependencyRoot, "node_modules", "electrobun", "package.json"), "utf8")).version;
 const pixiVersion = JSON.parse(readFileSync(join(dependencyRoot, "node_modules", "pixi.js", "package.json"), "utf8")).version;
 
@@ -35,6 +37,9 @@ if (!existsSync(adapterPath)) {
 		throw new Error("Electrobun SDK materialization failed");
 	}
 }
+
+verifyBunRuntimePin(selectedDevkit, bunVersion, { apply: !checkOnly && consumerRootIndex < 0 });
+console.log(`Bun runtime pin verified: ${bunVersion}`);
 
 const surfaceAcquireBefore = [
 	"\t\tconst surfaceTexture = makeSurfaceTexture();",

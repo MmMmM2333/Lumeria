@@ -18,13 +18,15 @@ import {
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { zstdDecompressSync } from "node:zlib";
 
 const EXPECTED = {
 	starter: "electrobun-pixi-native-starter",
 	product: "electrobun-pixijs-webgpu",
-	version: "0.3.2",
+	version: "0.3.3",
 	electrobun: "2.0.1",
 	pixi: "8.20.1",
+	bun: "1.4.2",
 	coreAbi: 1,
 	sdkAbi: 1,
 	nativeFrameAbi: 4,
@@ -212,6 +214,10 @@ for (const path of [
 	if (!listed.has(path)) fail(`required Starter file is missing: ${path}`);
 }
 const devkit = JSON.parse(readFileSync(join(release, ".hutch", "devkit-dcomp-2.0.1", "native-devkit.json"), "utf8"));
+if (devkit.toolchains?.bun?.defaultVersion !== EXPECTED.bun
+  || !readFileSync(join(release, ".hutch/devkit-dcomp-2.0.1/api/shared/bun-version.ts"), "utf8").includes(`export const BUN_VERSION = "${EXPECTED.bun}";`)) {
+  fail("embedded Bun runtime pin mismatch");
+}
 if (devkit.product?.version !== EXPECTED.electrobun || devkit.target?.os !== "win" || devkit.target?.arch !== "x64"
 	|| devkit.abi?.core?.name !== "electrobun-core" || devkit.abi?.core?.version !== EXPECTED.coreAbi
 	|| devkit.abi?.sdk?.name !== "electrobun-sdk" || devkit.abi?.sdk?.version !== EXPECTED.sdkAbi) {
@@ -222,6 +228,7 @@ const pkg = JSON.parse(readFileSync(join(release, "package.json"), "utf8"));
 const lock = JSON.parse(readFileSync(join(release, "package-lock.json"), "utf8"));
 if (pkg.name !== EXPECTED.product || pkg.version !== EXPECTED.version || pkg.dependencies?.electrobun !== EXPECTED.electrobun
 	|| pkg.dependencies?.["pixi.js"] !== EXPECTED.pixi
+	|| pkg.electrobunPixiStarter?.bunVersion !== EXPECTED.bun
 	|| pkg.electrobunPixiStarter?.nativeWrapperSha256 !== EXPECTED.nativeWrapperSha256
 	|| lock.packages?.[""]?.version !== EXPECTED.version
 	|| lock.packages?.[""]?.dependencies?.electrobun !== EXPECTED.electrobun
@@ -373,6 +380,19 @@ const createExternalConsumer = () => {
 	copyFileSync(join(release, "starter-manifest.json"), installedManifest);
 	runSync(process.execPath, [process.env.npm_execpath, "run", "typecheck"], { cwd: consumer });
 	runSync(process.execPath, [process.env.npm_execpath, "run", "build"], { cwd: consumer });
+	const stableRoot = join(consumer, "build", "stable-win-x64");
+	const payloads = walk(stableRoot).filter(path => path.includes(`${sep}Resources${sep}`) && path.endsWith(".tar.zst"));
+	if (payloads.length !== 1) fail("expected exactly one stable runtime archive");
+	const extracted = join(consumer, "stable-runtime-verification");
+	mkdirSync(extracted);
+	const tarPath = join(extracted, "runtime.tar");
+	writeFileSync(tarPath, zstdDecompressSync(readFileSync(payloads[0])));
+	runSync("tar.exe", ["-xf", tarPath, "-C", extracted], { cwd: consumer });
+	const bundledBun = walk(extracted).filter(path => path.endsWith(`${sep}bin${sep}bun.exe`));
+	if (bundledBun.length !== 1) fail("expected exactly one bundled Bun runtime");
+	const bunProbe = spawnSync(bundledBun[0], ["--version"], { encoding: "utf8", windowsHide: true });
+	if (bunProbe.status !== 0 || bunProbe.stdout.trim() !== EXPECTED.bun) fail("bundled Bun runtime version mismatch");
+	console.log(`consumer bundled Bun verified: ${EXPECTED.bun}`);
 	return { consumer, vendor };
 };
 

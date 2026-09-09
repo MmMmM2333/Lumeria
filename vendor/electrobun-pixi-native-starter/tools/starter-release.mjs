@@ -22,6 +22,7 @@ import { spawnSync } from "node:child_process";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { verifyBunRuntimePin } from "./bun-runtime-pin.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageJsonPath = join(root, "package.json");
@@ -235,6 +236,7 @@ const makeManifest = async () => {
 		if (!existsSync(path)) throw new Error(`release input is missing: ${path}`);
 	}
 	const pkg = readJson(packageJsonPath);
+	verifyBunRuntimePin(devkit, pkg.electrobunPixiStarter?.bunVersion);
 	const devkitManifest = readJson(join(devkit, "native-devkit.json"));
 	const electrobunVersion = pkg.dependencies?.electrobun;
 	const pixiVersion = pkg.dependencies?.["pixi.js"];

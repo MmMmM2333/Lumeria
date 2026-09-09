@@ -12,8 +12,11 @@ export async function runNativeToolbarVisualSmoke(app:NativePixiApplication,pres
   root.addChild(stripes,sample);app.stage.addChild(root);
   const filter=new NativeToolbarBackdrop();
   const read=async()=>{
-    const pixels=await app.renderer.extract.pixels({target:root,frame:new Rectangle(100,140,160,12),resolution:1});
-    const values=[];for(let i=0;i<pixels.pixels.length;i+=4)values.push(pixels.pixels[i]!);
+    // Render the surrounding stripes too: the backdrop kernel samples up to
+    // 40px away, so extracting only a 12px-high strip clips its input domain.
+    const pixels=await app.renderer.extract.pixels({target:root,frame:new Rectangle(0,0,384,240),resolution:1});
+    const values=[];
+    for(let y=140;y<152;y++)for(let x=100;x<260;x++)values.push(pixels.pixels[(y*384+x)*4]!);
     const mean=values.reduce((sum,v)=>sum+v,0)/values.length;
     return values.reduce((sum,v)=>sum+(v-mean)**2,0)/values.length;
   };

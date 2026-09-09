@@ -1,5 +1,10 @@
 # Electrobun + PixiJS Native Starter
 
+0.3.3 pins the bundled Bun runtime to 1.4.2. The upstream prepare step migrates the
+supported devkit declarations together; consumer builds and release validation reject
+version drift. External consumer smoke also extracts the stable runtime archive and
+checks the shipped `bun.exe --version`. See [runtime pin details](patches/bun-1.4.2-runtime.md).
+
 0.2.16 adds Windows Precision Touchpad input through Direct Manipulation registered
 on the hit-tested WGPU surface HWND. `readNativeTouchpad(event)` exposes
 begin/update/inertia/end/cancel and a sequence id; wheel deltas are logical pixels

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { DebugClient } from "./debug-client.mjs";
 
 const client=new DebugClient();
-const server=new McpServer({name:"electrobun-pixi-devtools",version:"0.3.2"});
+const server=new McpServer({name:"electrobun-pixi-devtools",version:"0.3.3"});
 const selector=z.object({id:z.string().optional(),label:z.string().optional()}).refine(v=>Boolean(v.id)!==Boolean(v.label),"Specify exactly one id or label");
 const result=value=>({content:[{type:"text",text:JSON.stringify(value)}],structuredContent:{result:value}});
 function tool(name,description,inputSchema,run,readOnlyHint=true){
