@@ -166,6 +166,7 @@ type NativeIconNode = Container & Readonly<{
   labelText: Text;
 }>;
 
+async function runNativeApplication(): Promise<void> {
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 
 const configuredNativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
@@ -3261,3 +3262,8 @@ try {
   await app.dispose();
   await nativeData.dispose();
 }
+}
+
+// Keep failures observable by the Worker error handler after existing finally
+// blocks have released application resources; never turn startup failure into success.
+void runNativeApplication().catch(error => { queueMicrotask(() => { throw error; }); });
