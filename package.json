@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "devtools:mcp": "node vendor/electrobun-pixi-native-starter/tools/devtools-mcp.mjs",
+    "devtools:cli": "node vendor/electrobun-pixi-native-starter/tools/devtools-cli.mjs",
     "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.ts",
     "check": "npm run check:pixi-patch && npm test && npm run typecheck && npm run check:policy && npm run check:i18n && npm run build",
     "check:i18n": "tsx scripts/checkI18n.ts",
@@ -51,6 +53,7 @@
   },
   "devDependencies": {
     "@iconify-json/fluent": "^1.2.51",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.0.0",
     "@types/bun": "1.4.0",
@@ -60,7 +63,8 @@
     "typescript": "5.9.3",
     "unplugin-icons": "^23.0.1",
     "vite": "^6.0.0",
-    "vue-tsc": "^3.3.10"
+    "vue-tsc": "^3.3.10",
+    "zod": "4.5.4"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,

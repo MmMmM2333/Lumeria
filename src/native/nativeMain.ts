@@ -30,6 +30,7 @@ import {
 } from "pixi.js";
 import {
   createNativePixiApplication,
+  attachNativeDevtools,
   NativeGlobalShortcut,
   NativeTray,openNativePath,
   readNativeTouchpad,
@@ -1570,6 +1571,23 @@ try {
   let folderChildLaunchObserved = false;
   let dpiTransition: NativeHostLifecycleProof["dpiTransition"] = "skipped-no-mixed-dpi-display";
   let dpiResolution = app.resolution;
+
+  const devtools=await attachNativeDevtools(app,{
+    name:"LaunchPad",build:process.env.LAUNCHPAD_DEBUG_BUILD??"development",
+    enabled:nativeMode==="dev"||process.env.LAUNCHPAD_DEVTOOLS==="1",
+    isolated:Boolean(process.env.LUMERIA_NATIVE_DATA_DIR),
+    state:()=>({
+      route:settingsShell?settingsNavigation.activeRoute.value.key:"desktop",
+      page:currentFrame.viewport.activePageIndex,
+      folder:{id:folderFlow.snapshot().renderedFolder?.id??null,progress:folderFlow.snapshot().openProgress},
+      selection:{active:editing?.selection.isActive.value??false,count:editing?.selection.selectedCount.value??0},
+      drag:{active:editing?.drag.isDragActive()??false,phase:editing?.drag.groupDragState.value?.phase??null,
+        hover:editing?.drag.dragFolderHoverState.value??null},
+      motion:scene.getMotionSnapshot(),
+    }),
+  });
+  if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
 
   if (nativeMode === "smoke") {
     if(process.env.LAUNCHPAD_ACRYLIC_RECOVERY_SMOKE==="1"){

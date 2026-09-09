@@ -220,6 +220,11 @@ import { createNativePixiApplication, nativeHost } from "./native-host";
 
 ## 无 DevTools 调试
 
+通用消费方接入与标准stdio MCP见 [consumer/DEVTOOLS.md](consumer/DEVTOOLS.md)。通过
+`attachNativeDevtools` 注册应用后，`devtools:cli` 和 `devtools:mcp` 共用多实例发现、
+节点检查、呈现关联取证、时序输入重放、取消和条件监视。下面的 `debug:pixi`
+保留为 Demo 专项测试兼容入口。
+
 开发实例默认开放一个仅绑定 `127.0.0.1`、随机 token 鉴权的 Agent Debug Bridge；端口和 token 只写入系统临时目录，窗口退出时删除。它让 AI/脚本在没有 WebView 和 DevTools 时仍可读取运行状态、Pixi scene tree、真实 native present 计数和 GPU 错误，并可截图、点击带 `label` 的节点、单步帧循环及注入故障：
 
 ```powershell

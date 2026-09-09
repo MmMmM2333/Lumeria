@@ -12,13 +12,12 @@ import {
 	Texture,
 } from "pixi.js";
 import { createHash } from "crypto";
-import { startAgentDebugBridge } from "../diagnostics/agent-debug";
+import { type AgentDebugHooks } from "../diagnostics/agent-debug";
+import { attachNativeDevtools } from "../diagnostics/native-devtools";
 import type { NativePixiApplication } from "../runtime/native-app";
 import { getNativePixiApplicationTesting, type NativeAppFault } from "../runtime/native-app-testing";
 import { nativeHost } from "../native-host";
 import { createTextInputHost } from "../input/text-input";
-import { join } from "path";
-import { tmpdir } from "os";
 
 export interface DemoOptions {
 	readonly bunnyCount: number;
@@ -344,26 +343,6 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 	bindNativeKeys();
 	subscriptions.push(() => offNativeKey());
 
-	const serializeTree = ({ depth, limit }: { depth: number; limit: number }) => {
-		let visited = 0; let truncated = false;
-		const visit = (node: any, remaining: number, path: string): any => {
-			if (visited++ >= limit) { truncated = true; return null; }
-			const bounds = node.getBounds?.();
-			const result: any = {
-				path, label: node.label || null, type: node.constructor?.name ?? "node",
-				visible: node.visible,
-				bounds: bounds && { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
-			};
-			if (remaining > 0 && node.children) {
-				result.children = node.children.map((child: any, index: number) =>
-					visit(child, remaining - 1,
-						`${path}/${child.label || `${child.constructor?.name ?? "node"}[${index}]`}`))
-					.filter(Boolean);
-			}
-			return result;
-		};
-		return { visited, truncated, root: visit(app.stage, depth, "stage") };
-	};
 	const standardRenderCheck = async () => {
 		if (app.state !== "running") {
 			const presented = app.nextPresent(); app.invalidate(); await presented;
@@ -396,7 +375,7 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 		}
 	};
 
-	const bridge = await startAgentDebugBridge({
+	const demoDebug:Pick<AgentDebugHooks,"status"|"command"> = {
 		status() {
 			const diagnostics = testing.diagnostics();
 			return {
@@ -434,12 +413,6 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 				},
 				events: diagnostics.events,
 			};
-		},
-		tree: serializeTree,
-		async capture() {
-			const path = join(tmpdir(), `electrobun-pixi-${process.pid}-${Date.now()}.png`);
-			await (app.renderer.extract as any).download({ target: app.stage, filename: path });
-			return { path, bytes: Bun.file(path).size };
 		},
 		async command(command) {
 			const action = String(command.action ?? "");
@@ -590,7 +563,9 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 			if (action === "job-scan") { const entries = await nativeHost.jobs.scanDirectory(String(command.path ?? import.meta.dir)); return { count: entries.length, entries: entries.slice(0, 32) }; }
 			throw new Error(`unknown debug command: ${action}`);
 		},
-	});
+	};
+  const bridge=await attachNativeDevtools(app,{name:"Starter Demo",build:"development",isolated:true,
+    statusExtension:()=>demoDebug.status() as Record<string,unknown>,commandExtension:command=>demoDebug.command(command)});
 
 	requestFrame();
 	let disposed = false;

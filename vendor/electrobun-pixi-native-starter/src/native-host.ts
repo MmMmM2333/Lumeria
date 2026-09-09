@@ -29,6 +29,7 @@ export { registerNativeFont, registerNativeFontData } from "./rendering/native-s
 export { createTextInputHost, TextInput, TextInputHost } from "./input/text-input";
 export { readNativeSystemPreferences, subscribeNativeSystemPreferences } from "./platform/native-system-preferences";
 export { readNativeTouchpad,type NativeTouchpadMetadata } from "./platform/native-touchpad";
+export { attachNativeDevtools, type NativeDevtoolsOptions } from "./diagnostics/native-devtools";
 export type { NativeSystemPreferences } from "./platform/native-system-preferences";
 export type { TextInputOptions, TextInputStyle, TextInputHostOptions } from "./input/text-input";
 

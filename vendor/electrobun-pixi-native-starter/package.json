@@ -1,12 +1,15 @@
 {
   "name": "electrobun-pixijs-webgpu",
-  "version": "0.2.17",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "electrobunPixiStarter": {
     "nativeWrapperSha256": "22a30e5a31ed3e95c4005d63605dc91e2498c3732bef0a022d92ec27650f1cb4"
   },
   "scripts": {
+    "devtools:mcp": "node tools/devtools-mcp.mjs",
+    "devtools:cli": "node tools/devtools-cli.mjs",
+    "test:devtools": "node tools/devtools-mcp.test.mjs",
     "prepare:electrobun": "node tools/patch-electrobun.mjs",
     "verify:adapter": "node tools/patch-electrobun.mjs --check",
     "debug:pixi": "node tools/pixi-debug.mjs",
@@ -31,7 +34,9 @@
     "pixi.js": "8.20.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@types/bun": "1.4.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "zod": "4.5.4"
   }
 }
