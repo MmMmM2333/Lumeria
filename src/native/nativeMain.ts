@@ -81,6 +81,7 @@ import { nativeLayoutSettingsPage } from "../rendering/native/nativeLayoutSettin
 import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
 import { nativeAboutSettingsPage } from "../rendering/native/nativeAboutSettingsPage.js";
 import { loadNativeIconTexture } from "../rendering/native/nativeIconTextureLoader.js";
+import { createNativeBrandingTextures } from "../rendering/native/nativeBrandingTextures.js";
 import { normalizeLaunchpadIconVariant, LAUNCHPAD_ICON_VARIANTS } from "../domain/launchpadIconVariant.js";
 import { createNativeShortcut } from "./nativeShortcut.js";
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
@@ -376,8 +377,9 @@ const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
   logNativeRuntime("shortcut",{state:app.state,visible:app.window.isVisible(),minimized:app.window.isMinimized()});
   try{toggleLaunchpad();}catch(error){logNativeRuntime("shortcut-error",error);}
 });
-const brandingTextures=new Map(await Promise.all(LAUNCHPAD_ICON_VARIANTS.map(async variant=>
-  [variant,await loadNativeIconTexture(join(import.meta.dir,"branding",variant+".svg"))] as const)));
+const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{settingsShell?.redraw();app.invalidate();});
+await branding.synchronize(app.resolution);
+const brandingTextures=branding.textures;
 const systemPreferences=readNativeSystemPreferences();
 setNativeUiFontFamily(systemPreferences.ok?systemPreferences.value.uiFontFamily:null);
 let systemAppearance=systemPreferences.ok?systemPreferences.value.appearance:"dark";
@@ -840,6 +842,7 @@ try {
   let resizeLiveBackingObserved = false;
   let observeLiveResize = false;
   offResize = app.on("resize", ({ height, resolution, width }) => {
+    void branding.synchronize(resolution).catch(reportNativeError);
     configureNativeTextResolution(resolution,app.stage);
     settingsShell?.redraw();
     // Resize must update controls as well as icons without depending on a later animation commit.
@@ -3221,7 +3224,7 @@ try {
   desktopBackground.destroy();
   mainShortcut.dispose();
   (settingsShell as NativeSettingsShell|null)?.destroy();
-  for(const texture of brandingTextures.values())texture.destroy(true);
+  branding.destroy();
   offWheelPointerInterrupt();
   offTouch();
   editing?.dispose();

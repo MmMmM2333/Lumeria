@@ -2,11 +2,11 @@
   "schemaVersion": 2,
   "starter": {
     "name": "electrobun-pixi-native-starter",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "product": {
     "name": "electrobun-pixijs-webgpu",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "target": {
     "platform": "win32",
@@ -14,14 +14,14 @@
     "minimumWindows": "10.0.19041"
   },
   "source": {
-    "commit": "bba3806bac3cf95b6181ca985ce489f1af364c18",
+    "commit": "e540e551bb685b090bf09d40e3232d08ca3f146d",
     "dirty": false,
-    "sourceDateEpoch": 1788931789
+    "sourceDateEpoch": 1788939658
   },
   "build": {
-    "commit": "bba3806bac3cf95b6181ca985ce489f1af364c18",
-    "sourceDateEpoch": 1788931789,
-    "timestamp": "2026-09-09T05:29:49.000Z"
+    "commit": "e540e551bb685b090bf09d40e3232d08ca3f146d",
+    "sourceDateEpoch": 1788939658,
+    "timestamp": "2026-09-09T07:40:58.000Z"
   },
   "dependencies": {
     "electrobun": "2.0.1",
@@ -2967,13 +2967,13 @@
       "path": "package-lock.json",
       "role": "starter-config",
       "size": 59114,
-      "sha256": "043709b88b20862b6792bd0606ad26be3a1fd878371d0388c3bcf668d1e4c736"
+      "sha256": "30f9db351cda678b9edf357d259f4452e17cbc4133cf4573a6d5a5169a215bde"
     },
     {
       "path": "package.json",
       "role": "starter-config",
       "size": 2097,
-      "sha256": "75a42ff5196e49b3b412bf084b7ca4fdb509e2e8539618c5de8763608054086f"
+      "sha256": "5aba354177fdb5c6d144ba7dfc87616a2e4cc94aa4b498bce31c0f7d0926dc06"
     },
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.md",
@@ -2990,8 +2990,8 @@
     {
       "path": "README.md",
       "role": "documentation",
-      "size": 31088,
-      "sha256": "72cc0333fed2f301dc483bf72bbd17806e4974c3e49c65598f5d196b78962f92"
+      "size": 31391,
+      "sha256": "a739b18688187482e2bd610c3afcf832cfcce08e4821b333a00f745254f9e52d"
     },
     {
       "path": "src/demo/demo.ts",
@@ -3246,6 +3246,18 @@
       "sha256": "f676aa7031d9ca5d498708440efd6e936ed6136c513f4dfd9845e86615177d35"
     },
     {
+      "path": "src/runtime/animation-frame.test.ts",
+      "role": "starter-source",
+      "size": 1914,
+      "sha256": "8f6f3dc255d3f8f70d2ff924f995addd7de84a615f2dcc62e98245a9437a847c"
+    },
+    {
+      "path": "src/runtime/animation-frame.ts",
+      "role": "starter-source",
+      "size": 1649,
+      "sha256": "e21c3de65f8712f6a151fb583d77a43aac6b7c31f334d3366871cb38dfb1edb5"
+    },
+    {
       "path": "src/runtime/color-dialog-smoke.ts",
       "role": "starter-source",
       "size": 2388,
@@ -3308,8 +3320,8 @@
     {
       "path": "src/runtime/runtime-shim.ts",
       "role": "starter-source",
-      "size": 293,
-      "sha256": "2146644404509fa92f23b4d6ff60dd9668f08c2744eb4c49d292f9297c12777d"
+      "size": 461,
+      "sha256": "2f67ebbb1d4bdc4e7434eb26b385b6ff693e9cf71da25a5dcb4ec0010772777c"
     },
     {
       "path": "src/runtime/shortcut-smoke.ts",
@@ -3345,7 +3357,7 @@
       "path": "starter-consumer-smoke/smoke.mjs",
       "role": "consumer-smoke",
       "size": 26471,
-      "sha256": "51569344c62c31c3f25114056294d5b75964cd0c44b8afbdd680a346cb26e372"
+      "sha256": "b98f54c8b26a36fe1b0ffd7e92746a0a03996925f61132bf9f6ff2c17571fe09"
     },
     {
       "path": "tools/debug-client.mjs",
@@ -3363,7 +3375,7 @@
       "path": "tools/devtools-mcp.mjs",
       "role": "starter-tool",
       "size": 5635,
-      "sha256": "7fbe1d49857b78f9c24a80529a002695af03274c4169fa9db448e7cdf75319f9"
+      "sha256": "d73e24ba8e5f07169f8f8736285ab458e33a54ac594e6ba15e8dd9c89efa2259"
     },
     {
       "path": "tools/devtools-mcp.test.mjs",

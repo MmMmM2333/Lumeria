@@ -133,6 +133,10 @@ npm run release:smoke
 
 ### 版本化制品
 
+0.3.1：无浏览器RAF时采用约60Hz的批次调度，避免Pixi系统ticker通过setImmediate空转。
+同批时间戳一致，递归请求推迟到下一批，保留取消和独立回调异常报告。
+该回退节拍不等同显示器vsync；原生输入和产品dirty-frame调度保持独立。
+
 0.2.17：TextInputHost 可通过 `textResolution` 为新输入框提供文字纹理分辨率；已有文字仍由消费方在 DPI 变化时同步。TextInputStyle 新增可选 `fontWeight` 和 `paddingHorizontal`，字宽测量、光标、选择与裁剪使用同一字重及内边距，默认行为保持兼容。
 
 ```powershell
