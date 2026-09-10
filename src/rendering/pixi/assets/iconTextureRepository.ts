@@ -53,6 +53,7 @@ type RepositoryOptions = Readonly<{
   maxConcurrentLoads?: number;
   resolveSource?: (item: IconTextureItem | null | undefined) => string | null;
   scheduleAfterFrame?: (callback: () => void) => void;
+  isTextureInUse?: (texture: Texture) => boolean;
 }>;
 
 type TextureErrorEntry = Readonly<{
@@ -124,7 +125,12 @@ function makeItemKey(item: IconTextureItem, source: string): string {
   return id || `@source:${source}`;
 }
 
-export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository {
+export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository & {
+  retain(items: readonly (IconTextureItem | null | undefined)[]): void;
+  retireUnused(): void;
+  prepare(items: readonly IconTextureItem[]): Promise<void>;
+  pendingWork(sources?: ReadonlySet<string>): Promise<void> | undefined;
+} {
   const loadTexture = options.loadTexture || loadTextureFromImage;
   const maxConcurrentLoads = options.maxConcurrentLoads ?? Infinity;
   if (maxConcurrentLoads !== Infinity && (!Number.isInteger(maxConcurrentLoads) || maxConcurrentLoads < 1)) {
@@ -192,7 +198,9 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
   }
 
   function isSourceRetained(source: string): boolean {
-    return (activeSourceCounts.get(source) || 0) > 0 || isFallbackSource(source);
+    const texture = cachedTextures.get(source);
+    return (activeSourceCounts.get(source) || 0) > 0 || isFallbackSource(source)
+      || Boolean(texture && options.isTextureInUse?.(texture));
   }
 
   function retireSourceAfterFrame(source: string): void {
@@ -316,9 +324,9 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     return fallbackSource ? cachedTextures.get(fallbackSource) || null : null;
   }
 
-  async function synchronize(
+  function retain(
     items: readonly (IconTextureItem | null | undefined)[],
-  ): Promise<IconTextureRepositorySnapshot> {
+  ): void {
     const nextSourceByItemKey = new Map<string, string>();
     const nextActiveSourceCounts = new Map<string, number>();
     for (const item of items || []) {
@@ -349,7 +357,11 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
 
     for (const source of nextActiveSourceCounts.keys()) promoteReadyReplacements(source);
     retireUnreferencedSources();
-    await Promise.allSettled(Array.from(nextActiveSourceCounts.keys(), requestTextureLoad));
+  }
+
+  async function synchronize(items: readonly (IconTextureItem | null | undefined)[]): Promise<IconTextureRepositorySnapshot> {
+    retain(items);
+    await Promise.allSettled(Array.from(activeSourceCounts.keys(), requestTextureLoad));
     retireUnreferencedSources();
     return snapshot();
   }
@@ -403,7 +415,17 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     recentTextureObserverErrors.length = 0;
   }
 
-  return Object.freeze({ dispose, resolve, snapshot, synchronize });
+  function prepare(items: readonly IconTextureItem[]): Promise<void> {
+    return Promise.all(items.map(item => {
+      const source = resolveSource(item);
+      return source && isSourceRetained(source) ? requestTextureLoad(source) : Promise.resolve();
+    })).then(() => {});
+  }
+  function pendingWork(sources?: ReadonlySet<string>): Promise<void> | undefined {
+    const work = [...pendingTextureLoads].filter(([source]) => !sources || sources.has(source)).map(([, promise]) => promise);
+    return work.length ? Promise.all(work).then(() => {}) : undefined;
+  }
+  return Object.freeze({ dispose, resolve, snapshot, synchronize, retain, prepare, pendingWork, retireUnused: retireUnreferencedSources });
 }
 
 export const iconTextureRepository = createIconTextureRepository();

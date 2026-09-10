@@ -75,6 +75,20 @@ export async function runIconTextureRepositoryTests() {
   };
 
   try {
+    {
+      const pending: (() => void)[] = [];
+      const lazy = createIconTextureRepository({ resolveSource: value => value?.id ?? null,
+        loadTexture: () => new Promise<Texture>(resolve => pending.push(() => resolve(makeTexture(99, 4, 4)))) });
+      lazy.retain([{ id: "background" }, { id: "foreground" }]);
+      assert(lazy.snapshot().activeCount === 2 && pending.length === 0, "retain must synchronously update ownership without IO");
+      const background = lazy.prepare([{ id: "background" }]);
+      assert(lazy.pendingWork(new Set(["foreground"])) === undefined, "unrelated work must not block the foreground");
+      const foreground = lazy.prepare([{ id: "foreground" }]);
+      const required = lazy.pendingWork(new Set(["foreground"])); assert(Boolean(required), "foreground work must be observable");
+      pending[1]!(); await required; await foreground;
+      assert(Boolean(lazy.pendingWork()), "background work remains pending independently");
+      pending[0]!(); await background; lazy.dispose();
+    }
     const retirements: (() => void)[] = [];
     const controlled = createControlledLoader();
     const repository = createIconTextureRepository({

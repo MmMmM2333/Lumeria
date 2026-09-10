@@ -244,7 +244,7 @@ function collectTextureItems(
     for (const page of item.childPages) for (const child of page) append(child as SceneItem | null);
   };
   frame.viewport.activePages.forEach((page) => {
-    // ponytail: retain layout textures for the scene lifetime; add scene-owned leases only if catalog-scale GPU memory becomes measurable.
+    // Layout ownership is independent from decoding and GPU residency.
     for (const item of page) append(item);
   });
   return result;
@@ -312,7 +312,6 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
-app.beforeRender(() => prepareNativeIconTextures(app.stage, app.renderer));
 configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
@@ -449,7 +448,7 @@ const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreferen
 const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate(),
   settingsTheme);
 
-const iconTextures = createNativeIconTextureRepository();
+const iconTextures = createNativeIconTextureRepository(app);
 function reportNativeError(error: unknown): void {
   const message=readErrorMessage(error);
   logNativeRuntime("error",message);
@@ -616,7 +615,10 @@ async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
   if(!reset){apps?.openExistingAppIconChooser(item.id);appDialogs?.sync();return;}
   if(!apps?.managedApps.value.some(app=>app.id===item.id))throw new Error("Application no longer exists");
   apps.updateAppCustomIcon(item.id,null);await saves.flush();
-  const result=await iconTextures.synchronize(collectTextureItems(currentFrame));
+  await iconTextures.synchronize(collectTextureItems(currentFrame));
+  const updated=collectTextureItems(currentFrame).find(candidate=>candidate.id===item.id);
+  if(updated)await iconTextures.prepareItems([updated]);
+  const result=iconTextures.snapshot();
   if(result.failed.length)throw new Error("Icon loading failed");
   requestSceneRender();
 }
@@ -691,6 +693,7 @@ const offPresented = app.on("presented", () => {
 let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
 let bindApplicationFocus = () => {};
+let cancelNativeGesture = () => {};
 const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);windowEffects.refresh();bindApplicationFocus();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
@@ -757,9 +760,7 @@ try {
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
-  if (nativeMode === "smoke" && (
-    iconTextureSnapshot.cached.length < 1 || iconTextureSnapshot.failed.length !== 0
-  )) {
+  if (nativeMode === "smoke" && iconTextureSnapshot.failed.length !== 0) {
     throw new Error(`Native smoke icon texture failed: ${JSON.stringify(iconTextureSnapshot)}`);
   }
   if (nativeMode !== "smoke" && iconTextureSnapshot.failed.length > 0) {
@@ -818,6 +819,7 @@ try {
         viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) });
       activePageItems = getNativeActivePageItems(currentFrame);
     }
+    iconTextures.retainLayout(collectTextureItems(currentFrame));
     work = commitScene({
       height: app.contentSize.height,
       resolution: app.resolution,
@@ -895,6 +897,7 @@ try {
   });
   offStateChange = app.on("statechange", ({ state,previous,reason }) => {
     logNativeRuntime("state",{state,previous,reason});
+    if(state!=="running")cancelNativeGesture();
     if(state==="running"&&previous!=="running")windowEffects.refresh();
     if (state === "closing" || state === "closed") resolveClosed();
   });
@@ -921,10 +924,7 @@ try {
     return commitDesktopPage(currentFrame.viewport.activePageIndex + direction);
   };
   onDesktopPageIndexCommit = index => {
-    wheelGestures.dispatch({ type: "cancel", time: performance.now() });
-    for (const timer of wheelDeadlines.values()) clearTimeout(timer);
-    wheelDeadlines.clear();
-    clearWheelPresentation();
+    cancelNativeGesture();
     commitDesktopPage(index);
   };
   const commitEditedPages = (pages: LaunchpadPages): void => {
@@ -1021,8 +1021,7 @@ try {
     localizationText:{t},desktopMainRef:flowState.cell(null),keyboardFocusArea:flowState.cell("desktop"),openingIcon,
     searchInputRef:flowState.derived(()=>searchBar.input),
     cancelInputGesture:()=>{
-      wheelGestures.dispatch({type:"cancel",time:performance.now()});
-      for(const timer of wheelDeadlines.values())clearTimeout(timer);wheelDeadlines.clear();clearWheelPresentation();
+      cancelNativeGesture();
       editing?.alt.cancelAltEditMode();
     },clearFocusedIcon:()=>setFocusedIcon(null),
     clearOpeningIcon:()=>{openingIcon.value=null;},clearSearch:()=>changeSearch(""),
@@ -1095,6 +1094,7 @@ try {
   }
   openSettings=()=>{
     if(settingsShell||editing!.drag.isDragActive())return;
+    cancelNativeGesture();
     closeFolder();editing!.selection.clear();editing!.alt.cancelAltEditMode();searchBar.host.blur();
     const startupStatus=settings.beginEdit();
     settingsShell=new NativeSettingsShell({
@@ -1178,6 +1178,12 @@ try {
     return true;
   };
   const wheelGestures = createLaunchpadGestureEngine();
+  let touchId: number | null = null;
+  const releaseGesturePointer = () => {
+    const id = touchId;
+    touchId = null;
+    if (id !== null) app.nativeInput.releasePointerCapture(id);
+  };
   let lastWheelGestureTime = 0;
   const clearWheelDeadline = (kind: LaunchpadGestureDeadline["kind"]): void => {
     const timer = wheelDeadlines.get(kind);
@@ -1234,6 +1240,9 @@ try {
     wheelDeadlines.set(deadline.kind, timer);
   };
   applyWheelOutput = (output, event, time): void => {
+    // Release before commands: activation can synchronously hide the window or
+    // trigger another cancellation, which must not observe a stale pointer.
+    if (output.releasesPointer) releaseGesturePointer();
     activeTouchpadCapture?.decision(output);
     lastWheelGestureTime = time;
     if (output.presentation) {
@@ -1348,10 +1357,21 @@ try {
     const time = Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : performance.now();
     applyWheelOutput(wheelGestures.dispatch({ type: "cancel", time }), null, time);
   };
-  let touchId: number | null = null;
+  cancelNativeGesture = () => {
+    const time = performance.now();
+    const output = wheelGestures.dispatch({ type: "cancel", time });
+    releaseGesturePointer();
+    applyWheelOutput(output, null, time);
+    for (const timer of wheelDeadlines.values()) clearTimeout(timer);
+    wheelDeadlines.clear();
+    clearWheelPresentation();
+  };
   let pointerShiftKey = false;
   const touch = (type: string, event: FederatedPointerEvent): void => {
-    if(launchFlow?.isLaunchpadInteractionBlocked())return;
+    if(launchFlow?.isLaunchpadInteractionBlocked()){
+      if(touchId!==null)cancelNativeGesture();
+      return;
+    }
     if (event.pointerType !== "touch" && event.pointerType !== "mouse") return;
     if (type === "pointerDown" && (touchId !== null || event.isPrimary === false)) return;
     if (type !== "pointerDown" && touchId !== event.pointerId) return;
@@ -1381,10 +1401,6 @@ try {
       app.nativeInput.capturePointer(event.pointerId);
     }
     applyWheelOutput(output, null, event.timeStamp);
-    if (output.releasesPointer) {
-      app.nativeInput.releasePointerCapture(event.pointerId);
-      touchId = null;
-    }
     event.stopPropagation();
   };
   const touchDown = (event: FederatedPointerEvent) => touch("pointerDown", event);
@@ -1402,7 +1418,7 @@ try {
     app.stage.off("pointerupcapture", touchUp);
     app.stage.off("pointerupoutside", touchUp);
     app.stage.off("pointercancel", touchCancel);
-    if (touchId !== null) app.nativeInput.releasePointerCapture(touchId);
+    cancelNativeGesture();
   };
   app.stage.on("pointerdowncapture", interruptWheel);
   offWheelPointerInterrupt = () => app.stage.off("pointerdowncapture", interruptWheel);
@@ -1471,10 +1487,7 @@ try {
     if (event.ctrlKey && direction === 0) return false;
     if (!arrow && key !== "Enter" && key !== "Escape") return false;
     if (event.repeat && !arrow) return true;
-    wheelGestures.dispatch({ type: "cancel", time: performance.now() });
-    for (const timer of wheelDeadlines.values()) clearTimeout(timer);
-    wheelDeadlines.clear();
-    clearWheelPresentation();
+    cancelNativeGesture();
     const folder = folderFlow.snapshot();
     if (key === "Escape") {
       if(folder.renderedFolder)closeFolder();
@@ -1555,7 +1568,7 @@ try {
   if(startupLoadRecovered)notices.showLayoutLoadRecovered();
   bindApplicationFocus = () => {
     offFocus();
-    offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else editing?.alt.handleWindowBlur();});
+    offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else {cancelNativeGesture();editing?.alt.handleWindowBlur();}});
   };
   bindApplicationFocus();
   searchBar.input.on("submit", () => {
@@ -1565,6 +1578,8 @@ try {
 
   await present(app, "the first LaunchPad scene frame");
   logNativeRuntime("first-scene-presented");
+  if (nativeMode === "smoke") assert.ok(iconTextures.snapshot().cached.length >= 1, "first native scene must prepare its icon before presentation");
+  iconTextures.startBackground();
   presentCount += 1;
   await waitFor(
     "the LaunchPad entrance motion to make every node visible",
@@ -1598,6 +1613,7 @@ try {
       drag:{active:editing?.drag.isDragActive()??false,phase:editing?.drag.groupDragState.value?.phase??null,
         hover:editing?.drag.dragFolderHoverState.value??null},
       motion:scene.getMotionSnapshot(),
+      iconResidency:iconTextures.residency(),
     }),
   });
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
@@ -1605,6 +1621,39 @@ try {
 
   if (nativeMode === "smoke") {
     await (await import("./nativeIconRecoverySmoke.test.js")).runNativeIconRecoverySmoke(app);
+    {
+      const press = () => {
+        const item = activePageItems.find(item=>item.type === "app")!;
+        const bounds = scene.createDragPointerEvent(item.id,{}).currentTarget.getBoundingClientRect();
+        const point = {x:bounds.left+bounds.width/2,y:bounds.top+bounds.height/2};
+        app.nativeInput.emitPointer("pointerdown",point.x,point.y,0);
+        assert.notEqual(touchId,null,"regression must start with an owned pointer");
+        return point;
+      };
+      const assertReleased = (reason:string,point:{x:number;y:number}) => {
+        assert.equal(touchId,null,`${reason} must clear the native gesture owner`);
+        assert.equal(app.nativeInput.hasPointerCapture(),false,`${reason} must release capture`);
+        app.nativeInput.emitPointer("pointerup",point.x,point.y,0);
+        assert.equal(touchId,null,"late pointerup must not restore cancelled ownership");
+      };
+      let point=press();
+      onKey({type:"down",key:"ArrowRight",ctrlKey:true});assertReleased("keyboard paging",point);
+      await waitFor("cancel regression page settles",()=>!scene.getMotionSnapshot().active);
+      onKey({type:"down",key:"ArrowLeft",ctrlKey:true});
+      await waitFor("cancel regression page restored",()=>!scene.getMotionSnapshot().active);await present(app,"cancel regression page restored");
+      point=press();app.nativeInput.emitFocus(false);assertReleased("focus loss",point);app.nativeInput.emitFocus(true);
+      point=press();openSettings();assertReleased("settings entry",point);closeSettings();await present(app,"cancel regression settings closed");
+      point=press();dismissLaunchpad();
+      await waitFor("cancel regression hidden",()=>!app.window.isVisible());assertReleased("hide",point);showLaunchpad();
+      await waitFor("cancel regression shown",()=>app.state==="running"&&scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);await present(app,"cancel regression shown");
+      const folder=activePageItems.find(item=>item.type==="folder")!;
+      const bounds=scene.createDragPointerEvent(folder.id,{}).currentTarget.getBoundingClientRect();
+      app.nativeInput.emitPointer("pointerdown",bounds.left+bounds.width/2,bounds.top+bounds.height/2,0);
+      app.nativeInput.emitPointer("pointerup",bounds.left+bounds.width/2,bounds.top+bounds.height/2,0);
+      await waitFor("folder clickable after cancellations",()=>folderFlow.snapshot().renderedFolder?.id===folder.id);
+      closeFolder();await waitFor("cancel regression folder closed",()=>folderFlow.snapshot().renderedFolder===null);await present(app,"cancel regression complete");
+      console.log("Native pointer cancellation: keyboard paging, focus loss, settings, hide and subsequent folder click passed");
+    }
     if(process.env.LAUNCHPAD_ACRYLIC_RECOVERY_SMOKE==="1"){
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       const handle=getNativePixiApplicationTesting(app).handles().inputWindow;

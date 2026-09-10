@@ -104,8 +104,19 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     node.addChild(background);
     background.selected=selected;
     toggle(`select-${app.id}`,selected,5,top+16,select,"checkbox");
-    const texture=options.icons.resolve(app);if(texture){const icon=new Sprite({texture,eventMode:"none"});icon.position.set(45,top+19);icon.width=icon.height=26;node.addChild(icon);}
-    else {const emoji=text(app.emoji||"▣",58,top+32,15);emoji.anchor.set(0.5);}
+    const artwork=new Container({eventMode:"none"});node.addChild(artwork);
+    const icon=new Sprite({eventMode:"none"});icon.position.set(45,top+19);icon.visible=false;artwork.addChild(icon);
+    const fallback=createNativeText({text:app.emoji||"▣",style:{fill:style.text,fontSize:15}});fallback.position.set(58,top+32);fallback.anchor.set(0.5);artwork.addChild(fallback);
+    // Settlement listeners are removed by the repository before invocation. A
+    // virtual row may disappear before IO finishes, so retain it only weakly.
+    const weakArtwork=new WeakRef(artwork);
+    const applyTexture=(texture:ReturnType<IconTextureRepository["resolve"]>)=>{
+      const current=weakArtwork.deref();if(!current||current.destroyed||!texture)return;
+      const sprite=current.children[0] as Sprite;sprite.texture=texture;sprite.width=sprite.height=26;sprite.visible=true;
+      current.children[1]!.visible=false;invalidate();
+    };
+    const ready=()=>{if(weakArtwork.deref()?.destroyed!==false)return;applyTexture(options.icons.resolve(app));};
+    applyTexture(options.icons.resolve(app,ready));
     const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,width-156));name.position.set(87,top+16);node.addChild(name);
     const target=new NativeSingleLineText(apps.getLaunchTargetPath(app)||key("manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:theme==="dark"?"rgba(255,255,255,0.48)":style.muted},Math.max(1,width-156));target.position.set(87,top+33);node.addChild(target);
     const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-56,top+16,32,more,false,"subtle");moreButton.caption.visible=false;

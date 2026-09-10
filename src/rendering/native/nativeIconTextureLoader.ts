@@ -1,13 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { Texture } from "pixi.js";
+import { createResidentIconRepository, type NativeIconRepository } from "./nativeIconResidency.js";
 import { decodeIconPixels, NativeRecoverableIconSource } from "./nativeRecoverableIconSource.js";
 import {
-  createIconTextureRepository,
-  type IconTextureRepository,
-} from "../pixi/assets/iconTextureRepository.js";
-import {
-  getNativeIconTextureSource,
   isNativeFileIconSource,
 } from "./nativeIconTextureSource.js";
 
@@ -20,11 +16,6 @@ export async function loadNativeIconTexture(source: string): Promise<Texture> {
   return new Texture({ source: new NativeRecoverableIconSource(encoded, await decodeIconPixels(encoded)) });
 }
 
-export function createNativeIconTextureRepository(): IconTextureRepository {
-  return createIconTextureRepository({
-    loadTexture: loadNativeIconTexture,
-    // Bound file IO and Skia decoding together during whole-layout loading.
-    maxConcurrentLoads: 4,
-    resolveSource: getNativeIconTextureSource,
-  });
+export function createNativeIconTextureRepository(host: Parameters<typeof createResidentIconRepository>[0]): NativeIconRepository {
+  return createResidentIconRepository(host, loadNativeIconTexture);
 }
