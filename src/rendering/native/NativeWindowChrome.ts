@@ -1,5 +1,5 @@
 import { createNativeText } from "./nativeTypography.js";
-import { Container, FillGradient, Graphics, Rectangle, Text } from "pixi.js";
+import { Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { WindowResizeDirection } from "../../platform/windowChromeContracts.js";
 import { t } from "../../native/nativeLocalization.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
@@ -22,17 +22,20 @@ export type NativeWindowChromeHost = {
 /** Mirrors WindowChromeOverlay: custom titlebar or drag strip and eight resize edges. */
 export class NativeWindowChrome extends Container {
   #key="";
-  #logoGradient:FillGradient|null=null;
-  constructor(readonly app:NativeWindowChromeHost,readonly report:(error:unknown)=>void){
+  #logo:Sprite|null=null;
+  constructor(readonly app:NativeWindowChromeHost,readonly report:(error:unknown)=>void,readonly icon:()=>Texture){
     super({label:"native-window-chrome",eventMode:"passive"});
   }
   update(showTitlebar:boolean,enabled:boolean):void{
     this.visible=enabled;if(!enabled)return;
+    if(this.#logo&&this.#logo.texture!==this.icon()){
+      this.#logo.texture=this.icon();this.#logo.width=this.#logo.height=20;this.app.invalidate();
+    }
     const {width,height}=this.app.contentSize;
     const key=`${width}/${height}/${showTitlebar}/${this.app.window.isMaximized()}/${t("common.actions.close")}`;
     if(key===this.#key)return;this.#key=key;
     for(const child of this.removeChildren())child.destroy({children:true});
-    this.#logoGradient?.destroy();this.#logoGradient=null;
+    this.#logo=null;
     const run=(action:()=>void)=>{try{action();}catch(error){this.report(error);}};
     const drag=new Container({eventMode:"static",cursor:"grab",label:"native-window-drag"});
     drag.hitArea=new Rectangle(showTitlebar?0:14,0,Math.max(1,width-(showTitlebar?126:28)),showTitlebar?44:24);
@@ -44,12 +47,10 @@ export class NativeWindowChrome extends Container {
       const background=new Graphics({eventMode:"none"}).rect(0,0,width,44).fill({color:0x141820,alpha:0.42})
         .moveTo(0,43.5).lineTo(width,43.5).stroke({color:0xffffff,alpha:0.14,width:1});
       this.addChildAt(background,0);
-      this.#logoGradient=new FillGradient({start:{x:0,y:0},end:{x:1,y:1},colorStops:[{offset:0,color:0x8b5cf6},{offset:1,color:0xef5da8}]});
-      const logo=new Graphics({eventMode:"none"}).roundRect(14,13,18,18,5).fill(this.#logoGradient);
-      const brand=createNativeText({text:"L",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fontWeight:"700",fill:0xffffff}});
-      brand.anchor.set(0.5);brand.position.set(23,22);
+      const logo=new Sprite({texture:this.icon(),eventMode:"none",label:"native-window-brand-icon"});
+      logo.position.set(13,12);logo.width=logo.height=20;this.#logo=logo;
       const title=createNativeText({text:"Lumeria",eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fontWeight:"600",fill:0xffffff}});title.position.set(40,13);
-      this.addChild(logo,brand,title);
+      this.addChild(logo,title);
       const maximized=this.app.window.isMaximized();
       for(const [index,name,action] of [
         [0,"minimize",()=>this.app.window.minimize()],
@@ -74,6 +75,6 @@ export class NativeWindowChrome extends Container {
     this.app.invalidate();
   }
   override destroy():void{
-    super.destroy({children:true});this.#logoGradient?.destroy();this.#logoGradient=null;
+    super.destroy({children:true});this.#logo=null;
   }
 }

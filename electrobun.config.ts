@@ -27,6 +27,6 @@ export default {
     linux: { bundleWGPU: true },
     mac: { bundleWGPU: true },
     mainProcess: "bun",
-    win: { bundleWGPU: true },
+    win: { bundleWGPU: true, icon: "src-tauri/icons/launchpad/light/256x256.png" },
   },
 } satisfies ElectrobunConfig;

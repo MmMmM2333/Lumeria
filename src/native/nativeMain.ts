@@ -382,7 +382,8 @@ const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
   logNativeRuntime("shortcut",{state:app.state,visible:app.window.isVisible(),minimized:app.window.isMinimized()});
   try{toggleLaunchpad();}catch(error){logNativeRuntime("shortcut-error",error);}
 });
-const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{settingsShell?.redraw();app.invalidate();});
+let refreshWindowChrome=()=>{};
+const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{refreshWindowChrome();settingsShell?.redraw();app.invalidate();});
 await branding.synchronize(app.resolution);
 const brandingTextures=branding.textures;
 const systemPreferences=readNativeSystemPreferences();
@@ -424,6 +425,8 @@ const settings=createLaunchpadSettings({
     }},
 },createNativeStateHost(()=>{}));
 settings.persistence.restore(loadedLayout?.settings??{});
+const applySavedWindowIcon=()=>app.setWindowIcon(readFileSync(join(import.meta.dir,"branding",settings.presentation.launchpadIconVariant.value+".png")));
+applySavedWindowIcon();
 const layoutSettings=settings.layoutSettings;
 const desktopBackground=new NativeBackground(app,()=>app.invalidate());
 app.stage.addChildAt(desktopBackground,0);
@@ -678,7 +681,8 @@ app.stage.addChild(selectionToolbar);
 app.stage.on("pointerdowncapture",event=>{let node=event.target as Container|null;while(node&&node!==selectionToolbar)node=node.parent;if(!node)selectionToolbar.clearFocus();});
 const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
 app.stage.addChild(settingsButton);
-const windowChrome=new NativeWindowChrome(app,reportNativeError);
+const windowChrome=new NativeWindowChrome(app,reportNativeError,()=>brandingTextures.get(settings.presentation.launchpadIconVariant.value)!);
+refreshWindowChrome=()=>windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
 app.stage.addChild(windowChrome);
 const launchGhostView=new NativeLaunchGhost();app.stage.addChild(launchGhostView);
 const onContext = (event: FederatedPointerEvent):void=>{
@@ -705,7 +709,7 @@ let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
 let bindApplicationFocus = () => {};
 let cancelNativeGesture = () => {};
-const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);windowEffects.refresh();bindApplicationFocus();});
+const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);applySavedWindowIcon();windowEffects.refresh();bindApplicationFocus();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -1770,6 +1774,35 @@ try {
   };
   if (process.env.LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE === "1") {
     assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR, "folder rename smoke requires isolated data");
+    const {dlopen}=await import("bun:ffi");
+    const {Sprite}=await import("pixi.js");
+    const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+    const icons=dlopen("user32.dll",{GetAncestor:{args:["u64","u32"],returns:"u64"},SendMessageW:{args:["u64","u32","u64","i64"],returns:"i64"}});
+    const root=icons.symbols.GetAncestor(BigInt(getNativePixiApplicationTesting(app).handles().inputWindow),2);
+    const readIcon=()=>icons.symbols.SendMessageW(root,0x7f,1n,0n);
+    const initialIcon=readIcon();assert.notEqual(initialIcon,0n,"startup must assign a window icon before any settings changes");
+    const originalVariant=settings.presentation.launchpadIconVariant.value;
+    const originalTitlebar=settings.presentation.showCustomTitlebar.value;
+    try{
+      for(const variant of LAUNCHPAD_ICON_VARIANTS){
+        const before=readIcon(),changed=variant!==settings.presentation.launchpadIconVariant.value;
+        settings.beginEdit();settings.actions.setDraftLaunchpadIconVariant(variant);settings.actions.setDraftShowCustomTitlebar(true);
+        await settings.applyEdit();refreshWindowChrome();await present(app,`branding ${variant}`);
+        const logo=windowChrome.getChildByLabel("native-window-brand-icon");assert.ok(logo instanceof Sprite);
+        assert.equal(logo.texture,brandingTextures.get(variant),"caption must use the committed icon variant");
+        assert.equal(logo.width,20);assert.equal(logo.height,20);
+        if(changed)assert.notEqual(readIcon(),before,"changing variants must replace the native window icon");
+        await captureSmokeFrame(`window-branding-${variant}`);
+      }
+      await branding.synchronize(3);refreshWindowChrome();
+      const logo=windowChrome.getChildByLabel("native-window-brand-icon") as Sprite;
+      assert.equal(logo.texture,brandingTextures.get(settings.presentation.launchpadIconVariant.value),"DPI refresh must replace the caption texture before old textures are destroyed");
+      assert.equal(logo.texture.destroyed,false);
+    }finally{
+      icons.close();settings.beginEdit();settings.actions.setDraftLaunchpadIconVariant(originalVariant);
+      settings.actions.setDraftShowCustomTitlebar(originalTitlebar);await settings.applyEdit();refreshWindowChrome();
+    }
+    console.log("Native branding: startup window icon, four variants, caption synchronization and DPI refresh passed");
     const folder = activePageItems.find(item => item.type === "folder");
     assert.ok(folder);await activateItem(folder);
     await runFolderRenameSmoke(folder);
