@@ -60,6 +60,7 @@ export type NativeSceneFolderLayout = Readonly<{
 export type NativeDesktopSceneOptions = Readonly<{
   folderLayout?: NativeSceneFolderLayout | undefined;
   iconTextures?: IconTextureRepository | undefined;
+  onFolderTitleFrameChange?: ((frame: unknown) => void) | undefined;
   onFolderCloseRequest?: (() => void) | undefined;
   onFolderReopenRequest?: ((folderId: string | null) => void) | undefined;
   onFolderInternalActivityChange?: ((active: boolean, folderId: string | null) => void) | undefined;
@@ -239,7 +240,8 @@ export class NativeDesktopScene {
         }
         if(item) options.onIconPointerDown?.(item, source ?? null, event);
       },
-      showFolderTitle: true,
+      showFolderTitle: false,
+      onFolderTitleFrameChange: options.onFolderTitleFrameChange,
     });
     this.#onIconActivate = options.onIconActivate ?? null;
     this.#layer.label = "launchpad-native-desktop";

@@ -143,6 +143,13 @@ export function createNativeEditing(options: Options) {
       for(const id of ids) pages = layout.operations.removeEverywhere(pages, id);
       commit(pages);
     },
+    renameFolder(id: string, name: string): void {
+      const pages = layout.operations.clonePages(cells.pages.value);
+      const folder = layout.operations.findFolder(pages, id);
+      if (!folder) return;
+      folder.item.name = String(name || "").slice(0, 32) || t("launchpad.newFolder");
+      commit(pages);
+    },
     rename(id: string, name: string): void {
       if(!name.trim()) throw new Error("Name is required");
       const pages = layout.operations.clonePages(cells.pages.value);

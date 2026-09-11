@@ -50,6 +50,10 @@ export interface TextInputClipboard {
 export interface TextInputStyle {
 	fontFamily: string | readonly string[];
 	fontSize: number;
+	textAlign?: "left" | "center";
+	selectionTextColor?: number;
+	selectionAlpha?: number;
+	dropShadow?: { color: number; alpha: number; blur: number; distance: number; angle: number };
 	fontWeight?: "normal" | "bold" | "600";
 	lineHeight: number;
 	padding: number;
@@ -351,6 +355,8 @@ export class TextInput extends Container {
 	private readonly content = new Container();
 	private readonly selectionLayer = new Graphics();
 	private readonly textNode: Text;
+	private readonly selectedText: Text;
+	private readonly selectedTextMask = new Graphics({ eventMode: "none" });
 	private readonly compositionLayer = new Graphics();
 	private readonly caretLayer = new Graphics();
 	private readonly placeholderNode: Text;
@@ -399,12 +405,16 @@ export class TextInput extends Container {
 			fontWeight: this.inputStyle.fontWeight ?? "normal",
 			lineHeight: this.inputStyle.lineHeight,
 			fill: this.inputStyle.textColor,
+			dropShadow: this.inputStyle.dropShadow ?? false,
 		};
 		this.textNode = new Text({ text: "", resolution:host.textResolution(), style: textStyle });
+		this.selectedText = new Text({ text: "", eventMode: "none", resolution: host.textResolution(),
+			style: { ...textStyle, dropShadow: false, fill: this.inputStyle.selectionTextColor ?? this.inputStyle.textColor } });
+		this.selectedText.mask = this.selectedTextMask;
 		this.placeholderNode = new Text({ text: this.placeholder, resolution:host.textResolution(), style: {
 			...textStyle, fill: this.inputStyle.placeholderColor,
 		} });
-		this.content.addChild(this.selectionLayer, this.textNode, this.compositionLayer, this.caretLayer, this.placeholderNode);
+		this.content.addChild(this.selectionLayer, this.textNode, this.selectedText, this.selectedTextMask, this.compositionLayer, this.caretLayer, this.placeholderNode);
 		this.addChild(this.background, this.content, this.clip, this.focusLayer);
 		this.content.mask = this.clip;
 		this.eventMode = "static";
@@ -550,16 +560,20 @@ export class TextInput extends Container {
 		return { width: Math.max(1, this.inputWidth - (this.inputStyle.paddingHorizontal ?? padding) * 2), height: Math.max(1, this.inputHeight - padding * 2) };
 	}
 	private updateHitArea(): void { this.hitArea = new Rectangle(0, 0, this.inputWidth, this.inputHeight); }
+	private horizontalInset(): number {
+		if (this.multiline || this.inputStyle.textAlign !== "center") return 0;
+		return Math.max(0, (this.innerSize().width - this.layoutSnapshot.offsetToCaret(this.editor.view.text.length).x) / 2);
+	}
 	private layoutToLocal(x: number, y: number) {
 		const inner = this.innerSize();
 		const vertical = this.multiline ? 0 : Math.max(0, (inner.height - this.inputStyle.lineHeight) / 2);
-		return { x: (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) + x - this.editor.state.scrollX,
+		return { x: (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) + this.horizontalInset() + x - this.editor.state.scrollX,
 			y: this.inputStyle.padding + vertical + y - this.editor.state.scrollY };
 	}
 	private localToLayout(x: number, y: number) {
 		const inner = this.innerSize();
 		const vertical = this.multiline ? 0 : Math.max(0, (inner.height - this.inputStyle.lineHeight) / 2);
-		return { x: x - (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) + this.editor.state.scrollX,
+		return { x: x - (this.inputStyle.paddingHorizontal ?? this.inputStyle.padding) - this.horizontalInset() + this.editor.state.scrollX,
 			y: y - this.inputStyle.padding - vertical + this.editor.state.scrollY };
 	}
 	private draw(): void {
@@ -593,10 +607,15 @@ export class TextInput extends Container {
 		const placeholderPosition = this.layoutToLocal(0, 0);
 		this.placeholderNode.position.set(placeholderPosition.x, placeholderPosition.y);
 		this.selectionLayer.clear();
+		this.selectedTextMask.clear();
+		this.selectedText.visible = this.inputStyle.selectionTextColor !== undefined && this.focusedState;
+		this.selectedText.text = this.textNode.text;
+		this.selectedText.position.copyFrom(this.textNode.position);
 		for (const rect of this.layoutSnapshot.rangeToRects(view.selection.start, view.selection.end)) {
 			const position = this.layoutToLocal(rect.x, rect.y);
 			this.selectionLayer.rect(position.x, position.y, rect.width, rect.height)
-				.fill({ color: style.selectionColor, alpha: 0.8 });
+				.fill({ color: style.selectionColor, alpha: style.selectionAlpha ?? 0.8 });
+			this.selectedTextMask.rect(position.x, position.y, rect.width, rect.height).fill(0xffffff);
 		}
 		this.compositionLayer.clear();
 		if (view.composition) for (const rect of this.layoutSnapshot.rangeToRects(view.composition.start, view.composition.end)) {

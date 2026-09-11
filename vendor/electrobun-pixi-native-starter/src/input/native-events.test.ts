@@ -111,5 +111,13 @@ test("two native touch contacts keep independent pointer data and implicit captu
 		["pointercancel", 44], ["pointerout", 44], ["lostpointercapture", 44],
 	]);
 
+	pending.push(touch(2, 51, { pointerType: "mouse", modifiers: 32 }));input.poll();
+	expect(delivered.findLast(event => event.type === "pointerdown")).toMatchObject({ activatesWindow: true, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false });
+	pending.push(touch(3, 51, { pointerType: "mouse", modifiers: 0, buttons: 0 }));input.poll();
+	expect(delivered.findLast(event => event.type === "pointerup").activatesWindow).toBe(false);
+	pending.push(touch(2, 51, { pointerType: "mouse", modifiers: 0 }));input.poll();
+	expect(delivered.findLast(event => event.type === "pointerdown").activatesWindow).toBe(false);
+	pending.push(touch(3, 51, { pointerType: "mouse", modifiers: 0, buttons: 0 }));input.poll();
+
 	input.destroy();
 });

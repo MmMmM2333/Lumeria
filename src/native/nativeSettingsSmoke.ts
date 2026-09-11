@@ -105,7 +105,8 @@ const mouseDrag=String.raw`
 import ctypes as c, sys, time
 from ctypes import wintypes as w
 target, handle, x, y, dx, dy = map(int, sys.argv[1:7])
-click = len(sys.argv)>7 and sys.argv[7]=='click'
+operation = sys.argv[7] if len(sys.argv)>7 else 'drag'
+click = operation != 'drag'
 user=c.WinDLL('user32',use_last_error=True)
 user.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p]
 user.SetThreadDpiAwarenessContext(c.c_void_p(-4))
@@ -142,28 +143,46 @@ assert c.sizeof(Input)==40
 def button(flags):
  item=Input(0,Payload(mouse=Mouse(0,0,0,flags,0,0)))
  if user.SendInput(1,c.byref(item),c.sizeof(item))!=1: raise c.WinError(c.get_last_error())
+probe=None
+if operation in ('activation-click','programmatic-click'):
+ user.CreateWindowExW.argtypes=[w.DWORD,w.LPCWSTR,w.LPCWSTR,w.DWORD,c.c_int,c.c_int,c.c_int,c.c_int,w.HWND,w.HMENU,w.HINSTANCE,c.c_void_p];user.CreateWindowExW.restype=w.HWND
+ user.DestroyWindow.argtypes=[w.HWND]
+ probe=user.CreateWindowExW(0,'STATIC','LaunchPad activation probe',0x90000000,x-100,y-70,80,40,None,None,None,None)
+ if not probe:raise c.WinError(c.get_last_error())
+ user.SetForegroundWindow(probe);time.sleep(.15)
+ if user.GetForegroundWindow()!=probe:
+  user.DestroyWindow(probe);raise RuntimeError('Activation probe did not acquire foreground')
+ if operation=='programmatic-click':
+  user.SetForegroundWindow(root);time.sleep(.15)
+  if user.GetForegroundWindow()!=root:
+   user.DestroyWindow(probe);raise RuntimeError('Programmatic focus did not return to owned window')
 user.SetCursorPos(x,y);time.sleep(.06)
-button(2)
 try:
- if click:
-  time.sleep(.05)
- else:
-  deadline=time.monotonic()+3
-  while not moving():
-   if time.monotonic()>deadline:raise RuntimeError('Owned window did not enter the OS move/size loop')
-   time.sleep(.01)
-  for step in range(1,13):
-   if user.GetForegroundWindow()!=root: raise RuntimeError('Foreground changed during the test drag')
-   if not user.SetCursorPos(x+round(dx*step/12),y+round(dy*step/12)): raise c.WinError(c.get_last_error())
-   time.sleep(.025)
-finally: button(4)
+ if user.GetAncestor(user.WindowFromPoint(w.POINT(x,y)),2)!=root:raise RuntimeError('Input point no longer belongs to the owned window')
+ button(2)
+ try:
+  if click:
+   time.sleep(.05)
+  else:
+   deadline=time.monotonic()+3
+   while not moving():
+    if time.monotonic()>deadline:raise RuntimeError('Owned window did not enter the OS move/size loop')
+    time.sleep(.01)
+   for step in range(1,13):
+    if user.GetForegroundWindow()!=root: raise RuntimeError('Foreground changed during the test drag')
+    if not user.SetCursorPos(x+round(dx*step/12),y+round(dy*step/12)): raise c.WinError(c.get_last_error())
+    time.sleep(.025)
+ finally: button(4)
+ time.sleep(.1)
+finally:
+ if probe:user.DestroyWindow(probe)
 deadline=time.monotonic()+3
 while moving():
  if time.monotonic()>deadline:raise RuntimeError('Owned window did not leave the OS move/size loop')
  time.sleep(.01)
 `;
 
-async function sendOwnedMouse(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number},operation:"drag"|"click"):Promise<void>{
+async function sendOwnedMouse(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number},operation:"drag"|"click"|"activation-click"|"programmatic-click"):Promise<void>{
   const child=spawn("python",["-c",mouseDrag,String(process.pid),String(inputWindow),
     ...[point.x,point.y,delta.x,delta.y].map(value=>String(Math.round(value))),operation],{
     windowsHide:true,stdio:["ignore","pipe","pipe"],
@@ -177,6 +196,7 @@ async function sendOwnedMouse(inputWindow:number,point:{x:number;y:number},delta
 
 export const dragOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number},delta:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,delta,"drag");
 export const clickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,{x:0,y:0},"click");
+export const activationClickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number},programmatic=false)=>sendOwnedMouse(inputWindow,point,{x:0,y:0},programmatic?"programmatic-click":"activation-click");
 
 export async function captureOwnedWindow(inputWindow:number,path?:string):Promise<{material:number;style:string}>{
   const script=String.raw`

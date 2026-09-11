@@ -1,3 +1,4 @@
+import { NativeFolderNameInput, type SingleStageFolderTitleFrame } from "../rendering/native/NativeFolderNameInput.js";
 import { createNativeText } from "../rendering/native/nativeTypography.js";
 import { t, setNativeLocale, getNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { createDefaultScanRoots } from "../domain/launchpadData.js";
@@ -13,7 +14,7 @@ import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.j
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
 import { createLaunchpadTray } from "./nativeTray.js";
 import { prepareNativeRestart } from "./nativeRestart.js";
-import { captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
+import { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -445,6 +446,8 @@ const recordShortcut=()=>{
 };
 let changeSearch: (query: string) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query));
+const folderNameInput = new NativeFolderNameInput(searchBar.host, (id, name) => editing!.renameFolder(id, name), () => app.invalidate());
+app.stage.addChild(folderNameInput);
 const management = new NativeManagement(searchBar.host, () => app.contentSize, () => app.invalidate(),
   settingsTheme);
 
@@ -526,6 +529,7 @@ function getCurrentIconScope(): LaunchpadIconScope<SceneItem> {
 }
 
 function closeFolder(): boolean {
+  folderNameInput.cancelRename();
   if (!folderFlow.close()) return false;
   setFocusedIcon(null);
   return true;
@@ -563,9 +567,11 @@ let editing: ReturnType<typeof createNativeEditing> | null = null;
 function editItem(item: SceneItem | null): void {
   const appItem = item && layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value).find(app => app.id === item.id);
   if(item?.type === "folder") {
-    management.form(t("common.actions.rename"), [{label:t("dialogs.appEditor.name"), value:String(item.name ?? "")}], t("common.actions.save"), async values=>{
-      editing!.rename(item.id,values[0]!); await saves.flush();
-    });
+    if (editing?.drag.isDragActive()) return;
+    folderNameInput.requestRename(item.id);
+    folderFlow.open(item);
+    setFocusedIcon(null);
+    requestSceneRender();
     return;
   }
   if(!apps)return;
@@ -590,6 +596,10 @@ function removeItems(ids: readonly string[]): void {
   }});
 }
 function contextMenu(item:SceneItem|null,x:number,y:number):void{
+  const folder = folderFlow.snapshot();
+  // Closing retains renderedFolder for animation, but no menu may use that retiring scope.
+  // Both stage right-clicks and menu relocation requests pass through this entry.
+  if (folder.isClosing) return;
   const actions:import("../rendering/native/NativeManagement.js").NativeMenuAction[]=[];
   const beginBatch=()=>{editing!.alt.cancelAltEditMode();editing!.selection.begin({});};
   if(item){
@@ -603,7 +613,7 @@ function contextMenu(item:SceneItem|null,x:number,y:number):void{
     }
   }else{
     actions.push({label:t("launchpad.contextMenu.batchManage"),icon:"select-all-on-20-regular",run:beginBatch});
-    if(!folderFlow.snapshot().renderedFolder){
+    if(!folder.renderedFolder){
       actions.push({label:t("settings.interface.layout.compactAction"),icon:"arrow-sort-20-regular",separatorBefore:true,run:()=>editing!.pageCommands.confirmForceFillAllPages()});
       if(apps?.canScanManagedApps.value)actions.push({label:t(apps.isScanningApps.value?"settings.apps.manager.scanning":"settings.apps.manager.scanApps"),icon:"scan-object-20-regular",disabled:apps.isScanningApps.value,run:()=>{void apps!.rescanManagedApps({announceStart:true});}});
       actions.push({label:t("launchpad.openSettings"),icon:"settings-20-regular",separatorBefore:Boolean(apps?.canScanManagedApps.value),run:()=>openSettings()});
@@ -627,6 +637,7 @@ const scene = new NativeDesktopScene(app.stage, {
   folderLayout,
   iconTextures,
   onFolderCloseRequest: closeFolder,
+  onFolderTitleFrameChange: frame => folderNameInput.setFrame(frame as SingleStageFolderTitleFrame | null),
   onFolderReopenRequest: (folderId) => {
     const item = currentFrame.viewport.activePages.flat().find((item) => item?.id === folderId);
     if (item) void activateItem(item);
@@ -827,6 +838,10 @@ try {
     }, snapDesktopLayout);
     settingsButton.position.set(app.contentSize.width-54,14+chromeInset());
     const folderHeader=folderFlow.snapshot();
+    const currentFolder = folderHeader.renderedFolder && layoutState.operations.findFolder(layoutState.presentation.pages.value, folderHeader.renderedFolder.id)?.item;
+    folderNameInput.update(currentFolder ?? folderHeader.renderedFolder, folderHeader.openProgress,
+      folderHeader.isClosing || Boolean(settingsShell || management.modal || editing?.drag.isDragActive()) || Boolean(launchFlow?.isLaunchpadInteractionBlocked()));
+    app.stage.setChildIndex(folderNameInput, app.stage.children.length - 1);
     const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
     settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
     searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
@@ -1377,6 +1392,11 @@ try {
     if (type !== "pointerDown" && touchId !== event.pointerId) return;
     const scope = getCurrentIconScope();
     const target = resolveNativePointerTarget(event.target);
+    if (type === "pointerDown" && event.button === 0 && target.kind === "surface"
+      && (event.nativeEvent as { activatesWindow?: boolean } | null)?.activatesWindow) {
+      // This click already activated the HWND; do not also start a blank-dismiss gesture.
+      event.stopPropagation();return;
+    }
     const itemId = target.kind === "icon" ? target.id : undefined;
     if(type === "pointerDown" && target.kind === "control") return;
     // Closing residuals keep their original reopen handler; desktop icons use the desktop scope.
@@ -1432,6 +1452,12 @@ try {
     if(settingsShell){
       if(searchBar.host.focused?.composing||event.isComposing)return false;
       return settingsShell.handleKey(event);
+    }
+    if (folderNameInput.input.focused) {
+      if (folderNameInput.input.composing || event.isComposing) return false;
+      if (event.key === "Enter" || event.key === "Tab") { folderNameInput.input.blur(); return true; }
+      if (event.key !== "Escape") return false;
+      folderNameInput.input.blur();
     }
     if (searchBar.input.composing || event.isComposing) return false;
     if(noticeView.hasFocus){
@@ -1619,6 +1645,142 @@ try {
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
 
+  const runFolderClosingContextSmoke = async (folder: SceneItem): Promise<void> => {
+    const rightAt = (x: number, y: number) => {
+      app.nativeInput.emitPointer("pointermove", x, y, 0);
+      app.nativeInput.emitPointer("pointerdown", x, y, 2);
+      app.nativeInput.emitPointer("pointerup", x, y, 2);
+    };
+    const assertNoMenu = (phase: string) => {
+      assert.equal(folderFlow.snapshot().isClosing, true, `${phase} must exercise a closing folder`);
+      assert.ok(folderFlow.snapshot().renderedFolder, "closing visuals must remain alive");
+      assert.equal(management.modal, false, `${phase} must not display a context menu`);
+    };
+    closeFolder();rightAt(20, 100);assertNoMenu("close-start right-click");
+    await waitFor("folder closing midpoint", () => folderFlow.snapshot().openProgress < 0.8);
+    rightAt(20, 100);assertNoMenu("mid-close right-click");
+    await captureSmokeFrame("folder-closing-no-context-menu");
+    await waitFor("folder closed before desktop menu", () => !folderFlow.snapshot().renderedFolder);
+    await present(app, "desktop menu after folder closes");
+    rightAt(20, 100);
+    assert.ok(management.getChildByLabel(`native-action:${t("launchpad.openSettings")}`, true), "desktop menu must return after closing cleanup");
+    assert.equal(management.getChildByLabel("native-management:keyboard-focus", true), null, "pointer-opened menus must not show default keyboard focus");
+    await present(app, "pointer-opened menu without keyboard focus");
+    await captureSmokeFrame("context-menu-pointer-focus");
+    onKey({type:"down",key:"ArrowDown"});
+    assert.ok(management.getChildByLabel("native-management:keyboard-focus", true), "arrow navigation must reveal keyboard focus");
+    await present(app, "keyboard-navigated menu with focus");
+    await captureSmokeFrame("context-menu-keyboard-focus");
+    onKey({type:"down",key:"Escape"});
+    assert.equal(management.modal, false, "keyboard Escape must still dismiss the menu");
+
+    await activateItem(folder);
+    await waitFor("folder reopened before menu relocation", () => !folderNameInput.input.disabled);
+    const panel = scene.getFolderPanelRect();assert.ok(panel);
+    rightAt(panel.left + panel.width / 2, panel.top + 12);
+    assert.ok(management.getChildByLabel("native-context-menu", true), "relocation regression requires an existing folder menu");
+    assert.equal(management.getChildByLabel(`native-action:${t("launchpad.openSettings")}`, true), null, "open-folder blank menu must keep its folder scope");
+    closeFolder();rightAt(20, 100);assertNoMenu("menu relocation during close");
+
+    await activateItem(folder);
+    await waitFor("rapidly reopened folder can interact", () => !folderFlow.snapshot().isClosing && !folderNameInput.input.disabled);
+    contextMenu(null, 450, 140);
+    assert.ok(management.getChildByLabel(`native-action:${t("launchpad.contextMenu.batchManage")}`, true), "rapid reopen must restore folder menus");
+    management.close();
+    console.log("Native closing folder context menu: start, midpoint, desktop recovery, relocation and rapid reopen passed");
+  };
+  const runWindowActivationSmoke = async (): Promise<void> => {
+    const { getNativePixiApplicationTesting } = await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+    const testing = getNativePixiApplicationTesting(app);
+    const handle = testing.handles().inputWindow;
+    const point = (x: number, y: number) => testing.clientToScreen(Math.round(x * app.resolution), Math.round(y * app.resolution));
+    const blank = { x: app.contentSize.width - 60, y: app.contentSize.height - 110 };
+    assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(blank.x, blank.y)).kind, "surface");
+    let activationDowns = 0;
+    const off = app.nativeInput.onHostEvent(event => { if (event.kind === 2 && (event.modifiers & 32)) activationDowns++; });
+    try {
+      await activationClickOwnedNativeWindow(handle, point(blank.x, blank.y));
+      await present(app, "activation blank click keeps desktop open");
+      assert.ok(activationDowns > 0, "real Windows activation must reach pointer metadata");
+      assert.equal(launchFlow!.isDesktopOpen.value, true, "activation blank click must only focus the window");
+      assert.equal(touchId, null, "activation click must not leave a desktop gesture owner");
+      await captureSmokeFrame("activation-click-keeps-open");
+      await present(app, "restore input target after activation screenshot");
+      const activationCount = activationDowns;
+      await clickOwnedNativeWindow(handle, point(blank.x, blank.y));
+      assert.equal(activationDowns, activationCount, "an already-focused click must not carry activation metadata");
+      await waitFor("second focused blank click hides", () => !app.window.isVisible());
+      showLaunchpad();await waitFor("activation smoke restored", () => app.window.isVisible() && !scene.getMotionSnapshot().active);
+      await activationClickOwnedNativeWindow(handle, point(blank.x, blank.y), true);
+      await waitFor("programmatic focus does not swallow next click", () => !app.window.isVisible());
+      showLaunchpad();await waitFor("activation control smoke restored", () => app.window.isVisible() && !scene.getMotionSnapshot().active);
+      const search = searchBar.input.getBounds();
+      await activationClickOwnedNativeWindow(handle, point(search.x + search.width / 2, search.y + search.height / 2));
+      assert.equal(searchBar.input.focused, true, "activation clicks on controls must retain control behavior");
+      searchBar.input.blur();
+      console.log("Native activation click: real mouse activation, second-click dismissal, programmatic focus and input control passed");
+    } finally { off(); }
+  };
+  const runFolderRenameSmoke = async (smokeFolder: SceneItem): Promise<void> => {
+    await waitFor("editable folder title", () => !folderNameInput.input.disabled);
+    clickWithNativeInput(folderNameInput.input);
+    assert.equal(folderNameInput.input.focused, true, "title clicks must focus the inline editor");
+    assert.equal(folderFlow.snapshot().isClosing, false, "title clicks must not close the folder");
+    const originalFolderName = String(smokeFolder.name);
+    folderNameInput.input.selectAll();
+    folderNameInput.input.beginComposition();
+    folderNameInput.input.updateComposition("\u4e2d\u6587\u6539\u540d", 4);
+    assert.equal(onKey({ type: "down", key: "Enter", isComposing: true }), false);
+    assert.equal(folderNameInput.input.focused, true, "IME confirmation must not blur the title");
+    folderNameInput.input.commitText("\u4e2d\u6587\u6539\u540d");
+    await present(app, "folder inline rename committed");
+    const savedFolderName = () => layoutState.operations.findFolder(layoutState.presentation.pages.value, smokeFolder.id)?.item.name;
+    assert.equal(savedFolderName(), "\u4e2d\u6587\u6539\u540d", "inline input must update layout without a Save dialog");
+    onKey({ type: "down", key: "Enter" });
+    await present(app, "folder title after Enter");
+    assert.equal(folderNameInput.input.focused, false);
+    assert.equal(folderNameInput.input.value, "\u4e2d\u6587\u6539\u540d", "blur must not restore a stale opening snapshot");
+    clickWithNativeInput(folderNameInput.input);
+    folderNameInput.input.selectAll();folderNameInput.input.commitText("temporary name");
+    folderNameInput.input.selectAll();folderNameInput.input.command({ type: "insert", text: "" }, true);
+    onKey({ type: "down", key: "Enter" });
+    assert.equal(folderNameInput.input.value, "\u4e2d\u6587\u6539\u540d", "empty input must restore the name at focus");
+    assert.equal(savedFolderName(), folderNameInput.input.value, "empty restore must also restore the saved layout name");
+    closeFolder();await waitFor("close before context rename", () => !folderFlow.snapshot().renderedFolder);
+    await present(app, "folder context rename source");
+    clickWithNativeInput(app.stage.getChildByLabel(`launchpad-item:${smokeFolder.id}`, true)!, 2);
+    await present(app, "folder context menu");
+    const renameAction = management.getChildByLabel(`native-action:${t("common.actions.rename")}`, true);
+    assert.ok(renameAction);clickWithNativeInput(renameAction);
+    await waitFor("context rename focuses inline title", () => folderNameInput.input.focused);
+    assert.equal(management.modal, false, "folder rename must not open a form");
+    assert.equal(folderNameInput.input.selection.start, 0);
+    assert.equal(folderNameInput.input.selection.end, folderNameInput.input.value.length);
+    await waitFor("folder rename focus appearance", () => !scene.getMotionSnapshot().active);
+    await captureSmokeFrame("folder-rename-selected");
+    folderNameInput.input.commitText("1234567890".repeat(4));
+    assert.equal(folderNameInput.input.value.length, 32, "folder names must be limited to 32 characters");
+    folderNameInput.input.selectAll();folderNameInput.input.commitText(originalFolderName);
+    onKey({ type: "down", key: "Enter" });await saves.flush();
+    await present(app, "folder title restored");
+    assert.equal(savedFolderName(), originalFolderName);
+    assert.equal(folderNameInput.input.value, originalFolderName);
+    await runFolderClosingContextSmoke(smokeFolder);
+    console.log("Native inline folder rename: pointer, context menu, IME, empty restore, length and persistence passed");
+  };
+  if (process.env.LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE === "1") {
+    assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR, "folder rename smoke requires isolated data");
+    const folder = activePageItems.find(item => item.type === "folder");
+    assert.ok(folder);await activateItem(folder);
+    await runFolderRenameSmoke(folder);
+    app.nativeInput.emitPointer("pointermove", 20, 20, 0);
+    await waitFor("folder rename idle appearance", () => !scene.getMotionSnapshot().active);
+    await captureSmokeFrame("folder-rename-idle");
+    closeFolder();await waitFor("rename smoke folder cleanup", () => !folderFlow.snapshot().renderedFolder);
+    await runWindowActivationSmoke();
+    writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!, JSON.stringify({ folderRename: "verified" }), "utf8");
+    return;
+  }
   if (nativeMode === "smoke") {
     await (await import("./nativeIconRecoverySmoke.test.js")).runNativeIconRecoverySmoke(app);
     {
@@ -2963,6 +3125,7 @@ try {
       const dots = app.stage.getChildByLabel("native-desktop-page-dots", true);
       return Boolean(dots && dots.alpha < 0.01 && scene.getDesktopAlpha()<0.01);
     });
+    await runFolderRenameSmoke(smokeFolder);
     await captureSmokeFrame("folder-page-1");
     presentCount += 1;
 
@@ -3011,7 +3174,7 @@ try {
       let title: Text | null = null;
       while (pending.length) {
         const node = pending.pop()!;
-        if (node instanceof Text && node.text === smokeFolder.name && Number(node.style.fontSize) === 18) title = node;
+        if (node instanceof Text && node.text === smokeFolder.name && Number(node.style.fontSize) === 26 && node.visible) title = node;
         pending.push(...node.children);
       }
       assert.ok(title, "folder title must remain in the scene while paging");
@@ -3311,6 +3474,7 @@ try {
   app.stage.off("rightclick",onContext);
   management.destroy();
   notices.clearTransientNoticeTimer();notices.clearWarningDialogTimer();noticeView.destroy({children:true});
+  folderNameInput.destroy();
   searchBar.destroy();
   selectionToolbar.destroy();app.stage.filters=[];selectionBackdropSurface.destroy();
   iconTextures.dispose();

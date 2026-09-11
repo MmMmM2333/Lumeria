@@ -790,6 +790,7 @@ struct AccessibilityState {
 }
 
 struct WindowInputState {
+    activation_mouse_message: u32,
     route_id: u64,
     last_x: i32,
     last_y: i32,
@@ -1904,6 +1905,7 @@ unsafe fn next_click_detail(
 }
 
 unsafe fn cancel_pointer(state: *mut WindowInputState, window: Handle) {
+    unsafe { (*state).activation_mouse_message = 0 };
     let should_cancel = unsafe { (*state).buttons != 0 || (*state).has_capture };
     unsafe { (*state).buttons = 0 };
     if should_cancel {
@@ -2165,6 +2167,16 @@ unsafe fn stop_text_input(window: Handle, state: *mut WindowInputState) -> i32 {
     if cancelled == 0 { -6 } else { 1 }
 }
 
+fn activation_mouse_message(was_inactive: bool, result: isize, l_param: isize) -> u32 {
+    // MA_ACTIVATE retains the triggering click; HTCLIENT excludes caption activation.
+    if was_inactive && result == 1 && (l_param as u32 & 0xffff) == 1 { (l_param as u32 >> 16) & 0xffff } else { 0 }
+}
+
+fn take_activation_mouse_message(state: &mut WindowInputState, message: u32) -> bool {
+    let pending = std::mem::replace(&mut state.activation_mouse_message, 0);
+    pending != 0 && (pending == message || pending + 2 == message)
+}
+
 unsafe extern "system" fn input_subclass_proc(
     window: Handle,
     message: u32,
@@ -2192,6 +2204,14 @@ unsafe fn input_subclass_proc_inner(
         return unsafe { DefSubclassProc(window, message, w_param, l_param) };
     }
     match message {
+        0x0021 => {
+            // Preserve the window's activation policy and annotate only its retained client click.
+            // Child views may receive WM_MOUSEACTIVATE even when their top-level window is active.
+            let was_inactive = unsafe { GetForegroundWindow() != root_window(window) };
+            let result = unsafe { DefSubclassProc(window, message, w_param, l_param) };
+            unsafe { (*state).activation_mouse_message = activation_mouse_message(was_inactive, result, l_param) };
+            return result;
+        }
         0x0231 => set_window_resizing(window as usize, true),
         0x0232 => set_window_resizing(window as usize, false),
         0x0003 if unsafe { root_window(window) } == window => {
@@ -2277,6 +2297,8 @@ unsafe fn input_subclass_proc_inner(
             }
             let mut event = blank_input_event(unsafe { (*state).route_id }, INPUT_POINTER_DOWN);
             event.modifiers = input_modifiers();
+            // Bit 5 is pointer metadata, separate from the keyboard modifiers in bits 0..4.
+            if take_activation_mouse_message(unsafe { &mut *state }, message) { event.modifiers |= 1 << 5; }
             unsafe { set_event_coordinates(window, &mut event, Point { x, y }, None) };
             event.button = button;
             event.buttons = unsafe { (*state).buttons };
@@ -2286,6 +2308,7 @@ unsafe fn input_subclass_proc_inner(
             if matches!(message, 0x020b | 0x020d) { return 1; }
         }
         0x0202 | 0x0205 | 0x0208 | 0x020c => {
+            unsafe { (*state).activation_mouse_message = 0 };
             let x = signed_low_word(l_param);
             let y = signed_high_word(l_param);
             let button = mouse_button(message, w_param);
@@ -2385,6 +2408,7 @@ unsafe fn input_subclass_proc_inner(
         }
         0x0007 => unsafe { queue_state_event(state, window, INPUT_FOCUS) },
         0x0100 | 0x0104 | 0x0101 | 0x0105 => {
+            unsafe { (*state).activation_mouse_message = 0 };
             let is_down = matches!(message, 0x0100 | 0x0104);
             if is_down
                 && unsafe { (*state).text_active && !(*state).ime_composing }
@@ -2668,6 +2692,7 @@ pub unsafe extern "C" fn pixi_attach_input(window: Handle, route_id: u64) -> i32
     if error != 0 { return error; }
     if unsafe { attached_input_state(window) }.is_some() { return -3; }
     let state = Box::new(WindowInputState {
+        activation_mouse_message: 0,
         route_id,
         last_x: 0,
         last_y: 0,
@@ -4035,6 +4060,7 @@ mod tests {
 
 	fn input_state(route_id: u64, text_active: bool) -> Box<WindowInputState> {
 		Box::new(WindowInputState {
+			activation_mouse_message: 0,
 			route_id,
 			last_x: 0,
 			last_y: 0,
@@ -4065,6 +4091,24 @@ mod tests {
         assert_eq!(scale_factor_from_dpi(0), 0.0);
         assert_eq!(scale_factor_from_dpi(96), 1.0);
         assert_eq!(scale_factor_from_dpi(144), 1.5);
+    }
+
+    #[test]
+    fn activation_click_only_tags_the_retained_client_mouse_down_once() {
+        let client_left_down = (0x0201_isize << 16) | 1;
+        assert_eq!(activation_mouse_message(true, 1, client_left_down), 0x0201);
+        assert_eq!(activation_mouse_message(false, 1, client_left_down), 0);
+        for policy in [2, 3, 4] { assert_eq!(activation_mouse_message(true, policy, client_left_down), 0); }
+        assert_eq!(activation_mouse_message(true, 1, (0x0201 << 16) | 2), 0);
+        let mut state = input_state(98765, false);
+        state.activation_mouse_message = 0x0201;
+        assert!(take_activation_mouse_message(&mut state, 0x0201));
+        assert!(!take_activation_mouse_message(&mut state, 0x0201));
+        state.activation_mouse_message = 0x0201;
+        assert!(take_activation_mouse_message(&mut state, 0x0203));
+        state.activation_mouse_message = 0x0201;
+        assert!(!take_activation_mouse_message(&mut state, 0x0204));
+        assert!(!take_activation_mouse_message(&mut state, 0x0201));
     }
 
     #[test]

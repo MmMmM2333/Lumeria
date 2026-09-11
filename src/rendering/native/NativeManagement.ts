@@ -29,7 +29,7 @@ export class NativeManagement extends Container {
   #panel: Container | null = null;
   #controls: { node: Container; activate?: () => void }[] = [];
   #focusIndex = -1;
-  readonly #focusRing = new Graphics({ eventMode: "none" });
+  readonly #focusRing = new Graphics({ eventMode: "none", label: "native-management:keyboard-focus" });
   #menu = false;
   #scroll:NativeScrollView|null=null;
   readonly #parents:ModalFrame[]=[];
@@ -212,7 +212,8 @@ export class NativeManagement extends Container {
       }
     });
     layer.addChild(panel);this.addChild(layer);this.#panel=layer;
-    this.#menu=true;const first=actions.findIndex(action=>action.selected&&!action.disabled);const focus=first>=0?first:actions.findIndex(action=>!action.disabled);if(focus>=0)this.#focus(focus,!selection);
+    // Opening a pointer menu keeps its keyboard anchor without painting keyboard focus.
+    this.#menu=true;const first=actions.findIndex(action=>action.selected&&!action.disabled);const focus=first>=0?first:actions.findIndex(action=>!action.disabled);if(focus>=0)this.#focus(focus,false);
     if(selection){layer.alpha=0;layer.y=-3;motion(layer).duration(0.1).ease("power2.out").to({alpha:1,y:0}).start();}
   }
   override destroy():void {

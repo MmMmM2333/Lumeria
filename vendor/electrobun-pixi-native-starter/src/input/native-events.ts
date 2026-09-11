@@ -7,6 +7,7 @@ const MOD_CTRL = 1 << 1;
 const MOD_ALT = 1 << 2;
 const MOD_META = 1 << 3;
 const MOD_COMPOSING = 1 << 4;
+const POINTER_ACTIVATES_WINDOW = 1 << 5;
 const BUTTON_BITS = [1, 4, 2, 8, 16] as const;
 const WHEEL_PIXELS_PER_NOTCH = 100;
 
@@ -401,6 +402,7 @@ export function attachNativePixiEvents(
 		const modifierState = modifiersFor(modifiers);
 		const event = {
 			type,
+			activatesWindow: type === "pointerdown" && Boolean((native?.modifiers ?? 0) & POINTER_ACTIVATES_WINDOW),
 			button,
 			buttons: pointerButtons,
 			clientX: x,

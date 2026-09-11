@@ -15,7 +15,7 @@
   },
   "source": {
     "commit": "0ae821017b77cc0d3ff56d862ffe979c1b6b36ff",
-    "dirty": false,
+    "dirty": true,
     "sourceDateEpoch": 1788978013
   },
   "build": {
@@ -2858,8 +2858,8 @@
     {
       "path": ".hutch/native-frame/native-frame.dll",
       "role": "native-frame-runtime",
-      "size": 290816,
-      "sha256": "82420194c43578eb0382f82b00e9465ff472c9945977ec0abfdea80af7e2b95b"
+      "size": 291328,
+      "sha256": "1f288f7ec5a1b05ec9f0a1302c7d817dce3182faa6c3630f25b4ad983b506ad0"
     },
     {
       "path": "assets/bunnies/rabbitv3_ash.png",
@@ -3068,14 +3068,14 @@
     {
       "path": "src/input/native-events.test.ts",
       "role": "starter-source",
-      "size": 5937,
-      "sha256": "f8314378773e757423cdc81396805e1d5a6500870c348e853773e72be57d8592"
+      "size": 6654,
+      "sha256": "391a76d0c76fba5088b8022120f6a362ca84ef85ea93bf4a3ba30d1a8c008120"
     },
     {
       "path": "src/input/native-events.ts",
       "role": "starter-source",
-      "size": 26356,
-      "sha256": "12ebb1f29d4e03281298abdfaf9634baf2ae2789f9f6279925fd8659be520b81"
+      "size": 26505,
+      "sha256": "5b60bbd99b36563e72e848f3d2e42370643d06ac3eb19185af0d3971d05803db"
     },
     {
       "path": "src/input/native-text-input.test.ts",
@@ -3104,14 +3104,14 @@
     {
       "path": "src/input/text-input.test.ts",
       "role": "starter-source",
-      "size": 9004,
-      "sha256": "599d7e6ddb46558ce846c4d5ff6d08d5ea3d8b75bc3ed6578f5f593cbb924c23"
+      "size": 10004,
+      "sha256": "3e66b8e84e48a0c0966aca9b821b8bfa051eed60a491242be51e63ec6837aa82"
     },
     {
       "path": "src/input/text-input.ts",
       "role": "starter-source",
-      "size": 26897,
-      "sha256": "8feeaddc362f3b7c6e422b54ec6963e558e85b30fd1a2c4720a6bfb33d0e524e"
+      "size": 28905,
+      "sha256": "edb8f627bd7fd3562c359ecea46c882b5885ca329fde4ff511ab6485615181af"
     },
     {
       "path": "src/main.ts",
@@ -3158,8 +3158,8 @@
     {
       "path": "src/platform/native-frame.rs",
       "role": "starter-source",
-      "size": 151543,
-      "sha256": "343f9ecb3ca67af093818c61af2cd7c98efa53275130ca37965da67be74d53b2"
+      "size": 154140,
+      "sha256": "6ba365998469935913244f7f4b2c08cb6eb5c5f89022ca0598c3e4c4217292de"
     },
     {
       "path": "src/platform/native-input-event.ts",

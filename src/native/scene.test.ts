@@ -157,6 +157,8 @@ for(const theme of ["light","dark"] as const){
   const unlabelled = new Container();
   root.addChild(chrome); chrome.addChild(unlabelled);
   assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "control" }, "unlabelled search children must belong to the input, not desktop gestures");
+  const title = new Container({ label: "native-folder-name" });root.addChild(title);title.addChild(unlabelled);
+  assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "control" }, "folder title descendants must not enter desktop pointer or context menu handling");
   const notice=new Container({label:"native-notice"});root.addChild(notice);notice.addChild(unlabelled);
   assert.deepEqual(resolveNativePointerTarget(unlabelled),{kind:"control"},"notification descendants must not dismiss the desktop through captured blank-click gestures");
   const icon = new Container({ label: "launchpad-item:app" });

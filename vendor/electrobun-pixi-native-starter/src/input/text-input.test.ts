@@ -188,5 +188,18 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	const local=(compact as any).layoutToLocal(25,0);
 	expect(local).toEqual({x:35,y:7});
 	expect((compact as any).localToLayout(local.x,local.y)).toEqual({x:25,y:0});
+	const centered = host.create({ width: 360, height: 38, value: "中文标题", chrome: false,
+		style: { fontSize: 26, lineHeight: 34, padding: 2, paddingHorizontal: 12,
+			textAlign: "center", selectionTextColor: 0x312e81, selectionColor: 0xffffff, selectionAlpha: 0.86 } });
+	root.addChild(centered);centered.focus();centered.selectAll();
+	const centerStart = (centered as any).layoutToLocal(0, 0);
+	const centerEnd = (centered as any).layoutToLocal((centered as any).layoutSnapshot.offsetToCaret(centered.value.length).x, 0);
+	expect((centerStart.x + centerEnd.x) / 2).toBeCloseTo(180);
+	expect((centered as any).localToLayout(centerStart.x, centerStart.y)).toEqual({ x: 0, y: 0 });
+	expect((centered as any).selectedText.visible).toBe(true);
+	expect((centered as any).selectedText.style.fill).toBe(0x312e81);
+	centered.value = "Very long folder title ".repeat(20);
+	expect((centered as any).horizontalInset()).toBe(0);
+	centered.blur();expect((centered as any).selectedText.visible).toBe(false);
 	host.destroy();
 });
