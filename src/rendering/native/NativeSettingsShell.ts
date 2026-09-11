@@ -11,6 +11,7 @@ import type { NativeSettingsLayout } from "./nativeSettingsLayout.js";
 import { captureSettingsGeometry,createSettingsTransition } from "./ui/nativeSettingsTransition.js";
 import { NativeVirtualList } from "./ui/NativeVirtualList.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
+import { releaseNativeGraphics, destroyNativeSubtree } from "./nativeGraphicsLifecycle.js";
 
 type Navigation=ReturnType<typeof createSettingsNavigation>;
 export type NativeSettingsContent = {
@@ -18,6 +19,7 @@ export type NativeSettingsContent = {
   height:number;
   controls:readonly NativeSettingsControl[];
   dispose():void;
+  update?():void;
   layout?:NativeSettingsLayout;
   viewport?(top:number,height:number):void;
 };
@@ -63,6 +65,7 @@ export class NativeSettingsShell extends Container {
   #controls:readonly NativeSettingsControl[]=[];
   #focus=-1;
   #redrawCount=0;
+  #renderTheme:NativeTheme="dark";
   #keyboardFocus=false;
   readonly #disclosures=new Map<string,{height:number;opacity:number;expanded:boolean}>();
   #bodySize={width:0,height:0};
@@ -143,7 +146,7 @@ export class NativeSettingsShell extends Container {
     this.#redrawCount++;
     killMotionOf(this.#contentProgress);this.#contentTransition=null;this.#contentHeights=null;
     const {options}=this, {width,height}=options.size(), theme=options.theme(), colors=nativeFluentTheme(theme);
-    const style=nativeSettingsStyle(theme);
+    const style=nativeSettingsStyle(theme);this.#renderTheme=theme;
     const route=options.navigation.activeRoute.value;
     const focusLabel=this.#routeKey===route.key?(this.#controls[this.#focus]?.virtualKey??this.#controls[this.#focus]?.node.label):null;
     const selection=focusLabel?this.#controls[this.#focus]?.selection?.():undefined;
@@ -159,12 +162,13 @@ export class NativeSettingsShell extends Container {
       this.#controls.forEach(control=>control.focus(false));
     }else{
       if(this.#page)killMotionOf(this.#page.node);
+      if(this.#page)releaseNativeGraphics(this.#page.node);
       this.#page?.dispose();
     }
     this.#page=null;this.#scroll=null;this.#buttons=[];this.#focus=-1;
     for(const button of this.#footerButtons)button.removeFromParent();
     this.#panel.mask=null;
-    for(const child of this.#panel.removeChildren())child.destroy({children:true});
+    for(const child of this.#panel.removeChildren())destroyNativeSubtree(child);
     const topInset=options.topInset?.()??0;
     const w=Math.min(1040,width*0.94),h=Math.min(780,Math.max(120,height-topInset-48));
     const compact=options.navigation.isNavigationCompact.value;
@@ -228,16 +232,7 @@ export class NativeSettingsShell extends Container {
     }
     this.#bodySize={width:w-navWidth,height:bodyHeight};
     this.#scroll.content.addChild(this.#page.node);
-    for(const entry of this.#page.layout?.disclosures??[]){
-      let state=this.#disclosures.get(entry.id);
-      if(!state){state={height:entry.expanded?1:0,opacity:entry.expanded?1:0,expanded:entry.expanded};this.#disclosures.set(entry.id,state);}
-      if(state.expanded!==entry.expanded){
-        state.expanded=entry.expanded;const target=entry.expanded?1:0;
-        motion(state).duration(0.2).ease(value=>Math.cbrt(value)*3-Math.pow(Math.cbrt(value),2)*3+value)
-          .to({height:target,onUpdate:()=>this.#reflow()}).start();
-        motion(state).duration(0.1).ease("power1.inOut").to({opacity:target,onUpdate:()=>this.#reflow()}).start();
-      }
-    }
+    this.#syncDisclosures();
     this.#reflow();
     // Expanded surfaces add padding during reflow. Restoring against the raw
     // page height first would permanently clamp a valid bottom scroll offset.
@@ -294,6 +289,15 @@ export class NativeSettingsShell extends Container {
       error.style.fill=colors.colorPaletteRedForeground1;
       error.style.wordWrap=true;error.style.wordWrapWidth=bodyWidth-220;
     }
+    this.#bindControls();
+    if(focusLabel){const index=this.#controls.findIndex(control=>(control.virtualKey??control.node.label)===focusLabel&&!control.disabled());if(index>=0){this.#setFocus(index);if(this.#controls[index]?.restoreFocus)this.#controls[index]!.focus(true);if(selection)this.#controls[index]?.restoreSelection?.(selection);}}
+    if(this.#applying)this.#page.node.eventMode="none";
+    options.invalidate();
+  }
+  #bindControls():void{
+    if(!this.#page)return;
+    const route=this.options.navigation.activeRoute.value;
+    const footer=route.depth===0&&(route.tabId==="general"||route.tabId==="interface");
     const chromeControls=this.#buttons.map(node=>({
       node,focus:(active:boolean)=>{node.focused=active;},
       handleKey:(key:string)=>{if(key!=="Enter"&&key!==" ")return false;node.activate();return true;},
@@ -301,25 +305,46 @@ export class NativeSettingsShell extends Container {
     }));
     const footerCount=footer?2:0;
     this.#controls=[...chromeControls.slice(0,chromeControls.length-footerCount),...this.#page.controls,...chromeControls.slice(chromeControls.length-footerCount)];
-    this.#controls.forEach((control,index)=>{
+    const lists=new Set<NativeVirtualList>();
+    this.#controls.forEach(control=>{
       if(control.virtualKey){
-        if(control.node instanceof NativeVirtualList)control.node.onControlFocus(key=>{
-          this.#keyboardFocus=false;const current=this.#controls.findIndex(item=>item.node===control.node&&item.virtualKey===key);if(current>=0)this.#setFocus(current);
-        });
+        const list=control.node;
+        if(list instanceof NativeVirtualList&&!lists.has(list)){lists.add(list);list.onControlFocus(key=>{
+          this.#keyboardFocus=false;const current=this.#controls.findIndex(item=>item.node===list&&item.virtualKey===key);if(current>=0)this.#setFocus(current);
+        });}
         return;
       }
       if(!this.#focusBound.has(control.node)){
         this.#focusBound.add(control.node);
         control.node.on("pointerdown",()=>{this.#keyboardFocus=false;const current=this.#controls.findIndex(item=>item.node===control.node);if(current>=0)this.#setFocus(current);});
+        if(control.restoreFocus)control.node.on("focus",()=>{
+          const index=this.#controls.findIndex(item=>item.node===control.node);
+          if(this.#focus!==index&&this.#focus>=0)this.#controls[this.#focus]?.focus(false);
+          this.#focus=index;
+        });
       }
-      if(control.restoreFocus)control.node.on("focus",()=>{
-        if(this.#focus!==index&&this.#focus>=0)this.#controls[this.#focus]?.focus(false);
-        this.#focus=index;
-      });
     });
-    if(focusLabel){const index=this.#controls.findIndex(control=>(control.virtualKey??control.node.label)===focusLabel&&!control.disabled());if(index>=0){this.#setFocus(index);if(this.#controls[index]?.restoreFocus)this.#controls[index]!.focus(true);if(selection)this.#controls[index]?.restoreSelection?.(selection);}}
-    if(this.#applying)this.#page.node.eventMode="none";
-    options.invalidate();
+  }
+  refreshContent():void{
+    if(this.destroyed)return;
+    if(!this.#page?.update||this.#routeKey!==this.options.navigation.activeRoute.value.key||this.#renderTheme!==this.options.theme()){this.redraw();return;}
+    const previous=this.#controls[this.#focus],key=previous?.virtualKey??previous?.node.label;
+    this.#page.update();this.#syncDisclosures();this.#reflow();this.#bindControls();
+    this.#focus=key?this.#controls.findIndex(control=>(control.virtualKey??control.node.label)===key&&!control.disabled()):-1;
+    if(this.#focus>=0&&previous?.virtualKey)this.#controls[this.#focus]!.focus(this.#keyboardFocus);
+    this.options.invalidate();
+  }
+  #syncDisclosures():void{
+    for(const entry of this.#page?.layout?.disclosures??[]){
+      let state=this.#disclosures.get(entry.id);
+      if(!state){state={height:entry.expanded?1:0,opacity:entry.expanded?1:0,expanded:entry.expanded};this.#disclosures.set(entry.id,state);}
+      if(state.expanded!==entry.expanded){
+        state.expanded=entry.expanded;const target=entry.expanded?1:0;
+        motion(state).duration(0.2).ease(value=>Math.cbrt(value)*3-Math.pow(Math.cbrt(value),2)*3+value)
+          .to({height:target,onUpdate:()=>this.#reflow()}).start();
+        motion(state).duration(0.1).ease("power1.inOut").to({opacity:target,onUpdate:()=>this.#reflow()}).start();
+      }
+    }
   }
   #reflow():void{
     if(this.destroyed||!this.#page||!this.#scroll)return;
@@ -342,7 +367,7 @@ export class NativeSettingsShell extends Container {
   #clearLeaving():void{
     if(!this.#leaving)return;
     const {scroll,page}=this.#leaving;this.#leaving=null;
-    killMotionOf(page.node);page.dispose();scroll.destroy();
+    killMotionOf(page.node);releaseNativeGraphics(scroll);page.dispose();scroll.destroy();
   }
   #apply():void{
     if(this.#applying)return;this.#applying=true;this.#error="";
@@ -387,13 +412,14 @@ export class NativeSettingsShell extends Container {
     return event.key?this.#controls[this.#focus]?.handleKey(event.key)??false:false;
   }
   override destroy():void{
-    for(const button of this.#footerButtons)if(!button.parent)button.destroy({children:true});
+    releaseNativeGraphics(this);
+    for(const button of this.#footerButtons)if(!button.parent)destroyNativeSubtree(button);
     killMotionOf(this.#contentProgress);this.#contentTransition=null;
     killMotionOf(this.#navigation);this.#navigationPaint=()=>{};
     this.#clearLeaving();
     for(const state of this.#disclosures.values())killMotionOf(state);
     killMotionOf(this.#reveal);
     killMotionOf(this);if(this.#page)killMotionOf(this.#page.node);
-    this.#page?.dispose();this.#page=null;super.destroy({children:true});
+    this.#page?.dispose();this.#page=null;this.#scroll=null;this.#controls=[];this.#buttons=[];this.#footerButtons=[];this.#disclosures.clear();super.destroy({children:true});
   }
 }

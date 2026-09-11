@@ -1683,6 +1683,14 @@ export interface FolderOverlayLayer {
 }
 
 export class FolderOverlayLayer extends Container {
+  private panelPresentation:Parameters<FolderOverlayLayer["animatePanel"]>|null=null;
+
+  /** Native progress is externally driven; do not rebuild icon/layout plans for it. */
+  presentOpenProgress(progress:number):void {
+    const input=this.panelPresentation;
+    if(!input||this.destroyed||!this.visible||input[0].isFolderClosing)return;
+    this.animatePanel({...input[0],folderOpenProgress:progress},input[1],input[2],input[3],input[4],input[5]);
+  }
   constructor(options: FolderOverlayLayerOptions) {
     super();
     this.panel = new Container();
@@ -1839,6 +1847,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   update(state: FolderOverlayStateInput): FolderGeometry | null {
+    if(!state.renderedFolder)this.panelPresentation=null;
     this.syncPageTurnVisualSettle(state);
     const prepared = this.prepareFolderOverlayState(state);
     if (prepared.done) return prepared.result;
@@ -4273,6 +4282,7 @@ export class FolderOverlayLayer extends Container {
     openingGeometrySnapshot: FolderOpeningGeometrySnapshot | null;
     openingLease: FolderOverlayOpenLease;
   }> | void {
+    this.panelPresentation=[state,targetX,targetY,panelRect,sourceRect,options];
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
     const isOpenFolderZoomFadeClosing = Boolean(state.isFolderZoomFadeClosing && !state.isFolderClosing);
     const folderId = state.renderedFolder?.id || null;
@@ -4670,6 +4680,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   destroy(options?: Parameters<Container["destroy"]>[0]): void {
+    this.panelPresentation=null;
     this.teardownTransientState({
       clearDetachedClosingVisuals: true,
       clearVisualCommitQueue: true,

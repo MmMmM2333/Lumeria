@@ -1,4 +1,7 @@
 import { ref, shallowRef } from "vue";
+import { createLaunchpadApps, type LaunchpadAppsOptions } from "../application/launchpadApps.js";
+import { createNativeStateHost } from "../application/stateHost.js";
+import { catalogPort } from "../platform/launchpadPorts.js";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
 import type { LaunchpadApiBridge, ScanStats } from "../api/launchpadApi.js";
 import { createLaunchpadLayoutHelpers } from "../domain/launchpadLayout.js";
@@ -159,6 +162,7 @@ async function waitForCondition(condition: () => boolean): Promise<boolean> {
 function createManagedAppRemovalHarness(
   pageItems: readonly (readonly (string | LaunchpadItem)[])[],
   currentPageIndex: number,
+  nativeHost = false,
 ) {
   const helpers = createLaunchpadLayoutHelpers({
     getFolderPageSize: () => 9,
@@ -229,7 +233,10 @@ function createManagedAppRemovalHarness(
     searchPageIndex,
   });
   const transientNotices: LaunchpadAppsNotice[] = [];
-  const apps = useLaunchpadApps({
+  const createApps = nativeHost
+    ? (options: LaunchpadAppsOptions) => createLaunchpadApps({ ...options, catalogPort }, createNativeStateHost(() => {}))
+    : useLaunchpadApps;
+  const apps = createApps({
     appendAppsToPages: (sourcePages, selectedApps) => [
       ...helpers.clonePages(sourcePages),
       selectedApps.map((app) => ({ ...app })),
@@ -265,6 +272,30 @@ export async function runLaunchpadAppsTests() {
   const assert = (condition: unknown, message: string): void => {
     if (!condition) throw new Error(`[Launchpad apps test failed] ${message}`);
   };
+
+  for (const nativeHost of [false, true]) {
+    const { apps } = createManagedAppRemovalHarness([[
+      { id: "stable-status", type: "app", name: "Stable", launchTarget: { kind: "executable", path: "C:/Stable.exe" } },
+    ]], 0, nativeHost);
+    const empty = apps.presentation.launchTargetStatusById.value;
+    assert(empty === apps.presentation.launchTargetStatusById.value, "unchanged status reads must retain identity on both hosts");
+    apps.appManagerSearchQuery.value = "unrelated query";
+    apps.toggleManagedAppSelection("stable-status", true);
+    assert(empty === apps.presentation.launchTargetStatusById.value, "list state must not invalidate launch target status projection");
+    const checks = apps.nativeIntegration.listLaunchTargets();
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "stable-status", status: "missing" }], checks);
+    const missing = apps.presentation.launchTargetStatusById.value;
+    assert(missing !== empty && missing["stable-status"] === "missing", "a real status change must publish a new map");
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "stable-status", status: "missing" }], checks);
+    assert(missing === apps.presentation.launchTargetStatusById.value, "equivalent check results must preserve projection identity");
+    assert(Object.isFrozen(missing), "shared status projections must be immutable");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    const cleared = apps.presentation.launchTargetStatusById.value;
+    assert(cleared !== missing && Object.keys(cleared).length === 0, "clearing checks must invalidate a populated map");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    assert(cleared === apps.presentation.launchTargetStatusById.value, "clearing an empty map must not republish it");
+    assert(missing["stable-status"] === "missing", "later updates must not mutate published snapshots");
+  }
 
   assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
   assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");

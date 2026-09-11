@@ -1,4 +1,5 @@
 import { Container, Graphics, Rectangle, type FederatedPointerEvent } from "pixi.js";
+import { releaseNativeGraphics } from "./nativeGraphicsLifecycle.js";
 import { nativeFluentTheme, type NativeTheme } from "./NativeFluentButton.js";
 import { nativeUiMetrics } from "./ui/nativeUiTheme.js";
 import { activeTouchpadCapture } from "../../debug/touchpadCapture.js";
@@ -66,5 +67,5 @@ export class NativeScrollView extends Container {
     this.#thumb.hitArea=new Rectangle(-4,0,12,height);
     this.invalidate();
   }
-  override destroy():void{this.#drag=null;super.destroy({children:true});}
+  override destroy():void{this.#drag=null;releaseNativeGraphics(this);super.destroy({children:true});}
 }

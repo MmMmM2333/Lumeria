@@ -26,6 +26,8 @@ import { getFolderLayoutMetricsForRows } from "../folderLayoutMetrics.js";
 import {
   applyDesktopLayerFrameUpdates,
   makeDesktopStructureFrame,
+  makeDesktopVisualFrame,
+  type DesktopStructureFrame,
   type DesktopLayerFrameWork,
 } from "../pixi/scene/desktopLayerFrames.js";
 import type { NativeFolderPresentation } from "./nativeFolderFlow.js";
@@ -37,6 +39,7 @@ export type NativeSceneViewport = Readonly<{
 }>;
 
 export type NativeSceneAnimationHost = Readonly<{
+  /** Apply pending state before rendering; motion alone must not rebuild state. */
   commit(): void;
   animate(update: (deltaMs: number) => void): () => void;
   invalidate(): void;
@@ -213,6 +216,50 @@ export class NativeDesktopScene {
   readonly #onFolderPageIndexCommit: (pageIndex: number) => void;
   readonly #pageRefs = new Map<number, unknown>();
   #destroyed = false;
+  #committed: {frame:CompleteDesktopSceneFrame;viewport:NativeSceneViewport;options:NativeSceneCommitOptions}|null=null;
+  #pageRange="";
+  #dependencies:readonly unknown[]|null=null;
+  #visualValues:readonly unknown[]=[];
+  #structureInvalidated=false;
+  #updates={structure:0,visual:0,motion:0};
+  #structureFrame:DesktopStructureFrame|null=null;
+  invalidateStructure():void {this.#structureInvalidated=true;}
+  getUpdateStatistics():Readonly<{structure:number;visual:number;motion:number}>{return {...this.#updates};}
+
+  #visiblePageRange(frame:CompleteDesktopSceneFrame,width:number):string {
+    const presented=-this.#layer.pageTrack.x/width;
+    const target=frame.viewport.activePageIndex;
+    // Include the moving source, including interrupted multi-page jumps.
+    let result="";
+    for(let index=0;index<frame.viewport.activePages.length;index++){
+      if(Math.abs(index-target)<=1||(index>=Math.floor(presented)&&index<=Math.ceil(presented)))result+=`${index},`;
+    }
+    return result;
+  }
+
+  /** Reconcile only page-realization boundary changes, not every motion sample. */
+  presentMotion():void {
+    const committed=this.#committed;
+    if(!committed||this.#destroyed)return;
+    this.#updates.motion++;
+    if(this.#visiblePageRange(committed.frame,committed.viewport.width)!==this.#pageRange){
+      this.commit(committed.frame,committed.viewport,{...committed.options,snapDesktopLayout:false});
+    }
+    this.#layer.flushInteractiveBounds();
+    if(committed.options.folderPresentation?.isClosing&&this.#structureFrame){
+      // Closing targets track the restoring desktop transform, even without a
+      // structural change. Reconcile the overlay geometry, not desktop nodes.
+      this.#layer.updateSingleStageFolderLayer(this.#structureFrame);
+    }
+    if(committed.options.folderPresentation?.renderedFolder||this.#layer.getFolderHandoffNodes().size)this.#layer.commitFolderSourceGhosting();
+  }
+
+  presentFolderProgress(progress:number):void {
+    if(this.#destroyed)return;
+    this.#layer.singleStageFolderLayer.presentOpenProgress(progress);
+    const saved=this.#committed;
+    if(saved?.options.folderPresentation){saved.options={...saved.options,folderPresentation:{...saved.options.folderPresentation,openProgress:progress}};}
+  }
 
   constructor(stage: Container, options: NativeDesktopSceneOptions = {}) {
     if (stage.destroyed) throw new Error("NativeDesktopScene requires a live Pixi stage");
@@ -259,6 +306,38 @@ export class NativeDesktopScene {
     assertCompleteDesktopSceneFrame(frame);
     assertStaticFrame(frame);
     assertViewport(viewport);
+    const folder=options.folderPresentation;
+    const dependencies=[...Object.values(frame.viewport),frame.interaction,frame.folder,frame.diagnostics,
+      viewport.width,viewport.height,viewport.resolution,options.chromeInset,options.openingIconId,
+      this.#folderLayout.cols,this.#folderLayout.rows,this.#folderLayout.iconSize,
+      folder?.renderedFolder,folder?.folderPageIndex,folder?.isClosing,folder?.openProgressTarget,folder?.openingCancelRequest,
+      options.folderPageTrackScrub];
+    const range=this.#visiblePageRange(frame,viewport.width);
+    const folderOpen=Boolean(folder?.renderedFolder&&!folder.isClosing);
+    const visualValues=[frame.visual.desktopVisualAlpha,frame.visual.desktopVisualTransform.scale,frame.visual.desktopVisualTransform.y,
+      frame.visual.launchpadVisualAlpha,frame.visual.launchpadVisualTransform.scale,frame.visual.launchpadVisualTransform.y,folderOpen];
+    if(options.snapDesktopLayout===false&&!this.#structureInvalidated&&this.#dependencies
+      &&dependencies.length===this.#dependencies.length&&dependencies.every((value,index)=>Object.is(value,this.#dependencies![index]))
+      &&range===this.#pageRange){
+      let visualWork:DesktopLayerFrameWork|null=null;
+      if(options.pageTrackScrub!==this.#committed?.options.pageTrackScrub)this.#layer.updatePagePresentation(options.pageTrackScrub??null);
+      if(visualValues.some((value,index)=>value!==this.#visualValues[index])){
+        visualWork=applyDesktopLayerFrameUpdates(this.#layer,[{lane:"visual",frame:makeDesktopVisualFrame({
+          desktopVisualAlpha:folderOpen?0:frame.visual.desktopVisualAlpha,
+          desktopVisualTransform:folderOpen&&!frame.interaction.isDesktopClosing?FOLDER_OPEN_DESKTOP_TRANSFORM:frame.visual.desktopVisualTransform,
+          height:viewport.height,isFolderOverlayActive:folderOpen,
+          launchpadVisualAlpha:frame.visual.launchpadVisualAlpha,launchpadVisualTransform:frame.visual.launchpadVisualTransform,
+          snapDesktopLayout:false,stageRect:{left:0,top:0,width:viewport.width,height:viewport.height},width:viewport.width,
+        })}]);this.#updates.visual++;
+      }
+      this.#visualValues=visualValues;
+      this.#committed={frame,viewport,options};
+      return visualWork??applyDesktopLayerFrameUpdates(this.#layer,[]);
+    }
+    this.#structureInvalidated=false;
+    this.#dependencies=dependencies;
+    this.#visualValues=visualValues;
+    this.#updates.structure++;
 
     const stageRect = Object.freeze({
       height: viewport.height,
@@ -284,16 +363,16 @@ export class NativeDesktopScene {
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
     for (const id of this.#layer.singleStageFolderLayer.getDesktopSourceGhostedIds()) folderSourceGhostedIds.add(id);
     if (folderId) folderSourceGhostedIds.add(folderId);
-    const folderOpen = Boolean(folderState && !folderState.isFolderClosing);
-    this.#pageDots.update(frame, viewport.width, viewport.height, folderOpen || frame.interaction.isDesktopClosing);
+    const folderIsOpen = Boolean(folderState && !folderState.isFolderClosing);
+    this.#pageDots.update(frame, viewport.width, viewport.height, folderIsOpen || frame.interaction.isDesktopClosing);
     const structureFrame = makeDesktopStructureFrame({
       activePageIndex: frame.viewport.activePageIndex,
       activePages: frame.viewport.activePages,
       desktopFrame: { ...stageRect, top: 64+(options.chromeInset??0), height: Math.max(1, viewport.height - 136-(options.chromeInset??0)) },
       desktopGridDebugOptions: null,
       desktopTrackMotionKey: frame.viewport.desktopTrackMotionKey,
-      desktopVisualAlpha: folderOpen ? 0 : frame.visual.desktopVisualAlpha,
-      desktopVisualTransform: folderOpen && !frame.interaction.isDesktopClosing ? FOLDER_OPEN_DESKTOP_TRANSFORM : frame.visual.desktopVisualTransform,
+      desktopVisualAlpha: folderIsOpen ? 0 : frame.visual.desktopVisualAlpha,
+      desktopVisualTransform: folderIsOpen && !frame.interaction.isDesktopClosing ? FOLDER_OPEN_DESKTOP_TRANSFORM : frame.visual.desktopVisualTransform,
       deviceResolution: viewport.resolution,
       dragFolderHoverState: frame.interaction.dragFolderHoverState,
       dragFolderTargetId: frame.interaction.dragFolderTargetId,
@@ -348,6 +427,7 @@ export class NativeDesktopScene {
     const work = applyDesktopLayerFrameUpdates(this.#layer, Object.freeze([
       Object.freeze({ frame: structureFrame, lane: "structure" as const }),
     ]));
+    this.#structureFrame=structureFrame;
 
     for (const [pageIndex, page] of frame.viewport.activePages.entries()) {
       for (const item of page) {
@@ -380,6 +460,8 @@ export class NativeDesktopScene {
       }
     }
     syncPixiTextResolution(this.#layer, viewport.resolution);
+    this.#committed={frame,viewport,options};
+    this.#pageRange=this.#visiblePageRange(frame,viewport.width);
     return work;
   }
 
@@ -400,8 +482,8 @@ export class NativeDesktopScene {
       stopFrames = host.animate((deltaMs) => {
         motionRuntime.step(deltaMs / 1000);
         // Match the Web presentation loop: update geometry/handoffs after motion, before rendering.
-        this.#layer.flushInteractiveBounds();
         host.commit();
+        this.presentMotion();
         if (motionRuntime.hasActiveWork()) return;
         const stop = stopFrames;
         stopFrames = null;
@@ -468,6 +550,8 @@ export class NativeDesktopScene {
   }
 
   destroy(): void {
+    this.#committed=null;
+    this.#structureFrame=null;
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.#folderPageRefs.clear();

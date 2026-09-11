@@ -57,6 +57,8 @@ import { NativeAppDialogs } from "../rendering/native/NativeAppDialogs.js";
 import { nativeHost } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { buildAppSearchDocuments, searchAppDocuments } from "../domain/launchpadSearch.js";
 import { snapshotContractValue } from "../rendering/contractSnapshot.js";
+import { createNativeRecordSnapshot } from "../rendering/native/nativeSceneSnapshot.js";
+import { createNativeSceneScheduler } from "./nativeSceneScheduler.js";
 import { createNativeEditing } from "./nativeEditing.js";
 import { createLayoutSaveQueue } from "../application/layoutSaveQueue.js";
 import { normalizeNativeCustomIcon } from "./nativeCustomIcon.js";
@@ -492,23 +494,25 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
   app.nativeInput.emitPointer("pointerup", x, y, button, modifiers);
 }
 
-let renderScene: (snapDesktopLayout?: boolean) => void;
-let sceneRenderQueued = false;
-let sceneDisposed = false;
-const requestSceneRender = (): void => {
-  if (sceneDisposed || sceneRenderQueued) return;
-  sceneRenderQueued = true;
-  queueMicrotask(() => {
-    if (!sceneRenderQueued) return;
-    sceneRenderQueued = false;
-    renderScene();
-  });
-};
+const sceneUpdates = createNativeSceneScheduler();
+const renderScene = sceneUpdates.run;
+const requestSceneRender = sceneUpdates.request;
+let lastFolderPresentation:ReturnType<ReturnType<typeof createNativeFolderFlow>["snapshot"]>|null=null;
+let folderNamePresentationItem:Readonly<{id:string;name?:string}>|null=null;
+let folderNamePresentationBlocked=false;
 const folderFlow = createNativeFolderFlow(presentation => {
   if(!presentation.renderedFolder && editing?.rollback.presentation.value?.phase === "closing") {
     editing.rollback.beginDissolve(editing.rollback.presentation.value.folderId);
   }
-  requestSceneRender();
+  const previous=lastFolderPresentation;
+  lastFolderPresentation=presentation;
+  if(previous&&previous.renderedFolder===presentation.renderedFolder
+    &&previous.folderPageIndex===presentation.folderPageIndex&&previous.isClosing===presentation.isClosing
+    &&previous.openProgressTarget===presentation.openProgressTarget&&previous.openingCancelRequest===presentation.openingCancelRequest){
+    scene.presentFolderProgress(presentation.openProgress);
+    folderNameInput.update(folderNamePresentationItem,presentation.openProgress,folderNamePresentationBlocked);
+    app.invalidate();
+  }else requestSceneRender();
 });
 
 function setFocusedIcon(focusedIcon: SceneFocusedIcon | null): void {
@@ -649,7 +653,7 @@ const scene = new NativeDesktopScene(app.stage, {
     folderFlow.notifyInternalActivity(active, folderId);
   },
   onFolderPageIndexCommit: setFolderPageIndex,
-  onFolderRenderRequest: requestSceneRender,
+  onFolderRenderRequest: ()=>{scene.invalidateStructure();requestSceneRender();},
   onIconActivate: (item) => void activateItem(item),
   onGroupReleaseComplete: result => editing?.complete(result),
   onRollbackComplete: token => {editing?.rollback.complete(token);},
@@ -709,7 +713,7 @@ let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
 let bindApplicationFocus = () => {};
 let cancelNativeGesture = () => {};
-const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);applySavedWindowIcon();windowEffects.refresh();bindApplicationFocus();});
+const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);applySavedWindowIcon();windowEffects.refresh();bindApplicationFocus();scene.invalidateStructure();requestSceneRender();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -783,7 +787,7 @@ try {
   }
 
   disconnectAnimationHost = scene.connectAnimationHost({
-    commit: () => renderScene(),
+    commit: sceneUpdates.flush,
     animate: (update) => app.animate(update),
     invalidate: () => app.invalidate(),
   });
@@ -806,8 +810,12 @@ try {
     resolution: app.resolution,
     width: app.contentSize.width,
   }, true);
-  renderScene = (snapDesktopLayout = false) => {
-    sceneRenderQueued = false;
+  let projectedPagesSource:ReturnType<ReturnType<typeof createNativeEditing>["projectedPages"]>|null=null;
+  let projectedPagesSnapshot=currentFrame.viewport.activePages;
+  let retainedPages:typeof currentFrame.viewport.activePages|null=null;
+  const captureInteraction=createNativeRecordSnapshot<Record<string,unknown>>();
+  const captureDiagnostics=createNativeRecordSnapshot<typeof currentFrame.diagnostics>();
+  sceneUpdates.connect((snapDesktopLayout = false) => {
     if(launchFlow){
       const closed=!launchFlow.isDesktopOpen.value;
       currentFrame=Object.freeze({...currentFrame,
@@ -820,21 +828,28 @@ try {
       launchGhostView.update(ghost,ghost?app.stage.getChildByLabel(`launchpad-item:${ghost.app.id}`,true):null);
     }
     if(editing) {
-      const interaction = snapshotContractValue({ ...currentFrame.interaction,
+      const interaction = captureInteraction({ ...currentFrame.interaction,
         dragMeta: editing.drag.dragMeta.value, groupDragState: editing.drag.groupDragState.value,
         dragFolderHoverState: editing.drag.dragFolderHoverState.value, dragFolderTargetId: editing.drag.dragFolderTargetId.value,
         isEditMode: editing.mode.value, isBatchSelectionActive: editing.selection.isActive.value,
         selectedAppIds: editing.selection.selectedIds.value,
         provisionalFolderRollback: editing.rollback.presentation.value,
       }) as typeof currentFrame.interaction;
-      const pages = searchQuery.trim() ? currentFrame.viewport.activePages : snapshotContractValue(editing.projectedPages()) as typeof currentFrame.viewport.activePages;
+      const source=editing.projectedPages();
+      if(!searchQuery.trim()&&source!==projectedPagesSource){
+        projectedPagesSource=source;
+        projectedPagesSnapshot=snapshotContractValue(source) as typeof currentFrame.viewport.activePages;
+      }
+      const pages = searchQuery.trim() ? currentFrame.viewport.activePages : projectedPagesSnapshot;
       currentFrame = Object.freeze({ ...currentFrame, interaction,
-        diagnostics:Object.freeze({...currentFrame.diagnostics,showMissingLaunchTargetBadge:apps?.presentation.showMissingLaunchTargetBadge.value??currentFrame.diagnostics.showMissingLaunchTargetBadge,
-          launchTargetStatusById:snapshotContractValue(apps?.presentation.launchTargetStatusById.value??currentFrame.diagnostics.launchTargetStatusById)}),
+        diagnostics:captureDiagnostics({...currentFrame.diagnostics,showMissingLaunchTargetBadge:apps?.presentation.showMissingLaunchTargetBadge.value??currentFrame.diagnostics.showMissingLaunchTargetBadge,
+          launchTargetStatusById:apps?.presentation.launchTargetStatusById.value??currentFrame.diagnostics.launchTargetStatusById}),
         viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) });
       activePageItems = getNativeActivePageItems(currentFrame);
     }
-    iconTextures.retainLayout(collectTextureItems(currentFrame));
+    if(retainedPages!==currentFrame.viewport.activePages){
+      iconTextures.retainLayout(collectTextureItems(currentFrame));retainedPages=currentFrame.viewport.activePages;
+    }
     work = commitScene({
       height: app.contentSize.height,
       resolution: app.resolution,
@@ -843,8 +858,9 @@ try {
     settingsButton.position.set(app.contentSize.width-54,14+chromeInset());
     const folderHeader=folderFlow.snapshot();
     const currentFolder = folderHeader.renderedFolder && layoutState.operations.findFolder(layoutState.presentation.pages.value, folderHeader.renderedFolder.id)?.item;
-    folderNameInput.update(currentFolder ?? folderHeader.renderedFolder, folderHeader.openProgress,
-      folderHeader.isClosing || Boolean(settingsShell || management.modal || editing?.drag.isDragActive()) || Boolean(launchFlow?.isLaunchpadInteractionBlocked()));
+    folderNamePresentationItem=currentFolder ?? folderHeader.renderedFolder;
+    folderNamePresentationBlocked=folderHeader.isClosing || Boolean(settingsShell || management.modal || editing?.drag.isDragActive()) || Boolean(launchFlow?.isLaunchpadInteractionBlocked());
+    folderNameInput.update(folderNamePresentationItem, folderHeader.openProgress,folderNamePresentationBlocked);
     app.stage.setChildIndex(folderNameInput, app.stage.children.length - 1);
     const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
     settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
@@ -863,7 +879,7 @@ try {
     windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
     app.stage.setChildIndex(windowChrome,app.stage.children.length-1);
     app.invalidate();
-  };
+  });
   searchBar.update(app.contentSize.width, false);
   let resizeEvents = 0;
   let resizeLiveBackingObserved = false;
@@ -981,7 +997,7 @@ try {
   const changedApps=()=>{
     if(appsChangeQueued)return;appsChangeQueued=true;
     queueMicrotask(()=>{
-      appsChangeQueued=false;if(!apps||sceneDisposed)return;
+      appsChangeQueued=false;if(!apps||sceneUpdates.disposed)return;
       const key=JSON.stringify(apps.persistence.capture());
       const persistedChange=key!==appsPersistenceKey;
       if(persistedChange){appsPersistenceKey=key;commitEditedPages(layoutState.operations.clonePages(layoutState.presentation.pages.value));}
@@ -989,7 +1005,7 @@ try {
       // page on blur would flash it while focus is moving to the next source field.
       const sourceFieldFocused=searchBar.host.focused?.label?.startsWith("native-apps:source-");
       const keywordDraftFocused=searchBar.host.focused?.label==="native-apps:keyword"&&!persistedChange;
-      if(settingsShell&&settingsNavigation.activeRoute.value.tabId==="apps"&&!sourceFieldFocused&&!keywordDraftFocused&&!management.modal)settingsShell.redraw();
+      if(settingsShell&&settingsNavigation.activeRoute.value.tabId==="apps"&&!sourceFieldFocused&&!keywordDraftFocused&&!management.modal)settingsShell.refreshContent();
       appDialogs?.sync();
       refreshTargetChecks();
       requestSceneRender();
@@ -1015,14 +1031,14 @@ try {
   }});
   let targetCheckKey="",targetCheckGeneration=0;
   refreshTargetChecks=()=>{
-    if(!apps||sceneDisposed)return;
+    if(!apps||sceneUpdates.disposed)return;
     const checks=apps.nativeIntegration.listLaunchTargets();
     const key=apps.nativeIntegration.shouldCheckLaunchTargets()?apps.nativeIntegration.launchTargetCheckSignature(checks):"off";
     if(key===targetCheckKey)return;targetCheckKey=key;const generation=++targetCheckGeneration;
     if(key==="off"){apps.nativeIntegration.clearLaunchTargetStatuses();return;}
     void nativeData.checkLaunchTargets(checks.map(({id,launchTarget})=>({id,launchTarget}))).then(results=>{
-      if(generation===targetCheckGeneration&&!sceneDisposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,checks);
-    }).catch(error=>{if(!sceneDisposed)logNativeRuntime("launch-target-check-error",error);});
+      if(generation===targetCheckGeneration&&!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,checks);
+    }).catch(error=>{if(!sceneUpdates.disposed)logNativeRuntime("launch-target-check-error",error);});
   };
   refreshTargetChecks();
   const flowState=createNativeStateHost(requestSceneRender),openingIcon=flowState.cell<import("../application/launchpadLaunchFlow.js").LaunchIconFocus|null>(null);
@@ -1595,7 +1611,7 @@ try {
       setTimeout(()=>{quitRequested=true;app.window.requestClose();},1500);
     }
   }
-  if(startupLoadRecovered)notices.showLayoutLoadRecovered();
+  if(startupLoadRecovered&&!notices.transientNotice.value)notices.showLayoutLoadRecovered();
   bindApplicationFocus = () => {
     offFocus();
     offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else {cancelNativeGesture();editing?.alt.handleWindowBlur();}});
@@ -1772,10 +1788,37 @@ try {
     await runFolderClosingContextSmoke(smokeFolder);
     console.log("Native inline folder rename: pointer, context menu, IME, empty restore, length and persistence passed");
   };
-  if (process.env.LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE === "1") {
-    assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR, "folder rename smoke requires isolated data");
+  if (process.env.LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE === "1" || process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE) {
+    assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR, "native interaction smoke requires isolated data");
     const {dlopen}=await import("bun:ffi");
     const {Sprite}=await import("pixi.js");
+    if(process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE){
+      const failedPath=settings.presentation.backgroundImagePath.value;
+      assert.ok(failedPath);assert.equal(settings.presentation.backgroundSource.value,"customImage");
+      const display=desktopBackground.getChildByLabel("native-background-image") as Sprite;
+      const base=desktopBackground.getChildByLabel("native-background-base");assert.ok(base);
+      assert.equal(display.visible,false,"failed startup wallpaper must show the base background");
+      assert.equal(base.width,app.contentSize.width);assert.equal(base.height,app.contentSize.height);
+      assert.equal(notices.transientNotice.value?.intent,"error","startup IO failure must retain its error notice");
+      assert.ok(notices.transientNotice.value?.message.includes(process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE==="missing"?"ENOENT":"Unsupported image type"));
+      assert.equal(readFileSync(nativeLogPath,"utf8").includes('"event":"uncaught-exception"'),false);
+      await captureSmokeFrame(`wallpaper-${process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE}-fallback`);
+      const config=backgroundConfig();
+      const stale=desktopBackground.configure({...config,backgroundImagePath:failedPath+".superseded"},app.contentSize.width,app.contentSize.height);
+      await desktopBackground.configure({...config,backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height);
+      await stale;
+      writeFileSync(failedPath,readFileSync(join(import.meta.dir,"branding","light.png")));
+      await refreshBackground();assert.equal(display.visible,true,"restoring the same file must allow a later retry");
+      const previousTexture=display.texture;
+      await assert.rejects(desktopBackground.configure({...config,backgroundImagePath:failedPath+".missing"},app.contentSize.width,app.contentSize.height));
+      assert.equal(display.visible,false);assert.equal(previousTexture.destroyed,true,"fallback must release obsolete effect render textures");
+      await refreshBackground();await present(app,"wallpaper retry restored");
+      assert.equal(settings.presentation.backgroundImagePath.value,failedPath,"fallback must not erase the user's configured path");
+      await captureSmokeFrame("wallpaper-restored");
+      console.log("Native invalid wallpaper: startup notice, base fallback, stale IO, texture cleanup and same-path retry passed");
+      writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({wallpaper:process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE}),"utf8");
+      return;
+    }
     const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
     const icons=dlopen("user32.dll",{GetAncestor:{args:["u64","u32"],returns:"u64"},SendMessageW:{args:["u64","u32","u64","i64"],returns:"i64"}});
     const root=icons.symbols.GetAncestor(BigInt(getNativePixiApplicationTesting(app).handles().inputWindow),2);
@@ -2212,6 +2255,30 @@ try {
       scroll.scrollTo(0);list.viewport(0,450);assert.ok(list.mountedCount<=9);
       assert.equal(toolbar.getGlobalPosition().y,toolbarY,"list scrolling must not move the toolbar");
       await present(app,"virtual scroll restored");
+    }
+    {
+      const search=app.stage.getChildByLabel("native-apps:search",true) as typeof searchBar.input;
+      const scroll=app.stage.getChildByLabel("native-apps:list-scroll",true) as import("../rendering/native/NativeScrollView.js").NativeScrollView;
+      const list=app.stage.getChildByLabel("native-virtual-list",true) as import("../rendering/native/ui/NativeVirtualList.js").NativeVirtualList;
+      const row=app.stage.getChildByLabel(`native-apps:row-${firstManaged.id}`,true);
+      const shell=settingsShell as NativeSettingsShell;
+      const revision=shell.redrawCount;
+      search.focus();search.commitText(firstManaged.name);await present(app,"live manager search");
+      assert.equal(app.stage.getChildByLabel("native-apps:search",true),search);
+      assert.equal(app.stage.getChildByLabel(`native-apps:row-${firstManaged.id}`,true),row,"matching rows must survive filtering");
+      search.setSelectionRange(0,Math.min(1,search.value.length));const selection={...search.selection};
+      const offset=scroll.offset;apps!.toggleManagedAppSelection(firstManaged.id,true);await present(app,"local manager selection");
+      assert.equal(search.focused,true);assert.deepEqual(search.selection,selection,"selection updates must preserve the live search caret");
+      assert.equal(scroll.offset,offset);assert.equal(app.stage.getChildByLabel("native-apps:list-scroll",true),scroll);
+      apps!.appManagerSearchQuery.value="no-such-native-manager-result";await present(app,"manager empty result");
+      assert.equal(list.mountedCount,0);assert.equal(list.controls.length,0);assert.equal(search.focused,true);
+      apps!.appManagerSearchQuery.value="";apps!.clearManagedAppSelection();await present(app,"manager search restored");
+      scroll.scrollTo(Math.min(70,scroll.maxOffset));const preservedOffset=scroll.offset;
+      apps!.toggleManagedAppSelection(firstManaged.id,true);await present(app,"manager scroll preserved during selection");
+      assert.equal(scroll.offset,preservedOffset);apps!.clearManagedAppSelection();scroll.scrollTo(0);await present(app,"manager local state reset");
+      assert.equal(settingsShell,shell);assert.equal(shell.redrawCount,revision,"search and selection must not rebuild the settings shell");
+      search.blur();await waitFor("local manager controls settle",()=>!scene.getMotionSnapshot().active);
+      console.log("Native manager local updates: input/caret, row reuse, empty results and shell/scroll identity passed");
     }
     clickWithNativeInput(app.stage.getChildByLabel(`native-apps:select-${firstManaged.id}`,true)!);
     await waitFor("apps selection bar expands",()=>app.stage.getChildByLabel("native-disclosure:apps.selection.apps.appManager",true)?.getChildByLabel("native-disclosure-content")?.alpha===1);
@@ -3479,10 +3546,12 @@ try {
     }else await closed;
   }
 } finally {
+  // Disconnect the renderer and invalidate queued tasks before any disposer can
+  // publish state changes or schedule drag/animation completion callbacks.
+  sceneUpdates.dispose();
   windowEffects.dispose();
   tray?.remove();tray=null;
   disposeLaunchFlow();
-  sceneDisposed=true;sceneRenderQueued=false;
   desktopBackground.destroy();
   mainShortcut.dispose();
   (settingsShell as NativeSettingsShell|null)?.destroy();

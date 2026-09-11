@@ -142,6 +142,14 @@ fixture.pages = [[
 fixture.settings.backgroundSource = isolated && process.argv.includes("--fullscreen") ? "customImage" : "systemMaterial";
 fixture.settings.windowMode = isolated && process.argv.includes("--fullscreen") ? "fullscreen" : "windowed";
 fixture.settings.backgroundImagePath = isolated && process.argv.includes("--fullscreen") ? iconPath : null;
+const invalidWallpaper=process.argv.find(argument=>argument.startsWith("--invalid-wallpaper="))?.slice("--invalid-wallpaper=".length);
+if(invalidWallpaper){
+  if(!isolated||!["missing","corrupt"].includes(invalidWallpaper))throw new Error("Invalid wallpaper smoke requires isolated data and missing or corrupt mode");
+  fixture.settings.backgroundSource="customImage";
+  const invalidWallpaperPath=join(dataDir,"invalid-wallpaper.png");
+  fixture.settings.backgroundImagePath=invalidWallpaperPath;
+  if(invalidWallpaper==="corrupt")writeFileSync(invalidWallpaperPath,"not a PNG","utf8");
+}
 fixture.settings.backgroundBaseColor = "#090b14";
 fixture.settings.backgroundBaseOpacity = 100;
 if(isolated&&process.argv.includes("--acrylic")){
@@ -200,6 +208,7 @@ try {
       ),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
+      LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE:invalidWallpaper??"",
       ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
       LAUNCHPAD_NATIVE_RESTART_FILE:restartPath,
@@ -219,13 +228,16 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
-  if (folderRenameSmoke && status !== 130) {
+  if (invalidWallpaper && status !== 130) {
+    if(!existsSync(markerPath)||JSON.parse(readFileSync(markerPath,"utf8")).wallpaper!==invalidWallpaper)throw new Error("Native wallpaper failure smoke did not complete");
+    console.log(`Native ${invalidWallpaper} wallpaper smoke passed`);
+  } else if (folderRenameSmoke && status !== 130) {
     if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath, "utf8")).folderRename !== "verified") {
       throw new Error("Native folder rename smoke did not complete");
     }
     console.log("Native folder rename smoke passed");
   }
-  if (nativeMode === "smoke" && !folderRenameSmoke && status !== 130) {
+  if (nativeMode === "smoke" && !folderRenameSmoke && !invalidWallpaper && status !== 130) {
     if (!existsSync(markerPath)) throw new Error("Electrobun worker exited without completing the native smoke test");
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;

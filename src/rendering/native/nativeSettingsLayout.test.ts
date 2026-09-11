@@ -15,11 +15,35 @@ import { captureSettingsGeometry,createSettingsTransition } from "./ui/nativeSet
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 import { nativeRowSummary } from "./ui/nativeRowSummary.js";
 import { NativeVirtualList } from "./ui/NativeVirtualList.js";
+import { destroyNativeSubtree } from "./nativeGraphicsLifecycle.js";
 import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
 import { NativeFluentSlider } from "./NativeFluentSlider.js";
 
 export function runNativeSettingsLayoutTests():void{
+  {
+    const root=new Container(),owned=new Graphics().rect(0,0,20,20).fill(0xffffff);
+    const shared=new Graphics().rect(0,0,10,10).fill(0xffffff),borrowed=new Graphics(shared.context);
+    let unloaded=0;owned.context.on("unload",()=>unloaded++);root.addChild(owned,borrowed);
+    destroyNativeSubtree(root);
+    assert.equal(unloaded,1,"recursive UI disposal must unload graphics resources");
+    assert.equal(shared.context.destroyed,false,"a shared context must retain its CPU data for other owners");
+    assert.equal(shared.context.instructions.length,1);shared.destroy();
+    let data=[{id:"a",name:"A"},{id:"b",name:"B"},{id:"c",name:"C"}],built=0;
+    const virtual=new NativeVirtualList(data.length,70,1,index=>{
+      const item=data[index]!,row=new Container({label:item.id});built++;
+      return {node:row,controls:[{node:row,focus:()=>{},disabled:()=>false,handleKey:()=>true}],update:(next:number)=>data[next]!.name===item.name};
+    },index=>data[index]!.id);
+    virtual.viewport(0,140);const b=virtual.getChildByLabel("b");assert.ok(b);
+    data=[data[1]!,data[2]!,{id:"d",name:"D"}];virtual.updateItems(data.length);virtual.viewport(0,140);
+    assert.equal(virtual.getChildByLabel("b"),b,"filter/reorder must retain rows by identity");assert.equal(b.y,0);assert.equal(built,4);
+    let focused="";virtual.onControlFocus(key=>{focused=key;});b.emit("pointerdown",{});
+    assert.equal(focused,"virtual:b:0","moved rows must report stable focus keys");
+    data=[{id:"b",name:"Renamed"},...data.slice(1)];virtual.updateItems(data.length);
+    assert.notEqual(virtual.getChildByLabel("b"),b,"changed content must replace only its row");assert.equal(built,5);
+    data=[];virtual.updateItems(0);virtual.viewport(0,140);assert.equal(virtual.mountedCount,0);assert.equal(virtual.controls.length,0);
+    virtual.destroy();
+  }
   const resizedButton=new NativeFluentButton("Change icon",136,()=>{},()=>{});
   resizedButton.resizeWidth(104);assert.equal(resizedButton.caption.x,52,"button caption follows its measured width");resizedButton.destroy({children:true});
   const segmented=new NativeSegmentedControl([{value:"a",label:"A",id:"a"},{value:"b",label:"B",id:"b"},{value:"c",label:"C",id:"c"}],"c",()=>{},()=>{},"dark");

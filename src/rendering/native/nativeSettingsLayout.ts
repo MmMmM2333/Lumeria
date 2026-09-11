@@ -20,17 +20,22 @@ export class NativeSettingsLayout {
     const wrapper=new NativeDisclosureSurface(this.width,height,this.theme,decorated);wrapper.label=`native-disclosure:${id}`;wrapper.y=top;
     const content=wrapper.content;
     for(const child of children){child.y-=top;content.addChild(child);}
-    this.node.addChild(wrapper);this.disclosures.push({id,expanded});
+    const disclosure={id,expanded};this.node.addChild(wrapper);this.disclosures.push(disclosure);
     const card=header?new NativeDisclosureCard(this.width,header.controlHeight,this.theme):null;
     if(card&&header){card.y=top-header.controlHeight;this.node.addChildAt(card,0);header.disclosureHeader=true;}
-    for(const control of controls){const disabled=control.disabled;control.disabled=()=>!expanded||disabled();}
+    for(const control of controls){const disabled=control.disabled;control.disabled=()=>!disclosure.expanded||disabled();}
     this.#blocks.push({node:wrapper,top,height,measure:progress=>{
-      const state=progress.get(id),amount=state?.height??(expanded?1:0);
-      const visibleHeight=wrapper.update(amount,state?.opacity??(expanded?1:0),expanded);
+      const state=progress.get(id),amount=state?.height??(disclosure.expanded?1:0);
+      const visibleHeight=wrapper.update(amount,state?.opacity??(disclosure.expanded?1:0),disclosure.expanded);
       card?.update(visibleHeight);
       if(chevron)chevron.rotation=-Math.PI*amount;
       return visibleHeight;
     }});
+  }
+  setExpanded(id:string,expanded:boolean):void{
+    const disclosure=this.disclosures.find(entry=>entry.id===id);
+    if(!disclosure)throw new Error(`Unknown disclosure: ${id}`);
+    disclosure.expanded=expanded;
   }
   child(page:NativeSettingsContent):void{
     if(!page.layout)return;

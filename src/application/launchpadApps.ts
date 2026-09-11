@@ -156,9 +156,22 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const excludedCatalogApps = ref<LaunchpadApp[]>([]);
   const showMissingLaunchTargetBadge = ref(true);
   const launchTargetStatusRecordsById = ref<{ [id: string]: LaunchTargetStatusRecord }>({});
-  const launchTargetStatusById = computed(() => Object.fromEntries(
-    Object.entries(launchTargetStatusRecordsById.value).map(([id, record]) => [id, record.status])
-  ));
+  // Native derived cells recompute on read. Preserve the public projection when
+  // neither its source nor its status values changed, independently of the host.
+  let projectedStatusSource: { [id: string]: LaunchTargetStatusRecord } | null = null;
+  let projectedStatuses: { [id: string]: LaunchTargetStatus } = Object.freeze({});
+  const launchTargetStatusById = computed(() => {
+    const source = launchTargetStatusRecordsById.value;
+    if (source === projectedStatusSource) return projectedStatuses;
+    const entries = Object.entries(source);
+    if (entries.length !== Object.keys(projectedStatuses).length || entries.some(([id, record]) => (
+      !Object.prototype.hasOwnProperty.call(projectedStatuses, id) || projectedStatuses[id] !== record.status
+    ))) {
+      projectedStatuses = Object.freeze(Object.fromEntries(entries.map(([id, record]) => [id, record.status])));
+    }
+    projectedStatusSource = source;
+    return projectedStatuses;
+  });
   const editorSession = shallowRef<ManagedAppEditorSession | null>(null);
   const editorName = ref("");
   const editorTarget = ref("");

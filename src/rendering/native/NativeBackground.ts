@@ -17,8 +17,8 @@ extensions.add(TilingSpritePipe);
 
 /** The native desktop and settings previews use the same placement and effect pipeline as Web. */
 export class NativeBackground extends Container {
-  readonly #base=new Graphics({eventMode:"none"});
-  readonly #display=new Sprite(Texture.EMPTY);
+  readonly #base=new Graphics({eventMode:"none",label:"native-background-base"});
+  readonly #display=new Sprite({texture:Texture.EMPTY,label:"native-background-image"});
   readonly #shade=new Graphics({eventMode:"none"});
   readonly #source=new Container();
   readonly #image=new Sprite(Texture.EMPTY);
@@ -37,14 +37,26 @@ export class NativeBackground extends Container {
     const request=++this.#request;
     const path=config.backgroundSource==="customImage"||config.backgroundSource==="windowsWallpaper"?config.backgroundImagePath:null;
     if(path!==this.#path){
-      const next=path?await loadNativeIconTexture(path):null;
+      let next:Texture|null;
+      try{next=path?await loadNativeIconTexture(path):null;}
+      catch(error){
+        // A superseded or disposed request must not clear a newer background.
+        if(this.destroyed||request!==this.#request)return;
+        this.#image.texture=this.#tile.texture=Texture.EMPTY;
+        this.#texture?.destroy(true);this.#texture=null;this.#path=null;this.#renderKey="";
+        this.#pipeline.destroyRenderTextures();this.#display.visible=false;this.#shade.clear();
+        this.#paintBase(config,width,height);this.invalidate();
+        // Keep the configured path untouched and retry on a later configure call.
+        // The caller still receives the real IO/decode error for its notice.
+        throw error;
+      }
       if(this.destroyed||request!==this.#request){next?.destroy(true);return;}
       this.#image.texture=this.#tile.texture=Texture.EMPTY;
       this.#texture?.destroy(true);this.#texture=next;this.#path=path;this.#renderKey="";
     }
     if(this.destroyed||request!==this.#request)return;
     const key=JSON.stringify([config,width,height,context,systemAppearance]);if(key===this.#renderKey)return;
-    this.#base.clear().rect(0,0,width,height).fill({color:config.backgroundBaseColor,alpha:config.backgroundBaseOpacity/100});
+    this.#paintBase(config,width,height);
     this.#display.visible=Boolean(this.#texture);this.#shade.clear();
     if(this.#texture){
       const texture=this.#texture;
@@ -74,6 +86,9 @@ export class NativeBackground extends Container {
       if(config.backgroundEffect==="dimmed")this.#shade.rect(0,0,width,height).fill({color:config.backgroundDarkenColor,alpha:config.backgroundDarkenStrength/100});
     }
     this.#renderKey=key;this.invalidate();
+  }
+  #paintBase(config:NativeBackgroundConfig,width:number,height:number):void{
+    this.#base.clear().rect(0,0,width,height).fill({color:config.backgroundBaseColor,alpha:config.backgroundBaseOpacity/100});
   }
   override destroy():void{
     this.#request++;this.#pipeline.destroy();this.#source.destroy({children:true});this.#texture?.destroy(true);super.destroy({children:true});

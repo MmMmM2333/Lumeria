@@ -1366,6 +1366,16 @@ export class DesktopLayer extends Container {
     return this.updateScene(state, { allowPlanReuse: false });
   }
 
+  updatePagePresentation(scrub:DesktopStructureFrame["pageTrackScrub"]):void {
+    const track=this.lastDesktopRenderPlan?.pageTrack;
+    if(!track)return;
+    updatePageTrackMotion(this.pageTrackMotion,this.pageTrack,{
+      debugMetadata:track.debugMetadata,onFrame:()=>this.markInteractiveBoundsDirty(),
+      pageIndex:track.pageIndex,pageSpan:track.pageSpan,scrub,
+      sourceLabel:track.sourceLabel,springConfig:motionSprings.layout,
+    });
+  }
+
   updateInteraction(state: DesktopInteractionState): Partial<DesktopLayerFrameWork> {
     const ownership = this.groupDragLayer?.syncVisualOwnership?.(normalizeGroupDragOwnershipGroup(state.groupDragState)) || {
       folderShellIds: new Set(),

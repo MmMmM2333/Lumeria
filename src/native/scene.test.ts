@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createNativeRecordSnapshot } from "../rendering/native/nativeSceneSnapshot.js";
+import { createNativeSceneScheduler } from "./nativeSceneScheduler.js";
 import { createLaunchpadGestureEngine } from "../domain/input/launchpadGestureEngine.js";
 import { runTouchpadCaptureTests } from "../debug/touchpadCapture.test.js";
 import { runNativeWindowEffectsTests } from "./nativeWindowEffects.test.js";
@@ -280,6 +282,51 @@ function makeCompleteFrame(overrides: DesktopSceneFrameInput = {}): CompleteDesk
 }
 
 const stage = new Container();
+{
+  const tasks:(()=>void)[]=[];
+  const scheduler=createNativeSceneScheduler(task=>tasks.push(task));
+  const frames:boolean[]=[];
+  scheduler.request();scheduler.request();
+  assert.equal(tasks.length,0,"startup state must wait for the renderer");
+  scheduler.connect(snap=>frames.push(snap));
+  assert.equal(tasks.length,1,"startup requests must coalesce");
+  scheduler.run(true);
+  scheduler.request();
+  tasks.shift()!();
+  assert.deepEqual(frames,[true],"a stale queued frame must not consume a newer request");
+  tasks.shift()!();
+  assert.deepEqual(frames,[true,false]);
+  scheduler.request();scheduler.dispose();
+  tasks.shift()!();scheduler.request();scheduler.run(true);scheduler.flush();
+  assert.deepEqual(frames,[true,false],"queued and synchronous work must disconnect before scene destruction");
+  assert.equal(scheduler.pending,false);assert.equal(tasks.length,0);
+  assert.throws(()=>scheduler.connect(()=>{}));
+  const followups:(()=>void)[]=[];let count=0;
+  const reentrant=createNativeSceneScheduler(task=>followups.push(task));
+  reentrant.connect(()=>{if(++count===1)reentrant.request();});
+  reentrant.request();followups.shift()!();
+  assert.equal(reentrant.pending,true,"requests published during a commit must survive");
+  followups.shift()!();assert.equal(count,2);assert.equal(reentrant.pending,false);
+  reentrant.dispose();
+  const failing=createNativeSceneScheduler(task=>followups.push(task));
+  failing.connect(()=>{throw new Error("render failure");});failing.request();
+  assert.throws(()=>followups.shift()!(),/render failure/,"rendering failures must remain observable");
+  failing.dispose();
+}
+{
+  const capture=createNativeRecordSnapshot<{selection:Set<string>;enabled:boolean}>();
+  const selection=new Set(["first"]);
+  const initial=capture({selection,enabled:true});
+  assert.equal(capture({selection,enabled:true}),initial,"unchanged inputs must reuse their immutable snapshot");
+  assert.throws(()=>initial.selection.add("mutation"),"published selection snapshots must remain immutable");
+  const updated=capture({selection:new Set(["second"]),enabled:true});
+  assert.notEqual(updated,initial);assert.deepEqual([...initial.selection],["first"]);
+  assert.deepEqual([...updated.selection],["second"],"replacing a selection must publish its new contents");
+  const captureShape=createNativeRecordSnapshot<Record<string,undefined>>();
+  const oldShape=captureShape({before:undefined});
+  const newShape=captureShape({after:undefined});
+  assert.notEqual(oldShape,newShape);assert.deepEqual(Object.keys(newShape),["after"]);
+}
 const activations: string[] = [];
 const scene = new NativeDesktopScene(stage, {
   onIconActivate: (item) => activations.push(item.id),
@@ -406,6 +453,7 @@ assert.equal(
 assert.equal(firstPageNode.eventMode, "none", "the source desktop page should become static after the turn");
 assert.equal(prefetchedSecondPageNode.eventMode, "static", "the target desktop page should become interactive");
 assert.equal(desktopLayer.pageTrack.x, 0, "a desktop page turn must not snap directly to its target");
+const planCountBeforeMotion=scene.getUpdateStatistics().structure;
 stepSceneAnimations();
 assert.ok(
   desktopLayer.pageTrack.x < 0 && desktopLayer.pageTrack.x > -1180,
@@ -415,6 +463,8 @@ for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x +
   stepSceneAnimations();
 }
 assert.ok(Math.abs(desktopLayer.pageTrack.x + 1180) <= 0.01, "the desktop page track should settle at page two");
+assert.equal(scene.getUpdateStatistics().structure,planCountBeforeMotion,"moving within the same realized page set must not rebuild desktop structure");
+assert.equal(scene.commit(pageTwoFrame,{height:760,resolution:2.5,width:1180},{snapDesktopLayout:false}).fullPlanBuilds,0,"an unchanged state notification must not rebuild a plan");
 const pageThreeFrame = setNativeDesktopPage(pageTwoFrame, 2);
 scene.commit(
   pageThreeFrame,
@@ -425,6 +475,7 @@ for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x +
   stepSceneAnimations();
 }
 assert.ok(Math.abs(desktopLayer.pageTrack.x + 2360) <= 0.01, "the desktop page track should settle at page three");
+assert.equal(stage.getChildByLabel("launchpad-item:page-1",true),null,"the old source page must retire after leaving the realized range");
 const thirdPageNode = stage.getChildByLabel("launchpad-item:page-3", true);
 assert.ok(thirdPageNode, "three-page layouts should reach their final page");
 const thirdPageBounds = thirdPageNode.getBounds();
