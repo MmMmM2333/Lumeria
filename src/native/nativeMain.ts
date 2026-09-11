@@ -2930,6 +2930,11 @@ try {
     assert.equal(folderFlow.snapshot().renderedFolder?.id, smokeFolder.id, "Enter with focus should activate the folder");
     assert.equal(currentFocus(), null, "opening a folder must clear the previous scope's focus");
     await waitFor("keyboard-opened folder", () => folderFlow.snapshot().openProgress >= 0.999);
+    await waitFor("open folder drains native frame work",()=>!scene.getMotionSnapshot().active);
+    await present(app,"unchanged open folder");
+    await new Promise(resolve=>setTimeout(resolve,250));
+    assert.equal(scene.getMotionSnapshot().active,false,"unchanged folder commits must not keep after-frame callbacks alive");
+    console.log("Native stationary folder: animation and after-frame work drained");
     onKey({ type: "down", key: "ArrowDown" });
     assert.equal(currentFocus()?.id, smokeFolder.childPages[0]?.[0]?.id, "first folder arrow should establish focus");
     onKey({ type: "down", key: "ArrowDown" });

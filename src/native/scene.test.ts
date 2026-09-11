@@ -707,6 +707,10 @@ stage.destroy();
 // The original Web loop commits geometry after each motion step. Native must keep
 // the closing target tracking the desktop's simultaneous scale/offset restoration.
 {
+  // The native host exposes RAF, routing bounds refreshes through afterFrame.
+  // Motion itself is driven by the deterministic host below.
+  const previousRaf=globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame=()=>0;
   const root = new Container();
   const subject = new NativeDesktopScene(root);
   const folder: NativeFolderItem = { id: "handoff-regression", type: "folder", name: "Folder", childPages: [[{id:"child",type:"app",name:"Child",emoji:"A"}]] };
@@ -723,6 +727,10 @@ stage.destroy();
   commit();await advance();
   presentation={renderedFolder:folder,folderPageIndex:0,isClosing:false,openProgress:1,openProgressTarget:1,openingCancelRequest:null};
   commit();await advance();
+  assert.equal(subject.getMotionSnapshot().active,false,"a stationary open folder must drain animations and after-frame callbacks");
+  assert.equal(tick,null,"a stationary open folder must release the native animation host");
+  commit();await advance();
+  assert.equal(tick,null,"committing unchanged folder geometry must not restart a perpetual frame loop");
   presentation={renderedFolder:folder,folderPageIndex:0,isClosing:true,openProgress:0,openProgressTarget:0,openingCancelRequest:null};
   commit();await advance();
   const layer=root.getChildByLabel("launchpad-native-desktop") as Container & {
@@ -738,6 +746,7 @@ stage.destroy();
     `closing target must follow restored desktop: target=${target.left},${target.top}, actual=${actual.left},${actual.top}`);
   assert.ok(Math.abs(target.width-actual.width)<0.1,"closing ghost and restored icon must have the same size");
   off();subject.destroy();root.destroy();
+  globalThis.requestAnimationFrame=previousRaf;
 }
 runNativeDesktopResizeTests(makeCompleteFrame());
 runNativeLabelRasterTests();
