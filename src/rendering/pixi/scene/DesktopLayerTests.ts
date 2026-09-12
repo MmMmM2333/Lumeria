@@ -851,6 +851,38 @@ export async function runDesktopLayerTests() {
 
   {
     motionRuntime.reset();
+    const items = Array.from({ length: 48 }, (_, index) => ({
+      id: `small-resize-${index}`, name: `Item ${index}`, type: "app",
+    }));
+    const layer = makeLayer(DesktopLayer, makePageTrack([]));
+    const nodes = items.map(item => prepareLayerForDesktopQuiescenceTest(layer, item));
+    const initialState = {
+      ...makeDesktopQuiescenceState(items[0]), activePages: [items], gridCols: 8, gridRows: 6,
+      snapDesktopLayout: true,
+    };
+    const resize = (width: number, height: number) => {
+      layer.update({ ...initialState, width, height,
+        desktopFrame: { left: 0, top: 64, width, height: height - 136 },
+        stageRect: { left: 0, top: 0, width, height },
+      });
+      const entries = assumePresent(layer.lastDesktopRenderPlan).entries;
+      for (const [index, entry] of entries.entries()) {
+        const node = assumePresent(nodes[index]);
+        assert(nearlyEqual(node.position.x, entry.layoutTarget.x) &&
+          nearlyEqual(node.position.y, entry.layoutTarget.y),
+        `small resize must reach the current target for slot ${index} at ${width}x${height}`);
+      }
+    };
+    resize(900, 600);
+    for (let width = 901; width <= 1200; width++) resize(width, 600 + (width - 900) * 2 / 3);
+    for (let width = 1199; width >= 900; width--) resize(width, 600);
+    assert(!getBaseAnimation(assumePresent(nodes[0]), "x") && !getBaseAnimation(assumePresent(nodes[0]), "y"),
+      "exact resize positioning must leave no active layout spring");
+    motionRuntime.reset();
+  }
+
+  {
+    motionRuntime.reset();
     const iconBoundsRegistry = createIconBoundsRegistry();
     const fillerA = { id: "cancel-layout-filler-a", name: "Filler A", type: "app" };
     const fillerB = { id: "cancel-layout-filler-b", name: "Filler B", type: "app" };
