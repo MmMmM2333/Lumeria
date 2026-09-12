@@ -4416,16 +4416,22 @@ export class FolderOverlayLayer extends Container {
       }
       this.panelAlphaTarget = 1;
       const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
-      this.panel.position.set(
-        lerpNumber(startGeometry.x, targetX, openProgress),
-        lerpNumber(startGeometry.y, targetY, openProgress)
-      );
-      this.panel.scale.set(
-        lerpNumber(startGeometry.scaleX, 1, openProgress),
-        lerpNumber(startGeometry.scaleY, 1, openProgress)
-      );
-      this.panel.alpha = lerpNumber(0.94, 1, openProgress);
-      updateOpeningPanelFrame();
+      const x = lerpNumber(startGeometry.x, targetX, openProgress);
+      const y = lerpNumber(startGeometry.y, targetY, openProgress);
+      const scaleX = lerpNumber(startGeometry.scaleX, 1, openProgress);
+      const scaleY = lerpNumber(startGeometry.scaleY, 1, openProgress);
+      const alpha = lerpNumber(0.94, 1, openProgress);
+      const presentationChanged = this.panel.x !== x || this.panel.y !== y
+        || this.panel.scale.x !== scaleX || this.panel.scale.y !== scaleY || this.panel.alpha !== alpha;
+      this.panel.position.set(x, y);
+      this.panel.scale.set(scaleX, scaleY);
+      this.panel.alpha = alpha;
+      // A bounds callback schedules another native scene commit. Re-enqueuing
+      // it for an unchanged panel would keep that loop alive after motion ends.
+      // New leases/targets still need their readiness and title notification.
+      if (presentationChanged || shouldRetargetPresentation || previousOpeningLease !== openingLease) {
+        updateOpeningPanelFrame();
+      }
       return {
         openingGeometrySnapshot,
         openingLease,
