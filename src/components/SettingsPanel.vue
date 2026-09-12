@@ -98,8 +98,9 @@
           </div>
 
           <footer v-if="showFooter" class="settings-actions">
+            <span v-if="applyError" class="settings-field-error settings-apply-error" role="alert">{{ applyError }}</span>
             <SettingsFluentButton appearance="outline" type="button" @click="shell.actions.close">{{ t("common.actions.cancel") }}</SettingsFluentButton>
-            <SettingsFluentButton appearance="primary" type="button" :disabled="!canApply" @click="shell.actions.apply">{{ t("common.actions.apply") }}</SettingsFluentButton>
+            <SettingsFluentButton appearance="primary" type="button" :disabled="!canApply" @click="applySettings">{{ t("common.actions.apply") }}</SettingsFluentButton>
           </footer>
         </div>
       </div>
@@ -123,6 +124,7 @@ import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import type { useSettingsPanelModel } from "../composables/useSettingsPanelModel.js";
 import { cx } from "../domain/launchpadLayout.js";
+import { readErrorMessage } from "../application/errorMessage.js";
 import { useLocalization } from "../i18n/localization.js";
 import AboutSettingsPage from "./settings/AboutSettingsPage.vue";
 import AppsSettingsPage from "./settings/AppsSettingsPage.vue";
@@ -148,6 +150,20 @@ const {
   shouldRender,
   showFooter,
 } = shell;
+
+const applyError = ref("");
+watch(isOpen, () => { applyError.value = ""; });
+async function applySettings() {
+  applyError.value = "";
+  try {
+    const outcome = await shell.actions.apply();
+    if (outcome && typeof outcome === "object" && "ok" in outcome && outcome.ok === false) {
+      const errors: unknown[] = ["error" in outcome ? outcome.error : outcome];
+      if ("rollbackErrors" in outcome && Array.isArray(outcome.rollbackErrors)) errors.push(...outcome.rollbackErrors);
+      applyError.value = errors.map(readErrorMessage).filter(Boolean).join("\n");
+    }
+  } catch (error) { applyError.value = readErrorMessage(error); }
+}
 
 const SETTINGS_OVERLAY_DURATION = 0.16;
 const SETTINGS_OVERLAY_EASE = "power2.out";
