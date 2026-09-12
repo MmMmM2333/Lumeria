@@ -272,6 +272,7 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
   const canCustomizeLaunchpadIconState = ref(Boolean(launchpadIcons.isAvailable()));
   const isApplyingSettingsConfigState = ref(false);
   const isChoosingBackgroundImageState = ref(false);
+  let backgroundRequestId = 0;
 
   function canUseLiveDesktopBackground() {
     return Boolean(
@@ -351,6 +352,8 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
   }
 
   function beginEdit() {
+    backgroundRequestId++;
+    isChoosingBackgroundImageState.value = false;
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
@@ -360,6 +363,8 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
   }
 
   function cancelEdit() {
+    backgroundRequestId++;
+    isChoosingBackgroundImageState.value = false;
     mainWindowShortcutErrorState.value = "";
     localePreferenceErrorState.value = "";
     launchpadIconErrorState.value = "";
@@ -516,9 +521,11 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
 
   async function chooseDraftBackgroundImage() {
     if (isChoosingBackgroundImageState.value) return { ok: true, skipped: true };
+    const requestId = ++backgroundRequestId;
     isChoosingBackgroundImageState.value = true;
     try {
       const selected = await backgroundAssets.pickImage();
+      if (requestId !== backgroundRequestId) return { ok: true, skipped: true };
       const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
       if (!imagePath) return { ok: true, skipped: true };
       draftBackgroundImagePath.value = imagePath;
@@ -529,15 +536,17 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
     } catch (error) {
       return explicitFailure(error);
     } finally {
-      isChoosingBackgroundImageState.value = false;
+      if (requestId === backgroundRequestId) isChoosingBackgroundImageState.value = false;
     }
   }
 
   async function useDraftDesktopWallpaper() {
     if (isChoosingBackgroundImageState.value) return { ok: true, skipped: true };
+    const requestId = ++backgroundRequestId;
     isChoosingBackgroundImageState.value = true;
     try {
       const selected = await backgroundAssets.getDesktopWallpaper();
+      if (requestId !== backgroundRequestId) return { ok: true, skipped: true };
       const imagePath = normalizeBackgroundImagePath(selected?.imagePath);
       if (!imagePath) return { ok: true, skipped: true };
       draftBackgroundImagePath.value = imagePath;
@@ -548,7 +557,7 @@ export function useLaunchpadSettings(options: LaunchpadSettingsOptions) {
     } catch (error) {
       return explicitFailure(error);
     } finally {
-      isChoosingBackgroundImageState.value = false;
+      if (requestId === backgroundRequestId) isChoosingBackgroundImageState.value = false;
     }
   }
 

@@ -412,4 +412,15 @@ export async function runLaunchpadSettingsTests() {
   assert(startupFailureCalls.join(",") === "true,false", "sign-in startup failure should attempt a native rollback");
   assert(!startupFailureSettings.presentation.launchAtLogin.value, "sign-in startup failure should commit no startup state");
   assert(startupFailureSettings.presentation.launchAtLoginError.value.includes("startup denied"), "sign-in startup failures should remain visible");
+  let resolveImage!: (value:{name:string;imagePath:string})=>void;
+  const imageSettings=useLaunchpadSettings({layout:useLaunchpadLayout({seedEnabled:false,getNewFolderName:()=>"Folder"}),localizationText,
+    liveDesktopSupport:{value:{supportsLiveDesktopBackground:false}},
+    mainWindow:makeMainWindowRuntime(),backgroundAssetPort:{toAssetUrl:path=>path??null,
+      pickImage:()=>new Promise(resolve=>{resolveImage=resolve;}),getDesktopWallpaper:async()=>null}});
+  imageSettings.beginEdit();
+  const choosing=imageSettings.actions.chooseDraftBackgroundImage();
+  imageSettings.cancelEdit();imageSettings.beginEdit();
+  resolveImage({name:"late.png",imagePath:"C:/Images/late.png"});await choosing;
+  assert(imageSettings.draft.backgroundImagePath.value===null,"a cancelled image request must not overwrite a new settings draft");
+  assert(!imageSettings.presentation.isChoosingBackgroundImage.value,"cancelled image selection must release its busy state");
 }
