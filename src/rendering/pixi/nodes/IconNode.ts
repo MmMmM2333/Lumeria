@@ -146,6 +146,7 @@ interface FolderHoverFrameState {
 interface AppFolderCreateFrameState {
   alpha: number;
   padding: number;
+  scale: number;
 }
 
 function makeLabelText(fontSize = 13): Text {
@@ -327,6 +328,7 @@ export class IconNode extends Container {
   declare readonly folderHoverFrame: FolderHoverFrameState;
   declare folderPreviewPlanKey: string | null;
   declare appFolderCreateActive: boolean;
+  declare appFolderCreateClearing: boolean;
   declare appFolderCreateKey: string | null;
   declare appFolderCreatePhase: string | null;
   declare readonly appFolderCreateFrame: AppFolderCreateFrameState;
@@ -424,9 +426,10 @@ export class IconNode extends Container {
     this.folderHoverFrame = { padding: 0 };
     this.folderPreviewPlanKey = null;
     this.appFolderCreateActive = false;
+    this.appFolderCreateClearing = false;
     this.appFolderCreateKey = null;
     this.appFolderCreatePhase = null;
-    this.appFolderCreateFrame = { alpha: 0, padding: 0 };
+    this.appFolderCreateFrame = { alpha: 0, padding: 0, scale: 1 };
     this.appFolderCreateBackdropSig = "";
     this.appFolderCreateFlashSig = "";
     this.editButtonSigs = new WeakMap();
@@ -1362,10 +1365,10 @@ export class IconNode extends Container {
   }
 
   drawAppFolderCreateBackdrop(): void {
-    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.alpha)}:${numberSig(this.appFolderCreateFrame.padding)}`;
+    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.padding)}`;
     if (this.appFolderCreateBackdropSig === sig) return;
     this.appFolderCreateBackdropSig = sig;
-    drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, this.appFolderCreateFrame);
+    drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, {alpha:1,padding:this.appFolderCreateFrame.padding});
   }
 
   drawAppFolderCreateFlashOverlay(): void {
@@ -1377,6 +1380,9 @@ export class IconNode extends Container {
 
   redrawAppFolderCreateFrame(): void {
     this.drawAppFolderCreateBackdrop();
+    this.folderCreateBackdrop.alpha = this.appFolderCreateFrame.alpha;
+    this.folderCreateBackdrop.scale.set(this.appFolderCreateFrame.scale);
+    this.folderCreateBackdrop.visible = this.appFolderCreateActive || this.appFolderCreateClearing;
     if (this.folderCreateFlashOverlay.visible) this.drawAppFolderCreateFlashOverlay();
   }
 
@@ -1386,19 +1392,13 @@ export class IconNode extends Container {
   ): void {
     const previousPadding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
     const nextPadding = Math.max(0, Number(targetPadding) || 0);
-    const previousScale = Math.max(0.01, Number(this.folderCreateBackdrop.scale?.x) || 1);
-    const previousAlpha = this.folderCreateBackdrop.visible
-      ? Math.max(0, Number(this.folderCreateBackdrop.alpha) || 0)
-      : Math.max(0, Number(this.appFolderCreateFrame.alpha) || 0);
+    const previousScale = Math.max(0.01, this.appFolderCreateFrame.scale);
     const nextScale = options.preserveCurrentScale
       ? previousScale
       : previousScale * getPaddedFrameScale(this.iconSize, previousPadding, nextPadding);
-    this.appFolderCreateFrame.alpha = 1;
     this.appFolderCreateFrame.padding = nextPadding;
-    this.drawAppFolderCreateBackdrop();
-    this.folderCreateBackdrop.alpha = previousAlpha;
-    this.folderCreateBackdrop.visible = true;
-    this.folderCreateBackdrop.scale.set(nextScale);
+    this.appFolderCreateFrame.scale = nextScale;
+    this.redrawAppFolderCreateFrame();
   }
 
   tweenAppFolderCreateIconAlpha(alpha: number, options: ImmediateOption = {}): void {
@@ -1426,13 +1426,15 @@ export class IconNode extends Container {
 
     const wasActive = this.appFolderCreateActive;
     this.appFolderCreateActive = true;
+    this.appFolderCreateClearing = false;
     const targetPadding = this.getAppFolderCreateTargetPadding();
     this.prepareAppFolderCreateBackdrop(targetPadding, {
       preserveCurrentScale: wasActive || this.folderCreateBackdrop.visible,
     });
     if (!wasActive) {
-      killMotionOf(this.appFolderCreateFrame);
-      motion(this.folderCreateBackdrop)
+      // Geometry updates and interrupted exits share one presentation state.
+      // Never animate Graphics.alpha while renderVisual writes a second alpha.
+      motion(this.appFolderCreateFrame)
         .duration(APP_FOLDER_CREATE_FRAME_DURATION)
         .ease("power3.out")
         .overlay()
@@ -1440,6 +1442,8 @@ export class IconNode extends Container {
         .to({
           alpha: 1,
           scale: 1,
+          onUpdate: () => this.redrawAppFolderCreateFrame(),
+          onComplete: () => this.redrawAppFolderCreateFrame(),
         })
         .start();
       this.tweenAppFolderCreateIconAlpha(APP_FOLDER_CREATE_DIM_ALPHA);
@@ -1469,19 +1473,21 @@ export class IconNode extends Container {
       this.emojiText.alpha !== 1 ||
       this.folderCreateFlashOverlay.visible;
     if (!shouldClear) return;
+    if (this.appFolderCreateClearing && !options.immediate) return;
 
     this.appFolderCreateActive = false;
     this.appFolderCreateKey = null;
     this.appFolderCreatePhase = null;
-    killMotionOf(this.appFolderCreateFrame);
     killMotionOf(this.folderCreateFlashOverlay);
     this.folderCreateFlashOverlay.alpha = 0;
     this.folderCreateFlashOverlay.visible = false;
 
     if (options.immediate) {
-      killMotionOf(this.folderCreateBackdrop, "alpha,scale");
+      killMotionOf(this.appFolderCreateFrame);
+      this.appFolderCreateClearing = false;
       this.appFolderCreateFrame.alpha = 0;
       this.appFolderCreateFrame.padding = 0;
+      this.appFolderCreateFrame.scale = 1;
       this.appFolderCreateBackdropSig = "";
       this.appFolderCreateFlashSig = "";
       this.folderCreateBackdrop.alpha = 0;
@@ -1495,7 +1501,8 @@ export class IconNode extends Container {
 
     const targetPadding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
     const hiddenScale = getPaddedFrameScale(this.iconSize, 0, targetPadding);
-    motion(this.folderCreateBackdrop)
+    this.appFolderCreateClearing = true;
+    motion(this.appFolderCreateFrame)
       .duration(FOLDER_HOVER_RESET_DURATION)
       .ease("power3.out")
       .overlay()
@@ -1503,9 +1510,13 @@ export class IconNode extends Container {
       .to({
         alpha: 0,
         scale: hiddenScale,
+        onUpdate: () => this.redrawAppFolderCreateFrame(),
         onComplete: () => {
+          if (this.appFolderCreateActive) return;
+          this.appFolderCreateClearing = false;
           this.appFolderCreateFrame.alpha = 0;
           this.appFolderCreateFrame.padding = 0;
+          this.appFolderCreateFrame.scale = 1;
           this.appFolderCreateBackdropSig = "";
           this.folderCreateBackdrop.clear();
           this.folderCreateBackdrop.visible = false;
