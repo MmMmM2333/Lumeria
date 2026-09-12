@@ -2936,32 +2936,32 @@
     {
       "path": "consumer/bytecode-builder.ts",
       "role": "consumer-integration",
-      "size": 3842,
-      "sha256": "a278a8161b1880246a06453a490305157e484763422adcb106660da12d146ab0"
+      "size": 4217,
+      "sha256": "969de1db2ea1a782a81ac8fdfb7d67fb16c5649259bd49e769cc29e1accd7379"
     },
     {
       "path": "consumer/bytecode-postbuild.d.mts",
       "role": "consumer-integration",
-      "size": 94,
-      "sha256": "0b4e7d53f3a7120736ea695165c6a4abeda0ba941554e9360da0ae21142200c2"
+      "size": 127,
+      "sha256": "7e04c97a784c24156bac1db3a1911d6898d8572fdc13dac877affb42f704b3b7"
     },
     {
       "path": "consumer/bytecode-postbuild.mjs",
       "role": "consumer-integration",
-      "size": 2399,
-      "sha256": "48c6f7be8b8bd62bcb0ba860c6a28d933a9757e9d9d51fde611eb0e7d36dd279"
+      "size": 2659,
+      "sha256": "a1952ef94a0ef8e53b1aa960224bc130959749779933a305b83d1c5c9ad16bdc"
     },
     {
       "path": "consumer/bytecode-postbuild.test.mjs",
       "role": "consumer-integration",
-      "size": 1141,
-      "sha256": "f3e8a2336b65dc8c3826aa6f6bef64a8e500f5fc9ee78902c3f704a9732ebaa3"
+      "size": 1391,
+      "sha256": "808f41083432f4d551ccbdfe8335e531e469af846c41e6b5541a3d2f7ba3a9b2"
     },
     {
       "path": "consumer/bytecode.md",
       "role": "consumer-integration",
-      "size": 2333,
-      "sha256": "b042365c527484000c6c0af692925dd855e2e806e0ba0f93bd61c0e8dc426625"
+      "size": 2564,
+      "sha256": "4f1591aab88c7c1dbc738925b47fa340c871312882afa984dfd70203964e236f"
     },
     {
       "path": "consumer/DEVTOOLS.md",

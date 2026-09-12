@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, EventBoundary, FederatedPointerEvent, Graphics, Text } from "pixi.js";
 import { NativeSettingsLayout } from "./nativeSettingsLayout.js";
 import { NativeSettingsShell } from "./NativeSettingsShell.js";
 import { NativeFluentButton } from "./NativeFluentButton.js";
@@ -37,7 +37,7 @@ export function runNativeSettingsLayoutTests():void{
     virtual.viewport(0,140);const b=virtual.getChildByLabel("b");assert.ok(b);
     data=[data[1]!,data[2]!,{id:"d",name:"D"}];virtual.updateItems(data.length);virtual.viewport(0,140);
     assert.equal(virtual.getChildByLabel("b"),b,"filter/reorder must retain rows by identity");assert.equal(b.y,0);assert.equal(built,4);
-    let focused="";virtual.onControlFocus(key=>{focused=key;});b.emit("pointerdown",{});
+    let focused="";virtual.onControlFocus(key=>{focused=key;});b.emit("pointerdown",new FederatedPointerEvent(new EventBoundary(b)));
     assert.equal(focused,"virtual:b:0","moved rows must report stable focus keys");
     data=[{id:"b",name:"Renamed"},...data.slice(1)];virtual.updateItems(data.length);
     assert.notEqual(virtual.getChildByLabel("b"),b,"changed content must replace only its row");assert.equal(built,5);

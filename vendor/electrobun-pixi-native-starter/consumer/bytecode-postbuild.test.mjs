@@ -9,6 +9,9 @@ test("bytecode hook is opt-in and rejects unsupported/missing build environments
     buildNativeBytecode({ entrypoint: "missing", tsconfig: "missing" });
     process.env.NATIVE_PIXI_BYTECODE = "yes";
     assert.throws(() => buildNativeBytecode({}), /must be 0 or 1/);
+    process.env.NATIVE_PIXI_BYTECODE = "1";
+    assert.throws(() => buildNativeBytecode({ define: { FEATURE: false } }), /record of string replacements/);
+    assert.throws(() => buildNativeBytecode({ define: [] }), /record of string replacements/);
     process.env.NATIVE_PIXI_BYTECODE = "1"; process.env.ELECTROBUN_OS = "linux";
     assert.throws(() => buildNativeBytecode({}), /Windows x64/);
     process.env.ELECTROBUN_OS = "win"; process.env.ELECTROBUN_ARCH = "x64";

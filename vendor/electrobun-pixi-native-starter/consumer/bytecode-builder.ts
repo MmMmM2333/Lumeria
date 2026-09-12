@@ -3,8 +3,11 @@ import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFil
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const [entrypoint, tsconfig, bundle, buildRoot] = process.argv.slice(2);
+const [entrypoint, tsconfig, bundle, buildRoot, definesJson = "{}"] = process.argv.slice(2);
 if (!entrypoint || !tsconfig || !bundle || !buildRoot || Bun.version !== "1.4.2") throw new Error("Invalid native bytecode build invocation");
+const consumerDefines: unknown = JSON.parse(definesJson);
+if (!consumerDefines || typeof consumerDefines !== "object" || Array.isArray(consumerDefines)
+  || Object.values(consumerDefines).some(value => typeof value !== "string")) throw new Error("Bytecode defines must be a record of string replacements");
 const project = realpathSync(process.cwd()), output = join(bundle, "Resources/app/bun");
 const rel = relative(realpathSync(buildRoot), realpathSync(output));
 if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("Bytecode output escaped the build directory");
@@ -15,7 +18,7 @@ const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("h
 try {
   const result = await Bun.build({
     entrypoints: [entrypoint], target: "bun", format: "cjs", bytecode: true, tsconfig, outdir: staging, naming: "index.js",
-    define: { "import.meta.env": "undefined", "import.meta.dir": "__nativeModuleDir", "import.meta.path": "__nativeModulePath", "import.meta.url": "__nativeModuleUrl" },
+    define: { ...(consumerDefines as Record<string, string>), "import.meta.env": "undefined", "import.meta.dir": "__nativeModuleDir", "import.meta.path": "__nativeModulePath", "import.meta.url": "__nativeModuleUrl" },
     banner: 'var __nativeModuleDir=__dirname;var __nativeModulePath=__filename;var __nativeModuleUrl=require("node:url").pathToFileURL(__filename).href;',
     plugins: [{ name: "native-sdk", setup(build) {
       build.onResolve({ filter: /^electrobun(?:\/.*)?$/ }, args => {

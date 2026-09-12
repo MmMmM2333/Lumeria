@@ -199,6 +199,7 @@ try {
     cwd: isolatedRuntime?join(isolatedRuntime,"bin"):projectRoot,
     env: {
       ...process.env,
+      LUMERIA_NATIVE_DIAGNOSTICS_BUILD: "1",
       LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
         projectRoot,
         "src-tauri",

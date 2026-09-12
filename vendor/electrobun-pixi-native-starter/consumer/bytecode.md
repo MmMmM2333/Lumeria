@@ -26,8 +26,11 @@ The entrypoint and bundled dependencies must not use top-level await; move async
 startup into an async function and preserve error propagation/cleanup. CJS module
 location aliases preserve runtime resource paths. `import.meta.env` is undefined,
 matching the current native ESM runtime; this hook does not implement browser/Vite
-environment injection. This initial mode uses default, unminified Bun bundling; custom
-bundler aliases/defines/plugins require an explicit integration rather than silent reuse.
+environment injection. This mode uses default, unminified Bun bundling. Pass an explicit
+`define` record to `buildNativeBytecode` when the consumer needs compile-time feature
+flags; use the same record in the normal Electrobun build. The native `import.meta`
+location aliases remain reserved and take precedence. Custom bundler aliases/plugins
+still require an explicit integration rather than silent reuse.
 The payload must stay flat: do not use the launcher's source-rewriting ASAR path.
 
 Bytecode is tied to Bun1.4.2 and increases package size. Rebuild when the runtime changes.

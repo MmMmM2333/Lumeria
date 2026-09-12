@@ -1,5 +1,6 @@
 import type { ElectrobunConfig } from "electrobun";
 import { nativePixiElectrobunCopy } from "./vendor/electrobun-pixi-native-starter/consumer/electrobun";
+import { nativeBuildDefines } from "./scripts/nativeBuildDefines.js";
 
 export default {
   scripts: { postBuild: "scripts/nativePostBuild.ts" },
@@ -11,6 +12,7 @@ export default {
   build: {
     bun: {
       entrypoint: "src/native/nativeMain.ts",
+      define: nativeBuildDefines(),
     },
     copy: {
       ...nativePixiElectrobunCopy,

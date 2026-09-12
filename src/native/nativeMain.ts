@@ -14,7 +14,6 @@ import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.j
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
 import { createLaunchpadTray } from "./nativeTray.js";
 import { prepareNativeRestart } from "./nativeRestart.js";
-import { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -120,6 +119,9 @@ import {
   type NativeScenePixelProof,
 } from "./nativePixelProof.js";
 
+// Supplied by both the Electrobun and optional bytecode build pipelines.
+declare const __LUMERIA_DIAGNOSTICS__: boolean;
+
 type NativeMode = "app" | "dev" | "smoke";
 
 type NativeFrameProof = Readonly<{
@@ -173,6 +175,9 @@ async function runNativeApplication(): Promise<void> {
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 
 const configuredNativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
+if (!__LUMERIA_DIAGNOSTICS__ && configuredNativeMode !== undefined) {
+  throw new Error("This build excludes native diagnostics; use native:dev or native:smoke for diagnostic modes");
+}
 if (configuredNativeMode !== undefined && configuredNativeMode !== "dev" && configuredNativeMode !== "smoke") {
   throw new Error(`LAUNCHPAD_NATIVE_MODE must be dev or smoke when set, received: ${configuredNativeMode}`);
 }
@@ -253,52 +258,13 @@ function collectTextureItems(
   return result;
 }
 
-function toPixelRegion(
-  target: Readonly<{ getBounds(): Readonly<{ height: number; width: number; x: number; y: number }> }>,
-  width: number,
-  height: number,
-): NativePixelRegion {
-  const bounds = target.getBounds();
-  const x = Math.max(0, Math.floor(bounds.x) - 2);
-  const y = Math.max(0, Math.floor(bounds.y) - 2);
-  const right = Math.min(width, Math.ceil(bounds.x + bounds.width) + 2);
-  const bottom = Math.min(height, Math.ceil(bounds.y + bounds.height) + 2);
-  if (right <= x || bottom <= y) {
-    throw new Error(
-      `Native text bounds are outside the captured scene: ${bounds.x},${bounds.y} ${bounds.width}x${bounds.height}`,
-    );
-  }
-  return Object.freeze({ height: bottom - y, width: right - x, x, y });
-}
 
-async function captureScenePixels(
-  app: NativePixiApplication,
-  width: number,
-  height: number,
-): Promise<NativePixelData> {
-  await prepareNativeIconTextures(app.stage, app.renderer);
-  return await app.renderer.extract.pixels({
-    antialias: true,
-    clearColor: 0x090b14,
-    frame: new Rectangle(0, 0, width, height),
-    resolution: 1,
-    target: app.stage,
-  }) as unknown as NativePixelData;
-}
 
-async function captureSmokeFrame(name: string): Promise<void> {
-  const directory = process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR;
-  if (!directory) throw new Error("LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR is required in smoke mode");
-  await prepareNativeIconTextures(app.stage, app.renderer);
-  const dataUrl = await app.renderer.extract.base64({
-    target: app.stage,
-    frame: new Rectangle(0, 0, app.contentSize.width, app.contentSize.height),
-    resolution: 1,
-    clearColor: 0x090b14,
-    format: "png",
-  });
-  writeFileSync(join(directory, `${name}.png`), Buffer.from(dataUrl.split(",")[1]!, "base64"));
-}
+
+
+
+
+const smoke = __LUMERIA_DIAGNOSTICS__ ? await import("./nativeSmokeSupport.js") : null;
 
 const nativeData = new NativeDataHost();
 const app = await createNativePixiApplication({
@@ -308,7 +274,7 @@ const app = await createNativePixiApplication({
   background: 0x090b14,
   height: 600,
   resizeMode: "live",
-  title: nativeMode === "app" ? "LaunchPad" : process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
+  title: nativeMode === "app" ? "LaunchPad" : (__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
 }).catch(async (error: unknown) => {
   await nativeData.dispose();
@@ -321,7 +287,7 @@ let catalogResult: NativeCatalogScanResult;
 let startupLoadRecovered=false;
 try {
   await nativeData.connect();
-  if(nativeMode==="smoke"){
+  if((__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke")){
     const cancelled=loadNativeLayoutWithRetry(app,async()=>{throw new Error("smoke: cancelled layout read");});
     await waitFor("cancellable startup notice",()=>Boolean(app.stage.getChildByLabel("native-notice:close",true)));
     await present(app,"startup notice cancellation");clickWithNativeInput(app.stage.getChildByLabel("native-notice:close",true)!);
@@ -329,14 +295,14 @@ try {
   }
   let loadAttempts=0;
   const loading=loadNativeLayoutWithRetry(app,async()=>{
-    if(nativeMode==="smoke"&&++loadAttempts<=2)throw new Error("smoke: layout read temporarily unavailable");
+    if((__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke")&&++loadAttempts<=2)throw new Error("smoke: layout read temporarily unavailable");
     return nativeData.loadLayout();
   });
-  if(nativeMode==="smoke"){
+  if((__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke")){
     for(let attempt=1;attempt<=2;attempt++){
       await waitFor("startup layout retry notice",()=>loadAttempts===attempt&&Boolean(app.stage.getChildByLabel("native-notice:action",true)));
       await present(app,"startup layout retry hit target");
-      if(attempt===2)await captureSmokeFrame("layout-load-retry");
+      if(attempt===2)await smoke!.captureSmokeFrame(app, "layout-load-retry");
       if(attempt===1)clickWithNativeInput(app.stage.getChildByLabel("native-notice:action",true)!);
       else{app.nativeInput.emitKey("down",{keyCode:13});app.nativeInput.emitKey("up",{keyCode:13});}
     }
@@ -463,35 +429,10 @@ function reportNativeError(error: unknown): void {
   notices.showTransientNotice({title:t("errors.launch.genericTitle"),message,intent:"error"});
 }
 
+
+
 function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
-  const hitArea = target.hitArea as Readonly<{
-    height?: number;
-    width?: number;
-    x?: number;
-    y?: number;
-  }> | null;
-  const bounds = target.getBounds();
-  const point = hitArea && Number(hitArea.width) > 0 && Number(hitArea.height) > 0
-    ? target.toGlobal({
-      x: Number(hitArea.x) + Number(hitArea.width) / 2,
-      y: Number(hitArea.y) + Number(hitArea.height) / 2,
-    })
-    : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-  const { x, y } = point;
-  app.nativeInput.emitPointer("pointermove", x, y, 0, modifiers);
-  if (nativeMode === "smoke") {
-    const boundary = app.renderer.events.rootBoundary;
-    const hit = boundary.hitTest(x, y);
-    let current: Container | null = hit;
-    while (current && current !== target) current = current.parent;
-    if (!current) {
-      throw new Error(
-        `Native pointer target ${target.label || target.constructor.name} was obscured by ${hit?.label || hit?.constructor.name || "nothing"}; ancestors=${[hit,hit?.parent,hit?.parent?.parent].map(node=>node?.label||node?.constructor.name).join("/")}; modal=${management.activeId}; point=${x},${y}`,
-      );
-    }
-  }
-  app.nativeInput.emitPointer("pointerdown", x, y, button, modifiers);
-  app.nativeInput.emitPointer("pointerup", x, y, button, modifiers);
+  smoke!.clickWithNativeInput(app, target, button, modifiers, (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke"));
 }
 
 const sceneUpdates = createNativeSceneScheduler();
@@ -779,7 +720,7 @@ try {
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
-  if (nativeMode === "smoke" && iconTextureSnapshot.failed.length !== 0) {
+  if ((__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke") && iconTextureSnapshot.failed.length !== 0) {
     throw new Error(`Native smoke icon texture failed: ${JSON.stringify(iconTextureSnapshot)}`);
   }
   if (nativeMode !== "smoke" && iconTextureSnapshot.failed.length > 0) {
@@ -1558,7 +1499,7 @@ try {
     return true;
   };
   searchBar.handleKey=onKey;
-  if(nativeMode==="dev"&&process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR){
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="dev" && process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR){
     app.window.setTitle("LaunchPad · Swipe speed preview");
     const directory=process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR;
     mkdirSync(directory,{recursive:true});
@@ -1594,7 +1535,7 @@ try {
     app.beforeClose(async()=>{exportFile();});
     panel.on("destroyed",()=>{offCaptureResize();setTouchpadCapture(null);});
     console.log("Touchpad capture ready",outputPath);
-    if(process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_SELFTEST==="1"){
+    if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_SELFTEST : undefined)==="1"){
       await present(app,"capture controls ready");
       searchBar.handleKey({type:"down",key:"F6"});assert.equal(capture.recording,true);
       for(const expected of [0,6,4]){searchBar.handleKey({type:"down",key:"F9"});assert.equal(getPageSwipeSpeed(),expected);}
@@ -1603,7 +1544,7 @@ try {
       searchBar.handleKey({type:"down",key:"F7"});
       await present(app,"capture recording and marker");
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
-      await captureOwnedWindow(getNativePixiApplicationTesting(app).handles().inputWindow,join(directory,"capture-ui.png"));
+      await smoke!.captureOwnedWindow(getNativePixiApplicationTesting(app).handles().inputWindow,join(directory,"capture-ui.png"));
       searchBar.handleKey({type:"down",key:"F8"});
       const saved=JSON.parse(readFileSync(outputPath,"utf8")) as {events:{kind:string}[]};
       assert.ok(saved.events.some(event=>event.kind==="wheel"));assert.ok(saved.events.some(event=>event.kind==="mark"));assert.equal(capture.recording,false);
@@ -1624,7 +1565,7 @@ try {
 
   await present(app, "the first LaunchPad scene frame");
   logNativeRuntime("first-scene-presented");
-  if (nativeMode === "smoke") assert.ok(iconTextures.snapshot().cached.length >= 1, "first native scene must prepare its icon before presentation");
+  if ((__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke")) assert.ok(iconTextures.snapshot().cached.length >= 1, "first native scene must prepare its icon before presentation");
   iconTextures.startBackground();
   presentCount += 1;
   await waitFor(
@@ -1647,9 +1588,9 @@ try {
   let dpiTransition: NativeHostLifecycleProof["dpiTransition"] = "skipped-no-mixed-dpi-display";
   let dpiResolution = app.resolution;
 
-  const devtools=await attachNativeDevtools(app,{
+  const devtools=__LUMERIA_DIAGNOSTICS__ ? await (await import("../../vendor/electrobun-pixi-native-starter/src/diagnostics/native-devtools.js")).attachNativeDevtools(app,{
     name:"LaunchPad",build:process.env.LAUNCHPAD_DEBUG_BUILD??"development",
-    enabled:nativeMode==="dev"||process.env.LAUNCHPAD_DEVTOOLS==="1",
+    enabled:nativeMode==="dev"||(__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_DEVTOOLS : undefined)==="1",
     isolated:Boolean(process.env.LUMERIA_NATIVE_DATA_DIR),
     state:()=>({
       route:settingsShell?settingsNavigation.activeRoute.value.key:"desktop",
@@ -1661,10 +1602,13 @@ try {
       motion:scene.getMotionSnapshot(),
       iconResidency:iconTextures.residency(),
     }),
-  });
+  }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
 
+  if (__LUMERIA_DIAGNOSTICS__) {
+  const { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } = smoke!;
+  const captureSmokeFrame = (name: string) => smoke!.captureSmokeFrame(app, name);
   const runFolderClosingContextSmoke = async (folder: SceneItem): Promise<void> => {
     const rightAt = (x: number, y: number) => {
       app.nativeInput.emitPointer("pointermove", x, y, 0);
@@ -1679,18 +1623,18 @@ try {
     closeFolder();rightAt(20, 100);assertNoMenu("close-start right-click");
     await waitFor("folder closing midpoint", () => folderFlow.snapshot().openProgress < 0.8);
     rightAt(20, 100);assertNoMenu("mid-close right-click");
-    await captureSmokeFrame("folder-closing-no-context-menu");
+    await smoke!.captureSmokeFrame(app, "folder-closing-no-context-menu");
     await waitFor("folder closed before desktop menu", () => !folderFlow.snapshot().renderedFolder);
     await present(app, "desktop menu after folder closes");
     rightAt(20, 100);
     assert.ok(management.getChildByLabel(`native-action:${t("launchpad.openSettings")}`, true), "desktop menu must return after closing cleanup");
     assert.equal(management.getChildByLabel("native-management:keyboard-focus", true), null, "pointer-opened menus must not show default keyboard focus");
     await present(app, "pointer-opened menu without keyboard focus");
-    await captureSmokeFrame("context-menu-pointer-focus");
+    await smoke!.captureSmokeFrame(app, "context-menu-pointer-focus");
     onKey({type:"down",key:"ArrowDown"});
     assert.ok(management.getChildByLabel("native-management:keyboard-focus", true), "arrow navigation must reveal keyboard focus");
     await present(app, "keyboard-navigated menu with focus");
-    await captureSmokeFrame("context-menu-keyboard-focus");
+    await smoke!.captureSmokeFrame(app, "context-menu-keyboard-focus");
     onKey({type:"down",key:"Escape"});
     assert.equal(management.modal, false, "keyboard Escape must still dismiss the menu");
 
@@ -1724,7 +1668,7 @@ try {
       assert.ok(activationDowns > 0, "real Windows activation must reach pointer metadata");
       assert.equal(launchFlow!.isDesktopOpen.value, true, "activation blank click must only focus the window");
       assert.equal(touchId, null, "activation click must not leave a desktop gesture owner");
-      await captureSmokeFrame("activation-click-keeps-open");
+      await smoke!.captureSmokeFrame(app, "activation-click-keeps-open");
       await present(app, "restore input target after activation screenshot");
       const activationCount = activationDowns;
       await clickOwnedNativeWindow(handle, point(blank.x, blank.y));
@@ -1777,7 +1721,7 @@ try {
     assert.equal(folderNameInput.input.selection.start, 0);
     assert.equal(folderNameInput.input.selection.end, folderNameInput.input.value.length);
     await waitFor("folder rename focus appearance", () => !scene.getMotionSnapshot().active);
-    await captureSmokeFrame("folder-rename-selected");
+    await smoke!.captureSmokeFrame(app, "folder-rename-selected");
     folderNameInput.input.commitText("1234567890".repeat(4));
     assert.equal(folderNameInput.input.value.length, 32, "folder names must be limited to 32 characters");
     folderNameInput.input.selectAll();folderNameInput.input.commitText(originalFolderName);
@@ -1802,7 +1746,7 @@ try {
       assert.equal(notices.transientNotice.value?.intent,"error","startup IO failure must retain its error notice");
       assert.ok(notices.transientNotice.value?.message.includes(process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE==="missing"?"ENOENT":"Unsupported image type"));
       assert.equal(readFileSync(nativeLogPath,"utf8").includes('"event":"uncaught-exception"'),false);
-      await captureSmokeFrame(`wallpaper-${process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE}-fallback`);
+      await smoke!.captureSmokeFrame(app, `wallpaper-${process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE}-fallback`);
       const config=backgroundConfig();
       const stale=desktopBackground.configure({...config,backgroundImagePath:failedPath+".superseded"},app.contentSize.width,app.contentSize.height);
       await desktopBackground.configure({...config,backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height);
@@ -1814,7 +1758,7 @@ try {
       assert.equal(display.visible,false);assert.equal(previousTexture.destroyed,true,"fallback must release obsolete effect render textures");
       await refreshBackground();await present(app,"wallpaper retry restored");
       assert.equal(settings.presentation.backgroundImagePath.value,failedPath,"fallback must not erase the user's configured path");
-      await captureSmokeFrame("wallpaper-restored");
+      await smoke!.captureSmokeFrame(app, "wallpaper-restored");
       console.log("Native invalid wallpaper: startup notice, base fallback, stale IO, texture cleanup and same-path retry passed");
       writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({wallpaper:process.env.LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE}),"utf8");
       return;
@@ -1835,7 +1779,7 @@ try {
         assert.equal(logo.texture,brandingTextures.get(variant),"caption must use the committed icon variant");
         assert.equal(logo.width,20);assert.equal(logo.height,20);
         if(changed)assert.notEqual(readIcon(),before,"changing variants must replace the native window icon");
-        await captureSmokeFrame(`window-branding-${variant}`);
+        await smoke!.captureSmokeFrame(app, `window-branding-${variant}`);
       }
       await branding.synchronize(3);refreshWindowChrome();
       const logo=windowChrome.getChildByLabel("native-window-brand-icon") as Sprite;
@@ -1851,7 +1795,7 @@ try {
     await runFolderRenameSmoke(folder);
     app.nativeInput.emitPointer("pointermove", 20, 20, 0);
     await waitFor("folder rename idle appearance", () => !scene.getMotionSnapshot().active);
-    await captureSmokeFrame("folder-rename-idle");
+    await smoke!.captureSmokeFrame(app, "folder-rename-idle");
     closeFolder();await waitFor("rename smoke folder cleanup", () => !folderFlow.snapshot().renderedFolder);
     await runWindowActivationSmoke();
     writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!, JSON.stringify({ folderRename: "verified" }), "utf8");
@@ -1879,7 +1823,8 @@ try {
       await waitFor("cancel regression page settles",()=>!scene.getMotionSnapshot().active);
       onKey({type:"down",key:"ArrowLeft",ctrlKey:true});
       await waitFor("cancel regression page restored",()=>!scene.getMotionSnapshot().active);await present(app,"cancel regression page restored");
-      point=press();app.nativeInput.emitFocus(false);assertReleased("focus loss",point);app.nativeInput.emitFocus(true);
+      // This replay must begin focused; the real window may have lost focus while earlier cases ran.
+      app.nativeInput.emitFocus(true);point=press();app.nativeInput.emitFocus(false);assertReleased("focus loss",point);app.nativeInput.emitFocus(true);
       point=press();openSettings();assertReleased("settings entry",point);closeSettings();await present(app,"cancel regression settings closed");
       point=press();dismissLaunchpad();
       await waitFor("cancel regression hidden",()=>!app.window.isVisible());assertReleased("hide",point);showLaunchpad();
@@ -1938,7 +1883,7 @@ try {
         await sendAltSpace();
         await waitFor("shortcut close animation",()=>scene.getDesktopAlpha()<0.95&&scene.getDesktopAlpha()>0.02);
         assert.equal(app.window.isVisible(),true,"window remains visible during close animation");
-        await captureSmokeFrame("shortcut-close-animation");
+        await smoke!.captureSmokeFrame(app, "shortcut-close-animation");
         await waitFor("physical shortcut hides",()=>!app.window.isVisible());
         await sendAltSpace();
         await waitFor("physical shortcut reopens",()=>app.window.isVisible()&&launchFlow!.isDesktopOpen.value);
@@ -1982,7 +1927,7 @@ try {
       await present(app,"restored fullscreen background settled");
       assert.equal(desktopBackground.getLocalBounds().width,app.contentSize.width,"startup background must cover the fullscreen width");
       assert.equal(desktopBackground.getLocalBounds().height,app.contentSize.height,"startup background must cover the fullscreen height");
-      await captureSmokeFrame("fullscreen-startup-background");
+      await smoke!.captureSmokeFrame(app, "fullscreen-startup-background");
       const {assertWindowInputCoverage}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/window-input-smoke.js");
       await assertWindowInputCoverage(app);
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
@@ -2021,7 +1966,7 @@ try {
       await desktopBackground.configure({...backgroundBaseline,backgroundSource:"customImage",backgroundImagePath:cachedBackground.imagePath,
         backgroundImageOpacity:100,backgroundEffect:effect},app.contentSize.width,app.contentSize.height);
       await present(app,`native background ${effect}`);
-      await captureSmokeFrame(`background-${effect}`);
+      await smoke!.captureSmokeFrame(app, `background-${effect}`);
     }
     await refreshBackground();
     const baselinePages=layoutState.operations.clonePages(layoutState.presentation.pages.value);
@@ -2030,15 +1975,15 @@ try {
     assert.ok(settingsShell,"settings button must open the native settings shell");
     await waitFor("settings entrance settles",()=>!scene.getMotionSnapshot().active);
     await present(app,"settings layout settled");
-    await captureSmokeFrame("settings-layout");
+    await smoke!.captureSmokeFrame(app, "settings-layout");
     const aboutTab=app.stage.getChildByLabel("native-settings-tab:about",true);assert.ok(aboutTab);
     clickWithNativeInput(aboutTab);await present(app,"native about route");
     await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
-    await captureSmokeFrame("settings-about");
+    await smoke!.captureSmokeFrame(app, "settings-about");
     const generalTab=app.stage.getChildByLabel("native-settings-tab:general",true);assert.ok(generalTab);
     clickWithNativeInput(generalTab);await present(app,"native general settings");
     await waitFor("general entrance settles",()=>!scene.getMotionSnapshot().active);
-    await captureSmokeFrame("settings-general");
+    await smoke!.captureSmokeFrame(app, "settings-general");
     const iconSummary=app.stage.getChildByLabel("native-setting:icon-summary",true) as Text;
     const iconSummaryRow=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
     assert.equal(iconSummary.anchor.x,1);assert.equal(iconSummary.x,iconSummaryRow.controlWidth-47,"summary right edge must track arrow column, not fixed text start");
@@ -2046,7 +1991,7 @@ try {
       const {nativeUiGallery}=await import("../rendering/native/ui/nativeUiGallery.js");
       for(const theme of ["dark","light"] as const){
         const gallery=nativeUiGallery(searchBar.host,theme,()=>app.invalidate());app.stage.addChild(gallery);
-        await present(app,`UI gallery ${theme}`);await captureSmokeFrame(`native-ui-gallery-${theme}`);gallery.destroy({children:true});
+        await present(app,`UI gallery ${theme}`);await smoke!.captureSmokeFrame(app, `native-ui-gallery-${theme}`);gallery.destroy({children:true});
       }
       await present(app,"UI gallery disposed");
     }
@@ -2056,10 +2001,10 @@ try {
       const hoverRow=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
       assert.equal(hoverRow.parent!.getChildIndex(hoverRow),0,"hover paint must be behind row icon and title");
       const p=hoverRow.toGlobal({x:Math.min(220,hoverRow.controlWidth/2),y:36});app.nativeInput.emitPointer("pointermove",p.x,p.y,0);
-      await present(app,`style ${theme} hover`);await captureSmokeFrame(`settings-style-${theme}-hover`);
+      await present(app,`style ${theme} hover`);await smoke!.captureSmokeFrame(app, `settings-style-${theme}-hover`);
       clickWithNativeInput(app.stage.getChildByLabel("native-setting:language",true)!);
       await waitFor("language popup entrance",()=>!scene.getMotionSnapshot().active);await present(app,`style ${theme} popup`);
-      assert.ok(management.getChildByLabel("native-menu:selected-indicator",true));await captureSmokeFrame(`settings-style-${theme}-dropdown`);
+      assert.ok(management.getChildByLabel("native-menu:selected-indicator",true));await smoke!.captureSmokeFrame(app, `settings-style-${theme}-dropdown`);
       onKey({type:"down",key:"Escape"});await present(app,"style dropdown dismissed");
     }
     settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"style theme restored");
@@ -2070,13 +2015,13 @@ try {
     const languageStart=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();
     assert.ok(Math.abs(languageStart.x-beforeLanguage.x)<0.1&&Math.abs(languageStart.y-beforeLanguage.y)<0.1,"sidebar toggle must not jump right-aligned controls before the first animation frame");
     await waitFor("sidebar intermediate width",()=>sidebar.navigationWidth>72&&sidebar.navigationWidth<215);
-    await captureSmokeFrame("settings-sidebar-expanding");
+    await smoke!.captureSmokeFrame(app, "settings-sidebar-expanding");
     const languageMid=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();const midpoint={x:languageMid.x,y:languageMid.y};
     sidebar.toggleNavigation();
     const languageReverse=app.stage.getChildByLabel("native-setting:language",true)!.getBounds();
     assert.ok(Math.abs(languageReverse.x-midpoint.x)<0.1&&Math.abs(languageReverse.y-midpoint.y)<0.1,"reversing sidebar keeps current content geometry");
     await present(app,"sidebar reverse");sidebar.toggleNavigation();
-    await waitFor("sidebar expanded width",()=>sidebar.navigationWidth===220&&!scene.getMotionSnapshot().active);await captureSmokeFrame("settings-sidebar-expanded");
+    await waitFor("sidebar expanded width",()=>sidebar.navigationWidth===220&&!scene.getMotionSnapshot().active);await smoke!.captureSmokeFrame(app, "settings-sidebar-expanded");
     sidebar.toggleNavigation();await waitFor("sidebar collapsed width",()=>sidebar.navigationWidth===68&&!scene.getMotionSnapshot().active);
     const disclosureButton=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
     assert.ok(disclosureButton);clickWithNativeInput(disclosureButton);
@@ -2084,14 +2029,14 @@ try {
     await waitFor("icon disclosure intermediate",()=>{
       const body=app.stage.getChildByLabel("native-disclosure:general.icons",true)?.getChildByLabel("native-disclosure-content");return Boolean(body&&body.alpha>0.05&&body.alpha<0.95);
     });
-    await captureSmokeFrame("settings-icons-expanding");
+    await smoke!.captureSmokeFrame(app, "settings-icons-expanding");
     clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
     await present(app,"icon disclosure closing interruption");
     clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
     await waitFor("icon disclosure reopened",()=>app.stage.getChildByLabel("native-disclosure:general.icons",true)?.getChildByLabel("native-disclosure-content")?.alpha===1&&!scene.getMotionSnapshot().active);
-    await captureSmokeFrame("settings-icons-expanded");
+    await smoke!.captureSmokeFrame(app, "settings-icons-expanded");
     {const tile=app.stage.getChildByLabel(`native-setting:icon-${settings.draft.launchpadIconVariant.value}`,true) as NativeFluentButton;
-      tile.hovered=true;await present(app,"icon card hover");await captureSmokeFrame("settings-icon-card-hover");tile.hovered=false;}
+      tile.hovered=true;await present(app,"icon card hover");await smoke!.captureSmokeFrame(app, "settings-icon-card-hover");tile.hovered=false;}
     clickWithNativeInput(app.stage.getChildByLabel("native-setting:icon-expand",true)!);
     await waitFor("icon disclosure collapsed",()=>app.stage.getChildByLabel("native-disclosure:general.icons",true)?.visible===false);
     const originalShortcut=settings.draft.mainWindowShortcut.value;
@@ -2101,7 +2046,7 @@ try {
     assert.equal(settings.draft.mainWindowShortcut.value,"control+alt+F8","native shortcut recording must reach the shared draft");
     const clearShortcut=app.stage.getChildByLabel("native-setting:clear-shortcut",true) as NativeFluentButton;
     assert.equal(clearShortcut.controlWidth,22);assert.equal(clearShortcut.controlHeight,22);assert.equal(clearShortcut.appearance,"subtle");
-    await captureSmokeFrame("settings-shortcut-clear");
+    await smoke!.captureSmokeFrame(app, "settings-shortcut-clear");
     assert.equal(recordingShortcut,false);
     settings.actions.setDraftMainWindowShortcut(originalShortcut);
     await present(app,"shortcut recording settles refreshed controls");
@@ -2128,7 +2073,7 @@ try {
     const savedGeneral=(await nativeData.loadLayout())!.settings;
     assert.equal(savedGeneral.localePreference,nextLocale);
     assert.equal(savedGeneral.launchpadIconVariant,nextIcon);
-    await captureSmokeFrame("settings-general-applied");
+    await smoke!.captureSmokeFrame(app, "settings-general-applied");
     settings.actions.setDraftLocalePreference(localeBefore);settings.actions.setDraftLaunchpadIconVariant(iconBefore);
     await present(app,"general restore ready");
     clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
@@ -2138,21 +2083,21 @@ try {
     await present(app,"restored settings navigation hit targets");
     clickWithNativeInput(app.stage.getChildByLabel("native-settings-tab:apps",true)!);
     await waitFor("apps overview transition",()=>!scene.getMotionSnapshot().active);await present(app,"apps overview rendered");
-    await captureSmokeFrame("settings-apps-overview");
+    await smoke!.captureSmokeFrame(app, "settings-apps-overview");
     {
       const before=apps!.persistence.capture();
       for(const root of apps!.presentation.scanRoots.value)if(root.enabled)apps!.toggleScanRootEnabled(root.id,false);
       await present(app,"scan disabled");
       const scanButton=app.stage.getChildByLabel("native-apps:scan",true) as NativeFluentButton;assert.ok(scanButton.disabled);
       const scroll=scanButton.parent!.parent!.parent as import("../rendering/native/NativeScrollView.js").NativeScrollView;
-      scroll.scrollTo(scroll.maxOffset);await present(app,"disabled scan overview");await captureSmokeFrame("settings-apps-scan-disabled");
+      scroll.scrollTo(scroll.maxOffset);await present(app,"disabled scan overview");await smoke!.captureSmokeFrame(app, "settings-apps-scan-disabled");
       apps!.persistence.restore(before);await present(app,"scan sources restored");
       for(const word of ["sample","installer","uninstall","temporary application name"]){apps!.newScanKeyword.value=word;apps!.addScanKeywordBlacklistItem();}
       appsPageState.keywords=true;(settingsShell as NativeSettingsShell).redraw();
       await waitFor("keyword chips expanded",()=>!scene.getMotionSnapshot().active);
       const add=app.stage.getChildByLabel("native-apps:add-keyword",true)!;
       const scroller=app.stage.getChildByLabel("native-apps:manager",true)!.parent!.parent!.parent as import("../rendering/native/NativeScrollView.js").NativeScrollView;
-      scroller.reveal(scroller.content.toLocal(add.toGlobal({x:0,y:0})).y,120);await present(app,"keyword chips");await captureSmokeFrame("settings-apps-keyword-chips");
+      scroller.reveal(scroller.content.toLocal(add.toGlobal({x:0,y:0})).y,120);await present(app,"keyword chips");await smoke!.captureSmokeFrame(app, "settings-apps-keyword-chips");
       const keywordField=()=>app.stage.getChildByLabel("native-apps:keyword",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
       let field=keywordField();clickWithNativeInput(field);field.commitText("single-click-keyword");
       await present(app,"keyword draft remains live");assert.equal(keywordField(),field,"typing must retain the input and Add button");
@@ -2166,7 +2111,7 @@ try {
       app.nativeInput.emitKey("down",{keyCode:0x0d});app.nativeInput.emitKey("up",{keyCode:0x0d});
       await present(app,"Enter keyword added");assert.ok(apps!.presentation.scanKeywordBlacklist.value.includes("enter-keyword"));assert.equal(keywordField().value,"");
       await saves.flush();assert.ok((await nativeData.loadLayout())!.settings.scanKeywordBlacklist.includes("enter-keyword"));
-      await captureSmokeFrame("settings-keyword-placeholder-fixed");
+      await smoke!.captureSmokeFrame(app, "settings-keyword-placeholder-fixed");
       {
         const badge=()=>app.stage.getChildByLabel("native-apps:missing-badge",true)!;
         const scroll=()=>badge().parent!.parent!.parent as import("../rendering/native/NativeScrollView.js").NativeScrollView;
@@ -2175,7 +2120,7 @@ try {
         const from=(badge() as NativeFluentToggle).transitionProgress;
         clickWithNativeInput(badge());
         await waitFor("switch animation intermediate after page rebuild",()=>{const value=(badge() as NativeFluentToggle).transitionProgress;return value>0.05&&value<0.95;});
-        await captureSmokeFrame("settings-switch-animation-middle");
+        await smoke!.captureSmokeFrame(app, "settings-switch-animation-middle");
         await present(app,"switch hit geometry after asynchronous target checks");
         clickWithNativeInput(badge());
         await waitFor("switch rapid reversal settled",()=>Math.abs((badge() as NativeFluentToggle).transitionProgress-from)<0.001&&!scene.getMotionSnapshot().active);
@@ -2185,7 +2130,7 @@ try {
           assert.equal(scroll().offset,offset,"clicking the last switch must retain the bottom scroll offset");
           assert.equal(badge().getGlobalPosition().y,position,"bottom switch must stay under the pointer after redraw");
         }
-        await captureSmokeFrame("settings-apps-bottom-scroll-stable");
+        await smoke!.captureSmokeFrame(app, "settings-apps-bottom-scroll-stable");
       }
       apps!.persistence.restore(before);appsPageState.keywords=false;(settingsShell as NativeSettingsShell).redraw();
       await waitFor("keyword audit restored",()=>!scene.getMotionSnapshot().active);
@@ -2198,7 +2143,7 @@ try {
       clickWithNativeInput(field);await present(app,"source path focused");
       assert.equal(shell.redrawCount,revision,"focusing an unchanged source path must not rebuild settings");
       assert.equal(app.stage.getChildByLabel(`native-apps:source-path-${root.id}`,true),field,"focus must retain the input session");
-      await captureSmokeFrame("settings-source-focused");
+      await smoke!.captureSmokeFrame(app, "settings-source-focused");
       const sourceName=app.stage.getChildByLabel(`native-apps:source-label-${root.id}`,true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
       clickWithNativeInput(sourceName);sourceName.selectAll();sourceName.commitText(root.label+" test");
       clickWithNativeInput(field);await present(app,"source blur saved without page rebuild");await saves.flush();
@@ -2209,7 +2154,7 @@ try {
     }
     for(const theme of ["dark","light"] as const){
       settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell).redraw();await present(app,`sources ${theme}`);
-      await captureSmokeFrame(`settings-sources-${theme}`);
+      await smoke!.captureSmokeFrame(app, `settings-sources-${theme}`);
     }
     settings.actions.setDraftSettingsThemePreference(styleThemeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"sources theme restored");
     {
@@ -2229,7 +2174,7 @@ try {
             assert.ok(status.y>=previous.y+previous.height+4,"scan metadata must clear the preceding input or description");
             if(description)assert.ok(description.y>=path.y+path.height+4,"Windows source description must clear the path input");
           }
-          await captureSmokeFrame(`settings-default-sources-${theme}`);
+          await smoke!.captureSmokeFrame(app, `settings-default-sources-${theme}`);
         }
       }finally{
         apps!.persistence.restore(savedSources);setNativeLocale(savedLocale);
@@ -2239,11 +2184,11 @@ try {
     const managerLink=app.stage.getChildByLabel("native-apps:manager",true) as NativeFluentButton;
     for(let index=0;index<100&&!managerLink.focused;index++)onKey({type:"down",key:"Tab"});
     assert.ok(managerLink.focused);await present(app,"apps manager link revealed");
-    {const scroll=managerLink.parent!.parent!.parent as import("../rendering/native/NativeScrollView.js").NativeScrollView;scroll.scrollTo(scroll.maxOffset);await present(app,"apps overview actions");await captureSmokeFrame("settings-apps-actions");}
+    {const scroll=managerLink.parent!.parent!.parent as import("../rendering/native/NativeScrollView.js").NativeScrollView;scroll.scrollTo(scroll.maxOffset);await present(app,"apps overview actions");await smoke!.captureSmokeFrame(app, "settings-apps-actions");}
     clickWithNativeInput(managerLink);
     await waitFor("apps manager transition",()=>!scene.getMotionSnapshot().active);await present(app,"apps manager rendered");
     const firstManaged=apps!.filteredManagedApps.value[0]!;
-    await captureSmokeFrame("virtual-manager-before-selection");
+    await smoke!.captureSmokeFrame(app, "virtual-manager-before-selection");
     {
       const list=app.stage.getChildByLabel("native-virtual-list",true) as import("../rendering/native/ui/NativeVirtualList.js").NativeVirtualList;
       assert.ok(list.mountedCount<apps!.managedApps.value.length,"only visible rows should be mounted");
@@ -2283,7 +2228,7 @@ try {
     clickWithNativeInput(app.stage.getChildByLabel(`native-apps:select-${firstManaged.id}`,true)!);
     await waitFor("apps selection bar expands",()=>app.stage.getChildByLabel("native-disclosure:apps.selection.apps.appManager",true)?.getChildByLabel("native-disclosure-content")?.alpha===1);
     assert.deepEqual(apps!.appManagerSelectedIds.value,[firstManaged.id]);
-    await captureSmokeFrame("settings-apps-selected");
+    await smoke!.captureSmokeFrame(app, "settings-apps-selected");
     clickWithNativeInput(app.stage.getChildByLabel("native-apps:clear",true)!);
     await waitFor("apps selection cleared",()=>apps!.selectedManagedAppCount.value===0&&!scene.getMotionSnapshot().active);
     const appSettingsBefore=apps!.persistence.capture();
@@ -2308,12 +2253,12 @@ try {
     await present(app,"app excluded");await saves.flush();assert.equal(apps!.managedApps.value.some(item=>item.id===firstManaged.id),false);
     settingsNavigation.openSubPage(settingsNavigation.settingsSubPages.value.appsExcludedApps!);(settingsShell as NativeSettingsShell).redraw();
     await waitFor("excluded page transition",()=>!scene.getMotionSnapshot().active);await present(app,"excluded page rendered");
-    await captureSmokeFrame("settings-apps-excluded");
+    await smoke!.captureSmokeFrame(app, "settings-apps-excluded");
     clickWithNativeInput(app.stage.getChildByLabel(`native-apps:restore-${firstManaged.id}`,true)!);await present(app,"exclusion removed");await saves.flush();
     assert.equal(apps!.presentation.scanAppBlacklist.value.length,appSettingsBefore.scanAppBlacklist.length);
     await apps!.rescanManagedApps();
     await waitFor("scan result modal",()=>management.activeId==="scan-results");await present(app,"scan results rendered");
-    assert.ok(apps!.scanResultModel.apps.value.some(item=>item.id===firstManaged.id));await captureSmokeFrame("settings-apps-scan-results");
+    assert.ok(apps!.scanResultModel.apps.value.some(item=>item.id===firstManaged.id));await smoke!.captureSmokeFrame(app, "settings-apps-scan-results");
     {
       const saveNormally=appDialogs!.options.save;
       appDialogs!.options.save=async()=>{throw new Error("smoke: scan save unavailable");};
@@ -2322,7 +2267,7 @@ try {
         await present(app,"scan save failure retained");
         assert.equal(apps!.scanResultModel.isOpen.value,true,"scan persistence failure must retain its model and dialog");
         assert.equal(management.activeId,"scan-results");
-        await captureSmokeFrame("scan-save-failure");
+        await smoke!.captureSmokeFrame(app, "scan-save-failure");
       }finally{appDialogs!.options.save=saveNormally;}
       clickWithNativeInput(management.getChildByLabel("native-modal:scan-results:confirm",true)!);
       await waitFor("scan selection saved after retry",()=>!management.modal);await present(app,"scan selection added");await saves.flush();
@@ -2340,13 +2285,13 @@ try {
     await present(app,"settings theme preview");
     assert.equal(settingsTheme(),previewTheme);
     assert.equal(settings.persistence.capture().settingsThemePreference,committedTheme,"theme preview must not commit settings");
-    await captureSmokeFrame("settings-theme-preview");
+    await smoke!.captureSmokeFrame(app, "settings-theme-preview");
     for(const theme of ["dark","light"] as const){
       settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell).redraw();await present(app,`segment ${theme}`);
       const selected=app.stage.getChildByLabel(`native-setting:theme-${theme}`,true) as NativeFluentButton;
-      selected.hovered=true;await present(app,"selected segment hover");await captureSmokeFrame(`settings-segment-${theme}-selected-hover`);selected.hovered=false;
+      selected.hovered=true;await present(app,"selected segment hover");await smoke!.captureSmokeFrame(app, `settings-segment-${theme}-selected-hover`);selected.hovered=false;
       const middle=app.stage.getChildByLabel("native-setting:theme-light",true) as NativeFluentButton;
-      middle.hovered=true;await present(app,"middle segment hover");await captureSmokeFrame(`settings-segment-${theme}-middle-hover`);middle.hovered=false;
+      middle.hovered=true;await present(app,"middle segment hover");await smoke!.captureSmokeFrame(app, `settings-segment-${theme}-middle-hover`);middle.hovered=false;
     }
     settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
     await present(app,"settings theme restored");
@@ -2379,7 +2324,7 @@ try {
         const disclosure=app.stage.getChildByLabel("native-disclosure:window.mode",true)!;
         const header=app.stage.getChildByLabel("native-window:mode-expand",true)!;
         assert.ok(Math.abs(disclosure.y-header.y-72)<0.01,"header and detail must share a seam without a row gap");
-        await captureSmokeFrame(`settings-window-disclosure-${mode}`);
+        await smoke!.captureSmokeFrame(app, `settings-window-disclosure-${mode}`);
       }
       settings.actions.setDraftWindowMode(modeBefore);settings.actions.setDraftSettingsThemePreference(themeBefore);(settingsShell as NativeSettingsShell).redraw();await present(app,"window disclosure draft restored");
     }
@@ -2393,7 +2338,7 @@ try {
     assert.equal(settings.presentation.showCustomTitlebar.value,true);
     assert.equal((await nativeData.loadLayout())!.settings.showCustomTitlebar,true);
     assert.ok(windowChrome.getChildByLabel("native-window-chrome:close"),"custom titlebar must expose a close action");
-    await captureSmokeFrame("settings-titlebar");
+    await smoke!.captureSmokeFrame(app, "settings-titlebar");
     {
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       const handle=getNativePixiApplicationTesting(app).handles().inputWindow;
@@ -2477,7 +2422,7 @@ try {
         assert.equal(settingsShell,applyingShell);assert.equal(applyingShell.closing,false);
         assert.equal(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true),applyButton);
         assert.equal(app.stage.getChildByLabel(`native-action:${t("common.actions.cancel")}`,true),cancelButton);
-        await captureSmokeFrame("settings-rapid-apply-stable");
+        await smoke!.captureSmokeFrame(app, "settings-rapid-apply-stable");
         console.log("Rapid apply: duplicate save blocked, footer nodes preserved, no settings close");
       }finally{applyingShell.options.apply=applyNormally;}
     }
@@ -2488,7 +2433,7 @@ try {
       clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
       assert.ok(applyingShell.applying);
       assert.equal(applyingShell.redrawCount,beforeApply,"pending apply must preserve the rendered controls");
-      await present(app,"pending apply visual");await captureSmokeFrame("settings-apply-pending");
+      await present(app,"pending apply visual");await smoke!.captureSmokeFrame(app, "settings-apply-pending");
       quitRequested=true;
       app.window.requestClose();
       await waitFor("close waits for settings",()=>windowClosing);
@@ -2512,11 +2457,11 @@ try {
       await applyWindowSettings();
       assert.equal((await nativeData.loadLayout())!.settings.windowEffectMaterial,"mica");
     }
-    await captureSmokeFrame("settings-window-material");
+    await smoke!.captureSmokeFrame(app, "settings-window-material");
     for(const theme of ["dark","light"] as const){
       settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell|null)?.redraw();
       await present(app,`window settings ${theme} theme`);
-      await captureSmokeFrame(`settings-window-${theme}`);
+      await smoke!.captureSmokeFrame(app, `settings-window-${theme}`);
     }
     settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
     await present(app,"window theme restored after comparison");
@@ -2524,7 +2469,7 @@ try {
     assert.equal(app.windowMode,"fullscreen");
     assert.equal((await nativeData.loadLayout())!.settings.windowMode,"fullscreen");
     assert.ok(app.getWindowFrame().width>=windowBefore.width);
-    await captureSmokeFrame("settings-window-fullscreen");
+    await smoke!.captureSmokeFrame(app, "settings-window-fullscreen");
     await clickWindowControl("windowed");settings.actions.setDraftWindowEffectMaterial(materialBefore);await applyWindowSettings();
     assert.equal(app.windowMode,"windowed");
     assert.deepEqual(app.getWindowFrame(),windowBefore,"window settings must restore the previous physical frame");
@@ -2581,18 +2526,18 @@ try {
     assert.equal(settings.persistence.capture().backgroundImagePath,backgroundBaseline.backgroundImagePath,"preview must not commit the image");
     await waitFor("background layer preview loaded",()=>app.stage.getChildByLabel("native-background-preview:layer",true)?.visible===true);
     await present(app,"background layer preview ready");
-    await captureSmokeFrame("settings-background-layer");
+    await smoke!.captureSmokeFrame(app, "settings-background-layer");
     await clickBackgroundControl("effect-expand");
     await clickBackgroundControl("effect-acrylic");
     await clickBackgroundControl("appearance-light");
     await waitFor("background effect preview loaded",()=>app.stage.getChildByLabel("native-background-preview:effect",true)?.visible===true);
     await present(app,"background effect preview ready");
-    await captureSmokeFrame("settings-background-effect");
+    await smoke!.captureSmokeFrame(app, "settings-background-effect");
     for(const theme of ["dark","light"] as const){
       settings.actions.setDraftSettingsThemePreference(theme);(settingsShell as NativeSettingsShell|null)?.redraw();
       await waitFor("theme background preview loaded",()=>app.stage.getChildByLabel("native-background-preview:effect",true)?.visible===true);
       await present(app,`background settings ${theme} theme`);
-      await captureSmokeFrame(`settings-background-${theme}`);
+      await smoke!.captureSmokeFrame(app, `settings-background-${theme}`);
     }
     settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
     await present(app,"background theme restored after comparison");
@@ -2603,7 +2548,7 @@ try {
     assert.equal(settings.draft.backgroundAcrylicLightParams.value.brightness,1.2,"brightness keyboard control must use the original UI range");
     onKey({type:"down",key:"Tab"});onKey({type:"down",key:"End"});
     assert.equal(settings.draft.backgroundAcrylicLightParams.value.contrast,1.25,"contrast control must reach the shared profile");
-    await present(app,"acrylic parameter controls settled");await captureSmokeFrame("settings-acrylic-parameters");
+    await present(app,"acrylic parameter controls settled");await smoke!.captureSmokeFrame(app, "settings-acrylic-parameters");
     clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
     await waitFor("background applied",()=>Boolean(settingsShell&&!settingsShell.applying));
     const savedBackground=(await nativeData.loadLayout())!.settings;
@@ -2639,7 +2584,7 @@ try {
     };
     await showCompact();
     await waitFor("compact confirmation animation settled",()=>management.getChildByLabel("native-form-overlay")?.alpha===1);
-    await present(app,"compact confirmation settled frame");await captureSmokeFrame("settings-compact-confirm");
+    await present(app,"compact confirmation settled frame");await smoke!.captureSmokeFrame(app, "settings-compact-confirm");
     onKey({type:"down",key:"Escape"});
     assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancelled compact must retain page boundaries");
     await waitFor("compact cancellation settled",()=>!management.modal);await present(app,"compact cancellation settled");await showCompact();
@@ -2674,7 +2619,7 @@ try {
       notices.showTransientNotice({title:"Layout could not be saved",message:"Your changes are kept in this session. Retry saving when the destination is available.",detail:"Smoke fixture: a deliberately unavailable destination.",intent:"error",actionText:"Retry",onAction:()=>{noticeActions++;}});
       await new Promise<void>(resolve=>setTimeout(resolve,90));await present(app,"persistent notice replaces timer");
       assert.equal(noticeView.visible,true,"replacing a timed notice must cancel its previous timer");
-      await captureSmokeFrame("notice-error-action");
+      await smoke!.captureSmokeFrame(app, "notice-error-action");
       clickWithNativeInput(noticeView.getChildByLabel("native-notice:action",true)!);assert.equal(noticeActions,1);
       searchBar.input.blur();onKey({type:"down",key:"Tab"});assert.equal(noticeView.hasFocus,true);
       onKey({type:"down",key:"Enter"});assert.equal(noticeActions,2,"notice action must be reachable from desktop keyboard navigation");
@@ -2684,7 +2629,7 @@ try {
       await waitFor("notice expires",()=>!noticeView.visible);
       await present(app,"notice expiry restores desktop hit targets");
       assert.equal(launchFlow!.isDesktopOpen.value,true,"notice clicks must not enter the desktop blank-click dismissal gesture");
-      await captureSmokeFrame("notice-expired-desktop");await present(app,"notice desktop presented");
+      await smoke!.captureSmokeFrame(app, "notice-expired-desktop");await present(app,"notice desktop presented");
     }
     clickWithNativeInput(settingsButton);await present(app,"settings reopened");
     const reopenedRows=app.stage.getChildByLabel("native-setting:desktopRows",true);assert.ok(reopenedRows);
@@ -2698,7 +2643,7 @@ try {
     assert.equal((await nativeData.loadLayout())?.settings.gridRows,baselineConfig.rows+1);
     for(let index=0;index<12;index++)onKey({type:"down",key:"Tab"});
     await present(app,"settings keyboard scrolled content");
-    await captureSmokeFrame("settings-layout-keyboard");
+    await smoke!.captureSmokeFrame(app, "settings-layout-keyboard");
     onKey({type:"down",key:"Escape"});
     layoutState.applyConfiguration(baselineConfig);layoutSettings.syncDraftsFromCommitted();
     currentFrame=Object.freeze({...currentFrame,viewport:Object.freeze({...currentFrame.viewport,gridRows:baselineConfig.rows,gridCols:baselineConfig.cols,iconSize:baselineConfig.iconSize})});
@@ -2726,18 +2671,18 @@ try {
         editField("name","Native dialog fixture");editField("target","C:\\Windows\\System32\\notepad.exe");
         await present(app,"editor executable args appear");assert.ok(management.getChildByLabel("native-editor:args",true));
         editField("args","--fixture");await present(app,"editor live draft");assert.equal(editor.args.value,"--fixture");
-        await captureSmokeFrame("editor-reference-match");
+        await smoke!.captureSmokeFrame(app, "editor-reference-match");
         nativeData.loadIconChoices=async()=>{throw new Error("Embedded icon fixture could not be read.");};
         clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
         await waitFor("embedded icon load failure",()=>Boolean(chooser.error.value)&&management.activeId==="icon-chooser");await present(app,"embedded icon error visible");
         assert.ok(management.getChildByLabel("native-dialog:icon-upload",true),"local image selection remains available after embedded icon failure");
-        await captureSmokeFrame("icon-candidate-load-error");onKey({type:"down",key:"Escape"});await present(app,"failed chooser closed");
+        await smoke!.captureSmokeFrame(app, "icon-candidate-load-error");onKey({type:"down",key:"Escape"});await present(app,"failed chooser closed");
         nativeData.loadIconChoices=async()=>candidates;
         clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
         await waitFor("embedded icon candidates loaded",()=>management.activeId==="icon-chooser"&&chooser.choices.value.length===candidates.length);await present(app,"candidate grid visible");
         const list=management.getChildByLabel("native-virtual-list",true) as import("../rendering/native/ui/NativeVirtualList.js").NativeVirtualList;
         assert.ok(list.mountedCount<list.count,"candidate grid must virtualize offscreen rows");
-        await captureSmokeFrame("icon-candidate-grid");await present(app,"candidate selection hit target");
+        await smoke!.captureSmokeFrame(app, "icon-candidate-grid");await present(app,"candidate selection hit target");
         clickWithNativeInput(management.getChildByLabel("native-dialog:icon-choice-0",true)!);
         await waitFor("candidate returns to editor",()=>management.activeId==="editor");await present(app,"selected editor icon");
         assert.equal(editor.iconDataUrl.value,cachedIcon.iconDataUrl);
@@ -2755,13 +2700,13 @@ try {
         nativeData.loadIconChoices=async()=>[];
         clickWithNativeInput(management.getChildByLabel("native-dialog:editor-icon",true)!);
         await waitFor("empty icon chooser ready",()=>management.activeId==="icon-chooser"&&!chooser.isLoading.value);await present(app,"empty icon chooser");
-        await captureSmokeFrame("icon-chooser-empty-reference-match");onKey({type:"down",key:"Escape"});await present(app,"empty chooser cancelled");
+        await smoke!.captureSmokeFrame(app, "icon-chooser-empty-reference-match");onKey({type:"down",key:"Escape"});await present(app,"empty chooser cancelled");
         assert.equal(editor.name.value,"Native dialog fixture","chooser cancellation preserves the editor draft");
         appDialogs!.options.save=async()=>{throw new Error("smoke: editor save unavailable. ".repeat(24));};
         const countBefore=apps!.managedApps.value.length;
         clickWithNativeInput(management.getChildByLabel("native-modal:editor:confirm",true)!);await present(app,"editor save failed");
         assert.equal(management.activeId,"editor");assert.equal(editor.name.value,"Native dialog fixture");assert.equal(apps!.managedApps.value.length,countBefore+1);
-        await captureSmokeFrame("editor-save-failure");
+        await smoke!.captureSmokeFrame(app, "editor-save-failure");
         const editorWindow={...app.window.getFrame()};
         try{
           app.window.setSize(480,420);
@@ -2770,7 +2715,7 @@ try {
           const confirm=management.getChildByLabel("native-modal:editor:confirm",true)!;
           const cancel=management.getChildByLabel("native-modal:editor:cancel",true)!;
           for(const button of [confirm,cancel]){const bounds=button.getBounds();assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=app.contentSize.width&&bounds.y+bounds.height<=app.contentSize.height,"error details must not displace footer controls outside a narrow viewport");}
-          await captureSmokeFrame("editor-narrow-long-error");
+          await smoke!.captureSmokeFrame(app, "editor-narrow-long-error");
         }finally{
           app.window.setSize(editorWindow.width,editorWindow.height);
           await waitFor("editor window restored",()=>app.contentSize.width>480);
@@ -2797,7 +2742,7 @@ try {
     searchBar.input.commitText("\u5df2\u52a0\u8f7d");
     assert.equal(activePageItems.length,1,"Chinese search should use shared matching");
     assert.equal(activePageItems[0]?.id,"native-layout-icon");
-    await new Promise<void>(resolve=>setTimeout(resolve,250));await present(app,"native search results");await captureSmokeFrame("search-chinese");
+    await new Promise<void>(resolve=>setTimeout(resolve,250));await present(app,"native search results");await smoke!.captureSmokeFrame(app, "search-chinese");
     searchBar.setQuery("yijiazai");
     assert.equal(activePageItems[0]?.id,"native-layout-icon","pinyin search should match the original algorithm");
     searchBar.setQuery("no-such-app-xyz");assert.equal(activePageItems.length,0);
@@ -2813,7 +2758,7 @@ try {
     clickWithNativeInput(firstApp,2);await present(app,"native context menu hit targets");
     assert.equal(management.modal,true);
     assert.ok(management.getChildByLabel(`native-action:${t("common.actions.open")}`,true));
-    await captureSmokeFrame("context-menu-app");management.close();
+    await smoke!.captureSmokeFrame(app, "context-menu-app");management.close();
     {
       let activated="",returned=0;
       const restore=management.captureReturnFocus;management.captureReturnFocus=()=>()=>{returned++;};
@@ -2827,10 +2772,10 @@ try {
       contextMenu(null,app.contentSize.width-1,app.contentSize.height-1);await present(app,"menu before relocation");
       app.nativeInput.emitPointer("pointerdown",40,200,2,0);app.nativeInput.emitPointer("pointerup",40,200,2,0);
       await present(app,"outside right click relocates menu");assert.equal(management.modal,true);
-      await captureSmokeFrame("context-menu-relocated");
+      await smoke!.captureSmokeFrame(app, "context-menu-relocated");
       management.resize();assert.equal(management.modal,false,"viewport changes must dismiss stale menu geometry");
     }
-    contextMenu(null,880,570);await present(app,"surface context menu");await captureSmokeFrame("context-menu-surface");
+    contextMenu(null,880,570);await present(app,"surface context menu");await smoke!.captureSmokeFrame(app, "context-menu-surface");
     const batchAction=management.getChildByLabel(`native-action:${t("launchpad.contextMenu.batchManage")}`,true);assert.ok(batchAction);
     clickWithNativeInput(batchAction);await present(app,"native selection from context menu");
     assert.equal(editing!.selection.isActive.value,true);
@@ -2857,7 +2802,7 @@ try {
     await present(app,"selected group over cancel zone");
     assert.equal(editing!.drag.groupDragState.value?.cancelArmed,true);
     assert.ok(selectionToolbar.summaryText.includes(t("launchpad.batch.releaseToCancel")));
-    await captureSmokeFrame("selection-cancel-zone");
+    await smoke!.captureSmokeFrame(app, "selection-cancel-zone");
     app.nativeInput.emitPointer("pointerup",app.contentSize.width/2,30+chromeInset(),0,0);
     await waitFor("selected group cancelled return",()=>!editing!.drag.isDragActive());
     assert.deepEqual(layoutState.presentation.pages.value,baselinePages,"cancel-zone drop must preserve layout");
@@ -2872,7 +2817,7 @@ try {
     const secondDot=app.stage.getChildByLabel("native-page-dot:1",true);assert.ok(secondDot);
     clickWithNativeInput(secondDot);await present(app,"selection hidden on second page");
     assert.ok(selectionToolbar.summaryText.includes(t("launchpad.batch.hiddenCount",{count:3})));
-    await captureSmokeFrame("selection-hidden-count");
+    await smoke!.captureSmokeFrame(app, "selection-hidden-count");
     onKey({type:"down",key:"Escape"});await present(app,"selection escaped");
     assert.equal(editing!.selection.isActive.value,false);
     const homeDot=app.stage.getChildByLabel("native-page-dot:0",true);assert.ok(homeDot);
@@ -2946,13 +2891,13 @@ try {
     await saves.flush();
     const created=layoutState.presentation.pages.value.flat().find(item=>item.type==="folder" && item.id!=="native-folder" && item.id!=="native-folder-other");
     assert.ok(created?.type==="folder" && created.childPages.flat().some(item=>item?.id==="native-layout-icon"));
-    await captureSmokeFrame("edited-folder-created");
+    await smoke!.captureSmokeFrame(app, "edited-folder-created");
     const freshHost=new NativeDataHost();
     try {await freshHost.connect();const saved=await freshHost.loadLayout();assert.ok(saved);assert.ok(saved.pages.flat().some(item=>item.id===created.id),"a restarted Rust host must read committed folder creation");}
     finally {await freshHost.dispose();}
     editing!.commit(baselinePages);await saves.flush();await present(app,"baseline restored after editing");
     editItem(activePageItems.find(item=>item.id==="native-settings")??null);
-    await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await captureSmokeFrame("application-edit-dialog");
+    await new Promise<void>(resolve=>setTimeout(resolve,200));await present(app,"native application edit form");await smoke!.captureSmokeFrame(app, "application-edit-dialog");
     const initialField=management.getChildByLabel("native-editor:name",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;assert.ok(initialField);clickWithNativeInput(initialField);
     management.form(t("dialogs.appEditor.changeIcon"),[],t("common.actions.cancel"),()=>{});
     assert.equal(management.modal,true,"nested form must retain the parent editing session");
@@ -2970,7 +2915,7 @@ try {
     await waitFor("Enter submits native edit form",()=>!management.modal);
     console.log("Native search/IME/touch/drag cancellation/save roundtrip smoke passed");
 
-    await captureSmokeFrame("desktop-page-1");
+    await smoke!.captureSmokeFrame(app, "desktop-page-1");
     const lastDot = app.stage.getChildByLabel(`native-page-dot:${currentFrame.viewport.activePages.length - 1}`, true);
     assert.ok(lastDot, "desktop pages must expose clickable dots");
     clickWithNativeInput(lastDot);
@@ -3032,7 +2977,7 @@ try {
           assert.equal(currentFrame.viewport.activePageIndex,1);
           const span=scene.getPageWidth("desktop",0,app.contentSize.width);
           await waitFor("limited swipe visible intermediate frame",()=>{const x=scene.getMotionSnapshot().desktopPageTrackX;return x < -span*.02&&x > -span*.9;});
-          await present(app,"speed-limited page visible");await captureSmokeFrame(`swipe-speed-${speed}-middle`);
+          await present(app,"speed-limited page visible");await smoke!.captureSmokeFrame(app, `swipe-speed-${speed}-middle`);
           emit("end");await settleDesktop();
           const settled=scene.getMotionSnapshot();
           assert.ok(settled.desktopPageTrackTargetX<0&&Math.abs(settled.desktopPageTrackX-settled.desktopPageTrackTargetX)<1,"limited swipe reaches the rendered page target, including the page gap");
@@ -3111,7 +3056,7 @@ try {
           () => iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
         );
         await present(app, "the settled next desktop page");
-        await captureSmokeFrame(`desktop-page-${currentFrame.viewport.activePageIndex + 1}`);
+        await smoke!.captureSmokeFrame(app, `desktop-page-${currentFrame.viewport.activePageIndex + 1}`);
         presentCount += 1;
       }
       if (turnPage(1)) throw new Error("Native desktop paging advanced past its last page");
@@ -3151,11 +3096,11 @@ try {
     await present(app, "partial opening before cancel");
     assert.equal(closeFolder(), true, "close must interrupt a presented opening");
     await present(app, "interrupted folder close");
-    await captureSmokeFrame("folder-opening-cancel");
+    await smoke!.captureSmokeFrame(app, "folder-opening-cancel");
     await activateItem(smokeFolder);
     await waitFor("same-folder reopen", () => !folderFlow.snapshot().isClosing && folderFlow.snapshot().openProgress >= 0.999);
     await present(app, "same-folder reopened");
-    await captureSmokeFrame("folder-reopened");
+    await smoke!.captureSmokeFrame(app, "folder-reopened");
     assert.equal(closeFolder(),true);
     await present(app,"closing before desktop pointer activation");
     assert.equal(folderFlow.snapshot().isClosing,true,"desktop pointer regression must run during closing");
@@ -3164,7 +3109,7 @@ try {
     clickWithNativeInput(otherFolderNode);
     await waitFor("cross-folder opening", () => folderFlow.snapshot().renderedFolder?.id === otherFolder.id);
     await present(app, "cross-folder handoff");
-    await captureSmokeFrame("folder-cross-handoff");
+    await smoke!.captureSmokeFrame(app, "folder-cross-handoff");
     await activateItem(smokeFolder);
     await activateItem(otherFolder);
     await activateItem(smokeFolder);
@@ -3176,7 +3121,7 @@ try {
     await waitFor("settings button reveals while folder is still closing",()=>settingsButton.alpha>0.1&&folderFlow.snapshot().isClosing);
     assert.ok(folderFlow.snapshot().renderedFolder,"settings button must appear before folder cleanup");
     assert.equal(settingsButton.eventMode,"none","visual reveal must not enable clicks through the closing folder");
-    await captureSmokeFrame("settings-button-folder-closing");
+    await smoke!.captureSmokeFrame(app, "settings-button-folder-closing");
     await waitFor("interruption stress cleanup", () => folderFlow.snapshot().renderedFolder === null);
     await present(app, "clean desktop after interruptions");
     for (const folder of [smokeFolder, otherFolder]) {
@@ -3226,7 +3171,7 @@ try {
       return Boolean(dots && dots.alpha < 0.01 && scene.getDesktopAlpha()<0.01);
     });
     await runFolderRenameSmoke(smokeFolder);
-    await captureSmokeFrame("folder-page-1");
+    await smoke!.captureSmokeFrame(app, "folder-page-1");
     presentCount += 1;
 
     wheel(100);
@@ -3255,7 +3200,7 @@ try {
       throw new Error("Native folder page navigation did not expose a real track animation");
     }
     await present(app, "the settled second native folder page");
-    await captureSmokeFrame("folder-page-2");
+    await smoke!.captureSmokeFrame(app, "folder-page-2");
     const secondFolderPageX = scene.getMotionSnapshot().folderPageTrackTargetX;
     assert.ok(secondFolderPageX !== null && secondFolderPageX < -1);
     for (let sample = 0; sample < 20; sample += 1) {
@@ -3278,8 +3223,8 @@ try {
         pending.push(...node.children);
       }
       assert.ok(title, "folder title must remain in the scene while paging");
-      const pixels = await captureScenePixels(app, app.contentSize.width, app.contentSize.height);
-      const region = toPixelRegion(title, pixels.width, pixels.height);
+      const pixels = await smoke!.captureScenePixels(app, app.contentSize.width, app.contentSize.height);
+      const region = smoke!.toPixelRegion(title, pixels.width, pixels.height);
       let brightPixels = 0;
       for (let y = region.y; y < region.y + region.height; y += 1) {
         for (let x = region.x; x < region.x + region.width; x += 1) {
@@ -3310,7 +3255,7 @@ try {
     assert.deepEqual(app.renderer.background.colorRgba,[0,0,0,0],"launch animation must clear to premultiplied transparent black");
     await waitFor("an intermediate app launch ghost",()=>launchGhostView.visible&&launchGhostView.alpha>0.15&&launchGhostView.alpha<0.6);
     assert.ok(launchGhostView.scale.x>1.2,"launch icon must expand as it fades");
-    await captureSmokeFrame("folder-app-launch-animation");
+    await smoke!.captureSmokeFrame(app, "folder-app-launch-animation");
     folderCloseMotionObserved = true;
     await waitFor("the native folder child process", () => existsSync(childLaunchMarker));
     folderChildLaunchObserved = true;
@@ -3322,7 +3267,7 @@ try {
       () => folderFlow.snapshot().renderedFolder === null,
     );
     await present(app, "the closed native folder");
-    await captureSmokeFrame("folder-closed");
+    await smoke!.captureSmokeFrame(app, "folder-closed");
     presentCount += 1;
 
     const initialSize = app.contentSize;
@@ -3412,6 +3357,8 @@ try {
     restorePresentCount = 1;
   }
 
+  }
+
   const visibleNodes = iconNodes.filter((node) => (
     node.alpha >= 0.999 && node.renderable && node.visible
   )).length;
@@ -3439,22 +3386,22 @@ try {
     );
   }
 
-  if (nativeMode === "smoke") {
-    await captureSmokeFrame("desktop-restored-resized");
-    const pixels = await captureScenePixels(app, contentSize.width, contentSize.height);
+  if ((__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke")) {
+    await smoke!.captureSmokeFrame(app, "desktop-restored-resized");
+    const pixels = await smoke!.captureScenePixels(app, contentSize.width, contentSize.height);
     const iconRegions = iconNodes
       .filter((node) => node.iconSprite.visible)
-      .map((node) => toPixelRegion(node.iconSprite, pixels.width, pixels.height));
+      .map((node) => smoke!.toPixelRegion(node.iconSprite, pixels.width, pixels.height));
     if (iconRegions.length < 1) throw new Error("Expected at least one native PNG icon sprite");
-    const pixelProof = assertNativeScenePixels(pixels, {
+    const pixelProof = smoke!.assertNativeScenePixels(pixels, {
       background: NATIVE_BACKGROUND,
       contentBottom: Math.ceil(contentSize.height / 2),
       contentEnd: Math.floor(contentSize.height - 72),
       emojiRegions: iconNodes
         .filter((node) => node.emojiText.visible)
-        .map((node) => toPixelRegion(node.emojiText, pixels.width, pixels.height)),
+        .map((node) => smoke!.toPixelRegion(node.emojiText, pixels.width, pixels.height)),
       iconRegions,
-      labelRegions: iconNodes.map((node) => toPixelRegion(node.labelText, pixels.width, pixels.height)),
+      labelRegions: iconNodes.map((node) => smoke!.toPixelRegion(node.labelText, pixels.width, pixels.height)),
     });
     const cjkLabelPixels = activePageItems.flatMap((item, index) => (
       typeof item.name === "string" && /\p{Script=Han}/u.test(item.name)
@@ -3513,12 +3460,12 @@ try {
       resolution,
       visibleNodes,
     }, null, 2));
-    if(process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY==="1"){
-      if(process.env.LAUNCHPAD_NATIVE_WINDOW_CARD_PREVIEW==="1"){settingsNavigation.selectTab("interface");windowPanelState.mode=true;}
-      if(process.env.LAUNCHPAD_NATIVE_APPS_PREVIEW==="1")settingsNavigation.selectTab("apps");
+    if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"){
+      if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_WINDOW_CARD_PREVIEW : undefined)==="1"){settingsNavigation.selectTab("interface");windowPanelState.mode=true;}
+      if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_APPS_PREVIEW : undefined)==="1")settingsNavigation.selectTab("apps");
       openSettings();
     }
-    if(process.env.LAUNCHPAD_NATIVE_RESTART_SMOKE==="1"){
+    if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_RESTART_SMOKE : undefined)==="1"){
       const {sendTrayTestAction}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
       assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR,"restart smoke must use isolated data");
       const attempt=Number(process.env.LAUNCHPAD_NATIVE_RESTART_ATTEMPT);
@@ -3538,7 +3485,7 @@ try {
         await sendTrayTestAction(tray!.id,"menu",5);
       }
     }
-    if(process.env.LAUNCHPAD_MEMORY_BENCH){
+    if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_MEMORY_BENCH : undefined)){
       const {runNativeAppsMemoryBenchmark}=await import("./nativeAppsMemoryBenchmark.js");
       await runNativeAppsMemoryBenchmark({apps:apps!,host:searchBar.host,width:740,theme:"dark",state:appsPageState,subPage:"apps.appManager",management,icons:iconTextures,
         invalidate:()=>app.invalidate(),redraw:()=>{},navigate:()=>{},edit:()=>{}},app.stage,()=>present(app,"memory benchmark frame"));
