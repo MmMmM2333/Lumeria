@@ -533,6 +533,18 @@ export function runLaunchpadGestureEngineTests() {
   );
 
   const reversalEngine = createLaunchpadGestureEngine();
+  for (const direction of [1, -1]) {
+    const overscrollEngine = createLaunchpadGestureEngine();
+    const viewport = { scope: "desktop", pageIndex: 1, pageCount: 3, pageWidth: 500 };
+    for (let sample = 0; sample < 50; sample++) {
+      overscrollEngine.dispatch({ type: "wheel", time: sample * 16, deltaMode: 0,
+        deltaX: 30 * direction, deltaY: 0, momentum: false, viewport });
+    }
+    const reversed = overscrollEngine.dispatch({ type: "wheel", time: 800, deltaMode: 0,
+      deltaX: -30 * direction, deltaY: 0, momentum: false, viewport });
+    assert(Math.abs((reversed.presentation?.progress ?? 0) - 0.94) < 0.001,
+      "reversing after prolonged overscroll must immediately move the visible page");
+  }
   const reversalViewport = { scope: "desktop", pageIndex: 1, pageCount: 3, pageWidth: 500 };
   for (const [time, deltaX] of [[0, 30], [16, 20], [32, -25], [48, -25]]) {
     reversalEngine.dispatch({

@@ -134,6 +134,7 @@ type PointerSession = {
 };
 
 type WheelSession = {
+  visualVelocity?: number;
   classification: "continuous" | "discrete" | "unknown";
   clearPresentationAt?: number;
   lastDelta: number;
@@ -400,6 +401,12 @@ export function createLaunchpadGestureEngine(
       const dtMs = Math.max(1, Math.min(policy.wheelVelocityMaxDeltaMs, time - session.lastTime));
       const instantVelocity = (delta / dtMs) * 1000;
       session.velocity += (instantVelocity - session.velocity) * policy.wheelVelocitySmoothing;
+      const width = session.viewport.pageWidth;
+      const before = Math.max(-width, Math.min(width, session.travel));
+      const after = Math.max(-width, Math.min(width, session.travel + delta));
+      const visual = (after - before) / dtMs * 1000;
+      session.visualVelocity = (session.visualVelocity ?? 0)
+        + (visual - (session.visualVelocity ?? 0)) * policy.wheelVelocitySmoothing;
     }
     session.lastDelta = delta;
     session.lastTime = time;
@@ -422,7 +429,7 @@ export function createLaunchpadGestureEngine(
         settle: true,
         settleToken: `wheel:${++settleSequence}`,
         targetProgress,
-        velocity: directionVelocity,
+        velocity: (Math.sign(session.travel || 1) * (session.visualVelocity ?? 0)) / session.viewport.pageWidth,
       },
       commands: pageIndex === scrub.fromIndex
         ? []
@@ -567,7 +574,9 @@ export function createLaunchpadGestureEngine(
       );
     }
     sampleWheelVelocity(wheel, delta, time);
-    wheel.travel += delta;
+    // Do not accumulate invisible travel past the adjacent page: reversing must
+    // move the page immediately, rather than paying back a long hidden overscroll.
+    wheel.travel = Math.max(-wheel.viewport.pageWidth, Math.min(wheel.viewport.pageWidth, wheel.travel + delta));
     if (wheel.sampleCount > 1) wheel.classification = "continuous";
     const presentation = makeWheelPresentation(wheel);
     wheel.presentation = presentation;
