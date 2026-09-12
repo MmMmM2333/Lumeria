@@ -325,6 +325,19 @@ export async function runLaunchpadAppsTests() {
       { id: "owner-contract-app", status: "missing" },
     ], requestedChecks);
     assert(apps.nativeIntegration.getLaunchTargetStatus(requireApp(pages.value[0]?.[0])) === "missing", "matching launch-target results should be accepted");
+    const firstProjection = apps.presentation.launchTargetStatusById.value;
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "owner-contract-app", status: "missing" }], requestedChecks);
+    assert(apps.presentation.launchTargetStatusById.value === firstProjection, "equivalent status refreshes should preserve projection identity");
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "owner-contract-app", status: "ok" }], requestedChecks);
+    const changedProjection = apps.presentation.launchTargetStatusById.value;
+    assert(changedProjection !== firstProjection && changedProjection["owner-contract-app"] === "ok", "changed status values must refresh consumers");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    const clearedProjection = apps.presentation.launchTargetStatusById.value;
+    assert(clearedProjection !== changedProjection && Object.keys(clearedProjection).length === 0, "removing statuses must refresh consumers");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    assert(apps.presentation.launchTargetStatusById.value === clearedProjection, "repeated empty results should preserve identity");
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "owner-contract-app", status: "missing" }], requestedChecks);
+    assert(apps.presentation.launchTargetStatusById.value !== clearedProjection, "adding statuses must refresh consumers");
     apps.editorModel.target.value = "C:/Apps/Owner-v2.exe";
     assert(apps.editorModel.actions.save(), "the unified editor should save an executable target change");
     apps.nativeIntegration.applyLaunchTargetStatuses([

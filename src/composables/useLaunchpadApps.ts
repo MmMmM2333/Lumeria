@@ -169,9 +169,17 @@ export function useLaunchpadApps(options: LaunchpadAppsOptions) {
   const excludedCatalogApps = ref<LaunchpadApp[]>([]);
   const showMissingLaunchTargetBadge = ref(true);
   const launchTargetStatusRecordsById = ref<{ [id: string]: LaunchTargetStatusRecord }>({});
-  const launchTargetStatusById = computed(() => Object.fromEntries(
-    Object.entries(launchTargetStatusRecordsById.value).map(([id, record]) => [id, record.status])
-  ));
+  let projectedStatuses: { [id: string]: LaunchTargetStatus } = Object.freeze({});
+  const launchTargetStatusById = computed(() => {
+    const entries = Object.entries(launchTargetStatusRecordsById.value);
+    // Equivalent refreshes must not invalidate consumers of the public status map.
+    if (entries.length !== Object.keys(projectedStatuses).length || entries.some(([id, record]) => (
+      !Object.prototype.hasOwnProperty.call(projectedStatuses, id) || projectedStatuses[id] !== record.status
+    ))) {
+      projectedStatuses = Object.freeze(Object.fromEntries(entries.map(([id, record]) => [id, record.status])));
+    }
+    return projectedStatuses;
+  });
   const editorSession = shallowRef<ManagedAppEditorSession | null>(null);
   const editorName = ref("");
   const editorTarget = ref("");
