@@ -76,8 +76,14 @@ function registrationCodes(testSource: string, runnerSource: string): string[] {
   const codes = violationCodes({
     "src/entry.ts": "export const value = 1;\n",
     ".cottontail-tmp/electrobun/123/build-helper.mjs": "export {};\n",
+    "release/staging/windows-x64/Lumeria/runtime/control.js": "export {};\n",
   }, { scanRoots: ["."] });
-  assert.deepEqual(codes, [], "generated Electrobun helpers must not be treated as first-party sources");
+  assert.deepEqual(codes, [], "generated runtime helpers and staging output must not be treated as first-party sources");
+}
+
+{
+  const codes = violationCodes({ "release/source.js": "export {};\n" }, { scanRoots: ["."] });
+  assert(codes.includes("legacy-source"), "release sources outside the generated staging directory remain subject to policy");
 }
 
 {

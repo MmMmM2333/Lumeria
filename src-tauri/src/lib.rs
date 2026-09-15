@@ -12,6 +12,7 @@ mod live_desktop;
 mod main_window_supervisor;
 mod models;
 mod native_data_host;
+mod native_paths;
 mod native_error;
 mod path_utils;
 mod startup;

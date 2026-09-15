@@ -1,5 +1,8 @@
 # 可选正式 bytecode 构建与 compile 评估
 
+Windows 独立安装包现使用 `npm run native:release` / `npm run native:release:bytecode`。
+当前发行流程见 [Windows 发行说明](../release/windows/README.md)；下文保留此前构建与性能测量记录。
+
 2026-09-10；应用入口基线18a6679，Starter0.3.4 / 0ae8210，Bun1.4.2。
 
 ## 使用方式

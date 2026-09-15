@@ -183,23 +183,21 @@ fn set_autostart_command_enabled(expected_command: &OsStr, enabled: bool) -> Res
 }
 
 fn installed_native_launcher(data_executable: &Path) -> Result<std::path::PathBuf, String> {
-    let root=data_executable.ancestors().nth(4)
-        .ok_or("Native data host is not in an installed application bundle")?;
-    if data_executable != root.join("Resources").join("app").join("bun").join("lumeria-native-data.exe")
-        || !root.join("Resources").join("main.js").is_file() {
-        return Err("Native data host is not in an installed application bundle".to_string());
-    }
-    let launcher=root.join("bin").join("launcher.exe");
-    if !launcher.is_file() {
-        return Err("Installed native application launcher is missing".to_string());
-    }
-    Ok(launcher)
+    crate::native_paths::installed_launcher(data_executable)
 }
 
 pub(crate) fn native_autostart_available() -> bool {
-    cfg!(target_os = "windows")
-        && std::env::var_os("LUMERIA_NATIVE_DATA_DIR").is_none()
-        && std::env::current_exe().ok().and_then(|path|installed_native_launcher(&path).ok()).is_some()
+    if std::env::var_os("LUMERIA_NATIVE_DATA_DIR").is_some() { return false; }
+    #[cfg(target_os = "windows")]
+    {
+        let Some(launcher) = std::env::current_exe().ok().and_then(|path| installed_native_launcher(&path).ok()) else { return false; };
+        let registered = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+            .open_subkey(crate::native_paths::INSTALL_REGISTRY_KEY)
+            .and_then(|key| key.get_value::<String, _>("InstallLocation"));
+        registered.ok().and_then(|path| std::fs::canonicalize(path).ok()).as_deref() == launcher.parent()
+    }
+    #[cfg(not(target_os = "windows"))]
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -241,21 +239,6 @@ mod tests {
     fn native_autostart_rejects_development_sidecar_and_request_selected_paths() {
         assert!(installed_native_launcher(Path::new(r"C:\project\target\release\lumeria_native_data.exe")).is_err());
         assert!(installed_native_launcher(Path::new(r"C:\other\application.exe")).is_err());
-    }
-
-    #[test]
-    fn native_autostart_resolves_only_its_own_bundle_launcher() {
-        let nonce=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let root=std::env::temp_dir().join(format!("lumeria-launcher-path-{}-{nonce}",std::process::id()));
-        std::fs::create_dir(&root).unwrap();
-        std::fs::create_dir_all(root.join("Resources/app/bun")).unwrap();
-        std::fs::create_dir(root.join("bin")).unwrap();
-        std::fs::write(root.join("Resources/main.js"),"").unwrap();
-        std::fs::write(root.join("bin/launcher.exe"),"").unwrap();
-        let sidecar=root.join("Resources/app/bun/lumeria-native-data.exe");
-        assert_eq!(installed_native_launcher(&sidecar).unwrap(),root.join("bin/launcher.exe"));
-        assert!(installed_native_launcher(&root.join("Resources/app/bun/other.exe")).is_err());
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -1,15 +1,17 @@
 import type { ElectrobunConfig } from "electrobun";
 import { nativePixiElectrobunCopy } from "./vendor/electrobun-pixi-native-starter/consumer/electrobun";
 import { nativeBuildDefines } from "./scripts/nativeBuildDefines.js";
+import { PRODUCT } from "./src/platform/product.js";
 
 export default {
   scripts: { postBuild: "scripts/nativePostBuild.ts" },
   app: {
-    identifier: "dev.lumeria.launchpad-native",
-    name: "LaunchPad Native",
-    version: "0.1.0",
+    identifier: PRODUCT.identifier,
+    name: PRODUCT.name,
+    version: PRODUCT.version,
   },
   build: {
+    artifactFolder: "build/electrobun-artifacts",
     bun: {
       entrypoint: "src/native/nativeMain.ts",
       define: nativeBuildDefines(),

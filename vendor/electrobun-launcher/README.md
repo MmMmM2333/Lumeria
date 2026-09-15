@@ -1,45 +1,58 @@
-# Lumeria Windows launcher
+# Lumeria Windows launchers
 
-Source: Electrobun v2.0.1, commit `8d09d15db791f346e419efd452d6759750addb62`,
-`package/src/launcher/`. See LICENSE for the upstream license.
+The original adapter is based on Electrobun v2.0.1, commit
+`8d09d15db791f346e419efd452d6759750addb62`, `package/src/launcher/`.
+See LICENSE for the upstream license.
 
-The only launcher behavior change is the Windows Bun executable name:
-`bun.exe` becomes `Lumeria.exe`. Extraction, environment setup, process
-supervision and uninstall behavior remain upstream implementations.
+## Product entry
 
-Build with Zig 0.16.0. `scripts/nativeRuntimeBranding.ts` builds this launcher
-and stages it after bytecode generation. Set `LUMERIA_ZIG` to a Zig 0.16.0
-executable, install that version on PATH, or place it at
+`product.zig` is the project-owned Windows entry, shipped as **Lumeria.exe**.
+It checks the product manifest, starts `runtime/bin/LumeriaRuntime.exe`, forwards
+startup arguments and the full Windows exit code, and waits for the runtime.
+It has no extraction, update, bootstrap-install or uninstall implementation.
+The NSIS installer owns those installation responsibilities.
+
+The application uses a per-data-directory authenticated session for activation
+and guarded shutdown. The launcher passes the login origin, its PID and the
+validated product root to the runtime. Normal starts are rejected while an
+installer transaction is open; `--lumeria-status` and `--lumeria-shutdown` remain
+available to the installer. Native library logs use the user log directory as
+the working directory; scripts and DLLs are located by absolute runtime paths.
+
+`ELECTROBUN_LAUNCHER_PID` is still supplied for the internal SDK's lifecycle.
+It is not an installation identity and can be removed when that runtime is
+replaced. `LUMERIA_LAUNCHER_PID` belongs to the product control protocol.
+
+## Electrobun build/development adapter
+
+`main.zig` remains the adapter for Electrobun's intermediate bundle and native
+development commands. Its Bun filename is `Lumeria.exe` instead of `bun.exe`.
+This adapter retains the upstream directory assumptions for those build tools.
+It is deliberately **excluded from the final product directory**, together with
+the upstream uninstall manager, by `scripts/stageWindowsRelease.ts`.
+
+Retain it while Electrobun is the build/development host; remove this adapter
+when the replacement host supplies those workflows. The remaining upstream
+runtime contents are kept together to preserve GPU/resource/bytecode behavior.
+
+## Build and verify
+
+Both entries use Zig **0.16.0**. `scripts/windowsBuildTools.ts` builds and caches
+them by source hash and applies icons/version resources to fresh output copies.
+Set `LUMERIA_ZIG`, put that version on PATH, or place it at
 `.codex-dev/toolchains/zig-x86_64-windows-0.16.0/zig.exe`.
 
-Official Windows compiler archive:
-https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip
+The shared `windows_spawn.zig` follows Windows CRT quoting rules for quotes,
+empty arguments and trailing backslashes. Verify changes with:
 
-SHA-256: `68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e`.
-Zig and Rust are build-time tools only; installed applications do not need them.
-Compiled launchers and the Windows resource editor are cached by source hash
-under `.codex-dev/runtime-branding/` and are not committed.
+- `zig build test` in this directory, for shared/upstream unit tests.
+- `npm run test:native-launcher`, for the real product entry and process boundary.
+- `npm run native:release` and `npm run test:native-product`.
+- `npm run native:smoke`, for the retained development adapter.
 
-The post-build hook runs bytecode generation before renaming Bun. It stages
-`Lumeria.exe`, replaces the launcher's filename selection, and writes matching
-product information and icons using Windows resource APIs. It never changes
-the shared Bun installation or devkit. `Resources/build.json` still identifies
-the runtime as Bun so SDK initialization and bytecode validation remain intact.
+When updating upstream sources, preserve `product.zig` and the shared argument
+quoting implementation. Test the development, ESM, bytecode, restart and installer
+flows. Do not patch executable string offsets or edit the shared Bun toolchain.
 
-The launcher remains `launcher.exe`, preserving existing restart, autostart and
-installer entry points. The native data service remains a separate process.
-The Windows runtime image name is `Lumeria.exe`; changing a parent process or
-window title is not used to simulate that name.
-
-Regression checks:
-- `npm run check`
-- `zig build test` in this directory (upstream launcher tests)
-- `npm run native:build` and `npm run native:build:bytecode`
-- Extract a generated update archive into an isolated directory and run
-  `scripts/runNativeElectrobun.ts --smoke --folder-rename --settings-only --runtime=<bundle>`.
-- Verify that the payload has `Lumeria.exe` and no `bun.exe`, the version
-  resource identifies Lumeria, and tray restart preserves data and exits cleanly.
-
-When upgrading Electrobun, update these sources from the matching release,
-reapply the one-line runtime-name change and verify dev, packaged, bytecode,
-restart and uninstall behavior. Do not patch binary string offsets.
+See `release/windows/README.md` for packaging, migration and platform boundaries,
+and `docs/windows-release-plan.md` for implementation status and evidence.

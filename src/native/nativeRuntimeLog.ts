@@ -1,9 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { nativeRuntimePaths } from "./runtimePaths.js";
 
-const dataRoot=process.env.LUMERIA_NATIVE_DATA_DIR??join(process.env.APPDATA??homedir(),"com.lumeria.app");
-export const nativeLogDirectory=join(dataRoot,"logs");
+export const nativeLogDirectory=nativeRuntimePaths().logs;
 export const nativeLogPath=join(nativeLogDirectory,"native-runtime.log");
 let logUnavailable=false;
 

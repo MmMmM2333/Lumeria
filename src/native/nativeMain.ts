@@ -17,7 +17,10 @@ import { prepareNativeRestart } from "./nativeRestart.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { Screen } from "electrobun/main";
+import { Screen, Utils } from "electrobun/main";
+import { PRODUCT } from "../platform/product.js";
+import { nativeRuntimePaths } from "./runtimePaths.js";
+import { acquireNativeSession, type NativeSession } from "./nativeSession.js";
 import {
   Container,
   AlphaFilter,
@@ -171,7 +174,7 @@ type NativeIconNode = Container & Readonly<{
   labelText: Text;
 }>;
 
-async function runNativeApplication(): Promise<void> {
+async function runNativeApplication(session: NativeSession): Promise<void> {
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 
 const configuredNativeMode = process.env.LAUNCHPAD_NATIVE_MODE;
@@ -274,7 +277,7 @@ const app = await createNativePixiApplication({
   background: 0x090b14,
   height: 600,
   resizeMode: "live",
-  title: nativeMode === "app" ? "LaunchPad" : (__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
+  title: nativeMode === "app" ? PRODUCT.name : (__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
   width: 900,
 }).catch(async (error: unknown) => {
   await nativeData.dispose();
@@ -662,6 +665,7 @@ let offWheelPointerInterrupt = (): void => {};
 let offTouch = (): void => {};
 let disconnectAnimationHost = (): void => {};
 let windowClosing=false;
+let externalClose: { resolve(): void; reject(error: unknown): void } | null = null;
 const offSaveBeforeClose = app.beforeClose(async () => {
   if(!quitRequested&&!restartRequested){
     logNativeRuntime("window-close-hide");
@@ -683,7 +687,9 @@ const offSaveBeforeClose = app.beforeClose(async () => {
       await prepareNativeRestart();
       logNativeRuntime("restart-ready");
     }
+    externalClose?.resolve(); externalClose=null;
   } catch (error) {
+    externalClose?.reject(error); externalClose=null;
     restartRequested=false;
     quitRequested=false;
     windowClosing=false;app.stage.interactiveChildren=true;
@@ -1148,7 +1154,16 @@ try {
     },
     quit:restart=>{if(windowClosing)return;restartRequested=restart;quitRequested=!restart;logNativeRuntime(restart?"restart-request":"quit-request");app.window.requestClose();},
   });
-  logNativeRuntime("ready",{version:"0.1.0",state:app.state,logDirectory:nativeLogDirectory});
+  session.setHandlers({
+    activate:()=>showLaunchpad(),
+    shutdown:()=>new Promise<void>((resolve,reject)=>{
+      if(windowClosing||restartRequested||externalClose){reject(new Error("Lumeria is already closing or restarting"));return;}
+      externalClose={resolve,reject};quitRequested=true;
+      app.window.requestClose();
+    }),
+  });
+  if(process.env.LUMERIA_LAUNCH_ORIGIN==="login")app.window.hide();
+  logNativeRuntime("ready",{version:PRODUCT.version,state:app.state,trayId:tray.id,logDirectory:nativeLogDirectory});
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
     return true;
@@ -3534,4 +3549,10 @@ try {
 
 // Keep failures observable by the Worker error handler after existing finally
 // blocks have released application resources; never turn startup failure into success.
-void runNativeApplication().catch(error => { queueMicrotask(() => { throw error; }); });
+async function runNativeEntry(): Promise<void> {
+  const session=await acquireNativeSession(nativeRuntimePaths(),process.env.LUMERIA_LAUNCH_ORIGIN==="login"?"login":"manual");
+  if(!session){Utils.quit();return;}
+  try { await runNativeApplication(session); }
+  finally { await session.dispose(); }
+}
+void runNativeEntry().catch(error => { queueMicrotask(() => { throw error; }); });

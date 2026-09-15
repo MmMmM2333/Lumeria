@@ -1,15 +1,15 @@
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { nativeRuntimePaths } from "./runtimePaths.js";
 
-const launcher=join(dirname(process.execPath),"launcher.exe");
-export const canRestartNative=()=>Boolean(process.env.LAUNCHPAD_NATIVE_RESTART_FILE)||existsSync(launcher);
+export const canRestartNative=()=>Boolean(process.env.LAUNCHPAD_NATIVE_RESTART_FILE)||nativeRuntimePaths().launcher!==null;
 
 /** Called only after the close guard has saved successfully. */
 export async function prepareNativeRestart():Promise<void>{
   const marker=process.env.LAUNCHPAD_NATIVE_RESTART_FILE;
   if(marker){writeFileSync(marker,JSON.stringify({pid:process.pid,time:Date.now()}));return;}
-  if(!existsSync(launcher))throw new Error("Native launcher is unavailable for restart");
+  const launcher=nativeRuntimePaths().launcher;
+  if(!launcher)throw new Error("Native launcher is unavailable for restart");
   // Standalone packages have no dev supervisor. A detached helper waits for the
   // old owner to exit before launching the same installed executable.
   const script=`const {spawn}=require('node:child_process');const {dirname}=require('node:path');

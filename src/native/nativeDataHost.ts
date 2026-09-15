@@ -4,6 +4,7 @@ import { isAbsolute, dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
+import { nativeDataExecutableName, nativePlatform } from "./runtimePaths.js";
 import {
   assertCatalogScanFilters,
   assertCatalogScanRoot,
@@ -128,7 +129,7 @@ function resolveExecutable(): string {
   }
   const moduleDir = (import.meta as ImportMeta & { dir?: string }).dir
     ?? dirname(fileURLToPath(import.meta.url));
-  return join(moduleDir, "lumeria-native-data.exe");
+  return join(moduleDir, nativeDataExecutableName(nativePlatform(process.platform)));
 }
 
 export class NativeDataHost {

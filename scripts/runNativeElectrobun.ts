@@ -16,6 +16,8 @@ const isolated = nativeMode === "smoke" || folderRenameSmoke || process.argv.inc
 const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
 const isolatedRuntime=runtimeArgument?resolve(runtimeArgument):null;
 if(isolatedRuntime&&!isolated)throw new Error("A separate runtime requires isolated data");
+const productRuntime=isolatedRuntime!==null&&existsSync(join(isolatedRuntime,"lumeria.json"));
+const isolatedLauncher=isolatedRuntime?join(isolatedRuntime,productRuntime?"Lumeria.exe":"bin/launcher.exe"):null;
 const runner = join(
   projectRoot,
   "vendor",
@@ -195,18 +197,18 @@ try {
   let status:number;
   do {
   rmSync(restartPath,{force:true});
-  status = await runNativeProcess(isolatedRuntime?join(isolatedRuntime,"bin","launcher.exe"):process.execPath, isolatedRuntime?[]:[runner, "start"], {
-    cwd: isolatedRuntime?join(isolatedRuntime,"bin"):projectRoot,
+  status = await runNativeProcess(isolatedLauncher??process.execPath, isolatedRuntime?[]:[runner, "start"], {
+    cwd: isolatedRuntime??projectRoot,
     env: {
       ...process.env,
       LUMERIA_NATIVE_DIAGNOSTICS_BUILD: "1",
-      LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
+      ...(!productRuntime||process.env.LAUNCHPAD_NATIVE_DATA_HOST?{LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
         projectRoot,
         "src-tauri",
         "target",
         "release",
         "lumeria_native_data.exe",
-      ),
+      )}:{}),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE:invalidWallpaper??"",

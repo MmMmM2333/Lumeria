@@ -1,37 +1,26 @@
 const std = @import("std");
 
-/// Build the compact command line used by the Windows production launcher.
-/// Every launcher-owned argument is a filesystem path; quotes are impossible
-/// in Windows path components, so rejecting them keeps escaping unambiguous.
+/// Quote arguments using the Windows CRT rules, including quotes and trailing
+/// backslashes. Product arguments must survive the launcher unchanged.
 pub fn commandLine(allocator: std.mem.Allocator, argv: []const []const u8) ![:0]u8 {
     if (argv.len == 0) return error.InvalidArguments;
-    var byte_len: usize = 0;
+    var result: std.ArrayList(u8) = .empty;
+    errdefer result.deinit(allocator);
     for (argv, 0..) |arg, index| {
-        if (std.mem.indexOfScalar(u8, arg, '"') != null or
-            std.mem.indexOfScalar(u8, arg, 0) != null)
-        {
-            return error.InvalidArguments;
+        if (std.mem.indexOfScalar(u8, arg, 0) != null) return error.InvalidArguments;
+        if (index != 0) try result.append(allocator, ' ');
+        try result.append(allocator, '"');
+        var backslashes: usize = 0;
+        for (arg) |char| {
+            if (char == '\\') { backslashes += 1; continue; }
+            try result.appendNTimes(allocator, '\\', if (char == '"') backslashes * 2 + 1 else backslashes);
+            try result.append(allocator, char);
+            backslashes = 0;
         }
-        byte_len = try std.math.add(usize, byte_len, arg.len + 2);
-        if (index != 0) byte_len = try std.math.add(usize, byte_len, 1);
+        try result.appendNTimes(allocator, '\\', backslashes * 2);
+        try result.append(allocator, '"');
     }
-
-    const result = try allocator.allocSentinel(u8, byte_len, 0);
-    var cursor: usize = 0;
-    for (argv, 0..) |arg, index| {
-        if (index != 0) {
-            result[cursor] = ' ';
-            cursor += 1;
-        }
-        result[cursor] = '"';
-        cursor += 1;
-        @memcpy(result[cursor..][0..arg.len], arg);
-        cursor += arg.len;
-        result[cursor] = '"';
-        cursor += 1;
-    }
-    std.debug.assert(cursor == byte_len);
-    return result;
+    return result.toOwnedSliceSentinel(allocator, 0);
 }
 
 test "Windows command line supports native and script main processes" {
@@ -51,5 +40,12 @@ test "Windows command line supports native and script main processes" {
     );
 
     try std.testing.expectError(error.InvalidArguments, commandLine(allocator, &.{}));
-    try std.testing.expectError(error.InvalidArguments, commandLine(allocator, &.{"bad\"path"}));
+    try std.testing.expectError(error.InvalidArguments, commandLine(allocator, &.{"bad\x00argument"}));
+}
+
+test "Windows arguments retain empty values, quotes and final backslashes" {
+    const allocator = std.testing.allocator;
+    const command = try commandLine(allocator, &.{ "", "a\"b", "C:\\space dir\\" });
+    defer allocator.free(command);
+    try std.testing.expectEqualStrings("\"\" \"a\\\"b\" \"C:\\space dir\\\\\"", command);
 }

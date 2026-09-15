@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    env, fs,
+    fs,
     io::{self, BufRead, Write},
     path::{Path, PathBuf},
 };
@@ -17,7 +17,6 @@ use crate::{
 };
 
 const PROTOCOL_VERSION: u32 = 1;
-const APP_IDENTIFIER: &str = "com.lumeria.app";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
@@ -136,24 +135,10 @@ struct HostState {
 }
 
 pub fn run() -> Result<(), String> {
-    let data_dir = resolve_data_dir()?;
+    let data_dir = crate::native_paths::data_directory()?;
     let stdin = io::stdin();
     let stdout = io::stdout();
     run_with_io(stdin.lock(), stdout.lock(), &data_dir)
-}
-
-fn resolve_data_dir() -> Result<PathBuf, String> {
-    if let Some(configured) = env::var_os("LUMERIA_NATIVE_DATA_DIR") {
-        let path = PathBuf::from(configured);
-        if !path.is_absolute() {
-            return Err("LUMERIA_NATIVE_DATA_DIR must be an absolute path".to_string());
-        }
-        return Ok(path);
-    }
-    let roaming = env::var_os("APPDATA").map(PathBuf::from).ok_or_else(|| {
-        "APPDATA is unavailable; cannot resolve Lumeria data directory".to_string()
-    })?;
-    Ok(roaming.join(APP_IDENTIFIER))
 }
 
 fn run_with_io(input: impl BufRead, mut output: impl Write, data_dir: &Path) -> Result<(), String> {
@@ -271,6 +256,7 @@ fn launch_app(app_id: &str, data_dir: &Path, state: &HostState) -> Result<(), La
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
     fn background_cache_reuses_original_validation_and_content_addressing() {

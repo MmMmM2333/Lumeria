@@ -122,12 +122,13 @@ function readSourceForAnalysis(path: string, source: string): string {
     .join("\n");
 }
 
-function collectFilesRecursively(directory: string): string[] {
+function collectFilesRecursively(directory: string, projectRoot: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...collectFilesRecursively(path));
+    if (entry.isDirectory() && projectRelativePath(projectRoot, path) === "release/staging") continue;
+    if (entry.isDirectory()) files.push(...collectFilesRecursively(path, projectRoot));
     else if (entry.isFile() && CODE_EXTENSIONS.has(extname(entry.name).toLowerCase())) files.push(path);
   }
   return files;
@@ -146,7 +147,7 @@ function collectSourceFiles(
       violations.push({ code: "missing-scan-root", detail: "declared source-policy scan root does not exist", path: root });
       continue;
     }
-    for (const path of collectFilesRecursively(absoluteRoot)) absolutePaths.add(resolve(path));
+    for (const path of collectFilesRecursively(absoluteRoot, projectRoot)) absolutePaths.add(resolve(path));
   }
 
   const sources = new Map<string, SourceFile>();
