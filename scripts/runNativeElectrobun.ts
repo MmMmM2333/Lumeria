@@ -13,6 +13,8 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
 const folderRenameSmoke = process.argv.includes("--folder-rename");
 const launchVisualSmoke = process.argv.includes("--launch-visual");
+const searchSmoke = process.argv.includes("--search");
+if (searchSmoke && nativeMode !== "smoke") throw new Error("Search verification requires smoke mode");
 if (launchVisualSmoke && nativeMode !== "smoke") throw new Error("Launch visual verification requires smoke mode");
 const isolated = nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
 const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
@@ -191,6 +193,18 @@ fixture.settings.scanRoots = [{
 fixture.settings.scanKeywordBlacklist = [];
 fixture.settings.scanKeywordAllowlist = [];
 fixture.settings.scanAppBlacklist = [];
+if(searchSmoke){
+  const canvas=createCanvas(256,256),context=canvas.getContext("2d");
+  const items=Array.from({length:180},(_,index)=>{
+    context.fillStyle=`hsl(${index*37%360},75%,55%)`;context.fillRect(0,0,256,256);
+    context.fillStyle="#ffffff";context.font="80px sans-serif";context.fillText(String(index),20,150);
+    const path=join(dataDir,`search-icon-${index}.png`);writeFileSync(path,canvas.toBuffer("image/png"));
+    return {id:`search-${index}`,type:"manualApp",name:`${index%3===0?"Word":"应用工具"} ${index}`,customIconPath:path,
+      launchTarget:{kind:"executable",path:process.execPath},launchArgs:`"${childLaunchHelperPath}" "${childLaunchMarkerPath}"`};
+  });
+  fixture.pages=[];for(let index=0;index<items.length;index+=28)fixture.pages.push(items.slice(index,index+28));
+  fixture.settings.mainWindowShortcut=null;
+}
 if(process.argv.includes("--settings-only"))fixture.settings.mainWindowShortcut=null;
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
@@ -216,6 +230,7 @@ try {
       LAUNCHPAD_NATIVE_MODE: nativeMode,
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE: launchVisualSmoke ? "1" : "0",
+      LAUNCHPAD_NATIVE_SEARCH_SMOKE: searchSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE:invalidWallpaper??"",
       ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
@@ -236,7 +251,10 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
-  if (launchVisualSmoke && status !== 130) {
+  if (searchSmoke && status !== 130) {
+    if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).search !== "verified") throw new Error("Native search verification did not complete");
+    console.log("Native search verification passed");
+  } else if (launchVisualSmoke && status !== 130) {
     if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).launchVisual !== "verified") throw new Error("Native launch visual verification did not complete");
     console.log("Native launch visual and cancellation verification passed");
   } else if (invalidWallpaper && status !== 130) {
@@ -248,7 +266,7 @@ try {
     }
     console.log("Native folder rename smoke passed");
   }
-  if (nativeMode === "smoke" && !folderRenameSmoke && !launchVisualSmoke && !invalidWallpaper && status !== 130) {
+  if (nativeMode === "smoke" && !folderRenameSmoke && !launchVisualSmoke && !searchSmoke && !invalidWallpaper && status !== 130) {
     if (!existsSync(markerPath)) throw new Error("Electrobun worker exited without completing the native smoke test");
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;

@@ -268,6 +268,7 @@ export class NativeDesktopScene {
     });
     this.#onFolderPageIndexCommit = options.onFolderPageIndexCommit ?? (() => {});
     this.#layer = new DesktopLayer({
+      reuseSearchNodes:true,
       iconBoundsRegistry: this.iconBoundsRegistry,
       iconTextures: options.iconTextures,
       renderCopy:{searchEmpty:t("launchpad.search.empty"),newFolderName:t("launchpad.newFolder")},
@@ -296,6 +297,8 @@ export class NativeDesktopScene {
     this.#pageDots = new NativePageDots(index => options.onDesktopPageIndexCommit?.(index));
     stage.addChild(this.#pageDots);
   }
+
+  clearSearchNodeCache():void {this.#layer.clearSearchNodeCache();}
 
   commit(
     frame: CompleteDesktopSceneFrame,

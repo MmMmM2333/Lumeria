@@ -24,6 +24,36 @@ export async function runNativeVisualParityTests(baseFrame:CompleteDesktopSceneF
   const scene=new NativeDesktopScene(root,{iconTextures:icons});
   const frame=snapshotContractValue({...baseFrame,viewport:{...baseFrame.viewport,activePages:[[item,folder]],activePageIndex:0,gridCols:8,gridRows:6}}) as CompleteDesktopSceneFrame;
   try{
+    {
+      const viewport={width:900,height:800,resolution:1};
+      scene.commit(frame,viewport,{snapDesktopLayout:true});
+      const desktopNode=root.getChildByLabel(`launchpad-item:${item.id}`,true) as IconNode;
+      const searchFrame=snapshotContractValue({...frame,viewport:{...frame.viewport,activePages:[[item]],desktopTrackMotionKey:"search"},
+        interaction:{...frame.interaction,isSearchMode:true}}) as CompleteDesktopSceneFrame;
+      scene.commit(searchFrame,viewport,{snapDesktopLayout:false});
+      const searchNode=root.getChildByLabel(`launchpad-item:${item.id}`,true) as IconNode;
+      assert.notEqual(searchNode,desktopNode);assert.equal(desktopNode.parent,null);assert.equal(desktopNode.eventMode,"none");
+      for(let cycle=0;cycle<12;cycle++){
+        scene.commit(frame,viewport,{snapDesktopLayout:false});
+        assert.equal(root.getChildByLabel(`launchpad-item:${item.id}`,true),desktopNode);
+        scene.commit(searchFrame,viewport,{snapDesktopLayout:false});
+        assert.equal(root.getChildByLabel(`launchpad-item:${item.id}`,true),searchNode);
+        assert.equal(root.getChildrenByLabel(`launchpad-item:${item.id}`,true).length,1,"detached cached nodes must not participate in lookup or hit testing");
+      }
+      scene.clearSearchNodeCache();assert.equal(desktopNode.destroyed,true);
+      scene.commit(frame,viewport,{snapDesktopLayout:false});
+      assert.notEqual(root.getChildByLabel(`launchpad-item:${item.id}`,true),desktopNode);
+      scene.clearSearchNodeCache();assert.equal(searchNode.destroyed,true);
+      const historical:IconNode[]=[];
+      for(let index=0;index<8;index++){
+        const next={...item,id:`other-search-${index}`};
+        scene.commit(snapshotContractValue({...searchFrame,viewport:{...searchFrame.viewport,activePages:[[next]]}}) as CompleteDesktopSceneFrame,viewport,{snapDesktopLayout:false});
+        historical.push(root.getChildByLabel(`launchpad-item:${next.id}`,true) as IconNode);
+        scene.commit(frame,viewport,{snapDesktopLayout:false});
+      }
+      assert.ok(historical.filter(node=>!node.destroyed).length<=2,"cached query nodes must remain bounded by realized page capacity");
+      scene.clearSearchNodeCache();assert.ok(historical.every(node=>node.destroyed),"clearing layout state must release cached query resources");
+    }
     for(const width of [760,900,1400]){
       scene.commit(frame,{width,height:800,resolution:1},{snapDesktopLayout:true});
       for(let i=0;i<60;i++)motionRuntime.step(1/120);

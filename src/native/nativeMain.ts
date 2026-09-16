@@ -90,7 +90,7 @@ import { createNativeBrandingTextures } from "../rendering/native/nativeBranding
 import { normalizeLaunchpadIconVariant, LAUNCHPAD_ICON_VARIANTS } from "../domain/launchpadIconVariant.js";
 import { createNativeShortcut } from "./nativeShortcut.js";
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
-import type { LaunchpadPages, ReadonlyLaunchpadApp } from "../domain/launchpadLayout.js";
+import type { LaunchpadApp, LaunchpadPages, ReadonlyLaunchpadApp, ReadonlyLaunchpadItem, ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
 import { createNativeIconTextureRepository } from "../rendering/native/nativeIconTextureLoader.js";
 import { prepareNativeIconTextures } from "../rendering/native/nativeRecoverableIconSource.js";
 import {
@@ -244,16 +244,18 @@ async function present(
 
 function collectTextureItems(
   frame: Readonly<{ viewport: Readonly<{ activePageIndex: number; activePages: readonly (readonly (SceneItem | null)[])[] }> }>,
-): readonly SceneItem[] {
-  const result: SceneItem[] = [];
+  layoutPages: ReadonlyLaunchpadPages | typeof frame.viewport.activePages = frame.viewport.activePages,
+): readonly (SceneItem | ReadonlyLaunchpadItem)[] {
+  const result: (SceneItem | ReadonlyLaunchpadItem)[] = [];
   const seen = new Set<string>();
-  const append = (item: SceneItem | null): void => {
+  const append = (item: SceneItem | ReadonlyLaunchpadItem | null | undefined): void => {
     if (!item || seen.has(item.id)) return;
     seen.add(item.id);
     result.push(item);
     if (item.type !== "folder" || !Array.isArray(item.childPages)) return;
     for (const page of item.childPages) for (const child of page) append(child as SceneItem | null);
   };
+  for(const page of layoutPages)for(const item of page)append(item);
   frame.viewport.activePages.forEach((page) => {
     // Layout ownership is independent from decoding and GPU residency.
     for (const item of page) append(item);
@@ -576,7 +578,7 @@ async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
   if(!reset){apps?.openExistingAppIconChooser(item.id);appDialogs?.sync();return;}
   if(!apps?.managedApps.value.some(app=>app.id===item.id))throw new Error("Application no longer exists");
   apps.updateAppCustomIcon(item.id,null);await saves.flush();
-  await iconTextures.synchronize(collectTextureItems(currentFrame));
+  await iconTextures.synchronize(collectTextureItems(currentFrame,layoutState.presentation.pages.value));
   const updated=collectTextureItems(currentFrame).find(candidate=>candidate.id===item.id);
   if(updated)await iconTextures.prepareItems([updated]);
   const result=iconTextures.snapshot();
@@ -760,6 +762,7 @@ try {
   let projectedPagesSource:ReturnType<ReturnType<typeof createNativeEditing>["projectedPages"]>|null=null;
   let projectedPagesSnapshot=currentFrame.viewport.activePages;
   let retainedPages:typeof currentFrame.viewport.activePages|null=null;
+  let retainedLayout:typeof layoutState.presentation.pages.value|null=null;
   const captureInteraction=createNativeRecordSnapshot<Record<string,unknown>>();
   const captureDiagnostics=createNativeRecordSnapshot<typeof currentFrame.diagnostics>();
   sceneUpdates.connect((snapDesktopLayout = false) => {
@@ -794,8 +797,11 @@ try {
         viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) });
       activePageItems = getNativeActivePageItems(currentFrame);
     }
-    if(retainedPages!==currentFrame.viewport.activePages){
-      iconTextures.retainLayout(collectTextureItems(currentFrame));retainedPages=currentFrame.viewport.activePages;
+    const layoutPages=layoutState.presentation.pages.value;
+    if(retainedLayout!==layoutPages||retainedPages!==currentFrame.viewport.activePages){
+      if(retainedLayout!==layoutPages)scene.clearSearchNodeCache();
+      iconTextures.retainLayout(collectTextureItems(currentFrame,layoutPages));
+      retainedPages=currentFrame.viewport.activePages;retainedLayout=layoutPages;
     }
     work = commitScene({
       height: app.contentSize.height,
@@ -809,9 +815,9 @@ try {
     folderNamePresentationBlocked=folderHeader.isClosing || Boolean(settingsShell || management.modal || editing?.drag.isDragActive()) || Boolean(launchFlow?.isLaunchpadInteractionBlocked());
     folderNameInput.update(folderNamePresentationItem, folderHeader.openProgress,folderNamePresentationBlocked);
     app.stage.setChildIndex(folderNameInput, app.stage.children.length - 1);
-    const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
-    settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
-    searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)),chromeInset());
+    const headerShown=!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
+    settingsButton.reveal(headerShown,headerShown&&!settingsShell&&!folderHeader.renderedFolder);
+    searchBar.update(app.contentSize.width, Boolean(editing?.selection.isActive.value || (folderHeader.renderedFolder && !folderHeader.isClosing)),chromeInset(),!settingsShell);
     const hiddenCount=(editing?.selection.selectedCount.value??0)-getSelectionScope().orderedIds.filter(id=>editing?.selection.isSelected(id)).length;
     selectionToolbar.update({width:app.contentSize.width,chromeInset:chromeInset(),theme:settingsTheme(),
       active:Boolean(editing?.selection.isActive.value),count:editing?.selection.selectedCount.value??0,hiddenCount,
@@ -851,16 +857,20 @@ try {
       return node as NativeIconNode;
     });
   let iconNodes = collectActiveIconNodes();
+  let indexedSearchPages:typeof layoutState.presentation.pages.value|null=null;
+  let searchDocuments:ReturnType<typeof buildAppSearchDocuments<LaunchpadApp>>|null=null;
   changeSearch = query => {
     searchQuery = query;
     layoutState.commitSearchPageIndex(0);
     if(query.trim() && folderFlow.snapshot().renderedFolder) closeFolder();
-    const documents = buildAppSearchDocuments(layoutState.operations.collectAppsFromPages(layoutState.presentation.pages.value));
+    const layoutPages=layoutState.presentation.pages.value;
+    if(indexedSearchPages!==layoutPages){indexedSearchPages=layoutPages;searchDocuments=null;}
+    if(query.trim()&&!searchDocuments)searchDocuments=buildAppSearchDocuments(layoutState.operations.collectAppsFromPages(layoutPages));
     const pages = query.trim()
-      ? layoutState.operations.chunkIntoPages(searchAppDocuments(documents, query), layoutState.presentation.pageSize.value)
-      : layoutState.presentation.pages.value;
+      ? layoutState.operations.chunkIntoPages(searchAppDocuments(searchDocuments!, query), layoutState.presentation.pageSize.value)
+      : layoutPages;
     currentFrame = Object.freeze({ ...currentFrame,
-      viewport: Object.freeze({ ...currentFrame.viewport, activePages: snapshotContractValue(pages) as typeof currentFrame.viewport.activePages,
+      viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages===projectedPagesSource?projectedPagesSnapshot:snapshotContractValue(pages) as typeof currentFrame.viewport.activePages,
         activePageIndex: query.trim() ? 0 : layoutState.presentation.pageIndex.value,
         desktopProjectionEpoch: currentFrame.viewport.desktopProjectionEpoch + 1,
         desktopTrackMotionKey: query.trim() ? "native-search" : "native-desktop" }),
@@ -1005,7 +1015,7 @@ try {
       cancelNativeGesture();
       editing?.alt.cancelAltEditMode();
     },clearFocusedIcon:()=>setFocusedIcon(null),
-    clearOpeningIcon:()=>{openingIcon.value=null;},clearSearch:()=>changeSearch(""),
+    clearOpeningIcon:()=>{openingIcon.value=null;},clearSearch:()=>searchBar.setQuery(""),
     cloneItem:item=>layoutState.operations.cloneItem(item) as import("../domain/launchpadLayout.js").LaunchpadApp,
     getLaunchIconRect:source=>{
       const node=app.stage.getChildByLabel(`launchpad-item:${source.id}`,true) as (Container & {iconSprite?:Sprite;emojiText?:Text})|null;
@@ -1622,6 +1632,38 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_SEARCH_SMOKE==="1"){
+    await iconTextures.prepareItems(collectTextureItems(currentFrame));
+    await present(app,"search benchmark warmed layout");
+    const {measureNativeSearch}=await import("./nativeSearchSmoke.js");
+    const measured=await measureNativeSearch(app,searchBar,iconTextures,()=>present(app,"search input presented"));
+    assert.equal(measured.newSources,0,"warm search toggles must not decode replacement textures");
+    searchBar.setQuery("w");await present(app,"search result ready");
+    const result=activePageItems.find(item=>item.id==="search-0");assert.ok(result);
+    await activateItem(result);
+    await waitFor("searched launch hides",()=>!app.window.isVisible());
+    await waitFor("searched app starts",()=>existsSync(process.env.LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER!));
+    assert.equal(searchQuery,"");assert.equal(searchBar.input.value,"");
+    showLaunchpad();await waitFor("search-free reopen",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+    assert.equal(searchBar.input.value,"");assert.equal(currentFrame.interaction.isSearchMode,false);
+    searchBar.setQuery("w");await present(app,"search before settings");
+    openSettings();await waitFor("settings shown over search",()=>Boolean(settingsShell)&&settingsShell!.transitionProgress>0.99);
+    assert.equal(searchBar.alpha,1);assert.equal(settingsButton.alpha,1);
+    assert.equal(searchBar.eventMode,"none");assert.equal(settingsButton.eventMode,"none");
+    assert.equal(searchBar.input.focused,false);
+    await smoke!.captureSmokeFrame(app,"search-settings-header");
+    closeSettings();await present(app,"settings closed over search");
+    assert.equal(searchBar.input.value,"w");assert.equal(searchBar.eventMode,"static");
+    // Layout edits invalidate both index and cached nodes, including unchanged query text.
+    editing!.rename("search-0","Renamed application");await present(app,"renamed search result");
+    searchBar.setQuery("Word 0");assert.equal(activePageItems.some(item=>item.id==="search-0"),false);
+    searchBar.setQuery("Renamed application");assert.equal(activePageItems[0]?.id,"search-0");
+    searchBar.setQuery("");
+    console.log("Native search launch clearing, settings header and index invalidation passed");
+    writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({search:"verified"}));
+    return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE==="1"){
     const item=currentFrame.viewport.activePages.flat().find(item=>item?.id==="native-layout-icon");assert.ok(item);
