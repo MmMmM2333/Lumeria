@@ -110,6 +110,7 @@ export type LaunchFailureReport = Readonly<{
   suggestion: string;
   detail: string;
 }>;
+export type LaunchResult = true | Readonly<{ kind: "cancelled" }> | LaunchFailureReport | undefined;
 export type MainWindowCloseTransition = Readonly<{ accepted: boolean; generation: number }>;
 export type MainWindowEffectsSupport = Readonly<{
   platform: string;

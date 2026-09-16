@@ -6,7 +6,7 @@ import {
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import type { LaunchIconFocus, LaunchTargetStatus } from "./useLaunchpadLaunchFlow.js";
 import { createLocalization } from "../i18n/localization.js";
-import type { LaunchFailureReport } from "../api/launchpadApi.js";
+import type { LaunchFailureReport, LaunchResult } from "../api/launchpadApi.js";
 import type {
   LaunchpadApp,
   ReadonlyLaunchpadApp,
@@ -69,7 +69,8 @@ type LaunchFlowOverrides = Readonly<{
   isFolderZoomFadeClosing?: boolean;
   isSearchMode?: boolean;
   keyboardFocusArea?: string;
-  launchNativeAppResult?: true | LaunchFailureReport;
+  launchNativeAppResult?: LaunchResult;
+  waitForAppLaunchAnimation?: () => Promise<void>;
   launchRect?: Pick<Rect, "height" | "left" | "top" | "width"> | null;
   launchTargetStatusById?: Readonly<Record<string, Exclude<LaunchTargetStatus, null>>>;
   openingIcon?: LaunchIconFocus | null;
@@ -171,6 +172,7 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
     openLaunchErrorDialog: (config) => calls.openLaunchErrorDialog.push(config),
     openingIcon,
     prepareNativeLaunch: overrides.prepareNativeLaunch,
+    waitForAppLaunchAnimation: overrides.waitForAppLaunchAnimation,
     schedulePageGridMetrics: () => {
       calls.schedulePageGridMetrics += 1;
     },
@@ -310,6 +312,32 @@ export async function runLaunchpadLaunchFlowTests() {
     await flushMicrotasks(2);
     assert(failedLaunch.calls.hideNativeWindow === 1, "failed app launches should still hide the native window after animation");
     assert(failedLaunch.calls.showNativeLaunchError[0] === launchError, "native launch errors should show after the launch animation");
+
+    const cancelledLaunch = createLaunchFlow({ launchNativeAppResult: { kind: "cancelled" } });
+    cancelledLaunch.flow.openApp(launchApp, source);
+    cancelledLaunch.flow.commitAppLaunchCloseFrame(cancelledLaunch.flow.appLaunchCloseSessionId.value);
+    await flushMicrotasks(2);
+    timers.runDelay(APP_LAUNCH_DURATION);
+    await flushMicrotasks(2);
+    assert(cancelledLaunch.calls.hideNativeWindow === 1 && cancelledLaunch.calls.showNativeLaunchError.length === 0,
+      "user cancellation must keep the launcher hidden without reporting a failure");
+
+    let finishVisual!: () => void;
+    const delayedLaunch = createLaunchFlow({ waitForAppLaunchAnimation: () => new Promise(resolve => { finishVisual = resolve; }) });
+    delayedLaunch.flow.openApp(launchApp, source);
+    delayedLaunch.flow.commitAppLaunchCloseFrame(delayedLaunch.flow.appLaunchCloseSessionId.value);
+    timers.runDelay(APP_LAUNCH_DURATION);
+    timers.runDelay(APP_LAUNCH_DURATION + 100);
+    assert(delayedLaunch.flow.launchGhost.value !== null && delayedLaunch.calls.hideNativeWindow === 0,
+      "slow native animation must retain its ghost and window after the wall-clock deadline");
+    finishVisual();await flushMicrotasks(4);
+    assert(Number(delayedLaunch.calls.hideNativeWindow) === 1 && delayedLaunch.flow.launchGhost.value === null,
+      "completed native visual must hide and clean up once");
+
+    const reopenedLaunch = createLaunchFlow({ waitForAppLaunchAnimation: () => new Promise(resolve => { finishVisual = resolve; }) });
+    reopenedLaunch.flow.openApp(launchApp, source);timers.runDelay(APP_LAUNCH_DURATION);
+    reopenedLaunch.flow.openDesktop();finishVisual();await flushMicrotasks(4);
+    assert(reopenedLaunch.calls.hideNativeWindow === 0, "old animation completion cannot hide a reopened launcher");
 
     const blockedByCriticalSave = createLaunchFlow({
       prepareNativeLaunch: () => false,

@@ -5,7 +5,7 @@ import {
 } from "../composables/launchpadConstants.js";
 
 
-import type { LaunchFailureReport } from "../api/launchpadApi.js";
+import type { LaunchFailureReport, LaunchResult } from "../api/launchpadApi.js";
 import type { LocalizationText } from "../i18n/localization.js";
 import type {
   LaunchpadApp,
@@ -69,7 +69,8 @@ export type LaunchpadLaunchFlowOptions = Readonly<{
   isFolderZoomFadeClosing?: Readonly<StateCell<boolean>> | undefined;
   isSearchMode(): boolean;
   keyboardFocusArea: StateCell<string>;
-  launchNativeAppIfAvailable(app: ReadonlyLaunchpadApp): true | LaunchFailureReport | undefined | Promise<true | LaunchFailureReport | undefined>;
+  launchNativeAppIfAvailable(app: ReadonlyLaunchpadApp): LaunchResult | Promise<LaunchResult>;
+  waitForAppLaunchAnimation?: (() => Promise<void>) | undefined;
   launchTargetStatusById?: Readonly<StateCell<Readonly<Record<string, Exclude<LaunchTargetStatus, null>>>>> | undefined;
   localizationText?: Pick<LocalizationText, "t"> | undefined;
   normalizeLaunchSource(app: ReadonlyLaunchpadApp, source: LaunchSourceInput | null | undefined): LaunchIconFocus;
@@ -173,7 +174,7 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
     }
     clearLaunchGhostTimer();
     launchGhost.value = { app: options.cloneItem(app), rect };
-    launchGhostTimer = scheduler.setTimeout(clearLaunchGhost, APP_LAUNCH_DURATION + 100);
+    if (!options.waitForAppLaunchAnimation) launchGhostTimer = scheduler.setTimeout(clearLaunchGhost, APP_LAUNCH_DURATION + 100);
   }
 
   function getLaunchPreflightError(app: ReadonlyLaunchpadApp): LaunchErrorDialog | null {
@@ -316,14 +317,27 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
     closeDesktop({ clearSearch: false });
 
     clearAppLaunchTimer();
-    appLaunchTimer = scheduler.setTimeout(() => {
+    const finishLaunchAnimation = () => {
+      if (activeAppLaunchSession !== launchSession) return;
       if (shouldClearSearchAfterLaunch) options.clearSearch({ keepFocus: false });
       options.clearOpeningIcon();
       isAppLaunching.value = false;
       clearAppLaunchTimer();
       launchSession.animationDone = true;
       Promise.resolve(options.hideNativeWindow())
-        .finally(() => maybeShowLaunchErrorAfterAnimation(launchSession));
+        .finally(() => {
+          if (activeAppLaunchSession !== launchSession) return;
+          if (options.waitForAppLaunchAnimation) clearLaunchGhost();
+          maybeShowLaunchErrorAfterAnimation(launchSession);
+        });
+    };
+    appLaunchTimer = scheduler.setTimeout(() => {
+      if (options.waitForAppLaunchAnimation) {
+        void options.waitForAppLaunchAnimation().then(finishLaunchAnimation).catch(error => {
+          console.error("Launch animation could not complete", error);
+          finishLaunchAnimation();
+        });
+      } else finishLaunchAnimation();
     }, APP_LAUNCH_DURATION);
   }
 
@@ -348,7 +362,7 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
     }
     Promise.resolve(launchResult)
       .then((result) => {
-        if (result && result !== true) {
+        if (result && result !== true && result.kind !== "cancelled" && "message" in result) {
           launchSession.error = result;
           maybeShowLaunchErrorAfterAnimation(launchSession);
         }

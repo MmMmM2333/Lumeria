@@ -62,10 +62,10 @@ export class NativeSearchBar extends Container {
   }
   setQuery(value: string): void { this.input.value = value; this.#sync(); this.onQuery(value); }
   setPlaceholder(value:string):void {this.#placeholder.text=value;this.#sync();}
-  update(width: number, hidden: boolean): void {
+  update(width: number, hidden: boolean, topInset=width<=760?14:20): void {
     const nextWidth = Math.min(348, Math.max(180, width - 40));
     if(nextWidth !== this.#width) { this.#width = nextWidth; this.input.resize(nextWidth - 63, 27); this.#sync(); }
-    this.position.set((width - this.#width) / 2, 14);
+    this.position.set((width - this.#width) / 2, 14+topInset);
     this.hitArea = new Rectangle(0, 0, this.#width, 35);
     this.interactiveChildren = !hidden; this.eventMode = hidden ? "none" : "static";
     if (hidden !== this.#hidden) {

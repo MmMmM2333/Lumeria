@@ -198,24 +198,40 @@ export const dragOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number}
 export const clickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,{x:0,y:0},"click");
 export const activationClickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number},programmatic=false)=>sendOwnedMouse(inputWindow,point,{x:0,y:0},programmatic?"programmatic-click":"activation-click");
 
-export async function captureOwnedWindow(inputWindow:number,path?:string):Promise<{material:number;style:string}>{
+export async function captureOwnedWindow(inputWindow:number,path?:string):Promise<{
+  material:number;style:string;borderColor:number|null;borderColorReadStatus:number;dpi:number;frame:number[];client:number[];surfaces:number[][];
+}>{
   const script=String.raw`
 import ctypes as c,sys,json,time
 from ctypes import wintypes as w
 pid,h=int(sys.argv[1]),int(sys.argv[2]);u=c.WinDLL('user32');d=c.WinDLL('dwmapi')
 u.GetWindowThreadProcessId.argtypes=[w.HWND,c.POINTER(w.DWORD)];u.GetWindowRect.argtypes=[w.HWND,c.POINTER(w.RECT)]
 u.GetWindowLongPtrW.argtypes=[w.HWND,c.c_int];u.GetWindowLongPtrW.restype=c.c_ssize_t
+u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
+u.GetClientRect.argtypes=[w.HWND,c.POINTER(w.RECT)];u.ClientToScreen.argtypes=[w.HWND,c.POINTER(w.POINT)]
+u.GetDpiForWindow.argtypes=[w.HWND];u.GetClassNameW.argtypes=[w.HWND,w.LPWSTR,c.c_int]
 d.DwmGetWindowAttribute.argtypes=[w.HWND,w.DWORD,c.c_void_p,w.DWORD]
 owner=w.DWORD();u.GetWindowThreadProcessId(h,c.byref(owner))
 if owner.value!=pid:raise RuntimeError('Screenshot window owner changed')
 material=c.c_int();d.DwmGetWindowAttribute(h,38,c.byref(material),4)
 if len(sys.argv)>3:
  from PIL import ImageGrab
- u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
  r=w.RECT();u.GetWindowRect(h,c.byref(r));ImageGrab.grab(bbox=(r.left,r.top,r.right,r.bottom),all_screens=True,include_layered_windows=True).save(sys.argv[3])
 u.GetForegroundWindow.restype=w.HWND
-dark=c.c_int();nc=c.c_int();d.DwmGetWindowAttribute(h,20,c.byref(dark),4);d.DwmGetWindowAttribute(h,1,c.byref(nc),4)
-print(json.dumps(dict(material=material.value,style=hex(u.GetWindowLongPtrW(h,-16)&0xffffffff),exStyle=hex(u.GetWindowLongPtrW(h,-20)&0xffffffff),foreground=u.GetForegroundWindow()==h,dark=dark.value,ncRendering=nc.value)))
+dark=c.c_int();nc=c.c_int();border=c.c_int();d.DwmGetWindowAttribute(h,20,c.byref(dark),4);d.DwmGetWindowAttribute(h,1,c.byref(nc),4);border_status=d.DwmGetWindowAttribute(h,34,c.byref(border),4)
+def rect(window,client=False):
+ r=w.RECT();(u.GetClientRect if client else u.GetWindowRect)(window,c.byref(r))
+ if client:
+  p=w.POINT(0,0);u.ClientToScreen(window,c.byref(p));return [p.x,p.y,r.right-r.left,r.bottom-r.top]
+ return [r.left,r.top,r.right-r.left,r.bottom-r.top]
+surfaces=[];callback=c.WINFUNCTYPE(w.BOOL,w.HWND,w.LPARAM)
+@callback
+def visit(window,_):
+ name=c.create_unicode_buffer(128);u.GetClassNameW(window,name,128)
+ if name.value=='ElectrobunWGPUView':surfaces.append(rect(window,True))
+ return True
+u.EnumChildWindows.argtypes=[w.HWND,callback,w.LPARAM];u.EnumChildWindows(h,visit,0)
+print(json.dumps(dict(material=material.value,style=hex(u.GetWindowLongPtrW(h,-16)&0xffffffff),exStyle=hex(u.GetWindowLongPtrW(h,-20)&0xffffffff),foreground=u.GetForegroundWindow()==h,dark=dark.value,ncRendering=nc.value,borderColor=border.value if border_status>=0 else None,borderColorReadStatus=border_status,dpi=u.GetDpiForWindow(h),frame=rect(h),client=rect(h,True),surfaces=surfaces)))
 `;
   const child=spawn("python",["-c",script,String(process.pid),String(inputWindow),...(path?[path]:[])],{windowsHide:true,stdio:["ignore","pipe","pipe"]});
   let output="",errors="";child.stdout.on("data",chunk=>{output+=chunk;});child.stderr.on("data",chunk=>{errors+=chunk;});

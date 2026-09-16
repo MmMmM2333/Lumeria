@@ -41,6 +41,7 @@ import {
 import { runtimePerformanceMetrics } from "../diagnostics/runtimePerformanceMetrics.js";
 import type {
   LaunchFailureReport,
+  LaunchResult,
   LaunchTargetCheckResult,
   ScanAppsResult,
   ScanStats,
@@ -940,12 +941,13 @@ export function useLaunchpadNative(options: LaunchpadNativeOptions) {
 
   async function launchNativeAppIfAvailable(
     app: ReadonlyLaunchpadApp,
-  ): Promise<true | LaunchFailureReport | undefined> {
+  ): Promise<LaunchResult> {
     if (!shouldUseNativeCatalog()) return;
     try {
       await platform.launchApp(app);
       return true;
     } catch (error) {
+      if (isRecord(error) && error.kind === "cancelled") return { kind: "cancelled" };
       console.error(`Failed to launch ${app.name}`, error);
       return normalizeLaunchErrorReport(error, app);
     }

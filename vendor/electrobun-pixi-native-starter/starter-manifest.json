@@ -2858,8 +2858,8 @@
     {
       "path": ".hutch/native-frame/native-frame.dll",
       "role": "native-frame-runtime",
-      "size": 291328,
-      "sha256": "1f288f7ec5a1b05ec9f0a1302c7d817dce3182faa6c3630f25b4ad983b506ad0"
+      "size": 291840,
+      "sha256": "f09f8f3dfd2e8f14bbb1f215a07bf04bbc4d52b393a8a197aa7d909723cca200"
     },
     {
       "path": "assets/bunnies/rabbitv3_ash.png",
@@ -3158,8 +3158,14 @@
     {
       "path": "src/platform/native-frame.rs",
       "role": "starter-source",
-      "size": 154140,
-      "sha256": "6ba365998469935913244f7f4b2c08cb6eb5c5f89022ca0598c3e4c4217292de"
+      "size": 157155,
+      "sha256": "7550683f9b8b6962c7d863ef0d4a98e92a3fdde17883c1243bbb11d39e0e61a2"
+    },
+    {
+      "path": "src/platform/native-frame-window-tests.rs",
+      "role": "starter-source",
+      "size": 4896,
+      "sha256": "4751bbd26d3fa08f2f8f470b56d7ee5d5cd66c92ea5d7b863c61588354d18b72"
     },
     {
       "path": "src/platform/native-input-event.ts",
@@ -3212,8 +3218,8 @@
     {
       "path": "src/platform/native-window-presentation.ts",
       "role": "starter-source",
-      "size": 8520,
-      "sha256": "4c3858fa01147afae54c338a7d3efa397ea41f0d9db6df466b6b0d36a01a872f"
+      "size": 8672,
+      "sha256": "b3cfeea74cadefe8671eace1a1063b4a787372c28747aed0d5b72655b3b9b232"
     },
     {
       "path": "src/rendering/electrobun-native-adapter.ts",

@@ -12,6 +12,8 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
 }
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
 const folderRenameSmoke = process.argv.includes("--folder-rename");
+const launchVisualSmoke = process.argv.includes("--launch-visual");
+if (launchVisualSmoke && nativeMode !== "smoke") throw new Error("Launch visual verification requires smoke mode");
 const isolated = nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
 const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
 const isolatedRuntime=runtimeArgument?resolve(runtimeArgument):null;
@@ -65,6 +67,7 @@ fixture.pages = [[
     emoji: "L",
     customIconPath: iconPath,
     launchTarget: { kind: "executable", path: process.execPath },
+    ...(launchVisualSmoke ? {launchArgs: `"${childLaunchHelperPath}" "${childLaunchMarkerPath}"`} : {}),
   },
   {
     id: "native-webgpu",
@@ -119,6 +122,7 @@ fixture.pages = [[
         type: "manualApp",
         name: "启动验证",
         emoji: "🚀",
+        customIconPath: iconPath,
         launchTarget: { kind: "executable", path: process.execPath },
         launchArgs: `"${childLaunchHelperPath}" "${childLaunchMarkerPath}"`,
       },
@@ -211,6 +215,7 @@ try {
       )}:{}),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
+      LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE: launchVisualSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE:invalidWallpaper??"",
       ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
@@ -231,7 +236,10 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
-  if (invalidWallpaper && status !== 130) {
+  if (launchVisualSmoke && status !== 130) {
+    if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).launchVisual !== "verified") throw new Error("Native launch visual verification did not complete");
+    console.log("Native launch visual and cancellation verification passed");
+  } else if (invalidWallpaper && status !== 130) {
     if(!existsSync(markerPath)||JSON.parse(readFileSync(markerPath,"utf8")).wallpaper!==invalidWallpaper)throw new Error("Native wallpaper failure smoke did not complete");
     console.log(`Native ${invalidWallpaper} wallpaper smoke passed`);
   } else if (folderRenameSmoke && status !== 130) {
@@ -240,7 +248,7 @@ try {
     }
     console.log("Native folder rename smoke passed");
   }
-  if (nativeMode === "smoke" && !folderRenameSmoke && !invalidWallpaper && status !== 130) {
+  if (nativeMode === "smoke" && !folderRenameSmoke && !launchVisualSmoke && !invalidWallpaper && status !== 130) {
     if (!existsSync(markerPath)) throw new Error("Electrobun worker exited without completing the native smoke test");
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;

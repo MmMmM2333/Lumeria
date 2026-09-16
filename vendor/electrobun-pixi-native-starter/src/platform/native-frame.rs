@@ -103,6 +103,7 @@ unsafe extern "system" {
     fn LoadCursorW(instance: Handle, name: *const u16) -> Handle;
     fn SetCursor(cursor: Handle) -> Handle;
     fn GetForegroundWindow() -> Handle;
+    fn GetFocus() -> Handle;
     fn GetDpiForWindow(window: Handle) -> u32;
 	fn GetPointerType(pointer_id: u32, pointer_type: *mut u32) -> i32;
 	fn GetPointerTouchInfo(pointer_id: u32, touch_info: *mut PointerTouchInfo) -> i32;
@@ -2041,10 +2042,44 @@ fn make_caret_rect(x: i32, y: i32, width: i32, height: i32) -> Option<Rect> {
     })
 }
 
-unsafe fn position_ime(window: Handle, state: *mut WindowInputState) -> i32 {
+// A GPU child and its root share an input route, but only the root owns the
+// editor session. Windows sends characters and IME messages to the focused HWND.
+unsafe fn text_session_owner(window: Handle, state: *mut WindowInputState) -> (Handle, *mut WindowInputState) {
+    let root = unsafe { root_window(window) };
+    if root != window {
+        if let Some(owner) = unsafe { attached_input_state(root) } {
+            if unsafe { (*owner).route_id == (*state).route_id && (*owner).text_active } {
+                return (root, owner);
+            }
+        }
+    }
+    (window, state)
+}
+
+unsafe fn same_input_route(window: Handle, other: Handle, state: *mut WindowInputState) -> bool {
+    if other.is_null() || unsafe { root_window(window) != root_window(other) } { return false; }
+    unsafe { attached_input_state(other).is_some_and(|other_state| (*other_state).route_id == (*state).route_id) }
+}
+
+unsafe fn text_focus_window(owner: Handle, state: *mut WindowInputState) -> Handle {
+    let focus = unsafe { GetFocus() };
+    if unsafe { same_input_route(owner, focus, state) } { focus } else { owner }
+}
+
+unsafe fn ime_caret(window: Handle, owner: Handle, state: *mut WindowInputState) -> Option<Rect> {
+    let caret = unsafe { (*state).caret };
+    if window == owner { return Some(caret); }
+    let mut start = Point { x: caret.left, y: caret.top };
+    let mut end = Point { x: caret.right, y: caret.bottom };
+    if unsafe { ClientToScreen(owner, &mut start) == 0 || ScreenToClient(window, &mut start) == 0
+        || ClientToScreen(owner, &mut end) == 0 || ScreenToClient(window, &mut end) == 0 } { return None; }
+    Some(Rect { left: start.x, top: start.y, right: end.x, bottom: end.y })
+}
+
+unsafe fn position_ime(window: Handle, owner: Handle, state: *mut WindowInputState) -> i32 {
+    let Some(caret) = (unsafe { ime_caret(window, owner, state) }) else { return 2; };
     let context = unsafe { ImmGetContext(window) };
     if context.is_null() { return -5; }
-    let caret = unsafe { (*state).caret };
     let candidate = CandidateForm {
         index: 0,
         style: 0x0080,
@@ -2374,10 +2409,11 @@ unsafe fn input_subclass_proc_inner(
             return 0;
         }
         0x010d => {
+            let (owner, state) = unsafe { text_session_owner(window, state) };
             if unsafe { (*state).text_active && !(*state).ime_composing } {
                 unsafe { (*state).ime_composing = true };
                 push_text_event(state, TEXT_COMPOSITION_START, 0, 0, Vec::new());
-                match unsafe { position_ime(window, state) } {
+                match unsafe { position_ime(window, owner, state) } {
                     2 => push_text_error(state, 3, "IMM caret positioning failed"),
                     -5 => push_text_error(state, 1, "IMM context unavailable"),
                     _ => {}
@@ -2385,30 +2421,47 @@ unsafe fn input_subclass_proc_inner(
             }
         }
         0x010f => {
+            let (_, state) = unsafe { text_session_owner(window, state) };
             if unsafe { (*state).text_active } {
                 unsafe { handle_ime_composition(state, window, l_param as u32) };
             }
         }
         0x010e => {
+            let (_, state) = unsafe { text_session_owner(window, state) };
             if unsafe { (*state).text_active && (*state).ime_composing } {
                 unsafe { (*state).ime_composing = false };
                 push_text_event(state, TEXT_COMPOSITION_END, 0, 0, Vec::new());
             }
         }
         0x0102 => {
+            let (_, state) = unsafe { text_session_owner(window, state) };
             if unsafe { (*state).text_active } {
                 unsafe { handle_wm_char(state, w_param as u16) };
             }
         }
         0x001f => unsafe { cancel_pointer(state, window) },
         0x0008 => {
-            unsafe { stop_text_input(window, state) };
-            unsafe { cancel_pointer(state, window) };
-            unsafe { queue_state_event(state, window, INPUT_BLUR) };
+            if !unsafe { same_input_route(window, w_param as Handle, state) } {
+                let (_, text_state) = unsafe { text_session_owner(window, state) };
+                unsafe { stop_text_input(window, text_state) };
+                unsafe { cancel_pointer(state, window) };
+                unsafe { queue_state_event(state, window, INPUT_BLUR) };
+            }
         }
-        0x0007 => unsafe { queue_state_event(state, window, INPUT_FOCUS) },
+        0x0007 => {
+            let (owner, text_state) = unsafe { text_session_owner(window, state) };
+            if unsafe { (*text_state).text_active } {
+                match unsafe { position_ime(window, owner, text_state) } {
+                    2 => push_text_error(text_state, 3, "IMM caret positioning failed"),
+                    -5 => push_text_error(text_state, 1, "IMM context unavailable"),
+                    _ => {}
+                }
+            }
+            unsafe { queue_state_event(state, window, INPUT_FOCUS) };
+        }
         0x0100 | 0x0104 | 0x0101 | 0x0105 => {
             unsafe { (*state).activation_mouse_message = 0 };
+            let (_, state) = unsafe { text_session_owner(window, state) };
             let is_down = matches!(message, 0x0100 | 0x0104);
             if is_down
                 && unsafe { (*state).text_active && !(*state).ime_composing }
@@ -2978,7 +3031,7 @@ pub unsafe extern "C" fn pixi_begin_text_input(
     if unsafe { (*state).text_active } {
         return unsafe { pixi_update_caret_rect(window, x, y, width, height) };
     }
-    let positioned = unsafe { position_ime(window, state) };
+    let positioned = unsafe { position_ime(text_focus_window(window, state), window, state) };
     if positioned < 0 { return positioned; }
     let route_id = unsafe { (*state).route_id };
     purge_text_events(route_id);
@@ -3009,7 +3062,7 @@ pub unsafe extern "C" fn pixi_update_caret_rect(
     if !unsafe { (*state).text_active } { return -4; }
     let Some(caret) = make_caret_rect(x, y, width, height) else { return -4; };
     unsafe { (*state).caret = caret };
-    let positioned = unsafe { position_ime(window, state) };
+    let positioned = unsafe { position_ime(text_focus_window(window, state), window, state) };
     match positioned {
         2 => push_text_error(state, 3, "IMM caret positioning failed"),
         -5 => push_text_error(state, 1, "IMM context unavailable"),
@@ -3028,7 +3081,7 @@ pub unsafe extern "C" fn pixi_end_text_input(window: Handle) -> i32 {
     }
     if error != 0 { return error; }
     let Some(state) = (unsafe { attached_input_state(window) }) else { return -3; };
-    unsafe { stop_text_input(window, state) }
+    unsafe { stop_text_input(text_focus_window(window, state), state) }
 }
 
 #[unsafe(no_mangle)]
@@ -4053,6 +4106,10 @@ pub unsafe extern "C" fn pixi_submit_bundle(
         )
     }
 }
+
+#[cfg(test)]
+#[path = "native-frame-window-tests.rs"]
+mod window_tests;
 
 #[cfg(test)]
 mod tests {

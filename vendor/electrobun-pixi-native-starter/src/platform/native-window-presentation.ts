@@ -47,7 +47,9 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     return result<0?null:data[0]!;
   };
   const initialDark=readAttribute(20),initialMaterial=readAttribute(38);
-  const initialBorder=readAttribute(34),initialCorner=readAttribute(33);
+  // Border color and corner preference are setter-only DWM attributes. A failed
+  // read is not a capability probe; it used to skip both policies at startup.
+  const decorationsSupported=Number(release().split(".")[2])>=22000;
   let current={material:"none" as NativeWindowMaterial,appearance:"light" as NativeWindowAppearance};
   let overscanPixels=0;
   let fullscreen=false;
@@ -76,8 +78,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
   const apply=(material:NativeWindowMaterial,appearance:NativeWindowAppearance)=>{
     setAttribute(20,appearance==="dark"?1:0);
     // Application close phases remove native frame decoration together with the material.
-    if(initialBorder!==null)setAttribute(34,material==="none"?-2:-1);
-    if(initialCorner!==null)setAttribute(33,material==="none"||fullscreen?1:2);
+    if(decorationsSupported){setAttribute(34,material==="none"||fullscreen?-2:-1);setAttribute(33,material==="none"||fullscreen?1:2);}
     if(initialMaterial!==null){
       setAttribute(38,materials[material]);
       // With WM_NCPAINT active, leaving full-window glass after removing the
@@ -113,7 +114,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(nextFullscreen&&!fullscreen)windowedPlacement=previous;
       if(!nextFullscreen)windowedPlacement=null;
       fullscreen=nextFullscreen;overscanPixels=nextPixels;
-      if(initialCorner!==null)setAttribute(33,fullscreen||current.material==="none"?1:2);
+      if(decorationsSupported){setAttribute(34,fullscreen||current.material==="none"?-2:-1);setAttribute(33,fullscreen||current.material==="none"?1:2);}
     },
     startDrag(){startNonClient(2);},
     startResize(direction:NativeResizeDirection){
@@ -131,8 +132,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(!user.symbols.IsWindow(window))return;
       if(initialMaterial!==null)setAttribute(38,initialMaterial);
       if(initialDark!==null)setAttribute(20,initialDark);
-      if(initialBorder!==null)setAttribute(34,initialBorder);
-      if(initialCorner!==null)setAttribute(33,initialCorner);
+      if(decorationsSupported){setAttribute(34,-1);setAttribute(33,0);}
     },
   };
 }

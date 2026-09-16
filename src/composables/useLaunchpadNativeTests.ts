@@ -2522,6 +2522,16 @@ export async function runLaunchpadNativeTests() {
     }
   });
 
+  await withMockTauri(async command => {
+    if (command === "launch_app") throw { kind: "cancelled", detail: "user declined elevation" };
+    throw new Error(`Cancellation must not invoke ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = createNative(options);
+    const result = await native.launchNativeAppIfAvailable({id:"cancelled-app",type:"app",name:"Cancelled App"});
+    assert(result !== true && result?.kind === "cancelled", "cancelled elevation must retain a distinct result");
+  });
+
   const englishLocalizationText = createLocalization({
     issue: null,
     match: "exact",
@@ -2550,7 +2560,7 @@ export async function runLaunchpadNativeTests() {
         type: "app",
         name: "Blocked App",
       });
-      assert(failure !== true && failure !== undefined, "blocked native launches should return a failure report");
+      assert(failure !== true && failure !== undefined && "message" in failure, "blocked native launches should return a failure report");
       await native.showNativeLaunchError(failure);
     } finally {
       console.error = originalConsoleError;

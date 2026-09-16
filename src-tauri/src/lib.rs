@@ -753,6 +753,7 @@ fn open_developer_console(webview: tauri::WebviewWindow) -> Result<(), String> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum LaunchFailureKind {
+    Cancelled,
     AccessDenied,
     AppNotInstalled,
     BrokenShortcut,
@@ -785,6 +786,7 @@ impl LaunchFailure {
 
     fn from_launch_path_error(error: LaunchPathError) -> Self {
         let kind = match error.kind {
+            LaunchPathErrorKind::Cancelled => LaunchFailureKind::Cancelled,
             LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
             LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::BrokenShortcut,
             LaunchPathErrorKind::NoAssociation => LaunchFailureKind::NoAssociation,
@@ -798,6 +800,7 @@ impl LaunchFailure {
 
     fn from_app_activation_error(error: LaunchPathError) -> Self {
         let kind = match error.kind {
+            LaunchPathErrorKind::Cancelled => LaunchFailureKind::Cancelled,
             LaunchPathErrorKind::AccessDenied => LaunchFailureKind::AccessDenied,
             LaunchPathErrorKind::BrokenShortcut => LaunchFailureKind::WindowsLaunchFailed,
             LaunchPathErrorKind::NoAssociation => LaunchFailureKind::WindowsLaunchFailed,
@@ -818,6 +821,7 @@ impl LaunchFailure {
 
     fn kind_code(&self) -> &'static str {
         match self.kind {
+            LaunchFailureKind::Cancelled => "cancelled",
             LaunchFailureKind::AccessDenied => "accessDenied",
             LaunchFailureKind::AppNotInstalled => "appNotInstalled",
             LaunchFailureKind::BrokenShortcut => "brokenShortcut",
@@ -1562,6 +1566,13 @@ mod tests {
         let payload = error.payload();
         assert_eq!(payload.kind, "appNotInstalled");
         assert_eq!(payload.detail, "not registered");
+    }
+
+    #[test]
+    fn launch_cancellation_keeps_its_protocol_kind() {
+        let cancelled = LaunchPathError { kind: LaunchPathErrorKind::Cancelled, detail: "cancelled by user".into() };
+        assert_eq!(LaunchFailure::from_launch_path_error(cancelled.clone()).payload().kind, "cancelled");
+        assert_eq!(LaunchFailure::from_app_activation_error(cancelled).payload().kind, "cancelled");
     }
 
     #[test]

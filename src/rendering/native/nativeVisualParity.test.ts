@@ -3,6 +3,7 @@ import { Container, Sprite, Text, Texture, BufferImageSource } from "pixi.js";
 import { createCanvas } from "@napi-rs/canvas";
 import { NativeDesktopScene } from "./NativeDesktopScene.js";
 import { NativeSelectionToolbar } from "./NativeSelectionToolbar.js";
+import { NativeLaunchGhost } from "./NativeLaunchGhost.js";
 import { configureNativeTextResolution, createNativeText, getNativeTextResolution } from "./nativeTypography.js";
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 import { createIconTextureRepository } from "../pixi/assets/iconTextureRepository.js";
@@ -83,5 +84,21 @@ export async function runNativeVisualParityTests(baseFrame:CompleteDesktopSceneF
     toolbar.update({...state,frozen:true});assert.equal(toolbar.hasFocus,false);
     toolbar.update({...state,theme:"light",canCancel:true,cancelArmed:true});assert.ok(toolbar.summaryText.includes("\n"));
     toolbar.update({...state,active:false});assert.equal(toolbar.cancelZoneRect(),null);toolbar.destroy();
+    const source=new Container() as Container & {iconSprite:Sprite};
+    source.iconSprite=new Sprite(Texture.WHITE);source.iconSprite.width=source.iconSprite.height=72;
+    source.addChild(source.iconSprite);source.scale.set(64/72);
+    const ghost=new NativeLaunchGhost();
+    try{
+      ghost.update({app:{id:"launch",name:"Launch",type:"app"},rect:{left:100,top:100,width:64,height:64}},source,72);
+      const image=ghost.getChildByLabel("native-launch-image") as Sprite;
+      assert.equal(image.width,72,"launch image must use the configured size, not the pressed or compact grid bounds");
+      assert.ok(ghost.getChildByLabel("native-launch-shadow"),"image launch must retain the original drop shadow");
+      let completed=false;const completion=ghost.waitForCompletion().then(()=>{completed=true;});
+      for(let i=0;i<6;i++)motionRuntime.step(.1);
+      await Promise.resolve();assert.equal(completed,false,"slow frames must not truncate the launch visual at its wall-clock duration");
+      for(let i=0;i<20;i++)motionRuntime.step(1/60);
+      await completion;assert.equal(ghost.alpha,0);assert.equal(ghost.scale.x,1.92);
+      assert.ok(Math.abs(image.getBounds().width-138.24)<0.001);
+    }finally{ghost.destroy();source.destroy({children:true});}
   }finally{scene.destroy();root.destroy();icons.dispose();configureNativeTextResolution(1);motionRuntime.reset();motionRuntime.resumeAutoTicker();}
 }

@@ -406,7 +406,7 @@ const refreshBackground=()=>desktopBackground.configure(backgroundConfig(),app.c
 const backgroundPanelState:NativeBackgroundPanelState={layer:false,effect:false,profile:systemAppearance,error:""};
 const windowPanelState={mode:false,material:false,advanced:false};
 const appsPageState:NativeAppsPageState={keywords:false,excludedQuery:"",excludedKeys:new Set()};
-const chromeInset=()=>app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24;
+const chromeInset=()=>Math.max(app.contentSize.width<=760?14:20,app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24);
 let recordingShortcut=false,expandedIcons=false;
 const stopShortcutRecording=()=>{
   if(!recordingShortcut)return true;
@@ -772,7 +772,7 @@ try {
           launchpadVisualAlpha:closed?0:1,launchpadVisualTransform:Object.freeze({scale:closed?DESKTOP_CLOSE_SCALE:1,y:0}),
           appLaunchCloseSessionId:launchFlow.appLaunchCloseSessionId.value})});
       const ghost=launchFlow.launchGhost.value;
-      launchGhostView.update(ghost,ghost?app.stage.getChildByLabel(`launchpad-item:${ghost.app.id}`,true):null);
+      launchGhostView.update(ghost,ghost?app.stage.getChildByLabel(`launchpad-item:${ghost.app.id}`,true):null,layoutState.presentation.iconSize.value,app.resolution);
     }
     if(editing) {
       const interaction = captureInteraction({ ...currentFrame.interaction,
@@ -811,8 +811,7 @@ try {
     app.stage.setChildIndex(folderNameInput, app.stage.children.length - 1);
     const headerShown=!settingsShell&&!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
     settingsButton.reveal(headerShown,headerShown&&!folderHeader.renderedFolder);
-    searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)));
-    searchBar.y=14+chromeInset();
+    searchBar.update(app.contentSize.width, Boolean(settingsShell||editing?.selection.isActive.value || (folderFlow.snapshot().renderedFolder && !folderFlow.snapshot().isClosing)),chromeInset());
     const hiddenCount=(editing?.selection.selectedCount.value??0)-getSelectionScope().orderedIds.filter(id=>editing?.selection.isSelected(id)).length;
     selectionToolbar.update({width:app.contentSize.width,chromeInset:chromeInset(),theme:settingsTheme(),
       active:Boolean(editing?.selection.isActive.value),count:editing?.selection.selectedCount.value??0,hiddenCount,
@@ -1020,8 +1019,12 @@ try {
     prepareNativeLaunch:async()=>{try{await saves.flush();return true;}catch{return false;}},
     launchNativeAppIfAvailable:async item=>{
       try{await nativeData.launchApp(item.id);return true;}
-      catch(error){const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};}
+      catch(error){
+        if(error instanceof NativeLaunchError&&error.kind==="cancelled")return {kind:"cancelled"};
+        const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};
+      }
     },
+    waitForAppLaunchAnimation:()=>launchGhostView.waitForCompletion(),
     showNativeLaunchError:error=>{showLaunchpad();management.warning({...error,intent:"error",confirmText:t("notices.acknowledge")});},
     beginNativeWindowClose:()=>{
       visibilityGeneration++;
@@ -1620,6 +1623,35 @@ try {
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE==="1"){
+    const item=currentFrame.viewport.activePages.flat().find(item=>item?.id==="native-layout-icon");assert.ok(item);
+    const originalLaunch=nativeData.launchApp.bind(nativeData),samples:unknown[]=[];
+    const off=app.on("presented",()=>{
+      if(launchGhostView.visible&&samples.length<240)samples.push({at:performance.now(),alpha:launchGhostView.alpha,scale:launchGhostView.scale.x,visible:app.window.isVisible()});
+    });
+    try{
+      for(const outcome of ["success","cancelled","failure"] as const){
+        if(outcome!=="success")nativeData.launchApp=async()=>{throw new NativeLaunchError(outcome==="cancelled"?"cancelled":"accessDenied","launch verification");};
+        showLaunchpad();await waitFor("launch verification reopened",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);
+        await activateItem(item);
+        await waitFor("launch bitmap midpoint",()=>launchGhostView.visible&&launchGhostView.alpha>0.15&&launchGhostView.alpha<0.6);
+        assert.equal(launchGhostView.getChildByLabel("native-launch-image")!.width,layoutState.presentation.iconSize.value);
+        assert.ok(launchGhostView.getChildByLabel("native-launch-shadow"));
+        await smoke!.captureSmokeFrame(app,`launch-bitmap-${outcome}`);
+        if(outcome==="failure"){
+          await waitFor("real failure restores an error",()=>management.modal&&app.window.isVisible());
+        }else{
+          await waitFor("completed launch hides",()=>!app.window.isVisible());
+          await new Promise(resolve=>setTimeout(resolve,100));
+          assert.equal(app.window.isVisible(),false);assert.equal(management.modal,false);
+          if(outcome==="success")await waitFor("launched fixture wrote marker",()=>existsSync(process.env.LAUNCHPAD_NATIVE_CHILD_LAUNCH_MARKER!));
+        }
+      }
+      writeFileSync(join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"launch-presented-samples.json"),JSON.stringify(samples,null,2));
+      writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({launchVisual:"verified"}));
+    }finally{off();nativeData.launchApp=originalLaunch;}
+    return;
+  }
 
   if (__LUMERIA_DIAGNOSTICS__) {
   const { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } = smoke!;
@@ -1851,6 +1883,40 @@ try {
       await waitFor("folder clickable after cancellations",()=>folderFlow.snapshot().renderedFolder?.id===folder.id);
       closeFolder();await waitFor("cancel regression folder closed",()=>folderFlow.snapshot().renderedFolder===null);await present(app,"cancel regression complete");
       console.log("Native pointer cancellation: keyboard paging, focus loss, settings, hide and subsequent folder click passed");
+    }
+    {
+      // Isolate the native GPU's alpha blend from DWM and wallpaper changes.
+      const proof=new Container(),background=new Graphics().rect(0,0,64,64).fill(0x808080);
+      const icon=new Graphics().rect(0,0,64,64).fill(0xef3b6d);icon.alpha=0.5;proof.addChild(background,icon);
+      try{
+        const pixels=await app.renderer.extract.pixels({target:proof,frame:new Rectangle(0,0,64,64),resolution:1});
+        const index=(32*pixels.width+32)*4;
+        const actual=Array.from(pixels.pixels.slice(index,index+4));
+        for(const [i,expected] of [184,94,119,255].entries())assert.ok(Math.abs(actual[i]!-expected)<=2,`native alpha blend channel ${i}: ${actual[i]}`);
+        writeFileSync(join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"native-alpha-blend.json"),JSON.stringify({foreground:[239,59,109],background:[128,128,128],alpha:0.5,actual}));
+      }finally{proof.destroy({children:true});}
+    }
+    {
+      const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      const testing=getNativePixiApplicationTesting(app),mode=app.windowMode;
+      const samples:unknown[]=[];
+      try{
+        for(const overscan of [0,1]){
+          app.setWindowMode("fullscreen",overscan);windowEffects.refresh();
+          await present(app,"fullscreen border and geometry");await present(app,"fullscreen surface resize");
+          app.window.activate();await present(app,"fullscreen capture foreground");
+          const sample=await captureOwnedWindow(testing.handles().inputWindow,join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,`fullscreen-physical-overscan-${overscan}.png`));
+          assert.deepEqual(sample.client,sample.frame,"fullscreen client must cover its complete outer frame");
+          assert.equal(sample.surfaces.length,1);
+          assert.deepEqual(sample.surfaces[0],sample.client,"GPU child must cover the full physical client, including overscan");
+          const backing=app.renderer.view.texture.source;
+          assert.equal(backing.pixelWidth,sample.client[2]);assert.equal(backing.pixelHeight,sample.client[3]);
+          assert.equal(searchBar.y,14+chromeInset());assert.equal(settingsButton.y,searchBar.y);
+          await smoke!.captureSmokeFrame(app,`fullscreen-header-overscan-${overscan}`);
+          samples.push({overscan,...sample,resolution:app.resolution,headerY:searchBar.y});
+        }
+        writeFileSync(join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"fullscreen-geometry.json"),JSON.stringify(samples,null,2));
+      }finally{app.setWindowMode(mode,settings.presentation.fullscreenOverscanEnabled.value?1:0);windowEffects.refresh();await present(app,"restored window mode");}
     }
     if(process.env.LAUNCHPAD_ACRYLIC_RECOVERY_SMOKE==="1"){
       const {getNativePixiApplicationTesting}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
@@ -3270,6 +3336,8 @@ try {
     assert.deepEqual(app.renderer.background.colorRgba,[0,0,0,0],"launch animation must clear to premultiplied transparent black");
     await waitFor("an intermediate app launch ghost",()=>launchGhostView.visible&&launchGhostView.alpha>0.15&&launchGhostView.alpha<0.6);
     assert.ok(launchGhostView.scale.x>1.2,"launch icon must expand as it fades");
+    assert.ok(launchGhostView.getChildByLabel("native-launch-shadow"),"bitmap launch must render its drop shadow");
+    assert.equal(launchGhostView.getChildByLabel("native-launch-image")!.width,layoutState.presentation.iconSize.value,"launch bitmap uses configured size");
     await smoke!.captureSmokeFrame(app, "folder-app-launch-animation");
     folderCloseMotionObserved = true;
     await waitFor("the native folder child process", () => existsSync(childLaunchMarker));

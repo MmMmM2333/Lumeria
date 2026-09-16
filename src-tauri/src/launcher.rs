@@ -3,6 +3,7 @@ use crate::{path_utils::extension, windows_com::ComGuard};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum LaunchPathErrorKind {
+    Cancelled,
     AccessDenied,
     BrokenShortcut,
     NoAssociation,
@@ -27,14 +28,14 @@ impl LaunchPathError {
 #[cfg(target_os = "windows")]
 pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
     use windows::{
-        core::HSTRING,
-        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+        core::{HSTRING, PCWSTR},
+        Win32::UI::{Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC}, WindowsAndMessaging::SW_SHOWNORMAL},
     };
 
     let _com_guard = ComGuard::new().map_err(|error| {
         LaunchPathError::new(
             LaunchPathErrorKind::WindowsLaunchFailed,
-            format!("Failed to initialize COM before ShellExecuteW for {path}: {error}"),
+            format!("Failed to initialize COM before ShellExecuteExW for {path}: {error}"),
         )
     })?;
     let file = HSTRING::from(path);
@@ -43,16 +44,17 @@ pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), L
         .filter(|value| !value.is_empty())
         .map(HSTRING::from);
 
-    let result = unsafe {
-        match parameters.as_ref() {
-            Some(parameters) => ShellExecuteW(None, None, &file, parameters, None, SW_SHOWNORMAL),
-            None => ShellExecuteW(None, None, &file, None, None, SW_SHOWNORMAL),
-        }
+    let mut request = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: parameters.as_ref().map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
     };
-    let result_code = result.0 as usize;
-    if result_code <= 32 {
-        return Err(classify_shell_execute_error(path, result_code));
-    }
+    unsafe { ShellExecuteExW(&mut request) }.map_err(|error| {
+        classify_shell_execute_error(path, error.code().0 as u32 & 0xffff)
+    })?;
 
     Ok(())
 }
@@ -110,19 +112,20 @@ pub(crate) fn launch_app_user_model_id(app_user_model_id: &str) -> Result<(), La
 }
 
 #[cfg(target_os = "windows")]
-fn classify_shell_execute_error(path: &str, result_code: usize) -> LaunchPathError {
+fn classify_shell_execute_error(path: &str, result_code: u32) -> LaunchPathError {
     let kind = match result_code {
         2 | 3 if extension(std::path::Path::new(path)).as_deref() == Some("lnk") => {
             LaunchPathErrorKind::BrokenShortcut
         }
         2 | 3 => LaunchPathErrorKind::TargetNotFound,
         5 => LaunchPathErrorKind::AccessDenied,
-        31 => LaunchPathErrorKind::NoAssociation,
+        31 | 1155 => LaunchPathErrorKind::NoAssociation,
+        1223 => LaunchPathErrorKind::Cancelled,
         _ => LaunchPathErrorKind::WindowsLaunchFailed,
     };
     LaunchPathError::new(
         kind,
-        format!("ShellExecuteW returned {result_code} for {path}"),
+        format!("ShellExecuteExW failed with Win32 error {result_code} for {path}"),
     )
 }
 
@@ -134,6 +137,7 @@ fn classify_activation_error(
 ) -> LaunchPathError {
     let code = source.code().0 as u32;
     let kind = match code {
+        0x800704C7 => LaunchPathErrorKind::Cancelled,
         0x80070005 => LaunchPathErrorKind::AccessDenied,
         0x80070002 | 0x80070003 | 0x80070490 | 0x80073CF1 => LaunchPathErrorKind::TargetNotFound,
         _ => LaunchPathErrorKind::WindowsLaunchFailed,
@@ -169,6 +173,8 @@ mod tests {
 
     #[test]
     fn classify_shell_execute_errors_for_user_facing_messages() {
+        assert_eq!(classify_shell_execute_error(r"C:\Apps\Admin.exe", 1223).kind, LaunchPathErrorKind::Cancelled);
+        assert_eq!(classify_shell_execute_error("unknown:target", 1155).kind, LaunchPathErrorKind::NoAssociation);
         assert_eq!(
             classify_shell_execute_error(r"C:\Missing\App.exe", 2).kind,
             LaunchPathErrorKind::TargetNotFound
