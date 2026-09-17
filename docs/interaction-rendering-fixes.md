@@ -1,5 +1,15 @@
 # 原生交互与渲染修复状态
 
+## 第九轮（搜索键盘导航与文本编辑）
+
+前八轮已提交为 `34cfc75`，含详细行为、性能证据及未解决限制；用户已有 `native-code-dependency-audit.md` 未纳入。
+
+本轮目标：直接键入搜索时，四向键选择结果后仍可继续键入、退格和使用 IME；Tab 或鼠标进入搜索框时，四向键由文本编辑器处理。
+
+原因：此前搜索框收到方向键便 blur，结束原生文本会话。实现将原生文本焦点与显式编辑模式分开，隐式导航保留会话，显式编辑放行方向键；Tab 从隐式模式进入编辑、再 Tab 返回结果；失焦/Esc 重置模式。复用现有 TextInputHost，未另建文本缓冲。
+
+完成：原生类型、完整 npm test、项目规则检查通过；23:14 隔离四页含文件夹原生 smoke 全部通过并正常退出，最终 bottomForegroundPixels=0。新增原生输入分发链路的四向导航/续输/退格、Tab 进出、已聚焦框鼠标切换、IME 提交断言全部通过；`artifacts/native-smoke/search-keyboard-navigation.png` 已目视检查。测试通过原生输入 API 注入事件，不等同于覆盖所有实体键盘/输入法组合。正式安装实例未改动。
+
 ## 第八轮（末页托盘三角形、快速开关背景、搜索动画）
 
 末页巨三角：12页末页9项，交替Esc/空白关闭+真实托盘唤出24次，选择/设置切换和70秒隐藏后仍未复现；OS截图比较中下部无变化，不能声称解决。透明窗口不使用native fast bundle。临时脚本artifacts/lastPageTrayProbe.ts/buildLastPageTrayProbe.ts/runLastPageTrayProbe.mjs待清理，截图与JSON保留。

@@ -1499,7 +1499,7 @@ try {
     if (searchBar.input.composing || event.isComposing) return false;
     if(noticeView.hasFocus){
       if(noticeView.handleKey(event.key??"",Boolean(event.shiftKey)))return true;
-      if(event.key==="Tab")searchBar.input.focus();
+      if(event.key==="Tab")searchBar.focusEditor();
       return true;
     }
     if(editing?.drag.isDragActive()){
@@ -1513,9 +1513,11 @@ try {
     }
     if (searchBar.input.focused) {
       if(event.key==="Escape") {searchBar.setQuery("");searchBar.input.blur();return true;}
+      // Keep the native text session alive while arrows navigate type-to-search results.
+      if(event.key?.startsWith("Arrow")&&searchBar.explicitEditing)return false;
+      if(event.key==="Tab"&&!searchBar.explicitEditing){searchBar.focusEditor();setFocusedIcon(null);return true;}
       if(event.key==="Tab" || event.key?.startsWith("Arrow") || event.key==="Enter") {
-        if((event.key==="ArrowLeft" || event.key==="ArrowRight") && event.shiftKey)return false;
-        searchBar.input.blur();
+        if(!event.key?.startsWith("Arrow"))searchBar.input.blur();
         if(event.key==="Tab"){if(event.shiftKey&&noticeView.focusEdge(true))return true;setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));return true;}
       } else return false;
     }
@@ -1536,12 +1538,12 @@ try {
     if(event.type==="down" && event.key==="Tab") {
       if(noticeView.focusEdge(Boolean(event.shiftKey))){setFocusedIcon(null);return true;}
       if(folderFlow.snapshot().renderedFolder || editing?.selection.isActive.value)setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));
-      else searchBar.input.focus();
+      else searchBar.focusEditor();
       return true;
     }
     if(event.type==="down" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key?.length===1 && event.key!==" " && !folderFlow.snapshot().renderedFolder) {
       // The native text session starts after this key's character message; transfer its first character once.
-      searchBar.input.focus();searchBar.input.commitText(event.key);return true;
+      searchBar.focusForTyping();searchBar.input.commitText(event.key);return true;
     }
     if (event.type !== "down" || event.isComposing || event.altKey || event.metaKey) return false;
     const key = event.key || event.code;
@@ -2981,8 +2983,61 @@ try {
         while(management.modal)management.close(true);commitEditedPages(baselinePages);await saves.flush();await present(app,"editor fixture restored");
       }
     }
+    {
+      const pressSearchKey=(keyCode:number,modifiers=0)=>{
+        app.nativeInput.emitKey("down",{keyCode,modifiers});
+        app.nativeInput.emitKey("up",{keyCode,modifiers});
+      };
+      searchBar.setQuery("");searchBar.input.blur();
+      pressSearchKey(0x50);app.nativeInput.emitText("age");
+      assert.equal(searchQuery,"page","type-to-search must transfer the first key and accept subsequent native text");
+      assert.equal(searchBar.explicitEditing,false);
+      assert.ok(activePageItems.length>=2,"navigation fixture needs multiple search results");
+      const firstResult=currentFrame.interaction.focusedIcon?.id;
+      const searchCaret={...searchBar.input.selection};
+      pressSearchKey(0x27);
+      assert.notEqual(currentFrame.interaction.focusedIcon?.id,firstResult,"implicit Right must navigate search results");
+      for(const arrow of [0x26,0x28,0x25,0x27]){
+        pressSearchKey(arrow);
+        assert.equal(searchBar.input.focused,true,"implicit arrows must preserve native text focus");
+        assert.equal(searchBar.explicitEditing,false);
+        assert.deepEqual(searchBar.input.selection,searchCaret,"implicit arrows must not move the text caret");
+      }
+      app.nativeInput.emitText(" w");assert.equal(searchQuery,"page w","typing must continue after result navigation");
+      pressSearchKey(0x08);assert.equal(searchQuery,"page ","Backspace must edit after result navigation");
+      pressSearchKey(0x08);assert.equal(searchQuery,"page");
+      await present(app,"implicit search keyboard navigation");
+      await smoke!.captureSmokeFrame(app,"search-keyboard-navigation");
+      pressSearchKey(0x09);
+      assert.equal(searchBar.explicitEditing,true,"Tab must explicitly enter the search editor");
+      const editorFocus=currentFrame.interaction.focusedIcon;
+      pressSearchKey(0x25);
+      assert.equal(searchBar.input.selection.start,3,"explicit Left must move the text caret");
+      pressSearchKey(0x27);
+      assert.equal(searchBar.input.selection.start,4,"explicit Right must move the text caret");
+      pressSearchKey(0x26);pressSearchKey(0x28);
+      assert.deepEqual(currentFrame.interaction.focusedIcon,editorFocus,"explicit arrows must not navigate results");
+      pressSearchKey(0x09);
+      assert.equal(searchBar.input.focused,false,"Tab from the editor must return to results");
+      pressSearchKey(0x57);
+      assert.equal(searchQuery,"pagew","typing from results must resume the native text session");
+      assert.equal(searchBar.explicitEditing,false);
+      searchBar.input.beginComposition();searchBar.input.updateComposition("中",1);
+      assert.equal(onKey({type:"down",key:"ArrowDown",isComposing:true}),false,"IME arrows must remain with composition");
+      assert.equal(searchQuery,"pagew","IME preedit must not run search");
+      app.textInput.commit("中");assert.equal(searchQuery,"pagew中","IME commit must survive implicit navigation");
+      await present(app,"implicit search before explicit pointer focus");
+      clickWithNativeInput(searchBar.input);
+      assert.equal(searchBar.explicitEditing,true,"clicking an already focused implicit editor must switch modes");
+      searchBar.input.setSelectionRange(3);pressSearchKey(0x25);
+      assert.equal(searchBar.input.selection.start,2,"mouse-focused editor must retain caret navigation");
+      pressSearchKey(0x1b);
+      assert.equal(searchQuery,"");assert.equal(searchBar.input.focused,false);assert.equal(searchBar.explicitEditing,false);
+      await present(app,"keyboard search reset");
+    }
     clickWithNativeInput(searchBar);
     assert.equal(searchBar.input.focused,true,"pointer click on search chrome must focus without exiting");
+    assert.equal(searchBar.explicitEditing,true);
     searchBar.input.blur();
     await present(app,"search blurred before child hit");
     clickWithNativeInput(searchBar.input);

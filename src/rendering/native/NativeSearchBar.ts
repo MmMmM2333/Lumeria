@@ -18,6 +18,11 @@ export class NativeSearchBar extends Container {
   readonly #clear = new Graphics({label:"native-search-clear"});
   #width = 348;
   #hidden = false;
+  #explicitEditing = false;
+  /** Native text focus also serves type-to-search. Only explicit focus edits the caret. */
+  get explicitEditing():boolean{return this.#explicitEditing;}
+  focusForTyping():void{this.input.focus();this.#explicitEditing=false;}
+  focusEditor():void{this.input.focus();this.#explicitEditing=true;}
   readonly #offRecovered: () => void;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
@@ -51,12 +56,12 @@ export class NativeSearchBar extends Container {
     this.#clear.eventMode = "static"; this.#clear.cursor = "pointer";
     this.#clear.hitArea = new Rectangle(-11, -11, 22, 22);
     this.#clear.on("pointerdown", event => event.stopPropagation());
-    this.#clear.on("pointertap", event => { event.stopPropagation(); this.setQuery(""); this.input.focus(); });
+    this.#clear.on("pointertap", event => { event.stopPropagation(); this.setQuery(""); this.focusEditor(); });
     this.#content.addChild(this.#icon, this.input, this.#placeholder);
     this.addChild(this.#background, this.#content, this.#clear);
-    this.on("pointerdown", event => { event.stopPropagation(); this.input.focus(); });
-    this.input.on("focus", () => this.#sync());
-    this.input.on("blur", () => this.#sync());
+    this.on("pointerdown", event => { event.stopPropagation(); this.focusEditor(); });
+    this.input.on("focus", () => {this.#explicitEditing=true;this.#sync();});
+    this.input.on("blur", () => {this.#explicitEditing=false;this.#sync();});
     this.input.on("input", () => { this.#sync(); this.onQuery(this.input.value); });
     this.#sync();
   }
