@@ -1515,11 +1515,16 @@ try {
       if(event.key==="Escape") {searchBar.setQuery("");searchBar.input.blur();return true;}
       // Keep the native text session alive while arrows navigate type-to-search results.
       if(event.key?.startsWith("Arrow")&&searchBar.explicitEditing)return false;
-      if(event.key==="Tab"&&!searchBar.explicitEditing){searchBar.focusEditor();setFocusedIcon(null);return true;}
-      if(event.key==="Tab" || event.key?.startsWith("Arrow") || event.key==="Enter") {
-        if(!event.key?.startsWith("Arrow"))searchBar.input.blur();
-        if(event.key==="Tab"){if(event.shiftKey&&noticeView.focusEdge(true))return true;setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));return true;}
-      } else return false;
+      if(event.key==="Tab"){
+        if(!searchBar.explicitEditing){searchBar.focusEditor();setFocusedIcon(null);return true;}
+        if(event.shiftKey&&noticeView.focusEdge(true)){searchBar.input.blur();return true;}
+        // Returning to result navigation must retain text/IME input, including Backspace.
+        searchBar.focusForTyping();
+        setFocusedIcon(currentFrame.interaction.focusedIcon??firstIconFocus(getCurrentIconScope()));
+        return true;
+      }
+      if(event.key==="Enter")searchBar.input.blur();
+      else if(!event.key?.startsWith("Arrow"))return false;
     }
     editing?.alt.handleAltKeyDown(event);
     if(editing?.alt.isAltKeyEvent(event))return true;
@@ -2989,6 +2994,13 @@ try {
         app.nativeInput.emitKey("up",{keyCode,modifiers});
       };
       searchBar.setQuery("");searchBar.input.blur();
+      pressSearchKey(0x09);assert.equal(searchBar.explicitEditing,true);
+      pressSearchKey(0x09);
+      assert.equal(searchBar.explicitEditing,false,"Tab back to an empty desktop must restore type-to-search");
+      assert.equal(searchBar.input.focused,true,"Tab must preserve the text session even with an empty query");
+      app.nativeInput.emitText("ed");assert.equal(searchQuery,"ed","native text must arrive immediately after Tab back to desktop");
+      pressSearchKey(0x08);assert.equal(searchQuery,"e");
+      pressSearchKey(0x1b);
       pressSearchKey(0x50);app.nativeInput.emitText("age");
       assert.equal(searchQuery,"page","type-to-search must transfer the first key and accept subsequent native text");
       assert.equal(searchBar.explicitEditing,false);
@@ -3018,10 +3030,14 @@ try {
       pressSearchKey(0x26);pressSearchKey(0x28);
       assert.deepEqual(currentFrame.interaction.focusedIcon,editorFocus,"explicit arrows must not navigate results");
       pressSearchKey(0x09);
-      assert.equal(searchBar.input.focused,false,"Tab from the editor must return to results");
-      pressSearchKey(0x57);
-      assert.equal(searchQuery,"pagew","typing from results must resume the native text session");
-      assert.equal(searchBar.explicitEditing,false);
+      assert.equal(searchBar.input.focused,true,"Tab back to results must keep the native text session");
+      assert.equal(searchBar.explicitEditing,false,"Tab back must restore implicit result navigation");
+      const resultBeforeTabArrow=currentFrame.interaction.focusedIcon?.id;
+      pressSearchKey(0x27);
+      assert.notEqual(currentFrame.interaction.focusedIcon?.id,resultBeforeTabArrow,"arrows after Tab back must navigate results");
+      assert.equal(searchBar.input.selection.start,4,"result navigation after Tab must preserve the caret");
+      pressSearchKey(0x08);assert.equal(searchQuery,"pag","Backspace must work immediately after Tab back");
+      app.nativeInput.emitText("ew");assert.equal(searchQuery,"pagew","native text must continue without reactivating the input");
       searchBar.input.beginComposition();searchBar.input.updateComposition("中",1);
       assert.equal(onKey({type:"down",key:"ArrowDown",isComposing:true}),false,"IME arrows must remain with composition");
       assert.equal(searchQuery,"pagew","IME preedit must not run search");
