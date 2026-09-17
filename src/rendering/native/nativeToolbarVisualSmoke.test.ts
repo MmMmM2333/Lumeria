@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { Container, Graphics, Rectangle } from "pixi.js";
+import { AlphaFilter, Container, Graphics, Rectangle } from "pixi.js";
+import { drawBatchSelectionCheck } from "../pixi/nodes/iconControlDrawing.js";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { NativeSelectionToolbar } from "./NativeSelectionToolbar.js";
 import { NativeToolbarBackdrop } from "./ui/NativeToolbarBackdrop.js";
@@ -7,6 +8,20 @@ import { getNativeLocale, setNativeLocale } from "../../native/nativeLocalizatio
 
 /** GPU pixel and layout regression, invoked only by the native smoke runner. */
 export async function runNativeToolbarVisualSmoke(app:NativePixiApplication,present:()=>Promise<void>,capture:(name:string)=>Promise<void>){
+  // The stage filter required by the backdrop must preserve MSAA for vector badges.
+  const badgeRoot=new Container(),badge=new Container(),circle=new Graphics(),check=new Graphics();
+  circle.circle(0,0,12).fill(0x1687ff).stroke({color:0xffffff,width:2});drawBatchSelectionCheck(check,24);
+  badge.addChild(circle,check);badge.position.set(20.35,20.65);badgeRoot.addChild(badge);
+  const coverage:number[]=[];
+  for(const antialias of [false,true]){
+    const surface=new AlphaFilter({alpha:1,resolution:"inherit",antialias});badgeRoot.filters=[surface];
+    const pixels=await app.renderer.extract.pixels({target:badgeRoot,frame:new Rectangle(0,0,42,42),resolution:1,antialias:true});
+    let partial=0;for(let index=3;index<pixels.pixels.length;index+=4)if(pixels.pixels[index]!>0&&pixels.pixels[index]!<255)partial++;
+    coverage.push(partial);badgeRoot.filters=[];surface.destroy();
+  }
+  badgeRoot.destroy({children:true});
+  assert.ok(coverage[1]!>coverage[0]!+10,`selection filter must preserve fractional edge coverage (${coverage})`);
+  console.log("Selection badge MSAA edge pixels",coverage);
   const root=new Container(),stripes=new Graphics(),sample=new Graphics().roundRect(80,110,220,80,18).fill({color:0x202020,alpha:0.94});
   for(let x=0;x<380;x+=8)stripes.rect(x,80,8,140).fill(x%16===0?0xffffff:0x000000);
   root.addChild(stripes,sample);app.stage.addChild(root);

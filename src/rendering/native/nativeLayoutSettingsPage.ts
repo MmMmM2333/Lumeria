@@ -38,7 +38,7 @@ export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLa
     const spin=new NativeSpinButton(host,controlWidth,min,max,step,cell.value,value=>{cell.value=value;},invalidate,theme,unit);
     spin.label=`native-setting:${key}`;spin.position.set(x,20);parent.addChild(spin);inputs.push(spin);
     controls.push({node:spin,focus:active=>{if(active)spin.input.focus();else if(spin.input.focused)spin.input.blur();},
-      handleKey:key=>spin.handleKey(key),disabled:()=>spin.input.disabled});
+      handleKey:key=>spin.handleKey(key),disabled:()=>spin.input.disabled,commit:()=>spin.commit()});
     return spin;
   };
   const themeHeading=createNativeText({text:t("settings.interface.theme.title"),style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:18,fontWeight:"600",fill:colors.colorNeutralForeground1}});

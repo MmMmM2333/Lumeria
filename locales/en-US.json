@@ -1095,6 +1095,7 @@
         }
     },
     "dialogs": {
+      "colorPicker": {"title":"Choose color","original":"Original","new":"New"},
       "iconChooser": {
         "close": "Close icon chooser",
         "embedded": "App icons",

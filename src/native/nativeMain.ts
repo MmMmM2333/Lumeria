@@ -1,5 +1,9 @@
 import { NativeFolderNameInput, type SingleStageFolderTitleFrame } from "../rendering/native/NativeFolderNameInput.js";
 import { createNativeText } from "../rendering/native/nativeTypography.js";
+import { createNativeTextPrewarm } from "../rendering/native/nativeTextPrewarm.js";
+import { collectDesktopPreparationItems } from "../rendering/native/nativeDesktopPreparation.js";
+import { createNativeResumeTiming } from "./nativeResumeTiming.js";
+import { createNativeStartupPreparation } from "./nativeStartupPreparation.js";
 import { t, setNativeLocale, getNativeLocale, nativeLocaleOptions } from "./nativeLocalization.js";
 import { createDefaultScanRoots } from "../domain/launchpadData.js";
 import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
@@ -10,6 +14,7 @@ import { createNativeWindowEffects } from "./nativeWindowEffects.js";
 import { loadNativeLayoutWithRetry } from "./nativeLayoutLoad.js";
 import { configureNativeTextResolution, setNativeUiFontFamily } from "../rendering/native/nativeTypography.js";
 import { NativeWindowChrome } from "../rendering/native/NativeWindowChrome.js";
+import { chooseNativeColor } from "../rendering/native/nativeColorPicker.js";
 import { NativeSettingsButton } from "../rendering/native/NativeSettingsButton.js";
 import { logNativeRuntime, nativeLogDirectory, nativeLogPath } from "./nativeRuntimeLog.js";
 import { createLaunchpadTray } from "./nativeTray.js";
@@ -273,6 +278,9 @@ const smoke = __LUMERIA_DIAGNOSTICS__ ? await import("./nativeSmokeSupport.js") 
 
 const nativeData = new NativeDataHost();
 const app = await createNativePixiApplication({
+  // FIFO presentation supplies display pacing; do not impose a 60 Hz timer cap.
+  maxFps: 0,
+  presentationMode: "fifo",
   transparent:true,
   titleBarStyle:"hidden",
   antialias: true,
@@ -286,6 +294,24 @@ const app = await createNativePixiApplication({
   throw error;
 });
 app.stage.label = "launchpad-native-stage";
+// The native host creates its HWND before returning. Hide immediately while
+// loading data; retry notices explicitly reveal the window when action is needed.
+app.window.hide();
+const resumeTiming=__LUMERIA_DIAGNOSTICS__?createNativeResumeTiming(sample=>logNativeRuntime("resume-timing",sample)):null;
+const resumeRenderObserver={prerender:()=>resumeTiming?.mark("renderStart"),postrender:()=>resumeTiming?.mark("renderEnd")};
+let timedRenderer=app.renderer;
+const unbindResumeRenderer=()=>{
+  // Device recovery destroys the old runners before emitting `recovered`.
+  for(const runner of [timedRenderer.runners.prerender,timedRenderer.runners.postrender]){
+    if(runner?.items)runner.remove(resumeRenderObserver);
+  }
+};
+const bindResumeRenderer=()=>{
+  unbindResumeRenderer();
+  timedRenderer=app.renderer;timedRenderer.runners.prerender.add(resumeRenderObserver);timedRenderer.runners.postrender.add(resumeRenderObserver);
+};
+bindResumeRenderer();
+const offResumePrepare=app.beforeRender(()=>{resumeTiming?.mark("prepareCallbacksReached");});
 configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult: NativeCatalogScanResult;
@@ -323,6 +349,10 @@ try {
   throw error;
 }
 setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat().resolvedOptions().locale);
+// A retry notice may have revealed the window. Resume hidden preparation after a successful load.
+const loginStartup=process.env.LUMERIA_LAUNCH_ORIGIN==="login";
+app.window.hide();
+let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=null;
 const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
 const settingsNavigation=createSettingsNavigation(createNativeStateHost(()=>{}),key=>t(key));
 settingsNavigation.selectTab("general");
@@ -429,6 +459,7 @@ const management = new NativeManagement(searchBar.host, () => app.contentSize, (
 
 const iconTextures = createNativeIconTextureRepository(app);
 function reportNativeError(error: unknown): void {
+  if(startupPreparation?.pending){startupPreparation.activate();app.window.show();app.window.activate();}
   const message=readErrorMessage(error);
   logNativeRuntime("error",message);
   notices.showTransientNotice({title:t("errors.launch.genericTitle"),message,intent:"error"});
@@ -578,7 +609,7 @@ async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
   if(!reset){apps?.openExistingAppIconChooser(item.id);appDialogs?.sync();return;}
   if(!apps?.managedApps.value.some(app=>app.id===item.id))throw new Error("Application no longer exists");
   apps.updateAppCustomIcon(item.id,null);await saves.flush();
-  await iconTextures.synchronize(collectTextureItems(currentFrame,layoutState.presentation.pages.value));
+  iconTextures.retainLayout(collectTextureItems(currentFrame,layoutState.presentation.pages.value),collectDesktopPreparationItems(currentFrame.viewport.activePages,currentFrame.viewport.folderPageSize));
   const updated=collectTextureItems(currentFrame).find(candidate=>candidate.id===item.id);
   if(updated)await iconTextures.prepareItems([updated]);
   const result=iconTextures.snapshot();
@@ -608,6 +639,14 @@ const scene = new NativeDesktopScene(app.stage, {
     else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(reportNativeError);
   },
 });
+const textPrewarm=createNativeTextPrewarm({renderer:()=>timedRenderer,
+  canRun:()=>app.state==="running"&&(app.window.isVisible()||Boolean(startupPreparation?.canPrepareHidden))&&!app.window.isMinimized(),
+  onError:error=>logNativeRuntime("text-prewarm-error",String(error))});
+startupPreparation=createNativeStartupPreparation(loginStartup,{
+  start:()=>{textPrewarm.prioritize(currentFrame.viewport.activePageIndex,currentFrame.viewport.activePageIndex);textPrewarm.start();iconTextures.startBackground();},
+  ready:()=>{const text=textPrewarm.snapshot();return (!text.enabled||text.pending===0)&&!iconTextures.isPreparing();},
+  reveal:()=>{if(app.state!=="running")return;app.window.show();app.window.activate();windowEffects.refresh();app.invalidate();},
+});
 app.stage.addChild(searchBar);
 app.stage.addChild(management);
 const selectionToolbar = new NativeSelectionToolbar({
@@ -626,7 +665,7 @@ const selectionToolbar = new NativeSelectionToolbar({
 });
 // The native presentation surface is not COPY_SRC. While the toolbar needs
 // backdrop sampling, render the stage through Pixi's sampleable intermediate.
-const selectionBackdropSurface=new AlphaFilter({alpha:1,resolution:"inherit"});
+const selectionBackdropSurface=new AlphaFilter({alpha:1,resolution:"inherit",antialias:"inherit"});
 app.stage.addChild(selectionToolbar);
 app.stage.on("pointerdowncapture",event=>{let node=event.target as Container|null;while(node&&node!==selectionToolbar)node=node.parent;if(!node)selectionToolbar.clearFocus();});
 const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
@@ -648,6 +687,7 @@ management.captureReturnFocus=()=>settingsShell?.captureFocus()??(()=>app.invali
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
+  resumeTiming?.mark("presented");resumeTiming?.presented();textPrewarm.presented();
   // Maximize state may settle after the resize notification. Refresh caption
   // controls against the HWND state of the frame that actually reached screen.
   windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
@@ -659,7 +699,7 @@ let offStateChange = (): void => {};
 const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
 let bindApplicationFocus = () => {};
 let cancelNativeGesture = () => {};
-const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);applySavedWindowIcon();windowEffects.refresh();bindApplicationFocus();scene.invalidateStructure();requestSceneRender();});
+const offRecovered=app.on("recovered",event=>{logNativeRuntime("recovered",event);bindResumeRenderer();textPrewarm.start();applySavedWindowIcon();windowEffects.refresh();bindApplicationFocus();scene.invalidateStructure();requestSceneRender();});
 let offFocus = (): void => {};
 let offSystemPreferences=()=>{};
 let offWheel = (): void => {};
@@ -746,7 +786,8 @@ try {
   const commitScene = (
     viewport: Readonly<{ height: number; resolution: number; width: number }>,
     snapDesktopLayout: boolean,
-  ) => scene.commit(currentFrame, viewport, {
+  ) => {
+    const commit=()=>scene.commit(currentFrame, viewport, {
     openingIconId:launchFlow?.launchGhost.value?.app.id??null,
     chromeInset:chromeInset(),
     folderPageTrackScrub,
@@ -754,6 +795,11 @@ try {
     pageTrackScrub: desktopPageTrackScrub,
     snapDesktopLayout,
   });
+    const work=resumeTiming?resumeTiming.measure("sceneCommit",commit):commit();
+    resumeTiming?.mark("sceneCommitted");
+    if(work.fullPlanBuilds)textPrewarm.setCandidates(scene.getTextPrewarmCandidates());
+    return work;
+  };
   let work = commitScene({
     height: app.contentSize.height,
     resolution: app.resolution,
@@ -800,7 +846,7 @@ try {
     const layoutPages=layoutState.presentation.pages.value;
     if(retainedLayout!==layoutPages||retainedPages!==currentFrame.viewport.activePages){
       if(retainedLayout!==layoutPages)scene.clearSearchNodeCache();
-      iconTextures.retainLayout(collectTextureItems(currentFrame,layoutPages));
+      iconTextures.retainLayout(collectTextureItems(currentFrame,layoutPages),collectDesktopPreparationItems(currentFrame.viewport.activePages,currentFrame.viewport.folderPageSize));
       retainedPages=currentFrame.viewport.activePages;retainedLayout=layoutPages;
     }
     work = commitScene({
@@ -899,6 +945,7 @@ try {
   function commitDesktopPage(pageIndex: number): boolean {
     const nextFrame = setNativeDesktopPage(currentFrame, pageIndex);
     if (nextFrame === currentFrame) return false;
+    textPrewarm.prioritize(currentFrame.viewport.activePageIndex,nextFrame.viewport.activePageIndex);
     if(searchQuery.trim()) layoutState.commitSearchPageIndex(nextFrame.viewport.activePageIndex);
     else layoutState.commitPageIndex(nextFrame.viewport.activePageIndex);
     currentFrame = nextFrame;
@@ -1039,7 +1086,7 @@ try {
     beginNativeWindowClose:()=>{
       visibilityGeneration++;
       windowEffects.set("none",resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
-      desktopBackground.alpha=0;
+      fadeNativeLaunchpadChrome([desktopBackground],false,true);
       fadeNativeLaunchpadChrome([searchBar,settingsButton,windowChrome,management,...(settingsShell?[settingsShell]:[])],false);
     },
     hideNativeWindow:hideAfterPresented,onDesktopCloseComplete:()=>{void hideAfterPresented().catch(reportNativeError);},
@@ -1049,18 +1096,23 @@ try {
     clearTimeout:id=>{clearTimeout(launchTimers.get(id));launchTimers.delete(id);},afterCommit:queueMicrotask,
   });
   showLaunchpad=()=>{
+    startupPreparation?.activate();
+    textPrewarm.prioritize(currentFrame.viewport.activePageIndex,currentFrame.viewport.activePageIndex);
+    resumeTiming?.begin({state:app.state,minimized:app.window.isMinimized(),visible:app.window.isVisible()});
+    const measure=<T>(name:string,run:()=>T):T=>resumeTiming?resumeTiming.measure(name,run):run();
     visibilityGeneration++;visibilityPreparing=false;
     const generation=visibilityGeneration;
     logNativeRuntime("show-request",{state:app.state,minimized:app.window.isMinimized()});
     if(app.state==="failed"){logNativeRuntime("show-failed","Renderer failed; use tray restart to recover");return;}
     if(folderFlow.snapshot().renderedFolder)folderFlow.reset();
-    if(app.window.isMinimized())app.window.unminimize();
-    windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
-    app.window.show();app.window.activate();
+    if(app.window.isMinimized())measure("unminimize",()=>app.window.unminimize());
+    measure("materialSet",()=>windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance)));
+    measure("show",()=>app.window.show());measure("activate",()=>app.window.activate());
     const reveal=()=>{
       if(generation!==visibilityGeneration||windowClosing)return;
-      windowEffects.refresh();
-      launchFlow!.openDesktop();fadeNativeLaunchpadChrome([desktopBackground,searchBar,windowChrome,management],true);
+      measure("materialRefresh",()=>windowEffects.refresh());
+      measure("openDesktop",()=>launchFlow!.openDesktop());fadeNativeLaunchpadChrome([desktopBackground,searchBar,windowChrome,management],true);
+      resumeTiming?.mark("revealRequested");textPrewarm.start();
       requestSceneRender();logNativeRuntime("shown",{state:app.state});
     };
     if(app.state==="running")reveal();
@@ -1069,6 +1121,7 @@ try {
   };
   dismissLaunchpad=()=>{
     if(visibilityPreparing||launchFlow!.isLaunchpadInteractionBlocked()||editing?.drag.isDragActive()||settingsShell?.applying)return;
+    startupPreparation?.activate();textPrewarm.pause();resumeTiming?.cancel();
     const generation=++visibilityGeneration;visibilityPreparing=true;
     void saves.flush().then(()=>{
       if(generation!==visibilityGeneration)return;
@@ -1120,11 +1173,7 @@ try {
         ?nativeAboutSettingsPage(width,settingsTheme(),brandingTextures.get(settings.draft.launchpadIconVariant.value)!)
         :nativeLayoutSettingsPage(settings,searchBar.host,width,()=>app.invalidate(),
           settingsTheme(),()=>settingsShell?.redraw(),{renderer:app.renderer,size:app.contentSize,state:backgroundPanelState,systemAppearance,
-            chooseColor:app.supportsColorDialog?async color=>{
-              const result=await app.chooseColor(color);
-              if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
-              return result.value;
-            }:undefined},windowPanelState,()=>editing!.pageCommands.confirmForceFillAllPages()),
+            chooseColor:color=>chooseNativeColor(management,color)},windowPanelState,()=>editing!.pageCommands.confirmForceFillAllPages()),
       apply:async()=>{
         if(!stopShortcutRecording())throw new Error(settings.presentation.mainWindowShortcutError.value);
         if(settings.presentation.isChoosingBackgroundImage.value)throw new Error(t("settings.interface.background.layer.choosing"));
@@ -1153,7 +1202,7 @@ try {
       },
     });
     const openedShell=settingsShell;
-    void startupStatus.then(()=>{if(settingsShell===openedShell&&!openedShell.destroyed)openedShell.redraw();});
+    void startupStatus.then(()=>{if(settingsShell===openedShell&&!openedShell.destroyed&&settingsNavigation.activeRoute.value.tabId==="general")openedShell.refreshContent();});
     app.stage.addChild(settingsShell);requestSceneRender();
   };
   tray=createLaunchpadTray({
@@ -1175,7 +1224,6 @@ try {
       app.window.requestClose();
     }),
   });
-  if(process.env.LUMERIA_LAUNCH_ORIGIN==="login")app.window.hide();
   logNativeRuntime("ready",{version:PRODUCT.version,state:app.state,trayId:tray.id,logDirectory:nativeLogDirectory});
   const turnFolderPage = (direction: Exclude<NativePageTurn, 0>): boolean => {
     if (!setFolderPageIndex(folderFlow.snapshot().folderPageIndex + direction)) return false;
@@ -1286,7 +1334,7 @@ try {
         if (item) void activateItem(item, {shiftKey: pointerShiftKey});
       }
       if(command.type==="surfaceTap"&&command.target.kind==="surface"){
-        if(settingsShell||management.modal||editing?.drag.isDragActive())continue;
+        if(settingsShell||management.modal||editing?.drag.isDragActive()||editing?.selection.isActive.value)continue;
         if(folderFlow.snapshot().renderedFolder){closeFolder();continue;}
         dismissLaunchpad();
       }
@@ -1595,6 +1643,9 @@ try {
   logNativeRuntime("first-scene-presented");
   if ((__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke")) assert.ok(iconTextures.snapshot().cached.length >= 1, "first native scene must prepare its icon before presentation");
   iconTextures.startBackground();
+  const startupWait=startupPreparation.start();
+  if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
+  else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
   presentCount += 1;
   await waitFor(
     "the LaunchPad entrance motion to make every node visible",
@@ -1632,6 +1683,33 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_PAGING_BENCH){
+    assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR,"paging benchmark requires isolated data");
+    assert.equal(currentFrame.viewport.activePages.flat().length,800,"paging fixture must contain exactly 800 apps");
+    await iconTextures.prepareItems(collectTextureItems(currentFrame));
+    await waitFor("paging benchmark warm",()=>!scene.getMotionSnapshot().active);
+    const results=[];
+    for(const baseline of [true,false]){
+      for(const target of [9,0,9,0]){
+        const intervals:number[]=[];let previousTime=performance.now();
+        const off=app.on("presented",()=>{const now=performance.now();intervals.push(now-previousTime);previousTime=now;});
+        const stats=scene.getUpdateStatistics(),start=performance.now();
+        if(baseline)scene.invalidateStructure();
+        commitDesktopPage(target);
+        const commitMs=performance.now()-start;
+        await waitFor("paging benchmark turn",()=>Math.abs(scene.getMotionSnapshot().desktopPageTrackX+target*app.contentSize.width)<0.05);
+        await present(app,"paging benchmark settled");off();
+        const sorted=[...intervals].sort((a,b)=>a-b);
+        results.push({baseline,target,commitMs,rebuilds:scene.getUpdateStatistics().structure-stats.structure,
+          frames:intervals.length,p95:sorted[Math.floor(sorted.length*.95)],max:sorted.at(-1),over16:intervals.filter(v=>v>16.67).length,
+          memory:process.memoryUsage(),icons:iconTextures.residency()});
+      }
+    }
+    writeFileSync(process.env.LAUNCHPAD_PAGING_BENCH,JSON.stringify(results,null,2));
+    console.log("Paging benchmark",JSON.stringify(results));
+    quitRequested=true;app.window.requestClose();await closed;return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_SEARCH_SMOKE==="1"){
     await iconTextures.prepareItems(collectTextureItems(currentFrame));
@@ -1696,7 +1774,7 @@ try {
   }
 
   if (__LUMERIA_DIAGNOSTICS__) {
-  const { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } = smoke!;
+  const { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow } = smoke!;
   const captureSmokeFrame = (name: string) => smoke!.captureSmokeFrame(app, name);
   const runFolderClosingContextSmoke = async (folder: SceneItem): Promise<void> => {
     const rightAt = (x: number, y: number) => {
@@ -1998,6 +2076,32 @@ try {
         desktopBackground.visible=backgroundVisible;
         windowEffects.set(savedMaterial,resolveAppearancePreference(savedAppearance,systemAppearance));
       }
+    }
+    {
+      // Replay the same toggle callback as Alt+Space without registering over a
+      // user's running instance. Sample every presented close-animation frame.
+      for(const delay of [16,40,80,140,220]){
+        dismissLaunchpad();await waitFor("rapid-toggle baseline hidden",()=>!app.window.isVisible());
+        showLaunchpad();await new Promise(resolve=>setTimeout(resolve,delay));
+        toggleLaunchpad();await waitFor("rapid-toggle closing",()=>launchFlow!.isDesktopClosing.value);
+        let samples=0;
+        const off=app.on("presented",()=>{if(launchFlow!.isDesktopClosing.value){samples++;assert.equal(desktopBackground.alpha,0,"interrupted opening must not restore the background during close");}});
+        try{await waitFor("rapid-toggle close hidden",()=>!app.window.isVisible());assert.ok(samples>0);}finally{off();}
+      }
+      showLaunchpad();await waitFor("rapid-toggle restored",()=>scene.getDesktopAlpha()>.99&&!scene.getMotionSnapshot().active);
+      console.log("Rapid open-close: background stays zero at 16/40/80/140/220ms interruptions");
+      for(let cycle=0;cycle<3;cycle++){
+        for(const query of ["w",""]){
+          changeSearch(query);sceneUpdates.flush();
+          for(const item of activePageItems){
+            const node=app.stage.getChildByLabel(`launchpad-item:${item.id}`,true);
+            if(node)assert.equal(node.alpha,0,"search-to-desktop and desktop-to-search must use the same entry state for all appearing nodes");
+          }
+          await waitFor("search scope entry settles",()=>!scene.getMotionSnapshot().active);
+        }
+      }
+      await present(app,"search entry parity restored");
+      console.log("Search w/backspace scope entry parity: 3 roundtrips passed");
     }
     if(process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY!=="1"){
       const {sendAltSpace}=await import("../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js");
@@ -2607,18 +2711,27 @@ try {
       await present(app,`background ${label} revealed`);clickWithNativeInput(control);
       await present(app,`background ${label} selected`);
     };
-    for(const command of [1,2] as const){
+    const originalPickerColor=settings.draft.backgroundBaseColor.value;
+    const pickerLocale=getNativeLocale();setNativeLocale("zh-CN");
+    for(const accept of [true,false]){
+      settings.actions.setDraftSettingsThemePreference(accept?"dark":"light");(settingsShell as NativeSettingsShell|null)?.redraw();
       const beforeColor=settings.draft.backgroundBaseColor.value;
-      const response=respondToOwnedColorDialog(command);
       await clickBackgroundControl("base-color-picker");
-      await response;
-      await waitFor("native color picker released",()=>{
-        const picker=app.stage.getChildByLabel("native-background:base-color-picker",true);
-        return picker instanceof NativeFluentButton&&!picker.disabled;
-      });
-      assert.equal(settings.draft.backgroundBaseColor.value,beforeColor,"system color confirmation/cancel must roundtrip the requested color");
+      assert.equal(management.activeId,"color-picker");
+      const field=management.getChildByLabel("native-color:hex",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
+      clickWithNativeInput(field);field.selectAll();field.commitText("#336699");
+      await smoke!.captureSmokeFrame(app,accept?"native-color-picker-dark":"native-color-picker-light");
+      clickWithNativeInput(management.getChildByLabel(accept?"native-modal:color-picker:confirm":"native-modal:color-picker:cancel",true)!);
+      await waitFor("native color picker released",()=>!management.modal);
+      await present(app,"color applied to draft");
+      assert.equal(settings.draft.backgroundBaseColor.value,accept?"#336699":beforeColor);
     }
-    console.log("Native settings color picker: actual system confirmation and cancellation passed");
+    const pickerColorInput=app.stage.getChildByLabel("native-background:base-color",true) as import("../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
+    pickerColorInput.value=originalPickerColor;
+    settings.actions.setDraftBackgroundBaseColor(originalPickerColor);
+    settings.actions.setDraftSettingsThemePreference(committedTheme);(settingsShell as NativeSettingsShell|null)?.redraw();
+    setNativeLocale(pickerLocale);
+    console.log("Native color picker: custom HEX confirmation and cancellation passed");
     {
       const initial=settings.draft.backgroundBaseColor.value;
       let finishColor!:(value:number|null)=>void;
@@ -2759,11 +2872,20 @@ try {
     for(let index=0;index<60&&!(reopenedRows as import("../rendering/native/NativeSpinButton.js").NativeSpinButton).input.focused;index++)onKey({type:"down",key:"Tab"});
     await present(app,"reopened desktop row revealed");
     clickWithNativeInput(reopenedRows.getChildByLabel("native-action:+",true)!);
+    const typedSize=app.stage.getChildByLabel("native-setting:iconSize",true) as import("../rendering/native/NativeSpinButton.js").NativeSpinButton;
+    assert.ok(typedSize);
+    for(let index=0;index<60&&!typedSize.input.focused;index++)onKey({type:"down",key:"Tab"});
+    await present(app,"icon size input revealed");
+    clickWithNativeInput(typedSize.input);
+    assert.equal(typedSize.input.focused,true,"mouse click must preserve numeric input focus");
+    typedSize.input.selectAll();typedSize.input.commitText("128");
     const applyButton=app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true);assert.ok(applyButton);
     clickWithNativeInput(applyButton);
     await waitFor("settings applied and persisted",()=>Boolean(settingsShell&&!settingsShell.applying));
     assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows+1);
     assert.equal((await nativeData.loadLayout())?.settings.gridRows,baselineConfig.rows+1);
+    assert.equal(layoutState.captureConfiguration().iconSize,128,"typing then clicking Apply must commit numeric text");
+    assert.equal((await nativeData.loadLayout())?.settings.iconSize,128);
     for(let index=0;index<12;index++)onKey({type:"down",key:"Tab"});
     await present(app,"settings keyboard scrolled content");
     await smoke!.captureSmokeFrame(app, "settings-layout-keyboard");
@@ -2783,7 +2905,12 @@ try {
     {
       const editor=apps!.editorModel,chooser=apps!.iconChooserModel;
       const loadNormally=nativeData.loadIconChoices,saveNormally=appDialogs!.options.save,pickNormally=appDialogs!.options.pickIcon;
-      const candidates=Array.from({length:121},(_,index)=>({id:`fixture-${index}`,...cachedIcon}));
+      const {createCanvas}=await import("@napi-rs/canvas");
+      const candidateCanvas=createCanvas(32,32),candidateContext=candidateCanvas.getContext("2d");
+      const candidates=Array.from({length:121},(_,index)=>{
+        candidateContext.fillStyle=`hsl(${index*3},75%,55%)`;candidateContext.fillRect(0,0,32,32);
+        return {id:`fixture-${index}`,...cachedIcon,iconDataUrl:index?candidateCanvas.toDataURL("image/png"):cachedIcon.iconDataUrl};
+      });
       nativeData.loadIconChoices=async()=>candidates;
       try{
         editor.actions.openCreate();appDialogs!.sync();await present(app,"new app editor rendered");
@@ -2937,6 +3064,15 @@ try {
     onKey({type:"down",key:"Enter"});
     assert.equal(searchQuery,"","selection mode must suppress printable search");
     assert.equal(management.modal,false,"selection Enter must not launch or edit");
+    const selectedBeforeBlank=[...editing!.selection.selectedIds.value];
+    const blankPoint={x:app.contentSize.width-60,y:app.contentSize.height-110};
+    assert.equal(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(blankPoint.x,blankPoint.y)).kind,"surface");
+    app.nativeInput.emitPointer("pointerdown",blankPoint.x,blankPoint.y,0);
+    app.nativeInput.emitPointer("pointerup",blankPoint.x,blankPoint.y,0);
+    await present(app,"selection blank click keeps launchpad open");
+    assert.equal(launchFlow!.isDesktopOpen.value,true);
+    assert.equal(editing!.selection.isActive.value,true);
+    assert.deepEqual([...editing!.selection.selectedIds.value],selectedBeforeBlank);
     const secondDot=app.stage.getChildByLabel("native-page-dot:1",true);assert.ok(secondDot);
     clickWithNativeInput(secondDot);await present(app,"selection hidden on second page");
     assert.ok(selectionToolbar.summaryText.includes(t("launchpad.batch.hiddenCount",{count:3})));
@@ -3620,7 +3756,8 @@ try {
 } finally {
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
-  sceneUpdates.dispose();
+  sceneUpdates.dispose();startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  unbindResumeRenderer();
   windowEffects.dispose();
   tray?.remove();tray=null;
   disposeLaunchFlow();

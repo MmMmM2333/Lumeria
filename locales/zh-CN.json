@@ -1095,6 +1095,7 @@
         }
     },
     "dialogs": {
+      "colorPicker": {"title":"选择颜色","original":"原色","new":"新颜色"},
       "iconChooser": {
         "close": "关闭图标选择",
         "embedded": "应用内图标",

@@ -3,7 +3,10 @@ import { createIconTextureRepository, type IconTextureItem, type IconTextureRepo
 import { getNativeIconTextureSource } from "./nativeIconTextureSource.js";
 import { NativeRecoverableIconSource, prepareNativeIconTextures } from "./nativeRecoverableIconSource.js";
 
-export const NATIVE_ICON_GPU_BUDGET = 128 * 1024 * 1024;
+// 800 distinct 256px icons with mipmaps occupy ~267 MiB. The measured 320 MiB
+// ceiling avoids repeated decode/upload on normal large layouts; it is not a
+// reservation, and offscreen LRU eviction still bounds larger source sets.
+export const NATIVE_ICON_GPU_BUDGET = 320 * 1024 * 1024;
 type Host = {
   readonly stage: Container;
   readonly renderer: WebGPURenderer;
@@ -13,10 +16,11 @@ type Host = {
 };
 type Entry = { source: NativeRecoverableIconSource; used: number };
 export type NativeIconRepository = IconTextureRepository & {
-  retainLayout(items: readonly (IconTextureItem | null | undefined)[]): void;
+  retainLayout(items: readonly (IconTextureItem | null | undefined)[], backgroundItems?:readonly IconTextureItem[]): void;
   prepareItems(items: readonly IconTextureItem[]): Promise<void>;
   prepareFrame(): void | Promise<void>;
   startBackground(): void;
+  isPreparing():boolean;
   residency(): { budgetBytes: number; gpuBytes: number; resident: number; backgroundPending: number };
 };
 
@@ -26,6 +30,7 @@ export function createResidentIconRepository(host: Host, load: (source: string) 
   const entries = new Map<string, Entry>();
   const foreground = new Set<string>();
   let layoutKeys: readonly (readonly [string | null | undefined, string | null])[] = [];
+  let backgroundKeys:readonly (string|null)[]=[];
   let epoch = 0, disposed = false, enabled = false;
   let queue: IconTextureItem[] = [], timer: ReturnType<typeof setTimeout> | null = null, warming = false;
   let clock = 0, backgroundError: unknown;
@@ -42,6 +47,7 @@ export function createResidentIconRepository(host: Host, load: (source: string) 
   const stageSources = () => {
     const sources = new Set<NativeRecoverableIconSource>();
     const visit = (node: Container) => {
+      if(!node.visible||!node.renderable)return;
       const source = (node as Container & { texture?: Texture }).texture?.source;
       if (source instanceof NativeRecoverableIconSource && !source.destroyed) sources.add(source);
       for (const child of node.children) visit(child);
@@ -121,15 +127,17 @@ export function createResidentIconRepository(host: Host, load: (source: string) 
     ready();
   }
   const offPrepare = host.beforeRender(prepareFrame);
-  function retainLayout(items: readonly (IconTextureItem | null | undefined)[]): void {
+  function retainLayout(items: readonly (IconTextureItem | null | undefined)[], backgroundItems:readonly IconTextureItem[]=items.filter((item):item is IconTextureItem=>Boolean(item))): void {
     if (disposed) return;
     if (items.length === layoutKeys.length && items.every((item, index) =>
-      item?.id === layoutKeys[index]![0] && getNativeIconTextureSource(item) === layoutKeys[index]![1])) return;
+      item?.id === layoutKeys[index]![0] && getNativeIconTextureSource(item) === layoutKeys[index]![1])
+      &&backgroundItems.length===backgroundKeys.length&&backgroundItems.every((item,index)=>getNativeIconTextureSource(item)===backgroundKeys[index])) return;
     const keys = items.map(item => [item?.id, getNativeIconTextureSource(item)] as const);
     // This API has no asynchronous boundary or file IO; resolve in the same
     // scene commit observes the new ownership immediately.
     base.retain(items);
-    layoutKeys = keys; epoch++; queue = items.filter((item): item is IconTextureItem => Boolean(item)); schedule();
+    layoutKeys = keys; backgroundKeys=backgroundItems.map(getNativeIconTextureSource);epoch++;
+    const seen=new Set<string>();queue=backgroundItems.filter(item=>{const key=getNativeIconTextureSource(item);if(!key||seen.has(key))return false;seen.add(key);return true;});schedule();
   }
   return {
     resolve(item, onLoad, listenerKey) {
@@ -148,6 +156,7 @@ export function createResidentIconRepository(host: Host, load: (source: string) 
     snapshot: base.snapshot,
     prepareFrame,
     startBackground() { enabled = true; schedule(); },
+    isPreparing(){return warming||queue.length>0||Boolean(base.pendingWork());},
     residency() { const current = live(); return { budgetBytes: budget, gpuBytes: gpuBytes(), resident: current.filter(entry => resident(entry.source)).length, backgroundPending: queue.length }; },
     dispose() { disposed = true; epoch++; if (timer) clearTimeout(timer); timer = null; queue = []; layoutKeys = []; foreground.clear(); offPrepare(); base.dispose(); entries.clear(); },
   };

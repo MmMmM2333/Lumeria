@@ -174,6 +174,11 @@ fixture.pages[0]!.push({
   childPages: [[{ id: "native-other-child", type: "manualApp", name: "另一个子项", emoji: "🌟",
     launchTarget: { kind: "url", path: "https://example.invalid/other" } }]],
 });
+if(process.argv.includes("--retained-folders")){
+  if(!isolated)throw new Error("Retained folder verification requires isolated data");
+  fixture.pages.push([{id:"native-fourth-page",type:"manualApp",name:"Fourth Page",emoji:"4",
+    launchTarget:{kind:"url",path:"https://example.invalid/fourth-page"}}]);
+}
 fixture.settings.gridCols = 7;
 fixture.settings.iconSize = 64;
 fixture.settings.folderRows = 2;
@@ -206,6 +211,20 @@ if(searchSmoke){
   fixture.settings.mainWindowShortcut=null;
 }
 if(process.argv.includes("--settings-only"))fixture.settings.mainWindowShortcut=null;
+if(process.env.LAUNCHPAD_PAGING_BENCH){
+  if(!isolated)throw new Error("Paging benchmark requires isolated data");
+  const canvas=createCanvas(128,128),context=canvas.getContext("2d");
+  const items=Array.from({length:800},(_,index)=>{
+    context.fillStyle=`hsl(${index*137.5%360},75%,55%)`;context.fillRect(0,0,128,128);
+    context.fillStyle="#ffffff";context.font="32px sans-serif";context.fillText(String(index),12,72);
+    const path=join(dataDir,`paging-${index}.png`);writeFileSync(path,canvas.toBuffer("image/png"));
+    return {id:`paging-${index}`,type:"manualApp",name:`应用 ${index}`,customIconPath:path,launchTarget:{kind:"url",path:"https://example.invalid/"}};
+  });
+  fixture.pages=Array.from({length:10},(_,page)=>items.slice(page*80,(page+1)*80));
+  fixture.settings.gridRows=8;fixture.settings.gridCols=10;fixture.settings.mainWindowShortcut=null;
+  fixture.settings.scanRoots=[];
+  fixture.settings.windowMode="fullscreen";
+}
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });

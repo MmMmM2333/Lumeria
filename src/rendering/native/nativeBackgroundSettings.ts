@@ -110,7 +110,7 @@ export function nativeBackgroundSettings(options:{
     }
     const commit=()=>{if(/^#[a-f\d]{6}$/i.test(input.value)){value=input.value.toLowerCase();change(value);paint(value);refreshPreviews();}else input.value=value;};
     input.on("blur",commit);cleanup.push(()=>{input.removeAllListeners("blur");input.destroy();});
-    controls.push({node:input,disabled:()=>input.disabled,focus:active=>{if(active)input.focus();else if(input.focused)input.blur();},
+    controls.push({node:input,commit,disabled:()=>input.disabled,focus:active=>{if(active)input.focus();else if(input.focused)input.blur();},
       handleKey:k=>{if(k==="Enter"){commit();return true;}if(k==="Escape"){input.value=value;input.blur();return true;}return false;}});y+=42;
   };
   const expandable=(title:string,id:"layer"|"effect",description:string,summary:string)=>{

@@ -52,7 +52,10 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
     mark.moveTo(-4,up?2:-2).lineTo(0,up?-2:2).lineTo(4,up?2:-2).stroke({color:style.text,width:1.25});
     mark.position.set(x,y);parent.addChild(mark);
   };
-  const startup=row(t("settings.general.startup.title"),settings.presentation.launchAtLoginError.value);
+  const startup=row(t("settings.general.startup.title"));
+  const startupTitle=startup.children.find(child=>child instanceof Text) as Text;
+  const startupError=new NativeSingleLineText("",{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,lineHeight:16.2,fill:style.muted},Math.max(80,width-150));
+  startupError.position.set(70,38);startup.addChild(startupError);
   const toggle=new NativeFluentToggle("switch",value=>settings.actions.setDraftLaunchAtLogin(value),options.invalidate,theme);
   toggle.label="native-setting:autostart";toggle.checked=settings.draft.launchAtLogin.value;
   toggle.disabled=!settings.presentation.canConfigureLaunchAtLogin.value||settings.presentation.isRefreshingLaunchAtLogin.value;
@@ -124,5 +127,13 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   y+=nativeUiMetrics.sectionGap;const advanced=text(t("settings.general.advanced.title"),0,y,18,true);node.addChild(advanced);y+=advanced.height+nativeUiMetrics.headingGap;
   const developer=row(t("settings.general.advanced.developerConsole"),t("settings.general.advanced.openUnavailable"));
   button(developer,t("settings.general.advanced.open"),width-132,19,116,()=>{}).disabled=true;
-  return {node,height:y,controls,layout:layout.finish(y),dispose:()=>{}};
+  const update=()=>{
+    const error=settings.presentation.launchAtLoginError.value;
+    startupTitle.y=error?17:(72-17)/2;
+    startupError.setValue(error);startupError.visible=Boolean(error);
+    if(toggle.checked!==settings.draft.launchAtLogin.value)toggle.checked=settings.draft.launchAtLogin.value;
+    toggle.disabled=!settings.presentation.canConfigureLaunchAtLogin.value||settings.presentation.isRefreshingLaunchAtLogin.value;
+  };
+  update();
+  return {node,height:y,controls,layout:layout.finish(y),update,dispose:()=>{}};
 }

@@ -2,9 +2,18 @@ import assert from "node:assert/strict";
 import { Container, Sprite, Texture, type WebGPURenderer } from "pixi.js";
 import { createResidentIconRepository } from "../rendering/native/nativeIconResidency.js";
 import { NativeRecoverableIconSource } from "../rendering/native/nativeRecoverableIconSource.js";
+import { collectDesktopPreparationItems } from "../rendering/native/nativeDesktopPreparation.js";
 
 const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
 const item = (id: string) => ({ id, iconPath: `C:/icons/${id}.png` });
+{
+  const children=Array.from({length:20},(_,index)=>({...item(`child-${index}`),type:"app"}));
+  const pages=[[{type:"folder",id:"folder",childPages:[children.slice(0,15),children.slice(15)]},
+    {...item("app"),type:"app"},{...item("duplicate"),type:"app",iconPath:children[0]!.iconPath}]];
+  const prepared=collectDesktopPreparationItems(pages);
+  assert.equal(prepared.length,10,"desktop preparation includes nine preview images plus ordinary apps, deduplicated by source");
+  assert.equal(prepared.some(candidate=>candidate.id==="child-9"),false,"unopened folder contents must stay out of desktop preparation");
+}
 function harness(budget = 1024) {
   const stage = new Container(), callbacks = new Set<() => void | Promise<void>>();
   const requests: { key: string; resolve(texture: Texture): void; reject(error: Error): void }[] = [];
@@ -26,6 +35,14 @@ function harness(budget = 1024) {
     const texture = new Texture({ source }); requests[index]!.resolve(texture); return texture;
   };
   return { stage, repository, requests, complete, uploads, callbacks, host, recover() { uid++; } };
+}
+
+{
+  const h=harness();h.repository.retainLayout([item("desktop"),item("unopened")],[item("desktop")]);h.repository.startBackground();
+  await sleep(25);assert.equal(h.requests.length,1);h.complete(0);await sleep(45);
+  assert.equal(h.requests.length,1,"background warming must not decode owned but unopened folder items");
+  h.repository.resolve(item("unopened"));assert.equal(h.requests.length,2,"foreground folder opening can still resolve an owned child");
+  h.complete(1);await sleep();h.repository.dispose();
 }
 
 {
@@ -101,6 +118,18 @@ function harness(budget = 1024) {
   assert.equal(previous.destroyed, true); h.repository.dispose();
 }
 console.log("Native icon residency ownership, readiness, priority, budget and cancellation tests passed");
+{
+  const h=harness(100);
+  await h.repository.synchronize([item("offscreen"),item("visible")]);
+  h.repository.resolve(item("offscreen"));const cold=h.complete(0);await sleep();
+  h.repository.resolve(item("visible"));const warm=h.complete(1);await sleep();
+  const hidden=new Container();hidden.renderable=false;hidden.addChild(new Sprite(cold));
+  h.stage.addChild(hidden,new Sprite(warm));
+  await h.repository.prepareFrame();
+  assert.ok(h.repository.residency().gpuBytes<=100,"retained offscreen nodes must not pin textures beyond the GPU budget");
+  assert.equal(cold.destroyed,false,"GPU eviction must preserve the retained icon source");
+  h.stage.destroy({children:true});h.repository.dispose();
+}
 {
   const h=harness();await h.repository.synchronize([item("held")]);h.repository.resolve(item("held"));const texture=h.complete(0);await sleep();
   const sprite=new Sprite(texture);h.stage.addChild(sprite);

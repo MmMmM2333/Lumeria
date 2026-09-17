@@ -4,8 +4,11 @@ import type { LaunchGhost } from "../../application/launchpadLaunchFlow.js";
 import { APP_LAUNCH_DURATION } from "../../composables/launchpadConstants.js";
 import { motion, killMotionOf } from "../pixi/animation/motionTween.js";
 
-export function fadeNativeLaunchpadChrome(nodes:readonly Container[],visible:boolean):void{
-  for(const node of nodes)motion(node).duration(0.24).ease("power2.out").to({alpha:visible?1:0}).start();
+export function fadeNativeLaunchpadChrome(nodes:readonly Container[],visible:boolean,immediate=false):void{
+  for(const node of nodes){
+    if(immediate){killMotionOf(node,"alpha");node.alpha=visible?1:0;}
+    else motion(node).duration(0.24).ease("power2.out").to({alpha:visible?1:0}).start();
+  }
 }
 
 /** Match the DOM ghost's configured size, screen center and image drop shadow. */

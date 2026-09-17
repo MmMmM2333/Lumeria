@@ -3,7 +3,7 @@ import { Container, Sprite, Text, Texture, BufferImageSource } from "pixi.js";
 import { createCanvas } from "@napi-rs/canvas";
 import { NativeDesktopScene } from "./NativeDesktopScene.js";
 import { NativeSelectionToolbar } from "./NativeSelectionToolbar.js";
-import { NativeLaunchGhost } from "./NativeLaunchGhost.js";
+import { NativeLaunchGhost, fadeNativeLaunchpadChrome } from "./NativeLaunchGhost.js";
 import { configureNativeTextResolution, createNativeText, getNativeTextResolution } from "./nativeTypography.js";
 import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 import { createIconTextureRepository } from "../pixi/assets/iconTextureRepository.js";
@@ -15,6 +15,19 @@ import type { CompleteDesktopSceneFrame, SceneItem } from "../sceneFrame.js";
 
 export async function runNativeVisualParityTests(baseFrame:CompleteDesktopSceneFrame):Promise<void>{
   motionRuntime.reset();motionRuntime.suspendAutoTicker();
+  {
+    const background=new Container();background.alpha=0;
+    for(const delay of [.016,.05,.12,.22]){
+      fadeNativeLaunchpadChrome([background],true);motionRuntime.step(delay);
+      fadeNativeLaunchpadChrome([background],false,true);
+      for(let frame=0;frame<20;frame++){
+        motionRuntime.step(1/60);
+        assert.equal(background.alpha,0,"closing must cancel an interrupted opening alpha animation");
+      }
+    }
+    fadeNativeLaunchpadChrome([background],true);for(let frame=0;frame<30;frame++)motionRuntime.step(1/60);
+    assert.equal(background.alpha,1,"a subsequent open must restore the background");background.destroy();
+  }
   const root=new Container();
   const icons=createIconTextureRepository({resolveSource:item=>item?.id?"native-test-icon":null,
     loadTexture:async()=>new Texture({source:new BufferImageSource({resource:new Uint8Array([240,30,90,255]),width:1,height:1,format:"rgba8unorm"})})});

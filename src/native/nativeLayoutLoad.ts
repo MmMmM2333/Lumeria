@@ -27,6 +27,7 @@ export async function loadNativeLayoutWithRetry(app:NativePixiApplication,load:(
       const offClose=app.beforeClose(async()=>{decide(false);});
       notices.showLayoutLoadFailed({error,retryCount:failures,onRetry:()=>decide(true)});
       app.stage.addChild(view);view.show(notices.transientNotice.value,()=>decide(false));view.focusEdge();
+      app.window.show();app.window.activate();app.invalidate();
       let retry:boolean;
       try{retry=await decision;}
       finally{offResize();offKey();offClose();notices.clearTransientNoticeTimer();if(!view.destroyed)view.destroy({children:true});app.invalidate();}

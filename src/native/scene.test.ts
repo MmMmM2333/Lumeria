@@ -29,6 +29,7 @@ import { NativeFluentSlider } from "../rendering/native/NativeFluentSlider.js";
 import { NativeScrollView } from "../rendering/native/NativeScrollView.js";
 import { nativeFluentIcon } from "../rendering/native/nativeFluentIcons.js";
 import { createNumericControlModel } from "../domain/numericControl.js";
+import { colorHsv, hsvColor } from "../domain/colorPicker.js";
 import { createSettingsNavigation, SETTINGS_SUBPAGE_SPECS } from "../application/settingsNavigation.js";
 import { createNativeStateHost } from "../application/stateHost.js";
 import { createNativeShortcut, nativeShortcutAccelerator } from "./nativeShortcut.js";
@@ -46,16 +47,19 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+for(const color of [0,0xffffff,0xff0000,0x00ff00,0x0000ff,0x336699,0x808080]){
+  assert.equal(hsvColor(...colorHsv(color)),color,"color picker RGB/HSV conversion must roundtrip");
+}
 {
-  let activated=0,focused=false,finishApply!:()=>void,rejectApply!:(error:Error)=>void;
+  let activated=0,focused=false,committed=0,finishApply!:()=>void,rejectApply!:(error:Error)=>void;
   const shell=new NativeSettingsShell({
     navigation:createSettingsNavigation(createNativeStateHost(()=>{}),key=>key),tabs:["general"],
     theme:()=>"dark",size:()=>({width:900,height:600}),t:key=>key,invalidate:()=>{},close:()=>{},
-    apply:()=>new Promise<void>((resolve,reject)=>{finishApply=resolve;rejectApply=reject;}),
+    apply:()=>new Promise<void>((resolve,reject)=>{assert.ok(committed>0,"apply must commit pending input first");finishApply=resolve;rejectApply=reject;}),
     content:()=>{
       const node=new Container({label:"test-settings-control"});
       return {node,height:40,dispose:()=>{},controls:[{node,disabled:()=>false,
-        focus:active=>{focused=active;},handleKey:()=>{activated++;return true;}}]};
+        commit:()=>{committed++;},focus:active=>{focused=active;},handleKey:()=>{activated++;return true;}}]};
     },
   });
   for(let index=0;index<4;index++)shell.handleKey({type:"down",key:"Tab"});
@@ -319,6 +323,8 @@ const stage = new Container();
   const initial=capture({selection,enabled:true});
   assert.equal(capture({selection,enabled:true}),initial,"unchanged inputs must reuse their immutable snapshot");
   assert.throws(()=>initial.selection.add("mutation"),"published selection snapshots must remain immutable");
+  const visibilityOnly=capture({selection,enabled:false});
+  assert.equal(visibilityOnly.selection,initial.selection,"visibility changes must retain unchanged selection snapshot identity");
   const updated=capture({selection:new Set(["second"]),enabled:true});
   assert.notEqual(updated,initial);assert.deepEqual([...initial.selection],["first"]);
   assert.deepEqual([...updated.selection],["second"],"replacing a selection must publish its new contents");
@@ -353,6 +359,14 @@ const work = scene.commit(frame, { height: 600, resolution: 1.25, width: 900 });
 assert.equal(work.structureFrames, 1);
 assert.equal(work.fullPlanBuilds, 1);
 assert.equal(work.reconciledNodes, 1);
+{
+  const count=scene.getUpdateStatistics().structure;
+  const closed=Object.freeze({...frame,interaction:Object.freeze({...frame.interaction,isDesktopClosing:true}),
+    visual:Object.freeze({...frame.visual,desktopVisualAlpha:0,launchpadVisualAlpha:0})});
+  scene.commit(closed,{height:600,resolution:1.25,width:900},{snapDesktopLayout:false});
+  scene.commit(frame,{height:600,resolution:1.25,width:900},{snapDesktopLayout:false});
+  assert.equal(scene.getUpdateStatistics().structure,count,"visibility-only close/reopen must reuse desktop structure");
+}
 assert.ok(stage.getChildByLabel("launchpad-native-desktop"));
 const itemNode = stage.getChildByLabel("launchpad-item:app-1", true);
 assert.ok(itemNode, "the active desktop page should create a real Pixi icon node");
@@ -476,6 +490,9 @@ for (let frameIndex = 0; frameIndex < 600 && Math.abs(desktopLayer.pageTrack.x +
 }
 assert.ok(Math.abs(desktopLayer.pageTrack.x + 2360) <= 0.01, "the desktop page track should settle at page three");
 assert.equal(stage.getChildByLabel("launchpad-item:page-1",true),null,"the old source page must retire after leaving the realized range");
+scene.commit(pagedFrame,{height:760,resolution:2.5,width:1180},{snapDesktopLayout:true});
+assert.equal(stage.getChildByLabel("launchpad-item:page-1",true),firstPageNode,"a nearby return must reuse the detached page node");
+scene.commit(pageThreeFrame,{height:760,resolution:2.5,width:1180},{snapDesktopLayout:true});
 const thirdPageNode = stage.getChildByLabel("launchpad-item:page-3", true);
 assert.ok(thirdPageNode, "three-page layouts should reach their final page");
 const thirdPageBounds = thirdPageNode.getBounds();
@@ -504,6 +521,72 @@ assert.ok(
   desktopLayer.pageTrack.x > -2360 && desktopLayer.pageTrack.x < -1180,
   "the native desktop scene should apply the gesture engine's live page scrub",
 );
+
+// Long page-dot jumps must never reveal freshly realized transparent pages.
+for(const fps of [60,120,144,165,180]){
+  const jump=makeCompleteFrame({activePages:Array.from({length:20},(_,index)=>[
+    {id:`jump-${fps}-${index}`,name:`Page ${index}`,emoji:"A",type:"app" as const},
+  ])});
+  scene.commit(jump,{width:1180,height:760,resolution:1},{snapDesktopLayout:true});
+  for(let index=0;index<120&&animationUpdate;index++)stepSceneAnimations();
+  const beforeTurn=scene.getUpdateStatistics().structure;
+  scene.commit(setNativeDesktopPage(jump,19),{width:1180,height:760,resolution:1},{snapDesktopLayout:false});
+  assert.equal(scene.getUpdateStatistics().structure,beforeTurn,"retained page changes must not rebuild desktop structure");
+  for(let index=0;index<fps;index++){
+    const current=animationUpdate as ((delta:number)=>void)|null;
+    current?.(1000/fps);
+    const page:number=-desktopLayer.pageTrack.x/1180;
+    for(const visible of new Set([Math.floor(page),Math.ceil(page)])){
+      if(visible<0||visible>=20)continue;
+      const icon=stage.getChildByLabel(`launchpad-item:jump-${fps}-${visible}`,true);
+      assert.ok(icon,`${fps} Hz page ${visible} must be realized`);
+      assert.equal(icon.alpha,1,`${fps} Hz page ${visible} must not fade in during a jump`);
+      assert.equal(icon.renderable,true,`${fps} Hz visible page must not be culled`);
+    }
+  }
+}
+
+{
+  const children=Array.from({length:20},(_,index)=>({id:`preview-child-${index}`,name:`Child ${index}`,emoji:"A",type:"app" as const}));
+  const folder:NativeFolderItem={id:"retained-folder",name:"Folder",type:"folder",childPages:[children]};
+  const mixed=makeCompleteFrame({activePages:[[folder],...[1,2,3].map(index=>[{id:`retained-app-${index}`,name:"App",emoji:"A",type:"app" as const}])]});
+  const vp={width:1180,height:760,resolution:1};
+  scene.commit(mixed,vp,{snapDesktopLayout:true});
+  const shell=stage.getChildByLabel("launchpad-item:retained-folder",true) as Container & {folderChildNodes:Container[];state:Record<string,unknown>|null;setState(state:Record<string,unknown>):void};
+  assert.equal(shell.folderChildNodes.filter(child=>child.visible).length,9,"idle folder shell must only realize nine preview children");
+  assert.equal(stage.getChildByLabel("launchpad-item:preview-child-19",true),null,"desktop preparation must not create expanded child nodes");
+  const offscreen=stage.getChildByLabel("launchpad-item:retained-app-3",true)! as Container & {setState(state:Record<string,unknown>):void};
+  let states=0;const original=offscreen.setState;offscreen.setState=function(state){states++;return original.call(this,state);};
+  const presentation:NativeFolderPresentation={openingCancelRequest:null,folderPageIndex:0,isClosing:false,openProgress:1,openProgressTarget:1,renderedFolder:folder};
+  const result=scene.commit(mixed,vp,{folderPresentation:presentation,snapDesktopLayout:false});
+  assert.equal(states,0,"opening a retained folder must not reconcile unrelated offscreen desktop nodes");
+  assert.equal(result.reconciledNodes,1,"opening updates only the folder source desktop page");
+  assert.ok(stage.getChildByLabel("launchpad-item:preview-child-19",true),"opening still realizes the folder contents on demand");
+  offscreen.setState=original;
+  scene.commit(mixed,vp,{snapDesktopLayout:true});
+  const snapshot=shell.state!;
+  shell.setState({...snapshot,folderHoverState:{key:"preview-test",targetId:folder.id,targetType:"folder",phase:"hover"}});
+  assert.equal(shell.folderChildNodes.filter(child=>child.visible).length,20,"hover preview must expand beyond nine items");
+  shell.setState({...snapshot,folderHoverState:null});
+  for(let index=0;index<90&&animationUpdate;index++)stepSceneAnimations();
+  assert.equal(shell.folderChildNodes.filter(child=>child.visible).length,9,"after scrolling resets only the nine resting thumbnails remain visible");
+}
+
+{
+  const word={id:"search-animation-word",type:"app" as const,name:"Word",emoji:"W"};
+  const other={id:"search-animation-other",type:"app" as const,name:"Other",emoji:"O"};
+  const desktop=makeCompleteFrame({activePages:[[word,other]]});
+  const search=makeCompleteFrame({activePages:[[word]],isSearchMode:true});
+  for(const [index,frame]of [desktop,search,desktop,search,desktop].entries()){
+    scene.commit(frame,{width:1180,height:760,resolution:1},{snapDesktopLayout:false});
+    if(index>0){
+      const wordNode=stage.getChildByLabel(`launchpad-item:${word.id}`,true)!;
+      assert.equal(wordNode.alpha,0,"search scope entry must animate consistently even when the result existed in the previous scope");
+      if(frame===desktop)assert.equal(stage.getChildByLabel(`launchpad-item:${other.id}`,true)!.alpha,wordNode.alpha,"restored desktop matches and nonmatches must use the same entry animation");
+    }
+    for(let tick=0;tick<120&&animationUpdate;tick++)stepSceneAnimations();
+  }
+}
 
 const folderItem: NativeFolderItem = {
   childPages: [

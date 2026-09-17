@@ -65,6 +65,7 @@ extensions.add(nativeIconUploader);
 export function prepareNativeIconTextures(stage: Container, renderer: Pick<WebGPURenderer, "uid">): void | Promise<void> {
   const missing = new Set<NativeRecoverableIconSource>();
   const visit = (node: Container): void => {
+    if(!node.visible||!node.renderable)return;
     const source = (node as Container & { texture?: { source: TextureSource } }).texture?.source;
     if (source instanceof NativeRecoverableIconSource && !source.destroyed && !source.retainedPixelBytes) {
       const data = source._gpuData[renderer.uid];

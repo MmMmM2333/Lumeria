@@ -596,6 +596,7 @@ export async function runLaunchpadAppsTests() {
         id: "win-app-store",
         type: "app",
         name: "Settings",
+        iconPath: "C:/Icons/settings.png",
         launchTarget: {
           kind: "appUserModelId",
           appUserModelId: "windows.settings_123!App",
@@ -791,8 +792,16 @@ export async function runLaunchpadAppsTests() {
 
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
     const windowsApp = requireApp(pages.value.flat().find((app) => app.id === "win-app-store"));
+    delete windowsApp.iconUrl;
+    delete windowsApp.iconDataUrl;
     assert(apps.getLaunchTargetPath(windowsApp) === "windows.settings_123!App", "managed app details should display AppUserModelIds");
     apps.openEditManagedApp(windowsApp);
+    apps.editorModel.actions.openIconChooser();
+    const defaultChoice=apps.iconChooserModel.choices.value[0];
+    assert(defaultChoice?.restoreDefault===true,"UWP must offer its cached original icon without filesystem extraction");
+    assert(defaultChoice?.iconDataUrl==="http://asset.localhost/C:/Icons/settings.png","UWP candidate must use the original cached image");
+    apps.iconChooserModel.actions.choose(defaultChoice!);
+    assert(apps.editorModel.isIconReset.value,"choosing the original icon should restore defaults rather than pin a custom override");
     assert(apps.editorModel.targetReadOnly.value, "Windows app identifiers should be treated as system-managed");
     apps.editorModel.name.value = "Windows Settings";
     apps.editorModel.target.value = "C:/Should/Not/Replace.exe";
@@ -898,6 +907,8 @@ export async function runLaunchpadAppsTests() {
       };
 
       apps.openExistingAppIconChooser("app-a");
+      assert(await waitForCondition(()=>!apps.iconChooserModel.isLoading.value),"empty icon extraction must settle");
+      assert(apps.iconChooserModel.choices.value.length===0,"truly missing icons must not manufacture a generic candidate");
       apps.iconChooserModel.actions.upload({ target: uploadInput as unknown as HTMLInputElement });
       assert(await waitForCondition(() => pendingCustomIconCaches.length === 1), "custom icon upload should reach the native cache");
       apps.openExistingAppIconChooser("app-b");

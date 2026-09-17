@@ -103,7 +103,15 @@ export class NativeAppDialogs{
       const choices=model.choices.value;
       if(choices.length){const count=this.#text(t("dialogs.iconChooser.count",{count:choices.length}),12,true);count.anchor.x=1;count.x=width;node.addChild(count);}
       let virtual:NativeVirtualList|null=null;
-      if(!choices.length){const hint=this.#text(t(model.isLoading.value?"dialogs.iconChooser.loading":"dialogs.iconChooser.empty"),12,true,width-28);if(model.error.value)hint.text=model.error.value;const height=Math.max(76,hint.height+28),plate=this.#emptyPlate(width,height);plate.y=y;node.addChild(plate);hint.position.set(14,y+(height-hint.height)/2);node.addChild(hint);y+=height+16;}
+      if(!choices.length){
+        const loading=model.isLoading.value;
+        const hint=this.#text(t(loading?"dialogs.iconChooser.loading":"dialogs.iconChooser.empty"),12,true,width-28);
+        if(model.error.value)hint.text=model.error.value;
+        const height=Math.max(76,hint.height+28);
+        if(!loading){const plate=this.#emptyPlate(width,height);plate.label="native-icon-empty";plate.y=y;node.addChild(plate);}
+        hint.label=loading?"native-icon-loading":"native-icon-status";
+        hint.position.set(14,y+(height-hint.height)/2);node.addChild(hint);y+=height+16;
+      }
       else{
         const columns=Math.max(1,Math.floor((width+10)/74)),tileWidth=(width-(columns-1)*10)/columns,stride=tileWidth+10,rows=Math.ceil(choices.length/columns),top=y;
         virtual=new NativeVirtualList(rows,stride,columns,index=>{

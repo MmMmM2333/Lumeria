@@ -32,7 +32,7 @@ import type {
   ScanAppsResult,
   ScanStats,
 } from "../api/launchpadApi.js";
-import { applyCachedIconAssetUrlsToApp } from "../domain/iconSource.js";
+import { applyCachedIconAssetUrlsToApp, getDefaultIconSource } from "../domain/iconSource.js";
 import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import type { CatalogPort } from "../platform/launchpadPortContracts.js";
 import type { LocalizationText } from "../i18n/localization.js";
@@ -48,6 +48,7 @@ export type ManagedAppIconChoice = Readonly<{
   id: string;
   iconDataUrl: string;
   iconPath: string | null;
+  restoreDefault?: boolean;
 }>;
 export type ManagedAppEditorSession = Readonly<{
   mode: "create" | "edit";
@@ -701,22 +702,25 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
 
   async function loadIconChoicesForChooser(chooser: ManagedAppIconChooser): Promise<void> {
     const requestId = (iconChooserRequestId += 1);
-    iconChoices.value = [];
+    const original=chooser.target==="existing"?managedApps.value.find(app=>app.id===chooser.appId)
+      :editingManagedApp.value&&getLaunchTargetPath(editingManagedApp.value)===editorTarget.value.trim()?editingManagedApp.value:null;
+    const originalSource=getDefaultIconSource(original)||(original?.iconPath?catalog.toAssetUrl(original.iconPath):null);
+    const defaults:ManagedAppIconChoice[]=originalSource?[{id:"default",iconDataUrl:originalSource,iconPath:original?.iconPath??null,restoreDefault:true}]:[];
+    iconChoices.value = defaults;
     iconChoicesError.value = "";
     const targetPath = getIconChooserSourcePath(chooser);
-    if (!targetPath || !options.shouldUseNativeCatalog()) {
-      isLoadingIconChoices.value = false;
-      return;
-    }
-
     isLoadingIconChoices.value = true;
     try {
-      const choices = await catalog.loadIconChoices(targetPath);
+      const choices = targetPath&&options.shouldUseNativeCatalog()?await catalog.loadIconChoices(targetPath):[];
       if (requestId !== iconChooserRequestId) return;
-      iconChoices.value = normalizeIconChoices(choices);
+      const seen=new Set(defaults.map(choice=>choice.iconDataUrl));
+      iconChoices.value = [...defaults,...normalizeIconChoices(choices).filter(choice=>{
+        if(seen.has(choice.iconDataUrl)||Boolean(choice.iconPath&&choice.iconPath===original?.iconPath))return false;
+        seen.add(choice.iconDataUrl);return true;
+      })];
     } catch (error) {
       if (requestId === iconChooserRequestId) {
-        iconChoices.value = [];
+        iconChoices.value = defaults;
         iconChoicesError.value = t("settings.apps.icon.loadChoicesFailed");
       }
       console.error("Failed to load app icon choices", error);
@@ -727,8 +731,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
 
   function openIconChooser(chooser: ManagedAppIconChooser | null | undefined): void {
     if (!chooser || options.isDragActive()) return;
-    iconChooser.value = chooser;
     loadIconChoicesForChooser(chooser);
+    iconChooser.value = chooser;
   }
 
   function openManagedAppEditorIconChooser() {
@@ -791,6 +795,18 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   }
 
   function chooseIconCandidate(choice: ManagedAppIconChoice): void {
+    if(choice.restoreDefault&&iconChooser.value){
+      if(iconChooser.value.target==="editor")resetManagedAppEditorIcon();
+      else updateAppCustomIcon(iconChooser.value.appId,null);
+      closeIconChooser();return;
+    }
+    if(!choice.iconPath&&options.shouldUseNativeCatalog()){
+      const requestId=iconChooserRequestId;
+      void cacheCustomIconDataUrl(choice.iconDataUrl).then(icon=>{
+        if(requestId===iconChooserRequestId)applyIconChooserIcon(icon);
+      },error=>{if(requestId===iconChooserRequestId)openIconErrorDialog(readErrorMessage(error));});
+      return;
+    }
     applyIconChooserIcon(choice);
   }
 

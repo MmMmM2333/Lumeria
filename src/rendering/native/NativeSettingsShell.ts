@@ -28,6 +28,7 @@ export type NativeSettingsControl = {
   focus(active:boolean):void;
   handleKey(key:string):boolean;
   disabled():boolean;
+  commit?():void;
   restoreFocus?:boolean;
   selection?():{anchor:number;focus:number};
   restoreSelection?(selection:{anchor:number;focus:number}):void;
@@ -143,6 +144,7 @@ export class NativeSettingsShell extends Container {
     if(result)throw result.error;
   }
   redraw():void{
+    for(const control of this.#page?.controls??[])control.commit?.();
     this.#redrawCount++;
     killMotionOf(this.#contentProgress);this.#contentTransition=null;this.#contentHeights=null;
     const {options}=this, {width,height}=options.size(), theme=options.theme(), colors=nativeFluentTheme(theme);
@@ -376,7 +378,7 @@ export class NativeSettingsShell extends Container {
     for(const button of this.#buttons){if(this.#footerButtons.includes(button))button.busy=true;else button.disabled=true;}
     this.options.invalidate();
     this.#pendingApply=(async()=>{
-      try{await this.options.apply();return null;}
+      try{for(const control of this.#page?.controls??[])control.commit?.();await this.options.apply();return null;}
       catch(error){this.#error=error instanceof Error?error.message:String(error);return {error};}
     })().finally(()=>{
       this.#applying=false;this.#pendingApply=null;if(!this.destroyed){this.#panel.interactiveChildren=!this.#closing;this.redraw();}
@@ -385,7 +387,6 @@ export class NativeSettingsShell extends Container {
   #setFocus(index:number):void{
     if(this.#focus!==index&&this.#focus>=0)this.#controls[this.#focus]?.focus(false);
     if(this.#keyboardFocus)this.#controls[index]?.focus(true);
-    else if(!this.#controls[index]?.restoreFocus)this.#controls[index]?.focus(false);
     this.#focus=index;
     const control=this.#controls[index];
     if(this.#keyboardFocus&&control&&this.#page?.controls.includes(control)&&this.#scroll){

@@ -1106,7 +1106,8 @@ export class IconNode extends Container {
     const thumb = getFolderThumbMetrics(size);
     const plan = getFolderPreviewMotionPlan(
       this.item as SceneItem & { readonly childPages?: unknown } | null,
-      state.folderPreviewPageSize,
+      this.getActiveFolderHoverState(state)||this.folderHoverActive||this.folderHoverClearing||this.folderChildrenWrap.y!==0
+        ?state.folderPreviewPageSize:Math.min(9,state.folderPreviewPageSize||9),
       thumb,
     );
     this.drawFolderThumbFrame(size, thumb);
@@ -1347,7 +1348,9 @@ export class IconNode extends Container {
       .ease("power3.out")
       .overlay()
       .blend(FOLDER_HOVER_BLEND_DURATION, FOLDER_HOVER_BLEND_EASE)
-      .to({ y: 0 })
+      .to({ y: 0,onComplete:()=>{
+        if(!this.destroyed&&this.isFolder&&this.state&&!this.getActiveFolderHoverState(this.state))this.renderFolderThumb(this.state);
+      } })
       .start();
     killMotionOf(this.folderFlashOverlay);
     this.folderFlashOverlay.alpha = 0;
