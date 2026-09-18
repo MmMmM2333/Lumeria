@@ -31,11 +31,11 @@ import type {
   LaunchTargetCheckResult,
   ScanAppsResult,
   ScanStats,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import { applyCachedIconAssetUrlsToApp, getDefaultIconSource } from "../domain/iconSource.js";
 import { DEFAULT_SCAN_ROOTS } from "../platform/applicationCatalogDefaults.js";
 import type { CatalogPort } from "../platform/launchpadPortContracts.js";
-import type { LocalizationText } from "../i18n/localization.js";
+import type { TranslationPort } from "../i18n/translationPort.js";
 export { getCustomIconCanvasSize } from "../domain/customIcon.js";
 const WINDOWS_APP_CATALOG_ROOT_TYPE = "windowsAppCatalog";
 const SCAN_RESULT_TAB_AVAILABLE = "available";
@@ -100,7 +100,7 @@ export type LaunchpadAppsOptions = Readonly<{
   ) => Readonly<{ item: ReadonlyLaunchpadFolder }> | null;
   focusedIcon?: Readonly<StateCell<Readonly<{ id?: string }> | null>>;
   isDragActive: () => boolean;
-  localizationText: Pick<LocalizationText, "t">;
+  localizationText: TranslationPort;
   makeId: (prefix: string) => string;
   markLaunchCriticalLayoutDirty?: (appId: string) => void;
   openFolderId: Readonly<StateCell<string | null>>;

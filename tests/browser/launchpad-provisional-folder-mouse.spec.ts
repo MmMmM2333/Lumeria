@@ -638,7 +638,7 @@ async function startCancellationFrameTrace(page: Page, folderId: string): Promis
     const previous = window.__LUMERIA_CANCELLATION_TRACE__;
     if (previous?.raf) cancelAnimationFrame(previous.raf);
     if (previous?.onCancelMove) {
-      window.removeEventListener("pointermove", previous.onCancelMove);
+      window.removeEventListener("pointermove", previous.onCancelMove, true);
     }
     const trace: CancellationTrace = {
       active: true,
@@ -649,9 +649,12 @@ async function startCancellationFrameTrace(page: Page, folderId: string): Promis
     };
     trace.onCancelMove = () => {
       if (trace.cancelMoveTime == null) trace.cancelMoveTime = performance.now();
+      // Capture the visible cancellation boundary before event handlers start
+      // fading. The next RAF may already be several animation steps later.
+      sample(false);
     };
-    window.addEventListener("pointermove", trace.onCancelMove, { once: true });
-    const sample = () => {
+    window.addEventListener("pointermove", trace.onCancelMove, { once: true, capture: true });
+    const sample = (scheduleNext = true) => {
       if (!trace.active) return;
       const sampleTime = performance.now();
       const snapshot = window.__LUMERIA_PROVISIONAL_FOLDER_TEST__.getProbe().snapshot();
@@ -707,7 +710,7 @@ async function startCancellationFrameTrace(page: Page, folderId: string): Promis
         targetLabelAlpha: layer?.target?.labelAlpha ?? null,
         time: sampleTime,
       });
-      trace.raf = requestAnimationFrame(sample);
+      if (scheduleNext) trace.raf = requestAnimationFrame(() => sample());
     };
     window.__LUMERIA_CANCELLATION_TRACE__ = trace;
     sample();
@@ -720,7 +723,7 @@ async function stopCancellationFrameTrace(page: Page): Promise<CancellationSampl
     if (!trace) throw new Error("Folder cancellation trace was not started");
     trace.active = false;
     if (trace.raf) cancelAnimationFrame(trace.raf);
-    if (trace.onCancelMove) window.removeEventListener("pointermove", trace.onCancelMove);
+    if (trace.onCancelMove) window.removeEventListener("pointermove", trace.onCancelMove, true);
     const samples = trace.samples.map((sample) => ({ ...sample }));
     delete window.__LUMERIA_CANCELLATION_TRACE__;
     return samples;

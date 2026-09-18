@@ -10,7 +10,7 @@ import {
 import { normalizeAppearancePreference } from "../domain/appearancePreference.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";
 import type { LiveDesktopBackgroundSupport } from "../api/liveDesktopContract.js";
-import type { MainWindowEffectsSupport } from "../api/launchpadApi.js";
+import type { MainWindowEffectsSupport } from "../platform/launchpadContracts.js";
 import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument.js";
 
 export type WindowEffectMaterial = LayoutSettings["windowEffectMaterial"];

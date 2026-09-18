@@ -10,7 +10,7 @@ export type PixiBackgroundCapabilityConfig = Readonly<{
   source: LayoutSettings["backgroundSource"];
 }>;
 
-/** Application-facing background rendering capabilities. */
+/** Web presentation entry: capability checks and the host-backed preview renderer. */
 export const backgroundEffectUsesPixi: (
   effect: LayoutSettings["backgroundEffect"],
 ) => boolean = backgroundEffectUsesPixiImplementation;

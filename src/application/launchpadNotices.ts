@@ -1,6 +1,6 @@
 import type { StateHost } from "./stateHost.js";
 import { readErrorMessage } from "./errorMessage.js";
-import type { LocalizationText } from "../i18n/localization.js";
+import type { TranslationPort } from "../i18n/translationPort.js";
 
 export type LaunchpadNoticeIntent = "error" | "info" | "success" | "warning";
 
@@ -48,7 +48,7 @@ export type LaunchpadLayoutFailureNoticeConfig = Readonly<{
 }>;
 
 export type LaunchpadNoticesOptions = Readonly<{
-  localizationText?: Pick<LocalizationText, "t">;
+  localizationText?: TranslationPort;
 }>;
 
 const WARNING_DIALOG_CLOSE_DURATION = 180;
@@ -64,7 +64,7 @@ export function createLaunchpadNotices(options: LaunchpadNoticesOptions, state: 
   if (!localizationText || typeof localizationText.t !== "function") {
     throw new TypeError("createLaunchpadNotices requires localization text");
   }
-  const t: LocalizationText["t"] = localizationText.t;
+  const t: TranslationPort["t"] = localizationText.t;
   const warningDialog = shallowRef<LaunchpadWarningDialog | null>(null);
   const isWarningDialogOpen = ref(false);
   const transientNotice = shallowRef<LaunchpadTransientNotice | null>(null);

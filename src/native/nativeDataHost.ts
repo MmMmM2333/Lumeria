@@ -1,8 +1,6 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { once } from "node:events";
+import { NativeDataTransport } from "./nativeDataTransport.js";
+import { NATIVE_DATA_PROTOCOL_VERSION as PROTOCOL_VERSION, requireNativeRecord as requireRecord } from "./nativeDataProtocol.js";
 import { isAbsolute, dirname, join } from "node:path";
-import { createInterface, type Interface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { nativeDataExecutableName, nativePlatform } from "./runtimePaths.js";
 import {
@@ -12,13 +10,10 @@ import {
   assertScannedCatalogApp,
   type CatalogScanFilters,
   type CatalogScanRoot,
-  type CatalogScanWarning,
-  type ScannedCatalogApp,
 } from "../domain/applicationCatalog.js";
 import { assertLayoutDocument, type LayoutDocument } from "../domain/layoutDocument.js";
-import type { AppIconChoice, CachedCustomIconResult, PickedBackgroundImage } from "../api/launchpadApi.js";
+import type { AppIconChoice, CachedCustomIconResult, PickedBackgroundImage, ScanAppsResult } from "../platform/launchpadContracts.js";
 
-const PROTOCOL_VERSION = 1;
 const SCAN_COUNT_FIELDS = [
   "dirsVisited",
   "entriesSeen",
@@ -31,40 +26,7 @@ const SCAN_COUNT_FIELDS = [
   "appsFound",
 ] as const;
 
-type UnknownRecord = Record<string, unknown>;
-type NativeDataProcess = ChildProcessByStdio<Writable, Readable, null>;
-
-export type NativeCatalogScanResult = Readonly<{
-  apps: readonly ScannedCatalogApp[];
-  excludedApps: readonly ScannedCatalogApp[];
-  keywordExcludedApps: readonly Readonly<{
-    app: ScannedCatalogApp;
-    matchedKeyword: string;
-  }>[];
-  warnings: readonly CatalogScanWarning[];
-  stats: Readonly<Record<(typeof SCAN_COUNT_FIELDS)[number], number> & {
-    limitReached: boolean;
-  }>;
-}>;
-
-export class NativeLaunchError extends Error {
-  readonly detail: string;
-  readonly kind: string;
-
-  constructor(kind: string, detail: string) {
-    super(detail);
-    this.name = "NativeLaunchError";
-    this.kind = kind;
-    this.detail = detail;
-  }
-}
-
-function requireRecord(value: unknown, path: string): UnknownRecord {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new TypeError(`${path} must be an object`);
-  }
-  return value as UnknownRecord;
-}
+export type NativeCatalogScanResult = ScanAppsResult;
 
 function validateCachedIcon(value:unknown):CachedCustomIconResult {
   const icon=requireRecord(value,"cached icon");
@@ -134,29 +96,14 @@ function resolveExecutable(): string {
 
 export class NativeDataHost {
   autostartAvailable = false;
-  readonly #process: NativeDataProcess;
-  readonly #lines: AsyncIterator<string>;
-  readonly #lineReader: Interface;
-  #closed = false;
-  #nextId = 1;
-  #processError: Error | null = null;
-  #tail: Promise<void> = Promise.resolve();
+  readonly #transport: NativeDataTransport;
 
   constructor(executable = resolveExecutable()) {
-    this.#process = spawn(executable, [], {
-      env: process.env,
-      stdio: ["pipe", "pipe", "inherit"],
-      windowsHide: true,
-    });
-    this.#process.on("error", (error) => {
-      this.#processError = error;
-    });
-    this.#lineReader = createInterface({ input: this.#process.stdout, crlfDelay: Infinity });
-    this.#lines = this.#lineReader[Symbol.asyncIterator]();
+    this.#transport = new NativeDataTransport(executable);
   }
 
   async connect(): Promise<void> {
-    const value = requireRecord(await this.#request("hello"), "hello result");
+    const value = requireRecord(await this.#transport.request("hello"), "hello result");
     if (value.protocolVersion !== PROTOCOL_VERSION) {
       throw new Error(`Native data host protocol mismatch: ${String(value.protocolVersion)}`);
     }
@@ -165,15 +112,15 @@ export class NativeDataHost {
   }
 
   async loadLayout(): Promise<LayoutDocument | null> {
-    const value = await this.#request("loadLayout");
+    const value = await this.#transport.request("loadLayout");
     return value === null ? null : assertLayoutDocument(value);
   }
 
   async saveLayout(layout: LayoutDocument): Promise<void> {
-    await this.#request("saveLayout", { layout: assertLayoutDocument(layout) });
+    await this.#transport.request("saveLayout", { layout: assertLayoutDocument(layout) });
   }
   async loadIconChoices(targetPath:string):Promise<readonly AppIconChoice[]> {
-    const result=await this.#request("loadIconChoices",{targetPath});
+    const result=await this.#transport.request("loadIconChoices",{targetPath});
     if(!Array.isArray(result))throw new TypeError("Native icon choices must be an array");
     return result.map(value=>{
       const entry=requireRecord(value,"icon choice");
@@ -182,17 +129,17 @@ export class NativeDataHost {
     });
   }
   async cacheCustomIcon(dataUrl:string):Promise<CachedCustomIconResult> {
-    return validateCachedIcon(await this.#request("cacheCustomIcon",{dataUrl}));
+    return validateCachedIcon(await this.#transport.request("cacheCustomIcon",{dataUrl}));
   }
   async background(request:{path:string}|{rect:readonly [number,number,number,number]}):Promise<PickedBackgroundImage|null>{
-    const value=await this.#request("path" in request?"cacheBackground":"wallpaper",request);
+    const value=await this.#transport.request("path" in request?"cacheBackground":"wallpaper",request);
     if(value===null)return null;
     const result=requireRecord(value,"background result");
     if(typeof result.name!=="string"||typeof result.imagePath!=="string"||!isAbsolute(result.imagePath))throw new TypeError("Invalid background result");
     return {name:result.name,imagePath:result.imagePath};
   }
   async autostart(enabled?:boolean):Promise<boolean>{
-    const value=await this.#request("autostart",enabled===undefined?{}:{enabled});
+    const value=await this.#transport.request("autostart",enabled===undefined?{}:{enabled});
     if(typeof value!=="boolean")throw new TypeError("Native autostart must return a boolean");
     return value;
   }
@@ -203,15 +150,15 @@ export class NativeDataHost {
   ): Promise<NativeCatalogScanResult> {
     roots.forEach((root, index) => assertCatalogScanRoot(root, `scanApps roots[${index}]`));
     assertCatalogScanFilters(filters);
-    return validateCatalogResult(await this.#request("scanApps", { roots, filters }));
+    return validateCatalogResult(await this.#transport.request("scanApps", { roots, filters }));
   }
 
   async launchApp(appId: string): Promise<void> {
     if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
-    await this.#request("launchApp", { appId });
+    await this.#transport.request("launchApp", { appId });
   }
-  async checkLaunchTargets(targets:readonly import("../api/launchpadApi.js").LaunchTargetCheckRequest[]):Promise<readonly import("../api/launchpadApi.js").LaunchTargetCheckResult[]>{
-    const value=await this.#request("checkLaunchTargets",{targets});
+  async checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[]):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
+    const value=await this.#transport.request("checkLaunchTargets",{targets});
     if(!Array.isArray(value))throw new TypeError("Launch target checks must return an array");
     return value.map(item=>{
       const entry=requireRecord(item,"launch target check");
@@ -220,48 +167,5 @@ export class NativeDataHost {
     });
   }
 
-  async dispose(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
-    await this.#tail;
-    this.#lineReader.close();
-    this.#process.stdin.end();
-    if (this.#process.exitCode === null && this.#processError === null) await once(this.#process, "close");
-  }
-
-  #request(operation: string, fields: UnknownRecord = {}): Promise<unknown> {
-    if (this.#closed) return Promise.reject(new Error("Native data host has been disposed"));
-    const id = this.#nextId++;
-    // ponytail: requests stay serial while the Rust host is serial; add id-based dispatch only if parallel host work is introduced.
-    const task = this.#tail.then(async () => {
-      await new Promise<void>((resolve, reject) => {
-        this.#process.stdin.write(
-          `${JSON.stringify({ version: PROTOCOL_VERSION, id, operation, ...fields })}\n`,
-          (error) => error ? reject(error) : resolve(),
-        );
-      });
-      const line = await this.#lines.next();
-      if (line.done) {
-        throw this.#processError
-          ?? new Error(`Native data host exited before responding to ${operation}`);
-      }
-      const response = requireRecord(JSON.parse(line.value) as unknown, `${operation} response`);
-      if (response.version !== PROTOCOL_VERSION || response.id !== id || typeof response.ok !== "boolean") {
-        throw new Error(`Native data host returned an invalid ${operation} envelope`);
-      }
-      if (!response.ok) {
-        if (operation === "launchApp" && response.error && typeof response.error === "object") {
-          const error = requireRecord(response.error, "launchApp response.error");
-          if (typeof error.kind === "string" && typeof error.detail === "string") {
-            throw new NativeLaunchError(error.kind, error.detail);
-          }
-        }
-        throw new Error(typeof response.error === "string" ? response.error : `${operation} failed`);
-      }
-      if (!("value" in response)) throw new Error(`Native data host ${operation} response is missing value`);
-      return response.value;
-    });
-    this.#tail = task.then(() => undefined, () => undefined);
-    return task;
-  }
+  dispose(): Promise<void> { return this.#transport.dispose(); }
 }

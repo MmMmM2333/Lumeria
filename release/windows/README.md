@@ -27,6 +27,8 @@ Rust 使用根目录 Cargo workspace 与 `Cargo.lock`。`native:build` 的前置
 运行包时命名为 `lumeria-native-data.exe`。旧 Tauri 宿主仍作为独立 workspace 成员保留，
 不参与 Native 数据服务构建。`npm run test:native-data` 运行共享核心/协议测试，并使用
 真实 release 数据服务与 TS 客户端验证隔离数据读写和通信。
+暂存后可运行 `npm run test:native-staged`，检查手动/登录启动后立即退出、保存、
+单实例释放及运行日志中的隐藏异常。它不安装产品、不修改真实用户数据，也不替代 UI 验收。
 
 构建工具要求 Node/npm、Rust 的 Windows MSVC 工具链、Zig **0.16.0**、NSIS **3.11**。
 用户安装后不需要这些开发工具。Zig 可通过 `LUMERIA_ZIG` 指定，也可放在

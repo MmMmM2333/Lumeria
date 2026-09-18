@@ -13,7 +13,7 @@ import {
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   WINDOW_EFFECT_APPEARANCE_SYSTEM,
   WINDOW_MODE_WINDOWED,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import {
   APPEARANCE_DARK as SETTINGS_THEME_DARK,
   APPEARANCE_LIGHT as SETTINGS_THEME_LIGHT,
@@ -452,7 +452,7 @@ async function runSettingsForHost(native:boolean) {
   assert(effectAttempts === 2, "failed effects must attempt restoration in case the host partially applied");
   assert((await windowFailureSettings.applyEdit()).ok, "window failures must permit retry");
 
-  for (const stage of ["layout", "localeActivation", "liveDesktop"] as const) {
+  for (const stage of ["windowMode", "layout", "localeActivation", "liveDesktop", "liveDesktopStructured"] as const) {
     const transactionError = new Error(`${stage} failed`);
     const transactionLayout = useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" });
     transactionLayout.commitPages([Array.from({ length: 10 }, (_, index) => transactionLayout.operations.makeApp([`App ${index}`, "C:/fixture.exe"], index))]);
@@ -464,7 +464,10 @@ async function runSettingsForHost(native:boolean) {
     const injectedFailure = () => { if (failOnce) { failOnce = false; throw transactionError; } };
     const transaction = useLaunchpadSettings({
       layout: transactionLayout, localizationText, liveDesktopSupport: { value: {} },
-      mainWindow: makeMainWindowRuntime(),
+      mainWindow: { ...makeMainWindowRuntime(), setMode: async () => {
+        if (stage === "windowMode") injectedFailure();
+        return { ok: true };
+      } },
       localeRuntime: { applyPreference: async preference => { locale = preference; return { ok: true, state: makeLocaleState(preference) }; } },
       activateLocale: state => { activatedLocale = state.resolvedLocale; if (stage === "localeActivation") injectedFailure(); },
       autostartPort: { isAvailable: () => true, getStatus: async () => startup, setEnabled: async enabled => { startup = enabled; return enabled; } },
@@ -478,15 +481,29 @@ async function runSettingsForHost(native:boolean) {
     transaction.actions.setDraftLaunchAtLogin(true);
     const result = await transaction.applyEdit({
       schedulePageGridMetrics: () => { if (stage === "layout") injectedFailure(); },
-      syncLiveDesktop: () => { desktopSyncs++; if (stage === "liveDesktop") injectedFailure(); },
+      syncLiveDesktop: () => {
+        desktopSyncs++;
+        if (stage === "liveDesktop") injectedFailure();
+        if (stage === "liveDesktopStructured" && failOnce) {
+          failOnce = false;
+          return { phase: "failed", detail: transactionError.message };
+        }
+      },
     });
-    assert(!result.ok && result.error === transactionError, `${stage} must return its original error`);
+    assert(
+      stage === "liveDesktopStructured"
+        ? !result.ok && result.error instanceof Error && result.error.message === transactionError.message
+        : !result.ok && result.error === transactionError,
+      stage === "liveDesktopStructured"
+        ? `${stage} must return its structured error detail`
+        : `${stage} must return its original error object`,
+    );
     assert(JSON.stringify(transaction.persistence.capture()) === before, `${stage} must restore committed settings`);
     assert(JSON.stringify(transactionLayout.documentPersistence.capture()) === layoutBefore, `${stage} must restore exact page partition after a smaller grid was applied`);
     assert(transaction.draft.rows.value === 2 && transaction.draft.cols.value === 3, `${stage} must preserve retry inputs`);
     assert(locale === "system" && activatedLocale === "zh-CN" && !startup, `${stage} must restore earlier native and UI side effects`);
     assert(!transaction.presentation.isApplyingSettingsConfig.value, `${stage} must release the submission lock`);
-    if (stage === "liveDesktop") assert(desktopSyncs === 2, "live desktop rollback must synchronize restored settings");
+    if (stage.startsWith("liveDesktop")) assert(desktopSyncs === 2, "live desktop rollback must synchronize restored settings");
     assert((await transaction.applyEdit()).ok, `${stage} must support retry after recovery`);
   }
 
@@ -520,4 +537,26 @@ async function runSettingsForHost(native:boolean) {
   resolveImage({name:"late.png",imagePath:"C:/Images/late.png"});await choosing;
   assert(imageSettings.draft.backgroundImagePath.value===null,"a cancelled image request must not overwrite a new settings draft");
   assert(!imageSettings.presentation.isChoosingBackgroundImage.value,"cancelled image selection must release its busy state");
+  for (const operation of ["chooseDraftBackgroundImage", "useDraftDesktopWallpaper"] as const) {
+    const pending: Array<(value: { name: string; imagePath: string }) => void> = [];
+    const select = () => new Promise<{ name: string; imagePath: string }>(resolve => pending.push(resolve));
+    const settings = useLaunchpadSettings({
+      layout: useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" }),
+      localizationText, liveDesktopSupport: { value: {} }, mainWindow: makeMainWindowRuntime(),
+      backgroundAssetPort: { toAssetUrl: path => path ?? null, pickImage: select, getDesktopWallpaper: select },
+    });
+    settings.beginEdit();
+    const oldRequest = settings.actions[operation]();
+    settings.cancelEdit();
+    settings.beginEdit();
+    const newRequest = settings.actions[operation]();
+    pending[0]!({ name: "old.png", imagePath: "C:/Images/old.png" });
+    await oldRequest;
+    assert(settings.presentation.isChoosingBackgroundImage.value, `${operation}: old completion must not clear a newer busy state`);
+    assert(settings.draft.backgroundImagePath.value === null, `${operation}: old completion must not change a newer draft`);
+    pending[1]!({ name: "new.png", imagePath: "C:/Images/new.png" });
+    await newRequest;
+    assert(settings.draft.backgroundImagePath.value === "C:/Images/new.png", `${operation}: the current selection must apply`);
+    assert(!settings.presentation.isChoosingBackgroundImage.value, `${operation}: current completion must release busy state`);
+  }
 }

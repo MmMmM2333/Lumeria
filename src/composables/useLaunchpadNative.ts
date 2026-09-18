@@ -1,7 +1,7 @@
 import { nextTick, ref, type Ref } from "vue";
 import {
   DESKTOP_CLOSE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { getKawaseDebugEffectPlanParams } from "../rendering/backgroundDebugPort.js";
@@ -32,7 +32,7 @@ import {
   normalizeBackgroundDarkenColor,
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
@@ -45,7 +45,7 @@ import type {
   LaunchTargetCheckResult,
   ScanAppsResult,
   ScanStats,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import type {
   LiveDesktopEffectPlan,
   LiveDesktopRuntimeConfig,

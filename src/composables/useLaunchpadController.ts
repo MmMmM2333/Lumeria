@@ -7,8 +7,8 @@ import {
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import {
   isNativeBridgeAvailable,
-  type BackgroundLayoutContext,
 } from "../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../platform/launchpadContracts.js";
 import {
   catalogPort,
   nativeLifecyclePort,
@@ -81,7 +81,7 @@ import {
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";

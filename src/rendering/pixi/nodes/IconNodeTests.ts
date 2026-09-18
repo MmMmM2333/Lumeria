@@ -68,6 +68,33 @@ export async function runIconNodeTests(): Promise<void> {
 
   const node = new IconNode();
   try {
+    const hoverNode = new IconNode();
+    try {
+      hoverNode.item = { id: "hover-target", type: "app" };
+      const hover = { folderHoverState: { key: "create", phase: "hover", targetId: "hover-target", targetType: "app" as const } };
+      hoverNode.updateAppFolderCreateHoverAnimation(hover);
+      motionRuntime.step(0.05);
+      const enteringAlpha = hoverNode.folderCreateBackdrop.alpha;
+      hoverNode.iconSize = 80;
+      hoverNode.updateAppFolderCreateHoverAnimation(hover);
+      assert(nearlyEqual(hoverNode.folderCreateBackdrop.alpha, enteringAlpha), "geometry updates must preserve the entering backdrop opacity");
+      hoverNode.clearAppFolderCreateHoverAnimation();
+      motionRuntime.step(0.03);
+      const exitAlpha = hoverNode.folderCreateBackdrop.alpha;
+      hoverNode.updateAppFolderCreateHoverAnimation(hover);
+      assert(nearlyEqual(hoverNode.folderCreateBackdrop.alpha, exitAlpha), "re-entry must start from the presented exit opacity");
+      for (let frame = 0; frame < 20; frame++) motionRuntime.step(0.05);
+      assert(hoverNode.folderCreateBackdrop.visible && nearlyEqual(hoverNode.folderCreateBackdrop.alpha, 1), "an interrupted exit must not hide the re-entered backdrop");
+      for (let frame = 0; frame < 20; frame++) {
+        hoverNode.clearAppFolderCreateHoverAnimation();
+        motionRuntime.step(0.05);
+      }
+      assert(!hoverNode.folderCreateBackdrop.visible, "repeated clear calls must let the exit complete");
+      assert(!motionRuntime.hasActiveWork(), "completed hover exit must leave no animation work");
+    } finally {
+      hoverNode.destroy({ children: true });
+      motionRuntime.reset();
+    }
     assert(node.labelText.resolution === 2, "icon labels should use the 2x text raster baseline");
     assert(node.labelTransitionText.resolution === 2, "label transition copies should use the same text raster baseline");
     assert(node.folderSlotReleaseEmoji.resolution === 2, "folder release text should use the shared text raster baseline");

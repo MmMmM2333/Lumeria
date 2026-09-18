@@ -2,8 +2,8 @@ import { computed } from "vue";
 import type { CSSProperties, Ref } from "vue";
 import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument.js";
 import type { BackgroundImageLayout } from "../domain/backgroundImageLayout.js";
-import type { NormalizedLiveDesktopBackgroundSupport } from "./useLaunchpadSettingsConfig.js";
-import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
+import type { NormalizedLiveDesktopBackgroundSupport } from "../application/launchpadSettingsConfig.js";
+import { DESKTOP_CLOSE_SCALE } from "../domain/launchpadConstants.js";
 import { FOLDER_OPEN_DESKTOP_TRANSFORM } from "../rendering/desktopVisualTargets.js";
 import {
   BACKGROUND_EFFECT_ACRYLIC,
@@ -18,7 +18,7 @@ import {
   normalizeBackgroundBaseColor,
   normalizeBackgroundDarkenColor,
   normalizeLiveDesktopBackgroundSupport,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "../domain/backgroundImageLayout.js";
 import {
   appLaunchGhostTransition,

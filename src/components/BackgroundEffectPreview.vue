@@ -43,7 +43,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { BackgroundLayoutContext } from "../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../platform/launchpadContracts.js";
 import type { BackgroundImagePixelSize } from "../composables/useBackgroundImagePixelSize.js";
 import BackgroundImagePreviewCanvas from "./BackgroundImagePreviewCanvas.vue";
 import {
@@ -52,7 +52,7 @@ import {
   BACKGROUND_EFFECT_DIMMED,
   clampBackgroundBaseOpacity,
   normalizeBackgroundBaseColor,
-} from "../composables/useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import {
   DEFAULT_BACKGROUND_IMAGE_LAYOUT,
 } from "../domain/backgroundImageLayout.js";

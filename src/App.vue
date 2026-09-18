@@ -170,7 +170,7 @@ import type {
 } from "./composables/useLaunchpadInputGestures.js";
 import type { LaunchpadDragVisualState } from "./composables/useLaunchpadDrag.js";
 import { useLocalization, useLocalizationRuntime } from "./i18n/localization.js";
-import { backgroundSourceUsesLiveDesktop } from "./composables/useLaunchpadSettingsConfig.js";
+import { backgroundSourceUsesLiveDesktop } from "./application/launchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
 import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
 import { runtimePerformanceMetrics } from "./diagnostics/runtimePerformanceMetrics.js";

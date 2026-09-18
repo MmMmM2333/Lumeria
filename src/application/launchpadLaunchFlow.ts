@@ -2,11 +2,11 @@ import type { StateCell, StateHost } from "./stateHost.js";
 import {
   APP_LAUNCH_DURATION,
   DESKTOP_CLOSE_DURATION,
-} from "../composables/launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 
 
-import type { LaunchFailureReport, LaunchResult } from "../api/launchpadApi.js";
-import type { LocalizationText } from "../i18n/localization.js";
+import type { LaunchFailureReport, LaunchResult } from "../platform/launchpadContracts.js";
+import type { TranslationPort } from "../i18n/translationPort.js";
 import type {
   LaunchpadApp,
   ReadonlyLaunchpadApp,
@@ -72,7 +72,7 @@ export type LaunchpadLaunchFlowOptions = Readonly<{
   launchNativeAppIfAvailable(app: ReadonlyLaunchpadApp): LaunchResult | Promise<LaunchResult>;
   waitForAppLaunchAnimation?: (() => Promise<void>) | undefined;
   launchTargetStatusById?: Readonly<StateCell<Readonly<Record<string, Exclude<LaunchTargetStatus, null>>>>> | undefined;
-  localizationText?: Pick<LocalizationText, "t"> | undefined;
+  localizationText?: TranslationPort | undefined;
   normalizeLaunchSource(app: ReadonlyLaunchpadApp, source: LaunchSourceInput | null | undefined): LaunchIconFocus;
   openLaunchErrorDialog?: ((config: LaunchErrorDialog) => unknown) | undefined;
   openingIcon: StateCell<LaunchIconFocus | null>;
@@ -106,7 +106,7 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
   if (!localizationText || typeof localizationText.t !== "function") {
     throw new TypeError("useLaunchpadLaunchFlow requires localization text");
   }
-  const t: LocalizationText["t"] = localizationText.t;
+  const t: TranslationPort["t"] = localizationText.t;
   const isDesktopOpen = ref(options.initialDesktopOpen !== false);
   const isDesktopClosing = ref(false);
   const isAppLaunching = ref(false);

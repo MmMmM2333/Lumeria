@@ -3,7 +3,8 @@ import { createLaunchpadApps, type LaunchpadAppsOptions } from "../application/l
 import { createNativeStateHost } from "../application/stateHost.js";
 import { catalogPort } from "../platform/launchpadPorts.js";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
-import type { LaunchpadApiBridge, ScanStats } from "../api/launchpadApi.js";
+import type { LaunchpadApiBridge } from "../api/launchpadApi.js";
+import type { ScanStats } from "../platform/launchpadContracts.js";
 import { createLaunchpadLayoutHelpers } from "../domain/launchpadLayout.js";
 import type { LaunchpadApp, LaunchpadFolder, LaunchpadItem, LaunchpadPages } from "../domain/launchpadLayout.js";
 import type { CatalogSource, CatalogSourceState } from "../domain/applicationCatalog.js";

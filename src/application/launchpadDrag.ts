@@ -8,7 +8,7 @@ import {
   FOLDER_HOVER_STICKY_MARGIN,
   PAGE_EDGE_SIZE,
   PAGE_TURN_DELAY,
-} from "../composables/launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import {
   clamp,
   expandRect,
@@ -79,7 +79,7 @@ import type {
   GroupTransferRuntimeReleaseEntry,
   GroupTransferRuntimeSourceEntry,
 } from "../rendering/desktopScenePort.js";
-import type { FolderMotionGeometry } from "../composables/useFolderMotionGeometry.js";
+import type { FolderMotionGeometry } from "../rendering/folderMotionGeometry.js";
 
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;

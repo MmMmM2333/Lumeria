@@ -1,5 +1,5 @@
 import type { StateHost } from "./stateHost.js";
-import { ALT_EDIT_DELAY } from "../composables/launchpadConstants.js";
+import { ALT_EDIT_DELAY } from "../domain/launchpadConstants.js";
 
 export type AltKeyEvent = Readonly<{ code?: string; key?: string; repeat?: boolean }>;
 

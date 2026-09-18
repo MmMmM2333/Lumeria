@@ -24,12 +24,11 @@ import {
   type SupportedLocale,
 } from "./locale.js";
 
-type TranslationPrimitive = string | number;
-type TranslationValues = Readonly<Record<string, TranslationPrimitive>>;
+import type { TranslationPort, TranslationValues } from "./translationPort.js";
 type DateTimeFormatKey = "scanTimestamp";
 type NumberFormatKey = "decimal";
 
-export type LocalizationText = Readonly<{
+export type LocalizationText = TranslationPort & Readonly<{
   availableLocales: readonly LocaleMetadata[];
   d(value: number | Date, formatKey?: DateTimeFormatKey): string;
   direction: ComputedRef<"ltr" | "rtl">;
@@ -37,7 +36,6 @@ export type LocalizationText = Readonly<{
   localePreference: DeepReadonly<Ref<string>>;
   n(value: number, formatKey?: NumberFormatKey): string;
   resolvedLocale: DeepReadonly<Ref<SupportedLocale>>;
-  t(key: unknown, values?: TranslationValues): string;
 }>;
 
 export type LocalizationRuntime = Readonly<{

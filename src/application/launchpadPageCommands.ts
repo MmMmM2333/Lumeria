@@ -7,7 +7,7 @@ import type {
   ReadonlyLaunchpadPages,
 } from "../domain/launchpadLayout.js";
 import type { IconFocus } from "../domain/iconFocus.js";
-import type { LocalizationText } from "../i18n/localization.js";
+import type { TranslationPort } from "../i18n/translationPort.js";
 
 type FolderLocation = Readonly<{
   index: number;
@@ -61,7 +61,7 @@ export type LaunchpadPageCommandsOptions = Readonly<{
   isDragActive: () => boolean;
   isFolderClosing?: Readonly<StateCell<boolean>>;
   isHomeRevealSettling?: Readonly<StateCell<boolean>>;
-  localizationText: Pick<LocalizationText, "t">;
+  localizationText: TranslationPort;
   openFolderId: Readonly<StateCell<string | null>>;
   openWarningDialog: (config: LaunchpadWarningDialogConfig) => void;
   pageIndex: Readonly<StateCell<number>>;

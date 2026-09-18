@@ -916,7 +916,7 @@ import type { useSettingsPanelModel } from "../../composables/useSettingsPanelMo
 import {
   normalizeWindowEffectAppearance,
   normalizeWindowEffectMaterial,
-} from "../../composables/useLaunchpadSettingsConfig.js";
+} from "../../application/launchpadSettingsConfig.js";
 import { useLocalization } from "../../i18n/localization.js";
 
 type InterfaceSettingsModel = ReturnType<typeof useSettingsPanelModel>["pages"]["interface"];

@@ -10,7 +10,7 @@ import type {
   LaunchFailureReport,
   LaunchTargetCheckRequest,
   ScanStats,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import type { LiveDesktopBackgroundSupport, LiveDesktopRuntimeConfig, LiveDesktopRuntimeStatus } from "../api/liveDesktopContract.js";
 import type { CatalogScanFilters, CatalogScanRoot, CatalogSource, ScannedCatalogApp } from "../domain/applicationCatalog.js";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
@@ -60,7 +60,7 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
   WINDOW_MODE_WINDOWED,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 type UnknownRecord = Record<string, unknown>;
 

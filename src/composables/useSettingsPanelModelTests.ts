@@ -1,5 +1,5 @@
 import { computed, ref } from "vue";
-import type { BackgroundLayoutContext } from "../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../platform/launchpadContracts.js";
 import {
   normalizeAppearancePreference,
 } from "../domain/appearancePreference.js";

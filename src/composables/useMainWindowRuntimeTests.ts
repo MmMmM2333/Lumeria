@@ -6,7 +6,7 @@ import {
   WINDOW_EFFECT_APPEARANCE_SYSTEM,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
   WINDOW_MODE_WINDOWED,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { useMainWindowRuntime } from "./useMainWindowRuntime.js";
 import type { MainWindowPort } from "../platform/launchpadPorts.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";

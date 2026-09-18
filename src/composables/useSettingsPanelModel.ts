@@ -7,7 +7,7 @@ import type {
   LiveDesktopBackgroundSupport,
   LiveDesktopRuntimeStatus,
   MainWindowEffectsSupport,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { cx } from "../domain/launchpadLayout.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";
@@ -37,7 +37,7 @@ import { mainWindowShortcutFromKeyboardEvent } from "../platform/mainWindowShort
 import { rgbArrayToHex } from "../domain/backgroundAcrylicParams.js";
 import type { AcrylicParameters } from "../domain/layoutDocument.js";
 import { useBackgroundImagePixelSize } from "./useBackgroundImagePixelSize.js";
-import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./launchpadConstants.js";
+import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../domain/launchpadConstants.js";
 import type { useLaunchpadApps } from "./useLaunchpadApps.js";
 import type { useLaunchpadSettings } from "./useLaunchpadSettings.js";
 import type { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
@@ -86,12 +86,12 @@ import {
   backgroundSourceUsesLiveDesktop,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import type {
   BackgroundAcrylicProfileKey,
   WindowEffectAppearance,
   WindowEffectMaterial,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
 import {

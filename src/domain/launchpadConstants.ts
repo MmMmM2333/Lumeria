@@ -6,7 +6,7 @@ export {
   DEFAULT_ROWS,
   ICON_SIZE_MAX,
   ICON_SIZE_MIN,
-} from "../domain/launchpadGridDefaults.js";
+} from "./launchpadGridDefaults.js";
 export const ICON_SIZE_STEP = 8;
 export const FOLDER_DRAG_SORT_GATE_DURATION = 430;
 export const DRAG_INTENT_IDLE_DELAY = 140;

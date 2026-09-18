@@ -12,13 +12,13 @@ import {
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
   homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
-import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
+import { DESKTOP_CLOSE_SCALE } from "../domain/launchpadConstants.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import type { LaunchpadViewStateOptions } from "./useLaunchpadViewState.js";
 

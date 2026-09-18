@@ -691,7 +691,7 @@ import {
   BACKGROUND_EFFECT_BLUR,
   clampBackgroundBlurStrength,
   normalizeBackgroundEffect,
-} from "../composables/useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS,

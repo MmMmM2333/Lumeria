@@ -18,8 +18,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type { CSSProperties, PropType } from "vue";
 import {
   loadCachedBackgroundImageDataUrl,
-  type BackgroundLayoutContext,
 } from "../../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../../platform/launchpadContracts.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";

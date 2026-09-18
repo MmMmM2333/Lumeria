@@ -14,7 +14,7 @@ import {
   type LaunchpadDragPayload,
   type LaunchpadDragPointerEvent,
 } from "./useLaunchpadDrag.js";
-import { PAGE_TURN_DELAY } from "./launchpadConstants.js";
+import { PAGE_TURN_DELAY } from "../domain/launchpadConstants.js";
 import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
 import type {
   GroupTransferAppItem,

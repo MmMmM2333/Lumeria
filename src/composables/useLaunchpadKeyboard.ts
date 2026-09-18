@@ -1,5 +1,5 @@
 import { nextTick } from "vue";
-import { DEV_OPEN_DESKTOP_SHORTCUT_CODE } from "./launchpadConstants.js";
+import { DEV_OPEN_DESKTOP_SHORTCUT_CODE } from "../domain/launchpadConstants.js";
 import {
   getElementFromRef,
   type DomRefSource,

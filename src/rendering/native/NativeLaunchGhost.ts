@@ -1,7 +1,7 @@
 import { createNativeText } from "./nativeTypography.js";
 import { BlurFilter, Container, Rectangle, Sprite, Text } from "pixi.js";
 import type { LaunchGhost } from "../../application/launchpadLaunchFlow.js";
-import { APP_LAUNCH_DURATION } from "../../composables/launchpadConstants.js";
+import { APP_LAUNCH_DURATION } from "../../domain/launchpadConstants.js";
 import { motion, killMotionOf } from "../pixi/animation/motionTween.js";
 
 export function fadeNativeLaunchpadChrome(nodes:readonly Container[],visible:boolean,immediate=false):void{

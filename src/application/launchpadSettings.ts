@@ -4,9 +4,9 @@ import { readErrorMessage } from "../application/errorMessage.js";
 import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";
 import type { LaunchpadIconVariant } from "../domain/launchpadIconVariant.js";
-import type { MainWindowEffectsSupport } from "../api/launchpadApi.js";
+import type { MainWindowEffectsSupport } from "../platform/launchpadContracts.js";
 import type { LocaleState } from "../i18n/locale.js";
-import type { LocalizationText } from "../i18n/localization.js";
+import type { TranslationPort } from "../i18n/translationPort.js";
 import type {
   AutostartPort,
   BackgroundAssetPort,
@@ -85,9 +85,9 @@ import {
   normalizeWindowEffectMaterial,
   normalizeWindowMode,
   resolveWindowEffectMaterialForSupport,
-} from "../composables/useLaunchpadSettingsConfig.js";
-import type { NormalizedLiveDesktopBackgroundSupport } from "../composables/useLaunchpadSettingsConfig.js";
-import { backgroundEffectUsesPixi } from "../rendering/backgroundPort.js";
+} from "./launchpadSettingsConfig.js";
+import type { NormalizedLiveDesktopBackgroundSupport } from "./launchpadSettingsConfig.js";
+import { backgroundEffectUsesPixi } from "../rendering/backgroundCapability.js";
 
 const DEFAULT_SETTINGS_THEME_PREFERENCE = APPEARANCE_DARK;
 
@@ -125,7 +125,7 @@ export type LaunchpadSettingsOptions = Readonly<{
   layout: Pick<ReturnType<typeof createLaunchpadLayoutState>, "captureConfiguration" | "applyConfiguration" | "createConfigurationRollback">;
   liveDesktopSupport: Readonly<{ value: Partial<NormalizedLiveDesktopBackgroundSupport> }>;
   localeRuntime: Pick<LocaleRuntimePort, "applyPreference">;
-  localizationText: Pick<LocalizationText, "t">;
+  localizationText: TranslationPort;
   mainWindow: LaunchpadSettingsMainWindow;
 }>;
 

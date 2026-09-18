@@ -1,4 +1,4 @@
-import { APP_LAUNCH_DURATION } from "./launchpadConstants.js";
+import { APP_LAUNCH_DURATION } from "../domain/launchpadConstants.js";
 
 export const panelSpring = { duration: 0.34, ease: "power3.out" };
 export const homeChromeTransition = { duration: 0.24, ease: "power2.out" };

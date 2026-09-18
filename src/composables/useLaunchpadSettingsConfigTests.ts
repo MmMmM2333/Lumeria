@@ -25,7 +25,7 @@ import {
   normalizeWindowEffectsSupport,
   normalizeWindowMode,
   resolveWindowEffectMaterialForSupport,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 export function runLaunchpadSettingsConfigTests() {
   const assert = (condition: unknown, message: string) => {

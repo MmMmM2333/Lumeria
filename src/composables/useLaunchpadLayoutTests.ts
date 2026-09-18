@@ -5,7 +5,7 @@ import {
   DEFAULT_FOLDER_ROWS,
   DEFAULT_ICON_SIZE,
   DEFAULT_ROWS,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import { useLaunchpadLayout } from "./useLaunchpadLayout.js";
 import type { FolderPageTurnPhase } from "./useLaunchpadLayout.js";
 import type { LaunchpadApp } from "../domain/launchpadLayout.js";

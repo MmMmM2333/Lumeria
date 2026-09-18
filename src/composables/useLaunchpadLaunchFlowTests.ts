@@ -2,11 +2,11 @@ import { nextTick, ref, shallowRef } from "vue";
 import {
   APP_LAUNCH_DURATION,
   DESKTOP_CLOSE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import { useLaunchpadLaunchFlow } from "./useLaunchpadLaunchFlow.js";
 import type { LaunchIconFocus, LaunchTargetStatus } from "./useLaunchpadLaunchFlow.js";
 import { createLocalization } from "../i18n/localization.js";
-import type { LaunchFailureReport, LaunchResult } from "../api/launchpadApi.js";
+import type { LaunchFailureReport, LaunchResult } from "../platform/launchpadContracts.js";
 import type {
   LaunchpadApp,
   ReadonlyLaunchpadApp,

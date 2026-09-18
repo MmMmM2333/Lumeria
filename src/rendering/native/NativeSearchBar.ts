@@ -1,6 +1,7 @@
 import { createNativeText, getNativeTextResolution } from "./nativeTypography.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
-import { createTextInputHost, nativeHost, type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import { createTextInputHost, type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import type { NativeClipboardPort } from "../../platform/clipboardPort.js";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import type { NativeNavigationKey } from "../../native/nativeStartup.js";
@@ -24,7 +25,7 @@ export class NativeSearchBar extends Container {
   focusForTyping():void{this.input.focus();this.#explicitEditing=false;}
   focusEditor():void{this.input.focus();this.#explicitEditing=true;}
   readonly #offRecovered: () => void;
-  constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void) {
+  constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void, clipboard: NativeClipboardPort) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
     const nativeEvents = (): Parameters<typeof createTextInputHost>[0]["nativeInput"] => ({
       ...app.nativeInput,
@@ -33,15 +34,7 @@ export class NativeSearchBar extends Container {
       }),
     });
     this.host = createTextInputHost({ root: app.stage, textResolution:getNativeTextResolution, nativeInput: nativeEvents(),
-      nativeTextInput: app.textInput, clipboard: {
-        writeText: text => nativeHost.platform.clipboard.writeText(text),
-        readText: async () => {
-          const result = await nativeHost.platform.clipboard.readText();
-          if (!result.ok) return result;
-          if (result.value !== null && typeof result.value !== "string") throw new TypeError("Native clipboard text must be a string or null");
-          return { ok: true as const, value: result.value };
-        },
-      }, requestFrame: () => app.invalidate() });
+      nativeTextInput: app.textInput, clipboard, requestFrame: () => app.invalidate() });
     this.#offRecovered = app.on("recovered", () => this.host.rebindNativeInput(nativeEvents()));
     this.input = this.host.create({ width: 285, height: 27, chrome: false,
       style: { fontFamily: [...PIXI_UI_FONT_FAMILY], fontSize: 13, lineHeight: 19, padding: 4,

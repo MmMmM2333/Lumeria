@@ -14,7 +14,7 @@ import type {
   PickedBackgroundImage,
   PickedLaunchFile,
   ScanAppsResult,
-} from "../api/launchpadApi.js";
+} from "./launchpadContracts.js";
 import type { CatalogScanFilters, CatalogScanRoot } from "../domain/applicationCatalog.js";
 import type { LayoutDocument, LayoutSettings } from "../domain/layoutDocument.js";
 import type { LocaleRuntimeOutcome } from "./localeRuntime.js";

@@ -60,6 +60,39 @@ function registrationCodes(testSource: string, runnerSource: string): string[] {
 }
 
 {
+  const direct = violationCodes({
+    "src/application/example.ts": 'import type { Ref } from "vue"; export type Value = Ref<string>;',
+  });
+  assert.ok(direct.includes("application-host-dependency"), "type-only framework coupling must be detected");
+  const typeQuery = violationCodes({ "src/application/example.ts": 'export type Value = import("vue").Ref<string>;' });
+  assert.ok(typeQuery.includes("application-host-dependency"), "inline import types must be checked too");
+  const forwarded = violationCodes({
+    "src/application/example.ts": 'export { value } from "../platform/forward.js";',
+    "src/platform/forward.ts": 'export { value } from "../composables/owner.js";',
+    "src/composables/owner.ts": 'export const value = 1;',
+  });
+  assert.ok(forwarded.includes("application-host-dependency"), "re-exports cannot hide a reversed dependency");
+  const dynamic = violationCodes({
+    "src/application/example.ts": 'export const read = () => import("../api/launchpadApi.js");',
+    "src/api/launchpadApi.ts": 'export const value = 1;',
+  });
+  assert.ok(dynamic.includes("application-host-dependency"), "dynamic imports cannot evade the application boundary");
+  const builtin = violationCodes({ "src/application/example.ts": 'import { readFileSync } from "fs"; export const read = readFileSync;' });
+  assert.ok(builtin.includes("application-host-dependency"), "bare Node builtins are also host dependencies");
+  const testReexport = violationCodes({
+    "src/application/example.ts": 'export { value } from "./helper.test.js";',
+    "src/application/helper.test.ts": 'import { ref } from "vue"; export const value = ref(1);',
+  });
+  assert.ok(testReexport.includes("application-host-dependency"), "production cannot use a test file to bypass the boundary");
+  const allowed = violationCodes({
+    "src/application/example.ts": 'import type { Port } from "../platform/port.js"; export type Owner = Port;',
+    "src/platform/port.ts": 'export type Port = { read(): string };',
+    "src/application/exampleTests.ts": 'import { ref } from "vue"; export const fixture = ref(1);',
+  });
+  assert.ok(!allowed.includes("application-host-dependency"), "pure contracts and host integration tests remain legal");
+}
+
+{
   const codes = violationCodes(
     {
       "src/entry.ts": "export const value = 1;\n",

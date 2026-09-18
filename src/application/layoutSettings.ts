@@ -1,7 +1,7 @@
 import type {StateHost} from "./stateHost.js";
 import type {createLaunchpadLayoutState} from "./launchpadLayoutState.js";
 import type {LayoutSettings} from "../domain/layoutDocument.js";
-import {DEFAULT_ROWS,DEFAULT_COLS,DEFAULT_FOLDER_ROWS,DEFAULT_FOLDER_COLS,ICON_SIZE_STEP} from "../composables/launchpadConstants.js";
+import {DEFAULT_ROWS,DEFAULT_COLS,DEFAULT_FOLDER_ROWS,DEFAULT_FOLDER_COLS,ICON_SIZE_STEP} from "../domain/launchpadConstants.js";
 import {clampLaunchpadIconSize,normalizeFolderIconSizeMode,FOLDER_ICON_SIZE_MODE_CUSTOM} from "../domain/layoutConfiguration.js";
 import {clamp} from "../domain/launchpadLayout.js";
 type LaunchpadSettingsRuntimeOptions = {reclampPageIndices?:()=>void;schedulePageGridMetrics?:()=>void};
