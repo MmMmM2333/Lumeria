@@ -7,7 +7,7 @@ import { rgbArrayToHex, ACRYLIC_PARAM_STEP, ACRYLIC_TINT_STRENGTH_MIN, ACRYLIC_T
   ACRYLIC_SATURATION_MIN, ACRYLIC_SATURATION_MAX } from "../../domain/backgroundAcrylicParams.js";
 import { t } from "../../native/nativeLocalization.js";
 import { NATIVE_UI_FONT_FAMILY as PIXI_UI_FONT_FAMILY } from "./nativeTypography.js";
-import { NativeBackground, type NativeBackgroundConfig } from "./NativeBackground.js";
+import { NativeBackground, type NativeBackgroundConfig, type NativeBackgroundHost } from "./NativeBackground.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeFluentSlider } from "./NativeFluentSlider.js";
 import { NativeSegmentedControl } from "./NativeSegmentedControl.js";
@@ -35,6 +35,7 @@ export function nativeDraftBackground(settings:Settings):NativeBackgroundConfig 
 
 export function nativeBackgroundSettings(options:{
   settings:Settings;host:TextInputHost;renderer:Renderer;width:number;theme:NativeTheme;
+  renderHost?: NativeBackgroundHost;
   systemAppearance:"light"|"dark";size:{width:number;height:number};state:NativeBackgroundPanelState;
   invalidate():void;redraw():void;
   chooseColor?: ((color:number)=>Promise<number|null>) | undefined;
@@ -126,7 +127,7 @@ export function nativeBackgroundSettings(options:{
     return {chevron,header:b};
   };
   const preview=(effect:boolean,top:number)=>{
-    const view=new NativeBackground({renderer:options.renderer},invalidate);
+    const view=new NativeBackground(options.renderHost??{renderer:options.renderer},invalidate);
     view.visible=false;
     const previewWidth=Math.min(320,width*0.43),scale=previewWidth/options.size.width;
     view.label=`native-background-preview:${effect?"effect":"layer"}`;

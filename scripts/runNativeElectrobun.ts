@@ -4,6 +4,9 @@ import { dirname, join, resolve } from "node:path";
 import { runNativeProcess } from "./runNativeProcess.js";
 import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
+import { parseNativeStressOptions } from "../src/native/diagnostics/nativeStressConfig.js";
+import { installNativeStressFixture } from "./nativeStressFixture.js";
+import { summarizeNativeStress } from "./summarizeNativeStress.js";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const modeArgument = process.argv[2] ?? "--smoke";
@@ -11,12 +14,21 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
   throw new Error(`Expected --dev or --smoke, received: ${modeArgument}`);
 }
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
+const stress = process.argv.includes("--stress") ? parseNativeStressOptions(process.argv) : null;
+if (stress && nativeMode !== "dev") throw new Error("Stress testing requires dev mode");
+if (!stress && process.argv.some(arg => arg.startsWith("--stress-"))) throw new Error("Stress options require --stress");
+if (stress && (process.argv.some(arg => ["--settings-only", "--folder-rename", "--restart-smoke", "--search", "--launch-visual"].includes(arg))
+  || Object.keys(process.env).some(key => /^(LAUNCHPAD_.*_BENCH|LAUNCHPAD_LIVE_DESKTOP_PROOF)$/.test(key) && process.env[key]))) {
+  throw new Error("Run stress separately from smoke/benchmark scenarios");
+}
+const stressDir = stress ? join(projectRoot, "artifacts", "native-stress", `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`) : null;
+if (stressDir) mkdirSync(stressDir, { recursive: true });
 const folderRenameSmoke = process.argv.includes("--folder-rename");
 const launchVisualSmoke = process.argv.includes("--launch-visual");
 const searchSmoke = process.argv.includes("--search");
 if (searchSmoke && nativeMode !== "smoke") throw new Error("Search verification requires smoke mode");
 if (launchVisualSmoke && nativeMode !== "smoke") throw new Error("Launch visual verification requires smoke mode");
-const isolated = nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
+const isolated = Boolean(stress) || nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
 const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
 const isolatedRuntime=runtimeArgument?resolve(runtimeArgument):null;
 if(isolatedRuntime&&!isolated)throw new Error("A separate runtime requires isolated data");
@@ -32,7 +44,8 @@ const runner = join(
 const artifactDir = join(projectRoot, "artifacts", "native-smoke");
 if (nativeMode === "smoke" || folderRenameSmoke) mkdirSync(artifactDir, { recursive: true });
 const markerPath = join(tmpdir(), `launchpad-native-smoke-${process.pid}.json`);
-const dataDir = mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
+const dataDir = stressDir ? join(stressDir, "data") : mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
+if (stressDir) mkdirSync(dataDir);
 const restartPath=join(dataDir,"restart-request.json");
 let restartAttempt=0;
 const iconPath = join(dataDir, "smoke-icon.png");
@@ -239,7 +252,13 @@ if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){
   fixture.settings.backgroundBaseOpacity=0;fixture.settings.backgroundLiveDesktopOpacity=100;
   fixture.settings.windowEffectMaterial="none";fixture.settings.mainWindowShortcut=null;
 }
+if (stress) installNativeStressFixture(fixture, dataDir, stress);
+if (stressDir) {
+  writeFileSync(join(stressDir, "config.json"), JSON.stringify(stress, null, 2));
+  console.log(`Stress artifacts: ${stressDir}\nCreate stop.request there to stop actions and preserve the process.`);
+}
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
+if (stressDir) copyFileSync(join(dataDir, "layout.json"), join(stressDir, "initial-layout.json"));
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
 try {
@@ -253,6 +272,8 @@ try {
     env: {
       ...process.env,
       LUMERIA_NATIVE_DIAGNOSTICS_BUILD: "1",
+      ...(stressDir ? { LAUNCHPAD_NATIVE_STRESS_DIR: stressDir,
+        LAUNCHPAD_NATIVE_STRESS_MEMORY_SCRIPT: join(projectRoot, "scripts", "Capture-LumeriaMemory.ps1") } : {}),
       ...(!productRuntime||process.env.LAUNCHPAD_NATIVE_DATA_HOST?{LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
         projectRoot,
         "target",
@@ -283,6 +304,13 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
+  if (stressDir && status !== 130) {
+    const proofPath = join(stressDir, "result.json");
+    if (!existsSync(proofPath)) throw new Error("Stress process exited without a result; inspect retained logs");
+    const proof = JSON.parse(readFileSync(proofPath, "utf8"));
+    if (proof.status !== "passed") throw new Error(`Stress ${proof.status}: ${proof.error ?? "stopped before completion"}`);
+    console.log(`Stress passed: ${stressDir}`);
+  }
   if(process.env.LAUNCHPAD_INTERACTION_BENCH&&status!==130){
     const proofPath=join(process.env.LAUNCHPAD_INTERACTION_BENCH,"proof.json");
     if(!existsSync(proofPath))throw new Error("Native interaction benchmark did not produce evidence");
@@ -435,9 +463,13 @@ try {
     }
   }
 } finally {
+  if (stressDir) {
+    try { await summarizeNativeStress(stressDir); }
+    catch (error) { console.error("Stress summary could not be generated; raw evidence is retained:", error); }
+  }
   if(nativeMode==="smoke"&&existsSync(join(dataDir,"logs","native-runtime.log"))){
     copyFileSync(join(dataDir,"logs","native-runtime.log"),join(artifactDir,"native-runtime.log"));
   }
-  rmSync(dataDir, { force: true, recursive: true });
+  if (!stressDir) rmSync(dataDir, { force: true, recursive: true });
   if (nativeMode === "smoke" || folderRenameSmoke) rmSync(markerPath, { force: true });
 }

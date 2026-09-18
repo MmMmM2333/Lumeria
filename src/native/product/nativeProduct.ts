@@ -1109,6 +1109,15 @@ try {
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode === "dev" && process.env.LAUNCHPAD_NATIVE_STRESS_DIR){
+    await (await import("../diagnostics/nativeStress.js")).runNativeStress({
+      app,scene,editing:editing!,folder:folderFlow,icons:iconTextures,background:desktopBackground,backgroundConfig,
+      pages:()=>layoutState.presentation.pages.value,page:commitDesktopPage,folderPage:setFolderPageIndex,
+      closeFolder,show:showLaunchpad,hide:dismissLaunchpad,quit:()=>closeCoordinator.requestQuit(),
+    });
+    await closed;return;
+  }
+
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_INTERACTION_BENCH){
     await (await import("../diagnostics/nativeInteractionBench.js")).runNativeInteractionBench({app,editing:editing!,scene,
       items:()=>activePageItems,present:name=>present(app,name),waitFor,quit:()=>closeCoordinator.requestQuit()});return;

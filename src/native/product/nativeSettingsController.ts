@@ -142,7 +142,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
         :tab==="about"
         ?nativeAboutSettingsPage(width,ports.settingsTheme(),ports.brandingTextures().get(settings.draft.launchpadIconVariant.value)!)
         :nativeLayoutSettingsPage(settings,ports.getSearchBar().host,width,()=>app.invalidate(),
-          ports.settingsTheme(),()=>shell?.redraw(),{renderer:app.renderer,size:app.contentSize,state:backgroundPanelState,systemAppearance:ports.getSystemAppearance(),
+          ports.settingsTheme(),()=>shell?.redraw(),{renderer:app.renderer,renderHost:app,size:app.contentSize,state:backgroundPanelState,systemAppearance:ports.getSystemAppearance(),
             chooseColor:color=>ports.chooseColor(color)},windowPanelState,()=>ports.getEditing()!.pageCommands.confirmForceFillAllPages()),
       apply:async()=>{
         if(!stopShortcutRecording())throw new Error(settings.presentation.mainWindowShortcutError.value);

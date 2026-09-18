@@ -18,7 +18,7 @@ import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 
 export function nativeLayoutSettingsPage(fullSettings:ReturnType<typeof createLaunchpadSettings>,host:TextInputHost,
   width:number,invalidate:()=>void,theme:NativeTheme,redraw:()=>void,
-  backgroundOptions:Pick<Parameters<typeof nativeBackgroundSettings>[0],"renderer"|"size"|"state"|"systemAppearance"|"chooseColor">,
+  backgroundOptions:Pick<Parameters<typeof nativeBackgroundSettings>[0],"renderer"|"renderHost"|"size"|"state"|"systemAppearance"|"chooseColor">,
   windowState:NativeWindowPanelState,compact:()=>void):NativeSettingsContent{
   const settings=fullSettings.layoutSettings;
   const node=new Container(),controls:NativeSettingsControl[]=[],inputs:NativeSpinButton[]=[];
