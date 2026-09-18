@@ -1,8 +1,12 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isNativeBridgeAvailable } from "./launchpadApi.js";
-
 import { WINDOW_RESIZE_DIRECTIONS, type WindowResizeDirection } from "../platform/windowChromeContracts.js";
 export { WINDOW_RESIZE_DIRECTIONS, type WindowResizeDirection } from "../platform/windowChromeContracts.js";
+
+// Reference-test-only window chrome adapter.
+//
+// This module no longer imports `@tauri-apps/api/window` and never looks for a
+// Tauri window on the global scope. Without a bridge injected through
+// `setWindowChromeBridgeForTests` every call reports false, which is the same
+// contract the browser fixture already relied on.
 type WindowChromeBridge = Readonly<{
   startDragging?: () => void | Promise<void>;
   startResizeDragging?: (direction: WindowResizeDirection) => void | Promise<void>;
@@ -27,13 +31,7 @@ export function setWindowChromeBridgeForTests(bridge: WindowChromeBridge | null 
 }
 
 function getWindowChromeBridge(): WindowChromeBridge | null {
-  if (windowChromeBridgeOverride) return windowChromeBridgeOverride;
-  if (!isNativeBridgeAvailable()) return null;
-  try {
-    return getCurrentWindow();
-  } catch {
-    return null;
-  }
+  return windowChromeBridgeOverride;
 }
 
 export function normalizeWindowResizeDirection(direction: unknown): WindowResizeDirection | null {

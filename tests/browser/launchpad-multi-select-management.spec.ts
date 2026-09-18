@@ -88,7 +88,7 @@ async function waitForFixture(page: Page) {
       getState: () => getInstance().setupState,
     };
   });
-  await page.goto("/?fixture=multi-select");
+  await page.goto("/tests/browser/reference/index.html?fixture=multi-select");
   await page.waitForFunction(() => {
     const state = document.querySelector<MultiSelectAppElement>("#app")
       ?.__vue_app__?._instance?.setupState;

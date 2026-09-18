@@ -118,33 +118,33 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { CSSProperties, Ref } from "vue";
-import LaunchpadDialogs from "./components/LaunchpadDialogs.vue";
-import LaunchpadChromeFrame from "./components/LaunchpadChromeFrame.vue";
-import LaunchpadOverlays from "./components/LaunchpadOverlays.vue";
-import LaunchpadSelectionToolbar from "./components/LaunchpadSelectionToolbar.vue";
-import SettingsPanel from "./components/SettingsPanel.vue";
-import WindowChromeOverlay from "./components/WindowChromeOverlay.vue";
+import LaunchpadDialogs from "../../../src/components/LaunchpadDialogs.vue";
+import LaunchpadChromeFrame from "../../../src/components/LaunchpadChromeFrame.vue";
+import LaunchpadOverlays from "../../../src/components/LaunchpadOverlays.vue";
+import LaunchpadSelectionToolbar from "../../../src/components/LaunchpadSelectionToolbar.vue";
+import SettingsPanel from "../../../src/components/SettingsPanel.vue";
+import WindowChromeOverlay from "../../../src/components/WindowChromeOverlay.vue";
 import type {
   IconContextMenuActionPayload,
   IconContextMenuPointerEvent,
   LaunchpadOverlaysExpose,
-} from "./components/iconContextMenuGeometry.js";
-import PixiBackgroundSurface from "./rendering/pixi/PixiBackgroundSurface.vue";
-import PixiDesktopSurface from "./rendering/pixi/PixiDesktopSurface.vue";
+} from "../../../src/components/iconContextMenuGeometry.js";
+import PixiBackgroundSurface from "../../../src/rendering/pixi/PixiBackgroundSurface.vue";
+import PixiDesktopSurface from "../../../src/rendering/pixi/PixiDesktopSurface.vue";
 import {
   assertSceneEvent,
   makeControlledPointerInput,
   makeControlledWheelInput,
-} from "./rendering/sceneEvents.js";
+} from "../../../src/rendering/sceneEvents.js";
 import type {
   ControlledPointerInput,
   GroupReleaseCompletionPayload,
   SceneEventData,
   SceneEventDataObject,
-} from "./rendering/sceneEvents.js";
-import { assertCompleteDesktopSceneFrame, makeDesktopSceneFrame } from "./rendering/sceneFrame.js";
-import type { CompleteDesktopSceneFrame } from "./rendering/sceneFrame.js";
-import { makeDesktopSceneRuntimeAdapter } from "./rendering/sceneRuntime.js";
+} from "../../../src/rendering/sceneEvents.js";
+import { assertCompleteDesktopSceneFrame, makeDesktopSceneFrame } from "../../../src/rendering/sceneFrame.js";
+import type { CompleteDesktopSceneFrame } from "../../../src/rendering/sceneFrame.js";
+import { makeDesktopSceneRuntimeAdapter } from "../../../src/rendering/sceneRuntime.js";
 import {
   getSingleStageDiagnosticsOptions,
   getSingleStageRenderKey,
@@ -153,47 +153,47 @@ import {
   resolveFolderPixiActivityUpdate,
   resolveFolderSourceGhostedIds,
   shouldClearFolderClosingHandoffRetainId,
-} from "./rendering/desktopScenePort.js";
-import { getBackgroundLayoutContext } from "./api/launchpadApi.js";
-import { loadBackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
-import type { BackgroundImagePixelSize } from "./composables/useBackgroundImagePixelSize.js";
-import { useLaunchpadController } from "./composables/useLaunchpadController.js";
+} from "../../../src/rendering/desktopScenePort.js";
+import { getBackgroundLayoutContext } from "../../../src/api/launchpadApi.js";
+import { loadBackgroundImagePixelSize } from "../../../src/composables/useBackgroundImagePixelSize.js";
+import type { BackgroundImagePixelSize } from "../../../src/composables/useBackgroundImagePixelSize.js";
+import { useLaunchpadController } from "../../../src/composables/useLaunchpadController.js";
 import type {
   LaunchpadLayoutFailureNoticeConfig,
   LaunchpadNoticeIntent,
   LaunchpadWarningDialog,
-} from "./composables/useLaunchpadNotices.js";
+} from "../../../src/composables/useLaunchpadNotices.js";
 import type {
   LaunchpadGestureEventListener,
   LaunchpadGesturePointerEvent,
   LaunchpadGesturePointerTarget,
-} from "./composables/useLaunchpadInputGestures.js";
-import type { LaunchpadDragVisualState } from "./composables/useLaunchpadDrag.js";
-import { useLocalization, useLocalizationRuntime } from "./i18n/localization.js";
-import { backgroundSourceUsesLiveDesktop } from "./application/launchpadSettingsConfig.js";
-import { resolveCssBackgroundImagePlacement } from "./domain/backgroundImageLayout.js";
-import { isLiveDesktopExperimentEnabled } from "./domain/experimentalFeatures.js";
-import { runtimePerformanceMetrics } from "./diagnostics/runtimePerformanceMetrics.js";
+} from "../../../src/composables/useLaunchpadInputGestures.js";
+import type { LaunchpadDragVisualState } from "../../../src/composables/useLaunchpadDrag.js";
+import { useLocalization, useLocalizationRuntime } from "../../../src/i18n/localization.js";
+import { backgroundSourceUsesLiveDesktop } from "../../../src/application/launchpadSettingsConfig.js";
+import { resolveCssBackgroundImagePlacement } from "../../../src/domain/backgroundImageLayout.js";
+import { isLiveDesktopExperimentEnabled } from "../../../src/domain/experimentalFeatures.js";
+import { runtimePerformanceMetrics } from "../../../src/diagnostics/runtimePerformanceMetrics.js";
 import {
   isLaunchpadContextMenuInteractionBlocked,
   resolveLaunchpadContextMenuTarget,
-} from "./domain/input/launchpadPointerTarget.js";
-import type { LaunchSource } from "./domain/input/launchpadPointerTarget.js";
+} from "../../../src/domain/input/launchpadPointerTarget.js";
+import type { LaunchSource } from "../../../src/domain/input/launchpadPointerTarget.js";
 import type {
   ReadonlyLaunchpadApp,
   ReadonlyLaunchpadFolder,
   ReadonlyLaunchpadItem,
-} from "./domain/launchpadLayout.js";
-import type { LaunchContext } from "./domain/launchContext.js";
-import { ICON_BOUNDS_KIND } from "./rendering/desktopScenePort.js";
+} from "../../../src/domain/launchpadLayout.js";
+import type { LaunchContext } from "../../../src/domain/launchContext.js";
+import { ICON_BOUNDS_KIND } from "../../../src/rendering/desktopScenePort.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
   LIVE_DESKTOP_DEBUG_SETTINGS_CHANGED_EVENT,
   LIVE_DESKTOP_DEBUG_STORAGE_KEYS,
   readLiveDesktopDebugSettings,
-} from "./diagnostics/liveDesktopDebugSettings.js";
-import type { LiveDesktopDebugSettings } from "./diagnostics/liveDesktopDebugSettings.js";
-import type { CapturedFolderOriginBounds } from "./rendering/desktopScenePort.js";
+} from "../../../src/diagnostics/liveDesktopDebugSettings.js";
+import type { LiveDesktopDebugSettings } from "../../../src/diagnostics/liveDesktopDebugSettings.js";
+import type { CapturedFolderOriginBounds } from "../../../src/rendering/desktopScenePort.js";
 import {
   resetDesktopLayoutDebugParams,
   resolveDesktopDragHitDebugOptions,
@@ -201,10 +201,10 @@ import {
   resolveDesktopLayoutDebugStyle,
   updateDesktopLayoutDebugParams,
   useDesktopLayoutDebugParams,
-} from "./components/backgroundDebug/desktopLayoutDebugSettings.js";
-import appPackage from "../package.json";
-import "./styles/launchpad.css";
-import "./styles/settings.css";
+} from "../../../src/components/backgroundDebug/desktopLayoutDebugSettings.js";
+import appPackage from "../../../package.json";
+import "../../../src/styles/launchpad.css";
+import "../../../src/styles/settings.css";
 
 const appVersion = appPackage.version;
 const props = withDefaults(defineProps<{
@@ -415,7 +415,7 @@ const {
 
 const isAcrylicDebugPanelEnabled = import.meta.env.DEV;
 const BackgroundDebugPanel = import.meta.env.DEV
-  ? defineAsyncComponent(() => import("./components/BackgroundDebugPanel.vue"))
+  ? defineAsyncComponent(() => import("../../../src/components/BackgroundDebugPanel.vue"))
   : null;
 const desktopLayoutDebugParams = useDesktopLayoutDebugParams();
 const desktopLayoutDebugStyle = computed(() => (
@@ -450,7 +450,7 @@ if (import.meta.env.DEV) {
 
   async function mountLaunchpadE2eProbe() {
     if (launchpadE2eProbeDisposed || !isMultiSelectFixture) return;
-    const { installLaunchpadE2eProbe } = await import("./testing/launchpadE2eProbe.js");
+    const { installLaunchpadE2eProbe } = await import("../../../src/testing/launchpadE2eProbe.js");
     if (launchpadE2eProbeDisposed || !isMultiSelectFixture) return;
     disposeLaunchpadE2eProbe = installLaunchpadE2eProbe({
       getIconBounds: getLaunchpadE2eIconBounds,

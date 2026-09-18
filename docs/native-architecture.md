@@ -1,7 +1,6 @@
 # Native product boundaries
 
-The Native and retained Web/Tauri products share business rules and persisted
-documents. Each host supplies capabilities and a state adapter; it does not keep
+The Native product and browser reference test host share business rules. Each host supplies capabilities and a state adapter; it does not keep
 a second copy of the document. The Rust package boundary is documented in
 [native-data-service.md](native-data-service.md).
 
@@ -11,7 +10,7 @@ a second copy of the document. The Rust package boundary is documented in
 | `src/application` | Apps, settings transactions, layout, selection, drag, notices and save coordination |
 | `src/platform/launchpadContracts.ts` | Shared host-facing result/value types; no Tauri runtime |
 | `src/platform/launchpadPortContracts.ts` | Capabilities consumed by shared application services |
-| `src/platform/launchpadPorts.ts` and `src/api/launchpadApi.ts` | Retained Web/Tauri capability implementations |
+| `src/platform/launchpadPorts.ts` and `src/api/launchpadApi.ts` | Injectable browser reference test adapters; no Tauri runtime |
 | `src/i18n/translationPort.ts` | Text lookup required by business rules without Vue reactive types |
 | `src/native/nativeDataHost.ts` | Validated business operations over the Rust data service |
 | `src/native/nativeDataTransport.ts` | One serial subprocess stream, request order and draining shutdown |
@@ -61,6 +60,8 @@ markers are absent. GPU captures prove the captured rendering only; a skipped
 mixed-DPI or physical-device check is not evidence for that environment.
 
 This boundary does not promise a plug-in renderer or a cost-free future PixiRust
-migration. Old product retirement, version/CI work and publication remain separate
-stages. The current implementation and acceptance status are maintained in
-[the release plan](open-source-release-plan.md#16-阶段四五实施状态2026-09-18).
+migration. The Tauri product is retired; its browser reference test host remains until
+its shared regression coverage has a replacement. Version/CI work and publication
+remain separate stages. Current packaging instructions are in the
+[Windows release guide](../release/windows/README.md); dated test reports record
+their own version and environment boundaries.

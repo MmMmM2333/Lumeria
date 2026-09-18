@@ -4,7 +4,7 @@ import type {} from "../../src/testing/launchpadE2eProbe.js";
 test.use({ locale: "en-US", viewport: { width: 900, height: 650 } });
 
 test("incremental viewport resizing preserves icon hit targets", async ({ page }) => {
-  await page.goto("/?fixture=multi-select");
+  await page.goto("/tests/browser/reference/index.html?fixture=multi-select");
   await page.waitForFunction(() => window.__LUMERIA_E2E__?.version === 1);
   const readBounds = () => page.evaluate(() => window.__LUMERIA_E2E__!.getIconBounds("app-4-calendar"));
   await expect.poll(async () => {
@@ -32,7 +32,7 @@ test("incremental viewport resizing preserves icon hit targets", async ({ page }
 });
 
 test("continuous browser wheel input settles and reverses between pages", async ({ page }) => {
-  await page.goto("/?fixture=multi-select");
+  await page.goto("/tests/browser/reference/index.html?fixture=multi-select");
   const dots = page.locator(".page-dots .page-dot");
   await expect(dots.nth(1)).toBeVisible();
   await expect(dots.nth(0)).toHaveClass(/page-dot-active/);

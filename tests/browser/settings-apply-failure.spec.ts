@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test.use({ locale: "en-US" });
 
 test("settings failures stay visible and retain the draft for retry", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   await page.getByRole("button", { name: "Open settings" }).click();
   const dialog = page.getByRole("dialog", { name: "Settings" });
   await expect(dialog).toBeVisible();

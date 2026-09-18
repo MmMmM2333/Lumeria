@@ -1,19 +1,16 @@
 # Native data service
 
 The Rust workspace separates shared Windows/data capabilities (`lumeria-core`),
-the serial JSON-lines process (`lumeria-native-data`), and the retained Tauri host
-(`src-tauri`, package `lumeria`). The core has no Tauri or Electrobun dependency.
-Windows-specific implementations stay explicit; this does not establish support
-for other operating systems. Tauri owns its commands, application handles,
-window/WebView/tray lifecycle, and path resolution.
+the serial JSON-lines process (`lumeria-native-data`), and the in-process
+Live Desktop library (`lumeria-live-desktop`). The core has no Tauri or Electrobun
+dependency. Windows-specific implementations remain explicit. The Tauri host
+is retired; its final version is preserved at `archive/tauri-vue-final`.
 
 Build from the repository root with `npm run native:data:build`. The workspace
 uses one root `Cargo.lock` and the root `target` directory. The release executable
 is `target/release/lumeria_native_data.exe`; Electrobun copies it into
-`bun/lumeria-native-data.exe`. Old files under `src-tauri/target` are not build
-inputs. `npm run test:native-data` exercises the Rust tests and the actual release
-binary through the production TypeScript client. The retained host can be checked
-with `cargo check -p lumeria --all-targets --locked`.
+`bun/lumeria-native-data.exe`. `npm run test:native-data` exercises the Rust tests and the actual release
+binary through the production TypeScript client.
 
 ## Compatibility contract
 
@@ -52,6 +49,6 @@ launch error categories, or the protocol version. The TypeScript client retains
 serial request ordering and waits for outstanding requests during normal shutdown.
 
 The Native runtime notice collector starts at the `lumeria-native-data` workspace
-member. A retained Tauri package in `Cargo.lock` does not imply a data-service
+member and the Live Desktop library. Archived Tauri code does not imply a data-service
 runtime dependency. Check its actual normal/build graph with
 `cargo tree -p lumeria-native-data --edges normal,build --locked`.

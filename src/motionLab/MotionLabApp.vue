@@ -1,5 +1,5 @@
 <template>
-  <div class="motion-lab-root" data-motion-lab-root>
+  <div class="motion-lab-root" data-motion-lab-root :data-motion-lab-state="toolState">
     <aside class="motion-lab-sidebar">
       <header class="motion-lab-header">
         <span>{{ t("motionLab.title") }}</span>
@@ -78,9 +78,9 @@
       </section>
 
       <section class="motion-lab-toolbar">
-        <button type="button" @click="runSelectedScenario">{{ t("motionLab.actions.run") }}</button>
-        <button type="button" @click="resetLabScene">{{ t("debug.common.reset") }}</button>
-        <button type="button" @click="captureReplayTrace">{{ t("motionLab.actions.captureReplay") }}</button>
+        <button type="button" :disabled="!canRunScenario" @click="handleRunSelectedScenario">{{ t("motionLab.actions.run") }}</button>
+        <button type="button" :disabled="!isToolReady" @click="resetLabScene">{{ t("debug.common.reset") }}</button>
+        <button type="button" :disabled="!isToolReady" @click="captureReplayTrace">{{ t("motionLab.actions.captureReplay") }}</button>
         <button type="button" :disabled="!canSaveBaseline" @click="saveBaselineRun">{{ t("motionLab.actions.saveBaseline") }}</button>
         <button type="button" :disabled="!canCompareBaseline" @click="compareBaselineRun">{{ t("motionLab.actions.compareBaseline") }}</button>
         <button type="button" :disabled="!canCompareLast" @click="compareLastRun">{{ t("motionLab.actions.compareLast") }}</button>
@@ -320,11 +320,16 @@ type ParameterControl = RangeParameterControl | SelectParameterControl;
 interface ParameterGroup { controls: readonly ParameterControl[]; titleKey: string }
 interface MotionLabSceneWithStage extends MotionLabScene { stage: Container }
 interface RecordRunOptions { replaceCurrent?: boolean }
+type MotionLabToolState = "failed" | "initializing" | "ready";
 
 const pixiHostRef = ref<HTMLElement | null>(null);
 const selectedScenarioId = ref<MotionLabScenarioId>(MOTION_LAB_SCENARIOS[0]?.id || "folder-open");
-const previewStatusKey = ref<string>("motionLab.values.ready");
+const toolState = ref<MotionLabToolState>("initializing");
+const previewStatusKey = ref<string>("debug.common.processing");
 const previewStatus = computed(() => t(previewStatusKey.value));
+const isToolReady = computed(() => toolState.value === "ready");
+const scenarioRunPending = ref(false);
+const canRunScenario = computed(() => isToolReady.value && !scenarioRunPending.value);
 const motionSnapshot = ref<MotionLabReportInput>(makeEmptyReport());
 const motionReport = ref<MotionDebugReport>(makeEmptyReport());
 const replayTrace = ref<RuntimeReplayTrace | null>(null);
@@ -814,7 +819,7 @@ function resetLabScene() {
   replayTrace.value = null;
   replayTraceJson.value = "";
   assertionResults.value = [];
-  previewStatusKey.value = "motionLab.values.ready";
+  if (isToolReady.value) previewStatusKey.value = "motionLab.values.ready";
   motionReport.value = makeEmptyReport();
   refreshMotionSnapshot();
 }
@@ -849,7 +854,7 @@ function updateScenarioAssertions(reason = "scenario-assertions"): MotionLabAsse
 }
 
 async function runSelectedScenario() {
-  if (!runtime || !scene) return;
+  if (!isToolReady.value || !runtime || !scene) return;
   resetLabScene();
   previewStatusKey.value = "motionLab.values.running";
   const context = makeScenarioContext();
@@ -857,11 +862,22 @@ async function runSelectedScenario() {
   runMotionLabScenario(selectedScenarioId.value, context);
   refreshMotionSnapshot();
   await wait(selectedScenario.value?.assertAfterMs ?? 760);
+  if (destroyed || !runtime || !scene) return;
   const assertions = updateScenarioAssertions();
   previewStatusKey.value = assertions.every((assertion) => assertion.passed)
     ? "motionLab.values.passed"
     : "motionLab.values.failed";
   recordRunSnapshot();
+}
+
+async function handleRunSelectedScenario(): Promise<void> {
+  if (!canRunScenario.value) return;
+  scenarioRunPending.value = true;
+  try {
+    await runSelectedScenario();
+  } finally {
+    if (!destroyed) scenarioRunPending.value = false;
+  }
 }
 
 function selectScenario(id: unknown): void {
@@ -1055,12 +1071,14 @@ function createMotionLabStatus() {
     canCompareBaseline: canCompareBaseline.value,
     canCompareLast: canCompareLast.value,
     canCopyFocused: canCopyFocused.value,
+    canRunScenario: canRunScenario.value,
     hasBaseline: Boolean(savedBaselineSnapshot.value),
     hasPixiApp: Boolean(pixiApp),
     mounted: true,
     scenarioCount: scenarioRows.value.length,
     selectedScenarioId: selectedScenarioId.value,
     state: previewStatus.value,
+    toolState: toolState.value,
     traceDiffRowCount: traceDiffRows.value.length,
     traceSchema: replayTrace.value?.schema || null,
   };
@@ -1153,36 +1171,7 @@ function clearCopyTimers() {
   copyFocusedTimer = null;
 }
 
-onMounted(async () => {
-  destroyed = false;
-const { createMotionRuntimeDebugAdapter } = await import("../rendering/motionPort.js");
-  if (destroyed) return;
-  installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
-  const mountedRuntime = createMotionRuntime();
-  runtime = mountedRuntime;
-  configureRuntime();
-  const pixiHost = pixiHostRef.value;
-  if (!pixiHost) return;
-  const nextPixiApp = await createPixiApp(pixiHost, {
-    autoStart: true,
-    className: "motion-lab-canvas",
-  });
-  if (destroyed || runtime !== mountedRuntime) {
-    nextPixiApp.destroy(false, { children: true });
-    return;
-  }
-  pixiApp = nextPixiApp;
-  scene = createScene(pixiApp);
-  setSceneDefaults();
-  describeSceneTargets();
-  refreshMotionSnapshot();
-  snapshotTimer = window.setInterval(refreshMotionSnapshot, 180);
-  installDiagnostics();
-});
-
-onBeforeUnmount(() => {
-  destroyed = true;
-  clearCopyTimers();
+function disposeSceneResources(): void {
   if (snapshotTimer != null) window.clearInterval(snapshotTimer);
   snapshotTimer = null;
   runtime?.reset();
@@ -1190,6 +1179,57 @@ onBeforeUnmount(() => {
   pixiApp?.destroy(false, { children: true });
   pixiApp = null;
   scene = null;
+}
+
+onMounted(async () => {
+  destroyed = false;
+  scenarioRunPending.value = false;
+  toolState.value = "initializing";
+  previewStatusKey.value = "debug.common.processing";
+  try {
+    const { createMotionRuntimeDebugAdapter } = await import("../rendering/motionPort.js");
+    if (destroyed) return;
+    installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
+    const mountedRuntime = createMotionRuntime();
+    runtime = mountedRuntime;
+    configureRuntime();
+    const pixiHost = pixiHostRef.value;
+    if (!pixiHost) throw new Error("Motion Lab Pixi host is unavailable");
+    const nextPixiApp = await createPixiApp(pixiHost, {
+      autoStart: true,
+      className: "motion-lab-canvas",
+    });
+    if (destroyed || runtime !== mountedRuntime) {
+      nextPixiApp.destroy(false, { children: true });
+      return;
+    }
+    pixiApp = nextPixiApp;
+    scene = createScene(pixiApp);
+    setSceneDefaults();
+    describeSceneTargets();
+    refreshMotionSnapshot();
+    snapshotTimer = window.setInterval(refreshMotionSnapshot, 180);
+    installDiagnostics();
+    toolState.value = "ready";
+    previewStatusKey.value = "motionLab.values.ready";
+  } catch (error) {
+    console.error("Failed to initialize Motion Lab", error);
+    disposeSceneResources();
+    void disposeDiagnostics().catch((disposeError) => {
+      console.error("Failed to release Motion Lab diagnostics after initialization failure", disposeError);
+    });
+    if (destroyed) return;
+    scenarioRunPending.value = false;
+    toolState.value = "failed";
+    previewStatusKey.value = "debug.common.error";
+  }
+});
+
+onBeforeUnmount(() => {
+  destroyed = true;
+  scenarioRunPending.value = false;
+  clearCopyTimers();
+  disposeSceneResources();
   void disposeDiagnostics().catch((error) => {
     console.error("Failed to release Motion Lab diagnostics entry point", error);
   });

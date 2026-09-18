@@ -252,7 +252,7 @@ test("editing an app from its context menu opens the edit dialog", async ({ page
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(String(error)));
 
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const search = page.getByRole("searchbox", { name: "搜索应用" });
   await expect(search).toBeVisible();
   await search.fill("Safari");
@@ -273,7 +273,7 @@ test("editing an app from its context menu opens the edit dialog", async ({ page
 });
 
 test("scrolling over an icon context menu closes it without consuming the wheel event", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const search = page.getByRole("searchbox", { name: "搜索应用" });
   await expect(search).toBeVisible();
   await search.fill("Safari");
@@ -296,7 +296,7 @@ test("scrolling over an icon context menu closes it without consuming the wheel 
 });
 
 test("icon context menu preserves the existing dark palette", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const menu = await rightClickFolder(page);
   await expect(menu.getByRole("menuitem", { name: "解散文件夹" })).toBeVisible();
 
@@ -318,7 +318,7 @@ test("icon context menu preserves the existing dark palette", async ({ page }) =
 });
 
 test("icon context menu uses the selected light palette", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   await applySettingsTheme(page, "浅色");
   const menu = await rightClickFolder(page);
   await expect(menu.getByRole("menuitem", { name: "解散文件夹" })).toBeVisible();
@@ -341,7 +341,7 @@ test("icon context menu uses the selected light palette", async ({ page }) => {
 });
 
 test("blank-area context menu exposes only desktop actions and opens settings", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const menu = await rightClickDesktopSurface(page);
 
   await expect(menu.getByRole("menuitem", { name: "重新整理", exact: true })).toBeVisible();
@@ -361,7 +361,7 @@ test("blank-area context menu exposes only desktop actions and opens settings", 
 });
 
 test("blank-area menu is replaced by an icon menu on the next right click", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const { menu: iconMenu, point } = await rightClickFolderTarget(page);
   await page.keyboard.press("Escape");
   await expect(iconMenu).toBeHidden();
@@ -374,7 +374,7 @@ test("blank-area menu is replaced by an icon menu on the next right click", asyn
 });
 
 test("icon menu remains an icon menu when the same icon is right-clicked again", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const { menu: iconMenu, point } = await rightClickFolderTarget(page);
 
   await page.mouse.click(point.x, point.y, { button: "right" });
@@ -384,7 +384,7 @@ test("icon menu remains an icon menu when the same icon is right-clicked again",
 });
 
 test("icon menu is replaced by the blank-area menu on a surface right click", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const { menu: iconMenu } = await rightClickFolderTarget(page);
   const point = await getDesktopSurfacePoint(page);
 
@@ -395,7 +395,7 @@ test("icon menu is replaced by the blank-area menu on a surface right click", as
 });
 
 test("right-clicking the menu itself keeps the current icon menu open", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const iconMenu = await rightClickFolder(page);
   const bounds = await iconMenu.boundingBox();
   if (!bounds) throw new Error("Folder context menu has no visible bounds");
@@ -411,7 +411,7 @@ test("right-clicking the menu itself keeps the current icon menu open", async ({
 });
 
 test("left-clicking outside an icon menu closes it without passing through", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const iconMenu = await rightClickFolder(page);
   const point = await getDesktopSurfacePoint(page);
 
@@ -422,7 +422,7 @@ test("left-clicking outside an icon menu closes it without passing through", asy
 });
 
 test("search blank space suppresses the surface menu while search icons remain routable", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const search = page.getByRole("searchbox", { name: "搜索应用" });
   await search.fill("no-match-for-context-menu");
   await page.evaluate(() => new Promise((resolve) => {
@@ -437,7 +437,7 @@ test("search blank space suppresses the surface menu while search icons remain r
 });
 
 test("folder icon, blank panel, and outside context menus keep their scopes separate", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const { menu: iconMenu, point: iconPoint } = await rightClickFolderChild(page);
   const label = await iconMenu.getAttribute("aria-label");
   if (label === null) throw new Error("Folder child context menu is missing its aria-label");
@@ -464,7 +464,7 @@ test("folder icon, blank panel, and outside context menus keep their scopes sepa
 });
 
 test("blank-area context menu routes rearrange to the existing confirmation", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const menu = await rightClickDesktopSurface(page);
   await menu.getByRole("menuitem", { name: "重新整理", exact: true }).click();
 
@@ -480,7 +480,7 @@ test("blank-area context menu routes rearrange to the existing confirmation", as
 });
 
 test("blank-area context menu follows the selected light palette", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   await applySettingsTheme(page, "浅色");
   const menu = await rightClickDesktopSurface(page);
   const theme = await readSurfaceContextMenuTheme(menu);
@@ -497,7 +497,7 @@ test("blank-area context menu follows the selected light palette", async ({ page
 });
 
 test("blank-area context menu is limited to the desktop main rectangle", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   const main = page.locator(".desktop-main");
   const mainBounds = await main.boundingBox();
@@ -524,7 +524,7 @@ test("blank-area context menu is limited to the desktop main rectangle", async (
 });
 
 test("the Pixi canvas suppresses the browser's native context menu", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const canvas = page.locator("canvas.pixi-launchpad-canvas");
   await expect(canvas).toBeVisible();
 
@@ -549,7 +549,7 @@ test("the Pixi canvas suppresses the browser's native context menu", async ({ pa
 });
 
 test("launchpad chrome routes background context menus while preserving buttons and editable fields", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   await expect(page.locator(".launchpad-header")).toBeVisible();
   await expect(page.locator(".page-dots")).toBeVisible();
 

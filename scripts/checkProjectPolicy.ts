@@ -53,7 +53,6 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   "docs-agents",
   "node_modules",
   "playwright-report",
-  "src-tauri",
   "target",
   "test-results",
   "vendor",

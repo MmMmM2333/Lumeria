@@ -42,7 +42,7 @@ test("reduced motion applies immediately and finishes an existing animation", as
 
 test("real Web settings, warning, launch ghost and chrome keep their transitions", async ({ page }, info) => {
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
-  await page.goto("/?fixture=multi-select");
+  await page.goto("/tests/browser/reference/index.html?fixture=multi-select");
   await expect(page.getByRole("button", { name: "Open settings" })).toBeVisible();
   await page.getByRole("button", { name: "Open settings" }).click();
   const panel = page.getByRole("dialog", { name: "Settings", exact: true });

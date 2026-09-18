@@ -1,5 +1,3 @@
-import { convertFileSrc as tauriConvertFileSrc, invoke as tauriInvoke, isTauri } from "@tauri-apps/api/core";
-import { listen as tauriListen } from "@tauri-apps/api/event";
 import {
   assertLiveDesktopBackgroundSupport,
   assertLiveDesktopRuntimeConfig,
@@ -31,6 +29,18 @@ type NativeInvoke = (command: string, args?: UnknownRecord) => Promise<unknown>;
 type NativeEventHandler = (event: unknown) => void;
 type Unlisten = () => void;
 
+/**
+ * Reference-test-only Launchpad adapter.
+ *
+ * This module is the API surface of the retained browser reference host
+ * (`tests/browser/reference`). It deliberately does not import
+ * `@tauri-apps/api` and never looks for a Tauri injection on the global scope:
+ * unless a bridge is injected through `setLaunchpadApiBridgeForTests`, every
+ * command reports the existing "bridge unavailable" contract result.
+ *
+ * The command and event names below are therefore only the mock protocol that
+ * test bridges implement. Nothing here executes a native command by itself.
+ */
 export type LaunchpadApiBridge = Readonly<{
   convertFileSrc?: (filePath: string) => string;
   invoke?: NativeInvoke;
@@ -120,37 +130,22 @@ export function setLaunchpadApiBridgeForTests(bridge: LaunchpadApiBridge | null 
   bridgeOverride = bridge || null;
 }
 
-function canUseTauriBridge(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return isTauri();
-  } catch {
-    return false;
-  }
+function getLaunchpadApiBridge(): LaunchpadApiBridge | null {
+  return bridgeOverride;
 }
 
-function getTauriBridge(): LaunchpadApiBridge | null {
-  if (bridgeOverride) return bridgeOverride;
-  if (!canUseTauriBridge()) return null;
-  return {
-    convertFileSrc: tauriConvertFileSrc,
-    invoke: (command, args) => tauriInvoke<unknown>(command, args),
-    listen: (eventName, handler) => tauriListen<unknown>(eventName, handler),
-  };
-}
-
-function getTauriInvoke(): NativeInvoke | null {
-  return getTauriBridge()?.invoke || null;
+function getBridgeInvoke(): NativeInvoke | null {
+  return getLaunchpadApiBridge()?.invoke || null;
 }
 
 export function convertFilePathToAssetUrl(filePath: string | null | undefined): string | null {
-  const convertFileSrc = getTauriBridge()?.convertFileSrc;
+  const convertFileSrc = getLaunchpadApiBridge()?.convertFileSrc;
   if (!convertFileSrc || !filePath) return null;
   return convertFileSrc(filePath);
 }
 
 export function isNativeBridgeAvailable() {
-  return Boolean(getTauriBridge()?.invoke);
+  return Boolean(getLaunchpadApiBridge()?.invoke);
 }
 
 function validateLaunchContext(value: unknown): LaunchContext {
@@ -181,19 +176,19 @@ function validateNativeLocaleState(value: unknown): NativeLocaleState {
 }
 
 export async function getLaunchContext(): Promise<LaunchContext> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return { origin: "manual" };
   return validateLaunchContext(await invoke("get_launch_context"));
 }
 
 export async function completeRendererStartup(): Promise<void> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return;
   await invoke("complete_renderer_startup");
 }
 
 export async function getAutostartStatus(): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
   return requireBoolean(await invoke("get_autostart_status"), "get_autostart_status result");
 }
@@ -203,7 +198,7 @@ export function isAutostartAvailable() {
 }
 
 export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) throw new Error("Autostart is unavailable in the current runtime");
   return requireBoolean(
     await invoke("set_autostart_enabled", { enabled: Boolean(enabled) }),
@@ -212,7 +207,7 @@ export async function setAutostartEnabled(enabled: boolean): Promise<boolean> {
 }
 
 export async function listenNativeEvent(eventName: string, handler: NativeEventHandler): Promise<Unlisten | null> {
-  const listen = getTauriBridge()?.listen;
+  const listen = getLaunchpadApiBridge()?.listen;
   if (!listen) return null;
   return listen(eventName, handler);
 }
@@ -221,7 +216,7 @@ export async function scanApps(
   roots: readonly CatalogScanRoot[] = [],
   filters: CatalogScanFilters = {},
 ): Promise<ScanAppsResult | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   roots.forEach((root, index) => assertCatalogScanRoot(root, `scan roots[${index}]`));
   assertCatalogScanFilters(filters);
@@ -286,7 +281,7 @@ export function normalizeScanAppsResult(result: unknown): ScanAppsResult {
 }
 
 export async function loadLayout(): Promise<LayoutDocument | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const layout = await invoke("load_layout");
   if (layout === null) return null;
@@ -295,19 +290,19 @@ export async function loadLayout(): Promise<LayoutDocument | null> {
 
 export async function saveLayout(layout: LayoutDocument): Promise<void> {
   assertLayoutDocument(layout);
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return;
   await invoke("save_layout", { layout });
 }
 
 export async function getAppLocaleState(): Promise<NativeLocaleState | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return validateNativeLocaleState(await invoke("get_app_locale_state"));
 }
 
 export async function applyAppLocalePreference(preference: string): Promise<NativeLocaleState | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return validateNativeLocaleState(await invoke("apply_app_locale_preference", { preference }));
 }
@@ -331,21 +326,21 @@ function validatePickedBackgroundImage(value: unknown): PickedBackgroundImage {
 }
 
 export async function pickLaunchFile(): Promise<PickedLaunchFile | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("pick_launch_file");
   return result === null ? null : validatePickedLaunchFile(result);
 }
 
 export async function pickBackgroundImage(): Promise<PickedBackgroundImage | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("pick_background_image");
   return result === null ? null : validatePickedBackgroundImage(result);
 }
 
 export async function getDesktopWallpaperBackground(): Promise<PickedBackgroundImage | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("get_desktop_wallpaper_background");
   return result === null ? null : validatePickedBackgroundImage(result);
@@ -364,21 +359,21 @@ function validateBackgroundLayoutContext(value: unknown): BackgroundLayoutContex
 }
 
 export async function getBackgroundLayoutContext(): Promise<BackgroundLayoutContext | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("get_background_layout_context");
   return result === null ? null : validateBackgroundLayoutContext(result);
 }
 
 export async function loadCachedBackgroundImageDataUrl(imagePath: string | null | undefined): Promise<string | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke || !imagePath) return null;
   const result = await invoke("load_cached_background_image_data_url", { imagePath });
   return result === null ? null : requireString(result, "cached background image data URL");
 }
 
 export async function pickScanRootDirectory(): Promise<string | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("pick_scan_root_directory");
   return result === null ? null : requireString(result, "picked scan root directory");
@@ -393,7 +388,7 @@ function validateAppIconChoice(value: unknown, index: number): AppIconChoice {
 }
 
 export async function loadAppIconChoices(targetPath: string): Promise<readonly AppIconChoice[]> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return [];
   const result = await invoke("load_app_icon_choices", { targetPath });
   if (!Array.isArray(result)) throw new TypeError("load_app_icon_choices result must be an array");
@@ -402,7 +397,7 @@ export async function loadAppIconChoices(targetPath: string): Promise<readonly A
 }
 
 export async function cacheCustomIcon(dataUrl: string): Promise<CachedCustomIconResult | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("cache_custom_icon", { dataUrl });
   if (result === null) return null;
@@ -415,7 +410,7 @@ export async function cacheCustomIcon(dataUrl: string): Promise<CachedCustomIcon
 export async function checkLaunchTargets(
   targets: readonly LaunchTargetCheckRequest[],
 ): Promise<readonly LaunchTargetCheckResult[]> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return [];
   targets.forEach((target, index) => {
     requireString(target.id, `check_launch_targets targets[${index}].id`);
@@ -438,14 +433,14 @@ function makeLaunchAppRequest(app: LaunchableApp): Readonly<{ id: string }> {
 }
 
 export async function launchApp(app: LaunchableApp): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("launch_app", { request: makeLaunchAppRequest(app) });
   return true;
 }
 
 export async function showLaunchErrorMessage(report: LaunchFailureReport): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   for (const key of ["kind", "title", "message", "suggestion", "detail"] as const) {
     requireString(report[key], `launch failure report.${key}`);
@@ -469,7 +464,7 @@ function validateMainWindowCloseTransition(value: unknown): MainWindowCloseTrans
 }
 
 export async function beginMainWindowClose(openSequence: number): Promise<MainWindowCloseTransition | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return validateMainWindowCloseTransition(await invoke("begin_main_window_close", {
     openSequence: requireMainWindowGeneration(openSequence, "openSequence"),
@@ -477,7 +472,7 @@ export async function beginMainWindowClose(openSequence: number): Promise<MainWi
 }
 
 export async function hideMainWindow(generation: number): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   return requireBoolean(await invoke("hide_main_window", {
     generation: requireMainWindowGeneration(generation, "generation"),
@@ -485,7 +480,7 @@ export async function hideMainWindow(generation: number): Promise<boolean> {
 }
 
 export async function revealMainWindow(openSequence: number): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   return requireBoolean(await invoke("reveal_main_window", {
     openSequence: requireMainWindowGeneration(openSequence, "openSequence"),
@@ -503,44 +498,44 @@ function validateMainWindowEffectsSupport(value: unknown): MainWindowEffectsSupp
 }
 
 export async function getMainWindowEffectsSupport(): Promise<MainWindowEffectsSupport | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return validateMainWindowEffectsSupport(await invoke("get_main_window_effects_support"));
 }
 
 export async function getLiveDesktopBackgroundSupport(): Promise<LiveDesktopBackgroundSupport | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return assertLiveDesktopBackgroundSupport(await invoke("get_live_desktop_background_support"));
 }
 
 export async function getLiveDesktopRuntimeStatus(): Promise<LiveDesktopRuntimeStatus | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return assertLiveDesktopRuntimeStatus(await invoke("get_live_desktop_runtime_status"));
 }
 
 export async function configureLiveDesktopBackground(config: LiveDesktopRuntimeConfig): Promise<LiveDesktopRuntimeStatus | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   assertLiveDesktopRuntimeConfig(config);
   return assertLiveDesktopRuntimeStatus(await invoke("configure_live_desktop_background", { config }));
 }
 
 export async function startLiveDesktopBackground(): Promise<LiveDesktopRuntimeStatus | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return assertLiveDesktopRuntimeStatus(await invoke("start_live_desktop_background"));
 }
 
 export async function stopLiveDesktopBackground(): Promise<LiveDesktopRuntimeStatus | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return assertLiveDesktopRuntimeStatus(await invoke("stop_live_desktop_background"));
 }
 
 export async function setLiveDesktopBackgroundVisible(visible: boolean): Promise<LiveDesktopRuntimeStatus | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   return assertLiveDesktopRuntimeStatus(await invoke(
     "set_live_desktop_background_visible",
@@ -553,7 +548,7 @@ export async function setMainWindowEffectsEnabled(
   openSequence: number | null = null,
   options: MainWindowEffectOptions = {},
 ): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("set_main_window_effects_enabled", {
     enabled,
@@ -568,7 +563,7 @@ export async function setMainWindowMode(
   mode: LayoutSettings["windowMode"],
   options: MainWindowModeOptions = {},
 ): Promise<LayoutSettings["windowMode"] | null | false> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   const result = await invoke("set_main_window_mode", {
     mode,
@@ -582,14 +577,14 @@ export async function setMainWindowMode(
 }
 
 export async function setMainWindowShortcut(shortcut: string | null): Promise<string | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("set_main_window_shortcut", { shortcut });
   return result === null ? null : requireString(result, "set_main_window_shortcut result");
 }
 
 export async function setMainWindowShortcutCaptureActive(active: boolean): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("set_main_window_shortcut_capture_active", { active: Boolean(active) });
   return true;
@@ -598,7 +593,7 @@ export async function setMainWindowShortcutCaptureActive(active: boolean): Promi
 export async function setLaunchpadIconVariant(
   variant: LayoutSettings["launchpadIconVariant"],
 ): Promise<LayoutSettings["launchpadIconVariant"] | null> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return null;
   const result = await invoke("set_launchpad_icon_variant", { variant });
   if (result !== "light" && result !== "dark" && result !== "pastelLight" && result !== "pastelDark") {
@@ -611,7 +606,7 @@ export async function setMainWindowNativeFrameEnabled(
   enabled: boolean,
   openSequence: number | null = null,
 ): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("set_main_window_native_frame_enabled", {
     enabled: Boolean(enabled),
@@ -621,21 +616,21 @@ export async function setMainWindowNativeFrameEnabled(
 }
 
 export async function openDeveloperConsole(): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("open_developer_console");
   return true;
 }
 
 export async function quitApp(): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("quit_app");
   return true;
 }
 
 export async function confirmQuitAfterSave(saved: boolean): Promise<boolean> {
-  const invoke = getTauriInvoke();
+  const invoke = getBridgeInvoke();
   if (!invoke) return false;
   await invoke("confirm_quit_after_save", { saved: Boolean(saved) });
   return true;

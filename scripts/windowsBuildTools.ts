@@ -20,7 +20,7 @@ export function windowsBuildTools(project = process.cwd()) {
   mkdirSync(cache, { recursive: true });
   const localZig = join(project, ".codex-dev/toolchains/zig-x86_64-windows-0.16.0/zig.exe");
   const zig = process.env.LUMERIA_ZIG ?? (existsSync(localZig) ? localZig : "zig");
-  const png = readFileSync(join(project, "src-tauri/icons/launchpad/light/256x256.png"));
+  const png = readFileSync(join(project, "src/assets/branding/app-icons/light/256x256.png"));
   const header = Buffer.alloc(22);
   header.writeUInt16LE(1, 2); header.writeUInt16LE(1, 4); header.writeUInt16LE(1, 10); header.writeUInt16LE(32, 12);
   header.writeUInt32LE(png.length, 14); header.writeUInt32LE(22, 18);

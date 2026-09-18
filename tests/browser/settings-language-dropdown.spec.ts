@@ -58,7 +58,7 @@ function readDropdownValue(element: SVGElement | HTMLElement): string {
 }
 
 test("the language selector uses a Fluent dropdown with WinUI-style selection", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
   const { control, dialog, dropdown } = await openGeneralSettings(page);
   const listbox = dropdown.getByRole("listbox");
   const options = dropdown.locator("fluent-option");
@@ -134,7 +134,7 @@ test("the language selector uses a Fluent dropdown with WinUI-style selection", 
 
 test("cancel restores the language draft and apply persists it", async ({ page }) => {
   test.setTimeout(40_000);
-  await page.goto("/");
+  await page.goto("/tests/browser/reference/index.html");
 
   let settings = await openGeneralSettings(page);
   await settings.control.click();

@@ -356,16 +356,8 @@ async function installProvisionalFolderTestBridge(page: Page): Promise<void> {
 }
 
 async function waitForFixture(page: Page): Promise<void> {
-  const fixturePath = `/?fixture=multi-select&trusted-mouse=${Date.now()}`;
-  if (process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT) {
-    const baseUrl = process.env.LUMERIA_WEBVIEW_BASE_URL || page.url();
-    if (!/^https?:\/\//.test(baseUrl)) {
-      throw new Error(`WebView2 page has no HTTP fixture origin: ${baseUrl}`);
-    }
-    await page.goto(new URL(fixturePath, baseUrl).href);
-  } else {
-    await page.goto(fixturePath);
-  }
+  const fixturePath = `/tests/browser/reference/index.html?fixture=multi-select&trusted-mouse=${Date.now()}`;
+  await page.goto(fixturePath);
   await expect.poll(async () => page.evaluate(() => {
     const root = document.querySelector('[data-launchpad-fixture="multi-select"]');
     return Boolean(root && window.__LUMERIA_E2E__?.version === 1);

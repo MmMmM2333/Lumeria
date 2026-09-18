@@ -9,11 +9,8 @@ dist/
 /artifacts/
 /release/staging/
 
-# Tauri/Rust build output
+# Rust build output
 /target/
-src-tauri/target/
-src-tauri/gen/
-src-tauri/icon-dump/
 
 # Local environment and tool state
 .env
