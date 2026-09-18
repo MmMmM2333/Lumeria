@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { heapStats } from "bun:jsc";
+import { heapStats, gcAndSweep } from "bun:jsc";
 import type { Container, Sprite } from "pixi.js";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { getNativePixiApplicationTesting } from "../../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js";
@@ -10,8 +10,6 @@ import type { NativeDesktopScene } from "../../rendering/native/NativeDesktopSce
 import type { NativeFolderFlow } from "../../rendering/native/nativeFolderFlow.js";
 import type { createNativeIconTextureRepository } from "../../rendering/native/nativeIconTextureLoader.js";
 import type { ReadonlyLaunchpadPages } from "../../domain/launchpadLayout.js";
-import type { DesktopLayer } from "../../rendering/pixi/scene/DesktopLayer.js";
-import type { IconNode } from "../../rendering/pixi/nodes/IconNode.js";
 import { resolveNativePointerTarget } from "../../rendering/native/nativePointerTarget.js";
 import type { createNativeEditing } from "../nativeEditing.js";
 import { captureOwnedWindow } from "../nativeSettingsSmoke.js";
@@ -49,8 +47,15 @@ export async function runNativeStress(o: Context): Promise<void> {
     `--stress-idle-every=${raw.idleEvery}`, `--stress-idle-ms=${raw.idleMs}`, `--stress-settle-ms=${raw.settleMs}`,
     `--stress-screenshots-every=${raw.screenshotsEvery}`, ...(raw.exitOnFailure ? ["--stress-exit-on-failure"] : []),
     ...(raw.windowed ? ["--stress-windowed"] : []),
+    ...(raw.rewarmCheckpoints ? ["--stress-rewarm-checkpoints"] : []),
+    `--stress-gc-every=${raw.gcEvery ?? 0}`, ...(raw.heapSnapshots ? ["--stress-heap-snapshots"] : []),
+    ...(raw.motionDiagnosticsOff ? ["--stress-motion-diagnostics-off"] : []),
   ]);
   const { app, scene, editing } = o, testing = getNativePixiApplicationTesting(app);
+  if(config.motionDiagnosticsOff){
+    const {installMotionRuntimeDebugAdapterFactory,createNoopMotionRuntimeDebugAdapter:createMotionRuntimeDebugAdapter}=await import("../../rendering/motionPort.js");
+    assert.equal(installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter),true);
+  }
   const random = createStressRandom(config.seed), started = performance.now();
   const expected = new Set(o.pages().flat().filter(item => item && item.type !== "folder").map(item => item!.id));
   assert.equal(expected.size, config.icons);
@@ -114,7 +119,7 @@ export async function runNativeStress(o: Context): Promise<void> {
       for (const child of node.children) visit(child);
     };
     visit(app.stage);
-    return { count, textNodes, sceneTextureSources: sources.size, sceneTexturePixels: texturePixels,
+    return { count, textNodes, retention:scene.getNodeRetentionStatistics(),sceneTextureSources: sources.size, sceneTexturePixels: texturePixels,
       scope: "scene reachable sources; excludes renderer pools, driver allocations and total VRAM" };
   };
   const sample = (kind: string) => {
@@ -122,6 +127,23 @@ export async function runNativeStress(o: Context): Promise<void> {
     emit("metrics.jsonl", { kind, process: process.memoryUsage(),
       js: { heapSize: heap.heapSize, heapCapacity: heap.heapCapacity, objectCount: heap.objectCount, extraMemorySize: heap.extraMemorySize },
       nodes: nodes(), ...state() });
+  };
+  const gcCheckpoint = async (name: string, snapshot = false) => {
+    if (!config.gcEvery) return;
+    sample(`before-gc:${name}`);
+    const at = performance.now(); gcAndSweep();
+    // Leave the collection call stack before counting survivors.
+    await sleep(0);
+    const stats = heapStats();
+    emit("gc.jsonl", { name, gcMs: performance.now() - at, heap: stats, nodes: nodes(), ...state() });
+    sample(`after-gc:${name}`);
+    if (snapshot && config.heapSnapshots) {
+      record("heap-snapshot-start", { name });
+      writeFileSync(join(directory, `${name}.heapsnapshot`), Bun.generateHeapSnapshot("v8"));
+      record("heap-snapshot-end", { name });
+      // Do not carry the large serialized snapshot into subsequent measurements.
+      await sleep(0); gcAndSweep();
+    }
   };
   const screenshot = async (name: string) => {
     try {
@@ -138,12 +160,12 @@ export async function runNativeStress(o: Context): Promise<void> {
     await wait("window reopened", () => app.window.isVisible() && app.state === "running"); await settled();
     await wait("desktop alpha", () => scene.getDesktopAlpha() > .99);
   };
-  const layer = () => app.stage.getChildByLabel("launchpad-native-desktop", true) as DesktopLayer;
   const clickFolder = async (id: string) => {
     const node = app.stage.getChildByLabel(`launchpad-item:${id}`, true);
     assert.ok(node, `Missing folder node ${id}`);
     // Container bounds include labels and selection adornments; target the artwork.
-    const { x, y } = (node as IconNode).visualWrap.toGlobal({ x: 0, y: 0 });
+    const center=scene.getIconArtworkCenter(id);assert.ok(center);
+    const { x, y } = center;
     app.nativeInput.emitPointer("pointermove", x, y, 0);
     assert.deepEqual(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(x, y)), { kind: "icon", id });
     record("pointer-click-folder", { id, x, y });
@@ -154,12 +176,13 @@ export async function runNativeStress(o: Context): Promise<void> {
     o.closeFolder(); editing.selection.clear(); o.show(); o.page(0); await settled();
     await wait("home fully revealed", () => scene.getDesktopAlpha() > .99);
     await wait("no folder", () => o.folder.snapshot().renderedFolder === null);
-    assert.equal(layer().singleStageFolderLayer.visible, false, "Closed folder overlay revived");
+    assert.equal(scene.isFolderOverlayVisible(), false, "Closed folder overlay revived");
     assertStressInventory(o.pages(), expected);
     const item = o.pages()[0]?.find(item => item !== null);
     assert.ok(item);
     const node = app.stage.getChildByLabel(`launchpad-item:${item.id}`, true); assert.ok(node);
-    const { x, y } = (node as IconNode).visualWrap.toGlobal({ x: 0, y: 0 });
+    const center=scene.getIconArtworkCenter(item.id);assert.ok(center);
+    const { x, y } = center;
     app.nativeInput.emitPointer("pointermove", x, y, 0);
     assert.deepEqual(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(x, y)), { kind: "icon", id: item.id });
   };
@@ -175,6 +198,11 @@ export async function runNativeStress(o: Context): Promise<void> {
     });
     record("recovered", { after: testing.diagnostics().runtime });
   };
+  const warmAllPages = async () => {
+    for (let index = 0; index < o.pages().length; index++) { record("page", { index, reason: "rewarm" }); o.page(index); await settled(); }
+    await home();
+    await wait("icon preparation complete", () => !o.icons.isPreparing());
+  };
 
   writeFileSync(join(directory, "runtime.json"), JSON.stringify({ pid: process.pid, versions: process.versions, config,
     startedUtc: new Date().toISOString(), diagnostics: testing.diagnostics(), dataDirectory: process.env.LUMERIA_NATIVE_DATA_DIR }, null, 2));
@@ -183,7 +211,7 @@ export async function runNativeStress(o: Context): Promise<void> {
     let geometry: unknown;
     if (!failure) try { geometry = inspectStressGeometry(app.stage).stats; } catch (error) { failure = error instanceof Error ? error : new Error(String(error)); }
     frames.push({ at: performance.now() - started, cycle, phase, event, folder: o.folder.snapshot().renderedFolder?.id ?? null,
-      overlayVisible: layer()?.singleStageFolderLayer.visible, motion: scene.getMotionSnapshot(), geometry });
+      overlayVisible: scene.isFolderOverlayVisible(), motion: scene.getMotionSnapshot(), geometry });
     if (frames.length > 180) frames.shift();
   });
   const offFatal = app.on("fatal", event => {
@@ -194,7 +222,8 @@ export async function runNativeStress(o: Context): Promise<void> {
   const collectorLog = openSync(join(directory, "windows-memory.log"), "a");
   const script = process.env.LAUNCHPAD_NATIVE_STRESS_MEMORY_SCRIPT;
   const collector = script ? spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
-    "-ProcessId", String(process.pid), "-DurationSeconds", "86400", "-IntervalSeconds", "1", "-OutputDirectory", directory],
+    "-ProcessId", String(process.pid), "-DurationSeconds", "86400", "-IntervalSeconds", "1", "-OutputDirectory", directory,
+    "-ClassifyVirtualMemory"],
   { windowsHide: true, stdio: ["ignore", collectorLog, collectorLog] }) : null;
   collector?.on("error", error => record("windows-memory-unavailable", { error: String(error) }));
   collector?.on("exit", code => record("windows-memory-exit", { code }));
@@ -203,8 +232,8 @@ export async function runNativeStress(o: Context): Promise<void> {
   let status: "passed" | "failed" | "stopped" = "passed", error: string | undefined;
   try {
     await step("warm-all-pages", async () => {
-      for (let index = 0; index < o.pages().length; index++) { record("page", { index }); o.page(index); await settled(); }
-      await home(); await sleep(config.settleMs); sample("baseline"); await screenshot("baseline");
+      await warmAllPages(); await sleep(config.settleMs); sample("baseline"); await screenshot("baseline");
+      await gcCheckpoint("baseline", true);
     });
     if (config.mode === "background-recovery") {
       phase = "background-recovery";
@@ -262,7 +291,10 @@ export async function runNativeStress(o: Context): Promise<void> {
         });
       } else await step("device-recovery", () => recover());
       await step("checkpoint", async () => {
-        await home(); sample("active-end"); await sleep(config.settleMs); sample("settled");
+        await home(); sample("active-end");
+        if(config.rewarmCheckpoints)await warmAllPages();
+        await sleep(config.settleMs); sample("settled");
+        if (config.gcEvery && cycle % config.gcEvery === 0) await gcCheckpoint(`cycle-${cycle}`);
         if (config.screenshotsEvery && cycle % config.screenshotsEvery === 0) await screenshot(`checkpoint-${cycle}`);
       });
       if (config.idleEvery && cycle % config.idleEvery === 0) await step("natural-gc-idle", async () => {
@@ -270,9 +302,11 @@ export async function runNativeStress(o: Context): Promise<void> {
         await wait("idle window hidden", () => !app.window.isVisible());
         await sleep(config.idleMs); sample("hidden-idle");
         o.show(); await home(); sample("after-idle-reopen");
+        if(config.rewarmCheckpoints){await warmAllPages();await sleep(config.settleMs);sample("after-idle-rewarm");}
       });
       completed++;
     }
+    await gcCheckpoint("final", true);
     sample("final"); await screenshot("final");
   } catch (caught) {
     status = caught instanceof StressStopped ? "stopped" : "failed";

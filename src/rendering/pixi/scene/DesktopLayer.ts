@@ -1334,6 +1334,10 @@ export class DesktopLayer extends Container {
   private readonly searchNodeCache=new Map<string,DesktopIconNode>();
   private knownDesktopItems=new Set<string>();
   private readonly detachedPageNodes=new Map<string,DesktopIconNode>();
+  getNodeRetentionStatistics(){
+    return {desktop:this.iconNodes.size,detachedPages:this.detachedPageNodes.size,searchCache:this.searchNodeCache.size,
+      groupDragPool:this.groupDragLayer?.nodes.length??0,folderIcons:this.singleStageFolderLayer.iconNodes.size};
+  }
   clearSearchNodeCache():void {
     if(!this.reuseSearchNodes)return;
     for(const node of this.searchNodeCache.values())destroyDisplayObjectAfterFrame(node,{children:true});

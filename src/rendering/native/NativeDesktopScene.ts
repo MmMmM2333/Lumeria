@@ -325,6 +325,13 @@ export class NativeDesktopScene {
     stage.addChild(this.#pageDots);
   }
 
+  isFolderOverlayVisible():boolean {return this.#layer.singleStageFolderLayer.visible;}
+  getNodeRetentionStatistics(){return this.#layer.getNodeRetentionStatistics();}
+  getIconArtworkCenter(id:string):{x:number;y:number}|null {
+    const node=this.#layer.getChildByLabel(`launchpad-item:${id}`,true) as import("../pixi/nodes/IconNode.js").IconNode|null;
+    if(!node)return null;
+    return node.visualWrap.toGlobal({x:0,y:0});
+  }
   clearSearchNodeCache():void {this.#layer.clearSearchNodeCache();}
   closingFolderAtPoint(x:number,y:number):string|null {return this.#layer.singleStageFolderLayer.closingFolderAtStagePoint(x,y);}
 

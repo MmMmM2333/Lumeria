@@ -35,6 +35,7 @@
     "native:stress": "tsx scripts/runNativeElectrobun.ts --dev --stress",
     "test:native-stress": "tsx src/native/diagnostics/nativeStressConfig.test.ts && tsx src/native/diagnostics/nativeStressGeometry.test.ts && tsx scripts/summarizeNativeStress.test.ts",
     "test:native-background-recovery": "tsx src/native/nativeBackgroundRecovery.test.ts",
+    "test:motion-diagnostics-lifetime": "node --expose-gc --import tsx src/native/nativeMotionDiagnosticsLifetime.test.ts",
     "prenative:smoke": "npm run native:data:build && npm run native:live-desktop:build",
     "native:smoke": "tsx scripts/runNativeElectrobun.ts",
     "postinstall": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root . --dependencies-only",

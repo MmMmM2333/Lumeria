@@ -20,6 +20,16 @@ npm run native:stress -- --stress-mode=recovery-limit
 
 # 背景专项：三种效果的设备恢复、显式卸载与GPU GC像素回归
 npm run native:stress -- --stress-mode=background-recovery --stress-icons=200 --stress-windowed
+
+# 可比较的内存检查点：每轮重新遍历全部图标，再回首页测量
+npm run native:stress -- --stress-mode=recovery --stress-cycles=20 --stress-rewarm-checkpoints --stress-idle-every=20
+npm run native:stress -- --stress-mode=operations --stress-cycles=20 --stress-rewarm-checkpoints --stress-idle-every=20
+
+# 独立GC取证：每轮完整GC，基线/结束堆快照（有明显时间/内存开销）
+npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-idle-every=0 --stress-gc-every=1 --stress-heap-snapshots
+
+# 同序列关闭动画遥测适配器，排除诊断工具保留（不是release构建）
+npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-idle-every=0 --stress-gc-every=1 --stress-motion-diagnostics-off
 ```
 
 默认全屏。需要窗口运行加 `--stress-windowed`。同一时间只运行一个测试，避免窗口互相遮挡和系统负载干扰。运行过程中不要手动操作测试窗口；系统录屏可以同时进行。
@@ -70,6 +80,10 @@ npm run native:stress -- --stress-mode=background-recovery --stress-icons=200 --
 | `--stress-idle-every` | 10 | 0禁用；每N轮执行可见/隐藏空闲 |
 | `--stress-idle-ms` | 90000 | 每次空闲0–600000ms |
 | `--stress-screenshots-every` | 10 | 0禁用周期截图；基线、结束、故障仍尝试截图 |
+| `--stress-rewarm-checkpoints` | 关闭 | 每轮检查点和隐藏重开后统一全页遍历，再等待settle时间采样 |
+| `--stress-gc-every` | 0 | 0禁用；每N轮及基线/结束执行JSC gcAndSweep，写gc.jsonl |
+| `--stress-heap-snapshots` | 关闭 | 必须配合gc-every；保存baseline/final.heapsnapshot（Bun V8格式） |
+| `--stress-motion-diagnostics-off` | 关闭 | 将动画遥测替换为noop，其他dev诊断仍保留 |
 
 相同 seed 重放相同的延迟选择与操作参数，不能保证 OS/GPU 调度时序一致；操作日志记录实际时刻。长测耗时受图标数与硬件影响，100轮不是固定时长。
 
@@ -77,7 +91,15 @@ npm run native:stress -- --stress-mode=background-recovery --stress-icons=200 --
 
 先比较 operations 与 recovery 两组每轮 `settled` 和 `after-idle-reopen` 的趋势，再看 mixed。`summary.md` 将预热基线与最后检查点对比，Windows 样本匹配误差超过3秒则标为不可用。峰值上涨不等于泄漏；需要关注返回相同场景后是否随轮数或设备代次持续增长。
 
+做内存归属对照时两组都加 `--stress-rewarm-checkpoints`。否则恢复后的图标可能仅部分驻留，启动基线与最后检查点不能直接比较。开启后额外产生 `after-idle-rewarm`，汇总优先使用它作为末尾检查点；`after-idle-reopen`仍保留用于观察冷重开状态。每轮表格同时列出节点数和图标驻留估算，实际资源计数仍须核对，不把统一操作序列等同于强制相同缓存状态。
+
+Windows采样器每5秒通过只读 `VirtualQueryEx` 分类已提交区域，记录MEM_PRIVATE的WRITECOMBINE、普通READWRITE及其他，以及Mapped/Image。它不读取内存内容，不提供分配栈、显存或工作集分类。一次遍历不是原子快照，变化中的进程可能有少量偏差。分类计数与检查点匹配容差6.5秒，在summary.json保留实际误差；普通Windows进程计数仍为每秒一次、匹配容差3秒。分类查询失败会记录错误，不当作零。
+
 各层内存有重叠，不能相加。图标驻留只是估算，不含 renderer 池、Dawn、驱动及全部显存；场景可达纹理也不代表所有活跃 GPU 资源。此前 WC 提交增长应进一步用 WPR VirtualAlloc 分配/释放调用栈归属，而不是只抓 JS heap。
+
+GC组单独解释：`gc.jsonl`包含每次完整回收后的heapStats、objectTypeCounts及节点保留统计；`metrics.jsonl`标记before-gc/after-gc。原summary.md中的settled仍是GC前检查点，不能当回收后数据。截图/快照序列化会产生额外分配，不用GC组的峰值替代自然组。堆快照只留本地，可用DevTools读取；Bun生成的Map内部槽位不一定展开全部引用边，不能盲信离线retained-size计算。
+
+节点统计的retention单独列出desktop、detachedPages、searchCache、groupDragPool、folderIcons；场景树count不包含已经脱离舞台但仍在缓存中的节点。
 
 几何合法不代表画面正确，有限但错误的巨大三角形可能通过检查。保留录屏与截图，首次异常用 `stop.request` 停止，不让后续翻页覆盖现场。截图未经自动视觉判定，因此 passed 只代表所列断言通过，不表示已排除所有图形问题。
 

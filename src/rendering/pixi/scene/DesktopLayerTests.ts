@@ -1700,9 +1700,12 @@ export async function runDesktopLayerTests() {
     assert(layer.desktopClosingUnderlayLayer.alpha === 0, "folder overlay changes should not reveal desktop closing underlay");
 
     layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 0 });
-    assert(layer.singleStageFolderLayer.visible === true, "hidden launchpad folder overlay should stay renderable so alpha can animate");
+    assert(layer.singleStageFolderLayer.visible === false, "alpha update must not revive an inactive folder overlay");
     assert((layer.singleStageFolderLayer.alpha as number) === 0, "hidden launchpad should apply alpha to the folder overlay");
     assert(layer.singleStageFolderLayer.interactiveChildren === false, "hidden folder overlay should not receive interaction");
+    layer.singleStageFolderLayer.visible = true;
+    layer.applyFolderOverlayAlpha({ launchpadVisualAlpha: 1 });
+    assert(layer.singleStageFolderLayer.visible === true, "alpha update preserves folder-owned visible handoff");
 
     const closingLayer = makeLayer(DesktopLayer, pageTrack);
     closingLayer.applyFolderOverlayTransform({

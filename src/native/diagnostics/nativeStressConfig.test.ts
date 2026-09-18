@@ -7,6 +7,11 @@ for (const args of [["--stress-icons=0"], ["--stress-mode=unknown"], ["--stress-
 }
 const config = parseNativeStressOptions(["--stress", "--stress-mode=mixed", "--stress-icons=2000", "--stress-exit-on-failure"]);
 assert.equal(config.icons, 2000); assert.equal(config.mode, "mixed"); assert.equal(config.exitOnFailure, true);
+assert.equal(config.rewarmCheckpoints, false);
+assert.equal(parseNativeStressOptions(["--stress-rewarm-checkpoints"]).rewarmCheckpoints, true);
+assert.equal(config.gcEvery, 0);
+assert.throws(() => parseNativeStressOptions(["--stress-heap-snapshots"]), /require/);
+assert.equal(parseNativeStressOptions(["--stress-gc-every=5", "--stress-heap-snapshots"]).heapSnapshots, true);
 const a = createStressRandom(19), b = createStressRandom(19), c = createStressRandom(20);
 const sequence = Array.from({ length: 100 }, a);
 assert.deepEqual(sequence, Array.from({ length: 100 }, b));

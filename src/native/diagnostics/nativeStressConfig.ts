@@ -10,6 +10,10 @@ export interface NativeStressConfig {
   screenshotsEvery: number;
   exitOnFailure: boolean;
   windowed: boolean;
+  rewarmCheckpoints: boolean;
+  gcEvery: number;
+  heapSnapshots: boolean;
+  motionDiagnosticsOff: boolean;
 }
 
 /** Shared by the launcher and runtime: reject typos before launching a long run. */
@@ -44,7 +48,11 @@ export function parseNativeStressOptions(args: readonly string[]): NativeStressC
     settleMs: integer("settle-ms", 2000, 0, 60000),
     screenshotsEvery: integer("screenshots-every", 10, 0, 100000),
     exitOnFailure: flag("exit-on-failure"), windowed: flag("windowed"),
+    rewarmCheckpoints: flag("rewarm-checkpoints"),
+    gcEvery: integer("gc-every", 0, 0, 100000), heapSnapshots: flag("heap-snapshots"),
+    motionDiagnosticsOff: flag("motion-diagnostics-off"),
   };
+  if (config.heapSnapshots && !config.gcEvery) throw new Error("Heap snapshots require --stress-gc-every to isolate diagnostic GC from normal runs");
   if (values.size) throw new Error(`Unknown stress options: ${[...values.keys()].join(", ")}`);
   return config;
 }

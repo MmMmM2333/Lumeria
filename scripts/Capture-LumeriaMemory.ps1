@@ -3,7 +3,8 @@ param(
     [ValidateRange(1, 2147483647)] [int] $ProcessId,
     [ValidateRange(1, 86400)] [int] $DurationSeconds = 900,
     [ValidateRange(1, 60)] [int] $IntervalSeconds = 5,
-    [string] $OutputDirectory = [Environment]::GetFolderPath('Desktop')
+    [string] $OutputDirectory = [Environment]::GetFolderPath('Desktop'),
+    [switch] $ClassifyVirtualMemory
 )
 
 # Read-only process sampling. No heap walk, GC, working-set trim or dump capture.
@@ -34,6 +35,65 @@ $watch = [System.Diagnostics.Stopwatch]::StartNew()
 Write-Host "Sampling PID $ProcessId. Keep this window open; Ctrl+C stops sampling."
 Write-Host "Output: $captureDirectory"
 $counterAvailable = $true
+$classificationAvailable = $false
+if ($ClassifyVirtualMemory) {
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class LumeriaVirtualMemory {
+    [StructLayout(LayoutKind.Sequential)] struct Region {
+        public UIntPtr BaseAddress, AllocationBase;
+        public uint AllocationProtect;
+        public UIntPtr RegionSize;
+        public uint State, Protect, Type;
+    }
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern UIntPtr VirtualQueryEx(IntPtr process, UIntPtr address, out Region region, UIntPtr size);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    public static object Sample(int pid) {
+        if (IntPtr.Size != 8) throw new Exception("Virtual memory classification requires 64-bit PowerShell");
+        IntPtr handle = OpenProcess(0x0400, false, pid);
+        if (handle == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        ulong address=0, privateBytes=0, wc=0, rw=0, other=0, mapped=0, image=0;
+        int regions=0, wcRegions=0;
+        try {
+            for (;;) {
+                Region r;
+                if (VirtualQueryEx(handle,new UIntPtr(address),out r,new UIntPtr((uint)Marshal.SizeOf(typeof(Region))))==UIntPtr.Zero) {
+                    int error=Marshal.GetLastWin32Error();
+                    if (error==87 && regions>0) break; // End of user address space.
+                    throw new Win32Exception(error);
+                }
+                regions++;
+                ulong size=r.RegionSize.ToUInt64();
+                if(r.State==0x1000) {
+                    if(r.Type==0x20000) {
+                        privateBytes+=size;
+                        if((r.Protect & 0x400)!=0){wc+=size;wcRegions++;}
+                        else if((r.Protect & 0xff)==0x04)rw+=size;
+                        else other+=size;
+                    } else if(r.Type==0x40000)mapped+=size;
+                    else if(r.Type==0x1000000)image+=size;
+                }
+                ulong next=r.BaseAddress.ToUInt64()+size;
+                if(next<=address)throw new Exception("VirtualQueryEx did not advance");
+                address=next;
+            }
+        } finally { CloseHandle(handle); }
+        return new { privateCommittedBytes=privateBytes, writeCombineCommittedBytes=wc,
+            readWriteCommittedBytes=rw, otherPrivateCommittedBytes=other, mappedCommittedBytes=mapped,
+            imageCommittedBytes=image, queriedRegions=regions, writeCombineRegions=wcRegions };
+    }
+}
+'@
+        $classificationAvailable = $true
+    } catch {
+        $writer.WriteLine((@{ timeUtc = [DateTime]::UtcNow.ToString('o'); event = 'virtual-memory-unavailable'; detail = $_.Exception.Message } | ConvertTo-Json -Compress))
+    }
+}
+$nextClassification = 0
 try {
     do {
         try {
@@ -64,6 +124,13 @@ try {
                 $sample.counterError = $_.Exception.Message
                 $counterAvailable = $false
             }
+        }
+        if ($classificationAvailable -and $watch.Elapsed.TotalSeconds -ge $nextClassification) {
+            try {
+                $sample.virtualMemory = [LumeriaVirtualMemory]::Sample($ProcessId)
+                $sample.virtualMemoryTimeUtc = [DateTime]::UtcNow.ToString('o')
+            } catch { $sample.virtualMemoryError = $_.Exception.Message; $classificationAvailable = $false }
+            $nextClassification = $watch.Elapsed.TotalSeconds + 5
         }
         $writer.WriteLine(($sample | ConvertTo-Json -Compress))
         Write-Host ('{0,5:N0}s  Private {1,8:N1} MiB  Working set {2,8:N1} MiB' -f $sample.elapsedSeconds, ($sample.privateBytes / 1MB), ($sample.workingSetBytes / 1MB))
