@@ -1,10 +1,10 @@
 [package]
-license = "GPL-3.0-only"
 name = "lumeria"
 version = "0.1.0"
 description = "Lumeria application launcher for Windows"
 authors = ["Lumeria"]
 edition = "2021"
+license = "GPL-3.0-only"
 default-run = "lumeria"
 
 [lib]

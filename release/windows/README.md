@@ -5,6 +5,10 @@ Windows x64 产品入口为 `Lumeria.exe`，安装与升级由本目录的 NSIS 
 
 ## 构建
 
+首次克隆先按 [Native 工具链指南](../../docs/native-toolchain.md) 完成 `npm ci` 和
+`npm run native:prepare -- --archive <固定工具链附件>`。当前工具链附件尚未对外发布；
+构建不再依赖作者未登记的本机 SDK，也不会在 npm 安装脚本中隐式构建 Starter。
+
 ```powershell
 npm run native:release           # ESM，默认正式安装包
 npm run native:release:bytecode  # 可选 CJS + 字节码安装包
@@ -36,6 +40,10 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 暂存步骤只接受经过验证的完整应用归档，拒绝路径穿越、链接和特殊文件。
 正式安装包拒绝诊断构建和测试替身。当前构建不进行 Authenticode 签名，产物清单明确标记
 `signed: false`；以后接入签名时，应先签名，再生成最终校验信息。
+
+暂存步骤只附带 `licenses/third-party/THIRD_PARTY_NOTICES.md` 和 `LICENSES.txt`，
+按 Native 包内容收集声明并合并原文。完整依赖盘点可独立生成到 `artifacts/`；
+待核项不阻塞打包，实际再分发义务仍按相关许可处理。见 [许可材料说明](../../legal/README.md)。
 
 ## 安装和使用
 

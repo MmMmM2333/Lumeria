@@ -11,7 +11,6 @@ export default {
 		bun: { entrypoint: "src/main.ts" },
 		cottontail: { entrypoint: "src/main.ts" },
 		copy: {
-			"assets/bunnies": "bun/assets/bunnies",
 			"node_modules/@napi-rs/canvas-win32-x64-msvc/icudtl.dat": "bun/icudtl.dat",
 			".hutch/native-frame/native-frame.dll": "bun/native-frame.dll",
 		},

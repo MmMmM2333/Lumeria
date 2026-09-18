@@ -1,5 +1,5 @@
+import { createDemoSpriteTextures } from "./demoTextures";
 import {
-	Assets,
 	BlurFilter,
 	BufferImageSource,
 	Container,
@@ -27,13 +27,6 @@ export interface DemoOptions {
 
 export interface DemoHandle { dispose(): Promise<void>; }
 
-const BUNNY_NAMES = [
-	"rabbitv3_ash.png", "rabbitv3_batman.png", "rabbitv3_bb8.png",
-	"rabbitv3_frankenstein.png", "rabbitv3_neo.png", "rabbitv3_sonic.png",
-	"rabbitv3_spidey.png", "rabbitv3_stormtrooper.png", "rabbitv3_superman.png",
-	"rabbitv3_tron.png", "rabbitv3_wolverine.png", "rabbitv3.png",
-];
-
 const DEMO_FONT_FAMILY = [
 	"Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI",
 	"Microsoft YaHei UI", "Microsoft YaHei",
@@ -43,7 +36,6 @@ const DEMO_FONT_FAMILY = [
 
 export async function createDemo(app: NativePixiApplication, options: DemoOptions): Promise<DemoHandle> {
 	const testing = getNativePixiApplicationTesting(app);
-	const bunnyUrls = BUNNY_NAMES.map((name) => new URL(`../assets/bunnies/${name}`, import.meta.url).href);
 	const root = new Container({ label: "demo-scene" });
 	root.eventMode = "static";
 	app.stage.label ||= "stage";
@@ -222,7 +214,7 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 		}
 	}
 
-	const bunnyTextures = options.bunnyCount ? await Promise.all(bunnyUrls.map(url => Assets.load<Texture>(url))) : [];
+	const bunnyTextures = options.bunnyCount ? createDemoSpriteTextures() : [];
 	const bunnies: Sprite[] = [];
 	const velocity: Array<[number, number]> = [];
 	for (let i = 0; i < options.bunnyCount; i++) {
@@ -587,7 +579,7 @@ export async function createDemo(app: NativePixiApplication, options: DemoOption
 			staticLayer.destroy({ children: true });
 			orbitSource.destroy();
 			markSource.destroy();
-			await Promise.all(bunnyUrls.slice(0, bunnyTextures.length).map(url => Assets.unload(url)));
+			for (const texture of bunnyTextures) texture.destroy(true);
 	};
 	removeRuntimeCleanup = testing.addCleanup(dispose);
 	return { dispose };

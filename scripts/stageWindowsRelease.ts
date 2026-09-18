@@ -6,6 +6,7 @@ import { assertNativeDiagnosticsArtifact } from "./nativeDiagnosticsArtifact.js"
 import { assertArchiveListing, assertReleaseOutput, releaseFiles } from "./windowsRelease.js";
 import { runWindowsBuildTool, windowsBuildTools } from "./windowsBuildTools.js";
 import { stageWindowsRuntimeLibraries } from "./windowsRuntimeLibraries.js";
+import { generateLicenseBundle } from "./thirdPartyLicenses.js";
 
 if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Windows staging currently requires Windows x64");
 assertReleaseVersion(PRODUCT.version);
@@ -54,6 +55,8 @@ try {
     WINDOWS_RELEASE.dataHost, "runtime/bin/ElectrobunCore.dll", "runtime/Resources/app/bun/native-frame.dll"]) {
     if (!existsSync(join(payload, path))) throw new Error(`Required product file is missing: ${path}`);
   }
+  const licenses = generateLicenseBundle(project, join(payload, "licenses/third-party"), payload);
+  console.log(`Third-party notices: ${licenses.packages.length} runtime entries, two consolidated files; ${licenses.issues.length} advisory follow-ups (see legal/README.md)`);
   const files = releaseFiles(payload);
   if (existsSync(output)) {
     previous = assertReleaseOutput(project, output + ".previous-" + process.pid);

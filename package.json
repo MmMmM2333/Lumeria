@@ -23,7 +23,7 @@
     "native:package": "tsx scripts/packageWindowsRelease.ts",
     "native:release": "npm run native:build && npm run native:stage && npm run native:package",
     "native:release:bytecode": "npm run native:build:bytecode && npm run native:stage && npm run native:package",
-    "test:native-release": "tsx src/native/runtimePaths.test.ts && tsx src/native/nativeSession.test.ts && tsx scripts/windowsRelease.test.ts",
+    "test:native-release": "tsx src/native/runtimePaths.test.ts && tsx src/native/nativeSession.test.ts && tsx scripts/windowsRelease.test.ts && npm run test:licenses",
     "test:native-launcher": "tsx scripts/testWindowsLauncher.ts",
     "test:native-installer": "tsx scripts/testWindowsInstaller.ts",
     "test:native-product": "tsx scripts/testWindowsProduct.ts",
@@ -50,7 +50,10 @@
     "native:prepare": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs prepare",
     "native:toolchain:check": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs check",
     "native:toolchain:pack": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs pack",
-    "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs"
+    "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs",
+    "licenses:generate": "tsx scripts/thirdPartyLicenses.ts generate",
+    "licenses:check": "tsx scripts/thirdPartyLicenses.ts check",
+    "test:licenses": "tsx scripts/thirdPartyLicenses.test.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.8",
