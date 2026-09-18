@@ -11,7 +11,7 @@ Starter 0.3.0 的通用 DevTools 已接入 LaunchPad。`native:dev` 自动注册
 {
   "command": "node",
   "args": [
-    "<local-workspace>/LaunchPad-native-webgpu/vendor/electrobun-pixi-native-starter/tools/devtools-mcp.mjs"
+    "C:/path/to/Lumeria/vendor/electrobun-pixi-native-starter/tools/devtools-mcp.mjs"
   ]
 }
 ```

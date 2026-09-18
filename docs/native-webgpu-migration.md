@@ -1,16 +1,21 @@
 ---
 type: context
-status: active
+status: historical
 scope: native-webgpu-migration
 updated: 2026-09-05
-read_when: "继续 LaunchPad 的 Electrobun/PixiJS 原生迁移时"
-next_entry: "完整设置/系统迁移进行中；唯一执行状态见 docs/native-product-parity.plan.md 当前执行检查点"
+read_when: "了解 2026-09-05 的早期迁移背景"
+next_entry: "当前构建见 docs/native-toolchain.md；本文只保留历史技术背景"
 ---
 
 # Native WebGPU migration
 
+This is a historical snapshot. Current toolchain ownership, build instructions and
+packaging instructions are recorded in the [Windows release guide](../release/windows/README.md)
+and [native-toolchain.md](native-toolchain.md). The dated decisions below are not
+current authorization or a requirement to maintain a separate Starter release.
+
 Branch: `feature/electrobun-native-migration`  
-Worktree: `<local-workspace>/LaunchPad-native-webgpu`
+Worktree: `<repository>`
 
 ## Confirmed direction
 

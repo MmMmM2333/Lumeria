@@ -72,7 +72,7 @@ Apple公开AppKit trackSwipeEvent文档提供经过处理的gestureAmount、phas
 
 ### Web对照与长滑过冲（用户文件1788882155576）
 
-来源<local-workspace>//Downloads/touchpad-web-1788882155576.json，34.447秒，3246 wheel/169 decision/16翻页，无异常标记、无溢出。视口887×695、DPI1.25；从首个进度与dx反推实际分页跨度695.200012像素。关键证据：momentum=false137条、true3109条，此浏览器确实提供惯性信息；native记录全部null。不能把此前“原版未必提供”继续当本机事实；本次是已提供。大段惯性跨越手势间隔，不能再用360ms空隙等同单个手势。Web首帧常1–11，native各段首帧均大于80；两次并非同一物理动作，不能据此拟合固定缩放比例。
+来源本地触控板采样 touchpad-web-1788882155576.json，34.447秒，3246 wheel/169 decision/16翻页，无异常标记、无溢出。视口887×695、DPI1.25；从首个进度与dx反推实际分页跨度695.200012像素。关键证据：momentum=false137条、true3109条，此浏览器确实提供惯性信息；native记录全部null。不能把此前“原版未必提供”继续当本机事实；本次是已提供。大段惯性跨越手势间隔，不能再用360ms空隙等同单个手势。Web首帧常1–11，native各段首帧均大于80；两次并非同一物理动作，不能据此拟合固定缩放比例。
 
 用现有共享引擎重放Web全部wheel（按eventTime调度deadline），得到16次settle；与录制进度/翻页匹配。再用实际pageTrackMotion与motionRuntime/layout弹簧（k190,c28,m0.9，1/120秒步长）重放这些释放状态：前4次慢滑无过冲，后12次快滑出现约37.8–297.4逻辑像素过冲。例：13.701秒progress1、velocity20.309页/秒→259.1px；31.013秒progress0.999712、velocity23.330→297.4px。不是实录屏幕位移，属于实录输入+现有实现的确定性计算，需后续界面验收。
 
