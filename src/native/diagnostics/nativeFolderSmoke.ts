@@ -9,6 +9,7 @@ import type { NativeFolderItem } from "../../rendering/native/nativeFolderFlow.j
 import type { SceneFocusedIcon,SceneItem } from "../../rendering/sceneFrame.js";
 import type { createNativeLayoutState,NativeNavigationKey,NativePageTurn } from "../nativeStartup.js";
 import type { NativeFolderFlow } from "../product/nativeInputRouter.js";
+import type { createNativeEditing } from "../nativeEditing.js";
 
 type NativeLayoutState = ReturnType<typeof createNativeLayoutState>;
 type NativeSmokeSupport = typeof import("../nativeSmokeSupport.js");
@@ -24,6 +25,7 @@ export type NativeFolderSmokeContext = Readonly<{
   closeFolder: () => boolean;
   desktopBackground: NativeBackground;
   folderFlow: NativeFolderFlow;
+  editing:ReturnType<typeof createNativeEditing>;
   folderLayout: Readonly<{ cols: number }>;
   getActivePageItems: () => readonly SceneItem[];
   getCurrentFocus: () => SceneFocusedIcon | null;
@@ -69,6 +71,30 @@ export async function runNativeFolderSmoke(context: NativeFolderSmokeContext): P
   if (!smokeFolder) throw new Error("Native smoke fixture must contain a multi-page folder on page one");
   const otherFolder = getActivePageItems().find((item) => item.id === "native-folder-other");
   assert.ok(otherFolder, "interruption smoke requires a second desktop folder");
+  // Exercise the actual closing hit area before it becomes a desktop icon.
+  const closingPoint=()=>{
+    for(let y=70;y<app.contentSize.height-50;y+=10)for(let x=20;x<app.contentSize.width-20;x+=10){
+      if(scene.closingFolderAtPoint(x,y)===smokeFolder.id)return {x,y};
+    }
+    throw new Error("Closing folder must expose its presented hit area");
+  };
+  await activateItem(smokeFolder);await waitFor("closing gesture open baseline",()=>folderFlow.snapshot().openProgress>.999);
+  closeFolder();await present("closing gesture pressed frame");
+  let point=closingPoint();app.nativeInput.emitPointer("pointerdown",point.x,point.y,0);
+  assert.equal(folderFlow.snapshot().isClosing,true,"pointer down must not reopen closing folder");
+  app.nativeInput.emitPointer("pointerup",point.x,point.y,0);
+  await waitFor("closing short tap reopens",()=>!folderFlow.snapshot().isClosing&&folderFlow.snapshot().openProgress>.999);
+  closeFolder();await present("closing folder hold baseline");point=closingPoint();
+  app.nativeInput.emitPointer("pointerdown",point.x,point.y,0);
+  await new Promise(resolve=>setTimeout(resolve,500));
+  assert.ok(folderFlow.snapshot().renderedFolder===null||folderFlow.snapshot().isClosing,"held closing target must not reopen while waiting");
+  app.nativeInput.emitPointer("pointermove",point.x+45,point.y+20,0);
+  await waitFor("closing folder hold starts drag",()=>context.editing.drag.isDragActive());
+  assert.ok(folderFlow.snapshot().renderedFolder===null||folderFlow.snapshot().isClosing,"dragging closing folder cannot activate it");
+  app.nativeInput.emitPointer("pointercancel",point.x+45,point.y+20,0);
+  await waitFor("closing folder hold cancellation",()=>!context.editing.drag.isDragActive());
+  await waitFor("closing folder fully retired",()=>folderFlow.snapshot().renderedFolder===null);
+  console.log("Closing folder: down does not open, short release opens, hold/move drags and cancellation preserves closure");
   await activateItem(smokeFolder);
   assert.equal(closeFolder(), true, "a close before the first opening present must be accepted");
   await waitFor("unpresented opening cancellation", () => folderFlow.snapshot().renderedFolder === null);

@@ -2,6 +2,21 @@ import type { ReadonlyLaunchpadItem } from "../launchpadLayout.js";
 
 export type LaunchpadItem = ReadonlyLaunchpadItem;
 
+/**
+ * Explicit identity for detached closing residuals.
+ *
+ * A residual still belongs to the folder that is closing. Native hosts read this
+ * label to classify the press without guessing from node names or geometry, so
+ * the same press can enter the shared gesture engine: a hold or drag hands off
+ * to the normal icon drag path, and only a short tap reopens the folder. Hosts
+ * that keep the immediate-reopen behavior simply never read the label.
+ */
+export const CLOSING_FOLDER_TARGET_LABEL_PREFIX = "launchpad-closing-folder:";
+
+export function closingFolderTargetLabel(folderId: string): string {
+  return `${CLOSING_FOLDER_TARGET_LABEL_PREFIX}${folderId}`;
+}
+
 export type LaunchpadBoundsMeta = Readonly<{
   area?: string | null;
   folderId?: string | null;

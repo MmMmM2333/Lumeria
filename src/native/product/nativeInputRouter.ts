@@ -13,7 +13,7 @@ import type { NativeManagement } from "../../rendering/native/NativeManagement.j
 import type { NativeSearchBar } from "../../rendering/native/NativeSearchBar.js";
 import type { NativeSettingsShell } from "../../rendering/native/NativeSettingsShell.js";
 import type { createNativeFolderFlow } from "../../rendering/native/nativeFolderFlow.js";
-import { resolveNativePointerTarget } from "../../rendering/native/nativePointerTarget.js";
+import { resolveNativePointerTarget, routeNativePointerDown } from "../../rendering/native/nativePointerTarget.js";
 import type { SceneItem,ScenePageTrackScrub } from "../../rendering/sceneFrame.js";
 import type { createNativeEditing } from "../nativeEditing.js";
 
@@ -80,12 +80,16 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     get folder(): ScenePageTrackScrub | null { return folderPageTrackScrub; },
   });
   let pointerShiftKey = false;
+  // A closing residual shares the desktop icon gesture path, but releasing
+  // outside the window must not be read as a short tap that reopens the folder.
+  let closingFolderGesture = false;
   let lastWheelGestureTime = 0;
   let touchpadOwner:{sequence:number;settings:NativeSettingsShell|null;dialog:string|null;folder:string|null}|null=null;
 
   const releaseGesturePointer = () => {
     const id = touchId;
     touchId = null;
+    closingFolderGesture = false;
     if (id !== null) app.nativeInput.releasePointerCapture(id);
   };
   const clearWheelDeadline = (kind: LaunchpadGestureDeadline["kind"]): void => {
@@ -275,24 +279,38 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     if (type === "pointerDown" && (touchId !== null || event.isPrimary === false)) return;
     if (type !== "pointerDown" && touchId !== event.pointerId) return;
     const scope = getCurrentIconScope();
-    const target = resolveNativePointerTarget(event.target);
+    let target = resolveNativePointerTarget(event.target);
+    if(target.kind==="surface"){
+      const closingId=scene.closingFolderAtPoint(event.global.x,event.global.y);
+      if(closingId)target={kind:"closingFolder",id:closingId};
+    }
     if (type === "pointerDown" && event.button === 0 && target.kind === "surface"
       && (event.nativeEvent as { activatesWindow?: boolean } | null)?.activatesWindow) {
       // This click already activated the HWND; do not also start a blank-dismiss gesture.
       event.stopPropagation();return;
     }
-    const itemId = target.kind === "icon" ? target.id : undefined;
-    if(type === "pointerDown" && target.kind === "control") return;
-    // Closing residuals keep their original reopen handler; desktop icons use the desktop scope.
-    if(type === "pointerDown" && folderFlow.snapshot().isClosing && (!itemId || !getActivePageItems().some(item=>item.id===itemId))) return;
-    if(type === "pointerDown" && !itemId && scope.area === "folder") return;
-    if(type === "pointerDown" && management.modal) return;
-    if(type === "pointerDown" && getSettingsShell()) return;
+    // A detached closing residual resolves to its own folder id, so the press
+    // enters the shared icon gesture path: pointer down never reopens, a short
+    // tap does, and a hold or drag hands off to the normal drag flow. Other
+    // deferred targets keep their existing handlers.
+    let gestureTarget: Readonly<{ id: string; kind: "icon" }> | Readonly<{ kind: "surface" }> = { kind: "surface" };
+    if (type === "pointerDown") {
+      const route = routeNativePointerDown({
+        hasModal: Boolean(management.modal),
+        hasSettingsShell: Boolean(getSettingsShell()),
+        isActiveDesktopItem: id => getActivePageItems().some(item => item.id === id),
+        isClosing: folderFlow.snapshot().isClosing,
+        scopeArea: scope.area,
+        target,
+      });
+      if (route.kind === "defer") return;
+      gestureTarget = route.target;
+    }
     pointerShiftKey=event.shiftKey;
     const output = wheelGestures.dispatch({ type, pointerId: event.pointerId, pointerType: event.pointerType,
       isPrimary: event.isPrimary, button: event.button, buttons: event.buttons,
       x: event.global.x, y: event.global.y, time: event.timeStamp,
-      target: itemId ? { kind: "icon", id: itemId } : { kind: "surface" },
+      target: gestureTarget,
       dragOnHold: getEditing()?.selection.isActive.value === true,
       viewport: { scope: scope.area === "folder" ? `folder:${scope.folderId}` : scope.area,
         pageIndex: scope.pageIndex,
@@ -301,6 +319,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     });
     if (output.ownsPointer) {
       touchId = event.pointerId;
+      if(type==="pointerDown")closingFolderGesture = target.kind === "closingFolder";
       clearWheelPresentation();
       app.nativeInput.capturePointer(event.pointerId);
     }
@@ -310,13 +329,16 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   const touchDown = (event: FederatedPointerEvent) => touch("pointerDown", event);
   const touchMove = (event: FederatedPointerEvent) => touch("pointerMove", event);
   const touchUp = (event: FederatedPointerEvent) => touch("pointerUp", event);
+  // Releasing a closing-residual press outside the window keeps its existing
+  // desktop-icon semantics for normal icons, but a residual must not reopen.
+  const touchUpOutside = (event: FederatedPointerEvent) => touch(closingFolderGesture ? "pointerCancel" : "pointerUp", event);
   const touchCancel = (event: FederatedPointerEvent) => touch("pointerCancel", event);
   const offWheel = () => {app.stage.off("wheel", onWheel);app.stage.off("wheelcapture",guardTouchpadRoute);};
   const offTouch = () => {
     app.stage.off("pointerdowncapture", touchDown);
     app.stage.off("globalpointermove", touchMove);
     app.stage.off("pointerupcapture", touchUp);
-    app.stage.off("pointerupoutside", touchUp);
+    app.stage.off("pointerupoutside", touchUpOutside);
     app.stage.off("pointercancel", touchCancel);
     cancelGesture();
   };
@@ -326,7 +348,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   app.stage.on("pointerdowncapture", touchDown);
   app.stage.on("globalpointermove", touchMove);
   app.stage.on("pointerupcapture", touchUp);
-  app.stage.on("pointerupoutside", touchUp);
+  app.stage.on("pointerupoutside", touchUpOutside);
   app.stage.on("pointercancel", touchCancel);
   app.stage.on("pointerdowncapture", interruptWheel);
 

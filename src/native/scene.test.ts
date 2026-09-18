@@ -6,7 +6,8 @@ import { runTouchpadCaptureTests } from "../debug/touchpadCapture.test.js";
 import { runNativeWindowEffectsTests } from "./nativeWindowEffects.test.js";
 import { readFileSync } from "node:fs";
 import { Container, type Text } from "pixi.js";
-import { resolveNativePointerTarget } from "../rendering/native/nativePointerTarget.js";
+import { resolveNativePointerTarget, routeNativePointerDown } from "../rendering/native/nativePointerTarget.js";
+import { closingFolderTargetLabel } from "../domain/input/launchpadPointerTarget.js";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
 import {
   assertCompleteDesktopSceneFrame,
@@ -174,6 +175,78 @@ for(const theme of ["light","dark"] as const){
   assert.deepEqual(resolveNativePointerTarget(unlabelled), { kind: "surface" });
   assert.deepEqual(resolveNativePointerTarget(null), { kind: "surface" });
   root.destroy({ children: true });
+}
+
+{
+  // Problem 1: a press on a detached closing residual must not reopen the folder
+  // on pointer down. The residual states which folder it belongs to, and the
+  // pointer-down route sends it through the ordinary icon gesture path.
+  const root = new Container();
+  const residual = new Container({ label: closingFolderTargetLabel("folder-closing-a") });
+  const residualChild = new Container();
+  residual.addChild(residualChild); root.addChild(residual);
+  assert.deepEqual(resolveNativePointerTarget(residualChild), { kind: "closingFolder", id: "folder-closing-a" }, "a closing residual descendant must resolve to the folder identity it still belongs to");
+  assert.deepEqual(resolveNativePointerTarget(residual), { kind: "closingFolder", id: "folder-closing-a" }, "a closing residual must resolve to its folder identity directly");
+
+  const route = (
+    target: Parameters<typeof routeNativePointerDown>[0]["target"],
+    overrides: Readonly<{
+      hasModal?: boolean;
+      hasSettingsShell?: boolean;
+      isActiveDesktopItem?: (id: string) => boolean;
+      isClosing?: boolean;
+      scopeArea?: string;
+    }> = {},
+  ) => routeNativePointerDown({
+    hasModal: overrides.hasModal ?? false,
+    hasSettingsShell: overrides.hasSettingsShell ?? false,
+    isActiveDesktopItem: overrides.isActiveDesktopItem ?? (id => id === "folder-closing-a"),
+    isClosing: overrides.isClosing ?? true,
+    scopeArea: overrides.scopeArea ?? "desktop",
+    target,
+  });
+
+  assert.deepEqual(route(resolveNativePointerTarget(residual)), { kind: "gesture", target: { id: "folder-closing-a", kind: "icon" } }, "pressing a closing residual must enter the icon gesture path so the reopen handler cannot steal the hold");
+  assert.deepEqual(route(resolveNativePointerTarget(residual), { isClosing: false }), { kind: "gesture", target: { id: "folder-closing-a", kind: "icon" } }, "a residual that outlives the closing flag still routes by its own folder identity");
+  assert.deepEqual(route({ kind: "surface" }), { kind: "defer" }, "a blank press during the closing animation must keep deferring so the desktop dismiss path is untouched");
+  assert.deepEqual(route({ kind: "surface" }, { isClosing: false }), { kind: "gesture", target: { kind: "surface" } }, "a blank desktop press outside a closing animation still reaches the gesture engine");
+  assert.deepEqual(route({ kind: "icon", id: "app-x" }, { isActiveDesktopItem: id => id === "app-x" }), { kind: "gesture", target: { id: "app-x", kind: "icon" } }, "another desktop icon must still open while a folder closes");
+  assert.deepEqual(route({ kind: "icon", id: "app-x" }), { kind: "defer" }, "a desktop icon that is not on the active page must keep deferring during a close");
+  assert.deepEqual(route({ kind: "control" }), { kind: "defer" }, "Pixi controls must keep their own handler");
+  assert.deepEqual(route(resolveNativePointerTarget(residual), { hasModal: false, hasSettingsShell: true }), { kind: "defer" }, "settings retain input ownership over a closing residual");
+  assert.deepEqual(route(resolveNativePointerTarget(residual), { isActiveDesktopItem:()=>false }), {kind:"defer"}, "retired or off-page folders cannot acquire a gesture");
+  root.destroy({ children: true });
+}
+
+{
+  // The shared gesture engine owns the closing-residual press: down never
+  // activates, a short tap reopens, and a hold/move drags without reopening.
+  const viewport = { scope: "desktop", pageIndex: 0, pageCount: 2, pageWidth: 900 };
+  const target = { id: "folder-closing-a", kind: "icon" } as const;
+  const press = (engine: ReturnType<typeof createLaunchpadGestureEngine>) => engine.dispatch({
+    type: "pointerDown", pointerId: 7, pointerType: "mouse", isPrimary: true, button: 0, buttons: 1, x: 200, y: 220, time: 0, target, viewport,
+  });
+
+  const tapEngine = createLaunchpadGestureEngine();
+  const tapPress = press(tapEngine);
+  assert.equal(tapPress.commands.length, 0, "pointer down on a closing residual must not activate the folder");
+  const tapRelease = tapEngine.dispatch({ type: "pointerUp", pointerId: 7, pointerType: "mouse", x: 201, y: 221, time: 90 });
+  assert.deepEqual(tapRelease.commands, [{ type: "activateTarget", target }], "a short tap on a closing residual must reopen that folder once");
+
+  const dragEngine = createLaunchpadGestureEngine();
+  assert.equal(press(dragEngine).commands.length, 0, "pointer down must not activate before the hold deadline");
+  dragEngine.dispatch({ type: "deadline", kind: "hold", time: 420 });
+  const dragStart = dragEngine.dispatch({ type: "pointerMove", pointerId: 7, pointerType: "mouse", buttons: 1, x: 240, y: 260, time: 460 });
+  assert.equal(dragStart.commands.length, 1, "a hold then move must hand off to the icon drag path");
+  assert.equal(dragStart.commands[0]?.type, "startDrag", "the closing residual hold must start a normal icon drag");
+  const dragFinish = dragEngine.dispatch({ type: "pointerUp", pointerId: 7, pointerType: "mouse", x: 260, y: 280, time: 520 });
+  assert.equal(dragFinish.commands[0]?.type, "finishDrag", "releasing the residual drag must finish through the atomic drag path without reopening");
+  assert.equal(dragFinish.commands.filter(command => command.type === "activateTarget").length, 0, "finishing a residual drag must not activate the folder");
+
+  const cancelEngine = createLaunchpadGestureEngine();
+  press(cancelEngine);
+  const cancelled = cancelEngine.dispatch({ type: "pointerCancel", pointerId: 7, pointerType: "mouse", x: 200, y: 220, time: 60 });
+  assert.equal(cancelled.commands.length, 0, "cancelling a closing-residual press must not open the folder");
 }
 
 const savedLayout = assertLayoutDocument(JSON.parse(readFileSync(

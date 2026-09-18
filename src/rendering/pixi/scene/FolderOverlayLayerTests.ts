@@ -15,6 +15,7 @@ import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
+import { closingFolderTargetLabel } from "../../../domain/input/launchpadPointerTarget.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { flushMotionRuntimeTestFrame } from "../animation/motionRuntimeTestHarness.js";
 import { FolderVisualSession } from "./folderVisualSession.js";
@@ -2701,6 +2702,10 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
 
     assert(layer.detachClosingPresentationForOpen("folder-b"), "cross-folder interruption should detach the active close presentation");
     const visual = layer.detachedClosingVisuals[0];
+    assert(
+      visual?.container.label === closingFolderTargetLabel("folder-a"),
+      "a detached closing residual must label the folder identity it still belongs to so hosts can classify the press"
+    );
     const afterFrameBounds = visual?.frame?.getBounds();
     const afterGhostOrigin = closingGhost.toGlobal({ x: 0, y: 0 });
     const afterGhostUnit = closingGhost.toGlobal({ x: 1, y: 0 });

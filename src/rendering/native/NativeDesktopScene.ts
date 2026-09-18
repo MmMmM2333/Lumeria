@@ -326,6 +326,7 @@ export class NativeDesktopScene {
   }
 
   clearSearchNodeCache():void {this.#layer.clearSearchNodeCache();}
+  closingFolderAtPoint(x:number,y:number):string|null {return this.#layer.singleStageFolderLayer.closingFolderAtStagePoint(x,y);}
 
   getTextPrewarmCandidates():readonly {text:Text;page:number}[]{
     if(!this.#committed||!this.#retainsPages(this.#committed.frame))return [];

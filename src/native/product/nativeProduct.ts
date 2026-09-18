@@ -1358,6 +1358,7 @@ try {
       if(outcome.pageNavigation==="verified")pageNavigation="verified";
     });
     await (await import("../diagnostics/nativeFolderSmoke.js")).runNativeFolderSmoke({
+      editing:editing!,
       activateItem:item=>activateItem(item),
       addPresent:count=>{presentCount+=count;},
       app,

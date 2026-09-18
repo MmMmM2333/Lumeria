@@ -1,5 +1,6 @@
 import { Container, Graphics, Matrix, Rectangle, RenderLayer, Sprite } from "pixi.js";
 import type { ContainerChild, FederatedPointerEvent } from "pixi.js";
+import { closingFolderTargetLabel } from "../../../domain/input/launchpadPointerTarget.js";
 import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
@@ -3481,6 +3482,7 @@ export class FolderOverlayLayer extends Container {
       // visual for the next folder's opening.
       this.onClosingHandoffPrepare?.(closingFolderId, { preserveVisualState: true });
       const container = new Container();
+      if (closingFolderId) container.label = closingFolderTargetLabel(closingFolderId);
       container.eventMode = (overlayFrameState || closingGhosts.length || previewSwapGhosts.length) ? "static" : "none";
       container.interactiveChildren = false;
       container.hitArea = {
@@ -4537,6 +4539,13 @@ export class FolderOverlayLayer extends Container {
     }
   }
 
+  closingFolderAtStagePoint(x:number,y:number):string|null {
+    const target=this.stableFolderCloseTarget;
+    return this.isClosing&&this.isUserFolderClosing&&target?.folderId
+      &&getClosingPresentationStageHitRects(this as FolderClosingHandoffLayer).some(rect=>isPointInRect(x,y,rect))
+      ? target.folderId : null;
+  }
+
   handlePointerDown(event: FederatedPointerEvent): void {
     const native = (event?.nativeEvent || event) as NativePointerInput & OptionalPointerEvent;
     if (typeof native?.button === "number" && native.button !== 0) return;
@@ -4546,14 +4555,11 @@ export class FolderOverlayLayer extends Container {
     const localPoint = clientPointToStageVisualPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
     const { x, y } = localPoint;
     if (this.isClosing) {
-      const closeTarget = this.stableFolderCloseTarget;
-      const hitRects = getClosingPresentationStageHitRects(this as FolderClosingHandoffLayer);
-      if (this.isUserFolderClosing &&
-        closeTarget?.folderId &&
-        hitRects.some((rect) => isPointInRect(x, y, rect))) {
+      const folderId=this.closingFolderAtStagePoint(x,y);
+      if (folderId) {
         native.preventDefault?.();
         native.stopPropagation?.();
-        this.onClosingFolderPointerDown(closeTarget.folderId, native);
+        this.onClosingFolderPointerDown(folderId, native);
       }
       return;
     }
