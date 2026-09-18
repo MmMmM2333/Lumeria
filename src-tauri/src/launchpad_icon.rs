@@ -1,5 +1,7 @@
 use tauri::{image::Image, AppHandle, Manager};
 
+pub(crate) use lumeria_core::launchpad_icon::LaunchpadIconVariant;
+
 use crate::tray::set_tray_icon;
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -19,36 +21,13 @@ const PASTEL_DARK_WINDOW_ICON: Image<'static> =
 const PASTEL_DARK_TRAY_ICON: Image<'static> =
     tauri::include_image!("./icons/launchpad/pastelDark/32x32.png");
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum LaunchpadIconVariant {
-    #[default]
-    Light,
-    Dark,
-    PastelLight,
-    PastelDark,
+pub(crate) trait LaunchpadIconVariantExt {
+    fn window_icon(self) -> Image<'static>;
+    fn tray_icon(self) -> Image<'static>;
 }
 
-impl LaunchpadIconVariant {
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value {
-            "light" => Some(Self::Light),
-            "dark" => Some(Self::Dark),
-            "pastelLight" => Some(Self::PastelLight),
-            "pastelDark" => Some(Self::PastelDark),
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::Light => "light",
-            Self::Dark => "dark",
-            Self::PastelLight => "pastelLight",
-            Self::PastelDark => "pastelDark",
-        }
-    }
-
-    pub(crate) const fn window_icon(self) -> Image<'static> {
+impl LaunchpadIconVariantExt for LaunchpadIconVariant {
+    fn window_icon(self) -> Image<'static> {
         match self {
             Self::Light => LIGHT_WINDOW_ICON,
             Self::Dark => DARK_WINDOW_ICON,
@@ -57,7 +36,7 @@ impl LaunchpadIconVariant {
         }
     }
 
-    pub(crate) const fn tray_icon(self) -> Image<'static> {
+    fn tray_icon(self) -> Image<'static> {
         match self {
             Self::Light => LIGHT_TRAY_ICON,
             Self::Dark => DARK_TRAY_ICON,
@@ -94,18 +73,4 @@ pub(crate) fn apply_runtime_icon(
         };
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::LaunchpadIconVariant;
-
-    #[test]
-    fn launchpad_icon_variants_use_the_persisted_frontend_contract() {
-        for value in ["light", "dark", "pastelLight", "pastelDark"] {
-            let variant = LaunchpadIconVariant::parse(value).expect("documented icon variant");
-            assert_eq!(variant.as_str(), value);
-        }
-        assert!(LaunchpadIconVariant::parse("system").is_none());
-    }
 }

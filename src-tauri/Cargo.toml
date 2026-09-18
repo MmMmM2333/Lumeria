@@ -16,19 +16,9 @@ name = "lumeria"
 path = "src/main.rs"
 
 [[bin]]
-name = "lumeria_native_data"
-path = "src/native_data_main.rs"
-
-[[bin]]
 name = "icon_dump"
 path = "test_tools/icon_dump.rs"
 required-features = ["debug-tools"]
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
 
 [features]
 debug-tools = []
@@ -37,11 +27,11 @@ debug-tools = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-blake3 = "1"
 log = "0.4"
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+lumeria-core = { path = "../crates/lumeria-core" }
 tauri = { version = "=2.11.2", features = ["devtools", "protocol-asset", "tray-icon"] }
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-log = "2"
@@ -74,4 +64,3 @@ windows = { version = "0.61.3", features = [
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "=0.38.2"
-winreg = "0.55.0"

@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum CatalogIdentityStatus {
+pub enum CatalogIdentityStatus {
     Exact,
     Unresolved,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum AppSourceType {
+pub enum AppSourceType {
     WindowsAppCatalog,
     StartMenuUser,
     StartMenuSystem,
@@ -18,7 +18,7 @@ pub(crate) enum AppSourceType {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum AppSourceState {
+pub enum AppSourceState {
     Primary,
     Equivalent,
     Shadowed,
@@ -26,44 +26,44 @@ pub(crate) enum AppSourceState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AppCatalogItem {
-    pub(crate) id: String,
+pub struct AppCatalogItem {
+    pub id: String,
     #[serde(rename = "type")]
-    pub(crate) item_type: String,
-    pub(crate) name: String,
+    pub item_type: String,
+    pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) icon_path: Option<String>,
+    pub icon_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) emoji: Option<String>,
-    pub(crate) launch_target: LaunchTarget,
+    pub emoji: Option<String>,
+    pub launch_target: LaunchTarget,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) launch_args: Option<String>,
-    pub(crate) tracking_key: String,
-    pub(crate) identity_status: CatalogIdentityStatus,
-    pub(crate) sources: Vec<AppSource>,
+    pub launch_args: Option<String>,
+    pub tracking_key: String,
+    pub identity_status: CatalogIdentityStatus,
+    pub sources: Vec<AppSource>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LaunchTarget {
-    pub(crate) kind: String,
+pub struct LaunchTarget {
+    pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) path: Option<String>,
+    pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) app_user_model_id: Option<String>,
+    pub app_user_model_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AppSource {
-    pub(crate) key: String,
+pub struct AppSource {
+    pub key: String,
     #[serde(rename = "type")]
-    pub(crate) source_type: AppSourceType,
-    pub(crate) state: AppSourceState,
-    pub(crate) root_id: String,
-    pub(crate) root_label: String,
-    pub(crate) relative_path: String,
-    pub(crate) absolute_path: String,
+    pub source_type: AppSourceType,
+    pub state: AppSourceState,
+    pub root_id: String,
+    pub root_label: String,
+    pub relative_path: String,
+    pub absolute_path: String,
 }
 
 #[cfg(test)]

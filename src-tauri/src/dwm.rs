@@ -47,10 +47,7 @@ unsafe fn set_dwm_attribute_for_hwnd<T>(
             std::mem::size_of_val(value) as u32,
         )
     }
-    .map_err(|source| NativeError::Dwm {
-        context: "DwmSetWindowAttribute",
-        source,
-    })
+    .map_err(|source| NativeError::dwm("DwmSetWindowAttribute", source))
 }
 
 #[cfg(target_os = "windows")]
@@ -217,10 +214,7 @@ pub(crate) fn set_main_window_topmost(window: &WebviewWindow, topmost: bool) -> 
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING,
         )
     }
-    .map_err(|source| NativeError::Win32 {
-        context: "SetWindowPos(topmost)",
-        source,
-    })?;
+    .map_err(|source| NativeError::win32("SetWindowPos(topmost)", source))?;
     Ok(())
 }
 

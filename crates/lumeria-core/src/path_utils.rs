@@ -1,17 +1,17 @@
 use std::path::Path;
 
-pub(crate) fn extension(path: &Path) -> Option<String> {
+pub fn extension(path: &Path) -> Option<String> {
     path.extension()
         .and_then(|value| value.to_str())
         .map(|value| value.to_lowercase())
 }
 
-pub(crate) fn windows_api_path(path: &Path) -> String {
+pub fn windows_api_path(path: &Path) -> String {
     path.to_string_lossy().replace('/', "\\")
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn expand_windows_env_vars(value: &str) -> String {
+pub fn expand_windows_env_vars(value: &str) -> String {
     use windows::{core::PCWSTR, Win32::System::Environment::ExpandEnvironmentStringsW};
 
     let source: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
@@ -34,7 +34,7 @@ pub(crate) fn expand_windows_env_vars(value: &str) -> String {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn expand_windows_env_vars(value: &str) -> String {
+pub fn expand_windows_env_vars(value: &str) -> String {
     value.to_string()
 }
 

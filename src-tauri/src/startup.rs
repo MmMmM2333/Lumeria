@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use serde::Serialize;
 use tauri::State;
 
-pub(crate) const AUTOSTART_ARGUMENT: &str = "--lumeria-autostart";
+pub(crate) use lumeria_core::autostart::AUTOSTART_ARGUMENT;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

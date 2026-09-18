@@ -1,0 +1,35 @@
+[package]
+name = "lumeria-core"
+version = "0.1.0"
+description = "Framework-independent Lumeria application services"
+authors = ["Lumeria"]
+edition = "2021"
+license = "GPL-3.0-only"
+
+[features]
+debug-tools = []
+
+[dependencies]
+blake3 = "1"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+png = "0.17"
+winreg = "0.55.0"
+windows = { version = "0.61.3", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_Environment",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_UI_WindowsAndMessaging",
+] }

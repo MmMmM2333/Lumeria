@@ -2,7 +2,7 @@
 use crate::{path_utils::extension, windows_com::ComGuard};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum LaunchPathErrorKind {
+pub enum LaunchPathErrorKind {
     Cancelled,
     AccessDenied,
     BrokenShortcut,
@@ -14,9 +14,9 @@ pub(crate) enum LaunchPathErrorKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LaunchPathError {
-    pub(crate) kind: LaunchPathErrorKind,
-    pub(crate) detail: String,
+pub struct LaunchPathError {
+    pub kind: LaunchPathErrorKind,
+    pub detail: String,
 }
 
 impl LaunchPathError {
@@ -26,10 +26,13 @@ impl LaunchPathError {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
+pub fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
     use windows::{
         core::{HSTRING, PCWSTR},
-        Win32::UI::{Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC}, WindowsAndMessaging::SW_SHOWNORMAL},
+        Win32::UI::{
+            Shell::{ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW},
+            WindowsAndMessaging::SW_SHOWNORMAL,
+        },
     };
 
     let _com_guard = ComGuard::new().map_err(|error| {
@@ -48,19 +51,20 @@ pub(crate) fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), L
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
         lpFile: PCWSTR(file.as_ptr()),
-        lpParameters: parameters.as_ref().map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
+        lpParameters: parameters
+            .as_ref()
+            .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
         nShow: SW_SHOWNORMAL.0,
         ..Default::default()
     };
-    unsafe { ShellExecuteExW(&mut request) }.map_err(|error| {
-        classify_shell_execute_error(path, error.code().0 as u32 & 0xffff)
-    })?;
+    unsafe { ShellExecuteExW(&mut request) }
+        .map_err(|error| classify_shell_execute_error(path, error.code().0 as u32 & 0xffff))?;
 
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn launch_app_user_model_id(app_user_model_id: &str) -> Result<(), LaunchPathError> {
+pub fn launch_app_user_model_id(app_user_model_id: &str) -> Result<(), LaunchPathError> {
     use windows::{
         core::{HSTRING, PCWSTR},
         Win32::{
@@ -149,7 +153,7 @@ fn classify_activation_error(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn launch_path(_path: &str, _launch_args: Option<&str>) -> Result<(), LaunchPathError> {
+pub fn launch_path(_path: &str, _launch_args: Option<&str>) -> Result<(), LaunchPathError> {
     Err(LaunchPathError::new(
         LaunchPathErrorKind::UnsupportedPlatform,
         "Launching apps is only implemented on Windows".to_string(),
@@ -157,7 +161,7 @@ pub(crate) fn launch_path(_path: &str, _launch_args: Option<&str>) -> Result<(),
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn launch_app_user_model_id(_app_user_model_id: &str) -> Result<(), LaunchPathError> {
+pub fn launch_app_user_model_id(_app_user_model_id: &str) -> Result<(), LaunchPathError> {
     Err(LaunchPathError::new(
         LaunchPathErrorKind::UnsupportedPlatform,
         "Launching apps is only implemented on Windows".to_string(),
@@ -173,8 +177,14 @@ mod tests {
 
     #[test]
     fn classify_shell_execute_errors_for_user_facing_messages() {
-        assert_eq!(classify_shell_execute_error(r"C:\Apps\Admin.exe", 1223).kind, LaunchPathErrorKind::Cancelled);
-        assert_eq!(classify_shell_execute_error("unknown:target", 1155).kind, LaunchPathErrorKind::NoAssociation);
+        assert_eq!(
+            classify_shell_execute_error(r"C:\Apps\Admin.exe", 1223).kind,
+            LaunchPathErrorKind::Cancelled
+        );
+        assert_eq!(
+            classify_shell_execute_error("unknown:target", 1155).kind,
+            LaunchPathErrorKind::NoAssociation
+        );
         assert_eq!(
             classify_shell_execute_error(r"C:\Missing\App.exe", 2).kind,
             LaunchPathErrorKind::TargetNotFound

@@ -42,7 +42,7 @@ pub(crate) fn encode_base64(bytes: &[u8]) -> String {
     output
 }
 
-pub(crate) fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
     let mut output = Vec::with_capacity(input.len() * 3 / 4);
     let mut buffer = 0u32;
     let mut bits = 0u8;

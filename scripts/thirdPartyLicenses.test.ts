@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { bundledNpmPaths, checkLicenseAudit, licenseSection, nativeFileCovered, runtimeCargoPackages } from "./thirdPartyLicenses.js";
+import { bundledNpmPaths, checkLicenseAudit, licenseSection, nativeDataCargoPackage, nativeFileCovered, runtimeCargoPackages } from "./thirdPartyLicenses.js";
 import { assertReleaseOutput } from "./windowsRelease.js";
 
 const prefix = Buffer.from("标题\n"), original = Buffer.from("Copyright\r\nPermission granted.\n");
@@ -23,6 +23,10 @@ const dependencies = { gsap: "3.15.0", typescript: "5.9.3" };
 assert.deepEqual([...modules], ["node_modules/pixi.js", "node_modules/@pixi/colord", "node_modules/example/node_modules/nested", "node_modules/@parent/library/node_modules/@child/library"]);
 assert.equal(modules.has("node_modules/gsap"), false, "embedded package metadata must not be mistaken for bundled code");
 const dep = (pkg: string, kind: string | null) => ({ pkg, dep_kinds: [{ kind }] });
+const workspacePackages = [{ id: "old-host", name: "lumeria" }, { id: "data", name: "lumeria-native-data" }];
+assert.equal(nativeDataCargoPackage(workspacePackages, ["old-host", "data"]), "data", "select the sidecar from a virtual workspace, not the old host or a null resolve.root");
+assert.throws(() => nativeDataCargoPackage(workspacePackages, ["old-host"]), /exactly one/);
+assert.throws(() => nativeDataCargoPackage([...workspacePackages, { id: "duplicate", name: "lumeria-native-data" }], ["data", "duplicate"]), /exactly one/);
 const runtime = runtimeCargoPackages("app", [
   { id: "app", deps: [dep("core", null), dep("builder", "build"), dep("test-only", "dev"), dep("derive", null)] },
   { id: "core", deps: [dep("shared", null)] },
@@ -31,6 +35,11 @@ const runtime = runtimeCargoPackages("app", [
   { id: "shared", deps: [dep("core", null)] },
 ], new Set(["derive"]));
 assert.deepEqual([...runtime].sort(), ["app", "core", "shared"], "normal shared dependencies survive; build/dev/macro-only branches do not");
+assert.deepEqual([...runtimeCargoPackages("data", [
+  { id: "old-host", deps: [dep("core", null), dep("tauri", null)] },
+  { id: "data", deps: [dep("core", null)] },
+  { id: "core", deps: [] },
+], new Set())].sort(), ["core", "data"], "retaining the Tauri workspace member does not add it to Native runtime notices");
 const component = { id: "test", version: "1", source: "test", texts: [], pending: [], files: ["runtime/bin/a.dll", "runtime/skia-*"] };
 assert.ok(nativeFileCovered("runtime/bin/a.dll", [component]));
 assert.ok(nativeFileCovered("runtime/skia-hash.node", [component]));

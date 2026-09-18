@@ -16,7 +16,9 @@ The component notice also preserves the existing Lumeria brand policy.
 
 JavaScript packages are selected from actual bundle module headers, plus copied
 native modules and embedded Fluent icons. Rust notices use the Windows normal
-runtime dependency graph, excluding build-only/dev edges and procedural macros.
+runtime dependency graph rooted at the `lumeria-native-data` workspace package,
+excluding build-only/dev edges and procedural macros. The retained Tauri host is
+a separate workspace member and does not belong to that runtime graph.
 This retains notices conservatively where linker elimination is unknown; it does
 not claim each Rust crate is present in the executable. Native libraries are
 selected by payload files. SDK-only components are reviewed with the SDK archive.

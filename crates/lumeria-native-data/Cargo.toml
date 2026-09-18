@@ -1,0 +1,19 @@
+[package]
+name = "lumeria-native-data"
+version = "0.1.0"
+description = "Lumeria native data protocol host"
+authors = ["Lumeria"]
+edition = "2021"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "lumeria_native_data"
+path = "src/main.rs"
+
+[dependencies]
+lumeria-core = { path = "../lumeria-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55.0"

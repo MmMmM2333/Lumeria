@@ -64,6 +64,14 @@ export function bundledNpmPaths(source: string): Set<string> {
   return paths;
 }
 type CargoNode = { id: string; deps: { pkg: string; dep_kinds: { kind: string | null }[] }[] };
+export function nativeDataCargoPackage(
+  packages: readonly Pick<CargoPackage, "id" | "name">[],
+  workspaceMembers: readonly string[],
+): string {
+  const matches = packages.filter(pkg => pkg.name === "lumeria-native-data" && workspaceMembers.includes(pkg.id));
+  if (matches.length !== 1) throw new Error("Cargo workspace must contain exactly one lumeria-native-data package");
+  return matches[0]!.id;
+}
 export function runtimeCargoPackages(root: string, nodes: CargoNode[], macros: Set<string>): Set<string> {
   const byId = new Map(nodes.map(node => [node.id, node]));
   const included = new Set<string>(), pending = [root];
@@ -155,11 +163,11 @@ export function generateLicenseBundle(project: string, output: string, payload?:
     packages.push({ ecosystem: "npm", name: pkg.name, version: pkg.version, scope, license: pkg.license ?? entry.license ?? null,
       source: typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url ?? entry.resolved ?? null, texts });
   }
-  const result = spawnSync("cargo", ["metadata", "--locked", "--offline", "--format-version", "1", "--manifest-path", join(project, "src-tauri/Cargo.toml"), "--filter-platform", "x86_64-pc-windows-msvc"], { encoding: "utf8", windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+  const result = spawnSync("cargo", ["metadata", "--locked", "--offline", "--format-version", "1", "--manifest-path", join(project, "Cargo.toml"), "--filter-platform", "x86_64-pc-windows-msvc"], { encoding: "utf8", windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Cargo license inventory failed; fetch the locked Windows dependencies first: ${result.stderr}`);
-  const cargo = JSON.parse(result.stdout) as { packages: (CargoPackage & { targets: { kind: string[] }[] })[]; resolve: { root: string; nodes: CargoNode[] } };
-  const runtimeIds = runtimeCargoPackages(cargo.resolve.root, cargo.resolve.nodes,
+  const cargo = JSON.parse(result.stdout) as { packages: (CargoPackage & { targets: { kind: string[] }[] })[]; workspace_members: string[]; resolve: { nodes: CargoNode[] } };
+  const runtimeIds = runtimeCargoPackages(nativeDataCargoPackage(cargo.packages, cargo.workspace_members), cargo.resolve.nodes,
     new Set(cargo.packages.filter(pkg => pkg.targets.some(target => target.kind.includes("proc-macro"))).map(pkg => pkg.id)));
   for (const pkg of cargo.packages.filter(pkg => pkg.source && (!payload || runtimeIds.has(pkg.id))).sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`, "en"))) {
     const texts = evidence("cargo", pkg.name, pkg.version, dirname(pkg.manifest_path), pkg.license_file);
@@ -213,7 +221,7 @@ export function generateLicenseBundle(project: string, output: string, payload?:
     ]), "## Outstanding review items", "", ...issues.map(issue => `- ${issue.component}: ${issue.detail}`), ""];
   writeFileSync(join(output, "INDEX.md"), index.join("\n"));
   const textFiles = inventoryFiles(output).map(path => ({ path, sha256: hash(readFileSync(join(output, path))) }));
-  const inputs = ["package-lock.json", "src-tauri/Cargo.lock", "legal/sources.json", "legal/THIRD_PARTY_LICENSES.txt", "legal/package-overrides.json", "legal/native-components.json", "vendor/electrobun-pixi-native-starter/native-toolchain.lock.json"]
+  const inputs = ["package-lock.json", "Cargo.lock", "legal/sources.json", "legal/THIRD_PARTY_LICENSES.txt", "legal/package-overrides.json", "legal/native-components.json", "vendor/electrobun-pixi-native-starter/native-toolchain.lock.json"]
     .map(path => ({ path, sha256: hash(readFileSync(join(project, path))) }));
   const report: Report = { schemaVersion: 1, status: issues.length ? "review-required" : "ready",
     scopes: ["Installed packages from npm lock, including build/dev dependencies", "Windows Cargo graph, including build dependencies", "Explicit native component review; transitive binary coverage is not inferred from an MIT package label"],

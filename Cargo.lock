@@ -2148,8 +2148,8 @@ dependencies = [
 name = "lumeria"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "log",
+ "lumeria-core",
  "png 0.17.16",
  "serde",
  "serde_json",
@@ -2162,6 +2162,29 @@ dependencies = [
  "webview2-com",
  "windows",
  "windows-version",
+]
+
+[[package]]
+name = "lumeria-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "log",
+ "png 0.17.16",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "windows",
+ "winreg",
+]
+
+[[package]]
+name = "lumeria-native-data"
+version = "0.1.0"
+dependencies = [
+ "lumeria-core",
+ "serde",
+ "serde_json",
  "winreg",
 ]
 

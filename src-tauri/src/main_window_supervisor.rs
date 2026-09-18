@@ -20,7 +20,6 @@ use crate::{
         set_window_shadow_enabled, set_window_transitions_enabled,
     },
     i18n,
-    launcher::launch_path,
     native_error::NativeError,
     startup::LaunchOrigin,
     window_effects::{
@@ -28,6 +27,7 @@ use crate::{
         update_main_window_effect_settings,
     },
 };
+use lumeria_core::launcher::launch_path;
 
 pub(crate) const OPEN_DESKTOP_EVENT: &str = "lumeria-open-desktop";
 pub(crate) const TOGGLE_DESKTOP_EVENT: &str = "lumeria-toggle-desktop";
@@ -1464,14 +1464,14 @@ fn set_main_window_tauri_resize_border_visible(
         None
     };
     unsafe { SetWindowPos(resize_border, insert_after, 0, 0, 0, 0, flags) }.map_err(|source| {
-        NativeError::Win32 {
-            context: if visible {
+        NativeError::win32(
+            if visible {
                 "SetWindowPos(show Tauri resize border)"
             } else {
                 "SetWindowPos(hide Tauri resize border)"
             },
             source,
-        }
+        )
     })?;
     log::debug!(
         target: "tray",
@@ -1500,9 +1500,8 @@ fn set_main_window_non_client_subclass(
                 0,
             )
             .ok()
-            .map_err(|source| NativeError::Win32 {
-                context: "SetWindowSubclass(main window non-client)",
-                source,
+            .map_err(|source| {
+                NativeError::win32("SetWindowSubclass(main window non-client)", source)
             })?;
         } else {
             let _ = RemoveWindowSubclass(
@@ -1688,10 +1687,7 @@ fn refresh_main_window_frame(window: &WebviewWindow) -> Result<(), String> {
                 | SWP_NOZORDER,
         )
     }
-    .map_err(|source| NativeError::Win32 {
-        context: "SetWindowPos(refresh main window frame)",
-        source,
-    })?;
+    .map_err(|source| NativeError::win32("SetWindowPos(refresh main window frame)", source))?;
     Ok(())
 }
 
@@ -1794,10 +1790,8 @@ fn resolve_cursor_monitor_target(
         source,
     })?;
     let mut cursor = POINT::default();
-    unsafe { GetCursorPos(&mut cursor) }.map_err(|source| NativeError::Win32 {
-        context: "GetCursorPos(main window shortcut)",
-        source,
-    })?;
+    unsafe { GetCursorPos(&mut cursor) }
+        .map_err(|source| NativeError::win32("GetCursorPos(main window shortcut)", source))?;
     let target_monitor = unsafe { MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST) };
     if target_monitor.is_invalid() {
         return Err("Failed to find the monitor under the cursor".to_string());
@@ -1901,9 +1895,8 @@ fn read_main_windowed_placement(
         length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
         ..Default::default()
     };
-    unsafe { GetWindowPlacement(hwnd, &mut placement) }.map_err(|source| NativeError::Win32 {
-        context: "GetWindowPlacement(main windowed placement)",
-        source,
+    unsafe { GetWindowPlacement(hwnd, &mut placement) }.map_err(|source| {
+        NativeError::win32("GetWindowPlacement(main windowed placement)", source)
     })?;
     if placement.rcNormalPosition.right <= placement.rcNormalPosition.left
         || placement.rcNormalPosition.bottom <= placement.rcNormalPosition.top
@@ -1948,9 +1941,8 @@ fn restore_main_windowed_placement(window: &WebviewWindow) -> Result<(), String>
     if saved_placement.was_maximized {
         set_window_transitions_enabled(window, false)?;
     }
-    unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| NativeError::Win32 {
-        context: "SetWindowPlacement(main windowed placement)",
-        source,
+    unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| {
+        NativeError::win32("SetWindowPlacement(main windowed placement)", source)
     })?;
     if saved_placement.was_maximized {
         schedule_main_window_transitions_restore(window.clone());
@@ -2031,7 +2023,7 @@ fn set_main_window_position_and_size(
             SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER,
         )
     }
-    .map_err(|source| NativeError::Win32 { context, source })?;
+    .map_err(|source| NativeError::win32(context, source))?;
     Ok(())
 }
 
@@ -2066,10 +2058,10 @@ fn relocate_windowed_main_window(
         placement.placement.showCmd = SW_SHOWNORMAL.0 as u32;
         placement.placement.flags.0 &= !WPF_RESTORETOMAXIMIZED.0;
         unsafe { SetWindowPlacement(hwnd, &placement.placement) }.map_err(|source| {
-            NativeError::Win32 {
-                context: "SetWindowPlacement(restore before monitor relocation)",
+            NativeError::win32(
+                "SetWindowPlacement(restore before monitor relocation)",
                 source,
-            }
+            )
         })?;
     }
 
@@ -2083,9 +2075,8 @@ fn relocate_windowed_main_window(
     // the physical size. Re-read the actual outer rectangle and center the
     // post-DPI size rather than preserving stale pixels from the old monitor.
     let mut actual_rect = RECT::default();
-    unsafe { GetWindowRect(hwnd, &mut actual_rect) }.map_err(|source| NativeError::Win32 {
-        context: "GetWindowRect(after windowed monitor relocation)",
-        source,
+    unsafe { GetWindowRect(hwnd, &mut actual_rect) }.map_err(|source| {
+        NativeError::win32("GetWindowRect(after windowed monitor relocation)", source)
     })?;
     let actual_rect: MainWindowRect = actual_rect.into();
     let final_target =
@@ -2102,18 +2093,18 @@ fn relocate_windowed_main_window(
             ..Default::default()
         };
         unsafe { GetWindowPlacement(hwnd, &mut maximized_placement) }.map_err(|source| {
-            NativeError::Win32 {
-                context: "GetWindowPlacement(before remaximizing after monitor relocation)",
+            NativeError::win32(
+                "GetWindowPlacement(before remaximizing after monitor relocation)",
                 source,
-            }
+            )
         })?;
         maximized_placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
         maximized_placement.showCmd = SW_MAXIMIZE.0 as u32;
         unsafe { SetWindowPlacement(hwnd, &maximized_placement) }.map_err(|source| {
-            NativeError::Win32 {
-                context: "SetWindowPlacement(remaximize after monitor relocation)",
+            NativeError::win32(
+                "SetWindowPlacement(remaximize after monitor relocation)",
                 source,
-            }
+            )
         })?;
         schedule_main_window_transitions_restore(window.clone());
     }
@@ -2291,17 +2282,19 @@ fn apply_main_window_borderless_fullscreen_rect(
             ..Default::default()
         };
         unsafe { GetWindowPlacement(hwnd, &mut placement) }.map_err(|source| {
-            NativeError::Win32 {
-                context: "GetWindowPlacement(borderless fullscreen from maximized)",
+            NativeError::win32(
+                "GetWindowPlacement(borderless fullscreen from maximized)",
                 source,
-            }
+            )
         })?;
         placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
         placement.showCmd = SW_SHOWNORMAL.0 as u32;
         placement.rcNormalPosition = rect.into();
-        unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| NativeError::Win32 {
-            context: "SetWindowPlacement(borderless fullscreen from maximized)",
-            source,
+        unsafe { SetWindowPlacement(hwnd, &placement) }.map_err(|source| {
+            NativeError::win32(
+                "SetWindowPlacement(borderless fullscreen from maximized)",
+                source,
+            )
         })?;
     }
     unsafe {
@@ -2315,10 +2308,7 @@ fn apply_main_window_borderless_fullscreen_rect(
             SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING | SWP_NOZORDER,
         )
     }
-    .map_err(|source| NativeError::Win32 {
-        context: "SetWindowPos(borderless fullscreen bounds)",
-        source,
-    })?;
+    .map_err(|source| NativeError::win32("SetWindowPos(borderless fullscreen bounds)", source))?;
     let webview: &tauri::Webview = window.as_ref();
     webview
         .set_auto_resize(false)
@@ -2571,11 +2561,7 @@ fn activate_window(window: &WebviewWindow) -> Result<(), String> {
         return Ok(());
     }
     if let Err(source) = bring_result {
-        return Err(NativeError::Win32 {
-            context: "BringWindowToTop for activation",
-            source,
-        }
-        .into());
+        return Err(NativeError::win32("BringWindowToTop for activation", source).into());
     }
     Err(format!(
         "SetForegroundWindow returned {foreground_requested}, but the main window did not become foreground"

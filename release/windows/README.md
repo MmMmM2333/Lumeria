@@ -22,6 +22,12 @@ npm run native:stage
 npm run native:package
 ```
 
+Rust 使用根目录 Cargo workspace 与 `Cargo.lock`。`native:build` 的前置步骤只构建
+`lumeria-native-data` 包，产物为 `target/release/lumeria_native_data.exe`，暂存到
+运行包时命名为 `lumeria-native-data.exe`。旧 Tauri 宿主仍作为独立 workspace 成员保留，
+不参与 Native 数据服务构建。`npm run test:native-data` 运行共享核心/协议测试，并使用
+真实 release 数据服务与 TS 客户端验证隔离数据读写和通信。
+
 构建工具要求 Node/npm、Rust 的 Windows MSVC 工具链、Zig **0.16.0**、NSIS **3.11**。
 用户安装后不需要这些开发工具。Zig 可通过 `LUMERIA_ZIG` 指定，也可放在
 `.codex-dev/toolchains/zig-x86_64-windows-0.16.0/`。NSIS 可通过 `LUMERIA_NSIS`

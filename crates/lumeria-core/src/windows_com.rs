@@ -5,13 +5,13 @@ use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTME
 use crate::native_error::NativeError;
 
 #[cfg(target_os = "windows")]
-pub(crate) struct ComGuard {
+pub struct ComGuard {
     initialized: bool,
 }
 
 #[cfg(target_os = "windows")]
 impl ComGuard {
-    pub(crate) fn new() -> Result<Self, NativeError> {
+    pub fn new() -> Result<Self, NativeError> {
         unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
             .ok()
             .map_err(|source| NativeError::Com {

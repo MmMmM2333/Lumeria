@@ -241,7 +241,6 @@ try {
       LUMERIA_NATIVE_DIAGNOSTICS_BUILD: "1",
       ...(!productRuntime||process.env.LAUNCHPAD_NATIVE_DATA_HOST?{LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
         projectRoot,
-        "src-tauri",
         "target",
         "release",
         "lumeria_native_data.exe",

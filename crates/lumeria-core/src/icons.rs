@@ -43,7 +43,7 @@ use windows::{
     },
 };
 #[cfg(target_os = "windows")]
-pub(crate) fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Option<String> {
+pub fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Option<String> {
     cache_app_icon_for_identity(path, icon_dir, app_id, &windows_api_path(path))
 }
 
@@ -157,7 +157,7 @@ pub(crate) fn cache_app_icon_choices(
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn cache_app_icon(_path: &Path, _icon_dir: &Path, _app_id: &str) -> Option<String> {
+pub fn cache_app_icon(_path: &Path, _icon_dir: &Path, _app_id: &str) -> Option<String> {
     None
 }
 
