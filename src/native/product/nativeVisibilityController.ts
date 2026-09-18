@@ -6,6 +6,7 @@ import type { NativeManagement } from "../../rendering/native/NativeManagement.j
 import type { NativeSearchBar } from "../../rendering/native/NativeSearchBar.js";
 import type { NativeWindowChrome } from "../../rendering/native/NativeWindowChrome.js";
 import type { createNativeWindowEffects } from "../nativeWindowEffects.js";
+import { shouldHideForNativeShortcut } from "../nativeShortcutPolicy.js";
 
 type LaunchFlow = Readonly<{
   closeDesktop(options?: Readonly<{ clearSearch?: boolean }>): void;
@@ -70,6 +71,7 @@ export type NativeVisibilityController = Readonly<{
   show: () => void;
   timers: Scheduler;
   toggle: () => void;
+  shortcut: () => void;
 }>;
 
 export function createNativeVisibilityController(
@@ -144,11 +146,19 @@ export function createNativeVisibilityController(
       visibilityPreparing = false; ports.closeSettings(); ports.getLaunchFlow()!.closeDesktop({ clearSearch: true });
     }).catch(error => { visibilityPreparing = false; ports.reportError(error); });
   };
-  const toggle = () => {
+  const shortcut = () => {
     if (ports.isCloseCoordinatorClosing()) return;
-    if (ports.app.window.isMinimized() || ports.app.state !== "running" || !ports.app.window.isVisible()
-      || !ports.getLaunchFlow()!.isDesktopOpen.value || visibilityPreparing) show();
-    else dismiss();
+    const visible=ports.app.window.isVisible(),minimized=ports.app.window.isMinimized();
+    const target=ports.app.prepareShortcutActivation();
+    ports.log("shortcut-target",target);
+    if (ports.app.state === "running" && ports.getLaunchFlow()!.isDesktopOpen.value && !visibilityPreparing
+      && shouldHideForNativeShortcut({visible,minimized,...target})) dismiss();
+    else show();
+  };
+  const toggle = () => {
+    if(ports.isCloseCoordinatorClosing())return;
+    if(ports.app.window.isMinimized()||ports.app.state!=="running"||!ports.app.window.isVisible()
+      ||!ports.getLaunchFlow()!.isDesktopOpen.value||visibilityPreparing)show();else dismiss();
   };
 
   return Object.freeze({
@@ -159,5 +169,6 @@ export function createNativeVisibilityController(
     show,
     timers,
     toggle,
+    shortcut,
   });
 }

@@ -1,5 +1,6 @@
 import { dlopen, ptr, type Pointer } from "bun:ffi";
 import { release } from "node:os";
+import { centerWindowOnWorkArea } from "./native-monitor-geometry";
 
 export type NativeWindowMaterial="none"|"acrylic"|"mica"|"micaAlt";
 export type NativeWindowAppearance="light"|"dark";
@@ -19,6 +20,12 @@ const user=process.platform==="win32"?dlopen("user32.dll",{
   GetWindowLongPtrW:{args:["ptr","i32"],returns:"i64"},
   SetWindowLongPtrW:{args:["ptr","i32","i64"],returns:"i64"},
   MonitorFromWindow:{args:["ptr","u32"],returns:"ptr"},
+  MonitorFromPoint:{args:["i64","u32"],returns:"ptr"},
+  GetForegroundWindow:{args:[],returns:"ptr"},
+  IsIconic:{args:["ptr"],returns:"i32"},
+  IsZoomed:{args:["ptr"],returns:"i32"},
+  GetWindowPlacement:{args:["ptr","ptr"],returns:"i32"},
+  ShowWindow:{args:["ptr","i32"],returns:"i32"},
   GetMonitorInfoW:{args:["ptr","ptr"],returns:"i32"},
 }):null;
 const dwm=process.platform==="win32"?dlopen("dwmapi.dll",{
@@ -91,6 +98,42 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
   };
   return {
     support,
+    get handle(){return Number(window);},
+    get displayId(){const monitor=user.symbols.MonitorFromWindow(window,2);if(!monitor)throw new Error("Window display is unavailable");return Number(monitor);},
+    prepareShortcutActivation(){
+      if(!user.symbols.IsWindow(window))throw new Error("Presentation window is closed");
+      const foreground=user.symbols.GetForegroundWindow()===window;
+      const point=new Int32Array(2);
+      if(!user.symbols.GetCursorPos(ptr(point)))throw new Error("Cannot read the cursor position");
+      const packed=BigInt.asIntN(64,BigInt(point[0]!>>>0)|(BigInt(point[1]!>>>0)<<32n));
+      const target=user.symbols.MonitorFromPoint(packed,2),currentMonitor=user.symbols.MonitorFromWindow(window,2);
+      if(!target||!currentMonitor)throw new Error("Cannot resolve shortcut display");
+      const displayChanged=target!==currentMonitor;
+      if(displayChanged){
+        const info=new Int32Array(10);info[0]=40;
+        if(!user.symbols.GetMonitorInfoW(target,ptr(info)))throw new Error("Cannot read shortcut display bounds");
+        const work=info.slice(5,9),monitor=info.slice(1,5);
+        const minimized=Boolean(user.symbols.IsIconic(window));
+        const placement=new Int32Array(11);placement[0]=44;
+        if(!user.symbols.GetWindowPlacement(window,ptr(placement)))throw new Error("Cannot read shortcut window placement");
+        const maximized=Boolean(user.symbols.IsZoomed(window))||(minimized&&(placement[1]!&2)!==0);
+        // Restore before measuring; WM_DPICHANGED may synchronously resize on relocation.
+        if(minimized||maximized)user.symbols.ShowWindow(window,9);
+        const previous=readPlacement();
+        const move=(rect:Int32Array)=>{
+          if(!user.symbols.SetWindowPos(window,null,rect[0]!,rect[1]!,rect[2]!-rect[0]!,rect[3]!-rect[1]!,0x214))throw new Error("Cannot relocate shortcut window");
+        };
+        if(fullscreen){
+          move(new Int32Array([monitor[0]!-overscanPixels,monitor[1]!-overscanPixels,monitor[2]!+overscanPixels,monitor[3]!+overscanPixels]));
+          if(windowedPlacement)windowedPlacement={...windowedPlacement,rect:centerWindowOnWorkArea(windowedPlacement.rect,work)};
+        }else{
+          move(centerWindowOnWorkArea(previous.rect,work));
+          move(centerWindowOnWorkArea(readPlacement().rect,work));
+          if(maximized)user.symbols.ShowWindow(window,3);
+        }
+      }
+      return {foreground,displayChanged};
+    },
     get fullscreen(){return fullscreen;},
     get overscanPixels(){return overscanPixels;},
     setMode(nextFullscreen:boolean,pixels:number){

@@ -226,9 +226,10 @@ const folderLayout = Object.freeze({
 });
 
 let toggleLaunchpad=()=>{};
+let shortcutLaunchpad=()=>{};
 const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
   logNativeRuntime("shortcut",{state:app.state,visible:app.window.isVisible(),minimized:app.window.isMinimized()});
-  try{toggleLaunchpad();}catch(error){logNativeRuntime("shortcut-error",error);}
+  try{shortcutLaunchpad();}catch(error){logNativeRuntime("shortcut-error",error);}
 });
 let refreshWindowChrome=()=>{};
 const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{refreshWindowChrome();nativeSettings.redraw();app.invalidate();});
@@ -877,7 +878,7 @@ try {
     hideNativeWindow:visibility.hideAfterPresented,onDesktopCloseComplete:()=>{void visibility.hideAfterPresented().catch(reportNativeError);},
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{...visibility.timers,afterCommit:queueMicrotask});
-  showLaunchpad=visibility.show;dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;
+  showLaunchpad=visibility.show;dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
