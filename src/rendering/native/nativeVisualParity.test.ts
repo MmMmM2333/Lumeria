@@ -11,10 +11,40 @@ import { DesktopLayer } from "../pixi/scene/DesktopLayer.js";
 import { IconNode } from "../pixi/nodes/IconNode.js";
 import { motionRuntime } from "../pixi/animation/motionRuntime.js";
 import { snapshotContractValue } from "../contractSnapshot.js";
+import { createIconBoundsRegistry } from "../pixi/geometry/iconBoundsRegistry.js";
 import type { CompleteDesktopSceneFrame, SceneItem } from "../sceneFrame.js";
 
 export async function runNativeVisualParityTests(baseFrame:CompleteDesktopSceneFrame):Promise<void>{
   motionRuntime.reset();motionRuntime.suspendAutoTicker();
+  {
+    const layer=new DesktopLayer({iconBoundsRegistry:createIconBoundsRegistry()});
+    const overlay=layer.singleStageFolderLayer;
+    try{
+      for(const height of [600,160]){
+        overlay.drawPanel({left:0,top:0,width:800,height});
+        overlay.prepareFolderOverlayState({renderedFolder:null,width:1000,height:800});
+        assert.equal(overlay.visible,false,"no folder or closing handoff hides the overlay");
+        const retainedHeight=overlay.panelMaterial.getLocalBounds().height;
+        for(const delay of [0,1/60,.08,.24]){
+          layer.applyFolderOverlayAlpha({...baseFrame.visual,launchpadVisualAlpha:0});
+          motionRuntime.step(delay);
+          layer.applyFolderOverlayAlpha({...baseFrame.visual,launchpadVisualAlpha:1});
+          for(let i=0;i<120;i++){
+            motionRuntime.step(1/60);
+            assert.equal(overlay.visible,false,"desktop hide/reopen must not revive a retained folder panel");
+          }
+          assert.equal(overlay.panelMaterial.getLocalBounds().height,retainedHeight,"retained geometry may be reused without displaying it");
+        }
+        // Visibility is also authoritative while the folder layer owns a live
+        // opening/closing handoff. Alpha updates must not hide that presentation.
+        overlay.visible=true;
+        layer.applyFolderOverlayAlpha({...baseFrame.visual,launchpadVisualAlpha:0});
+        assert.equal(overlay.visible,true,"fade preserves folder-owned handoff visibility");
+        layer.applyFolderOverlayAlpha({...baseFrame.visual,launchpadVisualAlpha:1});
+        assert.equal(overlay.visible,true);
+      }
+    }finally{layer.destroy({children:true});}
+  }
   {
     const background=new Container();background.alpha=0;
     for(const delay of [.016,.05,.12,.22]){

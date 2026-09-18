@@ -10,6 +10,8 @@ import type { SceneFocusedIcon,SceneItem } from "../../rendering/sceneFrame.js";
 import type { createNativeLayoutState,NativeNavigationKey,NativePageTurn } from "../nativeStartup.js";
 import type { NativeFolderFlow } from "../product/nativeInputRouter.js";
 import type { createNativeEditing } from "../nativeEditing.js";
+import type { DesktopLayer } from "../../rendering/pixi/scene/DesktopLayer.js";
+import { resolveNativePointerTarget } from "../../rendering/native/nativePointerTarget.js";
 
 type NativeLayoutState = ReturnType<typeof createNativeLayoutState>;
 type NativeSmokeSupport = typeof import("../nativeSmokeSupport.js");
@@ -281,4 +283,38 @@ export async function runNativeFolderSmoke(context: NativeFolderSmokeContext): P
   await present("the closed native folder");
   await smoke.captureSmokeFrame(app, "folder-closed");
   addPresent(1);
+  // The desktop visual-only path used to revive the last folder's retained
+  // material and hit area. Exercise both full and one-row folder geometry.
+  const layer=app.stage.getChildByLabel("launchpad-native-desktop",true) as DesktopLayer;
+  for(const folder of [smokeFolder,otherFolder]){
+    await activateItem(folder);
+    await waitFor("overlay regression folder open",()=>folderFlow.snapshot().openProgress>.999&&!scene.getMotionSnapshot().active);
+    assert.equal(layer.singleStageFolderLayer.visible,true);
+    closeFolder();
+    await waitFor("overlay regression folder closed",()=>folderFlow.snapshot().renderedFolder===null&&!scene.getMotionSnapshot().active);
+    await present("overlay regression closed commit");
+    assert.equal(layer.singleStageFolderLayer.visible,false);
+    for(const delay of [16,80,350]){
+      onKey({type:"down",key:"Escape"});
+      await waitFor("overlay regression desktop closing",()=>launchFlow.isDesktopClosing.value||!app.window.isVisible());
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      context.showLaunchpad();
+      await present("overlay regression reopen committed");
+      await waitFor("overlay regression desktop reopened",()=>app.window.isVisible()&&scene.getDesktopAlpha()>.99&&!scene.getMotionSnapshot().active);
+      await present("overlay regression reopened frame");
+      assert.equal(folderFlow.snapshot().renderedFolder,null);
+      assert.equal(layer.singleStageFolderLayer.visible,false,"reopening desktop must not revive the previous folder panel");
+      const node=app.stage.getChildByLabel(`launchpad-item:${folder.id}`,true)!;
+      const bounds=node.getBounds();
+      app.nativeInput.emitPointer("pointermove",bounds.x+bounds.width/2,bounds.y+bounds.height/2,0);
+      assert.deepEqual(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(bounds.x+bounds.width/2,bounds.y+bounds.height/2)),
+        {kind:"icon",id:folder.id},"retained folder overlay must not intercept desktop icon input");
+    }
+    await smoke.captureSmokeFrame(app,`folder-overlay-hidden-${folder.id}`);
+    click(app.stage.getChildByLabel(`launchpad-item:${folder.id}`,true)!);
+    await waitFor("overlay regression real icon click",()=>folderFlow.snapshot().renderedFolder?.id===folder.id&&folderFlow.snapshot().openProgress>.999);
+    closeFolder();
+    await waitFor("overlay regression final folder cleanup",()=>folderFlow.snapshot().renderedFolder===null&&!scene.getMotionSnapshot().active);
+  }
+  console.log("Folder overlay stays hidden across desktop reopen; both folder sizes remain clickable");
 }

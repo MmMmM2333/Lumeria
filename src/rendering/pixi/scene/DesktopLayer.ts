@@ -2002,7 +2002,8 @@ export class DesktopLayer extends Container {
 
   applyFolderOverlayAlpha(state: DesktopVisualState): void {
     const alpha = resolveLaunchpadVisualAlpha(state);
-    this.singleStageFolderLayer.visible = true;
+    // FolderOverlayLayer owns visibility, including closing handoffs. A visual-only
+    // desktop update must not reveal the retained panel of an already closed folder.
     this.singleStageFolderLayer.interactiveChildren = alpha > 0.001;
     if (!this.hasFolderOverlayAlpha) {
       this.singleStageFolderLayer.alpha = alpha;
