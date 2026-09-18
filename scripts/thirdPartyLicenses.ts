@@ -87,6 +87,7 @@ export function generateLicenseBundle(project: string, output: string, payload?:
   if (!payload && !/^(artifacts|\.codex-dev)\//.test(relativeOutput.replaceAll("\\", "/"))) throw new Error("Full license audits belong in artifacts/ or .codex-dev/");
   let ancestor = dirname(output); while (!existsSync(ancestor)) ancestor = dirname(ancestor);
   if (realpathSync(ancestor) !== ancestor) throw new Error("License output must not traverse links");
+  const projectLicenseId = readJson<{ license: string }>(join(project, "package.json")).license;
   const lock = readJson<{ packages: Record<string, { version?: string; dev?: boolean; optional?: boolean; os?: string[]; cpu?: string[]; license?: string; resolved?: string }> }>(join(project, "package-lock.json"));
   const sourceIndex = readJson<{ schemaVersion: number; sources: Source[] }>(join(project, "legal/sources.json"));
   if (sourceIndex.schemaVersion !== 2) throw new Error("Unsupported license source index");
@@ -189,13 +190,14 @@ export function generateLicenseBundle(project: string, output: string, payload?:
       ...packages.map(pkg => `- ${pkg.name}@${pkg.version} (${pkg.license ?? "see upstream"}) — ${pkg.source ?? "see source package"}; text: ${pkg.texts.map(text => text.sha256).join(", ") || "not collected"}`),
       "", "## Native libraries", "", ...native.flatMap(component => [
         `- ${component.id} ${component.version} — ${component.source}; text: ${component.texts.map(id => sourceText.get(id)!.sha256).join(", ") || "see upstream"}`,
-      ]), "", "## Lumeria", "", `Original Lumeria source: GPL-3.0-only; full license text: ${projectLicense.sha256}.`, "",
+      ]), "", "## Lumeria", "", `Original Lumeria source: ${projectLicenseId}; full license text: ${projectLicense.sha256}.`, "",
+      readFileSync(join(project, "LICENSING.md"), "utf8"), "",
       "## Brand policy", "", readFileSync(join(project, "TRADEMARKS.md"), "utf8"), ""];
     writeFileSync(join(output, "THIRD_PARTY_NOTICES.md"), notice.join("\n"));
     return { schemaVersion: 1, status: issues.length ? "review-required" : "ready", scopes: ["Native build notice collection"], inputs: [], packages, native,
       payload: payloadEvidence, textFiles: inventoryFiles(output).map(path => ({ path, sha256: hash(readFileSync(join(output, path))) })), issues };
   }
-  for (const file of ["LICENSE", "THIRD_PARTY_NOTICES.md", "TRADEMARKS.md"]) copyFileSync(join(project, file), join(output, file));
+  for (const file of ["LICENSE", "LICENSING.md", "THIRD_PARTY_NOTICES.md", "TRADEMARKS.md"]) copyFileSync(join(project, file), join(output, file));
   writeFileSync(join(output, "sources.json"), JSON.stringify({ schemaVersion: 1, sources: sources.filter(source => sourceText.has(source.id)).map(source => ({
     id: source.id, url: source.url, sha256: source.sha256, repositoryPath: `legal/${source.path}`, path: sourceText.get(source.id)!.path,
   })) }, null, 2) + "\n");
