@@ -13,7 +13,7 @@
     "check:policy": "tsx scripts/checkProjectPolicy.ts",
     "dev": "vite",
     "icons:export": "tsx scripts/exportBrandIcons.ts",
-    "native:data:build": "cargo build --manifest-path src-tauri/Cargo.toml --bin lumeria_native_data --release",
+    "native:data:build": "cargo build --manifest-path src-tauri/Cargo.toml --bin lumeria_native_data --release --locked",
     "native:host:build": "tsx scripts/buildNativeFrame.ts",
     "prenative:build": "npm run native:data:build",
     "native:build": "node vendor/electrobun-pixi-native-starter/consumer/run-electrobun.mjs build",
@@ -31,8 +31,8 @@
     "native:dev": "tsx scripts/runNativeElectrobun.ts --dev",
     "prenative:smoke": "npm run native:data:build",
     "native:smoke": "tsx scripts/runNativeElectrobun.ts",
-    "postinstall": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root .",
-    "test": "tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx scripts/nativeBuildDefines.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeTextPrewarm.test.ts && tsx src/native/nativeStartupPreparation.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/nativeRecoverableIconSource.test.ts && tsx src/native/nativeIconResidency.test.ts && tsx src/native/persistence.test.ts && npm run test:native-release",
+    "postinstall": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root . --dependencies-only",
+    "test": "npm run test:native-toolchain && tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx scripts/nativeBuildDefines.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeTextPrewarm.test.ts && tsx src/native/nativeStartupPreparation.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/nativeRecoverableIconSource.test.ts && tsx src/native/nativeIconResidency.test.ts && tsx src/native/persistence.test.ts && npm run test:native-release",
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.ts --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.ts --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.ts --project=chromium --workers=1",
@@ -46,7 +46,11 @@
     "typecheck:native": "tsc --noEmit -p tsconfig.electrobun.json",
     "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "native:prepare": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs prepare",
+    "native:toolchain:check": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs check",
+    "native:toolchain:pack": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs pack",
+    "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.8",

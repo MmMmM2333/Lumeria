@@ -1,6 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { verifyBunRuntimePin } from "./bun-runtime-pin.mjs";
 
@@ -15,6 +14,9 @@ const selectedDevkit = process.env.HUTCH_ELECTROBUN_DEVKIT_ROOT
 	: join(root, ".hutch", "devkit-dcomp-2.0.1");
 const adapterPath = join(selectedDevkit, "api", "sdks", "main", "webgpuAdapter.ts");
 const checkOnly = process.argv.includes("--check");
+const dependenciesOnly = process.argv.includes("--dependencies-only");
+const sdkOnly = process.argv.includes("--sdk-only");
+if (sdkOnly && dependenciesOnly) throw new Error("Choose either --sdk-only or --dependencies-only");
 const bunVersion = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).electrobunPixiStarter?.bunVersion;
 const electrobunVersion = JSON.parse(readFileSync(join(dependencyRoot, "node_modules", "electrobun", "package.json"), "utf8")).version;
 const pixiVersion = JSON.parse(readFileSync(join(dependencyRoot, "node_modules", "pixi.js", "package.json"), "utf8")).version;
@@ -26,19 +28,12 @@ if (pixiVersion !== "8.20.1") {
 	throw new Error(`PixiJS BindGroup patch supports 8.20.1, found ${pixiVersion}`);
 }
 
-if (!existsSync(adapterPath)) {
-	if (process.env.HUTCH_ELECTROBUN_DEVKIT_ROOT) {
-		throw new Error(`Selected Electrobun devkit has no WebGPU adapter: ${adapterPath}`);
-	}
-	if (checkOnly) throw new Error("Electrobun SDK has not been materialized; run npm run prepare:electrobun");
-	const cli = join(root, "node_modules", "electrobun", "bin", "electrobun.cjs");
-	const result = spawnSync(process.execPath, [cli, "build", "--env=dev"], { cwd: root, stdio: "inherit" });
-	if (result.status !== 0 || !existsSync(adapterPath)) {
-		throw new Error("Electrobun SDK materialization failed");
-	}
+if (!dependenciesOnly && !existsSync(adapterPath)) {
+  throw new Error("Native SDK is missing. Run npm run native:prepare -- --archive <toolchain.tar.gz>; see docs/native-toolchain.md");
 }
 
-verifyBunRuntimePin(selectedDevkit, bunVersion, { apply: !checkOnly && consumerRootIndex < 0 });
+if (!dependenciesOnly) {
+verifyBunRuntimePin(selectedDevkit, bunVersion, { apply: !checkOnly && (sdkOnly || consumerRootIndex < 0) });
 console.log(`Bun runtime pin verified: ${bunVersion}`);
 
 const surfaceAcquireBefore = [
@@ -318,6 +313,8 @@ if (source.split("function mapStencilOperation").length !== 2) {
 if (changed) writeFileSync(adapterPath, source);
 console.log(`Electrobun WebGPU adapter patch ${changed ? "applied" : "verified"}`);
 
+}
+
 const patchPixiBindGroups = (extension, baseClass) => {
 	const path = join(dependencyRoot, "node_modules", "pixi.js", "lib", "rendering", "batcher", "gpu", "getTextureBatchBindGroup." + extension);
 	let pixiSource = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
@@ -370,23 +367,9 @@ const patchPixiBindGroups = (extension, baseClass) => {
 	return pixiChanged;
 };
 
+if (!sdkOnly) {
 const pixiMjsChanged = patchPixiBindGroups("mjs", "BindGroup");
 const pixiJsChanged = patchPixiBindGroups("js", "BindGroup.BindGroup");
 const pixiChanged = pixiMjsChanged || pixiJsChanged;
 console.log(`PixiJS texture BindGroup lifecycle patch ${pixiChanged ? "applied" : "verified"}`);
-
-const nativeFramePath = join(root, ".hutch", "native-frame", "native-frame.dll");
-const nativeFrameSource = join(root, "src", "platform", "native-frame.rs");
-if (!checkOnly && consumerRootIndex < 0) {
-	mkdirSync(dirname(nativeFramePath), { recursive: true });
-	const result = spawnSync("rustc", [
-		"--crate-type", "cdylib",
-		nativeFrameSource,
-		"-C", "opt-level=3",
-		"-C", "link-arg=/Brepro",
-		"-o", nativeFramePath,
-	], { cwd: root, stdio: "inherit" });
-	if (result.status !== 0 || !existsSync(nativeFramePath)) {
-		throw new Error("Native frame bridge build failed; install Rust and retry");
-	}
 }

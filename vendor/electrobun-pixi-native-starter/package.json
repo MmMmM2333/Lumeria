@@ -23,13 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test:preparation": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-frame-preparation.test.ts",
     "test:bun-pin": "node --test tools/bun-runtime-pin.test.mjs",
-    "test:bytecode": "node --test consumer/bytecode-postbuild.test.mjs",
-    "release:generate": "node tools/starter-release.mjs generate",
-    "release:verify": "node tools/starter-release.mjs verify",
-    "release:package": "node tools/starter-release.mjs package",
-    "release:install": "node tools/starter-release.mjs install",
-    "release:install-consumer": "node tools/starter-release.mjs install-consumer",
-    "release:smoke": "node tools/starter-release.mjs smoke"
+    "test:bytecode": "node --test consumer/bytecode-postbuild.test.mjs"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.8",

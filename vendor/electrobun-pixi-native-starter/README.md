@@ -1,5 +1,10 @@
 # Electrobun + PixiJS Native Starter
 
+此目录现在随 Lumeria 维护。产品构建以仓库根目录的 [工具链指南](../../docs/native-toolchain.md) 为准；不再单独发布或安装 Starter 模板。下面保留 Runtime API、示例和历史变更说明，示例版本不等于 Lumeria 产品版本。
+
+`native-toolchain.lock.json` 锁定 SDK 附件和文件；`starter-manifest.json` 仅保留导入时的历史来源记录，包含旧路径，不再校验当前源码或本地构建输出。
+
+
 0.3.4 adds an optional [CommonJS bytecode build](consumer/bytecode.md), with packaged
 JS/JSC integrity checks and an independent consumer cache-hit smoke. ESM remains the default.
 
@@ -138,7 +143,6 @@ npm run typecheck
 npm run test:host
 npm run verify:adapter
 npm run build
-npm run release:smoke
 ```
 
 ### 版本化制品
@@ -149,26 +153,16 @@ npm run release:smoke
 
 0.2.17：TextInputHost 可通过 `textResolution` 为新输入框提供文字纹理分辨率；已有文字仍由消费方在 DPI 变化时同步。TextInputStyle 新增可选 `fontWeight` 和 `paddingHorizontal`，字宽测量、光标、选择与裁剪使用同一字重及内边距，默认行为保持兼容。
 
-```powershell
-npm run release:generate # 生成 ABI/capability/逐文件 SHA-256 manifest
-npm run release:verify   # 校验当前 manifest 与本地 payload
-npm run release:package  # 生成带版本号的发布目录
-npm run release:smoke    # 在系统临时目录打包并运行独立 consumer smoke
-```
-
-发布目录包含仓库中同一份已测试 Runtime、Demo、配置、lockfile、资源、兼容补丁、完整 patched Electrobun devkit、`libNativeWrapper.dll`、`native-frame.dll`、consumer smoke 和 `starter-manifest.json`，不维护第二份模板。manifest schema v2 固化 Starter/Electrobun/Pixi 精确版本、最低 Windows 10.0.19041、win-x64、core/sdk/native ABI、capability mask、可复现构建时间、commit，以及全部文件的 size/SHA-256。缺文件、hash、ABI、capability、架构或固定依赖版本不匹配都会明确失败。
-
-`release:smoke` 在系统临时空目录中只物化 release，扫描原仓库绝对路径泄漏，创建并安装独立 consumer，执行 `npm ci`、`npm run typecheck`、`npm run build`，再启动真实 Electrobun/Pixi 窗口并运行完整生命周期检查；关闭后还会确认没有指向临时 release 的残留进程。
-
-### 安装到既有项目
-
-LaunchPad 这类既有应用继续维护自己的 `package.json`，不把 Starter 当 npm 包。先精确声明并安装与 manifest 相同的依赖版本，再从解压后的 release 执行：
+本仓库已取消独立 Starter 的 generate/package/install-consumer 流程。请在 Lumeria 根目录运行：
 
 ```powershell
-npm run release:install-consumer -- <LaunchPad目录>
+npm ci
+npm run native:prepare -- --archive <工具链附件.tar.gz>
+npm run native:toolchain:check
+npm run native:build
 ```
 
-命令会完整校验 release 的 manifest、ABI、capabilities、平台和逐文件 SHA-256，再原子安装到 `LaunchPad/vendor/electrobun-pixi-native-starter`。相同 manifest 可重复执行且不改文件；目标中存在不同或损坏版本时会明确拒绝覆盖。安装目录内的 `starter-manifest.json` 记录 Starter commit 和全部制品 hash。
+SDK/DLL 附件与应用源码分开分发；`native-frame.dll` 从当前源码构建，本地凭据写入被忽略的 `.hutch/native-frame/build.json`。维护者使用 `native:toolchain:pack` 准备附件，不自动改写已提交锁定清单。完整说明及源码重建流程见上方工具链指南。
 
 消费方入口直接引用 vendored Runtime，并通过随 release 提供的 runner 启动：
 
@@ -413,5 +407,5 @@ await renderer.extract.download({ target: stage, filename: "capture.png" });
 - `src/demo/`：只通过公开应用 API 组装 showcase、输入控件、BunnyMark 和调试命令。
 - `tools/patch-electrobun.mjs`：固定版本、幂等的 Electrobun SDK stencil、Bun FFI 与 Pixi BindGroup 生命周期补丁。
 - `tools/pixi-debug.mjs`：Agent Debug Bridge 的命令行客户端与生命周期 smoke test。
-- `tools/starter-release.mjs`：完整 Starter payload、manifest、package、install、verify 和 detached smoke。
-- `starter-consumer-smoke/smoke.mjs`：在 release 内校验全部文件/ABI，并安装、构建、启动真实独立应用。
+- `tools/native-toolchain.mjs`：Lumeria 工具链的获取、校验、离线包及本地原生桥接构建。
+- `starter-manifest.json`：历史导入来源记录，不再作为活动源码的校验清单。
