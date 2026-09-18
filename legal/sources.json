@@ -208,15 +208,6 @@
       "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
       "offset": 88311,
       "length": 1549
-    },
-    {
-      "id": "GSAP-standard-license",
-      "path": "THIRD_PARTY_LICENSES.txt",
-      "url": "https://gsap.com/community/standard-license/",
-      "sha256": "4ba89b83c3fb471dd939698cda9f0750c4c7bfaf5b7fc9ed63e9a8f67bee32ae",
-      "note": "License body I\u2013VI extracted as plain text from official page on 2026-09-18; web terms can change. gsap 3.15.0 README points to the standard license; collection does not resolve downstream bundling questions.",
-      "offset": 89950,
-      "length": 3545
     }
   ]
 }

@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import type { ComponentPublicInstance, Ref } from "vue";
-import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import { useDomMotion, type DomMotion } from "../composables/useDomMotion.js";
 import type { LaunchpadSearchInputEvent } from "../composables/useLaunchpadSearch.js";
 import { cx } from "../domain/launchpadLayout.js";
 import type { ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
@@ -87,11 +87,11 @@ const { t } = useLocalization();
 
 const headerMotionRef = ref<HTMLElement | null>(null);
 const dotsMotionRef = ref<HTMLElement | null>(null);
-const headerMotion = useGsapDomMotion(headerMotionRef, {
+const headerMotion = useDomMotion(headerMotionRef, {
   initial: () => normalizeChromeMotion(props.chromeInitial),
   motion: resolveChromeMotion,
 });
-const dotsMotion = useGsapDomMotion(dotsMotionRef, {
+const dotsMotion = useDomMotion(dotsMotionRef, {
   initial: () => normalizeChromeMotion(props.chromeInitial),
   motion: resolveChromeMotion,
 });
@@ -146,11 +146,11 @@ function handleShellContextMenu(event: MouseEvent): void {
   emit("context-menu-request", event);
 }
 
-function resolveChromeMotion() {
+function resolveChromeMotion(): DomMotion {
   return {
     ...normalizeChromeMotion(props.chromeAnimate),
     duration: resolveChromeMotionDuration(props.chromeTransition),
-    ease: "power2.out",
+    ease: "cubic-out",
   };
 }
 

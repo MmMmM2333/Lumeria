@@ -33,13 +33,9 @@ See the component records and distribution guidance in [legal/README.md](legal/R
 
 ## Other distributions
 
-The retained Web interface uses GSAP under its [standard license](https://gsap.com/community/standard-license/),
-which has use restrictions and is not GPL-3.0-only. GSAP is not selected for Native
-notices merely because its name appears in bundled package metadata.
+The current Web and Native applications do not depend on GSAP. Historical
+revisions may have different dependencies and retain their own notices.
 
 The standalone SDK archive contains additional CEF/Chromium and SDK components;
 its notices belong to that archive's release, not every Lumeria installer. Optional
 full dependency audits are local maintainer artifacts; see [legal/README.md](legal/README.md).
-
-The limited additional permission for combining original project code with GSAP
-3.15.0 is in GSAP-COMBINATION-PERMISSION.md; GSAP retains its original terms.

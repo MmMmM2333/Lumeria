@@ -120,7 +120,7 @@ import InfoIcon from "~icons/fluent/info-24-regular";
 import NavigationIcon from "~icons/fluent/navigation-24-regular";
 import PaintBrushIcon from "~icons/fluent/paint-brush-24-regular";
 import SettingsRegularIcon from "~icons/fluent/settings-24-regular";
-import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import { useDomMotion, type DomMotion } from "../composables/useDomMotion.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
 import type { useSettingsPanelModel } from "../composables/useSettingsPanelModel.js";
 import { cx } from "../domain/launchpadLayout.js";
@@ -166,20 +166,20 @@ async function applySettings() {
 }
 
 const SETTINGS_OVERLAY_DURATION = 0.16;
-const SETTINGS_OVERLAY_EASE = "power2.out";
+const SETTINGS_OVERLAY_EASE = "cubic-out";
 const SETTINGS_PANEL_OPEN_DURATION = 0.34;
-const SETTINGS_PANEL_OPEN_EASE = "power3.out";
+const SETTINGS_PANEL_OPEN_EASE = "quart-out";
 const SETTINGS_PANEL_CLOSE_DURATION = 0.22;
-const SETTINGS_PANEL_CLOSE_EASE = "power2.inOut";
+const SETTINGS_PANEL_CLOSE_EASE = "cubic-in-out";
 const settingsOverlayRef = ref<HTMLElement | null>(null);
 const settingsPanelRef = ref<HTMLElement | null>(null);
 const settingsContentRef = ref<HTMLElement | null>(null);
 let themedSettingsPanel: HTMLElement | null = null;
-const settingsOverlayMotion = useGsapDomMotion(settingsOverlayRef, {
+const settingsOverlayMotion = useDomMotion(settingsOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveSettingsOverlayMotion,
 });
-const settingsPanelMotion = useGsapDomMotion(settingsPanelRef, {
+const settingsPanelMotion = useDomMotion(settingsPanelRef, {
   initial: () => shell.motion.initial.value,
   motion: resolveSettingsPanelMotion,
 });
@@ -253,7 +253,7 @@ function closeOpenFluentPopup(): boolean {
   return true;
 }
 
-function resolveSettingsOverlayMotion() {
+function resolveSettingsOverlayMotion(): DomMotion {
   return {
     ...shell.motion.overlay.value,
     duration: SETTINGS_OVERLAY_DURATION,
@@ -261,7 +261,7 @@ function resolveSettingsOverlayMotion() {
   };
 }
 
-function resolveSettingsPanelMotion() {
+function resolveSettingsPanelMotion(): DomMotion {
   const target = shell.motion.panel.value;
   const isClosing = Number(target.opacity) === 0;
   const closeDuration = Number(shell.motion.closeDurationSeconds?.value);
