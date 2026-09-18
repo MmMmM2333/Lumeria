@@ -1,4 +1,4 @@
-import Electrobun, { Screen, type GpuWindow } from "electrobun/main";
+import Electrobun, { Screen, type GpuWindow } from "../platform/electrobun-sdk";
 import { electrobunNativeAdapter } from "../rendering/electrobun-native-adapter";
 import { Container, EventSystem, FederatedContainer, extensions } from "pixi.js";
 

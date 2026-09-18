@@ -11,6 +11,8 @@ const diagnosticMarkers = [
 ] as const;
 
 export function assertNativeDiagnosticsArtifact(source: string, enabled: boolean): void {
+  const shortcutRegistries=source.match(/\.symbols\.setGlobalShortcutCallback\(/g)?.length??0;
+  if(shortcutRegistries!==1)throw new Error(`Native bundle must contain exactly one SDK callback registry, got ${shortcutRegistries}`);
   if (source.includes("__LUMERIA_DIAGNOSTICS__")) {
     throw new Error("Native diagnostics build flag was not resolved by the bundler");
   }

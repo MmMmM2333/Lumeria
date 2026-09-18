@@ -1,6 +1,6 @@
 import "./runtime-shim";
 import { NativeFramePreparation } from "./native-frame-preparation";
-import { GpuWindow, Screen, webgpu } from "electrobun/main";
+import { GpuWindow, Screen, webgpu } from "../platform/electrobun-sdk";
 import {
 	AlphaMask,
 	Assets,

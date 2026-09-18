@@ -1,4 +1,4 @@
-import { Screen } from "electrobun/main";
+import { Screen } from "../../../vendor/electrobun-pixi-native-starter/src/platform/electrobun-sdk.js";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 
 // Presentation helpers shared by the entry assembly and its diagnostic

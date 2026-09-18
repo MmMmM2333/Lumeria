@@ -1,4 +1,4 @@
-import type { GpuWindow } from "electrobun/main";
+import type { GpuWindow } from "../platform/electrobun-sdk";
 import { electrobunNativeAdapter } from "./electrobun-native-adapter";
 import {
 	normalizePresentStatus,

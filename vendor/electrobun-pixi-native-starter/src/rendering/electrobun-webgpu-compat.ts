@@ -1,4 +1,4 @@
-import { WGPU } from "electrobun/main";
+import { WGPU } from "../platform/electrobun-sdk";
 import { ptr } from "bun:ffi";
 
 const blendFactors: Record<string, number> = {

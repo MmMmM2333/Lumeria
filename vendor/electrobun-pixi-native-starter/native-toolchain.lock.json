@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r1",
+  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed",
   "target": "win32-x64",
   "electrobun": "2.0.1",
   "bun": "1.4.2",
@@ -8,18 +8,19 @@
     "upstreamRepository": "https://github.com/blackboardsh/electrobun",
     "upstreamCommit": "8d09d15db791f346e419efd452d6759750addb62",
     "starterVersion": "0.3.4",
-    "origin": "Imported Starter devkit; source reconstruction recipe in docs/native-toolchain.md. This is a content lock, not a claim of a fresh full upstream rebuild.",
+    "origin": "Local full upstream SDK build; see source.diff and build-environment.json in this artifact directory.",
     "patches": [
       {
         "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.patch",
-        "sha256": "9e3237dd165cafe17f810aa3d53afcec242cdf38a2def2227305d476dc292a66"
+        "sha256": "7a612e32ea4156123e263b631f335777e6d64cf67806a7d4791c6f2275579d6f"
       }
-    ]
+    ],
+    "sourceDiffSha256": "7a612e32ea4156123e263b631f335777e6d64cf67806a7d4791c6f2275579d6f"
   },
   "archive": {
-    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r1.tar.gz",
-    "size": 181741676,
-    "sha256": "88d20772ce2165449b78ec983585703a06c3d2dc45e4680c6caed9e76da3192e",
+    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz",
+    "size": 181741316,
+    "sha256": "b74c1c82b41acd0f4b7d62c11e00f356bb5fa30aa6bee75de4ce3e8b782009ef",
     "url": null
   },
   "files": [
@@ -1072,11 +1073,6 @@
       "path": "cef/libGLESv2.dll",
       "size": 7839744,
       "sha256": "c56f71e8178f266e1ebeae78db88bcf1c8bb288c1964d2ddce1a8412dae5527e"
-    },
-    {
-      "path": "cef/resources.pak",
-      "size": 14617786,
-      "sha256": "018816144fce189fefe218ea4d1cf136c0defc8412e5cda0246d8b5c620c83d0"
     },
     {
       "path": "cef/Resources/locales/af_FEMININE.pak",
@@ -2179,6 +2175,11 @@
       "sha256": "7cbcfda0b30f2978f72f2adb044324f6442652caa6c63d099fe0012ee8d8126d"
     },
     {
+      "path": "cef/resources.pak",
+      "size": 14617786,
+      "sha256": "018816144fce189fefe218ea4d1cf136c0defc8412e5cda0246d8b5c620c83d0"
+    },
+    {
       "path": "cef/v8_context_snapshot.bin",
       "size": 715800,
       "sha256": "3ec2923cd76cd23ef3854f3bbf1a8b1249c8b812059570721dbcdba076992484"
@@ -2206,12 +2207,12 @@
     {
       "path": "ElectrobunCore.dll",
       "size": 2766848,
-      "sha256": "974d88936690ff831a3ba78286b7bd4ab2955967c4bde6ecb4e61a10e90cf006"
+      "sha256": "658110e3978caa8ddfeada53ebe67baad88ecb96551adb01583f9c34486ece4b"
     },
     {
       "path": "extractor.exe",
       "size": 3255296,
-      "sha256": "0c5d2e60a10e6c7d1ede081affffca54d3594882fa812bccd7a5f5b7a0a0ca78"
+      "sha256": "4240fca8188ed288c621aea20d748b0f3a3701f5ea7557f8d412e90d0c713cc1"
     },
     {
       "path": "go-sdk/callbacks.go",
@@ -2246,7 +2247,7 @@
     {
       "path": "launcher.exe",
       "size": 2364928,
-      "sha256": "f711ea56d008cff79ca00d75e8504a123d14b53004ceb29ef1622ec62c4ea8d9"
+      "sha256": "7f47d2ec04963c6ef3ace26222dd196101e22c12432a9979712b4b145eca699d"
     },
     {
       "path": "libasar.dll",
@@ -2255,8 +2256,8 @@
     },
     {
       "path": "libNativeWrapper.dll",
-      "size": 2090496,
-      "sha256": "22a30e5a31ed3e95c4005d63605dc91e2498c3732bef0a022d92ec27650f1cb4"
+      "size": 2096128,
+      "sha256": "c599c6046be43d2b848ba73da9885b5a21d521a8eb3a6f17e2f5d281bb89bdbf"
     },
     {
       "path": "main.js",
@@ -2285,8 +2286,8 @@
     },
     {
       "path": "process_helper.exe",
-      "size": 720384,
-      "sha256": "63731d8142c2c2e20ab05950eaa895a83123ec46604e724d8569b2c61f0faf97"
+      "size": 720896,
+      "sha256": "09fba30d532f9b5a02258683ed69cc63cf3f82b39cfe0f6166c368ced496e295"
     },
     {
       "path": "rust-sdk/Cargo.toml",

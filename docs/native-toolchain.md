@@ -23,7 +23,7 @@ Lumeria 将 Starter 作为本仓库内部运行支持维护。无需克隆另一
 
 ```powershell
 npm ci
-npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r1.tar.gz
+npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz
 npm run native:toolchain:check
 npm run check
 npm run native:build
@@ -31,7 +31,7 @@ npm run native:build
 
 `npm ci` 只安装锁定 npm 依赖并应用 Pixi 补丁，不在安装脚本里隐式下载整个 Native SDK，也不要求已经有 SDK。准备 SDK 后才能进行 Native 类型检查和完整项目检查。
 
-当前工具链附件**已经在本地准备，但尚未对外发布**，锁文件的 `archive.url` 为 null，不能声称新用户已经能从公开地址下载。维护者阶段二产物位于 `artifacts/open-source-stage2/toolchain-r1-final/`。正式发布时应上传已校验的附件并补入真实不可变 URL，不能填一个尚不存在的下载地址。
+当前工具链附件**已经在本地准备，但尚未对外发布**，锁文件的 `archive.url` 为 null，不能声称新用户已经能从公开地址下载。当前维护者附件位于 `artifacts/stage6/toolchain-r2-fixed/`。正式发布时应上传已校验的附件并补入真实不可变 URL，不能填一个尚不存在的下载地址。
 
 发布 URL 配置后可直接使用 `npm run native:prepare`。也支持显式 HTTPS 地址：
 
@@ -116,3 +116,11 @@ npm run native:release:bytecode
 ```
 
 以上还需要 NSIS 3.11 与 MSVC CRT；路径变量和安装器说明见 [Windows 发行说明](../release/windows/README.md)。ESM 为默认。源码构建通过不代表 UI、安装/卸载或升级已验收，应针对具体候选产物完成相应验证。
+
+### r2 Native 合成桥接
+
+2026-09-18 在同一官方提交重建 SDK，当前锁定附件为 `lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz`，本地位于 `artifacts/stage6/toolchain-r2-fixed/`；尚未发布 URL。SHA-256：`b74c1c82b41acd0f4b7d62c11e00f356bb5fa30aa6bee75de4ce3e8b782009ef`。保留 461 个文件；与 r1 相比仅 ElectrobunCore、extractor、launcher、libNativeWrapper、process_helper 五个重建二进制变化，其他输入未升级。
+
+新增 `wgpuWindowSetBackgroundVisual(HWND, IDCompositionVisual*)` 只接受当前进程已存在的 GPU 窗口。在主线程和既有锁顺序下，把 Rust DComp 设备的视觉节点挂在 Pixi 视觉节点下面；宿主持有 COM 引用，detach/窗口关闭释放。不同设备分别提交自己的状态，不向 Rust 暴露宿主 DComp device。背景在首帧之前挂入和 resize generation 替换后仍须位于底层。注意 AddVisual 的 null 参考节点语义：TRUE 位于所有兄弟下面，FALSE 位于所有兄弟上面。
+
+`artifacts/stage6/sdk-order-fixed-rebuild.log` 和附件中的 build-environment.json/source.diff 保存重建证据。r1 SDK 备份在 `.codex-dev/stage6-sdk-r1-backup/`，错误层顺序的首个 r2 保存在 `.codex-dev/stage6-sdk-r2-order-failure/`；它不是验收版本。常规 native:prepare 仍按内容锁校验，不隐式接受 SDK 漂移。

@@ -22,6 +22,12 @@ if (version !== "2.0.1" || commit !== expectedCommit) {
 }
 
 if (refresh) {
+	// git diff omits untracked additions; never silently drop an existing patch's
+	// new native header when refreshing a freshly-applied checkout.
+	const header = "package/src/native/win/native_touchpad.h";
+	if (existsSync(join(source, header)) && runGit("ls-files", "--error-unmatch", header).status !== 0) {
+		throw new Error(`Refresh requires the new header in the diff; run git add -N ${header} in the source checkout`);
+	}
 	const diff = runGit(
 		"diff", "--",
 		"package/src/native/win/nativeWrapper.cpp",
@@ -71,6 +77,7 @@ if (alreadyApplied || apply) {
     "g_retainedPresentExtents",
     "SetSourceSize",
     "SetMatrixTransform",
+    "wgpuWindowSetBackgroundVisual",
 	]) {
 		if (!wrapper.includes(marker)) throw new Error(`patched wrapper is missing ${marker}`);
 	}
@@ -87,6 +94,7 @@ if (alreadyApplied || apply) {
 	}
 	for (const marker of [
 		"scaleActiveTo",
+    "setBackgroundVisual",
 		"promoteSwapChain",
 		"stageSwapChain",
 		"waitForCommitCompletion",

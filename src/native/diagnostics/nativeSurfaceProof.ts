@@ -1,4 +1,4 @@
-import { Screen } from "electrobun/main";
+import { Screen } from "../../../vendor/electrobun-pixi-native-starter/src/platform/electrobun-sdk.js";
 import assert from "node:assert/strict";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { NativeDesktopScene } from "../../rendering/native/NativeDesktopScene.js";

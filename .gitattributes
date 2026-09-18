@@ -5,3 +5,5 @@
 
 # Upstream text hashes include original line endings and trailing whitespace.
 legal/THIRD_PARTY_LICENSES.txt -text -whitespace
+# Unified diff context lines intentionally contain their leading space.
+vendor/electrobun-pixi-native-starter/patches/*.patch -whitespace

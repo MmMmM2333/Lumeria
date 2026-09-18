@@ -1,4 +1,4 @@
-import { Utils } from "electrobun/main";
+import { Utils } from "../../vendor/electrobun-pixi-native-starter/src/platform/electrobun-sdk.js";
 import { createNativePixiApplication } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { PRODUCT } from "../platform/product.js";
 import { NativeDataHost } from "./nativeDataHost.js";

@@ -1,4 +1,4 @@
-import { webgpu, type GpuWindow } from "electrobun/main";
+import { webgpu, type GpuWindow } from "../platform/electrobun-sdk";
 import {
 	enableWGPUKeyEvents,
 	enableWGPUPointerEvents,

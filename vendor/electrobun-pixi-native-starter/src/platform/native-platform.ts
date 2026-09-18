@@ -1,4 +1,4 @@
-import * as Utils from "electrobun/main/utils";
+import { Utils } from "./electrobun-sdk";
 import { homedir } from "os";
 import { join } from "path";
 import { nativeFrameHost } from "./native-frame-host";
