@@ -1,4 +1,5 @@
 import { NativeFolderNameInput, type SingleStageFolderTitleFrame } from "../rendering/native/NativeFolderNameInput.js";
+import { SEARCH_COMPOSITION_TEXT } from "./fixtures/searchComposition.js";
 import { createNativeText } from "../rendering/native/nativeTypography.js";
 import { createNativeTextPrewarm } from "../rendering/native/nativeTextPrewarm.js";
 import { collectDesktopPreparationItems } from "../rendering/native/nativeDesktopPreparation.js";
@@ -3038,10 +3039,10 @@ try {
       assert.equal(searchBar.input.selection.start,4,"result navigation after Tab must preserve the caret");
       pressSearchKey(0x08);assert.equal(searchQuery,"pag","Backspace must work immediately after Tab back");
       app.nativeInput.emitText("ew");assert.equal(searchQuery,"pagew","native text must continue without reactivating the input");
-      searchBar.input.beginComposition();searchBar.input.updateComposition("中",1);
+      searchBar.input.beginComposition();searchBar.input.updateComposition(SEARCH_COMPOSITION_TEXT,1);
       assert.equal(onKey({type:"down",key:"ArrowDown",isComposing:true}),false,"IME arrows must remain with composition");
       assert.equal(searchQuery,"pagew","IME preedit must not run search");
-      app.textInput.commit("中");assert.equal(searchQuery,"pagew中","IME commit must survive implicit navigation");
+      app.textInput.commit(SEARCH_COMPOSITION_TEXT);assert.equal(searchQuery,`pagew${SEARCH_COMPOSITION_TEXT}`,"IME commit must survive implicit navigation");
       await present(app,"implicit search before explicit pointer focus");
       clickWithNativeInput(searchBar.input);
       assert.equal(searchBar.explicitEditing,true,"clicking an already focused implicit editor must switch modes");
