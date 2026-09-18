@@ -19,6 +19,7 @@ type Options = {
   chromeInset?():number;
   selectionToolbarRect?():{left:number;top:number;width:number;height:number}|null;
   changed(): void;
+  frames: {request(callback:()=>void):number;cancel(id:number):void};
   commit(pages: LaunchpadPages): void;
   open(id: string | null): void;
   page(index: number): void;
@@ -100,7 +101,7 @@ export function createNativeEditing(options: Options) {
     onGroupDragEnd: () => selection.unfreeze("drag"),
   }, state, {
     setTimeout: schedule, clearTimeout: clear,
-    requestAnimationFrame: callback => schedule(callback, 0), cancelAnimationFrame: clear,
+    requestAnimationFrame: options.frames.request, cancelAnimationFrame: options.frames.cancel,
     // Native Pixi has no automatic browser context menu to suppress.
     addEventListener: () => {}, removeEventListener: () => {}, afterCommit: queueMicrotask,
   });

@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import { createNativeFrameCallbacks } from "./nativeFrameCallbacks.js";
+let invalidations=0;const frames=createNativeFrameCallbacks(()=>invalidations++),calls:number[]=[];
+const cancelled=frames.request(()=>calls.push(0));frames.cancel(cancelled);
+frames.request(()=>{calls.push(1);frames.request(()=>calls.push(3));});frames.request(()=>calls.push(2));
+assert.deepEqual([...calls],[]);frames.flush();assert.deepEqual([...calls],[1,2],"callbacks scheduled during prepare wait for the next frame");
+frames.flush();assert.deepEqual([...calls],[1,2,3]);
+frames.request(()=>calls.push(4));frames.dispose();frames.flush();assert.deepEqual([...calls],[1,2,3]);
+assert.equal(frames.request(()=>calls.push(5)),0);assert.ok(invalidations>0);
+console.log("Native one-shot frame scheduling, cancellation, reentrancy and teardown passed");

@@ -1,4 +1,4 @@
-import { Color, Container, Graphics, Rectangle, type Sprite } from "pixi.js";
+import { AlphaFilter, Color, Container, Graphics, Rectangle, RenderTexture, type Renderer, type Sprite } from "pixi.js";
 import { t } from "../../native/nativeLocalization.js";
 import { createNativeText, NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { NativeFluentButton, nativeFluentTheme, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
@@ -147,5 +147,21 @@ export class NativeSelectionToolbar extends Container {
     this.options.invalidate();
   }
   #present():void{const p=this.#reveal.value;this.#body.alpha=p;this.#body.scale.set(0.98+0.02*p);this.#body.position.set(this.#width*0.01*(1-p),-8*(1-p));this.options.invalidate();}
+  /** Compile the actual toolbar/shadow pipelines before the first user action. */
+  prepare(renderer:Renderer,width:number,chromeInset:number,theme:NativeTheme):void{
+    if(this.#state?.active)return;
+    const previous=this.#state??{width,chromeInset,theme,active:false,count:0,hiddenCount:0,frozen:false,canCancel:false,cancelArmed:false};
+    const parent=this.parent,index=parent?.getChildIndex(this)??0;
+    const root=new Container(),filter=new AlphaFilter({alpha:1,resolution:"inherit",antialias:"inherit"});
+    const texture=RenderTexture.create({width:Math.min(840,width+80),height:180,resolution:renderer.resolution,antialias:true});
+    try{
+      this.update({...previous,width,chromeInset,theme,active:true});killMotionOf(this.#reveal);this.#reveal.value=1;this.#present();
+      root.addChild(this);this.position.set(40,48);root.filters=[filter];
+      renderer.render({container:root,target:texture,clear:true});
+    }finally{
+      root.removeChild(this);if(parent)parent.addChildAt(this,index);
+      this.update(previous);root.filters=[];root.destroy();filter.destroy();texture.destroy(true);
+    }
+  }
   override destroy():void{killMotionOf(this.#reveal);this.#background.filters=[];this.#backdrop?.destroy();super.destroy({children:true});}
 }

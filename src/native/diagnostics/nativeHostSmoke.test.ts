@@ -223,6 +223,9 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     const {sendAltSpace}=await import("../../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js");
     assert.ok(mainShortcut.apply("alt+Space").ok,"Alt+Space must register for the isolated physical input test");
     try{
+      app.window.activate();
+      const {getNativePixiApplicationTesting}=await import("../../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
+      await waitFor("shortcut hide fixture is foreground",()=>getNativePixiApplicationTesting(app).diagnostics().window.snapshot.focused);
       await sendAltSpace();
       await waitFor("shortcut close animation",()=>scene.getDesktopAlpha()<0.95&&scene.getDesktopAlpha()>0.02);
       assert.equal(app.window.isVisible(),true,"window remains visible during close animation");

@@ -225,6 +225,14 @@ if(process.env.LAUNCHPAD_PAGING_BENCH){
   fixture.settings.scanRoots=[];
   fixture.settings.windowMode="fullscreen";
 }
+if(process.env.LAUNCHPAD_INTERACTION_BENCH){
+  if(!isolated)throw new Error("Interaction benchmark requires isolated data");
+  // A previous successful run must not satisfy this run's evidence check.
+  rmSync(join(process.env.LAUNCHPAD_INTERACTION_BENCH,"proof.json"),{force:true});
+  fixture.pages=[Array.from({length:28},(_,index)=>({id:`bench-${index}`,type:"manualApp",name:`Benchmark ${index}`,
+    customIconPath:iconPath,launchTarget:{kind:"url",path:"https://example.invalid/"}}))];
+  fixture.settings.mainWindowShortcut=null;
+}
 if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){
   if(!isolated||process.env.LUMERIA_EXPERIMENTAL_LIVE_DESKTOP!=="1")throw new Error("Live Desktop verification requires isolated data and explicit experiment opt-in");
   fixture.settings.backgroundSource="windowsLiveDesktop";fixture.settings.backgroundEffect="none";
@@ -275,6 +283,14 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
+  if(process.env.LAUNCHPAD_INTERACTION_BENCH&&status!==130){
+    const proofPath=join(process.env.LAUNCHPAD_INTERACTION_BENCH,"proof.json");
+    if(!existsSync(proofPath))throw new Error("Native interaction benchmark did not produce evidence");
+    const proof=JSON.parse(readFileSync(proofPath,"utf8"));
+    if(!(proof.icons>=20)||!(proof.drag?.frames>0)||!Number.isFinite(proof.timings?.createFolderFirstPresentMs))throw new Error("Native interaction benchmark evidence is incomplete");
+    const journal=readFileSync(join(dataDir,"logs/native-runtime.log"),"utf8");
+    if(/"event":"(?:uncaught-exception|unhandled-rejection|fatal)"/.test(journal))throw new Error("Native interaction benchmark journal contains failures");
+  }
   if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF&&status!==130){
     const proof=JSON.parse(readFileSync(join(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF,"proof.json"),"utf8"));
     if(!proof.running?.active||!proof.restarted?.active||proof.stopped?.active!==false)throw new Error("Live Desktop smoke did not complete");

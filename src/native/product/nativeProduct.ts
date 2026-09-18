@@ -72,6 +72,7 @@ import { logNativeRuntime,nativeLogDirectory,nativeLogPath } from "../nativeRunt
 import { createNativeSceneScheduler } from "../nativeSceneScheduler.js";
 import { type NativeSession } from "../nativeSession.js";
 import { createNativeShortcut } from "../nativeShortcut.js";
+import { createNativeFrameCallbacks } from "../nativeFrameCallbacks.js";
 import { createNativeLiveDesktop } from "../nativeLiveDesktop.js";
 import {
 createNativeLayoutState,
@@ -318,7 +319,7 @@ const refreshBackground=async()=>{
   await desktopBackground.configure(backgroundConfig(),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
 };
 const chromeInset=()=>Math.max(app.contentSize.width<=760?14:20,app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24);
-let changeSearch: (query: string) => void;
+let changeSearch: (query: string, deferScene?:boolean) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query), nativeClipboard);
 const folderNameInput = new NativeFolderNameInput(searchBar.host, (id, name) => editing!.renameFolder(id, name), () => app.invalidate());
 app.stage.addChild(folderNameInput);
@@ -339,9 +340,11 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
   smoke!.clickWithNativeInput(app, target, button, modifiers, (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke"));
 }
 
-const sceneUpdates = createNativeSceneScheduler();
+const inputFrames=createNativeFrameCallbacks(()=>app.invalidate());
+const sceneUpdates = createNativeSceneScheduler(task=>{inputFrames.request(task);});
 const renderScene = sceneUpdates.run;
 const requestSceneRender = sceneUpdates.request;
+const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();});
 let lastFolderPresentation:ReturnType<ReturnType<typeof createNativeFolderFlow>["snapshot"]>|null=null;
 let folderNamePresentationItem:Readonly<{id:string;name?:string}>|null=null;
 let folderNamePresentationBlocked=false;
@@ -484,6 +487,7 @@ async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
   if(result.failed.length)throw new Error("Icon loading failed");
   requestSceneRender();
 }
+let poolPrewarmFrame:number|null=null;
 const scene = new NativeDesktopScene(app.stage, {
   onDesktopPageIndexCommit: index => onDesktopPageIndexCommit(index),
   folderLayout,
@@ -498,7 +502,13 @@ const scene = new NativeDesktopScene(app.stage, {
     folderFlow.notifyInternalActivity(active, folderId);
   },
   onFolderPageIndexCommit: setFolderPageIndex,
-  onFolderRenderRequest: ()=>{scene.invalidateStructure();requestSceneRender();},
+  onFolderRenderRequest: reason=>{
+    if(reason==="group-release-pool-prewarm"){
+      if(poolPrewarmFrame===null)poolPrewarmFrame=inputFrames.request(()=>{
+        poolPrewarmFrame=null;scene.invalidateStructure();requestSceneRender();
+      });
+    }else{scene.invalidateStructure();requestSceneRender();}
+  },
   onIconActivate: (item) => void activateItem(item),
   onGroupReleaseComplete: result => editing?.complete(result),
   onRollbackComplete: token => {editing?.rollback.complete(token);},
@@ -730,7 +740,7 @@ try {
   let iconNodes = collectActiveIconNodes();
   let indexedSearchPages:typeof layoutState.presentation.pages.value|null=null;
   let searchDocuments:ReturnType<typeof buildAppSearchDocuments<LaunchpadApp>>|null=null;
-  changeSearch = query => {
+  changeSearch = (query,deferScene=false) => {
     searchQuery = query;
     layoutState.commitSearchPageIndex(0);
     if(query.trim() && folderFlow.snapshot().renderedFolder) closeFolder();
@@ -749,8 +759,8 @@ try {
     });
     activePageItems = getNativeActivePageItems(currentFrame);
     if(query.trim()) setFocusedIcon(firstIconFocus(getCurrentIconScope()));
-    renderScene();
-    iconNodes = collectActiveIconNodes();
+    if(deferScene){requestSceneRender();}
+    else{renderScene();iconNodes = collectActiveIconNodes();}
   };
 
   let resolveClosed!: () => void;
@@ -808,12 +818,13 @@ try {
       textless: layoutSettings.isTextlessModeState.value,hiddenAppIds:[...(apps?.presentation.hiddenAppIds.value??loadedLayout?.settings.hiddenAppIds??[])] });
     saves.enqueue(document);
     void saves.flush().catch(()=>{}); // The serialized writer reports failures and exposes retry through the notice.
-    changeSearch(searchQuery);
+    changeSearch(searchQuery,true);
     refreshTargetChecks();
     requestSceneRender();
   };
   commitEditedPagesForSettings = commitEditedPages;
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
+    frames:inputFrames,
     size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
     selectionToolbarRect:()=>selectionToolbar.cancelZoneRect(),
     confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
@@ -1042,6 +1053,9 @@ try {
   });
 
   await present(app, "the first LaunchPad scene frame");
+  const toolbarPrepareStart=performance.now();
+  selectionToolbar.prepare(app.renderer,app.contentSize.width,chromeInset(),settingsTheme());
+  logNativeRuntime("selection-toolbar-prepared",{ms:performance.now()-toolbarPrepareStart});
   logNativeRuntime("first-scene-presented");
   if ((__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke")) (await import("../diagnostics/nativeStartupSmoke.js")).assertNativeScenePrepared(iconTextures.snapshot().cached.length);
   iconTextures.startBackground();
@@ -1049,13 +1063,18 @@ try {
   if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
   else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
   presentCount += 1;
+  // Input/state work is now frame-coalesced. Apply the initial presentation
+  // before testing its endpoint; untouched nodes can still have alpha=1.
+  sceneUpdates.flush();
   await waitFor(
     "the LaunchPad entrance motion to make every node visible",
     () => app.state === "closing" || app.state === "closed"
-      || iconNodes.every((node) => node.alpha >= 0.999 && node.renderable && node.visible),
+      || (!sceneUpdates.pending&&!scene.getMotionSnapshot().active
+        &&collectActiveIconNodes().every((node) => node.alpha >= 0.999 && node.renderable && node.visible)),
   );
   if (app.state === "closing" || app.state === "closed") return;
   await present(app, "the settled LaunchPad scene frame");
+  if(closeCoordinator.closing||["closing","closed"].includes(app.state))return;
   liveDesktop.setVisible(app.window.isVisible()&&!app.window.isMinimized());
   presentCount += 1;
 
@@ -1089,6 +1108,11 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_INTERACTION_BENCH){
+    await (await import("../diagnostics/nativeInteractionBench.js")).runNativeInteractionBench({app,editing:editing!,scene,
+      items:()=>activePageItems,present:name=>present(app,name),waitFor,quit:()=>closeCoordinator.requestQuit()});return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){
     await (await import("../diagnostics/nativeLiveDesktopSmoke.js")).runNativeLiveDesktopSmoke({
@@ -1417,6 +1441,8 @@ try {
 
   }
 
+  if(closeCoordinator.closing||["closing","closed"].includes(app.state))return;
+  iconNodes=collectActiveIconNodes();
   const visibleNodes = iconNodes.filter((node) => (
     node.alpha >= 0.999 && node.renderable && node.visible
   )).length;
@@ -1513,6 +1539,7 @@ try {
     }else await closed;
   }
 } finally {
+  offInputFrame();inputFrames.dispose();
   if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
