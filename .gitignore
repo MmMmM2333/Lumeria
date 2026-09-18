@@ -29,6 +29,7 @@ docs-agents/
 goal-*/
 .agents/
 .codex-dev/
+.deepseek-tmp/
 
 # Logs
 *.log

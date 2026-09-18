@@ -39,6 +39,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".claude",
   ".codex",
   ".codex-dev",
+  ".deepseek-tmp",
   ".cottontail-tmp",
   ".git",
   ".idea",
