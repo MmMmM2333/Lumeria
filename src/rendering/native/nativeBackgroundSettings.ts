@@ -144,8 +144,8 @@ export function nativeBackgroundSettings(options:{
   const baseTop=y;
   node.addChild(new Graphics({eventMode:"none"}).roundRect(0,baseTop,width,72,8).fill(style.row).stroke({color:style.border,width:1}));
   const baseIcon=nativeFluentIcon("paint-brush-24-regular",style.accent,22);baseIcon.position.set(25,baseTop+25);node.addChild(baseIcon);
-  text(key("base.title"),62,baseTop+17,13,true);
-  const baseDescription=text(key("base.description"),62,baseTop+37,12);baseDescription.style.fill=style.muted;
+  text(key("base.title"),70,baseTop+17,13,true);
+  const baseDescription=text(key("base.description"),70,baseTop+37,12);baseDescription.style.fill=style.muted;
   baseDescription.style.wordWrap=true;baseDescription.style.wordWrapWidth=Math.max(100,width-425);
   const baseColors=new Container();let start=node.children.length;fieldWidth=180;y=baseTop+19;
   color("","base-color",d.backgroundBaseColor.value,a.setDraftBackgroundBaseColor);

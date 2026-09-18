@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { NativeScrollView } from "../../rendering/native/NativeScrollView.js";
 import { join } from "node:path";
 import { Container,Rectangle,Text } from "pixi.js";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -704,6 +705,16 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("background cleared",()=>Boolean(getSettingsShell()&&!getSettingsShell()!.applying));
   assert.equal((await nativeData.loadLayout())!.settings.backgroundImagePath,null);
   backgroundPanelState.layer=backgroundPanelState.effect=false;
+  (getSettingsShell() as NativeSettingsShell).redraw();await present("collapsed background rows");
+  {
+    const layer=app.stage.getChildByLabel("native-background:layer-expand",true) as NativeFluentButton;
+    let ancestor=layer.parent;
+    while(ancestor&&!(ancestor instanceof NativeScrollView))ancestor=ancestor.parent;
+    assert.ok(ancestor instanceof NativeScrollView,"background rows must belong to the settings scroll view");
+    const scroll=ancestor;
+    scroll.scrollTo(scroll.content.toLocal(layer.toGlobal({x:0,y:0})).y-110);
+    await present("background text column alignment");await capture("settings-background-aligned");
+  }
   (getSettingsShell() as NativeSettingsShell|null)?.redraw();await present("background sections collapsed");
   // A missing image must leave the committed document and desktop usable for retry.
   {
