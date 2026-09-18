@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { assertLayoutDocument } from "../src/domain/layoutDocument.js";
 import { requestNativeSession } from "../src/native/nativeSession.js";
 import { runNativeProcess } from "./runNativeProcess.js";
+import { spawnSync } from "node:child_process";
 
 const root = resolve("release/staging/windows-x64/Lumeria");
 mkdirSync("artifacts", { recursive: true });
@@ -11,7 +12,7 @@ const data = mkdtempSync(resolve("artifacts/native-staged-startup-"));
 const fixture = assertLayoutDocument(JSON.parse(readFileSync("src/domain/fixtures/layout-v2-roundtrip.json", "utf8")));
 const layout = assertLayoutDocument({ ...fixture,
   pages: [[{ id: "proof", type: "manualApp", name: "Startup proof", emoji: "S", launchTarget: { kind: "url", path: "https://example.invalid/" } }]],
-  settings: { ...fixture.settings, scanRoots: [], mainWindowShortcut: null, backgroundSource: "systemMaterial", backgroundEffect: "none", windowEffectMaterial: "none", windowMode: "windowed" },
+  settings: { ...fixture.settings, scanRoots: [], mainWindowShortcut: null, backgroundSource: "windowsLiveDesktop", backgroundEffect: "none", windowEffectMaterial: "none", windowMode: "windowed" },
 });
 writeFileSync(join(data, "layout.json"), JSON.stringify(layout));
 type JournalEvent = { pid: number; event: string };
@@ -26,6 +27,7 @@ for (const origin of ["manual", "login"]) {
   const environment: NodeJS.ProcessEnv = { ...process.env, LUMERIA_NATIVE_DATA_DIR: data };
   delete environment.LAUNCHPAD_NATIVE_DATA_HOST;
   delete environment.LAUNCHPAD_NATIVE_MODE;
+  delete environment.LUMERIA_EXPERIMENTAL_LIVE_DESKTOP;
   const running = runNativeProcess(join(root, "Lumeria.exe"), origin === "login" ? ["--lumeria-autostart"] : [],
     { cwd: root, env: environment, stdio: "inherit" }, controller.signal);
   let exited = false;
@@ -43,6 +45,10 @@ for (const origin of ["manual", "login"]) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.ok(!controller.signal.aborted && !exited, "production startup must complete");
+    const modules=spawnSync("powershell.exe",["-NoProfile","-Command",`(Get-Process -Id ${pid} -ErrorAction Stop).Modules.ModuleName | ConvertTo-Json -Compress`],{windowsHide:true,encoding:"utf8"});
+    assert.equal(modules.status,0,modules.stderr);
+    assert.ok(!modules.stdout.toLowerCase().includes("lumeria_live_desktop.dll"),"default-off persisted Live Desktop must not load the DLL");
+    assert.ok(!journal().some(event=>event.pid===pid&&event.event==="devtools-ready"),"production must not start a diagnostics server");
     await requestNativeSession({ data, installationRoot: root }, "shutdown");
     assert.equal(await running, 0);
     assert.equal(await requestNativeSession({ data, installationRoot: root }, "status"), null);

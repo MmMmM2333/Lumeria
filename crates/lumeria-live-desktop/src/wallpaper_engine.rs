@@ -869,7 +869,7 @@ pub(super) fn collect_wallpaper_engine_mouse_relay_targets(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::live_desktop::{LiveDesktopWindowInfo, LiveDesktopWindowRect};
+    use crate::{LiveDesktopWindowInfo, LiveDesktopWindowRect};
 
     fn info(
         hwnd: &str,

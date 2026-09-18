@@ -88,7 +88,9 @@ export class NativeBackground extends Container {
     this.#renderKey=key;this.invalidate();
   }
   #paintBase(config:NativeBackgroundConfig,width:number,height:number):void{
-    this.#base.clear().rect(0,0,width,height).fill({color:config.backgroundBaseColor,alpha:config.backgroundBaseOpacity/100});
+    // Live Desktop is composed below the GPU child window; its pixels need the
+    // child surface to stay transparent. Failed starts keep the previous base.
+    this.#base.clear().rect(0,0,width,height).fill({color:config.backgroundBaseColor,alpha:config.backgroundSource==="windowsLiveDesktop"?0:config.backgroundBaseOpacity/100});
   }
   override destroy():void{
     this.#request++;this.#pipeline.destroy();this.#source.destroy({children:true});this.#texture?.destroy(true);super.destroy({children:true});

@@ -72,3 +72,18 @@ await failing.beforeClose();
 await externalRetry;
 assert.equal(failing.closing, true, "failed restart clears restart intent so a later normal shutdown can succeed");
 console.log("Native close coordinator hide, save/apply ordering, failure retry and restart tests passed");
+
+let resourceFailure=true;
+const resources=createNativeCloseCoordinator({
+  requestWindowClose:()=>{},canAnimate:()=>true,hideWindow:()=>{},dismissLaunchpad:()=>{},
+  setInteractive:()=>{},waitForSettingsApply:()=>undefined,flushSaves:async()=>{},
+  finishCloseAnimation:async()=>{},prepareRestart:async()=>{},
+  prepareClose:()=>{if(resourceFailure)throw new Error("capture worker did not stop");},
+  hasSaveFailure:()=>false,reportError:()=>{},log:()=>{},
+});
+const resourceShutdown=resources.requestExternalShutdown();
+const shutdownRejected=assert.rejects(resourceShutdown,/capture worker/);
+await assert.rejects(resources.beforeClose(),/capture worker/);await shutdownRejected;
+assert.equal(resources.closing,false,"resource cleanup failure must restore close retry");
+resourceFailure=false;const resourceRetry=resources.requestExternalShutdown();
+await resources.beforeClose();await resourceRetry;

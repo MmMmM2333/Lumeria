@@ -47,7 +47,7 @@ pub(crate) struct LiveDesktopPixelProbe {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LiveDesktopRuntimeStatus {
+pub struct LiveDesktopRuntimeStatus {
     pub(crate) phase: &'static str,
     pub(crate) active: bool,
     pub(crate) generation: u64,

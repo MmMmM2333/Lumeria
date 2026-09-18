@@ -72,6 +72,7 @@ import { logNativeRuntime,nativeLogDirectory,nativeLogPath } from "../nativeRunt
 import { createNativeSceneScheduler } from "../nativeSceneScheduler.js";
 import { type NativeSession } from "../nativeSession.js";
 import { createNativeShortcut } from "../nativeShortcut.js";
+import { createNativeLiveDesktop } from "../nativeLiveDesktop.js";
 import {
 createNativeLayoutState,
 getNativeActivePageItems,
@@ -109,6 +110,29 @@ app.stage.label = "launchpad-native-stage";
 // loading data; retry notices explicitly reveal the window when action is needed.
 app.window.hide();
 const resumeTiming=__LUMERIA_DIAGNOSTICS__?createNativeResumeTiming(sample=>logNativeRuntime("resume-timing",sample)):null;
+let diagnosticBackground:Partial<ReturnType<typeof backgroundConfig>>={};
+const productDiagnostics=__LUMERIA_DIAGNOSTICS__? (await import("../diagnostics/nativeProductDiagnostics.js")).createNativeProductDiagnostics({
+  background:{
+    getState:()=>({committed:backgroundConfig(),preview:diagnosticBackground}),
+    preview:async patch=>{
+      const next={...diagnosticBackground};
+      const map={source:"backgroundSource",effect:"backgroundEffect",blurStrength:"backgroundBlurStrength",darkenColor:"backgroundDarkenColor",darkenStrength:"backgroundDarkenStrength",liveDesktopOpacity:"backgroundLiveDesktopOpacity"} as const;
+      for(const [key,value] of Object.entries(patch)){
+        const field=map[key as keyof typeof map];if(!field)throw new Error("Unsupported background preview property");
+        Object.assign(next,{[field]:value});
+      }
+      const config={...backgroundConfig(),...next};
+      if(config.backgroundSource==="windowsLiveDesktop"&&!liveDesktop.enabled)throw new Error("Live Desktop experiment is disabled");
+      liveDesktop.sync(config,systemAppearance);
+      await desktopBackground.configure(config,app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+      diagnosticBackground=next;return config;
+    },
+    restore:async()=>{diagnosticBackground={};if(app.state!=="closing"&&app.state!=="closed")await refreshBackground();},
+  },
+  layout:{getState:()=>({viewport:{width:app.contentSize.width,height:app.contentSize.height,rows:currentFrame.viewport.gridRows,columns:currentFrame.viewport.gridCols,iconSize:currentFrame.viewport.iconSize},geometry:scene.getMotionSnapshot()}),
+    preview:()=>{throw new Error("Use the Native scene inspector and hit-test for layout debugging; Web CSS overrides do not apply");},restore:()=>{}},
+  liveDesktop:{getState:()=>({enabled:liveDesktop.enabled,loaded:liveDesktop.loaded,support:liveDesktop.support.value,status:liveDesktop.poll()})},
+}):null;
 const resumeRenderObserver={prerender:()=>resumeTiming?.mark("renderStart"),postrender:()=>resumeTiming?.mark("renderEnd")};
 let timedRenderer=app.renderer;
 const unbindResumeRenderer=()=>{
@@ -194,6 +218,8 @@ const nativeSettings=createNativeSettingsController({
     }),interaction:Object.freeze({...currentFrame.interaction,isTextlessMode:settings.layoutSettings.isTextlessModeState.value})});
   },
   refreshBackground:()=>refreshBackground(),
+  syncLiveDesktop:()=>syncLiveDesktop(),
+  openLogs:()=>{if(!openNativePath(nativeLogDirectory))reportNativeError(new Error("Could not open logs folder"));},
   requestSceneRender:()=>requestSceneRender(),
   settings:()=>settings,
   settingsTheme:()=>settingsTheme(),
@@ -241,6 +267,10 @@ const windowEffects=createNativeWindowEffects({
   onError:error=>logNativeRuntime("window-effects-reapply-error",readErrorMessage(error)),
 });
 const settingsTheme=()=>resolveAppearancePreference(settings.draft.settingsThemePreference.value,systemAppearance);
+const liveDesktop=createNativeLiveDesktop({enabled:process.env.LUMERIA_EXPERIMENTAL_LIVE_DESKTOP==="1",
+  load:async()=>(await import("../nativeLiveDesktopLibrary.js")).requestNativeLiveDesktop,
+  windowHandle:()=>app.nativeSurfaceHandle,visible:()=>app.window.isVisible()&&!app.window.isMinimized()});
+await liveDesktop.initialize().catch(error=>logNativeRuntime("live-desktop-support-error",error));
 const settings=createLaunchpadSettings({
   layout:layoutState,isDragActive:()=>editing?.drag.isDragActive()??false,localizationText:{t},
   autostartPort:{isAvailable:()=>nativeData.autostartAvailable,getStatus:()=>nativeData.autostart(),setEnabled:value=>nativeData.autostart(value)},
@@ -249,7 +279,8 @@ const settings=createLaunchpadSettings({
   launchpadIconPort:{isAvailable:()=>app.supportsWindowIcon,applyVariant:async variant=>{
     app.setWindowIcon(readFileSync(join(import.meta.dir,"branding",variant+".png")));return variant;
   }},
-  liveDesktopSupport:{value:{supportsLiveDesktopBackground:false}},
+  liveDesktopSupport:liveDesktop.support,
+  isLiveDesktopEnabled:()=>liveDesktop.enabled,
   backgroundAssetPort:{
     toAssetUrl:path=>path??null,
     getDesktopWallpaper:async()=>{
@@ -277,7 +308,15 @@ const layoutSettings=settings.layoutSettings;
 const desktopBackground=new NativeBackground(app,()=>app.invalidate());
 app.stage.addChildAt(desktopBackground,0);
 const backgroundConfig=()=>({...loadedLayout?.settings,...settings.persistence.capture()});
-const refreshBackground=()=>desktopBackground.configure(backgroundConfig(),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+const syncLiveDesktop=()=>liveDesktop.sync(backgroundConfig(),systemAppearance);
+const refreshBackground=async()=>{
+  try{syncLiveDesktop();}
+  catch(error){
+    await desktopBackground.configure({...backgroundConfig(),backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+    throw error;
+  }
+  await desktopBackground.configure(backgroundConfig(),app.contentSize.width,app.contentSize.height,undefined,systemAppearance);
+};
 const chromeInset=()=>Math.max(app.contentSize.width<=760?14:20,app.windowMode==="fullscreen"?0:settings.presentation.showCustomTitlebar.value?56:24);
 let changeSearch: (query: string) => void;
 const searchBar = new NativeSearchBar(app, loadedLayout?.settings.localePreference === "en-US" ? "Search" : t("launchpad.search.placeholder"), query => changeSearch(query), nativeClipboard);
@@ -544,6 +583,7 @@ const closeCoordinator=createNativeCloseCoordinator({
     }
   },
   flushSaves:()=>saves.flush(),
+  prepareClose:()=>liveDesktop.stop(),
   // Saving already supplies an actionable retry notice; preserve it on close failure.
   hasSaveFailure:()=>saveFailureCount>0,
   hideWindow:()=>app.window.hide(),
@@ -555,7 +595,26 @@ const closeCoordinator=createNativeCloseCoordinator({
   waitForSettingsApply:()=>nativeSettings.shell?.waitForApply(),
 });
 const offSaveBeforeClose = app.beforeClose(async () => closeCoordinator.beforeClose());
+let liveDesktopTimer:ReturnType<typeof setInterval>|null=null;
 try {
+  if(liveDesktop.enabled){
+    let lastVisible=false;
+    let lastDisplay=app.nativeDisplayId;
+    liveDesktopTimer=setInterval(()=>{
+      if(!liveDesktop.status?.active)return;
+      try{
+        const display=app.nativeDisplayId;
+        if(display!==lastDisplay){liveDesktop.restart(backgroundConfig(),systemAppearance);lastDisplay=display;}
+        const visible=app.window.isVisible()&&!app.window.isMinimized();
+        if(visible!==lastVisible){liveDesktop.setVisible(visible);lastVisible=visible;}
+        liveDesktop.poll();
+      }catch(error){
+        try{liveDesktop.stop();}catch(stopError){logNativeRuntime("live-desktop-stop-error",stopError);}
+        void desktopBackground.configure({...backgroundConfig(),backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height,undefined,systemAppearance).catch(reportNativeError);
+        reportNativeError(error);
+      }
+    },1000);
+  }
   offBackgroundResize=app.on("resize",()=>{
     void refreshBackground().catch(reportNativeError);
   });
@@ -703,6 +762,7 @@ try {
     // The host can destroy stage children before the awaiting product body gets
     // back to its finally. Stop queued commits synchronously at this boundary.
     if (state === "closing" || state === "closed") {
+      try{liveDesktop.dispose();}catch(error){logNativeRuntime("live-desktop-stop-error",error);}
       sceneUpdates.dispose();
       cancelNativeGesture();
       resolveClosed();
@@ -814,6 +874,8 @@ try {
   refreshTargetChecks();
   const flowState=createNativeStateHost(requestSceneRender),openingIcon=flowState.cell<import("../../application/launchpadLaunchFlow.js").LaunchIconFocus|null>(null);
   const visibility=createNativeVisibilityController({
+    backgroundVisible:visible=>liveDesktop.setVisible(visible),
+    backgroundDisplayChanged:()=>liveDesktop.restart(backgroundConfig(),systemAppearance),
     activateStartupPreparation:()=>startupPreparation?.activate(),
     app,
     closeSettings:()=>closeSettings(),
@@ -878,7 +940,8 @@ try {
     hideNativeWindow:visibility.hideAfterPresented,onDesktopCloseComplete:()=>{void visibility.hideAfterPresented().catch(reportNativeError);},
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{...visibility.timers,afterCommit:queueMicrotask});
-  showLaunchpad=visibility.show;dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
+  showLaunchpad=visibility.show;
+  dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
@@ -993,6 +1056,7 @@ try {
   );
   if (app.state === "closing" || app.state === "closed") return;
   await present(app, "the settled LaunchPad scene frame");
+  liveDesktop.setVisible(app.window.isVisible()&&!app.window.isMinimized());
   presentCount += 1;
 
   let resizeObserved = false;
@@ -1012,6 +1076,7 @@ try {
     name:"LaunchPad",build:process.env.LAUNCHPAD_DEBUG_BUILD??"development",
     enabled:nativeMode==="dev"||(__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_DEVTOOLS : undefined)==="1",
     isolated:Boolean(process.env.LUMERIA_NATIVE_DATA_DIR),
+    ...(productDiagnostics?{commandExtension:productDiagnostics.command,statusExtension:()=>({product:productDiagnostics.status()})}:{}),
     state:()=>({
       route:nativeSettings.shell?settingsNavigation.activeRoute.value.key:"desktop",
       page:currentFrame.viewport.activePageIndex,
@@ -1024,6 +1089,13 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){
+    await (await import("../diagnostics/nativeLiveDesktopSmoke.js")).runNativeLiveDesktopSmoke({
+      app,live:liveDesktop,diagnostics:productDiagnostics,show:showLaunchpad,hide:dismissLaunchpad,sync:syncLiveDesktop,
+      present:name=>present(app,name),waitFor,quit:()=>closeCoordinator.requestQuit(),
+    });return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_PAGING_BENCH){
     await (await import("../diagnostics/nativePagingBenchSmoke.test.js")).runNativePagingBench({
@@ -1440,11 +1512,14 @@ try {
     }else await closed;
   }
 } finally {
+  if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
   sceneUpdates.dispose();startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  if(productDiagnostics){const result=await productDiagnostics.dispose();if(result.errors.length)logNativeRuntime("diagnostics-dispose-errors",result.errors);}
   unbindResumeRenderer();
   windowEffects.dispose();
+  try{liveDesktop.dispose();}catch(error){logNativeRuntime("live-desktop-stop-error",error);}
   tray?.remove();tray=null;
   disposeLaunchFlow();
   desktopBackground.destroy();

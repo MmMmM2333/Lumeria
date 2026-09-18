@@ -154,15 +154,17 @@ export function nativeBackgroundSettings(options:{
   slider(key("base.opacity"),"base-opacity",d.backgroundBaseOpacity.value,a.setDraftBackgroundBaseOpacity);
   const opacityChildren=node.children.slice(start);node.removeChildren(start);baseOpacity.addChild(...opacityChildren);baseOpacity.x=width-226;node.addChild(baseOpacity);
   fieldWidth=width;y=baseTop+78;
-  const source=d.backgroundSource.value,usesImage=source==="customImage"||source==="windowsWallpaper";
-  const layerName=key(source==="customImage"?"layer.custom":source==="windowsWallpaper"?"layer.wallpaper":"layer.none");
+  const source=d.backgroundSource.value,usesImage=source==="customImage"||source==="windowsWallpaper",usesLive=source==="windowsLiveDesktop";
+  const layerName=usesLive?t("debug.panel.tabs.liveDesktop"):key(source==="customImage"?"layer.custom":source==="windowsWallpaper"?"layer.wallpaper":"layer.none");
   const layerSummary=usesImage?`${layerName} · ${key(`layer.layout.${d.backgroundImageLayout.value}`)} · ${d.backgroundImageOpacity.value}%`:layerName;
-  const layerRow=expandable(key("layer.title"),"layer",key(`layer.${source==="customImage"?"hintCustom":source==="windowsWallpaper"?"hintWallpaper":"hintNone"}`),layerSummary);
+  const layerRow=expandable(key("layer.title"),"layer",key(`layer.${usesLive?"hintLive":source==="customImage"?"hintCustom":source==="windowsWallpaper"?"hintWallpaper":"hintNone"}`),layerSummary);
   const layerStart=node.children.length,layerTop=y,layerControls=controls.length;
   {
     const detailTop=y;fieldWidth=width-Math.min(320,width*0.43)-30;
     const busy=settings.presentation.isChoosingBackgroundImage.value;
-    choices(key("layer.source"),"source",[["systemMaterial",key("layer.none")],["customImage",key("layer.custom")],["windowsWallpaper",key("layer.wallpaper")]],source,value=>{
+    const sources:[string,string][]=[["systemMaterial",key("layer.none")],["customImage",key("layer.custom")],["windowsWallpaper",key("layer.wallpaper")]];
+    if(a.canUseLiveDesktopBackground())sources.push(["windowsLiveDesktop",t("debug.panel.tabs.liveDesktop")]);
+    choices(key("layer.source"),"source",sources,source,value=>{
       if(value==="windowsWallpaper")void choose(true);
       else if(value==="customImage"&&!d.backgroundImagePath.value)void choose(false);
       else a.setDraftBackgroundSource(value);
@@ -175,18 +177,19 @@ export function nativeBackgroundSettings(options:{
       button(t("common.actions.restoreDefault"),"clear",162,y,128,()=>{a.clearDraftBackgroundImage();redraw();}).disabled=busy;y+=46;
       choices(key("layer.display"),"layout",["fill","fit","stretch","tile","center"].map(value=>[value,key(`layer.layout.${value}`)]),d.backgroundImageLayout.value,a.setDraftBackgroundImageLayout);
     }
-    preview(false,detailTop);fieldWidth=width;
+    if(usesLive)slider(key("layer.liveOpacity"),"live-opacity",d.backgroundLiveDesktopOpacity.value,a.setDraftBackgroundLiveDesktopOpacity);
+    if(!usesLive)preview(false,detailTop);fieldWidth=width;
   }
   layout.disclosure("background.layer",state.layer,layerStart,layerTop,y-layerTop,controls.slice(layerControls),layerRow.chevron,true,layerRow.header);y+=6;
-  const effectSummary=!usesImage?key("effect.unavailable"):d.backgroundEffect.value==="blur"?`${key("effect.blur")} · ${d.backgroundBlurStrength.value}%`
+  const effectSummary=!(usesImage||usesLive)?key("effect.unavailable"):d.backgroundEffect.value==="blur"?`${key("effect.blur")} · ${d.backgroundBlurStrength.value}%`
     :d.backgroundEffect.value==="dimmed"?`${key("effect.dim")} · ${d.backgroundDarkenStrength.value}%`
     :d.backgroundEffect.value==="acrylic"?`Acrylic · ${d.backgroundAcrylicAppearance.value==="system"?key("effect.system"):t(`settings.interface.window.${d.backgroundAcrylicAppearance.value}`)} · ${d.backgroundAcrylicBlurStrength.value}%`:key("effect.original");
-  const effectRow=expandable(key("effect.title"),"effect",usesImage?key(`effect.${d.backgroundEffect.value==="none"?"hintOriginal":d.backgroundEffect.value==="dimmed"?"hintDim":d.backgroundEffect.value==="blur"?"hintBlur":"hintAcrylic"}`):key("effect.unavailable"),effectSummary);
+  const effectRow=expandable(key("effect.title"),"effect",(usesImage||usesLive)?key(`effect.${d.backgroundEffect.value==="none"?"hintOriginal":d.backgroundEffect.value==="dimmed"?"hintDim":d.backgroundEffect.value==="blur"?"hintBlur":"hintAcrylic"}`):key("effect.unavailable"),effectSummary);
   const effectStart=node.children.length,effectTop=y,effectControls=controls.length;
   {
     const detailTop=y;fieldWidth=width-Math.min(320,width*0.43)-30;
-    choices(key("effect.effect"),"effect",[["none",key("effect.original")],["dimmed",key("effect.dim")],["blur",key("effect.blur")],["acrylic","Acrylic"]],d.backgroundEffect.value,a.setDraftBackgroundEffect,!usesImage);
-    if(usesImage){
+    choices(key("effect.effect"),"effect",[["none",key("effect.original")],["dimmed",key("effect.dim")],["blur",key("effect.blur")],["acrylic","Acrylic"]],d.backgroundEffect.value,a.setDraftBackgroundEffect,!(usesImage||usesLive));
+    if(usesImage||usesLive){
       if(d.backgroundEffect.value==="blur")slider(key("effect.blurStrength"),"blur",d.backgroundBlurStrength.value,a.setDraftBackgroundBlurStrength);
       if(d.backgroundEffect.value==="dimmed"){
         color(key("effect.dimColor"),"dim-color",d.backgroundDarkenColor.value,a.setDraftBackgroundDarkenColor);
@@ -204,7 +207,7 @@ export function nativeBackgroundSettings(options:{
         slider(key("effect.saturation"),"saturation",params.saturation,v=>a.setDraftBackgroundAcrylicParam(state.profile,"saturation",v),ACRYLIC_SATURATION_MIN,ACRYLIC_SATURATION_MAX,ACRYLIC_PARAM_STEP);
         button(t("common.actions.restoreDefault"),"reset-acrylic",14,y,150,()=>{a.resetDraftBackgroundAcrylicParams(state.profile);redraw();});y+=44;
       }
-      preview(true,detailTop);
+      if(!usesLive)preview(true,detailTop);
     }
     fieldWidth=width;
   }

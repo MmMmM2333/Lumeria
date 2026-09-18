@@ -8,6 +8,8 @@ const diagnosticMarkers = [
   "Native activation click:",
   "Application list memory benchmark",
   "touchpad-native-",
+  "lumeria-native-product-diagnostics/v1",
+  "LAUNCHPAD_LIVE_DESKTOP_PROOF",
 ] as const;
 
 export function assertNativeDiagnosticsArtifact(source: string, enabled: boolean): void {

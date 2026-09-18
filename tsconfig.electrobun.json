@@ -42,6 +42,7 @@
     "src/rendering/native/nativeBackgroundSettings.ts",
     "src/native/product/**/*.ts",
     "src/native/diagnostics/**/*.ts",
-    "src/native/nativeClipboard.ts"
+    "src/native/nativeClipboard.ts",
+    "src/native/nativeLiveDesktopLibrary.ts"
   ]
 }

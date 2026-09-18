@@ -32,6 +32,7 @@ png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 lumeria-core = { path = "../crates/lumeria-core" }
+lumeria-live-desktop = { path = "../crates/lumeria-live-desktop" }
 tauri = { version = "=2.11.2", features = ["devtools", "protocol-asset", "tray-icon"] }
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-log = "2"

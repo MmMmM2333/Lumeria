@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "crates/lumeria-core",
+  "crates/lumeria-live-desktop",
   "crates/lumeria-native-data",
   "src-tauri",
 ]

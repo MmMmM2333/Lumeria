@@ -225,6 +225,12 @@ if(process.env.LAUNCHPAD_PAGING_BENCH){
   fixture.settings.scanRoots=[];
   fixture.settings.windowMode="fullscreen";
 }
+if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){
+  if(!isolated||process.env.LUMERIA_EXPERIMENTAL_LIVE_DESKTOP!=="1")throw new Error("Live Desktop verification requires isolated data and explicit experiment opt-in");
+  fixture.settings.backgroundSource="windowsLiveDesktop";fixture.settings.backgroundEffect="none";
+  fixture.settings.backgroundBaseOpacity=0;fixture.settings.backgroundLiveDesktopOpacity=100;
+  fixture.settings.windowEffectMaterial="none";fixture.settings.mainWindowShortcut=null;
+}
 writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
@@ -269,6 +275,12 @@ try {
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
+  if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF&&status!==130){
+    const proof=JSON.parse(readFileSync(join(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF,"proof.json"),"utf8"));
+    if(!proof.running?.active||!proof.restarted?.active||proof.stopped?.active!==false)throw new Error("Live Desktop smoke did not complete");
+    const journal=readFileSync(join(dataDir,"logs/native-runtime.log"),"utf8");
+    if(/"event":"(?:uncaught-exception|unhandled-rejection|fatal)"/.test(journal))throw new Error("Live Desktop smoke journal contains runtime failures");
+  }
   if (searchSmoke && status !== 130) {
     if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).search !== "verified") throw new Error("Native search verification did not complete");
     console.log("Native search verification passed");

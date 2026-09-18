@@ -3,7 +3,7 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LiveDesktopRuntimeConfig {
+pub struct LiveDesktopRuntimeConfig {
     pub(crate) effect: LiveDesktopBackgroundEffect,
     #[serde(default)]
     pub(crate) debug_frame_source_override: Option<LiveDesktopDebugFrameSourceOverride>,

@@ -7,6 +7,7 @@ type ClosePorts = Readonly<{
   waitForSettingsApply(): Promise<unknown> | undefined;
   flushSaves(): Promise<void>;
   finishCloseAnimation(): Promise<void>;
+  prepareClose?(): void | Promise<void>;
   prepareRestart(): Promise<void>;
   hasSaveFailure(): boolean;
   reportError(error: unknown): void;
@@ -57,6 +58,7 @@ export function createNativeCloseCoordinator(ports: ClosePorts) {
         await ports.waitForSettingsApply();
         await ports.flushSaves();
         await ports.finishCloseAnimation();
+        await ports.prepareClose?.();
         if (restartRequested) {
           await ports.prepareRestart();
           ports.log("restart-ready");

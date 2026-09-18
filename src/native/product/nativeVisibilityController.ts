@@ -61,6 +61,8 @@ export type NativeVisibilityControllerPorts = Readonly<{
   waitFor: (description: string, predicate: () => boolean) => Promise<void>;
   windowChrome: NativeWindowChrome;
   windowEffects: ReturnType<typeof createNativeWindowEffects>;
+  backgroundVisible: (visible:boolean) => void;
+  backgroundDisplayChanged: () => void;
 }>;
 
 export type NativeVisibilityController = Readonly<{
@@ -98,7 +100,7 @@ export function createNativeVisibilityController(
       await ports.present("desktop close animation final frame");
     }
     if (generation !== visibilityGeneration || ports.getLaunchFlow()!.isDesktopOpen.value) return;
-    ports.app.window.hide(); ports.log("hidden");
+    ports.backgroundVisible(false);ports.app.window.hide(); ports.log("hidden");
   };
   const beginCloseAnimation = () => {
     visibilityGeneration++;
@@ -125,6 +127,7 @@ export function createNativeVisibilityController(
     if (ports.app.window.isMinimized()) measure("unminimize", () => ports.app.window.unminimize());
     measure("materialSet", () => ports.windowEffects.set(ports.getSettingsMaterial(), resolveAppearancePreference(ports.getSettingsThemePreference(), ports.getSystemAppearance())));
     measure("show", () => ports.app.window.show()); measure("activate", () => ports.app.window.activate());
+    ports.backgroundVisible(true);
     const reveal = () => {
       if (generation !== visibilityGeneration || ports.isCloseCoordinatorClosing()) return;
       measure("materialRefresh", () => ports.windowEffects.refresh());
@@ -150,6 +153,7 @@ export function createNativeVisibilityController(
     if (ports.isCloseCoordinatorClosing()) return;
     const visible=ports.app.window.isVisible(),minimized=ports.app.window.isMinimized();
     const target=ports.app.prepareShortcutActivation();
+    if(target.displayChanged)ports.backgroundDisplayChanged();
     ports.log("shortcut-target",target);
     if (ports.app.state === "running" && ports.getLaunchFlow()!.isDesktopOpen.value && !visibilityPreparing
       && shouldHideForNativeShortcut({visible,minimized,...target})) dismiss();

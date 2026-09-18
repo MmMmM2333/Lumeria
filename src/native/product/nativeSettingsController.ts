@@ -37,6 +37,8 @@ type NativeIconTextures = ReturnType<typeof createNativeIconTextureRepository>;
 // before the later-created collaborators exist.
 export type NativeSettingsControllerPorts = Readonly<{
   app: NativePixiApplication;
+  syncLiveDesktop: () => void;
+  openLogs: () => void;
   cancelNativeGesture: () => void;
   chooseColor: (initial: number) => Promise<number | null>;
   closeFolder: () => boolean;
@@ -136,7 +138,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
         :tab==="general"
         ?nativeGeneralSettingsPage({settings,width,theme:ports.settingsTheme(),
           management:ports.getManagement(),invalidate:()=>app.invalidate(),redraw:()=>shell?.redraw(),recording:recordingShortcut,
-          record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;shell?.redraw();},icons:ports.brandingTextures()})
+          record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;shell?.redraw();},icons:ports.brandingTextures(),openLogs:ports.openLogs})
         :tab==="about"
         ?nativeAboutSettingsPage(width,ports.settingsTheme(),ports.brandingTextures().get(settings.draft.launchpadIconVariant.value)!)
         :nativeLayoutSettingsPage(settings,ports.getSearchBar().host,width,()=>app.invalidate(),
@@ -152,7 +154,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
           catch(rollback){throw new AggregateError([error,rollback],`${readErrorMessage(error)}\n${readErrorMessage(rollback)}`);}
           throw error;
         }
-        const outcome=await settings.applyEdit();
+        const outcome=await settings.applyEdit({syncLiveDesktop:ports.syncLiveDesktop});
         if(!outcome.ok){
           const errors:unknown[]=[outcome.error];
           if("rollbackErrors" in outcome&&Array.isArray(outcome.rollbackErrors))errors.push(...outcome.rollbackErrors);

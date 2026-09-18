@@ -124,6 +124,7 @@ export type LaunchpadSettingsOptions = Readonly<{
   launchpadIconPort: LaunchpadIconPort;
   layout: Pick<ReturnType<typeof createLaunchpadLayoutState>, "captureConfiguration" | "applyConfiguration" | "createConfigurationRollback">;
   liveDesktopSupport: Readonly<{ value: Partial<NormalizedLiveDesktopBackgroundSupport> }>;
+  isLiveDesktopEnabled?: () => boolean;
   localeRuntime: Pick<LocaleRuntimePort, "applyPreference">;
   localizationText: TranslationPort;
   mainWindow: LaunchpadSettingsMainWindow;
@@ -253,7 +254,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
 
   function canUseLiveDesktopBackground() {
     return Boolean(
-      isLiveDesktopExperimentEnabled()
+      (options.isLiveDesktopEnabled ?? isLiveDesktopExperimentEnabled)()
       && normalizeLiveDesktopBackgroundSupport(liveDesktopSupport.value).supportsLiveDesktopBackground
     );
   }

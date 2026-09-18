@@ -19,6 +19,7 @@ export default {
     copy: {
       ...nativePixiElectrobunCopy,
       "target/release/lumeria_native_data.exe": "bun/lumeria-native-data.exe",
+      "target/release/lumeria_live_desktop.dll": "bun/lumeria_live_desktop.dll",
       "src/assets/branding/lumeria-app-icon.svg": "bun/branding/light.svg",
       "src/assets/branding/lumeria-app-icon-dark.svg": "bun/branding/dark.svg",
       "src/assets/branding/lumeria-app-icon-pastel-grid.svg": "bun/branding/pastelLight.svg",

@@ -2150,6 +2150,7 @@ version = "0.1.0"
 dependencies = [
  "log",
  "lumeria-core",
+ "lumeria-live-desktop",
  "png 0.17.16",
  "serde",
  "serde_json",
@@ -2176,6 +2177,17 @@ dependencies = [
  "thiserror 2.0.18",
  "windows",
  "winreg",
+]
+
+[[package]]
+name = "lumeria-live-desktop"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "windows",
 ]
 
 [[package]]

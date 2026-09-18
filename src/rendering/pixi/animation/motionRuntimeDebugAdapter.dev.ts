@@ -84,7 +84,8 @@ const LIVE_DEBUG_METADATA_KEYS = new Set([
   "debugOverlayTarget",
   "overlayTarget",
 ]);
-const CAN_STORE_DEBUG_TARGET_REFS = import.meta.env?.DEV !== false;
+const developmentFlag: unknown = import.meta.env?.DEV;
+const CAN_STORE_DEBUG_TARGET_REFS = developmentFlag !== false && developmentFlag !== "false";
 
 function makeDebugCounters(): MotionDebugCounters {
   return {

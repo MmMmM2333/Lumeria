@@ -167,8 +167,13 @@ export function generateLicenseBundle(project: string, output: string, payload?:
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`Cargo license inventory failed; fetch the locked Windows dependencies first: ${result.stderr}`);
   const cargo = JSON.parse(result.stdout) as { packages: (CargoPackage & { targets: { kind: string[] }[] })[]; workspace_members: string[]; resolve: { nodes: CargoNode[] } };
-  const runtimeIds = runtimeCargoPackages(nativeDataCargoPackage(cargo.packages, cargo.workspace_members), cargo.resolve.nodes,
-    new Set(cargo.packages.filter(pkg => pkg.targets.some(target => target.kind.includes("proc-macro"))).map(pkg => pkg.id)));
+  const macros=new Set(cargo.packages.filter(pkg => pkg.targets.some(target => target.kind.includes("proc-macro"))).map(pkg => pkg.id));
+  const liveDesktop=cargo.packages.find(pkg=>pkg.name==="lumeria-live-desktop"&&cargo.workspace_members.includes(pkg.id));
+  if(!liveDesktop)throw new Error("Cargo workspace must contain the Live Desktop runtime package");
+  const runtimeIds = new Set([
+    ...runtimeCargoPackages(nativeDataCargoPackage(cargo.packages, cargo.workspace_members), cargo.resolve.nodes, macros),
+    ...runtimeCargoPackages(liveDesktop.id,cargo.resolve.nodes,macros),
+  ]);
   for (const pkg of cargo.packages.filter(pkg => pkg.source && (!payload || runtimeIds.has(pkg.id))).sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`, "en"))) {
     const texts = evidence("cargo", pkg.name, pkg.version, dirname(pkg.manifest_path), pkg.license_file);
     if (!texts.length) issues.push({ component: `${pkg.name}@${pkg.version}`, detail: "Crate has no collected LICENSE/NOTICE text; check exact upstream source" });

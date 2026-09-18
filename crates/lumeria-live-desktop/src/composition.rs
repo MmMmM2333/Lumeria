@@ -1,6 +1,53 @@
 #[allow(unused_imports)]
 use super::*;
 
+#[cfg(target_os = "windows")]
+pub(crate) enum LiveDesktopCompositionTarget {
+    Window(IDCompositionTarget),
+    Native {
+        hwnd: HWND,
+        attach: unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+    },
+}
+
+#[cfg(target_os = "windows")]
+impl LiveDesktopCompositionTarget {
+    pub(crate) unsafe fn set_root(
+        &self,
+        visual: Option<&IDCompositionVisual>,
+    ) -> windows::core::Result<()> {
+        match self {
+            Self::Window(target) => unsafe { target.SetRoot(visual) },
+            Self::Native { hwnd, attach } => {
+                let result = unsafe {
+                    attach(
+                        hwnd.0,
+                        visual.map_or(std::ptr::null_mut(), |value| value.as_raw()),
+                    )
+                };
+                if result == 1 || (result == 0 && visual.is_none()) {
+                    Ok(())
+                } else {
+                    Err(windows::core::Error::from_hresult(windows::core::HRESULT(
+                        0x80004005u32 as i32,
+                    )))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for LiveDesktopCompositionTarget {
+    fn drop(&mut self) {
+        if matches!(self, Self::Native { .. }) {
+            if let Err(error) = unsafe { self.set_root(None) } {
+                log::error!("Failed to detach Live Desktop visual: {error}");
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LiveDesktopVisualPlacement {
     pub(crate) scale: f32,
@@ -57,11 +104,33 @@ impl LiveDesktopCompositionDevice {
         &self,
         hwnd: HWND,
         topmost: bool,
-    ) -> Result<IDCompositionTarget, LiveDesktopError> {
+    ) -> Result<LiveDesktopCompositionTarget, LiveDesktopError> {
+        use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+        // Native owns the HWND target. Visuals may have parents from another
+        // DComp device, preserving the capture thread's independent transactions.
+        if let Ok(module) = unsafe { GetModuleHandleW(windows::core::w!("libNativeWrapper.dll")) } {
+            let attach = unsafe {
+                GetProcAddress(module, windows::core::s!("wgpuWindowSetBackgroundVisual"))
+            }
+            .ok_or_else(|| LiveDesktopError::Composition {
+                context: "Native SDK is missing the background visual bridge",
+                source: windows::core::Error::from_hresult(windows::core::HRESULT(
+                    0x80004001u32 as i32,
+                )),
+            })?;
+            let attach = unsafe {
+                std::mem::transmute::<
+                    unsafe extern "system" fn() -> isize,
+                    unsafe extern "C" fn(*mut std::ffi::c_void, *mut std::ffi::c_void) -> i32,
+                >(attach)
+            };
+            return Ok(LiveDesktopCompositionTarget::Native { hwnd, attach });
+        }
         match self {
             Self::Desktop(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
             Self::Legacy(device) => unsafe { device.CreateTargetForHwnd(hwnd, topmost) },
         }
+        .map(LiveDesktopCompositionTarget::Window)
         .map_err(|source| LiveDesktopError::Composition {
             context: "IDCompositionDevice::CreateTargetForHwnd",
             source,
@@ -432,7 +501,7 @@ pub(crate) unsafe fn create_live_desktop_native_effects(
 #[cfg(target_os = "windows")]
 pub(crate) unsafe fn set_direct_composition_root(
     device: &LiveDesktopCompositionDevice,
-    target: &IDCompositionTarget,
+    target: &LiveDesktopCompositionTarget,
     visual: &IDCompositionVisual,
     swap_chain: &IDXGISwapChain1,
     blur_effect: &Option<IDCompositionGaussianBlurEffect>,
@@ -462,7 +531,7 @@ pub(crate) unsafe fn set_direct_composition_root(
             source,
         })?;
     }
-    unsafe { target.SetRoot(visual) }.map_err(|source| LiveDesktopError::Composition {
+    unsafe { target.set_root(Some(visual)) }.map_err(|source| LiveDesktopError::Composition {
         context: "IDCompositionTarget::SetRoot",
         source,
     })?;

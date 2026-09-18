@@ -5,7 +5,7 @@ mod file_dialog;
 mod i18n;
 mod launchpad_icon;
 mod layout_store;
-mod live_desktop;
+use lumeria_live_desktop as live_desktop;
 mod main_window_supervisor;
 mod native_error;
 mod startup;

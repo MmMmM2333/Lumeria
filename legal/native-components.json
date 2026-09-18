@@ -8,6 +8,7 @@
       "files": [
         "Lumeria.exe",
         "runtime/Resources/app/bun/lumeria-native-data.exe",
+        "runtime/Resources/app/bun/lumeria_live_desktop.dll",
         "runtime/Resources/app/bun/native-frame.dll"
       ],
       "texts": [],

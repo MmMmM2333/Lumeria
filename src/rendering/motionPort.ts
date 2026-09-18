@@ -31,10 +31,12 @@ export {
 } from "./pixi/animation/motionRuntime.js";
 export type {
   MotionDebugConfig,
+  MotionDebugConfigPatch,
   MotionDebugCounters,
   MotionDebugReport,
   MotionRuntime,
 } from "./pixi/animation/motionRuntime.js";
+export { createMotionRuntimeDebugAdapter as createNoopMotionRuntimeDebugAdapter } from "./pixi/animation/motionRuntimeDebugAdapter.js";
 export {
   killMotionOf,
   lanePreset,

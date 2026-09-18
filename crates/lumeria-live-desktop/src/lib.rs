@@ -1,3 +1,10 @@
+//! Lumeria live desktop background runtime.
+//!
+//! Extracted from the Tauri host so the same implementation is reused in-process
+//! (rlib) and through the `lumeria_live_desktop.dll` C ABI (cdylib). Only the
+//! surface used by the Tauri host and the C ABI is public; everything else stays
+//! crate-visible.
+
 use serde::{Deserialize, Serialize};
 
 use std::{
@@ -99,6 +106,8 @@ mod test_pattern;
 mod wallpaper_engine;
 mod window_diagnostics;
 
+pub mod ffi;
+
 pub(crate) use capture::*;
 pub(crate) use composition::*;
 pub(crate) use config::*;
@@ -108,7 +117,10 @@ pub(crate) use diagnostics::*;
 pub(crate) use effects::*;
 pub(crate) use errors::*;
 pub(crate) use renderer_session::*;
-pub(crate) use runtime::*;
+
+pub use config::LiveDesktopRuntimeConfig;
+pub use diagnostics::LiveDesktopRuntimeStatus;
+pub use runtime::LiveDesktopRuntime;
 
 #[cfg(target_os = "windows")]
 use test_pattern::{
@@ -138,14 +150,14 @@ use window_diagnostics::{
 };
 
 #[cfg(target_os = "windows")]
-pub(crate) type LiveDesktopWindowHandle = HWND;
+pub type LiveDesktopWindowHandle = HWND;
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) type LiveDesktopWindowHandle = ();
+pub type LiveDesktopWindowHandle = ();
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LiveDesktopBackgroundSupport {
+pub struct LiveDesktopBackgroundSupport {
     platform: &'static str,
     supports_live_desktop_background: bool,
     supports_live_desktop_background_effects: bool,
@@ -171,20 +183,21 @@ struct LiveDesktopRendererResources {
     pub(crate) consecutive_frame_errors: u32,
     pub(crate) source_width: u32,
     pub(crate) source_height: u32,
-    pub(crate) _com: ComApartment,
     pub(crate) _d3d_device: ID3D11Device,
     pub(crate) _d3d_context: ID3D11DeviceContext,
     pub(crate) window_capture: Option<LiveDesktopWindowCapture>,
     pub(crate) _composition_device: LiveDesktopCompositionDevice,
     pub(crate) _blur_effect: Option<IDCompositionGaussianBlurEffect>,
     pub(crate) _color_matrix_effect: Option<IDCompositionColorMatrixEffect>,
-    pub(crate) _target: IDCompositionTarget,
+    pub(crate) _target: LiveDesktopCompositionTarget,
     pub(crate) host_window: LiveDesktopCompositionHost,
     pub(crate) _root_visual: IDCompositionVisual,
     pub(crate) _root_visual3: Option<IDCompositionVisual3>,
     pub(crate) _scale_transform: IDCompositionScaleTransform,
     pub(crate) _swap_chain: LiveDesktopCompositionSwapChain,
     pub(crate) _shader_pipeline: Option<LiveDesktopShaderPipeline>,
+    // Drop COM interfaces and detach the host visual before CoUninitialize.
+    pub(crate) _com: ComApartment,
 }
 
 #[cfg(target_os = "windows")]
@@ -447,9 +460,9 @@ impl LiveDesktopRendererResources {
 
     unsafe fn set_visual_visible(&mut self, visible: bool) -> Result<(), String> {
         if visible {
-            unsafe { self._target.SetRoot(&self._root_visual) }
+            unsafe { self._target.set_root(Some(&self._root_visual)) }
         } else {
-            unsafe { self._target.SetRoot(None::<&IDCompositionVisual>) }
+            unsafe { self._target.set_root(None) }
         }
         .map_err(|source| LiveDesktopError::Composition {
             context: "SetRoot(visual visibility)",
@@ -602,7 +615,7 @@ fn live_desktop_renderer_should_stop(stop_receiver: &mpsc::Receiver<()>) -> bool
     }
 }
 
-pub(crate) fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
+pub fn live_desktop_background_support() -> LiveDesktopBackgroundSupport {
     let prerequisite_probe = probe_live_desktop_prerequisites();
     let renderer_probe = probe_live_desktop_renderer();
     make_live_desktop_background_support(current_platform(), prerequisite_probe, renderer_probe)

@@ -2,7 +2,7 @@
 use super::*;
 
 #[derive(Debug)]
-pub(crate) struct LiveDesktopRuntime {
+pub struct LiveDesktopRuntime {
     status: LiveDesktopRuntimeStatus,
     pub(super) renderer_session: Option<LiveDesktopRendererSession>,
     config: LiveDesktopRuntimeConfig,
@@ -27,15 +27,29 @@ impl Default for LiveDesktopRuntime {
 }
 
 impl LiveDesktopRuntime {
-    pub(crate) fn active_background_support(&mut self) -> Option<LiveDesktopBackgroundSupport> {
+    pub fn active_background_support(&mut self) -> Option<LiveDesktopBackgroundSupport> {
         self.reap_abandoned_renderer_workers();
         self.renderer_session
             .as_ref()
             .map(|session| active_live_desktop_background_support(session.renderer_probe.clone()))
     }
 
-    pub(crate) fn status(&mut self) -> LiveDesktopRuntimeStatus {
+    pub fn status(&mut self) -> LiveDesktopRuntimeStatus {
         self.reap_abandoned_renderer_workers();
+        #[cfg(target_os = "windows")]
+        if self.status.active
+            && self
+                .renderer_session
+                .as_ref()
+                .and_then(|session| session.worker.as_ref())
+                .is_some_and(|worker| worker.is_finished())
+        {
+            self.status = LiveDesktopRuntimeStatus::failed(
+                self.status.generation,
+                "rendererExited",
+                "Live desktop capture worker exited unexpectedly".to_string(),
+            );
+        }
         let mut status = self.status.clone();
         let mut diagnostics = status.diagnostics.clone();
         if let Some(session) = self.renderer_session.as_ref() {
@@ -50,7 +64,7 @@ impl LiveDesktopRuntime {
         status
     }
 
-    pub(crate) fn start_for_window(
+    pub fn start_for_window(
         &mut self,
         window_handle: LiveDesktopWindowHandle,
     ) -> LiveDesktopRuntimeStatus {
@@ -60,10 +74,7 @@ impl LiveDesktopRuntime {
         })
     }
 
-    pub(crate) fn configure(
-        &mut self,
-        config: LiveDesktopRuntimeConfig,
-    ) -> LiveDesktopRuntimeStatus {
+    pub fn configure(&mut self, config: LiveDesktopRuntimeConfig) -> LiveDesktopRuntimeStatus {
         self.reap_abandoned_renderer_workers();
         self.config = config.clone();
         if let Some(session) = self.renderer_session.as_ref() {
@@ -72,7 +83,7 @@ impl LiveDesktopRuntime {
         self.status()
     }
 
-    pub(crate) fn set_visible(&mut self, visible: bool) -> LiveDesktopRuntimeStatus {
+    pub fn set_visible(&mut self, visible: bool) -> LiveDesktopRuntimeStatus {
         self.reap_abandoned_renderer_workers();
         if let Some(session) = self.renderer_session.as_ref() {
             session.set_visible(visible);
@@ -80,7 +91,7 @@ impl LiveDesktopRuntime {
         self.status()
     }
 
-    pub(crate) fn stop(&mut self) -> LiveDesktopRuntimeStatus {
+    pub fn stop(&mut self) -> LiveDesktopRuntimeStatus {
         #[cfg(target_os = "windows")]
         let cleanup_timeout = Duration::from_millis(LIVE_DESKTOP_RENDERER_STOP_JOIN_TIMEOUT_MS);
         #[cfg(not(target_os = "windows"))]

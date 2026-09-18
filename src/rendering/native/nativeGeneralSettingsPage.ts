@@ -20,6 +20,7 @@ type Options={
   management:NativeManagement;invalidate():void;redraw():void;
   recording:boolean;record():void;expanded:boolean;expand():void;
   icons:ReadonlyMap<LaunchpadIconVariant,Texture>;
+  openLogs():void;
 };
 export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent{
   const {settings,width,theme}=options,style=nativeSettingsStyle(theme),node=new Container();
@@ -125,8 +126,8 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   }
   layout.disclosure("general.icons",options.expanded,sectionStart,sectionTop,y-sectionTop,controls.slice(sectionControls),iconChevron,true,expandButton);
   y+=nativeUiMetrics.sectionGap;const advanced=text(t("settings.general.advanced.title"),0,y,18,true);node.addChild(advanced);y+=advanced.height+nativeUiMetrics.headingGap;
-  const developer=row(t("settings.general.advanced.developerConsole"),t("settings.general.advanced.openUnavailable"));
-  button(developer,t("settings.general.advanced.open"),width-132,19,116,()=>{}).disabled=true;
+  const developer=row(t("native.tray.logs"));
+  button(developer,t("native.tray.logs"),width-170,19,154,options.openLogs).label="native-setting:open-logs";
   const update=()=>{
     const error=settings.presentation.launchAtLoginError.value;
     startupTitle.y=error?17:(72-17)/2;
