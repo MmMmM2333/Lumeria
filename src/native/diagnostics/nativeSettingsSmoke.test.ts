@@ -110,6 +110,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("settings entrance settles",()=>!scene.getMotionSnapshot().active);
   await present("settings layout settled");
   await capture("settings-layout");
+  await (await import("./nativeAppsLayoutSmoke.js")).runNativeAppsLayoutSmoke(context);
   const aboutTab=app.stage.getChildByLabel("native-settings-tab:about",true);assert.ok(aboutTab);
   clickWithNativeInput(aboutTab);await present("native about route");
   await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
@@ -362,6 +363,14 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   clickWithNativeInput(app.stage.getChildByLabel(`native-apps:select-${firstManaged.id}`,true)!);
   await waitFor("apps selection bar expands",()=>app.stage.getChildByLabel("native-disclosure:apps.selection.apps.appManager",true)?.getChildByLabel("native-disclosure-content")?.alpha===1);
   assert.deepEqual(apps().appManagerSelectedIds.value,[firstManaged.id]);
+  {
+    const row=app.stage.getChildByLabel(`native-apps:row-${firstManaged.id}`,true) as NativeFluentButton;
+    const exclude=app.stage.getChildByLabel("native-apps:exclude-selected",true) as NativeFluentButton;
+    const remove=app.stage.getChildByLabel("native-apps:remove-selected",true) as NativeFluentButton;
+    const rowRight=row.getGlobalPosition().x+row.controlWidth;
+    assert.ok(Math.abs(rowRight-exclude.getGlobalPosition().x-exclude.controlWidth-10)<1,"selection actions retain the right inset");
+    assert.ok(remove.getGlobalPosition().x+remove.controlWidth<=exclude.getGlobalPosition().x-7,"selection buttons keep a gap");
+  }
   await capture("settings-apps-selected");
   clickWithNativeInput(app.stage.getChildByLabel("native-apps:clear",true)!);
   await waitFor("apps selection cleared",()=>apps().selectedManagedAppCount.value===0&&!scene.getMotionSnapshot().active);

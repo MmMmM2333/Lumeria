@@ -26,6 +26,7 @@ import { getFolderLayoutMetricsForRows } from "../folderLayoutMetrics.js";
 import {
   applyDesktopLayerFrameUpdates,
   makeDesktopStructureFrame,
+  makeDesktopInteractionFrame,
   makeDesktopVisualFrame,
   type DesktopStructureFrame,
   type DesktopLayerFrameWork,
@@ -222,9 +223,20 @@ export class NativeDesktopScene {
   #desktopDependencies:readonly unknown[]|null=null;
   #visualValues:readonly unknown[]=[];
   #structureInvalidated=false;
+  #interactionInvalidated=false;
+  #textResolution:number|null=null;
+  readonly #textNodes=new WeakSet<IconNode>();
   #updates={structure:0,visual:0,motion:0};
   #structureFrame:DesktopStructureFrame|null=null;
   invalidateStructure():void {this.#structureInvalidated=true;}
+  requestLayerUpdate(reason:string):void {
+    // Ownership/actor notifications do not change grid geometry. Other folder
+    // lifecycle requests still require the full handoff reconciliation path.
+    if(reason==="group-release-pool-prewarm"||reason.startsWith("group-transfer-")
+      ||(reason==="visual-ownership-committed"&&!this.#committed?.options.folderPresentation?.renderedFolder&&!this.#layer.getFolderHandoffNodes().size)){
+      this.#interactionInvalidated=true;
+    }else this.invalidateStructure();
+  }
   getUpdateStatistics():Readonly<{structure:number;visual:number;motion:number}>{return {...this.#updates};}
 
   #visiblePageRange(frame:CompleteDesktopSceneFrame,width:number):string {
@@ -353,7 +365,12 @@ export class NativeDesktopScene {
     const folder=options.folderPresentation;
     // Open/close is a presentation change. It does not alter desktop node state,
     // grid layout or hit bounds; native input gating is owned by the launch flow.
-    const interactionStructure=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing").flat();
+    // Group presentation (pointer/trail and release motion) owns an interaction
+    // lane. Layout projections, hover targets and ownership source changes are
+    // still structural dependencies, just as in PixiDesktopSurface.
+    const interactionStructure:unknown[]=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState").flat();
+    interactionStructure.push(frame.interaction.groupDragState?.key,frame.interaction.groupDragState?.phase,
+      frame.interaction.groupDragState?.runtimePlan?.key);
     const dependencies=[...Object.values(frame.viewport),...interactionStructure,frame.folder,frame.diagnostics,
       viewport.width,viewport.height,viewport.resolution,options.chromeInset,options.openingIconId,
       this.#folderLayout.cols,this.#folderLayout.rows,this.#folderLayout.iconSize,
@@ -396,6 +413,23 @@ export class NativeDesktopScene {
       &&dependencies.length===this.#dependencies.length&&dependencies.every((value,index)=>Object.is(value,this.#dependencies![index]))
       &&range===this.#pageRange){
       let visualWork:DesktopLayerFrameWork|null=null;
+      let interactionWork:DesktopLayerFrameWork|null=null;
+      if(this.#structureFrame&&(this.#interactionInvalidated||frame.interaction.groupDragState!==this.#committed?.frame.interaction.groupDragState)){
+        this.#interactionInvalidated=false;
+        const state=this.#structureFrame={...this.#structureFrame,groupDragState:frame.interaction.groupDragState,
+          singleStageFolderState:this.#structureFrame.singleStageFolderState?{...this.#structureFrame.singleStageFolderState,
+            groupDragState:frame.interaction.groupDragState}:null};
+        interactionWork=applyDesktopLayerFrameUpdates(this.#layer,[{lane:"interaction",frame:makeDesktopInteractionFrame({
+          deviceResolution:state.deviceResolution,dragFolderHoverState:state.dragFolderHoverState,
+          folderClosingHandoffIds:state.folderClosingHandoffIds,folderPageSize:state.folderPageSize,
+          folderSourceGhostedIds:state.folderSourceGhostedIds,gridCols:state.gridCols,gridRows:state.gridRows,
+          groupDragState:state.groupDragState,height:state.height,iconSize:state.iconSize,
+          isBatchSelectionActive:state.isBatchSelectionActive,isFolderOpeningPreviewFrameGhosted:state.isFolderOpeningPreviewFrameGhosted,
+          isTextlessMode:state.isTextlessMode,provisionalFolderRollback:state.provisionalFolderRollback,
+          launchTargetStatusById:state.launchTargetStatusById,showMissingLaunchTargetBadge:state.showMissingLaunchTargetBadge,
+          singleStageFolderState:state.singleStageFolderState,stageRect:state.stageRect,width:state.width,
+        })}]);
+      }
       if(frame.interaction.isDesktopClosing!==this.#committed?.frame.interaction.isDesktopClosing){
         this.#pageDots.update(frame,viewport.width,viewport.height,folderOpen||frame.interaction.isDesktopClosing);
       }
@@ -411,9 +445,11 @@ export class NativeDesktopScene {
       }
       this.#visualValues=visualValues;
       this.#committed={frame,viewport,options};
+      if(interactionWork)return {...interactionWork,visualFrames:visualWork?.visualFrames??0};
       return visualWork??applyDesktopLayerFrameUpdates(this.#layer,[]);
     }
     this.#structureInvalidated=false;
+    this.#interactionInvalidated=false;
     this.#dependencies=dependencies;
     this.#desktopDependencies=desktopDependencies;
     this.#visualValues=visualValues;
@@ -513,12 +549,16 @@ export class NativeDesktopScene {
     if(this.#retainsPages(frame))this.#layer.cullRetainedPages(viewport.width);
     else if(this.#pageRange==="retained")for(const node of this.#layer.iconNodes.values())node.renderable=true;
 
-    for (const [pageIndex, page] of frame.viewport.activePages.entries()) {
-      if(folderOnly&&pageIndex!==frame.viewport.activePageIndex)continue;
-      for (const item of page) {
-        if (!item) continue;
-        const node = this.#layer.findIconNodeByItemId(item.id);
-        if (!node) continue;
+    const resolutionChanged=this.#textResolution!==viewport.resolution;
+    const prepareText=(node:IconNode)=>{
+      // App labels use a stable subtree; folder previews can realize children.
+      if(!resolutionChanged&&(!this.#textNodes.has(node)||node.item?.type==="folder"))syncPixiTextResolution(node,viewport.resolution);
+      this.#textNodes.add(node);
+    };
+    for (const node of this.#layer.iconNodes.values()) {
+        prepareText(node);
+        if(folderOnly&&Number(node.source?.pageIndex)!==frame.viewport.activePageIndex)continue;
+        const item=node.item;if(!item)continue;
         node.label = `launchpad-item:${item.id}`;
         if (this.#activationNodes.has(node)) continue;
         this.#activationNodes.add(node);
@@ -527,10 +567,10 @@ export class NativeDesktopScene {
           const current = node.item;
           if (current) this.#onIconActivate?.(current);
         });
-      }
     }
     if (folderState && !folderState.isFolderClosing) {
       for (const node of this.#layer.singleStageFolderLayer.iconNodes.values()) {
+        prepareText(node);
         const item = node.item;
         if (!item) continue;
         node.label = `launchpad-item:${item.id}`;
@@ -544,7 +584,8 @@ export class NativeDesktopScene {
         });
       }
     }
-    syncPixiTextResolution(folderOnly?this.#layer.singleStageFolderLayer:this.#layer, viewport.resolution);
+    if(resolutionChanged){syncPixiTextResolution(this.#layer,viewport.resolution);this.#textResolution=viewport.resolution;}
+    else syncPixiTextResolution(this.#layer.groupDragLayer,viewport.resolution);
     this.#committed={frame,viewport,options};
     this.#pageRange=this.#visiblePageRange(frame,viewport.width);
     return work;

@@ -302,7 +302,9 @@ export async function runNativeFolderSmoke(context: NativeFolderSmokeContext): P
       await present("overlay regression reopened frame");
       assert.equal(folderFlow.snapshot().renderedFolder,null);
       assert.equal(scene.isFolderOverlayVisible(),false,"reopening desktop must not revive the previous folder panel");
-      const node=app.stage.getChildByLabel(`launchpad-item:${folder.id}`,true)!;
+      const node=app.stage.getChildByLabel(`launchpad-item:${folder.id}`,true);
+      assert.ok(node,`reopened folder source missing: ${JSON.stringify({id:folder.id,delay,page:layoutState.presentation.pageIndex.value,
+        pages:layoutState.presentation.pages.value.map(page=>page.map(item=>item?.id)),motion:scene.getMotionSnapshot()})}`);
       const bounds=node.getBounds();
       app.nativeInput.emitPointer("pointermove",bounds.x+bounds.width/2,bounds.y+bounds.height/2,0);
       assert.deepEqual(resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(bounds.x+bounds.width/2,bounds.y+bounds.height/2)),

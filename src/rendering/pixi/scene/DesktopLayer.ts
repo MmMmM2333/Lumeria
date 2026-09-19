@@ -3,6 +3,7 @@ import type { DestroyOptions } from "pixi.js";
 import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
+import { canRetainAppVisualState } from "../nodes/iconVisualState.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getDesktopGridMetrics } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
@@ -1665,7 +1666,7 @@ export class DesktopLayer extends Container {
 
         node!.stageRect = state.stageRect;
         node!.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
-        node!.setState(nodeState);
+        if(isNewNode||!canRetainAppVisualState(node!.state,nodeState))node!.setState(nodeState);
         if (isNewNode) {
           // Realizing an existing offscreen item is not an insertion animation.
           const snapEntry=(!pageTrackScopeChanged&&knownDesktopItems.has(item.id))||isFolderClosingHandoff||shouldSnapDragHandoffLayout||isProvisionalRollbackTarget;
@@ -2253,7 +2254,8 @@ export class DesktopLayer extends Container {
         : [];
       const previewSuppressionChanged = previousSuppressedFolderPreviewChildIds.length !== suppressedFolderPreviewChildIds.length ||
         previousSuppressedFolderPreviewChildIds.some((id, index) => id !== suppressedFolderPreviewChildIds[index]);
-      if (!wasDirectlyOwned && !isDirectlyOwned && !previewSuppressionChanged) continue;
+      if (wasDirectlyOwned === isDirectlyOwned && !previewSuppressionChanged
+        && (!isDirectlyOwned || node.state.ghosted)) continue;
       if (isDirectlyOwned && !wasDirectlyOwned) {
         killMotionOf(node, null, { reason: "group-release-source-handoff" });
         killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });

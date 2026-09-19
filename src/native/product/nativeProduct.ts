@@ -505,9 +505,9 @@ const scene = new NativeDesktopScene(app.stage, {
   onFolderRenderRequest: reason=>{
     if(reason==="group-release-pool-prewarm"){
       if(poolPrewarmFrame===null)poolPrewarmFrame=inputFrames.request(()=>{
-        poolPrewarmFrame=null;scene.invalidateStructure();requestSceneRender();
+        poolPrewarmFrame=null;scene.requestLayerUpdate(reason);requestSceneRender();
       });
-    }else{scene.invalidateStructure();requestSceneRender();}
+    }else{scene.requestLayerUpdate(reason);requestSceneRender();}
   },
   onIconActivate: (item) => void activateItem(item),
   onGroupReleaseComplete: result => editing?.complete(result),

@@ -268,6 +268,7 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     await sendTrayTestAction(trayHandle.id,"menu",1);await waitFor("tray settings opened",()=>Boolean(getSettingsShell()));
     await present("tray settings ready");
     app.nativeInput.emitKey("down",{keyCode:0x1b});await present("tray settings dismissed");
+    await waitFor("tray settings close animation finished",()=>!getSettingsShell());
     console.log("Tray left toggle, right-menu restore and settings actions passed");
   }
   if(settings.presentation.windowMode.value==="fullscreen"){

@@ -136,22 +136,36 @@ export class NativeAppDialogs{
   }
   scan():void{
     const {apps,management}=this.options,model=apps.scanResultModel;
-    management.dialog({id:"scan-results",title:t("dialogs.scanResults.title"),width:720,maxHeight:720,closeLabel:t("dialogs.scanResults.close"),cancelText:t("common.actions.cancel"),confirmText:t("dialogs.scanResults.addSelected"),canConfirm:()=>model.canAdd.value,onClose:()=>model.actions.close(),confirm:async()=>{model.actions.addSelected({keepOpen:true});await this.options.save();},build:width=>this.#scanBody(width)});
+    management.dialog({id:"scan-results",title:t("dialogs.scanResults.title"),get subtitle(){return t("dialogs.scanResults.summary",{selected:model.selectedCount.value});},width:720,maxHeight:720,closeLabel:t("dialogs.scanResults.close"),cancelText:t("common.actions.cancel"),confirmText:t("dialogs.scanResults.addSelected"),canConfirm:()=>model.canAdd.value,onClose:()=>model.actions.close(),confirm:async()=>{model.actions.addSelected({keepOpen:true});await this.options.save();},build:width=>this.#scanBody(width)});
   }
   #scanBody(width:number):NativeModalBody{
     const {apps,theme,invalidate}=this.options,model=apps.scanResultModel,style=nativeSettingsStyle(theme()),node=new Container(),controls:NativeSettingsControl[]=[];
-    let y=0;const summary=this.#text(t("dialogs.scanResults.summary",{selected:model.selectedCount.value}),12,true,width);node.addChild(summary);y+=summary.height+12;
+    let y=0;
     if(model.warnings.value.length){const partial=this.#text(t("dialogs.scanResults.partial"),12,true,width);partial.y=y;node.addChild(partial);y+=partial.height+8;}
     const total=Number(model.stats.value?.keywordExcludedApps)||model.keywordExcludedApps.value.length;
+    node.addChild(new Graphics({eventMode:"none"}).roundRect(0.5,y+0.5,width-1,41,8).fill(style.row).stroke({color:style.border,width:1}));
     for(const [index,tab] of (["available","ignored"] as const).entries()){
-      const button=this.#button(node,controls,`scan-tab-${tab}`,t(`dialogs.scanResults.tabs.${tab}`,{count:tab==="available"?model.apps.value.length:total}),index*(width/2+2),y,width/2-4,()=>model.actions.selectTab(tab),"subtle");
-      if(tab===model.activeTab.value)button.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,button.controlWidth,32,4).fill(style.selected),0);
-    }y+=50;
+      const tabWidth=(width-12)/2;
+      const button=this.#button(node,controls,`scan-tab-${tab}`,t(`dialogs.scanResults.tabs.${tab}`,{count:tab==="available"?model.apps.value.length:total}),4+index*(tabWidth+4),y+4,tabWidth,()=>model.actions.selectTab(tab),"subtle",34);
+      if(tab===model.activeTab.value)button.addChildAt(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,tabWidth-1,33,6).fill(style.selected).stroke({color:style.border,width:1}),0);
+    }y+=56;
     const ignored=model.activeTab.value==="ignored";
-    if(ignored){const intro=this.#text(t("dialogs.scanResults.ignoredIntro"),12,true,width-180);intro.y=y;node.addChild(intro);this.#button(node,controls,"scan-keywords",t("dialogs.scanResults.manageKeywords"),width-170,y,170,model.actions.manageKeywords,"subtle");y+=Math.max(32,intro.height)+10;}
+    if(ignored){
+      const manage=this.#button(node,controls,"scan-keywords",t("dialogs.scanResults.manageKeywords"),0,y,170,model.actions.manageKeywords,"subtle");
+      manage.resizeWidth(Math.ceil(manage.caption.width)+24);manage.x=width-manage.controlWidth;
+      const stacked=manage.x-16<220;
+      const intro=this.#text(t("dialogs.scanResults.ignoredIntro"),12,true,stacked?width:manage.x-16);intro.label="native-scan:intro";node.addChild(intro);
+      const height=stacked?intro.height+8+32:Math.max(32,intro.height);
+      intro.y=y+(stacked?0:(height-intro.height)/2);manage.y=y+(stacked?intro.height+8:(height-32)/2);y+=height+10;
+    }
     const entries=ignored?model.keywordExcludedApps.value:model.apps.value.map(app=>({app,matchedKeyword:""}));
-    if(entries.length){this.#button(node,controls,"scan-all",t("common.actions.selectAll"),0,y,88,model.actions.selectAll,"subtle");this.#button(node,controls,"scan-clear",t("common.actions.clearSelection"),96,y,110,model.actions.clearSelection,"subtle");y+=40;}
-    const top=y;
+    if(entries.length){
+      let x=0;for(const [id,label,action] of [["scan-all",t("common.actions.selectAll"),model.actions.selectAll],["scan-clear",t("common.actions.clearSelection"),model.actions.clearSelection]] as const){
+        const b=this.#button(node,controls,id,label,x,y,100,action,"subtle",24);b.resizeWidth(Math.ceil(b.caption.width));b.caption.style.fontSize=12;x+=b.controlWidth+16;
+      }y+=32;
+    }
+    const header={node:new Container({label:"native-scan:header"}),height:y,controls:controls.splice(0)};
+    const headerChildren=node.children.slice();node.removeChildren();header.node.addChild(...headerChildren);y=0;
     const list=new NativeVirtualList(entries.length,70,1,index=>{
       const {app,matchedKeyword}=entries[index]!,row=new Container(),rowControls:NativeSettingsControl[]=[];
       const selected=model.selectedIds.value.includes(app.id);
@@ -159,13 +173,20 @@ export class NativeAppDialogs{
       const toggle=new NativeFluentToggle("checkbox",value=>model.actions.toggleSelection(app.id,value),invalidate,theme(),16);toggle.checked=selected;toggle.label=`native-scan:select-${app.id}`;toggle.position.set(5,16);row.addChild(toggle);
       rowControls.push({node:toggle,disabled:()=>false,focus:active=>{background.focused=active;},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;toggle.toggle();return true;}});
       this.#image(row,getNativeIconTextureSource(app),app.emoji??"",45,19,26);
-      const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-105);name.position.set(87,12);row.addChild(name);
-      const target=new NativeSingleLineText(model.getLaunchTargetPath(app)||t("settings.apps.manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-105);target.position.set(87,31);row.addChild(target);
-      if(matchedKeyword){const match=new NativeSingleLineText(matchedKeyword,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:10,fill:style.accent},width-105);match.position.set(87,47);row.addChild(match);}
+      let detailsRight=width-22;
+      if(matchedKeyword){
+        const badge=new Container({eventMode:"none",label:`native-scan:keyword-${app.id}`});row.addChild(badge);
+        const match=new NativeSingleLineText(t("dialogs.scanResults.matchedKeyword",{keyword:matchedKeyword}),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},Math.max(1,Math.min(164,width*0.3-16)));
+        const badgeWidth=match.width+16;badge.position.set(detailsRight-badgeWidth,20);
+        badge.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,badgeWidth,24,12).fill(style.row).stroke({color:style.border,width:1}));match.position.set(8,(24-match.height)/2);badge.addChild(match);
+        detailsRight=badge.x-12;
+      }
+      const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,detailsRight-87));name.position.set(87,16);row.addChild(name);
+      const target=new NativeSingleLineText(model.getLaunchTargetPath(app)||t("settings.apps.manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},Math.max(1,detailsRight-87));target.position.set(87,33);row.addChild(target);
       return {node:row,controls:rowControls};
-    },index=>entries[index]!.app.id);list.y=top;node.addChild(list);controls.push(...list.controls);y+=entries.length*70;
+    },index=>entries[index]!.app.id);node.addChild(list);controls.push(...list.controls);y+=entries.length*70;
     if(!entries.length){const empty=this.#text(t(ignored?"dialogs.scanResults.ignoredEmpty":"dialogs.scanResults.empty"),13,true,width);empty.y=y+20;node.addChild(empty);y+=empty.height+60;}
     if(ignored&&total>entries.length){const hint=this.#text(t("dialogs.scanResults.ignoredTruncated",{shown:entries.length,total}),12,true,width);hint.y=y;node.addChild(hint);y+=hint.height+12;}
-    return {node,height:y,controls,viewport:(offset,height)=>list.viewport(offset-list.y,height)};
+    return {node,height:y,controls,fixedHeader:header,maxVisibleHeight:430,viewport:(offset,height)=>list.viewport(offset-list.y,height)};
   }
 }

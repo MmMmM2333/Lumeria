@@ -26,7 +26,9 @@ type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;wid
 
 /** Uses the same scan, exclusion and selection commands as the original settings page. */
 export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
-  const {apps,host,width,theme,state,invalidate,redraw}=options,style=nativeSettingsStyle(theme);
+  const {apps,host,theme,state,invalidate,redraw}=options,style=nativeSettingsStyle(theme);
+  const listGutter=options.subPage==="apps.appManager"||options.subPage==="apps.excludedApps"?12:0;
+  const width=options.width-listGutter;
   const node=new Container(),controls:NativeSettingsControl[]=[],cleanup:(()=>void)[]=[];
   const layout=new NativeSettingsLayout(node,width,theme);let y=0;
   let resizeList=(_height:number)=>{};
@@ -46,7 +48,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       control.focus=active=>{if(active){const target=rect();scroll.reveal(target.top,target.height);}focus(active);};
       control.revealRect=()=>({top:scroll.y,height:Math.min(70,listHeight)});
     }};wrapControls();
-    resizeList=height=>{const offset=state.scrollOffsets?.[route]??0;listHeight=Math.max(1,height-scroll.y);scroll.resize(width,listHeight,count*70);scroll.scrollTo(offset);list.viewport(scroll.offset,listHeight);};
+    resizeList=height=>{const offset=state.scrollOffsets?.[route]??0;listHeight=Math.max(1,height-scroll.y);scroll.resize(width+listGutter,listHeight,count*70);scroll.scrollTo(offset);list.viewport(scroll.offset,listHeight);};
     const controlStart=controls.length;controls.push(...list.controls);y+=1;
     return {list,refresh:(nextCount:number)=>{count=nextCount;if(list.updateItems(count)){wrapControls();controls.splice(controlStart,controls.length-controlStart,...list.controls);}}};
   };
@@ -104,7 +106,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
   };
   const appRow=(app:ReadonlyLaunchpadApp,selected:boolean,select:(checked:boolean)=>void,more:()=>void)=>{
     const top=y;y+=70;
-    const background=new NativeFluentButton("",width-12,()=>select(!apps.appManagerSelectedIds.value.includes(app.id)),invalidate,theme,"list-row",false,64);background.label=`native-apps:row-${app.id}`;background.y=top;
+    const background=new NativeFluentButton("",width,()=>select(!apps.appManagerSelectedIds.value.includes(app.id)),invalidate,theme,"list-row",false,64);background.label=`native-apps:row-${app.id}`;background.y=top;
     node.addChild(background);
     background.selected=selected;
     const checkbox=toggle(`select-${app.id}`,selected,5,top+16,select,"checkbox");
@@ -123,7 +125,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     applyTexture(options.icons.resolve(app,ready));
     const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,width-156));name.position.set(87,top+16);node.addChild(name);
     const target=new NativeSingleLineText(apps.getLaunchTargetPath(app)||key("manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:theme==="dark"?"rgba(255,255,255,0.48)":style.muted},Math.max(1,width-156));target.position.set(87,top+33);node.addChild(target);
-    const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-56,top+16,32,more,false,"subtle");moreButton.caption.visible=false;
+    const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-44,top+16,32,more,false,"subtle");moreButton.caption.visible=false;
     const dots=new Graphics({eventMode:"none"});for(const x of [11,16,21])dots.circle(x,16,1).fill(style.text);moreButton.addChild(dots);
     const source=getNativeIconTextureSource(app),targetPath=apps.getLaunchTargetPath(app);
     return (next:ReadonlyLaunchpadApp,checked:boolean):boolean=>{
@@ -135,9 +137,21 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
   };
   const selectionBar=(count:number,actions:()=>void)=>{
     const start=node.children.length,top=y,first=controls.length;
-    node.addChild(new Graphics({eventMode:"none"}).roundRect(0,y,width,48,8).fill(theme==="dark"?"rgba(75,163,246,0.16)":style.selected).stroke({color:style.accent,alpha:0.22,width:1}));
-    const label=text(key("manager.selected",{count}),12,y+16,12);y+=8;actions();y+=48;
-    layout.disclosure(`apps.selection.${options.subPage}`,count>0,start,top,56,controls.slice(first),undefined,false);return label;
+    const background=new Graphics({eventMode:"none"});node.addChild(background);
+    const label=text(key("manager.selected",{count}),12,y+16,12);y+=8;actions();
+    const buttons=controls.slice(first).map(control=>control.node as NativeFluentButton);
+    for(const b of buttons){b.caption.scale.x=1;b.resizeWidth(Math.ceil(b.caption.width)+24);}
+    const total=buttons.reduce((sum,b)=>sum+b.controlWidth,0)+Math.max(0,buttons.length-1)*8;
+    let actionY=top+8,right=width-10;
+    if(total+label.width+34>width)actionY=top+36;
+    for(const b of [...buttons].reverse()){
+      if(right-b.controlWidth<12){actionY+=40;right=width-10;}
+      b.position.set(right-b.controlWidth,actionY);right=b.x-8;
+    }
+    const height=actionY-top+40;
+    background.roundRect(0,top,width,height,8).fill(theme==="dark"?"rgba(75,163,246,0.16)":style.selected).stroke({color:style.accent,alpha:0.22,width:1});
+    y=top+height+8;
+    layout.disclosure(`apps.selection.${options.subPage}`,count>0,start,top,height+8,controls.slice(first),undefined,false);return label;
   };
   if(options.subPage==="apps.appManager"){
     const queryInput=input("search",apps.appManagerSearchQuery.value,0,y,Math.max(100,width-232),value=>{apps.appManagerSearchQuery.value=value;},false,true);
@@ -182,11 +196,11 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
       const top=y,name=entry.app.name||entry.key,selected=state.excludedKeys.has(entry.key);y+=70;
       const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);redraw();};
-      const background=new NativeFluentButton("",width-12,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
+      const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
       toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
       const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-116);nameLabel.position.set(45,top+16);node.addChild(nameLabel);
       const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-116);subtitle.position.set(45,top+33);node.addChild(subtitle);
-      const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-56,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
+      const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-44,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
       const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
     },index=>filtered[index]!.key);
     if(!filtered.length){text(key(entries.length?"excluded.noMatch":"excluded.empty"),14,y+24,13,true);y+=80;}

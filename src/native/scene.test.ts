@@ -19,6 +19,7 @@ import { installNativeCanvasTestAdapter } from "./nativeCanvasTestAdapter.js";
 import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { runNativeDesktopResizeTests } from "../rendering/native/nativeDesktopSceneResize.test.js";
+import { runNativeDragPerformanceTests } from "../rendering/native/nativeDragPerformance.test.js";
 import { runNativeLabelRasterTests } from "../rendering/native/nativeLabelRaster.test.js";
 import { runNativeVisualParityTests } from "../rendering/native/nativeVisualParity.test.js";
 import { runNativeSettingsLayoutTests } from "../rendering/native/nativeSettingsLayout.test.js";
@@ -427,6 +428,7 @@ function stepSceneAnimations(): void {
   update(1000 / 60);
 }
 const frame = makeCompleteFrame();
+runNativeDragPerformanceTests(frame);
 const work = scene.commit(frame, { height: 600, resolution: 1.25, width: 900 });
 
 assert.equal(work.structureFrames, 1);

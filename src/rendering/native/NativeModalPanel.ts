@@ -10,7 +10,9 @@ import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { nativePanelShadow } from "./ui/nativePanelShadow.js";
 
-export type NativeModalBody={node:Container;height:number;controls:NativeSettingsControl[];dispose?():void;update?():boolean;viewport?(top:number,height:number):void};
+export type NativeModalBody={node:Container;height:number;controls:NativeSettingsControl[];
+  fixedHeader?:{node:Container;height:number;controls:NativeSettingsControl[]};maxVisibleHeight?:number;
+  dispose?():void;update?():boolean;viewport?(top:number,height:number):void};
 export type NativeModalSpec={id:string;title:string;subtitle?:string;width:number;maxHeight?:number;closeLabel?:string;showClose?:boolean;headerIcon?:{name:Parameters<typeof nativeFluentIcon>[0];color:string};
   cancelText?:string;confirmText?:string;danger?:boolean;outlineConfirm?:boolean;canConfirm?():boolean;confirm?():void|Promise<void>;
   onClose?():void;enterSubmit?:boolean;warningAnimation?:boolean;footerGap?:number;build(width:number):NativeModalBody;};
@@ -73,7 +75,8 @@ export class NativeModalPanel extends Container{
     const error=this.#error?text(this.#error,12):null;if(error){error.style.fill="#ffb4a9";error.style.wordWrapWidth=width-40;}
     // Error details belong to the scrollable body so long IO errors cannot displace the footer.
     if(error){error.position.set(0,contentHeight+12);this.#body.node.addChild(error);contentHeight+=Math.ceil(error.height)+24;}
-    const height=Math.min(top+contentHeight+footerHeight,this.spec.maxHeight??720,Math.max(100,size.height-48));
+    const header=this.#body.fixedHeader,headerHeight=header?.height??0;
+    const height=Math.min(top+headerHeight+Math.min(contentHeight,this.#body.maxVisibleHeight??Infinity)+footerHeight,this.spec.maxHeight??720,Math.max(100,size.height-48));
     this.panel.pivot.set(width/2,height/2);this.panel.position.set(size.width/2,size.height/2);
     this.panel.addChild(nativePanelShadow(width,height,nativeFluentTheme(this.theme()).shadow64));
     this.panel.addChild(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,width-1,height-1,8).fill(style.panel).stroke({color:this.theme()==="dark"?"rgba(255,255,255,0.12)":style.border,width:1}),title);
@@ -83,8 +86,9 @@ export class NativeModalPanel extends Container{
     if(this.spec.showClose!==false){const close=register(new NativeFluentButton(this.spec.closeLabel??t("settings.shell.close"),32,()=>this.requestClose(),this.invalidate,this.theme(),"subtle",false,32));
       close.label=`native-modal:${this.spec.id}:close`;close.position.set(width-52,16);close.caption.visible=false;
       const icon=nativeFluentIcon("dismiss-16-regular",style.muted,16);icon.position.set(8,8);close.addChild(icon);this.panel.addChild(close);this.#footer.push(close);}
-    const scroll=new NativeScrollView(this.invalidate,offset=>{this.#body?.viewport?.(offset,bodyHeight);},this.theme());this.#scroll=scroll;scroll.position.set(20,top);
-    const bodyHeight=Math.max(1,height-top-footerHeight);
+    if(header){header.node.position.set(20,top);this.panel.addChild(header.node);this.#controls.push(...header.controls);}
+    const scroll=new NativeScrollView(this.invalidate,offset=>{this.#body?.viewport?.(offset,bodyHeight);},this.theme());this.#scroll=scroll;scroll.position.set(20,top+headerHeight);
+    const bodyHeight=Math.max(1,height-top-headerHeight-footerHeight);
     scroll.content.addChild(this.#body.node);scroll.resize(width-40,bodyHeight,contentHeight);scroll.scrollTo(offset);this.#body.viewport?.(scroll.offset,bodyHeight);this.panel.addChild(scroll);
     this.#controls.push(...this.#body.controls);
     let right=width-20;
@@ -104,7 +108,7 @@ export class NativeModalPanel extends Container{
     if(restore>=0){this.#setFocus(restore);if(selection)this.#controls[restore]?.restoreSelection?.(selection);}
     this.setBusy(this.#busy);this.invalidate();
   }
-  setBusy(value:boolean):void{this.#busy=value;for(const b of this.#footer)b.busy=value;if(this.#body)this.#body.node.interactiveChildren=!value;}
+  setBusy(value:boolean):void{this.#busy=value;for(const b of this.#footer)b.busy=value;if(this.#body){this.#body.node.interactiveChildren=!value;if(this.#body.fixedHeader)this.#body.fixedHeader.node.interactiveChildren=!value;}}
   async submit():Promise<void>{
     if(this.#busy||this.#closing||!this.spec.confirm||!(this.spec.canConfirm?.()??true))return;
     this.setBusy(true);this.#error="";

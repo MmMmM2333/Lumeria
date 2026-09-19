@@ -242,8 +242,12 @@ if(process.env.LAUNCHPAD_INTERACTION_BENCH){
   if(!isolated)throw new Error("Interaction benchmark requires isolated data");
   // A previous successful run must not satisfy this run's evidence check.
   rmSync(join(process.env.LAUNCHPAD_INTERACTION_BENCH,"proof.json"),{force:true});
-  fixture.pages=[Array.from({length:28},(_,index)=>({id:`bench-${index}`,type:"manualApp",name:`Benchmark ${index}`,
-    customIconPath:iconPath,launchTarget:{kind:"url",path:"https://example.invalid/"}}))];
+  const count=Number(process.env.LAUNCHPAD_INTERACTION_BENCH_APPS??28);
+  if(!Number.isInteger(count)||count<28||count>800)throw new Error("Interaction benchmark app count must be between 28 and 800");
+  const items=Array.from({length:count},(_,index)=>({id:`bench-${index}`,type:"manualApp",name:`Benchmark ${index}`,
+    customIconPath:iconPath,launchTarget:{kind:"url",path:"https://example.invalid/"}}));
+  fixture.pages=Array.from({length:Math.ceil(count/48)},(_,index)=>items.slice(index*48,(index+1)*48));
+  fixture.settings.gridCols=8;fixture.settings.gridRows=6;
   fixture.settings.mainWindowShortcut=null;
 }
 if(process.env.LAUNCHPAD_LIVE_DESKTOP_PROOF){

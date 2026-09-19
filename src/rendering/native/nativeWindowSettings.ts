@@ -172,7 +172,9 @@ export function nativeAdvancedWindowSettings(options: Parameters<typeof nativeWi
     const focus=new Graphics({eventMode:"none"});node.addChild(focus);
     controls.push({node:toggle,disabled:()=>toggle.disabled,focus:active=>{focus.clear();if(active)focus.roundRect(width-68,113,48,32,4).stroke({color:style.accent,width:2});invalidate();},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;toggle.toggle();return true;}});
     const height=158+detail.height;
-    layout.disclosure("window.advanced",state.advanced,start,110,height-110,controls.slice(1),chevron);
-    return {node,height,controls,layout:layout.finish(height),dispose:()=>{}};
+    // The disclosure owns vertical padding and the shared outer border.
+    for(const child of node.children.slice(start))child.y-=6;
+    layout.disclosure("window.advanced",state.advanced,start,104,height-110,controls.slice(1),chevron,true,expand);
+    return {node,height:height-6,controls,layout:layout.finish(height-6),dispose:()=>{}};
   }
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createMotionRuntimeDebugAdapter } from "../rendering/motionPort.js";
+import { createMotionRuntimeDebugAdapter,createMotionRuntime,installMotionRuntimeDebugAdapterFactory } from "../rendering/motionPort.js";
 
 assert.ok(globalThis.gc, "Run with node --expose-gc --import tsx");
 const adapter = createMotionRuntimeDebugAdapter(); adapter.configureDebug({ enabled: true });
@@ -22,3 +22,16 @@ assert.ok(!targets.some(value => value.targetId === 2), "collected target metada
 assert.equal(adapter.resolveTarget(1), persistent, "live targets remain inspectable");
 adapter.reset(); assert.equal(adapter.resolveTarget(1), null);
 console.log("Motion diagnostics do not keep completed targets or bounds alive");
+
+installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter);
+const runtime=createMotionRuntime({autoStart:false});runtime.configureDebug({enabled:true});
+const retainedTarget={x:0};
+function cacheTemporaryBounds(){
+  const bounds={x:4};runtime.describeTarget(retainedTarget,{label:"cached",overlayTarget:bounds});
+  runtime.describeTarget(retainedTarget,{label:"cached",overlayTarget:bounds});
+  return new WeakRef(bounds);
+}
+const cachedBounds=cacheTemporaryBounds();
+for(let i=0;i<8;i++){await new Promise(resolve=>setTimeout(resolve,0));globalThis.gc!();}
+assert.equal(cachedBounds.deref(),undefined,"metadata cache must not retain an overlay through a live target");
+runtime.reset();

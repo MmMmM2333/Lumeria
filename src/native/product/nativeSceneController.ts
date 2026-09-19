@@ -17,6 +17,7 @@ import { collectTextureItems } from "./nativeTextureItems.js";
 
 type PresentationFrame = ReturnType<typeof makeNativeStartupFrame>;
 type NativeEditing = ReturnType<typeof createNativeEditing>;
+type GroupState = NonNullable<NativeEditing["drag"]["groupDragState"]["value"]>;
 
 type IconTextureRepository = ReturnType<typeof createNativeIconTextureRepository>;
 type TextPrewarm = Readonly<{ setCandidates(candidates: readonly unknown[]): void }>;
@@ -68,6 +69,7 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
   let retainedPages: typeof projectedPagesSnapshot | null = null;
   let retainedLayout: ReadonlyLaunchpadPages | null = null;
   const captureInteraction = createNativeRecordSnapshot<Record<string, unknown>>();
+  let captureGroup:((input:GroupState)=>GroupState)|null=null;
   const captureDiagnostics = createNativeRecordSnapshot<PresentationFrame["diagnostics"]>();
 
   const commitScene = (
@@ -120,7 +122,7 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
     if (editing) {
       const currentFrame = frameAt();
       const interaction = captureInteraction({ ...currentFrame.interaction,
-        dragMeta: editing.drag.dragMeta.value, groupDragState: editing.drag.groupDragState.value,
+        dragMeta: editing.drag.dragMeta.value, groupDragState: null,
         dragFolderHoverState: editing.drag.dragFolderHoverState.value, dragFolderTargetId: editing.drag.dragFolderTargetId.value,
         isEditMode: editing.mode.value, isBatchSelectionActive: editing.selection.isActive.value,
         selectedAppIds: editing.selection.selectedIds.value,
@@ -133,7 +135,13 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
       }
       const pages = ports.getSearchQuery().trim() ? currentFrame.viewport.activePages : projectedPagesSnapshot;
       const apps = ports.getApps();
-      ports.applyFrame(Object.freeze({ ...currentFrame, interaction,
+      // Group publications replace pointer/trail every frame. Preserve their
+      // unchanged entries and projected layout instead of cloning the entire
+      // application collection through the parent interaction record again.
+      const group=editing.drag.groupDragState.value;
+      if(!group)captureGroup=null;
+      const groupSnapshot=(group?(captureGroup??=createNativeRecordSnapshot<GroupState>())(group):null) as unknown as typeof currentFrame.interaction.groupDragState;
+      ports.applyFrame(Object.freeze({ ...currentFrame, interaction:Object.freeze({...interaction,groupDragState:groupSnapshot}),
         diagnostics: captureDiagnostics({ ...currentFrame.diagnostics,
           showMissingLaunchTargetBadge: apps?.presentation.showMissingLaunchTargetBadge.value ?? currentFrame.diagnostics.showMissingLaunchTargetBadge,
           launchTargetStatusById: apps?.presentation.launchTargetStatusById.value ?? currentFrame.diagnostics.launchTargetStatusById }),
