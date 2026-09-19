@@ -14,7 +14,7 @@ export type NativeBackgroundHost = {
 };
 type BackgroundRecipe = {
   config: NativeBackgroundConfig; width: number; height: number;
-  context?: WindowsImagePlacementContext; systemAppearance: "light" | "dark";
+  context: WindowsImagePlacementContext | undefined; systemAppearance: "light" | "dark";
 };
 
 export type NativeBackgroundConfig = Pick<LayoutSettings,

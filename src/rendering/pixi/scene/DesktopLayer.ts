@@ -76,6 +76,8 @@ import {
   resolveDesktopVisualAlpha,
   resolveLaunchpadVisualAlpha,
   resolveLaunchpadVisualTransform,
+  countSelectedFolderChildren,
+  matchesDesktopIconFocus,
 } from "./desktopRenderPlan.js";
 import type {
   DesktopFolderGeometry,
@@ -1333,6 +1335,8 @@ export class DesktopLayer extends Container {
 
   private readonly reuseSearchNodes:boolean;
   private readonly searchNodeCache=new Map<string,DesktopIconNode>();
+  private desktopCacheLimit=0;
+  private searchCacheLimit=0;
   private knownDesktopItems=new Set<string>();
   private readonly detachedPageNodes=new Map<string,DesktopIconNode>();
   getNodeRetentionStatistics(){
@@ -1343,6 +1347,7 @@ export class DesktopLayer extends Container {
     if(!this.reuseSearchNodes)return;
     for(const node of this.searchNodeCache.values())destroyDisplayObjectAfterFrame(node,{children:true});
     this.searchNodeCache.clear();
+    this.desktopCacheLimit=0;this.searchCacheLimit=0;
   }
 
   retireIconNode(
@@ -1433,6 +1438,25 @@ export class DesktopLayer extends Container {
       const page=Number(node.source?.pageIndex);
       node.renderable=!Number.isFinite(page)||Math.abs(page-presented)<=1.25;
     }
+  }
+
+  /** Selection and focus do not change layout, input bounds or ownership. */
+  updateSelectionPresentation(state:DesktopStructureFrame):void {
+    const plan=this.lastDesktopRenderPlan;
+    if(!plan)throw new Error("Selection presentation requires a desktop plan");
+    const entries=plan.entries.map(entry=>{
+      const node=this.iconNodes.get(entry.key),old=node?.state;
+      if(!node||!old)return entry;
+      const batchSelected=state.isBatchSelectionActive&&entry.item.type==="app"&&state.selectedAppIds.has(entry.item.id);
+      const selectedChildCount=state.isBatchSelectionActive?countSelectedFolderChildren(entry.item,state.selectedAppIds):0;
+      const focused=old.interactive&&matchesDesktopIconFocus(state.focusedIcon,state.isSearchMode?"search":"desktop",entry.item.id,Number(old.source?.pageIndex));
+      if(old.batchSelected===batchSelected&&old.selectedChildCount===selectedChildCount&&old.focused===focused)return entry;
+      const nodeState=Object.freeze({...old,batchSelected,selectedChildCount,focused});
+      node.setState(nodeState);
+      return {...entry,nodeState};
+    });
+    this.lastDesktopRenderPlan={...plan,entries};
+    this.lastPointerOnlyPlanSnapshot=null;
   }
 
   updateInteraction(state: DesktopInteractionState): Partial<DesktopLayerFrameWork> {
@@ -1666,7 +1690,11 @@ export class DesktopLayer extends Container {
 
         node!.stageRect = state.stageRect;
         node!.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
-        if(isNewNode||!canRetainAppVisualState(node!.state,nodeState))node!.setState(nodeState);
+        const canRestoreCached=isNewNode&&node!.state&&!nodeState.editing&&!nodeState.interactionPhase
+          &&!nodeState.folderHoverState&&!nodeState.opening&&canRetainAppVisualState(node!.state,nodeState);
+        if(canRestoreCached){
+          node!.visible=true;node!.renderable=true;node!.eventMode=nodeState.interactive?"static":"none";
+        }else if(isNewNode||!canRetainAppVisualState(node!.state,nodeState))node!.setState(nodeState);
         if (isNewNode) {
           // Realizing an existing offscreen item is not an insertion animation.
           const snapEntry=(!pageTrackScopeChanged&&knownDesktopItems.has(item.id))||isFolderClosingHandoff||shouldSnapDragHandoffLayout||isProvisionalRollbackTarget;
@@ -1721,7 +1749,7 @@ export class DesktopLayer extends Container {
         }
         // Retain only ordinary app nodes across desktop/search transitions.
         // Detached nodes cannot receive input or participate in bounds lookup.
-        if(this.reuseSearchNodes&&pageTrackScopeChanged&&node.item?.type==="app"
+        if(this.reuseSearchNodes&&(pageTrackScopeChanged||node.source?.type==="search")&&node.item?.type==="app"
           &&!node.state?.dragging&&!node.state?.ghosted&&!node.state?.opening){
           this.iconNodes.delete(key);node.removeFromParent();killAllMotion(node);node.stopJiggle();
           node.setInteractionPhase(null,{immediate:true});
@@ -1743,12 +1771,17 @@ export class DesktopLayer extends Container {
           }
         }
       }
-      // At most one viewport's realized pages, regardless of total catalogue size.
+      // Independently bound the retained desktop and transient search history.
       if(this.reuseSearchNodes){
-        const cacheLimit=Math.max(previousPlan?.entries.length??0,plan.entries.length);
-        while(this.searchNodeCache.size>cacheLimit){
-          const [key,node]=this.searchNodeCache.entries().next().value!;
-          this.searchNodeCache.delete(key);destroyDisplayObjectAfterFrame(node,{children:true});
+        // A narrow/empty query must not evict the desktop it temporarily hides.
+        // Search history has its own bounded high-water mark, independent of it.
+        if(!state.isSearchMode)this.desktopCacheLimit=Math.min(800,plan.entries.length);
+        else this.searchCacheLimit=Math.min(state.gridCols*state.gridRows*3,Math.max(this.searchCacheLimit,plan.entries.length));
+        for(const [prefix,limit] of [["page:",this.desktopCacheLimit],["search:",this.searchCacheLimit]] as const){
+          const cached=[...this.searchNodeCache].filter(([key])=>key.startsWith(prefix));
+          for(const [key,node] of cached.slice(0,Math.max(0,cached.length-limit))){
+            this.searchNodeCache.delete(key);destroyDisplayObjectAfterFrame(node,{children:true});
+          }
         }
       }
 
@@ -2005,7 +2038,7 @@ export class DesktopLayer extends Container {
     motionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, motionSprings.settle);
   }
 
-  applyFolderOverlayAlpha(state: DesktopVisualState): void {
+  applyFolderOverlayAlpha(state: Pick<DesktopVisualFrame,"launchpadVisualAlpha">): void {
     const alpha = resolveLaunchpadVisualAlpha(state);
     // FolderOverlayLayer owns visibility, including closing handoffs. A visual-only
     // desktop update must not reveal the retained panel of an already closed folder.

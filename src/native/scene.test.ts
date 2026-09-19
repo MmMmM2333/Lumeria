@@ -20,6 +20,7 @@ import { assertNativeScenePixels } from "./nativePixelProof.js";
 import { NativeDesktopScene } from "../rendering/native/NativeDesktopScene.js";
 import { runNativeDesktopResizeTests } from "../rendering/native/nativeDesktopSceneResize.test.js";
 import { runNativeDragPerformanceTests } from "../rendering/native/nativeDragPerformance.test.js";
+import { runNativeSearchPerformanceTests } from "../rendering/native/nativeSearchPerformance.test.js";
 import { runNativeLabelRasterTests } from "../rendering/native/nativeLabelRaster.test.js";
 import { runNativeVisualParityTests } from "../rendering/native/nativeVisualParity.test.js";
 import { runNativeSettingsLayoutTests } from "../rendering/native/nativeSettingsLayout.test.js";
@@ -429,6 +430,7 @@ function stepSceneAnimations(): void {
 }
 const frame = makeCompleteFrame();
 runNativeDragPerformanceTests(frame);
+runNativeSearchPerformanceTests(frame);
 const work = scene.commit(frame, { height: 600, resolution: 1.25, width: 900 });
 
 assert.equal(work.structureFrames, 1);

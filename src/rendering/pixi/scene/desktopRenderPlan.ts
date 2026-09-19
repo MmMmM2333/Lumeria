@@ -284,7 +284,7 @@ function getFolderPreviewChildren(folder: DesktopItem): readonly DesktopItem[] {
     : [];
 }
 
-function countSelectedFolderChildren(folder: DesktopItem, selectedIds: ReadonlySet<string>): number {
+export function countSelectedFolderChildren(folder: DesktopItem, selectedIds: ReadonlySet<string>): number {
   if (folder.type !== "folder" || selectedIds.size === 0) return 0;
   return getFolderPreviewChildren(folder).reduce(
     (count, child) => count + (selectedIds.has(child.id) ? 1 : 0),
@@ -427,7 +427,7 @@ export function getDesktopFrame(
   };
 }
 
-function matchesDesktopIconFocus(
+export function matchesDesktopIconFocus(
   focus: SceneFocusedIcon | null,
   area: "desktop" | "search",
   itemId: string,

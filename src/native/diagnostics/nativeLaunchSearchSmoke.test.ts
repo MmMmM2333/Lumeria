@@ -69,6 +69,24 @@ export async function runNativeSearchSmoke(
   const measured=await measureNativeSearch(app,searchBar,iconTextures,()=>present("search input presented"));
   assert.equal(measured.newSources,0,"warm search toggles must not decode replacement textures");
   searchBar.setQuery("w");await present("search result ready");
+  // Search now realizes neighbouring pages instead of retaining every result.
+  // Exercise navigation and same-result query reset through the real key route.
+  const lastPage=currentFrame().viewport.activePages.length-1;
+  assert.ok(lastPage>0,"search fixture must cover multiple pages");
+  searchBar.focusForTyping();
+  for(let page=1;page<=lastPage;page++){
+    searchBar.handleKey({type:"down",key:"ArrowRight",ctrlKey:true});
+    await present("search page navigation");
+    assert.equal(currentFrame().viewport.activePageIndex,page);
+  }
+  await waitFor("last search page settled",()=>!scene.getMotionSnapshot().active);
+  await context.capture("search-last-page");
+  searchBar.setQuery("wo");await present("same results reset to first page");
+  assert.equal(currentFrame().viewport.activePageIndex,0);
+  assert.equal(activePageItems()[0]?.id,"search-0");
+  await waitFor("search result reset settled",()=>!scene.getMotionSnapshot().active);
+  await context.capture("search-first-page");
+  searchBar.setQuery("w");await present("search launch query restored");
   const result=activePageItems().find(item=>item.id==="search-0");assert.ok(result);
   await activateItem(result);
   await waitFor("searched launch hides",()=>!app.window.isVisible());

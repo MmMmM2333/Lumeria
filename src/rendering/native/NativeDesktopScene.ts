@@ -225,7 +225,7 @@ export class NativeDesktopScene {
   #structureInvalidated=false;
   #interactionInvalidated=false;
   #textResolution:number|null=null;
-  readonly #textNodes=new WeakSet<IconNode>();
+  readonly #textNodes=new WeakMap<IconNode,number>();
   #updates={structure:0,visual:0,motion:0};
   #structureFrame:DesktopStructureFrame|null=null;
   invalidateStructure():void {this.#structureInvalidated=true;}
@@ -254,6 +254,9 @@ export class NativeDesktopScene {
   #retainedSource:CompleteDesktopSceneFrame["viewport"]["activePages"]|null=null;
   #retainedEligible=false;
   #retainsPages(frame:CompleteDesktopSceneFrame):boolean {
+    // Search projections change on each query. Realize visible neighbours only;
+    // the separate desktop cache keeps the original layout ready for return.
+    if(frame.interaction.isSearchMode)return false;
     const pages=frame.viewport.activePages;
     if(pages!==this.#retainedSource){
       this.#retainedSource=pages;
@@ -368,7 +371,10 @@ export class NativeDesktopScene {
     // Group presentation (pointer/trail and release motion) owns an interaction
     // lane. Layout projections, hover targets and ownership source changes are
     // still structural dependencies, just as in PixiDesktopSurface.
-    const interactionStructure:unknown[]=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState").flat();
+    const localSelection=!folder?.renderedFolder&&!this.#layer.getFolderHandoffNodes().size
+      &&!frame.interaction.dragMeta&&!frame.interaction.groupDragState&&!frame.interaction.provisionalFolderRollback;
+    const interactionStructure:unknown[]=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState"
+      &&!(localSelection&&["selectedAppIds","focusedIcon","isBatchSelectionActive"].includes(key))).flat();
     interactionStructure.push(frame.interaction.groupDragState?.key,frame.interaction.groupDragState?.phase,
       frame.interaction.groupDragState?.runtimePlan?.key);
     const dependencies=[...Object.values(frame.viewport),...interactionStructure,frame.folder,frame.diagnostics,
@@ -376,7 +382,10 @@ export class NativeDesktopScene {
       this.#folderLayout.cols,this.#folderLayout.rows,this.#folderLayout.iconSize,
       folder?.renderedFolder,folder?.folderPageIndex,folder?.isClosing,folder?.openProgressTarget,folder?.openingCancelRequest,
       options.folderPageTrackScrub];
-    const desktopDependencies=[...Object.values(frame.viewport),...interactionStructure,frame.folder,frame.diagnostics,
+    const desktopDependencies=[...Object.values(frame.viewport),...Object.entries(frame.interaction)
+      .filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState").flat(),
+      frame.interaction.groupDragState?.key,frame.interaction.groupDragState?.phase,frame.interaction.groupDragState?.runtimePlan?.key,
+      frame.folder,frame.diagnostics,
       viewport.width,viewport.height,viewport.resolution,options.chromeInset,options.openingIconId,
       this.#folderLayout.cols,this.#folderLayout.rows,this.#folderLayout.iconSize];
     const folderOnly=this.#committed&&this.#retainsPages(frame)&&options.snapDesktopLayout===false
@@ -414,6 +423,13 @@ export class NativeDesktopScene {
       &&range===this.#pageRange){
       let visualWork:DesktopLayerFrameWork|null=null;
       let interactionWork:DesktopLayerFrameWork|null=null;
+      if(localSelection&&this.#structureFrame&&(frame.interaction.selectedAppIds!==previous?.frame.interaction.selectedAppIds
+        ||frame.interaction.focusedIcon!==previous?.frame.interaction.focusedIcon
+        ||frame.interaction.isBatchSelectionActive!==previous?.frame.interaction.isBatchSelectionActive)){
+        this.#structureFrame={...this.#structureFrame,selectedAppIds:frame.interaction.selectedAppIds,
+          focusedIcon:frame.interaction.focusedIcon,isBatchSelectionActive:frame.interaction.isBatchSelectionActive};
+        this.#layer.updateSelectionPresentation(this.#structureFrame);
+      }
       if(this.#structureFrame&&(this.#interactionInvalidated||frame.interaction.groupDragState!==this.#committed?.frame.interaction.groupDragState)){
         this.#interactionInvalidated=false;
         const state=this.#structureFrame={...this.#structureFrame,groupDragState:frame.interaction.groupDragState,
@@ -444,6 +460,7 @@ export class NativeDesktopScene {
         })}]);this.#updates.visual++;
       }
       this.#visualValues=visualValues;
+      this.#desktopDependencies=desktopDependencies;
       this.#committed={frame,viewport,options};
       if(interactionWork)return {...interactionWork,visualFrames:visualWork?.visualFrames??0};
       return visualWork??applyDesktopLayerFrameUpdates(this.#layer,[]);
@@ -552,8 +569,8 @@ export class NativeDesktopScene {
     const resolutionChanged=this.#textResolution!==viewport.resolution;
     const prepareText=(node:IconNode)=>{
       // App labels use a stable subtree; folder previews can realize children.
-      if(!resolutionChanged&&(!this.#textNodes.has(node)||node.item?.type==="folder"))syncPixiTextResolution(node,viewport.resolution);
-      this.#textNodes.add(node);
+      if(!resolutionChanged&&(this.#textNodes.get(node)!==viewport.resolution||node.item?.type==="folder"))syncPixiTextResolution(node,viewport.resolution);
+      this.#textNodes.set(node,viewport.resolution);
     };
     for (const node of this.#layer.iconNodes.values()) {
         prepareText(node);

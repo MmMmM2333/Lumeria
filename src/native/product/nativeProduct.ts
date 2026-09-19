@@ -25,7 +25,7 @@ import { createNativeStateHost } from "../../application/stateHost.js";
 import { resolveAppearancePreference } from "../../domain/appearancePreference.js";
 import { findFocusedIcon,firstIconFocus,type LaunchpadIconScope } from "../../domain/iconFocus.js";
 import type { LaunchpadApp,LaunchpadPages,ReadonlyLaunchpadApp } from "../../domain/launchpadLayout.js";
-import { buildAppSearchDocuments,searchAppDocuments } from "../../domain/launchpadSearch.js";
+import { createAppSearchIndex } from "../../domain/launchpadSearch.js";
 import type { LayoutDocument } from "../../domain/layoutDocument.js";
 import { normalizeMainWindowShortcut } from "../../domain/mainWindowShortcut.js";
 import { createLocaleRuntimePort } from "../../platform/localeRuntime.js";
@@ -739,21 +739,28 @@ try {
     });
   let iconNodes = collectActiveIconNodes();
   let indexedSearchPages:typeof layoutState.presentation.pages.value|null=null;
-  let searchDocuments:ReturnType<typeof buildAppSearchDocuments<LaunchpadApp>>|null=null;
+  const searchIndex=createAppSearchIndex<LaunchpadApp>();
+  let searchResults:readonly LaunchpadApp[]|null=null;
+  let searchPageSize=0;
   changeSearch = (query,deferScene=false) => {
     searchQuery = query;
     layoutState.commitSearchPageIndex(0);
     if(query.trim() && folderFlow.snapshot().renderedFolder) closeFolder();
     const layoutPages=layoutState.presentation.pages.value;
-    if(indexedSearchPages!==layoutPages){indexedSearchPages=layoutPages;searchDocuments=null;}
-    if(query.trim()&&!searchDocuments)searchDocuments=buildAppSearchDocuments(layoutState.operations.collectAppsFromPages(layoutPages));
-    const pages = query.trim()
-      ? layoutState.operations.chunkIntoPages(searchAppDocuments(searchDocuments!, query), layoutState.presentation.pageSize.value)
-      : layoutPages;
+    const layoutChanged=indexedSearchPages!==layoutPages;
+    if(query.trim()&&layoutChanged){indexedSearchPages=layoutPages;searchIndex.update(layoutState.operations.collectAppsFromPages(layoutPages));}
+    const results=query.trim()?searchIndex.search(query):null;
+    const pageSize=layoutState.presentation.pageSize.value;
+    const sameResults=Boolean(results&&searchResults&&!layoutChanged&&pageSize===searchPageSize
+      &&currentFrame.interaction.isSearchMode&&results.length===searchResults.length&&results.every((app,index)=>app===searchResults![index]));
+    const pages = sameResults?currentFrame.viewport.activePages:sceneController.resolveProjectedPages(query.trim()
+      ? layoutState.operations.chunkIntoPages([...results!],pageSize)
+      : layoutPages);
+    searchResults=results;searchPageSize=pageSize;
     currentFrame = Object.freeze({ ...currentFrame,
-      viewport: Object.freeze({ ...currentFrame.viewport, activePages: sceneController.resolveProjectedPages(pages),
+      viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages,
         activePageIndex: query.trim() ? 0 : layoutState.presentation.pageIndex.value,
-        desktopProjectionEpoch: currentFrame.viewport.desktopProjectionEpoch + 1,
+        desktopProjectionEpoch: currentFrame.viewport.desktopProjectionEpoch + (sameResults?0:1),
         desktopTrackMotionKey: query.trim() ? "native-search" : "native-desktop" }),
       interaction: Object.freeze({ ...currentFrame.interaction, focusedIcon: null, isSearchMode: Boolean(query.trim()) }),
     });
