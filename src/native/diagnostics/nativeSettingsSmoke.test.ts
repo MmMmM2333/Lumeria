@@ -110,6 +110,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("settings entrance settles",()=>!scene.getMotionSnapshot().active);
   await present("settings layout settled");
   await capture("settings-layout");
+  await (await import("./nativeSettingsApplyVisualSmoke.js")).runNativeSettingsApplyVisualSmoke({app,shell:getSettingsShell()!,present,waitFor});
   await (await import("./nativeAppsLayoutSmoke.js")).runNativeAppsLayoutSmoke(context);
   const aboutTab=app.stage.getChildByLabel("native-settings-tab:about",true);assert.ok(aboutTab);
   clickWithNativeInput(aboutTab);await present("native about route");

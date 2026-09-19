@@ -70,7 +70,15 @@ for(const color of [0,0xffffff,0xff0000,0x00ff00,0x0000ff,0x336699,0x808080]){
   shell.redraw();assert.ok(focused,"same-route redraw preserves control focus");
   const apply=shell.getChildByLabel("native-action:common.actions.apply",true) as NativeFluentButton;
   const cancel=shell.getChildByLabel("native-action:common.actions.cancel",true);
+  const nav=shell.getChildByLabel("native-settings-tab:general",true) as NativeFluentButton;
+  const navFill=nav.caption.style.fill;
   apply.activate();assert.ok(shell.applying);
+  assert.equal(nav.disabled,false);assert.equal(nav.caption.style.fill,navFill,"saving must not flash disabled navigation text");
+  const pendingRedraws=shell.redrawCount;nav.activate();assert.equal(shell.redrawCount,pendingRedraws,"busy navigation cannot activate");
+  shell.redraw();
+  const pendingNav=shell.getChildByLabel("native-settings-tab:general",true) as NativeFluentButton;
+  assert.equal(pendingNav.caption.style.fill,navFill,"redraw during apply must keep normal navigation colours");
+  const afterPendingRedraw=shell.redrawCount;pendingNav.activate();assert.equal(shell.redrawCount,afterPendingRedraw,"rebuilt navigation remains blocked during apply");
   apply.activate();assert.equal(apply.disabled,false,"busy save must not flash disabled button colors");
   shell.handleKey({type:"down",key:"Enter"});
   assert.equal(activated,0,"submitting settings blocks keyboard mutations");

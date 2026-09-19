@@ -189,7 +189,7 @@ export class NativeSettingsShell extends Container {
     };
     const button=(text:string,x:number,y:number,bw:number,action:()=>void,primary=false,controlHeight=34)=>{
       const node=new NativeFluentButton(text,bw,action,options.invalidate,theme,primary?"primary":text===options.t("common.actions.cancel")?"outline":"subtle",false,controlHeight);
-      node.position.set(x,y);node.disabled=this.#applying;this.#panel.addChild(node);this.#buttons.push(node);
+      node.position.set(x,y);node.busy=this.#applying;this.#panel.addChild(node);this.#buttons.push(node);
       return node;
     };
     const iconButton=(name:Parameters<typeof nativeFluentIcon>[0],label:string,x:number,y:number,bw:number,action:()=>void)=>{
@@ -375,7 +375,9 @@ export class NativeSettingsShell extends Container {
     if(this.#applying)return;this.#applying=true;this.#error="";
     // Keep input sessions, previews and hover geometry alive during the transaction.
     this.#panel.interactiveChildren=false;
-    for(const button of this.#buttons){if(this.#footerButtons.includes(button))button.busy=true;else button.disabled=true;}
+    // Saving is a temporary input lock, not a change in navigation availability.
+    // Keep caption colours stable while blocking both pointer and direct actions.
+    for(const button of this.#buttons)button.busy=true;
     this.options.invalidate();
     this.#pendingApply=(async()=>{
       try{for(const control of this.#page?.controls??[])control.commit?.();await this.options.apply();return null;}
