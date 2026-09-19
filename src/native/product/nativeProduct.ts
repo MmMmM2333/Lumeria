@@ -680,7 +680,7 @@ try {
       active:Boolean(editing?.selection.isActive.value),count:editing?.selection.selectedCount.value??0,hiddenCount,
       frozen:Boolean(editing?.selection.isFrozen.value),canCancel:Boolean(editing?.drag.groupDragState.value?.canCancel),
       cancelArmed:Boolean(editing?.drag.groupDragState.value?.cancelArmed)});
-    const needsBackdrop=selectionToolbar.visible&&!editing?.drag.groupDragState.value?.canCancel
+    const needsBackdrop=selectionToolbar.backdropEnabled&&selectionToolbar.visible&&!editing?.drag.groupDragState.value?.canCancel
       && !(app.surfaceTextureUsage & 1);
     if(Boolean(app.stage.filters?.length)!==needsBackdrop)app.stage.filters=needsBackdrop?[selectionBackdropSurface]:[];
     app.stage.setChildIndex(noticeView,app.stage.children.length-1);
@@ -1119,7 +1119,7 @@ try {
 
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode === "dev" && process.env.LAUNCHPAD_NATIVE_STRESS_DIR){
     await (await import("../diagnostics/nativeStress.js")).runNativeStress({
-      app,scene,editing:editing!,folder:folderFlow,icons:iconTextures,background:desktopBackground,backgroundConfig,
+      app,scene,editing:editing!,folder:folderFlow,icons:iconTextures,background:desktopBackground,backgroundConfig,selectionToolbar,
       pages:()=>layoutState.presentation.pages.value,page:commitDesktopPage,folderPage:setFolderPageIndex,
       closeFolder,show:showLaunchpad,hide:dismissLaunchpad,quit:()=>closeCoordinator.requestQuit(),
     });

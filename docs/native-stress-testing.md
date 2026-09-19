@@ -21,6 +21,9 @@ npm run native:stress -- --stress-mode=recovery-limit
 # 背景专项：三种效果的设备恢复、显式卸载与GPU GC像素回归
 npm run native:stress -- --stress-mode=background-recovery --stress-icons=200 --stress-windowed
 
+# Native CopySrc专项：窗口/全屏切换、设备恢复、工具条模糊及MSAA回归
+npm run native:stress -- --stress-mode=surface-copy --stress-icons=200 --stress-windowed
+
 # 可比较的内存检查点：每轮重新遍历全部图标，再回首页测量
 npm run native:stress -- --stress-mode=recovery --stress-cycles=20 --stress-rewarm-checkpoints --stress-idle-every=20
 npm run native:stress -- --stress-mode=operations --stress-cycles=20 --stress-rewarm-checkpoints --stress-idle-every=20
@@ -30,6 +33,18 @@ npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-
 
 # 同序列关闭动画遥测适配器，排除诊断工具保留（不是release构建）
 npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-idle-every=0 --stress-gc-every=1 --stress-motion-diagnostics-off
+
+# 完整操作预热4轮，再测20轮自然回收（不强制GC）
+npm run native:stress -- --stress-warmup-cycles=4 --stress-cycles=20 --stress-rewarm-checkpoints --stress-idle-every=20
+
+# 分别缩小触发序列；这些模式不隐式混入其他操作
+npm run native:stress -- --stress-mode=selection --stress-cycles=4 --stress-idle-every=0
+npm run native:stress -- --stress-mode=folders --stress-cycles=4 --stress-idle-every=0
+npm run native:stress -- --stress-mode=paging --stress-cycles=4 --stress-idle-every=0
+
+# 因果隔离，仅selection模式允许；日常默认行为不变
+npm run native:stress -- --stress-mode=selection --stress-isolation=no-prewarm --stress-cycles=1 --stress-idle-every=0 --stress-settle-ms=6000
+npm run native:stress -- --stress-mode=selection --stress-isolation=no-backdrop --stress-cycles=1 --stress-idle-every=0 --stress-settle-ms=6000
 ```
 
 默认全屏。需要窗口运行加 `--stress-windowed`。同一时间只运行一个测试，避免窗口互相遮挡和系统负载干扰。运行过程中不要手动操作测试窗口；系统录屏可以同时进行。
@@ -72,7 +87,7 @@ npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-
 
 | 参数 | 默认 | 范围/说明 |
 |---|---:|---|
-| `--stress-mode` | operations | operations / recovery / mixed / recovery-limit / background-recovery |
+| `--stress-mode` | operations | operations / selection / surface-copy / folders / paging / recovery / mixed / recovery-limit / background-recovery |
 | `--stress-icons` | 800 | 200–5000 |
 | `--stress-cycles` | 100 | 1–100000；recovery-limit 固定验证一次限流 |
 | `--stress-seed` | 20260919 | 1–4294967295 |
@@ -84,8 +99,14 @@ npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-
 | `--stress-gc-every` | 0 | 0禁用；每N轮及基线/结束执行JSC gcAndSweep，写gc.jsonl |
 | `--stress-heap-snapshots` | 关闭 | 必须配合gc-every；保存baseline/final.heapsnapshot（Bun V8格式） |
 | `--stress-motion-diagnostics-off` | 关闭 | 将动画遥测替换为noop，其他dev诊断仍保留 |
+| `--stress-warmup-cycles` | 0 | 0–100；先运行N轮相同操作，完成后记录baseline，再执行cycles轮测量 |
+| `--stress-isolation` | none | 仅selection：none / no-prewarm / no-backdrop / neither |
 
 相同 seed 重放相同的延迟选择与操作参数，不能保证 OS/GPU 调度时序一致；操作日志记录实际时刻。长测耗时受图标数与硬件影响，100轮不是固定时长。
+
+selection只进入批量管理、选择2/20/80/200项并取消，额外记录selection-empty/selection-filled；folders只批量创建并解散，不打开文件夹、不显隐；paging只快速翻页，不切换显隐。完整operations行为保持不变。warmupCycles预热期间记录warmup-settled（不进入summary的测量检查点），之后cycle字段继续累计，例如4轮预热后的第一测量轮cycle=5。预热覆盖操作序列，不保证所有渐进节点池已经达到容量上限，必须结合retention计数解释。
+
+隔离实验no-prewarm只暂停GroupDragLayer的渐进节点预热；no-backdrop只停止工具条背景取样Filter及为其启用的stage AlphaFilter中间表面，保留按钮、选中行为和节点池。neither同时暂停两者。仅隔离数据/dev诊断入口调用，成功结束恢复默认；失败保留实验状态供检查。不是产品性能开关或已确认的优化方案。selection的metrics另外记录Pixi空闲纹理池与缓存渲染目标附件（私有字段对应8.20.1，升级时需复核），不包含全部GPU资源、上传缓冲、驱动分配，不能当显存计数。
 
 ## 如何判断问题
 
@@ -93,7 +114,7 @@ npm run native:stress -- --stress-cycles=5 --stress-rewarm-checkpoints --stress-
 
 做内存归属对照时两组都加 `--stress-rewarm-checkpoints`。否则恢复后的图标可能仅部分驻留，启动基线与最后检查点不能直接比较。开启后额外产生 `after-idle-rewarm`，汇总优先使用它作为末尾检查点；`after-idle-reopen`仍保留用于观察冷重开状态。每轮表格同时列出节点数和图标驻留估算，实际资源计数仍须核对，不把统一操作序列等同于强制相同缓存状态。
 
-Windows采样器每5秒通过只读 `VirtualQueryEx` 分类已提交区域，记录MEM_PRIVATE的WRITECOMBINE、普通READWRITE及其他，以及Mapped/Image。它不读取内存内容，不提供分配栈、显存或工作集分类。一次遍历不是原子快照，变化中的进程可能有少量偏差。分类计数与检查点匹配容差6.5秒，在summary.json保留实际误差；普通Windows进程计数仍为每秒一次、匹配容差3秒。分类查询失败会记录错误，不当作零。
+Windows采样器每5秒通过只读 `VirtualQueryEx` 分类已提交区域，记录MEM_PRIVATE的WRITECOMBINE、普通READWRITE及其他，以及Mapped/Image。它不读取内存内容，不提供分配栈、显存或工作集分类。一次遍历不是原子快照，变化中的进程可能有少量偏差。只取检查点之前的样本，避免紧接着的下一操作污染基线：分类容差6.5秒，在summary.json保留实际误差；普通Windows进程计数仍为每秒一次、容差3秒。分类查询失败会记录错误，不当作零。早期报告使用前后最近样本，本轮起采用此更严格规则；跨报告比较需核实规则。
 
 各层内存有重叠，不能相加。图标驻留只是估算，不含 renderer 池、Dawn、驱动及全部显存；场景可达纹理也不代表所有活跃 GPU 资源。此前 WC 提交增长应进一步用 WPR VirtualAlloc 分配/释放调用栈归属，而不是只抓 JS heap。
 

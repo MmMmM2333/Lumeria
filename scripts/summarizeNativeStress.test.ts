@@ -8,13 +8,14 @@ const directory = mkdtempSync(join(tmpdir(), "native-stress-summary-"));
 try {
   const base = { timeUtc: "2026-09-19T00:00:01Z", kind: "baseline", process: { rss: 100 }, js: { heapSize: 40, extraMemorySize: 5 }, nodes: { count: 10 } };
   const final = { ...base, timeUtc: "2026-09-19T00:00:10Z", kind: "settled", process: { rss: 120 } };
-  writeFileSync(join(directory, "metrics.jsonl"), [base, { ...final, kind: "periodic", process: { rss: 999 } }, final].map(value => JSON.stringify(value)).join("\n"));
+  writeFileSync(join(directory, "metrics.jsonl"), [{...base,timeUtc:"2026-09-19T00:00:00Z",kind:"warmup-settled",process:{rss:80}},base, { ...final, kind: "periodic", process: { rss: 999 } }, final].map(value => JSON.stringify(value)).join("\n"));
   const windows = join(directory, "Lumeria-memory-test"); mkdirSync(windows);
   writeFileSync(join(windows, "samples.jsonl"), [
-    { timeUtc: "2026-09-19T00:00:02Z", privateBytes: 200, privateWorkingSetBytes: 90,
+    { timeUtc: "2026-09-19T00:00:00Z", privateBytes: 200, privateWorkingSetBytes: 90,
       virtualMemory: {privateCommittedBytes: 180, writeCombineCommittedBytes: 50, readWriteCommittedBytes: 130} },
-    { timeUtc: "2026-09-19T00:00:11Z", privateBytes: 210, privateWorkingSetBytes: null, counterError: "unavailable",
-      virtualMemoryTimeUtc: "2026-09-19T00:00:12Z", virtualMemory: {privateCommittedBytes: 190, writeCombineCommittedBytes: 55, readWriteCommittedBytes: 135} },
+    { timeUtc: "2026-09-19T00:00:09Z", privateBytes: 210, privateWorkingSetBytes: null, counterError: "unavailable",
+      virtualMemoryTimeUtc: "2026-09-19T00:00:09.500Z", virtualMemory: {privateCommittedBytes: 190, writeCombineCommittedBytes: 55, readWriteCommittedBytes: 135} },
+    {timeUtc:"2026-09-19T00:00:10.100Z",privateBytes:999,virtualMemory:{privateCommittedBytes:999,writeCombineCommittedBytes:999,readWriteCommittedBytes:0}},
   ].map(value => JSON.stringify(value)).join("\n"));
   await summarizeNativeStress(directory);
   const report = JSON.parse(readFileSync(join(directory, "summary.json"), "utf8"));
@@ -22,9 +23,11 @@ try {
   assert.equal(report.windowsFirst.privateBytes, 200); assert.equal(report.windowsLast.privateWorkingSetBytes, null);
   assert.equal(report.windowsMatchDeltaMs.first, 1000); assert.deepEqual(report.warnings, ["unavailable"]);
   assert.equal(report.checkpoints.length, 2);
+  assert.equal(report.firstCheckpoint.kind, "baseline", "operation warmup must not become the comparison baseline");
   assert.equal(report.checkpoints[0].virtualMemory.writeCombineCommittedBytes, 50);
   assert.equal(report.checkpoints[1].virtualMemory.writeCombineCommittedBytes, 55);
-  assert.equal(report.checkpoints[1].virtualMemoryDeltaMs, 2000);
+  assert.equal(report.checkpoints[1].virtualMemoryDeltaMs, 500);
+  assert.equal(report.windowsLast.privateBytes,210,"a closer sample after the checkpoint may belong to the next action");
   writeFileSync(join(windows, "samples.jsonl"), JSON.stringify({ timeUtc: "2026-09-18T00:00:02Z", privateBytes: 200 }));
   await summarizeNativeStress(directory);
   const stale = JSON.parse(readFileSync(join(directory, "summary.json"), "utf8"));

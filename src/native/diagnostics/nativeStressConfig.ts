@@ -1,4 +1,4 @@
-export type NativeStressMode = "operations" | "recovery" | "mixed" | "recovery-limit" | "background-recovery";
+export type NativeStressMode = "operations" | "selection" | "surface-copy" | "folders" | "paging" | "recovery" | "mixed" | "recovery-limit" | "background-recovery";
 export interface NativeStressConfig {
   mode: NativeStressMode;
   icons: number;
@@ -14,6 +14,8 @@ export interface NativeStressConfig {
   gcEvery: number;
   heapSnapshots: boolean;
   motionDiagnosticsOff: boolean;
+  warmupCycles: number;
+  isolation: "none" | "no-prewarm" | "no-backdrop" | "neither";
 }
 
 /** Shared by the launcher and runtime: reject typos before launching a long run. */
@@ -39,7 +41,10 @@ export function parseNativeStressOptions(args: readonly string[]): NativeStressC
     return value !== undefined;
   };
   const mode = values.get("mode") ?? "operations"; values.delete("mode");
-  if (!["operations", "recovery", "mixed", "recovery-limit", "background-recovery"].includes(mode)) throw new Error(`Invalid stress mode: ${mode}`);
+  const isolation=values.get("isolation")??"none";values.delete("isolation");
+  if(!["none","no-prewarm","no-backdrop","neither"].includes(isolation))throw new Error(`Invalid stress isolation: ${isolation}`);
+  if(isolation!=="none"&&mode!=="selection")throw new Error("Selection isolation requires selection mode");
+  if (!["operations", "selection", "surface-copy", "folders", "paging", "recovery", "mixed", "recovery-limit", "background-recovery"].includes(mode)) throw new Error(`Invalid stress mode: ${mode}`);
   const config: NativeStressConfig = {
     mode: mode as NativeStressMode,
     icons: integer("icons", 800, 200, 5000), cycles: integer("cycles", 100, 1, 100000),
@@ -51,8 +56,11 @@ export function parseNativeStressOptions(args: readonly string[]): NativeStressC
     rewarmCheckpoints: flag("rewarm-checkpoints"),
     gcEvery: integer("gc-every", 0, 0, 100000), heapSnapshots: flag("heap-snapshots"),
     motionDiagnosticsOff: flag("motion-diagnostics-off"),
+    warmupCycles: integer("warmup-cycles", 0, 0, 100),
+    isolation:isolation as NativeStressConfig["isolation"],
   };
   if (config.heapSnapshots && !config.gcEvery) throw new Error("Heap snapshots require --stress-gc-every to isolate diagnostic GC from normal runs");
+  if(config.warmupCycles && ["recovery-limit","background-recovery","surface-copy"].includes(config.mode)) throw new Error("One-shot recovery proofs do not support warmup cycles");
   if (values.size) throw new Error(`Unknown stress options: ${[...values.keys()].join(", ")}`);
   return config;
 }

@@ -16,9 +16,12 @@ import { captureOwnedWindow } from "../nativeSettingsSmoke.js";
 import { assertStressInventory, createStressRandom, parseNativeStressOptions, type NativeStressConfig } from "./nativeStressConfig.js";
 import { inspectStressGeometry } from "./nativeStressGeometry.js";
 import type { NativeBackground, NativeBackgroundConfig } from "../../rendering/native/NativeBackground.js";
+import type { NativeSelectionToolbar } from "../../rendering/native/NativeSelectionToolbar.js";
+import { isolateNativeSelection,inspectSelectionTexturePool } from "../../rendering/native/nativeSelectionStressIsolation.js";
 
 type Context = {
   app: NativePixiApplication;
+  selectionToolbar:NativeSelectionToolbar;
   background: NativeBackground;
   backgroundConfig(): NativeBackgroundConfig;
   scene: NativeDesktopScene;
@@ -50,8 +53,11 @@ export async function runNativeStress(o: Context): Promise<void> {
     ...(raw.rewarmCheckpoints ? ["--stress-rewarm-checkpoints"] : []),
     `--stress-gc-every=${raw.gcEvery ?? 0}`, ...(raw.heapSnapshots ? ["--stress-heap-snapshots"] : []),
     ...(raw.motionDiagnosticsOff ? ["--stress-motion-diagnostics-off"] : []),
+    `--stress-warmup-cycles=${raw.warmupCycles ?? 0}`,
+    `--stress-isolation=${raw.isolation??"none"}`,
   ]);
   const { app, scene, editing } = o, testing = getNativePixiApplicationTesting(app);
+  const restoreIsolation=isolateNativeSelection(app.stage,o.selectionToolbar,config.isolation);
   if(config.motionDiagnosticsOff){
     const {installMotionRuntimeDebugAdapterFactory,createNoopMotionRuntimeDebugAdapter:createMotionRuntimeDebugAdapter}=await import("../../rendering/motionPort.js");
     assert.equal(installMotionRuntimeDebugAdapterFactory(createMotionRuntimeDebugAdapter),true);
@@ -97,7 +103,7 @@ export async function runNativeStress(o: Context): Promise<void> {
     await wait("motion and edits settled", () => !scene.getMotionSnapshot().active && !editing.drag.isDragActive());
     await present();
   };
-  const state = () => ({ runtime: testing.diagnostics().runtime, rendererUid: app.state === "running" ? app.renderer.uid : null,
+  const state = () => ({ runtime: testing.diagnostics().runtime,surfaceTextureUsage:app.surfaceTextureUsage, rendererUid: app.state === "running" ? app.renderer.uid : null,
     folder: { id: o.folder.snapshot().renderedFolder?.id ?? null, progress: o.folder.snapshot().openProgress,
       closing: o.folder.snapshot().isClosing, page: o.folder.snapshot().folderPageIndex },
     selection: { count: editing.selection.selectedCount.value, active: editing.selection.isActive.value },
@@ -125,6 +131,7 @@ export async function runNativeStress(o: Context): Promise<void> {
   const sample = (kind: string) => {
     const heap = heapStats();
     emit("metrics.jsonl", { kind, process: process.memoryUsage(),
+      ...(["selection","surface-copy"].includes(config.mode)&&app.state==="running"?{texturePool:inspectSelectionTexturePool(app.renderer)}:{}),
       js: { heapSize: heap.heapSize, heapCapacity: heap.heapCapacity, objectCount: heap.objectCount, extraMemorySize: heap.extraMemorySize },
       nodes: nodes(), ...state() });
   };
@@ -232,10 +239,36 @@ export async function runNativeStress(o: Context): Promise<void> {
   let status: "passed" | "failed" | "stopped" = "passed", error: string | undefined;
   try {
     await step("warm-all-pages", async () => {
-      await warmAllPages(); await sleep(config.settleMs); sample("baseline"); await screenshot("baseline");
-      await gcCheckpoint("baseline", true);
+      await warmAllPages(); await sleep(config.settleMs); sample(config.warmupCycles ? "before-warmup" : "baseline"); await screenshot(config.warmupCycles?"before-warmup":"baseline");
+      if(!config.warmupCycles)await gcCheckpoint("baseline", true);
     });
-    if (config.mode === "background-recovery") {
+    if(config.mode==="surface-copy"){
+      phase="surface-copy";
+      for(const mode of ["windowed","fullscreen","windowed"] as const){
+        app.setWindowMode(mode);await sleep(300);await settled();
+        if(mode==="windowed"){
+          const width=completed===0?760:1040,height=completed===0?540:700;
+          app.window.setSize(width,height);
+          await wait("window resize",()=>app.contentSize.width===width&&app.contentSize.height===height);await settled();
+        }
+        editing.selection.begin({});await settled();await sleep(300);
+        assert.ok(app.surfaceTextureUsage&1,"Acquired surface must support CopySrc");
+        assert.equal(app.stage.filters?.length??0,0,"CopySrc surface must avoid whole-stage intermediate");
+        await screenshot(`surface-copy-${mode}-${completed}-before`);
+        await recover();await settled();await sleep(300);
+        assert.ok(app.surfaceTextureUsage&1);assert.equal(app.stage.filters?.length??0,0);
+        sample("copy-recovered");await screenshot(`surface-copy-${mode}-${completed}-after`);
+        editing.selection.clear();await toggle(80);await home();completed++;
+      }
+      await (await import("../../rendering/native/nativeToolbarVisualSmoke.test.js")).runNativeToolbarVisualSmoke(app,present,screenshot);
+      await o.background.configure({...o.backgroundConfig(),backgroundSource:"systemMaterial",backgroundBaseOpacity:0},app.contentSize.width,app.contentSize.height);
+      editing.selection.begin({});await settled();await screenshot("surface-copy-transparent");
+      app.window.minimize();await wait("minimized",()=>app.window.isMinimized());o.show();
+      await wait("restored",()=>app.state==="running"&&!app.window.isMinimized());await settled();
+      editing.selection.begin({});await settled();assert.ok(app.surfaceTextureUsage&1);assert.equal(app.stage.filters?.length??0,0);
+      await screenshot("surface-copy-transparent-restored");editing.selection.clear();
+      await o.background.configure(o.backgroundConfig(),app.contentSize.width,app.contentSize.height);await home();
+    }else if (config.mode === "background-recovery") {
       phase = "background-recovery";
       await (await import("./nativeBackgroundRecoverySmoke.js")).runNativeBackgroundRecoverySmoke({
         app, background: o.background, config: o.backgroundConfig(), directory, present, recover, screenshot,
@@ -250,21 +283,30 @@ export async function runNativeStress(o: Context): Promise<void> {
       await wait("recovery limit failure", () => app.state === "failed");
       assert.equal(testing.diagnostics().lastError?.type, "recovery-limit");
       record("expected-recovery-limit"); completed = 1;
-    } else for (cycle = 1; cycle <= config.cycles; cycle++) {
+    } else for (cycle = 1; cycle <= config.cycles + config.warmupCycles; cycle++) {
       if (config.mode !== "recovery") {
         const count = [2, 20, 80, 200][(cycle - 1) % 4]!;
         const delay = [16, 80, 350][Math.floor(random() * 3)]!;
+        if(config.mode === "selection")await step("select-clear",async()=>{
+          const ids=o.pages().flat().filter(item=>item&&item.type!=="folder").slice(0,count).map(item=>item!.id);
+          editing.selection.begin({});await settled();await sleep(config.settleMs);sample("selection-empty");
+          if(cycle===1)await screenshot("selection-empty");
+          editing.selection.begin({initialIds:ids});await settled();await sleep(config.settleMs);sample("selection-filled");
+          assert.equal(editing.selection.selectedCount.value,count);
+          editing.selection.clear();await settled();
+        },{count});
+        if(config.mode !== "paging" && config.mode !== "selection"){
         await step("batch-create", async () => {
           const ids = o.pages().flat().filter(item => item && item.type !== "folder").slice(0, count).map(item => item!.id);
           editing.selection.begin({ initialIds: ids }); await present();
           assert.equal(editing.selection.selectedCount.value, count);
           assert.equal(editing.createFolder(), true);
-          if (cycle % 4 === 0) await toggle(delay);
+          if (cycle % 4 === 0 && config.mode !== "folders") await toggle(delay);
           await settled(); assertStressInventory(o.pages(), expected);
         }, { count, delay });
         const folder = o.pages().flat().find(item => item?.type === "folder");
         if (folder) {
-          await step("folder-open-page-interrupt", async () => {
+          if(config.mode !== "folders")await step("folder-open-page-interrupt", async () => {
             o.page(0); await settled(); await clickFolder(folder.id); await sleep(delay);
             if (cycle % 2 === 0) {
               await toggle(delay);
@@ -282,29 +324,33 @@ export async function runNativeStress(o: Context): Promise<void> {
             assert.ok(!o.pages().flat().some(item => item?.type === "folder"), "Dissolve left a folder");
           });
         } else record("creation-cancelled-by-hide");
+        }
+        if(config.mode !== "selection" && config.mode !== "folders"){
         await step("paging-burst-hide", async () => {
           const last = o.pages().length - 1;
           for (const index of [last, 0, Math.min(1, last), last, 0]) {
             record("page", { index }); o.page(index); await sleep([16, 80, 350][Math.floor(random() * 3)]!);
           }
-          await toggle(delay);
+          if(config.mode !== "paging")await toggle(delay);
         });
+        }
       } else await step("device-recovery", () => recover());
       await step("checkpoint", async () => {
         await home(); sample("active-end");
         if(config.rewarmCheckpoints)await warmAllPages();
-        await sleep(config.settleMs); sample("settled");
-        if (config.gcEvery && cycle % config.gcEvery === 0) await gcCheckpoint(`cycle-${cycle}`);
+        await sleep(config.settleMs); sample(cycle<=config.warmupCycles?"warmup-settled":"settled");
+        if(cycle===config.warmupCycles){sample("baseline");await gcCheckpoint("baseline",true);await screenshot("baseline");}
+        else if (config.gcEvery && cycle>config.warmupCycles&&(cycle-config.warmupCycles)%config.gcEvery===0) await gcCheckpoint(`cycle-${cycle}`);
         if (config.screenshotsEvery && cycle % config.screenshotsEvery === 0) await screenshot(`checkpoint-${cycle}`);
       });
-      if (config.idleEvery && cycle % config.idleEvery === 0) await step("natural-gc-idle", async () => {
+      if (config.idleEvery && cycle>config.warmupCycles&&(cycle-config.warmupCycles)%config.idleEvery===0) await step("natural-gc-idle", async () => {
         await sleep(config.idleMs); sample("visible-idle"); o.hide();
         await wait("idle window hidden", () => !app.window.isVisible());
         await sleep(config.idleMs); sample("hidden-idle");
         o.show(); await home(); sample("after-idle-reopen");
         if(config.rewarmCheckpoints){await warmAllPages();await sleep(config.settleMs);sample("after-idle-rewarm");}
       });
-      completed++;
+      if(cycle>config.warmupCycles)completed++;
     }
     await gcCheckpoint("final", true);
     sample("final"); await screenshot("final");
@@ -316,6 +362,7 @@ export async function runNativeStress(o: Context): Promise<void> {
     await screenshot("failure");
   } finally {
     clearInterval(timer); offPresent(); offFatal(); offRecovered(); collector?.kill(); console.warn = originalWarn;
+    if(status==="passed")restoreIsolation();
     writeFileSync(join(directory, "last-frames.json"), JSON.stringify(frames, null, 2));
     writeFileSync(join(directory, "result.json"), JSON.stringify({ status, error, completedCycles: completed, warningCount, config,
       elapsedMs: performance.now() - started, diagnostics: testing.diagnostics() }, null, 2));

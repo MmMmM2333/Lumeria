@@ -52,15 +52,15 @@ export async function summarizeNativeStress(directory: string): Promise<void> {
         const cp = checkpoints[index]!, cpTime = Date.parse(cp.sample.timeUtc);
         if (cpTime > Math.max(time, vmTime) + 6500) break;
         const delta = Math.abs(cpTime - time), vmDelta = Math.abs(cpTime - vmTime);
-        if (delta <= 3000 && delta < cp.windowsDeltaMs) { cp.windows = sample; cp.windowsDeltaMs = delta; }
-        if (sample.virtualMemory && vmDelta <= 6500 && vmDelta < cp.virtualMemoryDeltaMs) {
+        if (time <= cpTime && delta <= 3000 && delta < cp.windowsDeltaMs) { cp.windows = sample; cp.windowsDeltaMs = delta; }
+        if (sample.virtualMemory && vmTime <= cpTime && vmDelta <= 6500 && vmDelta < cp.virtualMemoryDeltaMs) {
           cp.virtualMemory = sample.virtualMemory; cp.virtualMemoryDeltaMs = vmDelta;
         }
       }
       const d1 = first ? Math.abs(time - Date.parse(first.timeUtc)) : Infinity;
       const d2 = last ? Math.abs(time - Date.parse(last.timeUtc)) : Infinity;
-      if (d1 < firstDistance) { firstDistance = d1; windowsFirst = sample; }
-      if (d2 < lastDistance) { lastDistance = d2; windowsLast = sample; }
+      if (first && time <= Date.parse(first.timeUtc) && d1 < firstDistance) { firstDistance = d1; windowsFirst = sample; }
+      if (last && time <= Date.parse(last.timeUtc) && d2 < lastDistance) { lastDistance = d2; windowsLast = sample; }
     }
   }
   if (firstDistance > 3000) { windowsFirst = undefined; warnings.add("No Windows baseline sample within 3 seconds"); }
@@ -84,7 +84,7 @@ export async function summarizeNativeStress(directory: string): Promise<void> {
     `\n\n场景节点：${first?.nodes?.count ?? "未知"} → ${last?.nodes?.count ?? "未知"}；设备代次：${first?.runtime?.deviceGeneration ?? "未知"} → ${last?.runtime?.deviceGeneration ?? "未知"}。\n\n` +
     `这些计数不能单独证明泄漏，也不能确定 WC 分配属于 Dawn 还是驱动。查看 metrics.jsonl 中各轮 settled/idle 趋势；需要分配归属时补 VirtualAlloc 调用栈。\n\n` +
     [...warnings].map(value => `- ${value}`).join("\n") + "\n\n## 每轮检查点\n\n" +
-    "单位 MiB。WC/RW是VirtualQueryEx已提交区域分类，不是工作集或显存；VM分类匹配容差6.5秒（采样每5秒），进程计数容差3秒。\n\n" +
+    "单位 MiB。只取检查点之前的样本，避免混入下一个操作。WC/RW是VirtualQueryEx已提交区域分类，不是工作集或显存；VM分类容差6.5秒（采样每5秒），进程计数容差3秒。\n\n" +
     "| 轮次/阶段 | 私有提交 | 私有WS | WC提交 | RW提交 | JS堆 | 图标GPU估算 | 节点 | 设备代次 |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n" +
     checkpoints.map(cp => `| ${cp.sample.cycle ?? 0}/${cp.sample.kind} | ${mib(cp.windows?.privateBytes)} | ${mib(cp.windows?.privateWorkingSetBytes)} | ${mib(cp.virtualMemory?.writeCombineCommittedBytes)} | ${mib(cp.virtualMemory?.readWriteCommittedBytes)} | ${mib(cp.sample.js?.heapSize)} | ${mib(cp.sample.icons?.gpuBytes)} | ${cp.sample.nodes?.count ?? "?"} | ${cp.sample.runtime?.deviceGeneration ?? "?"} |`).join("\n") + "\n");
 }

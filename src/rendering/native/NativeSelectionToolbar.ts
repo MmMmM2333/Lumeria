@@ -15,6 +15,12 @@ type Action={button:NativeFluentButton;icon:Sprite|null;chevron:Sprite|null;key:
 
 /** Native counterpart of LaunchpadSelectionToolbar.vue, including its compact icon actions. */
 export class NativeSelectionToolbar extends Container {
+  #backdropEnabled=true;
+  get backdropEnabled():boolean{return this.#backdropEnabled;}
+  setBackdropEnabled(enabled:boolean):void{
+    this.#backdropEnabled=enabled;this.#signature="";this.#surfaceSignature="";
+    if(!enabled)this.#background.filters=[];
+  }
   readonly #body=new Container();
   readonly #background=new Graphics({eventMode:"none"});
   #backdrop:NativeToolbarBackdrop|null=null;
@@ -96,7 +102,7 @@ export class NativeSelectionToolbar extends Container {
     const surfaceSignature=JSON.stringify([this.#width,state.theme,state.canCancel,state.cancelArmed]);
     if(surfaceSignature!==this.#surfaceSignature){
       if(!this.#backdrop)this.#backdrop=new NativeToolbarBackdrop();
-      this.#background.filters=state.canCancel?[]:[this.#backdrop];
+      this.#background.filters=state.canCancel||!this.#backdropEnabled?[]:[this.#backdrop];
       this.#surfaceSignature=surfaceSignature;this.#shadow?.destroy({children:true});
       this.#shadow=nativePanelShadow(this.#width,54,state.cancelArmed?"0 18px 54px rgba(31,8,12,0.4)":tokens.shadow28,18);
       this.#body.addChildAt(this.#shadow,0);
