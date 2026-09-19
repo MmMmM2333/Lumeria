@@ -23,7 +23,7 @@ Lumeria 将 Starter 作为本仓库内部运行支持维护。无需克隆另一
 
 ```powershell
 npm ci
-npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz
+npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc.tar.gz
 npm run native:toolchain:check
 npm run check
 npm run native:build
@@ -31,7 +31,16 @@ npm run native:build
 
 `npm ci` 只安装锁定 npm 依赖并应用 Pixi 补丁，不在安装脚本里隐式下载整个 Native SDK，也不要求已经有 SDK。准备 SDK 后才能进行 Native 类型检查和完整项目检查。
 
-当前工具链附件**已经在本地准备，但尚未对外发布**，锁文件的 `archive.url` 为 null，不能声称新用户已经能从公开地址下载。当前维护者附件位于 `artifacts/stage6/toolchain-r2-fixed/`。正式发布时应上传已校验的附件并补入真实不可变 URL，不能填一个尚不存在的下载地址。
+当前工具链附件**已经在本地准备，但尚未对外发布**，锁文件的 `archive.url` 为 null，不能声称新用户已经能从公开地址下载。当前维护者附件位于 `artifacts/toolchain-r3-copysrc/`。正式发布时应上传已校验的附件并补入真实不可变 URL，不能填一个尚不存在的下载地址。
+
+本工作区可直接使用已校验的离线包：
+
+```powershell
+npm run native:prepare -- --archive artifacts/toolchain-r3-copysrc/lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc.tar.gz
+npm run native:toolchain:check
+```
+
+`artifacts/` 不进入 Git。新 checkout 需要从维护者取得该锁定附件；没有附件时，按下文“从官方源码重建 SDK”生成并验收自己的候选工具链，不能把本地路径误当成公开下载地址。当前提交包含补丁与锁文件，不包含二进制附件，也不代表已经发布。
 
 发布 URL 配置后可直接使用 `npm run native:prepare`。也支持显式 HTTPS 地址：
 
@@ -119,8 +128,16 @@ npm run native:release:bytecode
 
 ### r2 Native 合成桥接
 
-2026-09-18 在同一官方提交重建 SDK，当前锁定附件为 `lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz`，本地位于 `artifacts/stage6/toolchain-r2-fixed/`；尚未发布 URL。SHA-256：`b74c1c82b41acd0f4b7d62c11e00f356bb5fa30aa6bee75de4ce3e8b782009ef`。保留 461 个文件；与 r1 相比仅 ElectrobunCore、extractor、launcher、libNativeWrapper、process_helper 五个重建二进制变化，其他输入未升级。
+2026-09-18 在同一官方提交重建 SDK，当时锁定附件为 `lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz`，本地位于 `artifacts/stage6/toolchain-r2-fixed/`；尚未发布 URL。SHA-256：`b74c1c82b41acd0f4b7d62c11e00f356bb5fa30aa6bee75de4ce3e8b782009ef`。保留 461 个文件；与 r1 相比仅 ElectrobunCore、extractor、launcher、libNativeWrapper、process_helper 五个重建二进制变化，其他输入未升级。
 
 新增 `wgpuWindowSetBackgroundVisual(HWND, IDCompositionVisual*)` 只接受当前进程已存在的 GPU 窗口。在主线程和既有锁顺序下，把 Rust DComp 设备的视觉节点挂在 Pixi 视觉节点下面；宿主持有 COM 引用，detach/窗口关闭释放。不同设备分别提交自己的状态，不向 Rust 暴露宿主 DComp device。背景在首帧之前挂入和 resize generation 替换后仍须位于底层。注意 AddVisual 的 null 参考节点语义：TRUE 位于所有兄弟下面，FALSE 位于所有兄弟上面。
 
 `artifacts/stage6/sdk-order-fixed-rebuild.log` 和附件中的 build-environment.json/source.diff 保存重建证据。r1 SDK 备份在 `.codex-dev/stage6-sdk-r1-backup/`，错误层顺序的首个 r2 保存在 `.codex-dev/stage6-sdk-r2-order-failure/`；它不是验收版本。常规 native:prepare 仍按内容锁校验，不隐式接受 SDK 漂移。
+
+### r3 CopySrc 呈现表面
+
+2026-09-19 采用 `lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc`，附件位于 `artifacts/toolchain-r3-copysrc/`，SHA-256 `d1bc3f1e20477ad3168b429a174a500884c33f5717d8df39f4cbee885f169780`，仍未发布URL。固定上游提交不变，完整461文件清单；相对r2仅libNativeWrapper.dll与api/sdks/main/webgpuAdapter.ts变化。
+
+DComp SharedTextureMemory实际纹理按surface configure请求的usage与支持能力取交集，不再硬编码CopyDst|RenderAttachment；usage参与表面代次匹配，配置用途变化不复用不匹配的旧纹理。SDK每次获取纹理后通过wgpuTextureGetUsage报告textureUsage，Native application公开surfaceTextureUsage。未知或不含CopySrc时批量工具条保留旧整页中间表面；支持CopySrc时直接使用Pixi区域背景复制，保留工具条模糊/MSAA。
+
+本机探针支持mask0x17；实际复制/窗口全屏切换/设备恢复与工具条视觉回归通过。只证明已测设备路径，不保证所有设备支持相同用途。旧r2备份保存在 `.codex-dev/render-corruption/sdk-r2-before-copysrc/`，旧锁文件同目录 `r2-native-toolchain.lock.json`；不自动回滚或绕过新锁校验。

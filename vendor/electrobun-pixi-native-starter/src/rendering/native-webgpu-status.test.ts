@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { electrobunNativeAdapter } from "./electrobun-native-adapter";
-import { consumePresentStatus, createContext, present } from "./native-webgpu-context";
+import { describe, expect, test, mock } from "bun:test";
+// Context contract tests do not need Electrobun native DLLs beside the test host.
+const electrobunNativeAdapter:Record<string,unknown>={};
+mock.module("./electrobun-native-adapter",()=>({electrobunNativeAdapter}));
+const { consumePresentStatus, createContext, present, getSurfaceTextureUsage } = await import("./native-webgpu-context");
 import { normalizePresentStatus } from "./native-webgpu-status";
 
 describe("native WebGPU present status", () => {
@@ -28,7 +30,7 @@ describe("native WebGPU present status", () => {
 			consumeWebgpuPresentStatus: adapter.consumeWebgpuPresentStatus,
 			submitWithWebgpuSurface: adapter.submitWithWebgpuSurface,
 		};
-		const raw = { status: 1 };
+		const raw = { status: 1,textureUsage:0 };
 		Object.assign(adapter, {
 			createWebgpuContext: () => ({
 				canvas: { width: 1, height: 1, getContext: () => raw },
@@ -43,6 +45,9 @@ describe("native WebGPU present status", () => {
 		});
 		try {
 			const context = createContext({} as any);
+      expect(getSurfaceTextureUsage(context)).toBe(0);
+      raw.textureUsage=0x17;expect(getSurfaceTextureUsage(context)&1).toBe(1);
+      raw.textureUsage=0x12;expect(getSurfaceTextureUsage(context)&1).toBe(0);
 			expect(present(context, () => -3)).toBe("outdated");
 			raw.status = 5;
 			expect(consumePresentStatus(context)).toBe("surface-lost");

@@ -541,8 +541,8 @@ const selectionToolbar = new NativeSelectionToolbar({
     ],248,{restore});
   },
 });
-// The native presentation surface is not COPY_SRC. While the toolbar needs
-// backdrop sampling, render the stage through Pixi's sampleable intermediate.
+// Older/unsupported native surfaces still need an intermediate. Prefer direct
+// regional backdrop copies only when an acquired texture reports COPY_SRC.
 const selectionBackdropSurface=new AlphaFilter({alpha:1,resolution:"inherit",antialias:"inherit"});
 app.stage.addChild(selectionToolbar);
 app.stage.on("pointerdowncapture",event=>{let node=event.target as Container|null;while(node&&node!==selectionToolbar)node=node.parent;if(!node)selectionToolbar.clearFocus();});
@@ -680,7 +680,8 @@ try {
       active:Boolean(editing?.selection.isActive.value),count:editing?.selection.selectedCount.value??0,hiddenCount,
       frozen:Boolean(editing?.selection.isFrozen.value),canCancel:Boolean(editing?.drag.groupDragState.value?.canCancel),
       cancelArmed:Boolean(editing?.drag.groupDragState.value?.cancelArmed)});
-    const needsBackdrop=selectionToolbar.visible&&!editing?.drag.groupDragState.value?.canCancel;
+    const needsBackdrop=selectionToolbar.visible&&!editing?.drag.groupDragState.value?.canCancel
+      && !(app.surfaceTextureUsage & 1);
     if(Boolean(app.stage.filters?.length)!==needsBackdrop)app.stage.filters=needsBackdrop?[selectionBackdropSurface]:[];
     app.stage.setChildIndex(noticeView,app.stage.children.length-1);
     if(nativeSettings.shell)app.stage.setChildIndex(nativeSettings.shell,app.stage.children.length-1);

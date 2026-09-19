@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed",
+  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc",
   "target": "win32-x64",
   "electrobun": "2.0.1",
   "bun": "1.4.2",
@@ -12,15 +12,15 @@
     "patches": [
       {
         "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.patch",
-        "sha256": "7a612e32ea4156123e263b631f335777e6d64cf67806a7d4791c6f2275579d6f"
+        "sha256": "0a4e53a3941ee0fb505edd88304e8e31df31a9f6703bd486a88b3a11a5e060b3"
       }
     ],
-    "sourceDiffSha256": "7a612e32ea4156123e263b631f335777e6d64cf67806a7d4791c6f2275579d6f"
+    "sourceDiffSha256": "0a4e53a3941ee0fb505edd88304e8e31df31a9f6703bd486a88b3a11a5e060b3"
   },
   "archive": {
-    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r2-fixed.tar.gz",
-    "size": 181741316,
-    "sha256": "b74c1c82b41acd0f4b7d62c11e00f356bb5fa30aa6bee75de4ce3e8b782009ef",
+    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc.tar.gz",
+    "size": 181741587,
+    "sha256": "d1bc3f1e20477ad3168b429a174a500884c33f5717d8df39f4cbee885f169780",
     "url": null
   },
   "files": [
@@ -691,8 +691,8 @@
     },
     {
       "path": "api/sdks/main/webgpuAdapter.ts",
-      "size": 104931,
-      "sha256": "5e2796dd92e9adbdb803c3b491dc5508f095f7ad15acfa1517c53969d5bbf2d9"
+      "size": 105139,
+      "sha256": "8131fefb9ef5310b37c4a98ea4930453b1671836cf148dbf56c7b2ea285d2851"
     },
     {
       "path": "api/sdks/main/webgpuContextKey.test.ts",
@@ -2256,8 +2256,8 @@
     },
     {
       "path": "libNativeWrapper.dll",
-      "size": 2096128,
-      "sha256": "c599c6046be43d2b848ba73da9885b5a21d521a8eb3a6f17e2f5d281bb89bdbf"
+      "size": 2096640,
+      "sha256": "534a65f3ec4976c27272d533687935cb00e97bb040a3df2d71c0f0832fddb420"
     },
     {
       "path": "main.js",

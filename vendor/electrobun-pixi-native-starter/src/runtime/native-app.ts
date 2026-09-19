@@ -40,6 +40,7 @@ import {
 import {
 	consumePresentStatus,
 	createContext,
+  getSurfaceTextureUsage,
 	present as presentContext,
 	reconfigure as reconfigureContext,
   setPresentExtent,
@@ -130,6 +131,8 @@ export interface NativePixiApplication {
 	readonly stage: Container;
 	readonly window: GpuWindow;
 	readonly renderer: WebGPURenderer;
+  /** Last acquired native surface texture usages. Zero until first acquisition. */
+  readonly surfaceTextureUsage: number;
 	readonly screen: Rectangle;
 	readonly resolution: number;
 	readonly contentSize: Readonly<{ width: number; height: number }>;
@@ -792,6 +795,7 @@ export async function createNativePixiApplication(
 
 		const application: NativePixiApplication = {
 			stage, window,
+      get surfaceTextureUsage(){return closed?0:getSurfaceTextureUsage(runtimeContext);},
       get windowMode(){return windowPresentation?.fullscreen?"fullscreen":"windowed";},
       setWindowMode(mode, pixels=0) {
         if(mode!=="fullscreen"&&mode!=="windowed")throw new TypeError("Invalid window mode");

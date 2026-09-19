@@ -46,6 +46,12 @@ export function getContentSize(context: NativeWebGpuContext) {
 	return { width, height };
 }
 
+/** Actual acquired texture usages, not the requested configure mask. Unknown is 0. */
+export function getSurfaceTextureUsage(context:NativeWebGpuContext):number {
+  const value=stateFor(context).raw.textureUsage;
+  return Number.isSafeInteger(value)&&value>=0?value:0;
+}
+
 export function reconfigure(context: NativeWebGpuContext) {
 	const state = stateFor(context);
 	electrobunNativeAdapter.reconfigureWebgpuContext(state.raw);

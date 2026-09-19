@@ -269,6 +269,11 @@ const patches = [
 ];
 
 let source = readFileSync(adapterPath, "utf8").replaceAll("\r\n", "\n");
+// The DComp source patch records actual surface usages. Preserve that addition
+// while applying the older acquire-status projection anchors.
+const acquiredUsageLine="\t\tthis.textureUsage = Number(WGPUNative.symbols.wgpuTextureGetUsage(texPtr));\n";
+const hasAcquiredUsage=source.includes(acquiredUsageLine);
+if(hasAcquiredUsage)source=source.replace(acquiredUsageLine,"");
 let changed = false;
 const presentModeLine = "writeU32(view, 60, (globalThis as any).__electrobunPresentMode ?? WGPUPresentMode_Fifo);";
 if (!source.includes(presentModeLine)) {
@@ -310,6 +315,11 @@ if (source.split("function mapStencilOperation").length !== 2) {
 	throw new Error("Electrobun WebGPU stencil patch is duplicated or incomplete");
 }
 
+if(hasAcquiredUsage){
+  const acquisition="\t\tthis._currentTexture = new GPUTexture(texPtr, this.format, this);\n";
+  if(!source.includes(acquisition))throw new Error("Surface usage observation lost its acquisition anchor");
+  source=source.replace(acquisition,acquisition+acquiredUsageLine);
+}
 if (changed) writeFileSync(adapterPath, source);
 console.log(`Electrobun WebGPU adapter patch ${changed ? "applied" : "verified"}`);
 

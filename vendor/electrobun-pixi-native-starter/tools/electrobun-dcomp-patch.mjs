@@ -78,6 +78,8 @@ if (alreadyApplied || apply) {
     "SetSourceSize",
     "SetMatrixTransform",
     "wgpuWindowSetBackgroundVisual",
+    "surfaceUsage | WGPUTextureUsage_RenderAttachment",
+    "bridge->requestedUsage == surfaceState->requestedUsage",
 	]) {
 		if (!wrapper.includes(marker)) throw new Error(`patched wrapper is missing ${marker}`);
 	}
@@ -115,6 +117,7 @@ if (alreadyApplied || apply) {
 		|| adapter.includes("WGPUNative.symbols.wgpuSurfaceUnconfigure")) {
 		throw new Error("patched adapter does not route unconfigure through the native surface state");
 	}
+  if(!adapter.includes("this.textureUsage = Number(WGPUNative.symbols.wgpuTextureGetUsage(texPtr))"))throw new Error("SDK must report actual acquired texture usages");
 	const initialPromotion = compositor.slice(
 		compositor.indexOf("bool promoteSwapChain"),
 		compositor.indexOf("// May block until DWM"),
