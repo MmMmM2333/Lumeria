@@ -18,7 +18,6 @@
     "playwright.webgpu.config.ts",
     "scripts/**/*.ts",
     "tests/browser/**/*.ts",
-    "vite.config.ts",
-    "vite.motion-lab.config.ts"
+    "vite.config.ts"
   ]
 }

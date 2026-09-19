@@ -11,7 +11,7 @@
     "check:i18n": "tsx scripts/checkI18n.ts",
     "check:pixi-patch": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root . --check",
     "check:policy": "tsx scripts/checkProjectPolicy.ts",
-    "dev": "vite --config vite.motion-lab.config.ts",
+    "dev": "vite --host 127.0.0.1",
     "icons:export": "tsx scripts/exportBrandIcons.ts",
     "native:data:build": "cargo build -p lumeria-native-data --bin lumeria_native_data --release --locked",
     "test:native-data": "cargo test -p lumeria-core -p lumeria-native-data --locked && npm run native:data:build && tsx scripts/testNativeDataIntegration.ts",
@@ -57,8 +57,8 @@
     "native:toolchain:check": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs check",
     "native:toolchain:pack": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs pack",
     "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs",
-    "dev:motion-lab": "vite --config vite.motion-lab.config.ts --host 127.0.0.1",
-    "build:motion-lab": "vite build --config vite.motion-lab.config.ts",
+    "dev:motion-lab": "npm run dev --",
+    "build:motion-lab": "vite build",
     "native:live-desktop:build": "cargo build -p lumeria-live-desktop --release --locked"
   },
   "dependencies": {
