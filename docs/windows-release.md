@@ -1,13 +1,11 @@
 # Windows 独立发行
 
-Windows x64 产品入口为 `Lumeria.exe`，安装与升级由本目录的 NSIS 脚本管理。
+Windows x64 产品入口为 `Lumeria.exe`，安装与升级由 `release/windows/` 下的 NSIS 脚本管理。
 产品名、标识和版本分别来自 `src/platform/product.ts` 与根目录 `package.json`。
 
 ## 构建
 
-首次克隆先按 [Native 工具链指南](../../docs/native-toolchain.md) 完成 `npm ci` 和
-`npm run native:prepare -- --archive <固定工具链附件>`。当前工具链附件尚未对外发布；
-构建不再依赖作者未登记的本机 SDK，也不会在 npm 安装脚本中隐式构建 Starter。
+首次克隆先执行 `npm ci` 和 `npm run native:prepare:source`，编译、校验并接入本地 SDK；有匹配附件时也可显式导入。环境要求及切换方式见 [Native 工具链指南](native-toolchain.md)。
 
 ```powershell
 npm run native:release           # ESM，默认正式安装包
@@ -22,13 +20,12 @@ npm run native:stage
 npm run native:package
 ```
 
-Rust 使用根目录 Cargo workspace 与 `Cargo.lock`。`native:build` 的前置步骤只构建
-`lumeria-native-data` 包，产物为 `target/release/lumeria_native_data.exe`，暂存到
-运行包时命名为 `lumeria-native-data.exe`。旧 Tauri 宿主仍作为独立 workspace 成员保留，
-不参与 Native 数据服务构建。`npm run test:native-data` 运行共享核心/协议测试，并使用
+Rust 使用根目录 Cargo workspace 与 `Cargo.lock`。`native:build` 的前置步骤构建
+`lumeria-native-data` 与 `lumeria-live-desktop`。数据服务产物为 `target/release/lumeria_native_data.exe`，暂存到
+运行包时命名为 `lumeria-native-data.exe`。旧 Tauri 产品已退役。`npm run test:native-data` 运行共享核心/协议测试，并使用
 真实 release 数据服务与 TS 客户端验证隔离数据读写和通信。
-暂存后可运行 `npm run test:native-staged`，检查手动/登录启动后立即退出、保存、
-单实例释放及运行日志中的隐藏异常。它不安装产品、不修改真实用户数据，也不替代 UI 验收。
+暂存后运行 `npm run test:native-staged`，检查手动启动首帧、登录启动准备、保存和退出、
+单实例释放及日志中的隐藏异常；字节码包还会核对文件大小与哈希。测试使用隔离数据，不安装产品，也不替代完整 UI 验收。
 
 构建工具要求 Node/npm、Rust 的 Windows MSVC 工具链、Zig **0.16.0**、NSIS **3.11**。
 用户安装后不需要这些开发工具。Zig 可通过 `LUMERIA_ZIG` 指定，也可放在
@@ -49,9 +46,10 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 正式安装包拒绝诊断构建和测试替身。当前构建不进行 Authenticode 签名，产物清单明确标记
 `signed: false`；以后接入签名时，应先签名，再生成最终校验信息。
 
-暂存步骤只附带 `licenses/third-party/THIRD_PARTY_NOTICES.md` 和 `LICENSES.txt`，
-按 Native 包内容收集声明并合并原文。完整依赖盘点可独立生成到 `artifacts/`；
-待核项不阻塞打包，实际再分发义务仍按相关许可处理。见 [许可材料说明](../../legal/README.md)。
+暂存时将根目录的 `LICENSE` 和 `THIRD_PARTY_NOTICES.txt` 原样复制到 `licenses/`，
+另保留 MSVC 运行库说明。打包不扫描依赖或生成许可清单。
+
+增删或升级分发依赖时，同步更新第三方声明中的组件和许可原文。发布二进制时提供对应版本的源码与构建脚本，具体说明见 [LICENSING.md](../LICENSING.md)。
 
 ## 安装和使用
 
@@ -125,13 +123,13 @@ npm run native:smoke
 使用真正的安装包，验证 GPU、数据服务、本地 CRT 加载、单实例、托盘重启、自启动、
 运行中重装和界面。`--ui-only` 可在其他代码未变时只补验界面与卸载。
 
-可针对另一份暂存目录单独验证启动与退出：
+默认检查 `release/staging/windows-x64/Lumeria`，也可指定项目 `release/staging/` 或 `.codex-dev/` 下的另一份暂存目录：
 
 ```powershell
-node --import tsx scripts/smokeWindowsRuntime.ts .codex-dev/windows-bytecode-runtime
+npm run test:native-staged -- .codex-dev/windows-bytecode-runtime
 ```
 
-实施状态和最终证据以 `docs/windows-release-plan.md` 为准。
+每次候选包需要按实际版本验证安装、升级、卸载和启动；旧安装包的哈希、大小和通过记录不能替代新产物验收。
 
 ## 跨平台边界
 

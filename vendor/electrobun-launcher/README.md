@@ -54,5 +54,5 @@ When updating upstream sources, preserve `product.zig` and the shared argument
 quoting implementation. Test the development, ESM, bytecode, restart and installer
 flows. Do not patch executable string offsets or edit the shared Bun toolchain.
 
-See `release/windows/README.md` for packaging, migration and platform boundaries,
-and `docs/windows-release-plan.md` for implementation status and evidence.
+See `docs/windows-release.md` for packaging, platform boundaries and validation
+commands.

@@ -33,7 +33,7 @@ npm run native:dev
 npm run native:release
 ```
 
-安装包输出到 `artifacts/Lumeria-<版本>-x64-Setup.exe`。更多打包选项见 [Windows 构建说明](release/windows/README.md)。
+安装包输出到 `artifacts/Lumeria-<版本>-x64-Setup.exe`。更多打包选项见 [Windows 构建说明](docs/windows-release.md)。
 
 首次编译 SDK 耗时较长；已有预编译工具链附件时也可以直接导入，见 [工具链说明](docs/native-toolchain.md)。
 

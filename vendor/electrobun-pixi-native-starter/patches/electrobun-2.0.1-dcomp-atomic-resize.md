@@ -98,4 +98,4 @@ state so unconfigure is called exactly once. This prevents replacement
 surfaces from failing `IDXGISwapChain1` creation with `0x80070005` and removes
 the duplicate `Surface is not configured` teardown diagnostic.
 
-Starter 0.2.13 adds an opt-in `capacity` resize mode. It queries Dawn device limits, keeps padded backing resources within capacity, and uses DXGI source size plus compensating matrix transforms. Reclaim occurs after one second of settled resize with a 1.5x area threshold. The product default remains `live` pending mixed-DPI and scanout validation. See `docs/native-resize-progress.md` in the consumer for verification status.
+Starter 0.2.13 adds an opt-in `capacity` resize mode. It queries Dawn device limits, keeps padded backing resources within capacity, and uses DXGI source size plus compensating matrix transforms. Reclaim occurs after one second of settled resize with a 1.5x area threshold. The default is selected by the consumer. See `docs/input-and-window.md` in Lumeria for window behavior and resize validation considerations.

@@ -3014,8 +3014,8 @@
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.md",
       "role": "electrobun-patch",
-      "size": 6084,
-      "sha256": "00f6b0bb0a7d1b7ba29a46f87eab0bf65f4da37d25aec767c6e1a905eafda46c"
+      "size": 6070,
+      "sha256": "51f8d641ad3f365caba7fcc9812bc4740e32f7af012e88794d72cf2169bca037"
     },
     {
       "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.patch",
