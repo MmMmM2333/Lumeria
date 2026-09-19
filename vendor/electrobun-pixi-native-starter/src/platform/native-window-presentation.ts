@@ -74,6 +74,24 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     const actual=readPlacement().rect;
     if(actual.some((value,index)=>value!==rect[index]))throw new Error("Window did not retain the requested frame");
   };
+  let syncingFullscreen=false;
+  const syncFullscreenBounds=():boolean=>{
+    if(!fullscreen||syncingFullscreen||user.symbols.IsIconic(window))return false;
+    if(!user.symbols.IsWindow(window))throw new Error("Presentation window is closed");
+    const monitor=user.symbols.MonitorFromWindow(window,2),info=new Int32Array(10);info[0]=40;
+    if(!monitor||!user.symbols.GetMonitorInfoW(monitor,ptr(info)))throw new Error("Cannot read fullscreen display bounds");
+    const target=new Int32Array([info[1]!-overscanPixels,info[2]!-overscanPixels,info[3]!+overscanPixels,info[4]!+overscanPixels]);
+    if(readPlacement().rect.every((value,index)=>value===target[index]))return false;
+    // WM_DPICHANGED's suggested rectangle preserves a normal window's logical
+    // size. Fullscreen instead owns the monitor's current physical rectangle.
+    // Avoid activation/Z-order changes and leave the saved windowed placement intact.
+    syncingFullscreen=true;
+    try{
+      if(!user.symbols.SetWindowPos(window,null,target[0]!,target[1]!,target[2]!-target[0]!,target[3]!-target[1]!,0x14))throw new Error("Cannot refresh fullscreen bounds");
+      if(readPlacement().rect.some((value,index)=>value!==target[index]))throw new Error("Fullscreen bounds were not retained");
+      return true;
+    }finally{syncingFullscreen=false;}
+  };
   const startNonClient=(hit:number)=>{
     if(!user.symbols.IsWindow(window))throw new Error("Presentation window is closed");
     const point=new Int32Array(2);
@@ -132,15 +150,18 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
           if(maximized)user.symbols.ShowWindow(window,3);
         }
       }
+      // The monitor can keep its identity while its scale/bounds change.
+      syncFullscreenBounds();
       return {foreground,displayChanged};
     },
     get fullscreen(){return fullscreen;},
     get overscanPixels(){return overscanPixels;},
+    syncFullscreenBounds,
     setMode(nextFullscreen:boolean,pixels:number){
       if(!Number.isInteger(pixels)||pixels<0||pixels>16)throw new RangeError("Overscan must be 0–16 physical pixels");
       if(!user.symbols.IsWindow(window))throw new Error("Presentation window is closed");
       const nextPixels=nextFullscreen?pixels:0;
-      if(nextFullscreen===fullscreen&&nextPixels===overscanPixels)return;
+      if(nextFullscreen===fullscreen&&nextPixels===overscanPixels){syncFullscreenBounds();return;}
       const previous=readPlacement();
       let target:WindowPlacement;
       if(nextFullscreen){

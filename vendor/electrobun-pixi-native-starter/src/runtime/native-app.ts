@@ -669,6 +669,10 @@ export async function createNativePixiApplication(
 			try {
 				const previousDisplayId = snapshot.displayId;
 				const previousResolution = resolution;
+        // Refit the native fullscreen HWND before deriving the logical viewport
+        // and backing. This also handles same-monitor DPI/display notifications
+        // and restoration after a change received while suspended.
+        windowPresentation?.syncFullscreenBounds();
 				snapshot = nativeFrameHost.getWindowSnapshot(inputWindow);
 				const nextResolution = snapshot.scaleFactor > 0 ? snapshot.scaleFactor : 1;
 				const nextSize = { width: snapshot.clientWidth / nextResolution, height: snapshot.clientHeight / nextResolution };

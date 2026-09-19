@@ -85,6 +85,8 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     smoke, toggleLaunchpad, tray, waitFor, windowEffects,
   } = context;
   let structuredLaunchFailureObserved = false;
+  await (await import("./nativeFullscreenBoundsSmoke.js")).runNativeFullscreenBoundsSmoke({app,present,waitFor,
+    overscan:settings.presentation.fullscreenOverscanEnabled.value?1:0});
   await (await import("../nativeIconRecoverySmoke.test.js")).runNativeIconRecoverySmoke(app);
   {
     const press = () => {
