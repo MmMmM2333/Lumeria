@@ -9,7 +9,7 @@ license. It is provided without warranty; see LICENSE for the complete terms.
 This covers original application code, tests, build scripts, documentation and
 original Starter/native bridge contributions, except material explicitly covered
 by a separate notice. Third-party code, copied icon paths and vendored dependencies
-retain their original licenses and copyright notices. See THIRD_PARTY_NOTICES.md
+retain their original licenses and copyright notices. See THIRD_PARTY_NOTICES.txt
 and the applicable upstream notices; a dependency's SPDX label must not be changed
 to the project's license.
 
@@ -27,7 +27,7 @@ revision and relevant build inputs available alongside release downloads; a link
 to a moving default branch is not an exact-version source release.
 
 Third-party source, attribution and redistribution requirements still apply.
-An optional license audit is not legal approval and does not block local builds.
+Keep THIRD_PARTY_NOTICES.txt up to date when shipped dependencies change.
 
 ## Contributions
 
