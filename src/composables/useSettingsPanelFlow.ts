@@ -4,7 +4,7 @@ import {
   DESKTOP_CLOSE_DURATION,
   DESKTOP_CLOSE_SCALE,
   SETTINGS_PANEL_CLOSE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 
 const SETTINGS_PANEL_CLOSE_MODE_PANEL = "panel";
 const SETTINGS_PANEL_CLOSE_MODE_DESKTOP = "desktop";

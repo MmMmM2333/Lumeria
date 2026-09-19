@@ -91,7 +91,7 @@ function createRenderTexture(width: unknown, height: unknown): RenderTexture {
 }
 
 export class BackgroundEffectPipeline {
-  app: Application<Renderer> | null;
+  app: Pick<Application<Renderer>,"renderer"> | null;
   displaySprite: Sprite | null;
   passSprite: Sprite | null;
   downFilter: ReturnType<typeof createKawaseFilter> | null;
@@ -107,7 +107,7 @@ export class BackgroundEffectPipeline {
   upTextures: RenderTexture[];
   renderSizeKey: string;
 
-  constructor(app: Application<Renderer>, options: BackgroundEffectPipelineOptions = {}) {
+  constructor(app: Pick<Application<Renderer>,"renderer">, options: BackgroundEffectPipelineOptions = {}) {
     const filterPrefix = options.filterPrefix || "launchpad-background";
     const filterNames = options.filterNames || {};
     this.app = app;

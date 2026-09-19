@@ -3,6 +3,22 @@
   "displayName": "简体中文",
   "direction": "ltr",
   "messages": {
+    "touchpadCapture": {
+      "speed": "F9 翻页速度：{mode}",
+      "baseline": "基线（不限速）",
+      "rate": "{rate} 页/秒",
+      "title": "触控板采集",
+      "recording": "● 正在录制",
+      "stopped": "已停止／等待开始",
+      "full": "已达上限，请导出",
+      "toggle": "F6 开始／停止",
+      "mark": "F7 标记异常",
+      "export": "F8 导出",
+      "hint": "每种动作做3次，动作之间停2秒",
+      "marked": "已标记异常（记录 {count}）",
+      "saved": "已导出到项目 artifacts；可继续 F6 录制",
+      "failed": "导出失败：{error}"
+    },
     "common": {
       "actions": {
         "apply": "应用",
@@ -1079,6 +1095,7 @@
         }
     },
     "dialogs": {
+      "colorPicker": {"title":"选择颜色","original":"原色","new":"新颜色"},
       "iconChooser": {
         "close": "关闭图标选择",
         "embedded": "应用内图标",
@@ -1326,7 +1343,7 @@
             "acrylicSaturation": "Acrylic 饱和度",
             "unavailable": "选择背景层后可用",
             "hintCss": "当前效果由前端透明层合成",
-            "hintAcrylic": "WebGL Acrylic 风格合成",
+            "hintAcrylic": "Acrylic 风格合成",
             "hintBlur": "模糊背景层",
             "hintDim": "叠加暗化遮罩",
             "hintOriginal": "直接显示背景层"

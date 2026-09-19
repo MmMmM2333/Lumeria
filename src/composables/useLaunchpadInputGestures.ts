@@ -1,4 +1,5 @@
 import { shallowRef, type Ref } from "vue";
+import { activeTouchpadCapture } from "../debug/touchpadCapture.js";
 import type {
   ReadonlyLaunchpadApp,
   ReadonlyLaunchpadFolder,
@@ -175,6 +176,8 @@ export type LaunchpadInputGesturesOptions = Readonly<{
 }>;
 
 export type LaunchpadPageTrackScrub = Readonly<{
+  continuousWheel?:boolean;
+  sampleTime?:number;
   edge: boolean;
   fromIndex: number;
   progress: number;
@@ -370,6 +373,7 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     lastPresentationScope = presentation.scope;
     clearDeadline("clearPresentation");
     const scrub: LaunchpadPageTrackScrub = {
+      ...(presentation.continuousWheel?{continuousWheel:true,sampleTime:presentation.sampleTime}:{}),
       edge: presentation.edge,
       fromIndex: presentation.fromIndex,
       progress: presentation.progress,
@@ -504,6 +508,7 @@ export function useLaunchpadInputGestures(options: LaunchpadInputGesturesOptions
     commandContext: CancelInteractionOptions = {},
   ): LaunchpadGestureOutput {
     lastDispatchTime = readNumber(input?.time, lastDispatchTime);
+    activeTouchpadCapture?.decision(output);
     applyPresentation(output?.presentation);
     if (Object.prototype.hasOwnProperty.call(output || {}, "targetPresentation")) {
       iconGesturePresentation.value = output.targetPresentation ?? null;

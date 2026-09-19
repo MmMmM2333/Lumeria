@@ -33,7 +33,7 @@ interface BrandVariant {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_DIRECTORY = path.join(ROOT, "src", "assets", "branding");
-const OUTPUT_DIRECTORY = path.join(ROOT, "src-tauri", "icons", "launchpad");
+const OUTPUT_DIRECTORY = path.join(SOURCE_DIRECTORY, "app-icons");
 const SOURCE_SIZE = 1254;
 const ANALYSIS_SIZE = 4096;
 const ALPHA_THRESHOLD = 1;

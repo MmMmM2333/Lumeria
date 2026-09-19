@@ -2,7 +2,7 @@ import {
   DESKTOP_CLOSE_DURATION,
   DESKTOP_CLOSE_SCALE,
   SETTINGS_PANEL_CLOSE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
 
 function withMockWindow(run: (timers: Array<() => void>) => void): void {

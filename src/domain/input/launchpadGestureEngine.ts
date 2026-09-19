@@ -31,6 +31,8 @@ export type LaunchpadGestureInput = Readonly<{
   kind?: string;
   metaKey?: boolean;
   momentum?: boolean | null;
+  wheelSource?: "touchpad" | "wheel";
+  wheelPhase?: "begin" | "update" | "inertia" | "end" | "cancel";
   pointerId?: number | null | undefined;
   pointerType?: string;
   target?: LaunchpadGestureTarget;
@@ -42,6 +44,8 @@ export type LaunchpadGestureInput = Readonly<{
 }>;
 
 export type LaunchpadPagePresentation = Readonly<{
+  continuousWheel?:boolean;
+  sampleTime?:number;
   direction: -1 | 1;
   edge: boolean;
   fromIndex: number;
@@ -134,6 +138,7 @@ type PointerSession = {
 };
 
 type WheelSession = {
+  visualVelocity?: number;
   classification: "continuous" | "discrete" | "unknown";
   clearPresentationAt?: number;
   lastDelta: number;
@@ -385,6 +390,7 @@ export function createLaunchpadGestureEngine(
     const edge = toIndex < 0 || toIndex >= session.viewport.pageCount;
     const rawProgress = Math.abs(session.travel) / session.viewport.pageWidth;
     return {
+      ...(session.classification!=="discrete"?{continuousWheel:true,sampleTime:session.lastTime}:{}),
       direction,
       edge,
       fromIndex: session.viewport.pageIndex,
@@ -400,6 +406,11 @@ export function createLaunchpadGestureEngine(
       const dtMs = Math.max(1, Math.min(policy.wheelVelocityMaxDeltaMs, time - session.lastTime));
       const instantVelocity = (delta / dtMs) * 1000;
       session.velocity += (instantVelocity - session.velocity) * policy.wheelVelocitySmoothing;
+      const width=session.viewport.pageWidth;
+      const before=Math.max(-width,Math.min(width,session.travel));
+      const after=Math.max(-width,Math.min(width,session.travel+delta));
+      const visual=(after-before)/dtMs*1000;
+      session.visualVelocity=(session.visualVelocity??0)+(visual-(session.visualVelocity??0))*policy.wheelVelocitySmoothing;
     }
     session.lastDelta = delta;
     session.lastTime = time;
@@ -422,7 +433,7 @@ export function createLaunchpadGestureEngine(
         settle: true,
         settleToken: `wheel:${++settleSequence}`,
         targetProgress,
-        velocity: directionVelocity,
+        velocity: (Math.sign(session.travel||1)*(session.visualVelocity??0))/session.viewport.pageWidth,
       },
       commands: pageIndex === scrub.fromIndex
         ? []
@@ -470,6 +481,12 @@ export function createLaunchpadGestureEngine(
   }
 
   function handleWheel(input: LaunchpadGestureInput): LaunchpadGestureOutput {
+    if(input.wheelPhase==="cancel")return cancelWheel(input);
+    if(input.wheelPhase==="begin"){
+      wheel=null;
+      return {handled:true,presentation:null,commands:[],deadline:null};
+    }
+    if(input.wheelPhase==="end")return finishWheel(input);
     if (pointer || input.ctrlKey || input.metaKey) {
       return { handled: false, presentation: null, commands: [], deadline: null };
     }
@@ -485,7 +502,7 @@ export function createLaunchpadGestureEngine(
           handled: true,
           presentation: null,
           commands: [],
-          deadline: { kind: "wheelEnd", at: readNumber(input.time) + policy.continuousWheelIdleMs },
+          deadline: input.wheelSource==="touchpad"?null:{ kind: "wheelEnd", at: readNumber(input.time) + policy.continuousWheelIdleMs },
         };
       }
       if (delta === 0) {
@@ -501,7 +518,7 @@ export function createLaunchpadGestureEngine(
       activeWheel.clearPresentationAt = time + 720;
       return {
         ...settleContinuousWheel(activeWheel),
-        deadline: { kind: "wheelEnd", at: time + policy.continuousWheelIdleMs },
+        deadline: input.wheelSource==="touchpad"?null:{ kind: "wheelEnd", at: time + policy.continuousWheelIdleMs },
       };
     }
     if (delta === 0) {
@@ -552,6 +569,7 @@ export function createLaunchpadGestureEngine(
     }
     if (
       wheel.classification === "unknown" &&
+      input.wheelSource !== "touchpad" &&
       input.momentum !== true &&
       Math.abs(delta) >= policy.wheelDiscreteMinDelta &&
       wheel.sampleCount === 0
@@ -567,7 +585,9 @@ export function createLaunchpadGestureEngine(
       );
     }
     sampleWheelVelocity(wheel, delta, time);
-    wheel.travel += delta;
+    // Do not accumulate invisible travel past the adjacent page: reversing must
+    // move the page immediately, rather than paying back a long hidden overscroll.
+    wheel.travel = Math.max(-wheel.viewport.pageWidth,Math.min(wheel.viewport.pageWidth,wheel.travel+delta));
     if (wheel.sampleCount > 1) wheel.classification = "continuous";
     const presentation = makeWheelPresentation(wheel);
     wheel.presentation = presentation;
@@ -575,7 +595,7 @@ export function createLaunchpadGestureEngine(
       handled: true,
       presentation,
       commands: [],
-      deadline: { kind: "wheelEnd", at: readNumber(input.time) + policy.continuousWheelIdleMs },
+      deadline: input.wheelSource==="touchpad"?null:{ kind: "wheelEnd", at: readNumber(input.time) + policy.continuousWheelIdleMs },
     };
   }
 

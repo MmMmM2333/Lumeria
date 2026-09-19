@@ -7,14 +7,14 @@ import type {
   ReadonlyLaunchpadFolder,
   ReadonlyLaunchpadPages,
 } from "../domain/launchpadLayout.js";
-import type { FolderMotionGeometry } from "./useFolderMotionGeometry.js";
+import type { FolderMotionGeometry } from "../rendering/folderMotionGeometry.js";
 import {
   FOLDER_APP_LAUNCH_DURATION,
   FOLDER_CLOSE_DURATION,
   FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION,
   FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import {
   useLaunchpadFolderFlow,
   type FolderFlowPageTurnRequest,

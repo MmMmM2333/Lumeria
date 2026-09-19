@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!--
+  Launchpad browser reference host (development only).
+
+  This page exists so Playwright can drive the shared animation/folder/gesture
+  code in a plain browser after the product entry left `src/`. It is a test
+  host, not a product entry: it never connects to real user data or to Tauri,
+  and it is not part of any production rollup entry or build input. `main.ts`
+  refuses to mount unless `import.meta.env.DEV` is true.
+
+  Start it through the Vite dev server, for example:
+    npm run dev -- --host 127.0.0.1 --port 4175 --strictPort
+  then open /tests/browser/reference/index.html or
+  /tests/browser/reference/index.html?fixture=multi-select
+
+  Retention rationale and exit conditions: see README.md in this directory.
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" href="data:," />
+    <title>Launchpad Browser Reference Host (dev only)</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

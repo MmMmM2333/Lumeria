@@ -12,6 +12,7 @@ import {
   resolve,
 } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isBuiltin } from "node:module";
 import ts from "typescript";
 
 const CODE_EXTENSIONS = new Set([".cjs", ".cts", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx", ".vue"]);
@@ -39,17 +40,22 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".claude",
   ".codex",
   ".codex-dev",
+  ".deepseek-tmp",
+  ".cottontail-tmp",
   ".git",
   ".idea",
   ".vscode",
   ".worktrees",
+  ".hutch",
+  "artifacts",
+  "build",
   "dist",
   "docs-agents",
   "node_modules",
   "playwright-report",
-  "src-tauri",
   "target",
   "test-results",
+  "vendor",
 ]);
 const TYPE_DIRECTIVE_PREFIX = "@ts-";
 const FORBIDDEN_TYPE_DIRECTIVE_PATTERN = new RegExp(`${TYPE_DIRECTIVE_PREFIX}(?:ignore|nocheck)\\b`);
@@ -117,12 +123,13 @@ function readSourceForAnalysis(path: string, source: string): string {
     .join("\n");
 }
 
-function collectFilesRecursively(directory: string): string[] {
+function collectFilesRecursively(directory: string, projectRoot: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...collectFilesRecursively(path));
+    if (entry.isDirectory() && projectRelativePath(projectRoot, path) === "release/staging") continue;
+    if (entry.isDirectory()) files.push(...collectFilesRecursively(path, projectRoot));
     else if (entry.isFile() && CODE_EXTENSIONS.has(extname(entry.name).toLowerCase())) files.push(path);
   }
   return files;
@@ -141,7 +148,7 @@ function collectSourceFiles(
       violations.push({ code: "missing-scan-root", detail: "declared source-policy scan root does not exist", path: root });
       continue;
     }
-    for (const path of collectFilesRecursively(absoluteRoot)) absolutePaths.add(resolve(path));
+    for (const path of collectFilesRecursively(absoluteRoot, projectRoot)) absolutePaths.add(resolve(path));
   }
 
   const sources = new Map<string, SourceFile>();
@@ -367,6 +374,39 @@ function resolveImportedSource(
   return null;
 }
 
+function checkApplicationBoundaries(
+  projectRoot: string,
+  sources: ReadonlyMap<string, SourceFile>,
+  violations: ProjectPolicyViolation[],
+): void {
+  const isTest = (path: string) => /(?:Tests|\.test|\.typeTests)\.[cm]?tsx?$/.test(path);
+  const isForbiddenModule = (path: string) => path.startsWith("src/composables/")
+    || path.startsWith("src/native/") || path.startsWith("vendor/")
+    || path === "src/api/launchpadApi.ts" || path === "src/platform/launchpadPorts.ts";
+  const forbiddenPackage = /^(?:vue(?:-i18n)?(?:\/|$)|@tauri-apps\/|electrobun(?:\/|$)|bun(?:$|:)|node:)/;
+  for (const [entry, source] of sources) {
+    if (!entry.startsWith("src/application/") || isTest(entry)) continue;
+    const visited = new Set<string>();
+    const walk = (file: SourceFile, chain: readonly string[]): void => {
+      if (visited.has(file.relativePath)) return;
+      visited.add(file.relativePath);
+      for (const imported of ts.preProcessFile(readSourceForAnalysis(file.relativePath, file.source), true, true).importedFiles) {
+        const specifier = imported.fileName;
+        const target = resolveImportedSource(projectRoot, file, specifier, sources);
+        const relativeTarget = specifier.startsWith(".")
+          ? projectRelativePath(projectRoot, resolve(dirname(file.absolutePath), specifier)).replace(/\.js$/, ".ts") : specifier;
+        if (forbiddenPackage.test(specifier) || isBuiltin(specifier) || isForbiddenModule(target ?? relativeTarget) || (target !== null && isTest(target))) {
+          violations.push({ code: "application-host-dependency", path: entry,
+            detail: `shared application dependency crosses the host boundary: ${[...chain, specifier].join(" -> ")}` });
+        } else if (target && !isTest(target)) {
+          walk(sources.get(target)!, [...chain, target]);
+        }
+      }
+    };
+    walk(source, [entry]);
+  }
+}
+
 function checkTestRegistration(
   projectRoot: string,
   sources: ReadonlyMap<string, SourceFile>,
@@ -459,6 +499,7 @@ export function analyzeProjectPolicy(options: ProjectPolicyOptions): ProjectPoli
   const sources = collectSourceFiles(projectRoot, options.scanRoots, violations);
   const compiledPaths = collectStrictConfigCoverage(projectRoot, options.strictConfigs, violations);
   checkSourcePolicies(sources, compiledPaths, violations);
+  checkApplicationBoundaries(projectRoot, sources, violations);
   const runtimeTestSuites = checkTestRegistration(
     projectRoot,
     sources,
@@ -483,7 +524,7 @@ function runCli(): void {
   const result = analyzeProjectPolicy({
     projectRoot,
     scanRoots: ["."],
-    strictConfigs: ["tsconfig.json", "tsconfig.tools.json"],
+    strictConfigs: ["tsconfig.json", "tsconfig.tools.json", "tsconfig.electrobun.json"],
     testRoot: "src",
     testRunner: "src/domain/runLaunchpadLayoutTests.ts",
   });

@@ -10,7 +10,7 @@ import type {
   LaunchFailureReport,
   LaunchTargetCheckRequest,
   ScanStats,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import type { LiveDesktopBackgroundSupport, LiveDesktopRuntimeConfig, LiveDesktopRuntimeStatus } from "../api/liveDesktopContract.js";
 import type { CatalogScanFilters, CatalogScanRoot, CatalogSource, ScannedCatalogApp } from "../domain/applicationCatalog.js";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
@@ -36,7 +36,7 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_IMAGE_LAYOUT_CENTER,
@@ -60,7 +60,7 @@ import {
   WINDOW_EFFECT_MATERIAL_MICA,
   WINDOW_EFFECT_MATERIAL_MICA_ALT,
   WINDOW_MODE_WINDOWED,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -1190,7 +1190,7 @@ export async function runLaunchpadNativeTests() {
         pages: [[{ id: "acrylic-app", type: "manualApp", name: "Acrylic", launchTarget: { kind: "shortcut", path: "Acrylic.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
-          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
           backgroundImagePath: "C:/Images/acrylic.webp",
         },
       };
@@ -1205,9 +1205,9 @@ export async function runLaunchpadNativeTests() {
     await native.loadNativeLaunchpadData();
     await flushMicrotasks(3);
 
-    assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for webgl acrylic");
-    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve webgl acrylic background effect");
-    assert(options.settings.draft.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync webgl acrylic draft effect");
+    assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_CUSTOM_IMAGE, "native load should apply custom image source for acrylic");
+    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC, "native load should preserve acrylic background effect");
+    assert(options.settings.draft.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC, "native load should sync acrylic draft effect");
   });
 
   await withMockTauri(async (command) => {
@@ -1244,7 +1244,7 @@ export async function runLaunchpadNativeTests() {
         pages: [[]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
-          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
           backgroundImagePath: null,
         },
       };
@@ -1277,8 +1277,8 @@ export async function runLaunchpadNativeTests() {
     await native.loadNativeLaunchpadData();
     await flushMicrotasks(3);
 
-    assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when webgl acrylic has no image path");
-    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset webgl acrylic without an image path");
+    assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_SYSTEM_MATERIAL, "native load should fall back when acrylic has no image path");
+    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED, "native load should reset acrylic without an image path");
   });
 
   await withMockTauri(async (command) => {
@@ -1392,7 +1392,7 @@ export async function runLaunchpadNativeTests() {
         pages: [[{ id: "live-acrylic-app", type: "manualApp", name: "Live Acrylic", launchTarget: { kind: "shortcut", path: "Live Acrylic.lnk" } }]],
         settings: {
           backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
-          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+          backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
           backgroundImagePath: "C:/Images/ignored.webp",
         },
       };
@@ -1425,10 +1425,10 @@ export async function runLaunchpadNativeTests() {
     await native.loadNativeLaunchpadData();
 
     assert(options.settings.presentation.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should keep supported live desktop backgrounds");
-    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should preserve live desktop acrylic when effects are supported");
+    assert(options.settings.presentation.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC, "native load should preserve live desktop acrylic when effects are supported");
     assert(options.settings.presentation.backgroundImagePath.value === null, "native load should not keep image paths for live desktop backgrounds");
     assert(options.settings.draft.backgroundSource.value === BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP, "native load should sync live desktop background draft");
-    assert(options.settings.draft.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "native load should sync live desktop acrylic draft");
+    assert(options.settings.draft.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC, "native load should sync live desktop acrylic draft");
     assert(readRuntimePhase(options.liveDesktopRuntime.status) === "running", "native load should start the live desktop runtime for saved live desktop backgrounds");
   }, {
     passLiveDesktopBackgroundSupport: true,
@@ -1534,7 +1534,7 @@ export async function runLaunchpadNativeTests() {
     options.restoreSettings({
       backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
       backgroundImagePath: "C:/Images/live-config.png",
-      backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+      backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
       backgroundLiveDesktopOpacity: 37,
       backgroundBlurStrength: 72,
       backgroundAcrylicBlurStrength: 84,
@@ -1567,7 +1567,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialRuntimeConfig.skipBlankFrames === false, "runtime config should keep blank frame skipping disabled by default");
     assert(initialRuntimeConfig.forceDwmFlush === false, "runtime config should keep DWM flush disabled by default");
     assert(initialRuntimeConfig.opacity === 37, "runtime config should include live desktop opacity");
-    assert(initialRuntimeConfig.effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should include the selected effect");
+    assert(initialRuntimeConfig.effect === BACKGROUND_EFFECT_ACRYLIC, "runtime config should include the selected effect");
     assert(initialRuntimeConfig.blurStrength === 84, "runtime config should include acrylic blur strength");
     assert(initialRuntimeConfig.darkenColor === "#334455", "runtime config should include darken color");
     assert(initialRuntimeConfig.darkenStrength === 41, "runtime config should include darken strength");
@@ -1576,7 +1576,7 @@ export async function runLaunchpadNativeTests() {
     assert(initialRuntimeConfig.acrylicParams.tintColor[1] === 0.2, "runtime config should include acrylic tint color");
     const initialEffectPlan = initialRuntimeConfig.effectPlan;
     assert(initialEffectPlan !== null, "runtime config should include the shared effect plan");
-    assert(initialEffectPlan.effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime config should preserve the effect in the shared plan");
+    assert(initialEffectPlan.effect === BACKGROUND_EFFECT_ACRYLIC, "runtime config should preserve the effect in the shared plan");
     assert(initialEffectPlan.acrylic.brightness === 1.2, "runtime effect plan should include normalized acrylic params");
     assert(initialEffectPlan.acrylic.alpha === 0.37, "runtime effect plan should carry acrylic composite alpha");
     assert(readRuntimePhase(options.liveDesktopRuntime.status) === "failed", "runtime start should apply returned failure state");
@@ -1723,10 +1723,10 @@ export async function runLaunchpadNativeTests() {
     assert(readRuntimePhase(optionsForLiveDesktopSync.liveDesktopRuntime.status) === "running", "runtime sync should apply the started status");
 
     liveDesktopSyncCommands.length = 0;
-    optionsForLiveDesktopSync.restoreSettings({ backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL });
+    optionsForLiveDesktopSync.restoreSettings({ backgroundEffect: BACKGROUND_EFFECT_ACRYLIC });
     await native.syncLiveDesktopBackgroundRuntime();
     assert(liveDesktopSyncCommands.join(",") === "configure_live_desktop_background", "runtime sync should reconfigure an already running live desktop runtime");
-    assert(requireLast(liveDesktopSyncConfigs, "updated live desktop sync config").effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL, "runtime sync should send updated effects to a running runtime");
+    assert(requireLast(liveDesktopSyncConfigs, "updated live desktop sync config").effect === BACKGROUND_EFFECT_ACRYLIC, "runtime sync should send updated effects to a running runtime");
 
     liveDesktopSyncCommands.length = 0;
     const restartRequest = native.restartLiveDesktopBackgroundRuntime();
@@ -2522,6 +2522,16 @@ export async function runLaunchpadNativeTests() {
     }
   });
 
+  await withMockTauri(async command => {
+    if (command === "launch_app") throw { kind: "cancelled", detail: "user declined elevation" };
+    throw new Error(`Cancellation must not invoke ${command}`);
+  }, async () => {
+    const { options } = makeOptions();
+    const native = createNative(options);
+    const result = await native.launchNativeAppIfAvailable({id:"cancelled-app",type:"app",name:"Cancelled App"});
+    assert(result !== true && result?.kind === "cancelled", "cancelled elevation must retain a distinct result");
+  });
+
   const englishLocalizationText = createLocalization({
     issue: null,
     match: "exact",
@@ -2550,7 +2560,7 @@ export async function runLaunchpadNativeTests() {
         type: "app",
         name: "Blocked App",
       });
-      assert(failure !== true && failure !== undefined, "blocked native launches should return a failure report");
+      assert(failure !== true && failure !== undefined && "message" in failure, "blocked native launches should return a failure report");
       await native.showNativeLaunchError(failure);
     } finally {
       console.error = originalConsoleError;

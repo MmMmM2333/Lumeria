@@ -15,6 +15,7 @@ import {
   ICON_BOUNDS_KIND,
   ICON_BOUNDS_VARIANT,
 } from "../geometry/iconBoundsRegistry.js";
+import { closingFolderTargetLabel } from "../../../domain/input/launchpadPointerTarget.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { flushMotionRuntimeTestFrame } from "../animation/motionRuntimeTestHarness.js";
 import { FolderVisualSession } from "./folderVisualSession.js";
@@ -2607,6 +2608,17 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
     assert(Math.abs(layer.panel.alpha - 0.97) < 0.001, "open progress should interpolate panel alpha");
     assert(layer.panelOpenProgressDriven, "open progress should mark the panel presentation as progress-driven");
     assert(motionRuntime.debugSnapshot().summary.activeAnimationCount === 0, "open progress should not start a competing panel spring");
+    let boundsUpdates = 0;
+    layer.markRegisteredBoundsDirty = () => { boundsUpdates += 1; };
+    layer.animatePanel(state, 580, 380, panelRect, sourceRect);
+    assert(boundsUpdates === 0, "unchanged progress and geometry must not enqueue bounds work");
+    layer.animatePanel({ ...state, folderOpenProgress: 0.75 }, 580, 380, panelRect, sourceRect);
+    assert(Number(boundsUpdates) === 1, "changed progress must refresh bounds");
+    layer.animatePanel({ ...state, folderOpenProgress: 0.75 }, 600, 380, panelRect, sourceRect);
+    assert(Number(boundsUpdates) === 2, "changed panel target must refresh bounds even at unchanged progress");
+    layer.panel.x -= 5;
+    layer.animatePanel({ ...state, folderOpenProgress: 0.75 }, 600, 380, panelRect, sourceRect);
+    assert(Number(boundsUpdates) === 3, "restoring externally changed panel geometry must refresh bounds");
     motionRuntime.reset();
   }
 
@@ -2690,6 +2702,10 @@ export async function runFolderOverlayLayerTests(): Promise<void> {
 
     assert(layer.detachClosingPresentationForOpen("folder-b"), "cross-folder interruption should detach the active close presentation");
     const visual = layer.detachedClosingVisuals[0];
+    assert(
+      visual?.container.label === closingFolderTargetLabel("folder-a"),
+      "a detached closing residual must label the folder identity it still belongs to so hosts can classify the press"
+    );
     const afterFrameBounds = visual?.frame?.getBounds();
     const afterGhostOrigin = closingGhost.toGlobal({ x: 0, y: 0 });
     const afterGhostUnit = closingGhost.toGlobal({ x: 1, y: 0 });

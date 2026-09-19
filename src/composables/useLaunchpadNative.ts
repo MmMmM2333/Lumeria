@@ -1,7 +1,7 @@
 import { nextTick, ref, type Ref } from "vue";
 import {
   DESKTOP_CLOSE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 import { createBackgroundEffectPlan } from "../domain/backgroundEffectPlan.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import { getKawaseDebugEffectPlanParams } from "../rendering/backgroundDebugPort.js";
@@ -20,7 +20,7 @@ import type {
 import {
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_SOURCE_WINDOWS_WALLPAPER,
   backgroundSourceUsesLiveDesktop,
   clampBackgroundAcrylicBlurStrength,
@@ -32,7 +32,7 @@ import {
   normalizeBackgroundDarkenColor,
   normalizeBackgroundEffect,
   normalizeBackgroundImagePath,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   DEFAULT_LIVE_DESKTOP_DEBUG_SETTINGS,
@@ -41,10 +41,11 @@ import {
 import { runtimePerformanceMetrics } from "../diagnostics/runtimePerformanceMetrics.js";
 import type {
   LaunchFailureReport,
+  LaunchResult,
   LaunchTargetCheckResult,
   ScanAppsResult,
   ScanStats,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import type {
   LiveDesktopEffectPlan,
   LiveDesktopRuntimeConfig,
@@ -366,7 +367,7 @@ function makeLiveDesktopRuntimeConfig(
     acrylicProfile
   );
   const effect = normalizeBackgroundEffect(config.effect);
-  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+  const blurStrength = effect === BACKGROUND_EFFECT_ACRYLIC
     ? clampBackgroundAcrylicBlurStrength(config.backgroundAcrylicBlurStrength)
     : clampBackgroundBlurStrength(config.backgroundBlurStrength);
   return {
@@ -940,12 +941,13 @@ export function useLaunchpadNative(options: LaunchpadNativeOptions) {
 
   async function launchNativeAppIfAvailable(
     app: ReadonlyLaunchpadApp,
-  ): Promise<true | LaunchFailureReport | undefined> {
+  ): Promise<LaunchResult> {
     if (!shouldUseNativeCatalog()) return;
     try {
       await platform.launchApp(app);
       return true;
     } catch (error) {
+      if (isRecord(error) && error.kind === "cancelled") return { kind: "cancelled" };
       console.error(`Failed to launch ${app.name}`, error);
       return normalizeLaunchErrorReport(error, app);
     }

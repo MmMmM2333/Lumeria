@@ -6,13 +6,17 @@ import type {
   Text,
   TextStyleFontWeight,
 } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { killMotionOf, motionAdd, motionSequence, motion } from "../animation/motionTween.js";
 import type { MotionControl } from "../animation/motionTween.js";
-import { iconTextureRepository } from "../assets/iconTextureRepository.js";
+import {
+  iconTextureRepository,
+  type IconTextureRepository,
+} from "../assets/iconTextureRepository.js";
 import {
   getCenteredLocalRect,
   mapDisplayObjectLocalRectToStageRect,
@@ -49,8 +53,10 @@ import {
 } from "./iconFolderHoverState.js";
 import type { IconFolderHoverState } from "./iconFolderHoverState.js";
 import { getIconLabelRenderState } from "./iconLabelLayout.js";
+import { resolveLabelRasterWidth } from "./iconLabelRaster.js";
 import {
   drawFocusFrame,
+  shouldDrawFocusFrame,
   getFocusFrameRect as getFocusFrameRectForIcon,
 } from "./iconFocusFrame.js";
 import {
@@ -100,6 +106,7 @@ export type IconNodeActionHandler = (
 ) => void;
 
 export interface IconNodeOptions {
+  readonly iconTextures?: IconTextureRepository | undefined;
   readonly onAction?: IconNodeActionHandler | undefined;
 }
 
@@ -144,6 +151,7 @@ interface FolderHoverFrameState {
 interface AppFolderCreateFrameState {
   alpha: number;
   padding: number;
+  scale: number;
 }
 
 function makeLabelText(fontSize = 13): Text {
@@ -152,9 +160,9 @@ function makeLabelText(fontSize = 13): Text {
     style: {
       align: "center",
       fill: 0xffffff,
-      fontFamily: "Inter, Segoe UI, sans-serif",
+      fontFamily: [...PIXI_UI_FONT_FAMILY],
       fontSize,
-      fontWeight: "520" as TextStyleFontWeight,
+      fontWeight: "500" as TextStyleFontWeight,
       lineHeight: Math.round(fontSize * 1.22),
       wordWrap: true,
       wordWrapWidth: 160,
@@ -251,6 +259,7 @@ const APP_FOLDER_CREATE_DIM_DURATION = 0.12;
 const APP_FOLDER_CREATE_FRAME_DURATION = 0.16;
 const APP_FOLDER_CREATE_BLEND_DURATION = 0.08;
 const APP_FOLDER_CREATE_BLEND_EASE = "power2.out";
+const EMOJI_FONT_FAMILY = [...new Set(["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", ...PIXI_UI_FONT_FAMILY])];
 const ICON_OPENING_SCALE = 1.08;
 const JIGGLE_ROTATION = 0.032;
 const JIGGLE_Y = 1;
@@ -308,6 +317,7 @@ export class IconNode extends Container {
   declare readonly folderCreateBackdrop: Graphics;
   declare readonly folderCreateFlashOverlay: Graphics;
   declare readonly iconSprite: Sprite;
+  declare readonly iconTextures: IconTextureRepository;
   declare readonly emojiText: Text;
   declare readonly labelText: Text;
   declare readonly labelTransitionText: Text;
@@ -325,6 +335,7 @@ export class IconNode extends Container {
   declare readonly folderHoverFrame: FolderHoverFrameState;
   declare folderPreviewPlanKey: string | null;
   declare appFolderCreateActive: boolean;
+  declare appFolderCreateClearing: boolean;
   declare appFolderCreateKey: string | null;
   declare appFolderCreatePhase: string | null;
   declare readonly appFolderCreateFrame: AppFolderCreateFrameState;
@@ -360,6 +371,7 @@ export class IconNode extends Container {
     this.openingScaleActive = null;
     this.interactionPhase = null;
     this.onAction = options.onAction || (() => {});
+    this.iconTextures = options.iconTextures || iconTextureRepository;
 
     this.focusFrame = new Graphics();
     this.batchSelectionBadge = new Container();
@@ -370,7 +382,7 @@ export class IconNode extends Container {
       style: {
         align: "center",
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 12,
         fontWeight: "800" as TextStyleFontWeight,
         lineHeight: 12,
@@ -382,7 +394,13 @@ export class IconNode extends Container {
     this.folderSlotReleaseSprite = new Sprite();
     this.folderSlotReleaseEmoji = createPixiText({
       text: "",
-      style: { align: "center", fill: 0xffffff, fontSize: 16, lineHeight: 0 },
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: EMOJI_FONT_FAMILY,
+        fontSize: 16,
+        lineHeight: 0,
+      },
     });
     this.folderThumb = new Graphics();
     this.folderPreviewMask = new Graphics();
@@ -394,7 +412,13 @@ export class IconNode extends Container {
     this.iconSprite = new Sprite();
     this.emojiText = createPixiText({
       text: "",
-      style: { align: "center", fill: 0xffffff, fontSize: 64, lineHeight: 64 },
+      style: {
+        align: "center",
+        fill: 0xffffff,
+        fontFamily: EMOJI_FONT_FAMILY,
+        fontSize: 64,
+        lineHeight: 64,
+      },
     });
     this.labelText = makeLabelText();
     this.labelTransitionText = makeLabelText();
@@ -405,7 +429,7 @@ export class IconNode extends Container {
       style: {
         align: "center",
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 12,
         fontWeight: "800" as TextStyleFontWeight,
         lineHeight: 12,
@@ -422,9 +446,10 @@ export class IconNode extends Container {
     this.folderHoverFrame = { padding: 0 };
     this.folderPreviewPlanKey = null;
     this.appFolderCreateActive = false;
+    this.appFolderCreateClearing = false;
     this.appFolderCreateKey = null;
     this.appFolderCreatePhase = null;
-    this.appFolderCreateFrame = { alpha: 0, padding: 0 };
+    this.appFolderCreateFrame = { alpha: 0, padding: 0, scale: 1 };
     this.appFolderCreateBackdropSig = "";
     this.appFolderCreateFlashSig = "";
     this.editButtonSigs = new WeakMap();
@@ -871,11 +896,17 @@ export class IconNode extends Container {
   }
 
   renderFrame(state: IconVisualState): void {
+    const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
+    const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
+    if (!shouldDrawFocusFrame({ focused: state.focused, batchSelected: state.batchSelected,
+      dropTarget: state.dropTarget, isFolderDropHover, isAppFolderCreateHover })) {
+      if (this.focusFrameSig !== "hidden") this.focusFrame.clear();
+      this.focusFrameSig = "hidden";
+      return;
+    }
     const rect = state.batchSelected
       ? this.getBatchSelectionFrameRect(state)
       : this.getFocusFrameRect(state);
-    const isFolderDropHover = Boolean(this.isFolder && state.folderHoverState?.targetId === this.item?.id);
-    const isAppFolderCreateHover = Boolean(!this.isFolder && state.folderHoverState?.targetId === this.item?.id && state.folderHoverState?.targetType === "app");
     const sig = [
       numberSig(rect.left),
       numberSig(rect.top),
@@ -999,7 +1030,7 @@ export class IconNode extends Container {
 
     this.hideFolderChildren();
     const itemId = this.item?.id;
-    const texture = iconTextureRepository.resolve(this.item, () => {
+    const texture = this.iconTextures.resolve(this.item, () => {
       if (this.destroyed || this.item?.id !== itemId || !this.state) return;
       this.renderVisual(this.state);
     }, this);
@@ -1075,7 +1106,8 @@ export class IconNode extends Container {
     const thumb = getFolderThumbMetrics(size);
     const plan = getFolderPreviewMotionPlan(
       this.item as SceneItem & { readonly childPages?: unknown } | null,
-      state.folderPreviewPageSize,
+      this.getActiveFolderHoverState(state)||this.folderHoverActive||this.folderHoverClearing||this.folderChildrenWrap.y!==0
+        ?state.folderPreviewPageSize:Math.min(9,state.folderPreviewPageSize||9),
       thumb,
     );
     this.drawFolderThumbFrame(size, thumb);
@@ -1089,7 +1121,7 @@ export class IconNode extends Container {
       const childSprite = new Sprite();
       const childEmoji = createPixiText({
         text: "",
-        style: { align: "center", fill: 0xffffff, fontSize: 14, lineHeight: 0 },
+        style: { align: "center", fill: 0xffffff, fontFamily: EMOJI_FONT_FAMILY, fontSize: 14, lineHeight: 0 },
       });
       childSprite.anchor.set(0.5);
       childEmoji.anchor.set(0.5);
@@ -1117,7 +1149,7 @@ export class IconNode extends Container {
         continue;
       }
       const childId = child.id;
-      const texture = iconTextureRepository.resolve(child, () => {
+      const texture = this.iconTextures.resolve(child, () => {
         if (this.destroyed || !this.state || this.item?.type !== "folder") return;
         const currentPlan = getFolderPreviewMotionPlan(
           this.item as SceneItem & { readonly childPages?: unknown } | null,
@@ -1316,7 +1348,9 @@ export class IconNode extends Container {
       .ease("power3.out")
       .overlay()
       .blend(FOLDER_HOVER_BLEND_DURATION, FOLDER_HOVER_BLEND_EASE)
-      .to({ y: 0 })
+      .to({ y: 0,onComplete:()=>{
+        if(!this.destroyed&&this.isFolder&&this.state&&!this.getActiveFolderHoverState(this.state))this.renderFolderThumb(this.state);
+      } })
       .start();
     killMotionOf(this.folderFlashOverlay);
     this.folderFlashOverlay.alpha = 0;
@@ -1354,10 +1388,10 @@ export class IconNode extends Container {
   }
 
   drawAppFolderCreateBackdrop(): void {
-    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.alpha)}:${numberSig(this.appFolderCreateFrame.padding)}`;
+    const sig = `${numberSig(this.iconSize)}:${numberSig(this.appFolderCreateFrame.padding)}`;
     if (this.appFolderCreateBackdropSig === sig) return;
     this.appFolderCreateBackdropSig = sig;
-    drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, this.appFolderCreateFrame);
+    drawAppFolderCreateBackdropGraphic(this.folderCreateBackdrop, this.iconSize, {alpha:1,padding:this.appFolderCreateFrame.padding});
   }
 
   drawAppFolderCreateFlashOverlay(): void {
@@ -1369,6 +1403,9 @@ export class IconNode extends Container {
 
   redrawAppFolderCreateFrame(): void {
     this.drawAppFolderCreateBackdrop();
+    this.folderCreateBackdrop.alpha = this.appFolderCreateFrame.alpha;
+    this.folderCreateBackdrop.scale.set(this.appFolderCreateFrame.scale);
+    this.folderCreateBackdrop.visible = this.appFolderCreateActive || this.appFolderCreateClearing;
     if (this.folderCreateFlashOverlay.visible) this.drawAppFolderCreateFlashOverlay();
   }
 
@@ -1378,19 +1415,13 @@ export class IconNode extends Container {
   ): void {
     const previousPadding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
     const nextPadding = Math.max(0, Number(targetPadding) || 0);
-    const previousScale = Math.max(0.01, Number(this.folderCreateBackdrop.scale?.x) || 1);
-    const previousAlpha = this.folderCreateBackdrop.visible
-      ? Math.max(0, Number(this.folderCreateBackdrop.alpha) || 0)
-      : Math.max(0, Number(this.appFolderCreateFrame.alpha) || 0);
+    const previousScale = Math.max(0.01, this.appFolderCreateFrame.scale);
     const nextScale = options.preserveCurrentScale
       ? previousScale
       : previousScale * getPaddedFrameScale(this.iconSize, previousPadding, nextPadding);
-    this.appFolderCreateFrame.alpha = 1;
     this.appFolderCreateFrame.padding = nextPadding;
-    this.drawAppFolderCreateBackdrop();
-    this.folderCreateBackdrop.alpha = previousAlpha;
-    this.folderCreateBackdrop.visible = true;
-    this.folderCreateBackdrop.scale.set(nextScale);
+    this.appFolderCreateFrame.scale = nextScale;
+    this.redrawAppFolderCreateFrame();
   }
 
   tweenAppFolderCreateIconAlpha(alpha: number, options: ImmediateOption = {}): void {
@@ -1418,13 +1449,15 @@ export class IconNode extends Container {
 
     const wasActive = this.appFolderCreateActive;
     this.appFolderCreateActive = true;
+    this.appFolderCreateClearing = false;
     const targetPadding = this.getAppFolderCreateTargetPadding();
     this.prepareAppFolderCreateBackdrop(targetPadding, {
       preserveCurrentScale: wasActive || this.folderCreateBackdrop.visible,
     });
     if (!wasActive) {
-      killMotionOf(this.appFolderCreateFrame);
-      motion(this.folderCreateBackdrop)
+      // Geometry updates and interrupted exits share one presentation state.
+      // Never animate Graphics.alpha while renderVisual writes a second alpha.
+      motion(this.appFolderCreateFrame)
         .duration(APP_FOLDER_CREATE_FRAME_DURATION)
         .ease("power3.out")
         .overlay()
@@ -1432,6 +1465,8 @@ export class IconNode extends Container {
         .to({
           alpha: 1,
           scale: 1,
+          onUpdate: () => this.redrawAppFolderCreateFrame(),
+          onComplete: () => this.redrawAppFolderCreateFrame(),
         })
         .start();
       this.tweenAppFolderCreateIconAlpha(APP_FOLDER_CREATE_DIM_ALPHA);
@@ -1461,19 +1496,21 @@ export class IconNode extends Container {
       this.emojiText.alpha !== 1 ||
       this.folderCreateFlashOverlay.visible;
     if (!shouldClear) return;
+    if (this.appFolderCreateClearing && !options.immediate) return;
 
     this.appFolderCreateActive = false;
     this.appFolderCreateKey = null;
     this.appFolderCreatePhase = null;
-    killMotionOf(this.appFolderCreateFrame);
     killMotionOf(this.folderCreateFlashOverlay);
     this.folderCreateFlashOverlay.alpha = 0;
     this.folderCreateFlashOverlay.visible = false;
 
     if (options.immediate) {
-      killMotionOf(this.folderCreateBackdrop, "alpha,scale");
+      killMotionOf(this.appFolderCreateFrame);
+      this.appFolderCreateClearing = false;
       this.appFolderCreateFrame.alpha = 0;
       this.appFolderCreateFrame.padding = 0;
+      this.appFolderCreateFrame.scale = 1;
       this.appFolderCreateBackdropSig = "";
       this.appFolderCreateFlashSig = "";
       this.folderCreateBackdrop.alpha = 0;
@@ -1487,7 +1524,8 @@ export class IconNode extends Container {
 
     const targetPadding = Math.max(0, Number(this.appFolderCreateFrame.padding) || 0);
     const hiddenScale = getPaddedFrameScale(this.iconSize, 0, targetPadding);
-    motion(this.folderCreateBackdrop)
+    this.appFolderCreateClearing = true;
+    motion(this.appFolderCreateFrame)
       .duration(FOLDER_HOVER_RESET_DURATION)
       .ease("power3.out")
       .overlay()
@@ -1495,9 +1533,13 @@ export class IconNode extends Container {
       .to({
         alpha: 0,
         scale: hiddenScale,
+        onUpdate: () => this.redrawAppFolderCreateFrame(),
         onComplete: () => {
+          if (this.appFolderCreateActive) return;
+          this.appFolderCreateClearing = false;
           this.appFolderCreateFrame.alpha = 0;
           this.appFolderCreateFrame.padding = 0;
+          this.appFolderCreateFrame.scale = 1;
           this.appFolderCreateBackdropSig = "";
           this.folderCreateBackdrop.clear();
           this.folderCreateBackdrop.visible = false;
@@ -1515,7 +1557,7 @@ export class IconNode extends Container {
   }
 
   renderLabel(state: IconVisualState): void {
-    const labelState = getIconLabelRenderState({
+    const requestedLabelState = getIconLabelRenderState({
       cellWidth: state.cellWidth,
       compact: state.compact,
       iconSize: this.iconSize,
@@ -1523,6 +1565,9 @@ export class IconNode extends Container {
       singleLineLabel: state.singleLineLabel,
       textless: this.textless,
     });
+    const labelState = requestedLabelState.visible
+      ? { ...requestedLabelState, wordWrapWidth: resolveLabelRasterWidth(this.labelText, requestedLabelState) }
+      : requestedLabelState;
     const sig = [
       boolSig(labelState.visible),
       (labelState as VisibleIconLabelState).text || "",

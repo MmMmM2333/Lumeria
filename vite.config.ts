@@ -3,11 +3,7 @@ import Icons from "unplugin-icons/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  server: {
-    watch: {
-      ignored: ["**/src-tauri/**"],
-    },
-  },
+  server: { watch: { ignored: ["**/target/**", "**/.codex-dev/**", "**/artifacts/**", "**/build/**"] } },
   plugins: [
     vue({
       template: {

@@ -215,7 +215,7 @@ export async function runLiveDesktopRuntimeTests() {
   calls.length = 0;
   const secondConfig: LiveDesktopRuntimeConfig = {
     ...BASE_CONFIG,
-    effect: "acrylicWebgl",
+    effect: "acrylic",
     opacity: 70,
   };
   await runtime.sync({ enabled: true, visible: true, config: secondConfig });

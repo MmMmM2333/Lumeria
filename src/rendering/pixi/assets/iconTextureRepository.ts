@@ -11,8 +11,10 @@ import {
 
 export type IconTextureItem = Readonly<{
   customIconDataUrl?: string | null;
+  customIconPath?: string | null;
   customIconUrl?: string | null;
   iconDataUrl?: string | null;
+  iconPath?: string | null;
   iconUrl?: string | null;
   id?: string | null;
 }>;
@@ -24,6 +26,8 @@ export type IconTextureRepositorySnapshot = Readonly<{
     sourceDestroyed: boolean;
     sourcePixelHeight: number | null;
     sourcePixelWidth: number | null;
+    retainedPixelBytes: number | null;
+    retainedEncodedBytes: number;
     sourceUid: number | null;
     textureDestroyed: boolean;
     textureUid: number | null;
@@ -46,7 +50,10 @@ export type IconTextureRepository = Readonly<{
 
 type RepositoryOptions = Readonly<{
   loadTexture?: (source: string) => Promise<Texture>;
+  maxConcurrentLoads?: number;
+  resolveSource?: (item: IconTextureItem | null | undefined) => string | null;
   scheduleAfterFrame?: (callback: () => void) => void;
+  isTextureInUse?: (texture: Texture) => boolean;
 }>;
 
 type TextureErrorEntry = Readonly<{
@@ -118,8 +125,21 @@ function makeItemKey(item: IconTextureItem, source: string): string {
   return id || `@source:${source}`;
 }
 
-export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository {
+export function createIconTextureRepository(options: RepositoryOptions = {}): IconTextureRepository & {
+  retain(items: readonly (IconTextureItem | null | undefined)[]): void;
+  retireUnused(): void;
+  prepare(items: readonly IconTextureItem[]): Promise<void>;
+  pendingWork(sources?: ReadonlySet<string>): Promise<void> | undefined;
+} {
   const loadTexture = options.loadTexture || loadTextureFromImage;
+  const maxConcurrentLoads = options.maxConcurrentLoads ?? Infinity;
+  if (maxConcurrentLoads !== Infinity && (!Number.isInteger(maxConcurrentLoads) || maxConcurrentLoads < 1)) {
+    throw new RangeError("Texture load concurrency must be a positive integer");
+  }
+  let activeLoads = 0;
+  let drainingLoads = false;
+  const queuedLoads: { start: () => void; cancel: () => void }[] = [];
+  const resolveSource = options.resolveSource || getPixiIconTextureSource;
   const scheduleAfterFrame = options.scheduleAfterFrame || scheduleAfterRenderFrame;
   const cachedTextures = new Map<string, Texture>();
   const failedTextureSources = new Set<string>();
@@ -178,7 +198,9 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
   }
 
   function isSourceRetained(source: string): boolean {
-    return (activeSourceCounts.get(source) || 0) > 0 || isFallbackSource(source);
+    const texture = cachedTextures.get(source);
+    return (activeSourceCounts.get(source) || 0) > 0 || isFallbackSource(source)
+      || Boolean(texture && options.isTextureInUse?.(texture));
   }
 
   function retireSourceAfterFrame(source: string): void {
@@ -221,37 +243,66 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     }
   }
 
+  function drainLoads(): void {
+    if (drainingLoads) return;
+    drainingLoads = true;
+    try {
+      while (activeLoads < maxConcurrentLoads && queuedLoads.length) queuedLoads.shift()!.start();
+    } finally {
+      drainingLoads = false;
+    }
+  }
+
   function requestTextureLoad(source: string): Promise<void> {
     if (cachedTextures.has(source) || failedTextureSources.has(source)) return Promise.resolve();
     const existing = pendingTextureLoads.get(source);
     if (existing) return existing;
     const loadGeneration = generation;
-    let pending: Promise<void>;
-    pending = loadTexture(source)
-      .then((texture) => {
+    let settle!: () => void;
+    const pending = new Promise<void>((resolve) => { settle = resolve; });
+    const finish = () => {
+      if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
+      settle();
+    };
+    pendingTextureLoads.set(source, pending);
+    queuedLoads.push({
+      cancel: finish,
+      start: () => {
+        // Layout replacement and disposal can obsolete work before it reaches IO.
         if (loadGeneration !== generation || (!isSourceRetained(source) && !textureLoadListeners.has(source))) {
-          destroyTexture(texture);
+          finish();
           return;
         }
-        cachedTextures.set(source, texture);
-        failedTextureSources.delete(source);
-        textureLoadFailureCounts.delete(source);
-        promoteReadyReplacements(source);
-        notifyTextureLoadSettled(source);
-      })
-      .catch((error: unknown) => {
-        if (loadGeneration !== generation) return;
-        const diagnostic = recordTextureError(source, error);
-        console.error("Failed to load icon texture", diagnostic);
-        const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
-        textureLoadFailureCounts.set(source, failureCount);
-        if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
-        notifyTextureLoadSettled(source);
-      })
-      .finally(() => {
-        if (pendingTextureLoads.get(source) === pending) pendingTextureLoads.delete(source);
-      });
-    pendingTextureLoads.set(source, pending);
+        activeLoads += 1;
+        void (async () => {
+          try {
+            const texture = await loadTexture(source);
+            if (loadGeneration !== generation || (!isSourceRetained(source) && !textureLoadListeners.has(source))) {
+              destroyTexture(texture);
+              return;
+            }
+            cachedTextures.set(source, texture);
+            failedTextureSources.delete(source);
+            textureLoadFailureCounts.delete(source);
+            promoteReadyReplacements(source);
+            notifyTextureLoadSettled(source);
+          } catch (error: unknown) {
+            if (loadGeneration !== generation) return;
+            const diagnostic = recordTextureError(source, error);
+            console.error("Failed to load icon texture", diagnostic);
+            const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
+            textureLoadFailureCounts.set(source, failureCount);
+            if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
+            notifyTextureLoadSettled(source);
+          } finally {
+            activeLoads -= 1;
+            finish();
+            drainLoads();
+          }
+        })();
+      },
+    });
+    drainLoads();
     return pending;
   }
 
@@ -260,7 +311,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     onLoad?: (() => void) | null,
     listenerKey: unknown = onLoad,
   ): Texture | null {
-    const source = getPixiIconTextureSource(item) as string | null;
+    const source = resolveSource(item);
     if (!source) return null;
     const cached = cachedTextures.get(source);
     if (cached) return cached;
@@ -273,14 +324,14 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     return fallbackSource ? cachedTextures.get(fallbackSource) || null : null;
   }
 
-  async function synchronize(
+  function retain(
     items: readonly (IconTextureItem | null | undefined)[],
-  ): Promise<IconTextureRepositorySnapshot> {
+  ): void {
     const nextSourceByItemKey = new Map<string, string>();
     const nextActiveSourceCounts = new Map<string, number>();
     for (const item of items || []) {
       if (!item) continue;
-      const source = getPixiIconTextureSource(item) as string | null;
+      const source = resolveSource(item);
       if (!source) continue;
       const itemKey = makeItemKey(item, source);
       nextSourceByItemKey.set(itemKey, source);
@@ -306,7 +357,11 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
 
     for (const source of nextActiveSourceCounts.keys()) promoteReadyReplacements(source);
     retireUnreferencedSources();
-    await Promise.allSettled(Array.from(nextActiveSourceCounts.keys(), requestTextureLoad));
+  }
+
+  async function synchronize(items: readonly (IconTextureItem | null | undefined)[]): Promise<IconTextureRepositorySnapshot> {
+    retain(items);
+    await Promise.allSettled(Array.from(activeSourceCounts.keys(), requestTextureLoad));
     retireUnreferencedSources();
     return snapshot();
   }
@@ -324,6 +379,8 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
       sourceDestroyed: texture.source?.destroyed === true,
       sourcePixelHeight: texture.source?.pixelHeight ?? null,
       sourcePixelWidth: texture.source?.pixelWidth ?? null,
+      retainedPixelBytes: ArrayBuffer.isView(texture.source?.resource) ? texture.source.resource.byteLength : null,
+      retainedEncodedBytes: (texture.source as { retainedEncodedBytes?: number } | undefined)?.retainedEncodedBytes ?? 0,
       sourceUid: texture.source?.uid ?? null,
       textureDestroyed: texture.destroyed === true,
       textureUid: texture.uid ?? null,
@@ -343,6 +400,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
 
   function dispose(): void {
     generation += 1;
+    for (const load of queuedLoads.splice(0)) load.cancel();
     for (const texture of cachedTextures.values()) destroyTexture(texture);
     cachedTextures.clear();
     failedTextureSources.clear();
@@ -357,7 +415,17 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     recentTextureObserverErrors.length = 0;
   }
 
-  return Object.freeze({ dispose, resolve, snapshot, synchronize });
+  function prepare(items: readonly IconTextureItem[]): Promise<void> {
+    return Promise.all(items.map(item => {
+      const source = resolveSource(item);
+      return source && isSourceRetained(source) ? requestTextureLoad(source) : Promise.resolve();
+    })).then(() => {});
+  }
+  function pendingWork(sources?: ReadonlySet<string>): Promise<void> | undefined {
+    const work = [...pendingTextureLoads].filter(([source]) => !sources || sources.has(source)).map(([, promise]) => promise);
+    return work.length ? Promise.all(work).then(() => {}) : undefined;
+  }
+  return Object.freeze({ dispose, resolve, snapshot, synchronize, retain, prepare, pendingWork, retireUnused: retireUnreferencedSources });
 }
 
 export const iconTextureRepository = createIconTextureRepository();

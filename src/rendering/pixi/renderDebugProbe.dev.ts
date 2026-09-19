@@ -371,9 +371,39 @@ interface RenderGlProbe {
   ): void;
 }
 
+interface RenderGpuDeviceLostInfoProbe {
+  message?: unknown;
+  reason?: unknown;
+}
+
+interface RenderGpuUncapturedErrorEventProbe {
+  error?: {
+    constructor?: { name?: string };
+    message?: unknown;
+  } | null;
+}
+
+interface RenderGpuDeviceProbe {
+  addEventListener?(type: string, listener: (event: RenderGpuUncapturedErrorEventProbe) => void): void;
+  features?: Iterable<unknown> | null;
+  limits?: Record<string, unknown> | null;
+  lost?: PromiseLike<RenderGpuDeviceLostInfoProbe> | null;
+  removeEventListener?(type: string, listener: (event: RenderGpuUncapturedErrorEventProbe) => void): void;
+}
+
+interface RenderGpuAdapterProbe {
+  info?: Record<string, unknown> | null;
+}
+
+interface RenderGpuProbe {
+  adapter?: RenderGpuAdapterProbe | null;
+  device?: RenderGpuDeviceProbe | null;
+}
+
 interface RenderProbeRenderer extends Omit<PixiBatchProbeRenderer, "gl"> {
   canvas?: RenderCanvasProbe | null;
   gl?: RenderGlProbe | null;
+  gpu?: RenderGpuProbe | null;
   height?: number | null;
   resolution?: number | null;
   textureGC?: { active?: boolean | null; checkCount?: number | null; count?: number | null } | null;
@@ -430,13 +460,16 @@ function requireProbeRecord(value: unknown, path: string): Record<string, unknow
 }
 
 function adaptRendererForRenderProbe(
-  renderer: Renderer | PixiBatchProbeRenderer | null | undefined,
+  renderer: Renderer | PixiBatchProbeRenderer | RenderProbeRenderer | null | undefined,
 ): AdaptedRenderProbeRenderer | null {
   if (renderer == null) return null;
   const source = requireProbeRecord(renderer, "render probe renderer");
-  for (const key of ["canvas", "gl", "renderPipes", "texture", "textureGC"] as const) {
+  for (const key of ["canvas", "gl", "gpu", "renderPipes", "texture", "textureGC"] as const) {
     if (source[key] != null) requireProbeRecord(source[key], `render probe renderer.${key}`);
   }
+  const gpu = source.gpu as Record<string, unknown> | null | undefined;
+  if (gpu?.adapter != null) requireProbeRecord(gpu.adapter, "render probe renderer.gpu.adapter");
+  if (gpu?.device != null) requireProbeRecord(gpu.device, "render probe renderer.gpu.device");
   if (source.name != null && typeof source.name !== "string") {
     throw new TypeError("render probe renderer.name must be a string");
   }
@@ -1424,6 +1457,29 @@ function makeGlSnapshot(renderer: RenderProbeRenderer | null | undefined) {
   }
 }
 
+function makeGpuSnapshot(renderer: RenderProbeRenderer | null | undefined) {
+  if (renderer?.name !== "webgpu") {
+    return { available: false, reason: `renderer:${renderer?.name || "unknown"}` };
+  }
+  const device = renderer.gpu?.device;
+  if (!device) return { available: false, reason: "webgpu-device-unavailable" };
+  const features = device.features && typeof device.features[Symbol.iterator] === "function"
+    ? Array.from(device.features, (feature) => String(feature)).sort()
+    : [];
+  const limits = device.limits || {};
+  return {
+    adapter: clonePlain(renderer.gpu?.adapter?.info || null),
+    available: true,
+    features,
+    limits: {
+      maxBindGroups: readNumber(limits.maxBindGroups, 0),
+      maxSampledTexturesPerShaderStage: readNumber(limits.maxSampledTexturesPerShaderStage, 0),
+      maxTextureDimension2D: readNumber(limits.maxTextureDimension2D, 0),
+    },
+    reason: null,
+  };
+}
+
 function makeRendererSnapshot(app: RenderProbeApp | null | undefined) {
   const renderer = app?.renderer || null;
   const canvas = app?.canvas || renderer?.canvas || null;
@@ -1435,6 +1491,7 @@ function makeRendererSnapshot(app: RenderProbeApp | null | undefined) {
       width: canvas.width ?? null,
     } : null,
     gl: makeGlSnapshot(renderer),
+    gpu: makeGpuSnapshot(renderer),
     height: renderer?.height ?? null,
     name: renderer?.name || null,
     resolution: renderer?.resolution ?? null,
@@ -1673,7 +1730,7 @@ export function createPixiRenderProbe(options: RenderProbeCreateOptions) {
   let pointerPrelude: PointerPrelude | null = null;
   const recentEvents: RenderProbeEvent[] = [];
   const sessions: RenderProbeSession[] = [];
-  const canvasBindings: (() => void)[] = [];
+  const rendererBindings: (() => void)[] = [];
 
   function timestamp(): number {
     return round(now(), 3);
@@ -1974,22 +2031,61 @@ export function createPixiRenderProbe(options: RenderProbeCreateOptions) {
     return link.download;
   }
 
-  function attachCanvas(canvas: RenderCanvasProbe | null | undefined): () => void {
-    if (!canvas?.addEventListener) return () => {};
+  function attachRenderer(
+    rendererInput: Renderer | RenderProbeRenderer | null | undefined,
+    canvasInput?: RenderCanvasProbe | null,
+  ): () => void {
+    const renderer = adaptRendererForRenderProbe(rendererInput);
+    const canvas = canvasInput || renderer?.canvas;
+    const disposers: (() => void)[] = [];
     const onLost = (event: RenderCanvasEventProbe | null | undefined) => record("webgl-context-lost", { statusMessage: event?.statusMessage || null });
     const onRestored = () => record("webgl-context-restored");
-    canvas.addEventListener("webglcontextlost", onLost);
-    canvas.addEventListener("webglcontextrestored", onRestored);
+    if (canvas?.addEventListener) {
+      canvas.addEventListener("webglcontextlost", onLost);
+      canvas.addEventListener("webglcontextrestored", onRestored);
+      disposers.push(() => {
+        canvas.removeEventListener?.("webglcontextlost", onLost);
+        canvas.removeEventListener?.("webglcontextrestored", onRestored);
+      });
+    }
+
+    const device = renderer?.name === "webgpu" ? renderer.gpu?.device : null;
+    let active = true;
+    if (device?.addEventListener) {
+      const onUncapturedError = (event: RenderGpuUncapturedErrorEventProbe) => record("webgpu-uncaptured-error", {
+        errorType: event.error?.constructor?.name || "GPUError",
+        message: String(event.error?.message || "Unknown WebGPU error"),
+      });
+      device.addEventListener("uncapturederror", onUncapturedError);
+      disposers.push(() => device.removeEventListener?.("uncapturederror", onUncapturedError));
+    }
+    if (device?.lost) {
+      void Promise.resolve(device.lost).then(
+        (info) => {
+          if (active) record("webgpu-device-lost", {
+            message: String(info?.message || ""),
+            reason: String(info?.reason || "unknown"),
+          });
+        },
+        (error) => {
+          if (active) record("webgpu-device-lost-rejected", { error: String(error) });
+        },
+      );
+    }
+
+    let disposed = false;
     const dispose = () => {
-      canvas.removeEventListener?.("webglcontextlost", onLost);
-      canvas.removeEventListener?.("webglcontextrestored", onRestored);
+      if (disposed) return;
+      disposed = true;
+      active = false;
+      for (const release of disposers.splice(0)) release();
     };
-    canvasBindings.push(dispose);
+    rendererBindings.push(dispose);
     return dispose;
   }
 
   function destroy(): void {
-    for (const dispose of canvasBindings.splice(0)) dispose();
+    for (const dispose of rendererBindings.splice(0)) dispose();
   }
 
   const commands = {
@@ -2008,7 +2104,7 @@ export function createPixiRenderProbe(options: RenderProbeCreateOptions) {
 
   return {
     afterRender,
-    attachCanvas,
+    attachRenderer,
     beforeRender,
     commands,
     destroy,

@@ -1,4 +1,4 @@
-import { buildAppSearchDocuments, searchAppDocuments } from "./launchpadSearch.js";
+import { buildAppSearchDocuments, searchAppDocuments,createAppSearchIndex } from "./launchpadSearch.js";
 
 const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new Error(`[Launchpad search domain test failed] ${message}`);
@@ -110,4 +110,18 @@ export function runLaunchpadSearchDomainTests() {
   assert(searchAppDocuments(buildAppSearchDocuments([cpp]), "c++")[0]?.id === cpp.id, "tokenization should not weaken literal punctuation-bearing app names");
 
   assert(searchAppDocuments(mixedDocuments, "").length === 0, "an empty query should not produce search results");
+  const index=createAppSearchIndex<typeof settings>();
+  const first={...settings,id:"first"},second={...settings,id:"second"};
+  index.update([first,second]);
+  const cached=index.search("sz");
+  assert(index.search("sz")===cached,"repeated queries reuse bounded results");
+  assert(index.search("ＳＺ")[0]===first,"full-width input keeps the original matching semantics");
+  index.update([second,first]);
+  assert(index.search("sz")[0]===second,"layout order changes must update tie-breaking");
+  first.name="Calculator";index.update([second,first]);
+  assert(index.search("sz").length===1&&index.search("calc")[0]===first,"rename invalidates names and query results even with mutable input");
+  index.update([first]);assert(index.search("sz").length===0,"removed applications cannot survive in cached results");
+  const beforeEviction=index.search("calc");
+  for(let i=0;i<20;i++)index.search(`query-${i}`);
+  assert(index.search("calc")!==beforeEviction,"query history must evict old result arrays");
 }

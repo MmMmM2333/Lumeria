@@ -1,6 +1,8 @@
 import { ref } from "vue";
 import { useAltEditMode } from "./useAltEditMode.js";
 import type { AltKeyEvent } from "./useAltEditMode.js";
+import { createAltEditMode } from "../application/altEditMode.js";
+import { createNativeStateHost } from "../application/stateHost.js";
 
 function createTimerTarget() {
   let nextId = 1;
@@ -35,16 +37,21 @@ function altEvent(overrides: Partial<AltKeyEvent> = {}): AltKeyEvent {
 }
 
 export function runAltEditModeTests() {
+  for(const native of [false,true])runModeTests(native);
+}
+
+function runModeTests(native:boolean) {
   const assert = (condition: unknown, message: string) => {
     if (!condition) throw new Error(`[Alt edit mode test failed] ${message}`);
   };
   const batchActive = ref(false);
   const target = createTimerTarget();
-  const mode = useAltEditMode({
+  const options = {
     eventTarget: target,
     isBatchSelectionActive: () => batchActive.value,
     isDragActive: () => false,
-  });
+  };
+  const mode = native ? createAltEditMode(options,createNativeStateHost(()=>{})) : useAltEditMode(options);
 
   mode.handleAltKeyDown(altEvent());
   assert(target.size === 1, "normal mode should arm the Alt quick-edit delay");

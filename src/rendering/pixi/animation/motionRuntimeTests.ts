@@ -110,6 +110,25 @@ export function runMotionRuntimeTests(): void {
   };
 
   {
+    const runtime=createMotionRuntime({autoStart:false}),target={x:0},overlay={};
+    let metadataEvents=0;
+    runtime.addObserver(event=>{if(event.type==="targetMetadata")metadataEvents++;});
+    runtime.configureDebug({enabled:false});
+    assert(runtime.describeTarget(target,{label:"disabled"})===null,"disabled diagnostics must not construct unused metadata");
+    runtime.configureDebug({enabled:true});
+    const first=runtime.describeTarget(target,{label:"Icon",overlayTarget:overlay});
+    runtime.describeTarget(target,{label:"Icon",overlayTarget:overlay});
+    assert(metadataEvents===1,"unchanged target metadata should be registered once");
+    assert(first?.targetId!=null&&runtime.resolveDebugTarget(first.targetId,{bounds:true})===overlay,"cached metadata must retain diagnostic bounds lookup");
+    runtime.describeTarget(target,{label:"Renamed",overlayTarget:overlay});
+    assert(Number(metadataEvents)===2,"renaming a target must refresh its metadata");
+    const detail={name:"old"};runtime.describeTarget(target,{detail});detail.name="new";runtime.describeTarget(target,{detail});
+    assert(Number(metadataEvents)===4,"mutable nested metadata must never reuse a stale record");
+    runtime.reset();runtime.configureDebug({enabled:true});runtime.describeTarget(target,{label:"Renamed",overlayTarget:overlay});
+    assert(Number(metadataEvents)===5,"reset must allow live targets to register again");
+  }
+
+  {
     const runtime = createMotionRuntime({ autoStart: false });
     let afterFrameCalls = 0;
     runtime.afterFrame(() => {

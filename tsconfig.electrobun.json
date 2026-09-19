@@ -1,0 +1,48 @@
+{
+  "extends": "./vendor/electrobun-pixi-native-starter/consumer/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "types": [
+      "bun"
+    ],
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "src/rendering/native/nativeColorPicker.ts",
+    "src/rendering/native/NativeFolderNameInput.ts",
+    "src/native/nativeIconRecoverySmoke.test.ts",
+    "src/rendering/native/nativeDragVisualSmoke.test.ts",
+    "src/rendering/native/nativeToolbarVisualSmoke.test.ts",
+    "src/native/nativeLayoutLoad.ts",
+    "src/rendering/native/NativeAppDialogs.ts",
+    "src/rendering/native/NativeModalPanel.ts",
+    "src/native/nativeAppsMemoryBenchmark.ts",
+    "src/rendering/native/ui/nativeUiGallery.ts",
+    "electrobun.config.ts",
+    "src/rendering/native/nativeSettingsInput.ts",
+    "src/native/nativeMain.ts",
+    "src/native/nativeSmokeSupport.ts",
+    "src/native/nativeSearchSmoke.ts",
+    "src/native/nativeCatalogPort.ts",
+    "src/rendering/native/nativeAppsSettingsPage.ts",
+    "src/native/nativeDataHost.ts",
+    "src/native/nativeStartup.ts",
+    "src/rendering/native/NativeSearchBar.ts",
+    "src/rendering/native/NativeManagement.ts",
+    "src/rendering/native/NativeSpinButton.ts",
+    "src/rendering/native/nativeLayoutSettingsPage.ts",
+    "src/rendering/native/nativeGeneralSettingsPage.ts",
+    "src/rendering/native/nativeBackgroundSettings.ts",
+    "src/native/product/**/*.ts",
+    "src/native/diagnostics/**/*.ts",
+    "src/native/nativeClipboard.ts",
+    "src/native/nativeLiveDesktopLibrary.ts"
+  ]
+}

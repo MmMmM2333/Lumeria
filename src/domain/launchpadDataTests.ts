@@ -288,10 +288,10 @@ export function runLaunchpadDataTests() {
     ...snapshot.settings,
     pages: merged,
     backgroundSource: "customImage",
-    backgroundEffect: "acrylicWebgl",
+    backgroundEffect: "acrylic",
     backgroundImagePath: "C:/Images/acrylic.webp",
   });
-  assert(acrylicSnapshot.settings.backgroundEffect === "acrylicWebgl", "layout snapshots should preserve webgl acrylic background effect");
+  assert(acrylicSnapshot.settings.backgroundEffect === "acrylic", "layout snapshots should preserve the acrylic background effect");
   const blurSnapshot = dataHelpers.createLayoutSnapshot({
     ...snapshot.settings,
     pages: merged,

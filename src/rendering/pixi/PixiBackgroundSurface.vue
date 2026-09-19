@@ -18,8 +18,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type { CSSProperties, PropType } from "vue";
 import {
   loadCachedBackgroundImageDataUrl,
-  type BackgroundLayoutContext,
 } from "../../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../../platform/launchpadContracts.js";
 import { createPixiApp } from "./createPixiApp.js";
 import { disposePixiForHotReload, reloadOnPixiHotUpdate } from "./devHmr.js";
 import { isAcrylicDebugEnabled, useAcrylicDebugOverrideEnabled, useAcrylicDebugParams } from "./background/acrylicDebugParams.js";
@@ -33,7 +33,7 @@ import {
 } from "../../domain/backgroundImageLayout.js";
 import type { BackgroundImageLayout } from "../../domain/backgroundImageLayout.js";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   DEFAULT_BACKGROUND_BLUR_STRENGTH,
 } from "../../domain/backgroundSettings.js";
@@ -192,7 +192,7 @@ function renderBackgroundEffect(): void {
   renderSourceToTexture(renderSize, hostSize);
   effectPipeline.renderBlur(effectPlan, hostSize);
 
-  if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) {
+  if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) {
     effectPipeline.renderAcrylicComposite(effectPlan.acrylic);
     displaySprite!.texture = effectPipeline.finalRenderTexture!;
     displaySprite!.alpha = 1;
@@ -232,7 +232,7 @@ async function resolveTextureSource(source: string): Promise<string> {
   try {
     return await loadCachedBackgroundImageDataUrl(props.backgroundImagePath) || source;
   } catch (error) {
-    console.warn("Failed to load WebGL-safe background image data", error);
+    console.warn("Failed to load cached background image data", error);
     return source;
   }
 }
@@ -300,7 +300,6 @@ onMounted(async () => {
     nextApp = await createPixiApp(hostRef.value!, {
       autoStart: false,
       className: "pixi-background-canvas",
-      preference: ["webgl"],
     });
   } catch (error) {
     if (!destroyed) {
@@ -387,7 +386,7 @@ watch(
 watch(
   () => props.backgroundBlurStrength,
   () => {
-    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+    if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) scheduleRender();
   }
 );
 
@@ -404,7 +403,7 @@ watch(
     props.backgroundAcrylicParams?.tintColor?.[2],
   ],
   () => {
-    if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+    if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) scheduleRender();
   }
 );
 
@@ -423,7 +422,7 @@ if (isAcrylicDebugEnabled) {
       acrylicDebugOverrideEnabled.value,
     ],
     () => {
-      if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+      if (props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) scheduleRender();
     }
   );
 }
@@ -443,7 +442,7 @@ if (isKawaseDebugEnabled) {
       kawaseDebugOverrideEnabled.value,
     ],
     () => {
-      if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) scheduleRender();
+      if (props.backgroundEffect === BACKGROUND_EFFECT_BLUR || props.backgroundEffect === BACKGROUND_EFFECT_ACRYLIC) scheduleRender();
     }
   );
 }

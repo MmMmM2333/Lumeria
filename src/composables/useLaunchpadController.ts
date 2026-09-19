@@ -7,8 +7,8 @@ import {
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import {
   isNativeBridgeAvailable,
-  type BackgroundLayoutContext,
 } from "../api/launchpadApi.js";
+import type { BackgroundLayoutContext } from "../platform/launchpadContracts.js";
 import {
   catalogPort,
   nativeLifecyclePort,
@@ -77,11 +77,11 @@ import {
   BACKGROUND_ACRYLIC_APPEARANCE_DARK,
   BACKGROUND_ACRYLIC_APPEARANCE_LIGHT,
   BACKGROUND_ACRYLIC_APPEARANCE_SYSTEM,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   FOLDER_ICON_SIZE_MODE_CUSTOM,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { usePageRenderRange } from "./usePageRenderRange.js";
 import { usePageGridMetrics } from "./usePageGridMetrics.js";
 import { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
@@ -493,7 +493,7 @@ function createLaunchpadController(inputOptions?: LaunchpadControllerOptions) {
     );
   });
   const backgroundEffectBlurStrength = computed(() => (
-    backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
       ? backgroundAcrylicBlurStrength.value
       : backgroundBlurStrength.value
   ));

@@ -1,6 +1,5 @@
 import { expect, test as base } from "@playwright/test";
 import type {
-  Browser,
   ConsoleMessage,
   Page,
   PlaywrightTestArgs,
@@ -8,16 +7,16 @@ import type {
   TestInfo,
 } from "@playwright/test";
 
-const WEBVIEW_CDP_ENDPOINT = process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT || "";
-const WEBVIEW_BASE_URL = process.env.LUMERIA_WEBVIEW_BASE_URL || "";
-const isWebViewRun = Boolean(WEBVIEW_CDP_ENDPOINT);
+// Browser-only Launchpad test fixture for the retained reference host.
+//
+// The Playwright WebView2 CDP entry (`LUMERIA_WEBVIEW_CDP_ENDPOINT` plus
+// `playwright.webview.config.ts`) was retired together with the product entry:
+// these specs now always drive the Chromium page served by the Vite dev server
+// at /tests/browser/reference/index.html. Failed-run evidence (console output
+// and a screenshot) is kept so browser runs stay diagnosable.
 
 interface LaunchpadTestFixtures {
   appPage: Page;
-}
-
-interface LaunchpadWorkerFixtures {
-  webviewBrowser: Browser | null;
 }
 
 interface PageDiagnosticsOptions {
@@ -49,27 +48,27 @@ async function usePageWithDiagnostics(
   } finally {
     page.off("console", onConsole);
     page.off("pageerror", onPageError);
-    if (isWebViewRun && testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
+    if (testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
       try {
-        await testInfo.attach("webview2-failure", {
+        await testInfo.attach("browser-failure", {
           body: await page.screenshot({ type: "png" }),
           contentType: "image/png",
         });
       } catch (error: unknown) {
         testInfo.annotations.push({
           description: describeError(error),
-          type: "webview2-screenshot-failed",
+          type: "browser-screenshot-failed",
         });
       }
     }
     if (options.restoreUrl) {
       if (page.isClosed()) {
-        teardownProblems.push(`WebView2 page closed before ${options.restoreUrl} could be restored`);
+        teardownProblems.push(`Browser page closed before ${options.restoreUrl} could be restored`);
       } else {
         try {
           await page.mouse.up();
         } catch (error: unknown) {
-          teardownProblems.push(`Unable to release the WebView2 mouse: ${describeError(error)}`);
+          teardownProblems.push(`Unable to release the browser mouse: ${describeError(error)}`);
         }
         try {
           await page.goto(options.restoreUrl, {
@@ -97,27 +96,6 @@ async function usePageWithDiagnostics(
   }
 }
 
-const webViewAppPageFixture: TestFixture<Page, LaunchpadWorkerFixtures> = async (
-  { webviewBrowser },
-  use,
-  testInfo,
-): Promise<void> => {
-  if (!webviewBrowser) {
-    throw new Error(`WebView2 browser is not connected to ${WEBVIEW_CDP_ENDPOINT}`);
-  }
-  const pages = webviewBrowser.contexts().flatMap((context) => context.pages());
-  const preferredOrigin = WEBVIEW_BASE_URL ? new URL(WEBVIEW_BASE_URL).origin : null;
-  const page = pages.find((candidate) => (
-    preferredOrigin !== null && candidate.url().startsWith(preferredOrigin)
-  )) || pages.find((candidate) => /^https?:\/\//.test(candidate.url()));
-  if (!page) {
-    throw new Error(`No HTTP page is exposed by ${WEBVIEW_CDP_ENDPOINT}: ${pages.map((entry) => entry.url()).join(", ")}`);
-  }
-  const restoreUrl = page.url();
-  await page.bringToFront();
-  await usePageWithDiagnostics(page, use, testInfo, { restoreUrl });
-};
-
 const browserAppPageFixture: TestFixture<Page, Pick<PlaywrightTestArgs, "page">> = async (
   { page },
   use,
@@ -126,23 +104,8 @@ const browserAppPageFixture: TestFixture<Page, Pick<PlaywrightTestArgs, "page">>
   await usePageWithDiagnostics(page, use, testInfo);
 };
 
-const appPageFixture: TestFixture<
-  Page,
-  LaunchpadWorkerFixtures & Pick<PlaywrightTestArgs, "page">
-> = isWebViewRun ? webViewAppPageFixture : browserAppPageFixture;
-
-export const test = base.extend<LaunchpadTestFixtures, LaunchpadWorkerFixtures>({
-  webviewBrowser: [async ({ playwright }, use): Promise<void> => {
-    if (!isWebViewRun) {
-      await use(null);
-      return;
-    }
-    const browser = await playwright.chromium.connectOverCDP(WEBVIEW_CDP_ENDPOINT);
-    await use(browser);
-    // The browser belongs to the already-running Tauri process. Let this test
-    // worker exit to disconnect instead of closing the user's WebView2.
-  }, { scope: "worker" }],
-  appPage: appPageFixture,
+export const test = base.extend<LaunchpadTestFixtures>({
+  appPage: browserAppPageFixture,
 });
 
 export { expect };

@@ -1,5 +1,5 @@
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -76,7 +76,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(Math.abs(defaultAutoAfterBoundaryPlan.blur.offsetScale - 0.227) < 0.0001, "default auto dual kawase should start from the recommended base scale");
 
   const acrylicPlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     opacity: 37,
     acrylicParams: {
       brightness: 1.2,
@@ -91,7 +91,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(Math.abs(acrylicPlan.acrylic.tintColor[1] - 0.4) < 0.0001, "acrylic effect plan should normalize tint color");
 
   const kawaseOverridePlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     dualKawaseParams: {
       kernel: BLUR_KERNEL_DUAL_KAWASE,
       offsetScale: 0.53,
@@ -106,7 +106,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(Math.abs(secondDownOffset - 0.7155) < 0.0001, "effect plan should scale down pass offsets from the debug radius scale");
 
   const gaussianPlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     dualKawaseParams: {
       gaussianRadiusPx: 20,
       kernel: BLUR_KERNEL_GAUSSIAN,
@@ -116,7 +116,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(gaussianPlan.blur.gaussianRadiusPx === 20, "effect plan should accept a gaussian radius in target pixels");
 
   const clampedGaussianPlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     dualKawaseParams: {
       gaussianRadiusPx: 200,
       kernel: BLUR_KERNEL_GAUSSIAN,
@@ -187,7 +187,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(autoTestStrengthPlan.blur.gaussianRadiusPx === 10, "auto blur plans should use the debug test strength for gaussian radius");
 
   const autoAcrylicPlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     blurStrength: 21,
     dualKawaseParams: {
       acrylicGaussianCutoff: 20,
@@ -198,7 +198,7 @@ export function runAcrylicBackgroundPlanTests() {
   assert(autoAcrylicPlan.blur.kernel === BLUR_KERNEL_DUAL_KAWASE, "auto acrylic plans should use the acrylic cutoff");
 
   const clampedKawasePlan = createBackgroundEffectPlan({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     dualKawaseParams: {
       gaussianRadiusPx: 200,
       kernel: "bad",
@@ -212,10 +212,10 @@ export function runAcrylicBackgroundPlanTests() {
   assert(clampedKawasePlan.blur.offsetScale === 2, "effect plan should clamp debug dual kawase radius scale");
 
   assert(shouldUsePixiBackgroundEffect({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     source: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     imageUrl: "asset://wallpaper",
-  }), "webgl acrylic should be enabled for image backgrounds");
+  }), "acrylic should be enabled for image backgrounds");
   assert(shouldUsePixiBackgroundEffect({
     effect: BACKGROUND_EFFECT_BLUR,
     source: BACKGROUND_SOURCE_CUSTOM_IMAGE,
@@ -227,7 +227,7 @@ export function runAcrylicBackgroundPlanTests() {
     imageUrl: "asset://wallpaper",
   }), "non-pixi effects should not use the pixi background renderer");
   assert(!shouldUsePixiBackgroundEffect({
-    effect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    effect: BACKGROUND_EFFECT_ACRYLIC,
     source: BACKGROUND_SOURCE_SYSTEM_MATERIAL,
     imageUrl: "asset://wallpaper",
   }), "system material backgrounds should not use the pixi background renderer");

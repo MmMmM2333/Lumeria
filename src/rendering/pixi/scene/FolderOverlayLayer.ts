@@ -1,5 +1,7 @@
 import { Container, Graphics, Matrix, Rectangle, RenderLayer, Sprite } from "pixi.js";
-import type { ContainerChild, FederatedPointerEvent, TextStyleFontWeight } from "pixi.js";
+import type { ContainerChild, FederatedPointerEvent } from "pixi.js";
+import { closingFolderTargetLabel } from "../../../domain/input/launchpadPointerTarget.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
 import { killAllMotion } from "../animation/motionCleanup.js";
@@ -133,6 +135,7 @@ import { resolveFolderIconRenderSize } from "./folderIconSizing.js";
 import { makeIconRect, makeSyntheticPointerEvent, makeTargetIconBounds } from "./iconSceneHelpers.js";
 import { IconNode } from "../nodes/IconNode.js";
 import type { IconNodeAction, IconNodeActionHandler } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import { getIconCellTopInteractionOverflow } from "../nodes/iconInteractionGeometry.js";
 import { makeIconVisualSpec, makeIconVisualSpecFromNodeState } from "./iconVisualSpec.js";
 import type { IconVisualSpec } from "./iconVisualSpec.js";
@@ -418,6 +421,7 @@ interface ClosingHandoffPrepareOptions {
 interface FolderOverlayLayerOptions {
   detachedClosingVisualLayer?: Container | undefined;
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures?: IconTextureRepository | undefined;
   isHandoffSourceVisible?: ((folderId: string | null) => boolean) | undefined;
   onClosingFolderPointerDown?: ((folderId: string | null, event: unknown) => void) | undefined;
   onClosingHandoffPrepare?: ((
@@ -1619,6 +1623,7 @@ export interface FolderOverlayLayer {
   showFolderTitle: boolean;
   renderCopy: { newFolderName: string };
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures: IconTextureRepository | undefined;
   visualCommitQueue: FolderVisualCommitQueue;
   visualOwnership: VisualOwnershipRegistry;
   ownedVisualTokens: Set<unknown>;
@@ -1679,6 +1684,14 @@ export interface FolderOverlayLayer {
 }
 
 export class FolderOverlayLayer extends Container {
+  private panelPresentation:Parameters<FolderOverlayLayer["animatePanel"]>|null=null;
+
+  /** Native progress is externally driven; do not rebuild icon/layout plans for it. */
+  presentOpenProgress(progress:number):void {
+    const input=this.panelPresentation;
+    if(!input||this.destroyed||!this.visible||input[0].isFolderClosing)return;
+    this.animatePanel({...input[0],folderOpenProgress:progress},input[1],input[2],input[3],input[4],input[5]);
+  }
   constructor(options: FolderOverlayLayerOptions) {
     super();
     this.panel = new Container();
@@ -1705,16 +1718,18 @@ export class FolderOverlayLayer extends Container {
       style: {
         fill: 0xffffff,
         fontSize: 18,
-        fontWeight: "620" as TextStyleFontWeight,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontWeight: "600",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
       },
     });
+    this.folderTitle.eventMode = "none";
     this.iconNodes = new Map();
     this.folderIconLayoutTargets = new Map();
     this.iconBoundsRefreshers = new Map();
     this.openingGhostBoundsRefreshers = new Map();
     this.registeredBoundsDirty = false;
     this.registeredBoundsFlushQueued = false;
+    this.iconTextures = options.iconTextures;
     this.onIconAction = options.onIconAction || (() => { });
     this.onClosingHandoffPrepare = options.onClosingHandoffPrepare || (() => { });
     this.onClosingHandoffReady = options.onClosingHandoffReady || (() => { });
@@ -1743,23 +1758,23 @@ export class FolderOverlayLayer extends Container {
     this.openingGhosts = new FolderOpeningGhostController(
       this as FolderOverlayLayer & FolderOpeningGhostControllerLayer,
       {
-      ghostFactory: () => new IconNode() as FolderGhostNode,
-    });
+        ghostFactory: () => new IconNode({ iconTextures: this.iconTextures }) as FolderGhostNode,
+      });
     this.closingPreviewSwap = new FolderClosingPreviewSwapController<FolderClosingState>(
       this as FolderOverlayLayer & FolderClosingPreviewSwapLayer,
       {
-      containerFactory: () => new Container() as ClosingPreviewContainerNode,
-      getIconTexture: (item, render, ghost) => iconTextureRepository.resolve(item, render, ghost),
-      graphicsFactory: () => new Graphics() as ClosingPreviewGraphicsNode,
-      spriteFactory: () => new Sprite() as ClosingPreviewSpriteNode,
-      textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }) as ClosingPreviewTextNode,
-    });
+        containerFactory: () => new Container() as ClosingPreviewContainerNode,
+        getIconTexture: (item, render, ghost) => (this.iconTextures ?? iconTextureRepository).resolve(item, render, ghost),
+        graphicsFactory: () => new Graphics() as ClosingPreviewGraphicsNode,
+        spriteFactory: () => new Sprite() as ClosingPreviewSpriteNode,
+        textFactory: (size) => createPixiText({ text: "", style: { align: "center", fill: 0xffffff, fontSize: size, lineHeight: size } }) as ClosingPreviewTextNode,
+      });
     this.closingGhosts = new FolderClosingGhostController(
       this as FolderOverlayLayer & FolderClosingGhostControllerLayer,
       {
-      ghostFactory: () => new IconNode() as FolderGhostNode,
-      previewSwap: this.closingPreviewSwap,
-    });
+        ghostFactory: () => new IconNode({ iconTextures: this.iconTextures }) as FolderGhostNode,
+        previewSwap: this.closingPreviewSwap,
+      });
     this.folderVisualSession = new FolderVisualSession<
       FolderOpeningControllerVisualPlan,
       FolderClosingControllerVisualPlan
@@ -1833,6 +1848,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   update(state: FolderOverlayStateInput): FolderGeometry | null {
+    if(!state.renderedFolder)this.panelPresentation=null;
     this.syncPageTurnVisualSettle(state);
     const prepared = this.prepareFolderOverlayState(state);
     if (prepared.done) return prepared.result;
@@ -2430,6 +2446,7 @@ export class FolderOverlayLayer extends Container {
       const isNewNode = !node;
       if (!node) {
         node = new IconNode({
+          iconTextures: this.iconTextures,
           onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
             this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
         });
@@ -3465,6 +3482,7 @@ export class FolderOverlayLayer extends Container {
       // visual for the next folder's opening.
       this.onClosingHandoffPrepare?.(closingFolderId, { preserveVisualState: true });
       const container = new Container();
+      if (closingFolderId) container.label = closingFolderTargetLabel(closingFolderId);
       container.eventMode = (overlayFrameState || closingGhosts.length || previewSwapGhosts.length) ? "static" : "none";
       container.interactiveChildren = false;
       container.hitArea = {
@@ -4266,6 +4284,7 @@ export class FolderOverlayLayer extends Container {
     openingGeometrySnapshot: FolderOpeningGeometrySnapshot | null;
     openingLease: FolderOverlayOpenLease;
   }> | void {
+    this.panelPresentation=[state,targetX,targetY,panelRect,sourceRect,options];
     const isClosing = Boolean(state.isFolderClosing || state.isFolderAppLaunchClosing);
     const isOpenFolderZoomFadeClosing = Boolean(state.isFolderZoomFadeClosing && !state.isFolderClosing);
     const folderId = state.renderedFolder?.id || null;
@@ -4416,16 +4435,22 @@ export class FolderOverlayLayer extends Container {
       }
       this.panelAlphaTarget = 1;
       const startGeometry = getPanelOpenStartGeometry(targetX, targetY, panelRect, sourceRect, state.stageRect);
-      this.panel.position.set(
-        lerpNumber(startGeometry.x, targetX, openProgress),
-        lerpNumber(startGeometry.y, targetY, openProgress)
-      );
-      this.panel.scale.set(
-        lerpNumber(startGeometry.scaleX, 1, openProgress),
-        lerpNumber(startGeometry.scaleY, 1, openProgress)
-      );
-      this.panel.alpha = lerpNumber(0.94, 1, openProgress);
-      updateOpeningPanelFrame();
+      const x = lerpNumber(startGeometry.x, targetX, openProgress);
+      const y = lerpNumber(startGeometry.y, targetY, openProgress);
+      const scaleX = lerpNumber(startGeometry.scaleX, 1, openProgress);
+      const scaleY = lerpNumber(startGeometry.scaleY, 1, openProgress);
+      const alpha = lerpNumber(0.94, 1, openProgress);
+      const presentationChanged = this.panel.x !== x || this.panel.y !== y
+        || this.panel.scale.x !== scaleX || this.panel.scale.y !== scaleY || this.panel.alpha !== alpha;
+      this.panel.position.set(x, y);
+      this.panel.scale.set(scaleX, scaleY);
+      this.panel.alpha = alpha;
+      // A bounds callback schedules another native scene commit. Re-enqueuing
+      // it for an unchanged panel would keep that loop alive after motion ends.
+      // New leases/targets still need their readiness and title notification.
+      if (presentationChanged || shouldRetargetPresentation || previousOpeningLease !== openingLease) {
+        updateOpeningPanelFrame();
+      }
       return {
         openingGeometrySnapshot,
         openingLease,
@@ -4514,6 +4539,13 @@ export class FolderOverlayLayer extends Container {
     }
   }
 
+  closingFolderAtStagePoint(x:number,y:number):string|null {
+    const target=this.stableFolderCloseTarget;
+    return this.isClosing&&this.isUserFolderClosing&&target?.folderId
+      &&getClosingPresentationStageHitRects(this as FolderClosingHandoffLayer).some(rect=>isPointInRect(x,y,rect))
+      ? target.folderId : null;
+  }
+
   handlePointerDown(event: FederatedPointerEvent): void {
     const native = (event?.nativeEvent || event) as NativePointerInput & OptionalPointerEvent;
     if (typeof native?.button === "number" && native.button !== 0) return;
@@ -4523,14 +4555,11 @@ export class FolderOverlayLayer extends Container {
     const localPoint = clientPointToStageVisualPoint({ x: clientX, y: clientY }, this.stageRect) || { x: 0, y: 0 };
     const { x, y } = localPoint;
     if (this.isClosing) {
-      const closeTarget = this.stableFolderCloseTarget;
-      const hitRects = getClosingPresentationStageHitRects(this as FolderClosingHandoffLayer);
-      if (this.isUserFolderClosing &&
-        closeTarget?.folderId &&
-        hitRects.some((rect) => isPointInRect(x, y, rect))) {
+      const folderId=this.closingFolderAtStagePoint(x,y);
+      if (folderId) {
         native.preventDefault?.();
         native.stopPropagation?.();
-        this.onClosingFolderPointerDown(closeTarget.folderId, native);
+        this.onClosingFolderPointerDown(folderId, native);
       }
       return;
     }
@@ -4657,6 +4686,7 @@ export class FolderOverlayLayer extends Container {
   }
 
   destroy(options?: Parameters<Container["destroy"]>[0]): void {
+    this.panelPresentation=null;
     this.teardownTransientState({
       clearDetachedClosingVisuals: true,
       clearVisualCommitQueue: true,

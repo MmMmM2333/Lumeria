@@ -307,7 +307,7 @@ async function waitForFixture(page: Page) {
       getState,
     };
   });
-  await page.goto(`/?fixture=multi-select&group-release=${Date.now()}`);
+  await page.goto(`/tests/browser/reference/index.html?fixture=multi-select&group-release=${Date.now()}`);
   await page.waitForFunction(() => {
     const state = document.querySelector<GroupReleaseAppElement>("#app")
       ?.__vue_app__?._instance?.setupState;

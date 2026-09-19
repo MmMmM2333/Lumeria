@@ -1,7 +1,9 @@
 import { Container, Graphics } from "pixi.js";
 import type { DestroyOptions } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { createPixiText } from "../pixiText.js";
+import { canRetainAppVisualState } from "../nodes/iconVisualState.js";
 import { getIconVisualOffsetY } from "../geometry/iconMetrics.js";
 import { getDesktopGridMetrics } from "../geometry/gridGeometry.js";
 import { clientRectToStageVisualRect, stageLayoutRecordToClientRect } from "../geometry/stageCoordinates.js";
@@ -18,6 +20,7 @@ import type {
 import { motionRuntime } from "../animation/motionRuntime.js";
 import { motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion } from "../animation/motionTween.js";
+import { killAllMotion } from "../animation/motionCleanup.js";
 import type { MotionTarget, MotionVars } from "../animation/motionTween.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 import { makeDesktopBoundsRegistration } from "./desktopBoundsRegistration.js";
@@ -48,6 +51,7 @@ import type { DragHitDebugSnapshot } from "./DragHitDebugLayer.js";
 import { FolderDropTargetLayer } from "./FolderDropTargetLayer.js";
 import { IconNode } from "../nodes/IconNode.js";
 import type { IconNodeAction, IconNodeActionHandler } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import type {
   SceneDataRecord,
   SceneItem,
@@ -72,6 +76,8 @@ import {
   resolveDesktopVisualAlpha,
   resolveLaunchpadVisualAlpha,
   resolveLaunchpadVisualTransform,
+  countSelectedFolderChildren,
+  matchesDesktopIconFocus,
 } from "./desktopRenderPlan.js";
 import type {
   DesktopFolderGeometry,
@@ -120,7 +126,9 @@ interface DesktopRenderCopy {
 }
 
 interface DesktopLayerOptions {
+  reuseSearchNodes?: boolean;
   iconBoundsRegistry: IconBoundsRegistry;
+  iconTextures?: IconTextureRepository | undefined;
   onClosingFolderPointerDown?: ((folderId: string | null, event: unknown) => void) | undefined;
   onFolderGeometryChange?: ((geometry: unknown) => void) | undefined;
   onFolderInternalActivityChange?: ((active: boolean, folderId: string | null) => void) | undefined;
@@ -135,6 +143,7 @@ interface DesktopLayerOptions {
     newFolderName?: unknown;
     searchEmpty?: unknown;
   }> | undefined;
+  showFolderTitle?: boolean | undefined;
   visualCommitQueue?: FolderVisualCommitQueue | undefined;
   visualOwnership?: VisualOwnershipRegistry | undefined;
 }
@@ -337,6 +346,7 @@ interface ResolveReleaseScaleOptions {
 interface DesktopUpdateOptions {
   allowPlanReuse?: boolean;
   boundsTransaction?: boolean;
+  retainOffscreenPages?: boolean;
 }
 
 interface RetireIconNodeOptions {
@@ -1063,6 +1073,7 @@ function shouldSkipMotionSpring(
 }
 
 export class DesktopLayer extends Container {
+  private boundsUpdateDepth = 0;
   declare boundsDirty: boolean;
   declare boundsFlushQueued: boolean;
   declare boundsRegistration: DesktopBoundsRegistration<DesktopBoundsEntry, DesktopRect> | null;
@@ -1097,6 +1108,7 @@ export class DesktopLayer extends Container {
   declare onFolderTitleFrameChange: NonNullable<DesktopLayerOptions["onFolderTitleFrameChange"]>;
   declare onGroupReleaseComplete: NonNullable<DesktopLayerOptions["onGroupReleaseComplete"]>;
   declare onIconAction: IconNodeActionHandler;
+  declare iconTextures: IconTextureRepository | undefined;
   declare pageTrack: Container;
   declare pageTrackMotion: PageTrackMotionState;
   declare primaryFolderHandoffId: string | null;
@@ -1116,12 +1128,14 @@ export class DesktopLayer extends Container {
 
   constructor(options: DesktopLayerOptions) {
     super();
+    this.reuseSearchNodes=options.reuseSearchNodes===true;
     this.visualRoot = new Container();
     this.pageTrack = new Container();
     this.desktopClosingUnderlayLayer = new Container();
     this.desktopClosingUnderlayLayer.eventMode = "none";
     this.handoffDebugLayer = new Graphics();
     this.onIconAction = options.onIconAction || (() => {});
+    this.iconTextures = options.iconTextures;
     this.onClosingFolderPointerDown = options.onClosingFolderPointerDown || (() => {});
     this.onFolderGeometryChange = options.onFolderGeometryChange || (() => {});
     this.onFolderInternalActivityChange = options.onFolderInternalActivityChange || (() => {});
@@ -1146,6 +1160,7 @@ export class DesktopLayer extends Container {
     this.singleStageFolderLayer = new FolderOverlayLayer({
       detachedClosingVisualLayer: this.desktopClosingUnderlayLayer,
       iconBoundsRegistry: this.iconBoundsRegistry,
+      iconTextures: this.iconTextures,
       onDesktopSourceGhostingChange: () => this.onFolderRenderRequest("desktop-source-ownership-committed"),
       onClosingFolderPointerDown: (folderId: string | null, event: unknown) => this.onClosingFolderPointerDown(folderId, event),
       onClosingHandoffPrepare: (folderId: string | null, prepareOptions = {}) => this.startClosingFolderHandoffNow(folderId, {
@@ -1171,7 +1186,7 @@ export class DesktopLayer extends Container {
       onOutsidePointerDown: (event: unknown) => this.onFolderOutsidePointerDown(event),
       onPanelPointerDown: (event: unknown) => this.onFolderPanelPointerDown(event),
       renderCopy: this.renderCopy,
-      showFolderTitle: false,
+      showFolderTitle: options.showFolderTitle === true,
       onTitleFrameChange: (frame) => this.onFolderTitleFrameChange(frame),
       visualCommitQueue: this.visualCommitQueue,
       visualOwnership: this.visualOwnership,
@@ -1184,6 +1199,7 @@ export class DesktopLayer extends Container {
       onTargetActive: (folderId: string) => this.holdFolderDropFrameSuppression(folderId),
     });
     this.groupDragLayer = new GroupDragLayer({
+      iconTextures: this.iconTextures,
       onPrewarmRequest: (reason: string) => this.onFolderRenderRequest(reason),
       onRenderRequest: (reason: string) => this.onFolderRenderRequest(reason),
       onReleaseAborted: (payload) => this.onGroupReleaseComplete(payload),
@@ -1222,7 +1238,7 @@ export class DesktopLayer extends Container {
     this.boundsDirty = false;
     this.emptyText = createPixiText({
       text: this.renderCopy.searchEmpty,
-      style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: "Inter, Segoe UI, sans-serif" },
+      style: { fill: 0xffffff, fontSize: 15, alpha: 0.74, fontFamily: [...PIXI_UI_FONT_FAMILY] },
     } as NonNullable<Parameters<typeof createPixiText>[0]>);
     this.emptyText.anchor.set(0.5);
     this.visualRoot.addChild(this.pageTrack);
@@ -1317,6 +1333,23 @@ export class DesktopLayer extends Container {
     }
   }
 
+  private readonly reuseSearchNodes:boolean;
+  private readonly searchNodeCache=new Map<string,DesktopIconNode>();
+  private desktopCacheLimit=0;
+  private searchCacheLimit=0;
+  private knownDesktopItems=new Set<string>();
+  private readonly detachedPageNodes=new Map<string,DesktopIconNode>();
+  getNodeRetentionStatistics(){
+    return {desktop:this.iconNodes.size,detachedPages:this.detachedPageNodes.size,searchCache:this.searchNodeCache.size,
+      groupDragPool:this.groupDragLayer?.nodes.length??0,folderIcons:this.singleStageFolderLayer.iconNodes.size};
+  }
+  clearSearchNodeCache():void {
+    if(!this.reuseSearchNodes)return;
+    for(const node of this.searchNodeCache.values())destroyDisplayObjectAfterFrame(node,{children:true});
+    this.searchNodeCache.clear();
+    this.desktopCacheLimit=0;this.searchCacheLimit=0;
+  }
+
   retireIconNode(
     key: string,
     node: DesktopIconNode | null | undefined,
@@ -1337,6 +1370,7 @@ export class DesktopLayer extends Container {
     };
     if (options.immediate === true) {
       node.alpha = 0;
+      node.parent?.removeChild(node);
       finalize();
       return true;
     }
@@ -1355,6 +1389,74 @@ export class DesktopLayer extends Container {
 
   updateStructure(state: DesktopStructureFrame): Partial<DesktopLayerFrameWork> {
     return this.updateScene(state, { allowPlanReuse: false });
+  }
+
+  /** Folder presentation only changes the active desktop page and its source
+   * shell. Preserve other pages while retaining the normal handoff pipeline. */
+  updateRetainedFolderStructure(state:DesktopStructureFrame):Partial<DesktopLayerFrameWork>{
+    return this.updateScene(state,{allowPlanReuse:false,retainOffscreenPages:true});
+  }
+
+  updatePagePresentation(scrub:DesktopStructureFrame["pageTrackScrub"]):void {
+    const track=this.lastDesktopRenderPlan?.pageTrack;
+    if(!track)return;
+    updatePageTrackMotion(this.pageTrackMotion,this.pageTrack,{
+      debugMetadata:track.debugMetadata,onFrame:()=>this.markInteractiveBoundsDirty(),
+      pageIndex:track.pageIndex,pageSpan:track.pageSpan,scrub,
+      sourceLabel:track.sourceLabel,springConfig:motionSprings.layout,
+    });
+  }
+
+  /** Normal retained-page navigation only: update two pages, not all icon visuals. */
+  updateRetainedPage(state:DesktopStructureFrame):void {
+    const previous=this.lastDesktopRenderPlan!;
+    const oldPage=previous.pageTrack.pageIndex;
+    const partial=buildDesktopRenderPlan(makeDesktopRenderPlanState({
+      ...state,getDesktopPageRenderMode:index=>index===state.activePageIndex?"interactive":index===oldPage?"static-real":"empty",
+    },new Set(),new Set()),{
+      effectiveFolderSourceGhostedIds:new Set(),folderDropFrameSuppressedIds:new Set(),
+      folderGeometryById:new Map(),folderHandoffEntries:new Map(),
+      handoffObservation:captureDesktopHandoffObservation(this.singleStageFolderLayer,new Set()),
+    });
+    const replacements=new Map(partial.entries.map(entry=>[entry.key,entry]));
+    const bounds:DesktopBoundsEntry[]=[];
+    for(const entry of partial.entries){
+      const node=this.iconNodes.get(entry.key);if(!node)throw new Error("Retained page node missing");
+      node.setState(entry.nodeState);
+      if(entry.boundsEntry)bounds.push({...entry.boundsEntry,node} as DesktopBoundsEntry);
+    }
+    this.lastDesktopRenderPlan={...previous,...partial,entries:previous.entries.map(entry=>replacements.get(entry.key)??entry),revision:++this.desktopPlanRevision} as DesktopRenderPlanWithRevision;
+    this.lastPointerOnlyPlanSnapshot=null;
+    this.boundsRegistration=makeDesktopBoundsRegistration(state,bounds,partial.desktopFrame);
+    this.updatePagePresentation(state.pageTrackScrub);
+    this.flushInteractiveBounds({force:true});
+  }
+
+  cullRetainedPages(width:number):void {
+    const presented=-this.pageTrack.x/width;
+    for(const node of this.iconNodes.values()){
+      const page=Number(node.source?.pageIndex);
+      node.renderable=!Number.isFinite(page)||Math.abs(page-presented)<=1.25;
+    }
+  }
+
+  /** Selection and focus do not change layout, input bounds or ownership. */
+  updateSelectionPresentation(state:DesktopStructureFrame):void {
+    const plan=this.lastDesktopRenderPlan;
+    if(!plan)throw new Error("Selection presentation requires a desktop plan");
+    const entries=plan.entries.map(entry=>{
+      const node=this.iconNodes.get(entry.key),old=node?.state;
+      if(!node||!old)return entry;
+      const batchSelected=state.isBatchSelectionActive&&entry.item.type==="app"&&state.selectedAppIds.has(entry.item.id);
+      const selectedChildCount=state.isBatchSelectionActive?countSelectedFolderChildren(entry.item,state.selectedAppIds):0;
+      const focused=old.interactive&&matchesDesktopIconFocus(state.focusedIcon,state.isSearchMode?"search":"desktop",entry.item.id,Number(old.source?.pageIndex));
+      if(old.batchSelected===batchSelected&&old.selectedChildCount===selectedChildCount&&old.focused===focused)return entry;
+      const nodeState=Object.freeze({...old,batchSelected,selectedChildCount,focused});
+      node.setState(nodeState);
+      return {...entry,nodeState};
+    });
+    this.lastDesktopRenderPlan={...plan,entries};
+    this.lastPointerOnlyPlanSnapshot=null;
   }
 
   updateInteraction(state: DesktopInteractionState): Partial<DesktopLayerFrameWork> {
@@ -1398,10 +1500,18 @@ export class DesktopLayer extends Container {
     options: DesktopUpdateOptions = {},
   ): Partial<DesktopLayerFrameWork> {
     if (options.boundsTransaction !== false && typeof this.iconBoundsRegistry.transaction === "function") {
-      return this.iconBoundsRegistry.transaction(() => this.updateScene(state, {
-        ...options,
-        boundsTransaction: false,
-      }));
+      this.boundsUpdateDepth = (this.boundsUpdateDepth || 0) + 1;
+      try {
+        return this.iconBoundsRegistry.transaction(() => this.updateScene(state, {
+          ...options,
+          boundsTransaction: false,
+        }));
+      } finally {
+        this.boundsUpdateDepth -= 1;
+        // Structural updates flush their bounds synchronously. Only schedule
+        // another frame if something remains dirty when the transaction ends.
+        if (this.boundsUpdateDepth === 0 && this.boundsDirty) this.markInteractiveBoundsDirty();
+      }
     }
     const groupTransferOwnership = this.groupDragLayer?.syncVisualOwnership?.(normalizeGroupDragOwnershipGroup(state.groupDragState)) || {
       folderShellIds: new Set(),
@@ -1454,10 +1564,14 @@ export class DesktopLayer extends Container {
       state.groupTransferOwnedFolderShellIds || new Set(),
       state.groupTransferOwnedItemIds || new Set(),
     );
-    const plan: DesktopRenderPlanWithRevision | null = canReusePlan
+    const retainedPage=options.retainOffscreenPages?state.activePageIndex:null;
+    const previousRetainedPlan=this.lastDesktopRenderPlan;
+    const buildState=retainedPage===null?planState:{...planState,
+      getDesktopPageRenderMode:(pageIndex:number)=>pageIndex===retainedPage?planState.getDesktopPageRenderMode(pageIndex):"empty" as const};
+    let plan: DesktopRenderPlanWithRevision | null = canReusePlan
       ? this.lastDesktopRenderPlan
       : {
-        ...buildDesktopRenderPlan(planState, {
+        ...buildDesktopRenderPlan(buildState, {
           effectiveFolderSourceGhostedIds,
           folderDropFrameSuppressedIds: this.folderDropFrameSuppressedIds,
           folderGeometryById: this.makeFolderPresentationGeometrySnapshot(),
@@ -1468,6 +1582,11 @@ export class DesktopLayer extends Container {
       } as DesktopRenderPlanWithRevision;
     if (!plan) {
       throw new Error("DesktopLayer.updateScene requires an initialized render plan before reuse");
+    }
+    const plannedEntries=plan.entries;
+    const entriesToApply=retainedPage===null?plannedEntries:plannedEntries.filter(entry=>entry.item.type==="folder");
+    if(retainedPage!==null&&previousRetainedPlan){
+      plan={...plan,entries:[...previousRetainedPlan.entries.filter(entry=>Number(entry.nodeState.source?.pageIndex)!==retainedPage),...plannedEntries]};
     }
     if (!canReusePlan) this.desktopPlanRevision = nextPlanRevision;
     this.lastPointerOnlyPlanSnapshot = pointerOnlyPlanSnapshot;
@@ -1481,6 +1600,8 @@ export class DesktopLayer extends Container {
     this.applyFolderOverlayAlpha(state);
     const markBoundsDirty = () => this.markInteractiveBoundsDirty();
     const previousPlan = this.lastDesktopRenderPlan;
+    const knownDesktopItems=this.knownDesktopItems??new Set<string>();
+    this.knownDesktopItems=new Set(state.activePages.flatMap(page=>page.flatMap(item=>item?[item.id]:[])));
     const shouldApplyDesktopPlan = !canReusePlan;
     const pageTrackScopeChanged = Boolean(
       previousPlan?.pageTrack && previousPlan.pageTrack.scope !== plan.pageTrack.scope
@@ -1505,11 +1626,12 @@ export class DesktopLayer extends Container {
         state.setPageRef(pageRef.element, pageRef.pageIndex);
       }
 
-      const seen = new Set<string>();
-      const boundsEntries: DesktopBoundsEntry[] = [];
+      const seen = new Set<string>(retainedPage===null?[]:plan.entries.filter(entry=>Number(entry.nodeState.source?.pageIndex)!==retainedPage||entry.item.type!=="folder").map(entry=>entry.key));
+      const boundsEntries: DesktopBoundsEntry[] = retainedPage===null?[]:
+        [...(this.boundsRegistration?.entries??[])].filter(entry=>entry.item?.type!=="folder");
       const groupTransferOwnedItemIds = state.groupTransferOwnedItemIds || new Set();
       const groupTransferOwnedFolderShellIds = state.groupTransferOwnedFolderShellIds || new Set();
-      for (const entry of plan.entries) {
+      for (const entry of entriesToApply) {
         const {
           effectiveFolderHandoffEntry,
           isActiveFolderClosingHandoff,
@@ -1531,18 +1653,29 @@ export class DesktopLayer extends Container {
         seen.add(key);
         let node = this.iconNodes.get(key);
         const isNewNode = !node;
+        if(!node&&this.detachedPageNodes?.has(key)){
+          node=this.detachedPageNodes.get(key)!;this.detachedPageNodes.delete(key);
+          this.iconNodes.set(key,node);this.pageTrack.addChild(node);node.visible=true;
+        }
+        if(!node&&this.reuseSearchNodes){
+          node=this.searchNodeCache.get(key);
+          if(node){this.searchNodeCache.delete(key);this.iconNodes.set(key,node);this.pageTrack.addChild(node);}
+        }
         const shouldSnapDragHandoffLayout = !isFolderClosingHandoff && (
           entry.isActiveDraggedItem || entry.isGroupTransferShellOwned
         );
         const shouldSnapResizeLayout = !isFolderClosingHandoff && state.snapDesktopLayout === true;
-        if (isNewNode) {
+        if (!node) {
           node = new IconNode({
+            iconTextures: this.iconTextures,
             onAction: (action, originalEvent, actionItem, actionSource, iconNode) =>
               this.handleIconAction(action, originalEvent, actionItem, actionSource, iconNode),
           });
           this.iconNodes.set(key, node);
           this.pageTrack.addChild(node);
-        } else if ((shouldSnapDragHandoffLayout || shouldSnapResizeLayout) && shouldSpringLayout) {
+        } else if (!isNewNode && (shouldSnapResizeLayout || (shouldSnapDragHandoffLayout && shouldSpringLayout))) {
+          // Resize must reach the current target even when consecutive plans differ
+          // by less than the animation threshold; skipped deltas otherwise accumulate.
           snapIconLayoutPosition(
             node as DesktopIconNode,
             layoutTarget,
@@ -1551,22 +1684,28 @@ export class DesktopLayer extends Container {
               ? DESKTOP_DRAG_HANDOFF_LAYOUT_REASON
               : DESKTOP_RESIZE_LAYOUT_REASON
           );
-        } else if (!isFolderClosingHandoff && shouldSpringLayout) {
+        } else if (!isNewNode && !isFolderClosingHandoff && shouldSpringLayout) {
           springIconLayoutPosition(node as DesktopIconNode, layoutTarget, markBoundsDirty);
         }
 
         node!.stageRect = state.stageRect;
         node!.__folderSourceGhostedByOwnership = Boolean(entry.isFolderSourceGhosted);
-        node!.setState(nodeState);
+        const canRestoreCached=isNewNode&&node!.state&&!nodeState.editing&&!nodeState.interactionPhase
+          &&!nodeState.folderHoverState&&!nodeState.opening&&canRetainAppVisualState(node!.state,nodeState);
+        if(canRestoreCached){
+          node!.visible=true;node!.renderable=true;node!.eventMode=nodeState.interactive?"static":"none";
+        }else if(isNewNode||!canRetainAppVisualState(node!.state,nodeState))node!.setState(nodeState);
         if (isNewNode) {
-          node!.alpha = isFolderClosingHandoff || shouldSnapDragHandoffLayout || isProvisionalRollbackTarget ? 1 : 0;
+          // Realizing an existing offscreen item is not an insertion animation.
+          const snapEntry=(!pageTrackScopeChanged&&knownDesktopItems.has(item.id))||isFolderClosingHandoff||shouldSnapDragHandoffLayout||isProvisionalRollbackTarget;
+          node!.alpha = snapEntry ? 1 : 0;
           node!.position.set(
             layoutTarget.x,
-            isFolderClosingHandoff || shouldSnapDragHandoffLayout || isProvisionalRollbackTarget
+            snapEntry
               ? layoutTarget.y
               : layoutTarget.y + 8
           );
-          if (!isFolderClosingHandoff && !shouldSnapDragHandoffLayout && !isProvisionalRollbackTarget) {
+          if (!snapEntry) {
             motion(node)
               .preset("fade")
               .layout()
@@ -1603,11 +1742,47 @@ export class DesktopLayer extends Container {
       this.emptyText.position.set(plan.emptyText.x, plan.emptyText.y);
       for (const [key, node] of this.iconNodes) {
         if (seen.has(key)) continue;
+        if(this.detachedPageNodes&&!pageTrackScopeChanged&&this.knownDesktopItems.has(node.item?.id??"")
+          &&node.item?.type==="app"&&!node.state?.dragging&&!node.state?.ghosted&&!node.state?.opening){
+          this.iconNodes.delete(key);node.removeFromParent();killAllMotion(node);node.stopJiggle();
+          node.eventMode="none";node.visible=false;this.detachedPageNodes.set(key,node);continue;
+        }
+        // Retain only ordinary app nodes across desktop/search transitions.
+        // Detached nodes cannot receive input or participate in bounds lookup.
+        if(this.reuseSearchNodes&&(pageTrackScopeChanged||node.source?.type==="search")&&node.item?.type==="app"
+          &&!node.state?.dragging&&!node.state?.ghosted&&!node.state?.opening){
+          this.iconNodes.delete(key);node.removeFromParent();killAllMotion(node);node.stopJiggle();
+          node.setInteractionPhase(null,{immediate:true});
+          node.clearAppFolderCreateHoverAnimation({immediate:true});
+          node.eventMode="none";node.visible=false;
+          this.searchNodeCache.set(key,node);
+          continue;
+        }
         this.retireIconNode(key, node, {
-          immediate: pageTrackScopeChanged ||
+          immediate: pageTrackScopeChanged || this.knownDesktopItems.has(node.item?.id??"") ||
             groupTransferOwnedItemIds.has(node?.item?.id as string) ||
             groupTransferOwnedFolderShellIds.has(node?.item?.id as string),
         });
+      }
+      if(this.detachedPageNodes){
+        for(const [key,node] of this.detachedPageNodes){
+          if(pageTrackScopeChanged||!this.knownDesktopItems.has(node.item?.id??"")||this.detachedPageNodes.size>280){
+            this.detachedPageNodes.delete(key);destroyDisplayObjectAfterFrame(node,{children:true});
+          }
+        }
+      }
+      // Independently bound the retained desktop and transient search history.
+      if(this.reuseSearchNodes){
+        // A narrow/empty query must not evict the desktop it temporarily hides.
+        // Search history has its own bounded high-water mark, independent of it.
+        if(!state.isSearchMode)this.desktopCacheLimit=Math.min(800,plan.entries.length);
+        else this.searchCacheLimit=Math.min(state.gridCols*state.gridRows*3,Math.max(this.searchCacheLimit,plan.entries.length));
+        for(const [prefix,limit] of [["page:",this.desktopCacheLimit],["search:",this.searchCacheLimit]] as const){
+          const cached=[...this.searchNodeCache].filter(([key])=>key.startsWith(prefix));
+          for(const [key,node] of cached.slice(0,Math.max(0,cached.length-limit))){
+            this.searchNodeCache.delete(key);destroyDisplayObjectAfterFrame(node,{children:true});
+          }
+        }
       }
 
       this.boundsRegistration = makeDesktopBoundsRegistration<DesktopBoundsEntry, DesktopRect>(
@@ -1653,7 +1828,7 @@ export class DesktopLayer extends Container {
     return {
       fullPlanBuilds: shouldApplyDesktopPlan ? 1 : 0,
       handoffReconciliations: handoffReconciled ? 1 : 0,
-      reconciledNodes: shouldApplyDesktopPlan ? plan.entries.length : 0,
+      reconciledNodes: shouldApplyDesktopPlan ? entriesToApply.length : 0,
     };
   }
 
@@ -1863,9 +2038,10 @@ export class DesktopLayer extends Container {
     motionSpringTo(this.desktopClosingUnderlayLayer, { alpha }, motionSprings.settle);
   }
 
-  applyFolderOverlayAlpha(state: DesktopVisualState): void {
+  applyFolderOverlayAlpha(state: Pick<DesktopVisualFrame,"launchpadVisualAlpha">): void {
     const alpha = resolveLaunchpadVisualAlpha(state);
-    this.singleStageFolderLayer.visible = true;
+    // FolderOverlayLayer owns visibility, including closing handoffs. A visual-only
+    // desktop update must not reveal the retained panel of an already closed folder.
     this.singleStageFolderLayer.interactiveChildren = alpha > 0.001;
     if (!this.hasFolderOverlayAlpha) {
       this.singleStageFolderLayer.alpha = alpha;
@@ -2111,7 +2287,8 @@ export class DesktopLayer extends Container {
         : [];
       const previewSuppressionChanged = previousSuppressedFolderPreviewChildIds.length !== suppressedFolderPreviewChildIds.length ||
         previousSuppressedFolderPreviewChildIds.some((id, index) => id !== suppressedFolderPreviewChildIds[index]);
-      if (!wasDirectlyOwned && !isDirectlyOwned && !previewSuppressionChanged) continue;
+      if (wasDirectlyOwned === isDirectlyOwned && !previewSuppressionChanged
+        && (!isDirectlyOwned || node.state.ghosted)) continue;
       if (isDirectlyOwned && !wasDirectlyOwned) {
         killMotionOf(node, null, { reason: "group-release-source-handoff" });
         killMotionOf(node.scale, null, { reason: "group-release-source-handoff" });
@@ -2843,6 +3020,7 @@ export class DesktopLayer extends Container {
 
   markInteractiveBoundsDirty(): void {
     this.boundsDirty = true;
+    if (this.boundsUpdateDepth > 0) return;
     if (this.boundsFlushQueued) return;
     this.boundsFlushQueued = true;
     const flush = () => {
@@ -3182,6 +3360,9 @@ export class DesktopLayer extends Container {
   }
 
   override destroy(options?: DestroyOptions): void {
+    for(const node of this.detachedPageNodes?.values()??[])destroyDisplayObjectAfterFrame(node,{children:true});
+    this.detachedPageNodes?.clear();
+    this.clearSearchNodeCache();
     this.unregisterFolderHandoffDiagnosticClear?.();
     this.unregisterFolderHandoffDiagnosticClear = null;
     this.unsubscribeVisualOwnership?.();

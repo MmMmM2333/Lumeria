@@ -284,7 +284,7 @@ function getFolderPreviewChildren(folder: DesktopItem): readonly DesktopItem[] {
     : [];
 }
 
-function countSelectedFolderChildren(folder: DesktopItem, selectedIds: ReadonlySet<string>): number {
+export function countSelectedFolderChildren(folder: DesktopItem, selectedIds: ReadonlySet<string>): number {
   if (folder.type !== "folder" || selectedIds.size === 0) return 0;
   return getFolderPreviewChildren(folder).reduce(
     (count, child) => count + (selectedIds.has(child.id) ? 1 : 0),
@@ -427,7 +427,7 @@ export function getDesktopFrame(
   };
 }
 
-function matchesDesktopIconFocus(
+export function matchesDesktopIconFocus(
   focus: SceneFocusedIcon | null,
   area: "desktop" | "search",
   itemId: string,
@@ -463,6 +463,19 @@ function readFolderPresentation(options: UnknownRecord): FolderPresentationState
   return result as FolderPresentationState;
 }
 
+// Geometry depends on the viewport/grid, not on the active page or track offset.
+// Bound the cache across resizes; no app nodes or textures are retained here.
+const desktopGridCache=new Map<string,ReturnType<typeof getDesktopGridMetrics>>();
+function cachedDesktopGrid(options:Parameters<typeof getDesktopGridMetrics>[0]){
+  const key=JSON.stringify(options);
+  let metrics=desktopGridCache.get(key);
+  if(!metrics){
+    metrics=getDesktopGridMetrics(options);desktopGridCache.set(key,metrics);
+    if(desktopGridCache.size>32)desktopGridCache.delete(desktopGridCache.keys().next().value!);
+  }
+  return metrics;
+}
+
 export function buildDesktopRenderPlan(
   state: DesktopRenderPlanState,
   context: DesktopRenderPlanContext,
@@ -494,7 +507,7 @@ export function buildDesktopRenderPlan(
     const visibleItems = state.getVisibleDesktopPage(page);
     const renderMode = state.getDesktopPageRenderMode(pageIndex);
     const isInteractivePage = renderMode === "interactive";
-    const metrics = getDesktopGridMetrics({
+    const metrics = cachedDesktopGrid({
       cols: state.gridCols,
       height: desktopFrame.height,
       isSearchMode: state.isSearchMode,

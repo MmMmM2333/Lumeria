@@ -1,0 +1,8 @@
+{
+  "extends": "./consumer/tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src", "electrobun.config.ts", "consumer/bytecode-builder.ts"]
+}

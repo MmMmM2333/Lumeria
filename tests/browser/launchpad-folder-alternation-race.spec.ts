@@ -157,16 +157,8 @@ async function readFolderState(page: Page): Promise<FolderStateSnapshot> {
 }
 
 async function waitForFixture(page: Page): Promise<void> {
-  const fixturePath = `/?fixture=multi-select&folder-alternation=${Date.now()}`;
-  if (process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT) {
-    const baseUrl = process.env.LUMERIA_WEBVIEW_BASE_URL || page.url();
-    if (!/^https?:\/\//.test(baseUrl)) {
-      throw new Error(`WebView2 page has no HTTP fixture origin: ${baseUrl}`);
-    }
-    await page.goto(new URL(fixturePath, baseUrl).href);
-  } else {
-    await page.goto(fixturePath);
-  }
+  const fixturePath = `/tests/browser/reference/index.html?fixture=multi-select&folder-alternation=${Date.now()}`;
+  await page.goto(fixturePath);
   await expect.poll(async () => page.evaluate(() => {
     const probe = window.__LUMERIA_E2E__;
     if (
@@ -702,8 +694,8 @@ test("rapidly alternating two folders never revives or cross-wires a stale folde
   appPage: page,
 }) => {
   test.skip(
-    !process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT,
-    "The folder alternation race requires the connected WebView2 compositor",
+    true,
+    "Historical WebView2-only case: already skipped in the Chromium project because it needs the connected WebView2 compositor, whose Playwright CDP entry was retired. Native already covers cross-folder handoff in src/native/diagnostics/nativeFolderSmoke.ts; see tests/browser/reference/README.md.",
   );
   test.setTimeout(180_000);
   await waitForFixture(page);
@@ -938,8 +930,8 @@ test("closing a second folder at zero and 32ms after its accepted open request r
   appPage: page,
 }) => {
   test.skip(
-    !process.env.LUMERIA_WEBVIEW_CDP_ENDPOINT,
-    "The interrupted folder opening race requires the connected WebView2 compositor",
+    true,
+    "Historical WebView2-only case: already skipped in the Chromium project because it needs the connected WebView2 compositor, whose Playwright CDP entry was retired. Native already covers interrupted opening plus the latest cross-folder request winning in src/native/diagnostics/nativeFolderSmoke.ts; see tests/browser/reference/README.md.",
   );
   test.setTimeout(90_000);
   await waitForFixture(page);

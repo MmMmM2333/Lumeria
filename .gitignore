@@ -3,11 +3,14 @@ node_modules/
 
 # Frontend build output
 dist/
+/build/
+/.hutch/
+/.cottontail-tmp/
+/artifacts/
+/release/staging/
 
-# Tauri/Rust build output
-src-tauri/target/
-src-tauri/gen/
-src-tauri/icon-dump/
+# Rust build output
+/target/
 
 # Local environment and tool state
 .env
@@ -24,6 +27,7 @@ docs-agents/
 goal-*/
 .agents/
 .codex-dev/
+.deepseek-tmp/
 
 # Logs
 *.log

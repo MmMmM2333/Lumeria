@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { DestroyOptions, PointData, Text } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { createPixiText } from "../pixiText.js";
 import {
   GROUP_TRANSFER_OUTCOME,
@@ -16,6 +17,7 @@ import type {
 } from "../../../domain/groupTransferPresentation.js";
 import type { GroupTransferEffects } from "../../../domain/groupTransferPlanner.js";
 import { IconNode } from "../nodes/IconNode.js";
+import type { IconTextureRepository } from "../assets/iconTextureRepository.js";
 import { clientPointToStageVisualPoint } from "../geometry/stageCoordinates.js";
 import type { StagePoint, StageRect } from "../geometry/stageCoordinates.js";
 import type { SceneDataRecord, SceneItem } from "../../sceneFrame.js";
@@ -186,6 +188,7 @@ export type GroupDragFolderClipGeometry = Readonly<{
 export type GroupDragReleasePayload = Partial<GroupReleaseSettlementPayload>;
 
 export type GroupDragLayerOptions = Readonly<{
+  iconTextures?: IconTextureRepository | undefined;
   onPrewarmRequest?: ((reason: string) => void) | undefined;
   onReleaseAborted?: ((payload: GroupDragReleasePayload) => void) | undefined;
   onReleaseSettled?: ((payload: GroupDragReleasePayload) => void) | undefined;
@@ -700,8 +703,11 @@ export class GroupDragLayer extends Container {
   declare visualSpecTransition: GroupDragVisualSpecTransition;
   declare releaseController: GroupReleaseController | null;
 
+  readonly iconTextures: IconTextureRepository | undefined;
+
   constructor(options: GroupDragLayerOptions = {}) {
     super();
+    this.iconTextures = options.iconTextures;
     this.eventMode = "none";
     this.sortableChildren = true;
     this.badge = new Container();
@@ -712,7 +718,7 @@ export class GroupDragLayer extends Container {
       text: "",
       style: {
         fill: 0xffffff,
-        fontFamily: "Inter, Segoe UI, sans-serif",
+        fontFamily: [...PIXI_UI_FONT_FAMILY],
         fontSize: 13,
         fontWeight: "700",
       },
@@ -1153,7 +1159,7 @@ export class GroupDragLayer extends Container {
 
   acquireNode(index: number): GroupDragActorNode {
     while (this.nodes.length <= index) {
-      const node = new IconNode({ onAction: () => {} });
+      const node = new IconNode({ onAction: () => {}, iconTextures: this.iconTextures });
       node.eventMode = "none";
       const badge = new Container();
       badge.eventMode = "none";
@@ -1163,7 +1169,7 @@ export class GroupDragLayer extends Container {
         text: "",
         style: {
           fill: 0xffffff,
-          fontFamily: "Inter, Segoe UI, sans-serif",
+          fontFamily: [...PIXI_UI_FONT_FAMILY],
           fontSize: 11,
           fontWeight: "700",
         },

@@ -3,7 +3,7 @@ import type { Ref } from "vue";
 import type { AcrylicParameters } from "../domain/layoutDocument.js";
 import { setLiveDesktopExperimentEnabledForTests } from "../domain/experimentalFeatures.js";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
@@ -12,13 +12,13 @@ import {
   BACKGROUND_SOURCE_CUSTOM_IMAGE,
   BACKGROUND_SOURCE_SYSTEM_MATERIAL,
   BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import {
   appLaunchGhostTransition,
   homeChromeTransition,
   panelSpring,
 } from "./launchpadMotion.js";
-import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
+import { DESKTOP_CLOSE_SCALE } from "../domain/launchpadConstants.js";
 import { useLaunchpadViewState } from "./useLaunchpadViewState.js";
 import type { LaunchpadViewStateOptions } from "./useLaunchpadViewState.js";
 
@@ -95,7 +95,7 @@ export function runLaunchpadViewStateTests() {
   assert(desktop.view.appLaunchGhostTransition === appLaunchGhostTransition, "view state should expose the app launch ghost transition");
   assert(desktop.view.homeChromeTransition === homeChromeTransition, "view state should expose the home chrome transition");
   assert(desktop.view.panelSpring === panelSpring, "view state should expose the settings panel spring");
-  assert(!("stiffness" in panelSpring) && !("damping" in panelSpring) && !("mass" in panelSpring), "settings panel transition should not expose GSAP-ignored spring fields");
+  assert(!("stiffness" in panelSpring) && !("damping" in panelSpring) && !("mass" in panelSpring), "settings panel transition should not expose unsupported spring fields");
 
   const imageBackground = createViewState({ backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE, backgroundImageOpacity: 58 });
   assert(imageBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0.58", "root style should expose image opacity in image background mode");
@@ -115,14 +115,14 @@ export function runLaunchpadViewStateTests() {
   assert(dimmedImageBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0.64", "dimmed background effect should expose configured darken strength");
   const acrylicBackground = createViewState({
     backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
-    backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
     backgroundImageOpacity: 71,
     backgroundImageUrl: "asset://C:/Images/acrylic.webp",
   });
-  assert(acrylicBackground.view.shouldRenderPixiBackgroundEffect.value === true, "webgl acrylic should render the pixi background for image sources");
-  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "webgl acrylic should hide the css image background");
-  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "webgl acrylic should hide the css overlay");
-  assert(acrylicBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/acrylic.webp\")", "webgl acrylic should keep the css image ready for handoff");
+  assert(acrylicBackground.view.shouldRenderPixiBackgroundEffect.value === true, "acrylic should render the pixi background for image sources");
+  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-image-opacity"] === "0", "acrylic should hide the css image background");
+  assert(acrylicBackground.view.rootStyle.value["--launchpad-background-overlay-opacity"] === "0", "acrylic should hide the css overlay");
+  assert(acrylicBackground.view.backgroundImageStyle.value.backgroundImage === "url(\"asset://C:/Images/acrylic.webp\")", "acrylic should keep the css image ready for handoff");
   const blurBackground = createViewState({
     backgroundSource: BACKGROUND_SOURCE_CUSTOM_IMAGE,
     backgroundEffect: BACKGROUND_EFFECT_BLUR,
@@ -169,7 +169,7 @@ export function runLaunchpadViewStateTests() {
   assert(liveDesktopNativeBlur.view.rootStyle.value["--launchpad-live-desktop-backdrop-filter"] === "none", "native live desktop effects should not be double-filtered in css");
   const liveDesktopAcrylic = createViewState({
     backgroundSource: BACKGROUND_SOURCE_WINDOWS_LIVE_DESKTOP,
-    backgroundEffect: BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    backgroundEffect: BACKGROUND_EFFECT_ACRYLIC,
     backgroundBlurStrength: 10,
     backgroundAcrylicBlurStrength: 80,
     liveDesktopCssFallbackEffectsEnabled: true,

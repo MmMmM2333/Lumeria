@@ -10,7 +10,7 @@ import {
 import { normalizeMainWindowShortcut } from "../domain/mainWindowShortcut.js";
 import { resolveAppearancePreference } from "../domain/appearancePreference.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";
-import type { MainWindowEffectsSupport } from "../api/launchpadApi.js";
+import type { MainWindowEffectsSupport } from "../platform/launchpadContracts.js";
 import type { LayoutSettings } from "../domain/layoutDocument.js";
 import {
   DEFAULT_WINDOW_EFFECTS_SUPPORT,
@@ -19,7 +19,7 @@ import {
   normalizeWindowEffectsSupport,
   normalizeWindowMode,
   resolveWindowEffectMaterialForSupport,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 export type MainWindowRuntimeOptions = Readonly<{
   port?: MainWindowPort;

@@ -191,7 +191,7 @@ type LaunchpadSettings = {
   backgroundBaseColor: string;
   backgroundBaseOpacity: number;
   backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
-  backgroundEffect: "none" | "dimmed" | "blur" | "acrylicWebgl";
+  backgroundEffect: "none" | "dimmed" | "blur" | "acrylic";
   backgroundImageOpacity: number;
   backgroundLiveDesktopOpacity: number;
   backgroundImageLayout: "fill" | "fit" | "stretch" | "tile" | "center";

@@ -2,10 +2,11 @@ import { computed } from "vue";
 import type { CSSProperties, Ref } from "vue";
 import type { AcrylicParameters, LayoutSettings } from "../domain/layoutDocument.js";
 import type { BackgroundImageLayout } from "../domain/backgroundImageLayout.js";
-import type { NormalizedLiveDesktopBackgroundSupport } from "./useLaunchpadSettingsConfig.js";
-import { DESKTOP_CLOSE_SCALE } from "./launchpadConstants.js";
+import type { NormalizedLiveDesktopBackgroundSupport } from "../application/launchpadSettingsConfig.js";
+import { DESKTOP_CLOSE_SCALE } from "../domain/launchpadConstants.js";
+import { FOLDER_OPEN_DESKTOP_TRANSFORM } from "../rendering/desktopVisualTargets.js";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_DIMMED,
   backgroundSourceUsesImage,
   backgroundSourceUsesLiveDesktop,
@@ -17,7 +18,7 @@ import {
   normalizeBackgroundBaseColor,
   normalizeBackgroundDarkenColor,
   normalizeLiveDesktopBackgroundSupport,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { resolveCssBackgroundImagePlacement } from "../domain/backgroundImageLayout.js";
 import {
   appLaunchGhostTransition,
@@ -98,7 +99,7 @@ export function useLaunchpadViewState(options: LaunchpadViewStateOptions) {
     && !normalizeLiveDesktopBackgroundSupport(options.liveDesktopBackgroundSupport?.value).supportsLiveDesktopBackgroundEffects
   ));
   const liveDesktopBlurStrength = computed(() => (
-    options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && options.backgroundAcrylicBlurStrength
+    options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC && options.backgroundAcrylicBlurStrength
       ? clampBackgroundAcrylicBlurStrength(options.backgroundAcrylicBlurStrength.value)
       : clampBackgroundBlurStrength(options.backgroundBlurStrength?.value)
   ));
@@ -108,7 +109,7 @@ export function useLaunchpadViewState(options: LaunchpadViewStateOptions) {
   const liveDesktopBackdropFilter = computed(() => {
     if (!shouldUseCssLiveDesktopEffect.value) return "none";
     const blur = `blur(${liveDesktopBlurRadius.value.toFixed(1)}px)`;
-    if (options.backgroundEffect.value !== BACKGROUND_EFFECT_ACRYLIC_WEBGL) return blur;
+    if (options.backgroundEffect.value !== BACKGROUND_EFFECT_ACRYLIC) return blur;
     const params = options.backgroundAcrylicParams?.value || {};
     const brightness = Number.isFinite(Number(params.brightness)) ? Number(params.brightness) : 0.8;
     const contrast = Number.isFinite(Number(params.contrast)) ? Number(params.contrast) : 0.85;
@@ -130,14 +131,14 @@ export function useLaunchpadViewState(options: LaunchpadViewStateOptions) {
     return clampBackgroundImageOpacity(options.backgroundImageOpacity.value) / 100;
   });
   const backgroundOverlayOpacity = computed(() => (
-    shouldUseLiveDesktopBackground.value && options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && shouldUseCssLiveDesktopEffect.value
+    shouldUseLiveDesktopBackground.value && options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC && shouldUseCssLiveDesktopEffect.value
       ? Math.max(0, Math.min(0.52, Number(options.backgroundAcrylicParams?.value?.tintStrength ?? 0.2) * 0.65))
       : options.backgroundEffect.value === BACKGROUND_EFFECT_DIMMED
       ? clampBackgroundDarkenStrength(options.backgroundDarkenStrength?.value) / 100
       : 0
   ));
   const backgroundOverlayColor = computed(() => (
-    shouldUseLiveDesktopBackground.value && options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL && shouldUseCssLiveDesktopEffect.value
+    shouldUseLiveDesktopBackground.value && options.backgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC && shouldUseCssLiveDesktopEffect.value
       ? liveDesktopAcrylicOverlayColor.value
       : normalizeBackgroundDarkenColor(options.backgroundDarkenColor?.value)
   ));
@@ -167,7 +168,7 @@ export function useLaunchpadViewState(options: LaunchpadViewStateOptions) {
   }));
   const desktopVisualTransform = computed(() => {
     if (isDesktopAnimatingClosed.value) return { scale: DESKTOP_CLOSE_SCALE, y: 0 };
-    if (options.openFolderId.value && !options.isFolderClosing.value) return { scale: 0.92, y: 44 };
+    if (options.openFolderId.value && !options.isFolderClosing.value) return FOLDER_OPEN_DESKTOP_TRANSFORM;
     return { scale: 1, y: 0 };
   });
   const desktopVisualAlpha = computed(() => (shouldHideHomeShell.value ? 0 : 1));

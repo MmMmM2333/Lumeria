@@ -1,0 +1,21 @@
+pub mod app_icon_cache;
+pub mod autostart;
+pub mod background;
+pub mod catalog;
+pub mod encoding;
+pub mod icons;
+pub mod launch;
+pub mod launcher;
+pub mod launchpad_icon;
+pub mod layout_store;
+pub mod models;
+pub mod path_utils;
+
+#[cfg(target_os = "windows")]
+pub mod native_error;
+#[cfg(target_os = "windows")]
+pub mod windows_app_catalog;
+#[cfg(target_os = "windows")]
+pub mod windows_com;
+#[cfg(target_os = "windows")]
+pub mod windows_shell_link;

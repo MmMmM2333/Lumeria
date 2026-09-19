@@ -22,7 +22,7 @@ test.describe("localized launchpad search placeholder", () => {
   test.use({ locale: "en-US" });
 
   test("the English placeholder is not clipped and animates in both directions", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/tests/browser/reference/index.html");
     const search = page.getByRole("searchbox", { name: "Search apps" });
     await expect(search).toBeVisible();
     await expect(search).toHaveAttribute("placeholder", "Search");

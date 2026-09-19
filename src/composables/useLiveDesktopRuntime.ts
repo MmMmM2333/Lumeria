@@ -13,7 +13,7 @@ import { liveDesktopPort, type LiveDesktopPort } from "../platform/launchpadPort
 import {
   DEFAULT_LIVE_DESKTOP_BACKGROUND_SUPPORT,
   normalizeLiveDesktopBackgroundSupport,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
 const LIVE_DESKTOP_IDLE_STOP_DELAY_MS = 10_000;
 const LIVE_DESKTOP_EXPERIMENT_DISABLED_REASON = "experimentDisabled";

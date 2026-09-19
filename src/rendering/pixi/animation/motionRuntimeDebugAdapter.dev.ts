@@ -35,8 +35,8 @@ interface MotionDebugHistoryState {
 }
 
 interface MotionDebugTargetRef {
-  overlayTarget: object;
-  target: object;
+  overlayTarget: WeakRef<object>;
+  target: WeakRef<object>;
 }
 
 interface MotionCurveStatsSeed extends MotionDebugRecord {
@@ -84,7 +84,8 @@ const LIVE_DEBUG_METADATA_KEYS = new Set([
   "debugOverlayTarget",
   "overlayTarget",
 ]);
-const CAN_STORE_DEBUG_TARGET_REFS = import.meta.env?.DEV !== false;
+const developmentFlag: unknown = import.meta.env?.DEV;
+const CAN_STORE_DEBUG_TARGET_REFS = developmentFlag !== false && developmentFlag !== "false";
 
 function makeDebugCounters(): MotionDebugCounters {
   return {
@@ -452,6 +453,16 @@ export function createMotionRuntimeDebugAdapter(): MotionRuntimeDebugAdapter {
   let runtimeState = { activeAnimationCount: 0, frames: 0, timeMs: 0 };
   let config: MotionDebugConfig = { ...DEFAULT_DEBUG_CONFIG };
   let lastSampleTimeMs = Number.NEGATIVE_INFINITY;
+  let targetRegistrations = 0;
+
+  function pruneCollectedTargets(): void {
+    if (!targetRefsById) return;
+    for (const [id, refs] of targetRefsById) {
+      if (refs.target.deref() || refs.overlayTarget.deref()) continue;
+      targetRefsById.delete(id);
+      targetMetaById.delete(id);
+    }
+  }
 
   function cloneConfig(): MotionDebugConfig {
     return {
@@ -477,9 +488,11 @@ export function createMotionRuntimeDebugAdapter(): MotionRuntimeDebugAdapter {
     const liveTarget = isObjectTarget(candidate) ? candidate : null;
     const previous = targetRefsById.get(targetId);
     targetRefsById.set(targetId, {
-      overlayTarget: liveTarget || previous?.overlayTarget || target,
-      target,
+      overlayTarget: new WeakRef(liveTarget || previous?.overlayTarget.deref() || target),
+      target: new WeakRef(target),
     });
+    // Diagnostics may inspect live targets but must not own their lifetime.
+    if (++targetRegistrations % 256 === 0) pruneCollectedTargets();
   }
 
   function rememberTargetMetadata(event: MotionDebugEvent): MotionDebugRecord | null {
@@ -736,6 +749,7 @@ export function createMotionRuntimeDebugAdapter(): MotionRuntimeDebugAdapter {
     clearHistory();
     targetMetaById.clear();
     targetRefsById?.clear();
+    targetRegistrations = 0;
   }
 
   function resolveTarget(targetId: number, options: { bounds?: boolean } = {}): object | null {
@@ -743,10 +757,14 @@ export function createMotionRuntimeDebugAdapter(): MotionRuntimeDebugAdapter {
     if (!Number.isFinite(numericId)) return null;
     const entry = targetRefsById?.get(numericId);
     if (!entry) return null;
-    return options.bounds === false ? entry.target : (entry.overlayTarget || entry.target);
+    const target = entry.target.deref();
+    const result = options.bounds === false ? target : (entry.overlayTarget.deref() || target);
+    if (!result && !target) { targetRefsById?.delete(numericId); targetMetaById.delete(numericId); }
+    return result ?? null;
   }
 
   function getTargetRecords(): MotionDebugRecord[] {
+    pruneCollectedTargets();
     return Array.from(targetMetaById.values())
       .map((metadata) => ({ ...metadata }))
       .sort((a, b) => (a.targetId || 0) - (b.targetId || 0));

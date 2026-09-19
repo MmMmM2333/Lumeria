@@ -687,11 +687,11 @@ import {
   resolveAutoGaussianRadiusPx,
 } from "../domain/backgroundEffectPlan.js";
 import {
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   clampBackgroundBlurStrength,
   normalizeBackgroundEffect,
-} from "../composables/useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   DEFAULT_DESKTOP_LAYOUT_DEBUG_PARAMS,
@@ -1142,7 +1142,7 @@ const activeBlurKernelSliders = computed(() => (
 const blurKernelStatus = computed(() => {
   const effect = normalizeBackgroundEffect(props.state?.draftBackgroundEffect?.value);
   const actualStrength = clampBackgroundBlurStrength(
-    effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    effect === BACKGROUND_EFFECT_ACRYLIC
       ? props.state?.draftBackgroundAcrylicBlurStrength?.value
       : props.state?.draftBackgroundBlurStrength?.value
   );
@@ -1150,7 +1150,7 @@ const blurKernelStatus = computed(() => {
   if (kawaseParams.kernel === BLUR_KERNEL_AUTO) {
     const resolvedKernel = resolveAutoBlurKernel(effect, testStrength, kawaseParams);
     const radius = resolveAutoGaussianRadiusPx(testStrength, kawaseParams);
-    const cutoff = effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    const cutoff = effect === BACKGROUND_EFFECT_ACRYLIC
       ? kawaseParams.acrylicGaussianCutoff
       : kawaseParams.gaussianCutoff;
     const offsetScale = resolveAutoDualKawaseOffsetScale(effect, testStrength, kawaseParams);
@@ -1815,7 +1815,7 @@ function formatBlurKernelLabel(kernel: BlurKernel): string {
 }
 
 function formatEffectLabel(effect: string): string {
-  if (effect === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return "acrylic";
+  if (effect === BACKGROUND_EFFECT_ACRYLIC) return "acrylic";
   if (effect === BACKGROUND_EFFECT_BLUR) return "blur";
   return effect;
 }

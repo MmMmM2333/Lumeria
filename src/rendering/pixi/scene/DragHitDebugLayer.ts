@@ -1,5 +1,6 @@
 import { Container, Graphics } from "pixi.js";
 import type { Text } from "pixi.js";
+import { PIXI_UI_FONT_FAMILY } from "../../typography.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
 import { sceneDiagnosticsState } from "../../../diagnostics/sceneDiagnosticsState.js";
 import { createPixiText } from "../pixiText.js";
@@ -87,7 +88,7 @@ function makeLabelText(): Text {
     text: "",
     style: {
       fill: 0x07111f,
-      fontFamily: "Inter, Segoe UI, sans-serif",
+      fontFamily: [...PIXI_UI_FONT_FAMILY],
       fontSize: 10,
       fontWeight: "700",
       lineHeight: 12,

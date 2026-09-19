@@ -1,6 +1,10 @@
 import { ref, shallowRef } from "vue";
+import { createLaunchpadApps, type LaunchpadAppsOptions } from "../application/launchpadApps.js";
+import { createNativeStateHost } from "../application/stateHost.js";
+import { catalogPort } from "../platform/launchpadPorts.js";
 import { setLaunchpadApiBridgeForTests } from "../api/launchpadApi.js";
-import type { LaunchpadApiBridge, ScanStats } from "../api/launchpadApi.js";
+import type { LaunchpadApiBridge } from "../api/launchpadApi.js";
+import type { ScanStats } from "../platform/launchpadContracts.js";
 import { createLaunchpadLayoutHelpers } from "../domain/launchpadLayout.js";
 import type { LaunchpadApp, LaunchpadFolder, LaunchpadItem, LaunchpadPages } from "../domain/launchpadLayout.js";
 import type { CatalogSource, CatalogSourceState } from "../domain/applicationCatalog.js";
@@ -159,6 +163,7 @@ async function waitForCondition(condition: () => boolean): Promise<boolean> {
 function createManagedAppRemovalHarness(
   pageItems: readonly (readonly (string | LaunchpadItem)[])[],
   currentPageIndex: number,
+  nativeHost = false,
 ) {
   const helpers = createLaunchpadLayoutHelpers({
     getFolderPageSize: () => 9,
@@ -229,7 +234,10 @@ function createManagedAppRemovalHarness(
     searchPageIndex,
   });
   const transientNotices: LaunchpadAppsNotice[] = [];
-  const apps = useLaunchpadApps({
+  const createApps = nativeHost
+    ? (options: LaunchpadAppsOptions) => createLaunchpadApps({ ...options, catalogPort }, createNativeStateHost(() => {}))
+    : useLaunchpadApps;
+  const apps = createApps({
     appendAppsToPages: (sourcePages, selectedApps) => [
       ...helpers.clonePages(sourcePages),
       selectedApps.map((app) => ({ ...app })),
@@ -265,6 +273,30 @@ export async function runLaunchpadAppsTests() {
   const assert = (condition: unknown, message: string): void => {
     if (!condition) throw new Error(`[Launchpad apps test failed] ${message}`);
   };
+
+  for (const nativeHost of [false, true]) {
+    const { apps } = createManagedAppRemovalHarness([[
+      { id: "stable-status", type: "app", name: "Stable", launchTarget: { kind: "executable", path: "C:/Stable.exe" } },
+    ]], 0, nativeHost);
+    const empty = apps.presentation.launchTargetStatusById.value;
+    assert(empty === apps.presentation.launchTargetStatusById.value, "unchanged status reads must retain identity on both hosts");
+    apps.appManagerSearchQuery.value = "unrelated query";
+    apps.toggleManagedAppSelection("stable-status", true);
+    assert(empty === apps.presentation.launchTargetStatusById.value, "list state must not invalidate launch target status projection");
+    const checks = apps.nativeIntegration.listLaunchTargets();
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "stable-status", status: "missing" }], checks);
+    const missing = apps.presentation.launchTargetStatusById.value;
+    assert(missing !== empty && missing["stable-status"] === "missing", "a real status change must publish a new map");
+    apps.nativeIntegration.applyLaunchTargetStatuses([{ id: "stable-status", status: "missing" }], checks);
+    assert(missing === apps.presentation.launchTargetStatusById.value, "equivalent check results must preserve projection identity");
+    assert(Object.isFrozen(missing), "shared status projections must be immutable");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    const cleared = apps.presentation.launchTargetStatusById.value;
+    assert(cleared !== missing && Object.keys(cleared).length === 0, "clearing checks must invalidate a populated map");
+    apps.nativeIntegration.clearLaunchTargetStatuses();
+    assert(cleared === apps.presentation.launchTargetStatusById.value, "clearing an empty map must not republish it");
+    assert(missing["stable-status"] === "missing", "later updates must not mutate published snapshots");
+  }
 
   assert(getCustomIconCanvasSize(128, 128) === 128, "128px custom icons should not be upscaled to 256px");
   assert(getCustomIconCanvasSize(64, 64) === 128, "small custom icons should be normalized to the UI max size");
@@ -565,6 +597,7 @@ export async function runLaunchpadAppsTests() {
         id: "win-app-store",
         type: "app",
         name: "Settings",
+        iconPath: "C:/Icons/settings.png",
         launchTarget: {
           kind: "appUserModelId",
           appUserModelId: "windows.settings_123!App",
@@ -760,8 +793,16 @@ export async function runLaunchpadAppsTests() {
 
     assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
     const windowsApp = requireApp(pages.value.flat().find((app) => app.id === "win-app-store"));
+    delete windowsApp.iconUrl;
+    delete windowsApp.iconDataUrl;
     assert(apps.getLaunchTargetPath(windowsApp) === "windows.settings_123!App", "managed app details should display AppUserModelIds");
     apps.openEditManagedApp(windowsApp);
+    apps.editorModel.actions.openIconChooser();
+    const defaultChoice=apps.iconChooserModel.choices.value[0];
+    assert(defaultChoice?.restoreDefault===true,"UWP must offer its cached original icon without filesystem extraction");
+    assert(defaultChoice?.iconDataUrl==="http://asset.localhost/C:/Icons/settings.png","UWP candidate must use the original cached image");
+    apps.iconChooserModel.actions.choose(defaultChoice!);
+    assert(apps.editorModel.isIconReset.value,"choosing the original icon should restore defaults rather than pin a custom override");
     assert(apps.editorModel.targetReadOnly.value, "Windows app identifiers should be treated as system-managed");
     apps.editorModel.name.value = "Windows Settings";
     apps.editorModel.target.value = "C:/Should/Not/Replace.exe";
@@ -867,6 +908,8 @@ export async function runLaunchpadAppsTests() {
       };
 
       apps.openExistingAppIconChooser("app-a");
+      assert(await waitForCondition(()=>!apps.iconChooserModel.isLoading.value),"empty icon extraction must settle");
+      assert(apps.iconChooserModel.choices.value.length===0,"truly missing icons must not manufacture a generic candidate");
       apps.iconChooserModel.actions.upload({ target: uploadInput as unknown as HTMLInputElement });
       assert(await waitForCondition(() => pendingCustomIconCaches.length === 1), "custom icon upload should reach the native cache");
       apps.openExistingAppIconChooser("app-b");

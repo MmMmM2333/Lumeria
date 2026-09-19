@@ -10,14 +10,7 @@ import type { createIconBoundsRegistry } from "../rendering/desktopScenePort.js"
 const BOUNDS_KIND = ICON_BOUNDS_KIND;
 const BOUNDS_VARIANT = ICON_BOUNDS_VARIANT;
 
-export type FolderMotionGeometry = Readonly<{
-  borderRadius: number;
-  id: string | null;
-  scaleX: number;
-  scaleY: number;
-  x: number;
-  y: number;
-}>;
+import type { FolderMotionGeometry } from "../rendering/folderMotionGeometry.js";
 
 type PageRectElement = Readonly<{
   getBoundingClientRect: () => Readonly<Rect>;

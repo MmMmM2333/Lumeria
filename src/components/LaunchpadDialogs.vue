@@ -93,7 +93,7 @@ import DismissIcon from "~icons/fluent/dismiss-16-regular";
 import ErrorCircleIcon from "~icons/fluent/error-circle-20-regular";
 import InfoIcon from "~icons/fluent/info-20-regular";
 import WarningIcon from "~icons/fluent/warning-20-regular";
-import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import { useDomMotion, type DomMotion } from "../composables/useDomMotion.js";
 import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import type { LaunchpadNoticeIntent } from "../composables/useLaunchpadNotices.js";
 import { focusModalElement, handleModalKeydown } from "../composables/useModalFocusTrap.js";
@@ -115,11 +115,11 @@ const managedAppEditorDialogRef = ref<FocusableDialog | null>(null);
 const appIconChooserDialogRef = ref<FocusableDialog | null>(null);
 const warningDialogOverlayRef = ref<HTMLElement | null>(null);
 const warningDialogRef = ref<HTMLElement | null>(null);
-const warningDialogOverlayMotion = useGsapDomMotion(warningDialogOverlayRef, {
+const warningDialogOverlayMotion = useDomMotion(warningDialogOverlayRef, {
   initial: { opacity: 0 },
   motion: resolveWarningDialogOverlayMotion,
 });
-const warningDialogMotion = useGsapDomMotion(warningDialogRef, {
+const warningDialogMotion = useDomMotion(warningDialogRef, {
   initial: { opacity: 0, scale: 0.96 },
   motion: resolveWarningDialogPanelMotion,
 });
@@ -202,14 +202,14 @@ function getNoticeIcon(intent: unknown) {
   }
 }
 
-function resolveWarningDialogOverlayMotion() {
+function resolveWarningDialogOverlayMotion(): DomMotion {
   return {
     opacity: props.state.isWarningDialogOpen.value ? 1 : 0,
     duration: 0.14,
   };
 }
 
-function resolveWarningDialogPanelMotion() {
+function resolveWarningDialogPanelMotion(): DomMotion {
   return props.state.isWarningDialogOpen.value
     ? { opacity: 1, scale: 1, duration: 0.16 }
     : { opacity: 0, scale: 0.96, duration: 0.16 };

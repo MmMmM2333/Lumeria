@@ -8,7 +8,7 @@ import type {
 } from "../domain/launchpadLayout.js";
 import type { CapturedFolderOriginBounds } from "../rendering/desktopScenePort.js";
 import { killMotionOf, motion, motionSprings } from "../rendering/desktopScenePort.js";
-import type { FolderMotionGeometry } from "./useFolderMotionGeometry.js";
+import type { FolderMotionGeometry } from "../rendering/folderMotionGeometry.js";
 import type {
   FolderPageTurnRequestOptions,
 } from "./useLaunchpadLayout.js";
@@ -18,7 +18,7 @@ import {
   FOLDER_CLOSE_PROGRESS_FALLBACK_DURATION,
   FOLDER_ZOOM_FADE_CLOSE_DURATION,
   HOME_REVEAL_SETTLE_DURATION,
-} from "./launchpadConstants.js";
+} from "../domain/launchpadConstants.js";
 
 const FOLDER_OPEN_PROGRESS_LANE_KEY = "folder-open-progress";
 const FOLDER_OPEN_PROGRESS_SPRING = Object.freeze({

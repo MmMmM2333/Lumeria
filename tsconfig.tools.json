@@ -3,14 +3,22 @@
   "compilerOptions": {
     "allowJs": false,
     "checkJs": false,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node", "vite/client"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ]
   },
   "include": [
     "playwright.config.ts",
-    "playwright.webview.config.ts",
+    "playwright.webgpu.config.ts",
     "scripts/**/*.ts",
     "tests/browser/**/*.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "vite.motion-lab.config.ts"
   ]
 }

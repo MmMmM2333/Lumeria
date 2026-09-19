@@ -618,6 +618,9 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
   const pendingUpdateAnimations = new Set<RuntimeMotionAnimationState>();
   const targetIds = new WeakMap<object, number>();
   let debugAdapter: MotionRuntimeDebugAdapter = motionRuntimeDebugAdapterFactory();
+  // Only flat metadata is reusable: nested caller-owned records may mutate.
+  // Weak keys keep a retired scene node and its overlay targets collectible.
+  let targetDescriptions=new WeakMap<object,{metadata:Record<string,unknown>;record:MotionDebugRecord}>();
   const observers = new Set<MotionDebugObserver | MotionDebugObserverListener>();
   const renderSignalObservers = new Set<MotionRenderSignalListener | MotionRenderSignalObserver>();
   const activeAnimationScratch: RuntimeMotionAnimationState[] = [];
@@ -639,6 +642,7 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
     const nextAdapter = factory();
     nextAdapter.configureDebug?.(previousConfig);
     debugAdapter = nextAdapter;
+    targetDescriptions=new WeakMap();
     return true;
   }
 
@@ -944,15 +948,29 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
     const hasPatch = Boolean(config && typeof config === "object" && Object.keys(config).length);
     const nextConfig = debugAdapter.configureDebug(config);
     if (hasPatch) {
+      targetDescriptions=new WeakMap();
       emitRenderSignal("debug-config");
       emitMotionEvent("debugConfig", { config: nextConfig });
     }
     return nextConfig;
   }
 
-  function describeTarget(target: object, metadata: MotionDebugMetadata = {}): MotionDebugRecord {
+  function describeTarget(target: object, metadata: MotionDebugMetadata = {}): MotionDebugRecord | null {
+    // No observer consumes metadata while disabled; avoid allocating/sanitizing
+    // a record that emitMotionEvent would immediately discard.
+    if (!debugAdapter.isEnabled()) return null;
+    const keys=Object.keys(metadata),previous=targetDescriptions.get(target);
+    const cacheable=keys.every(key=>["boundsTarget","debugOverlayTarget","overlayTarget"].includes(key)
+      ||metadata[key]===null||typeof metadata[key]!=="object");
+    if(cacheable&&previous&&keys.length===Object.keys(previous.metadata).length
+      &&keys.every(key=>{const saved=previous.metadata[key];return Object.prototype.hasOwnProperty.call(previous.metadata,key)
+        &&Object.is(metadata[key],saved instanceof WeakRef?saved.deref():saved);}))return {...previous.record};
     const targetId = getTargetId(target);
     const record = { targetId, ...sanitizeDebugMetadata(metadata) };
+    if(cacheable)targetDescriptions.set(target,{metadata:Object.fromEntries(keys.map(key=>{
+      const value=metadata[key];return [key,value!==null&&(typeof value==="object"||typeof value==="function")?new WeakRef(value):value];
+    })),record:{...record}});
+    else targetDescriptions.delete(target);
     emitMotionEvent("targetMetadata", { metadata, record, target, targetId });
     return { ...record };
   }
@@ -1718,6 +1736,7 @@ export function createMotionRuntime(options: MotionRuntimeOptions = {}): MotionR
     pendingUpdateAnimations.clear();
     stopTicker();
     debugAdapter.reset();
+    targetDescriptions=new WeakMap();
     clearDebugHistory();
     frameCount = 0;
     frameAfterFrameFlushes = 0;

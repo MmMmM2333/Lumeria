@@ -401,3 +401,35 @@ export function searchAppDocuments<TApp extends SearchableApp>(
     ))
     .map((match) => match.document.app);
 }
+
+/** Keep name analysis across layout moves, but never retain removed applications.
+ * Query history is bounded and cleared whenever app identity/order/name changes. */
+export function createAppSearchIndex<TApp extends SearchableApp>() {
+  let documents:AppSearchDocument<TApp>[]=[];
+  let names:string[]=[];
+  const results=new Map<string,readonly TApp[]>();
+  return {
+    update(apps:readonly TApp[]):void {
+      const nextNames=apps.map(app=>String(app.name||""));
+      if(apps.length===documents.length&&apps.every((app,index)=>app===documents[index]!.app&&nextNames[index]===names[index]))return;
+      const byName=new Map(documents.map((document,index)=>[names[index]!,document]));
+      documents=apps.map((app,originalOrder)=>{
+        const name=nextNames[originalOrder]!;
+        let document=byName.get(name);
+        if(!document){document=buildAppSearchDocuments([app])[0]!;byName.set(name,document);}
+        return {...document,app,originalOrder};
+      });
+      names=nextNames;results.clear();
+    },
+    search(query:string):readonly TApp[] {
+      // Tokenization uses original casing to detect camel-case word boundaries.
+      const key=query;
+      const cached=results.get(key);
+      if(cached){results.delete(key);results.set(key,cached);return cached;}
+      const found=Object.freeze(searchAppDocuments(documents,query));
+      results.set(key,found);
+      if(results.size>16)results.delete(results.keys().next().value!);
+      return found;
+    },
+  };
+}

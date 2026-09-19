@@ -1,3 +1,5 @@
+import { createSettingsNavigation, SETTINGS_SUBPAGE_SPECS, type SettingsTabId, type SettingsSubPageSpec, type SettingsSubPageItem } from "../application/settingsNavigation.js";
+import { vueStateHost } from "./vueStateHost.js";
 import { computed, effectScope, ref, watch } from "vue";
 import type { Ref } from "vue";
 import type {
@@ -5,7 +7,7 @@ import type {
   LiveDesktopBackgroundSupport,
   LiveDesktopRuntimeStatus,
   MainWindowEffectsSupport,
-} from "../api/launchpadApi.js";
+} from "../platform/launchpadContracts.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import { cx } from "../domain/launchpadLayout.js";
 import type { AppearancePreference } from "../domain/appearancePreference.js";
@@ -35,7 +37,7 @@ import { mainWindowShortcutFromKeyboardEvent } from "../platform/mainWindowShort
 import { rgbArrayToHex } from "../domain/backgroundAcrylicParams.js";
 import type { AcrylicParameters } from "../domain/layoutDocument.js";
 import { useBackgroundImagePixelSize } from "./useBackgroundImagePixelSize.js";
-import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "./launchpadConstants.js";
+import { ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP } from "../domain/launchpadConstants.js";
 import type { useLaunchpadApps } from "./useLaunchpadApps.js";
 import type { useLaunchpadSettings } from "./useLaunchpadSettings.js";
 import type { useSettingsPanelFlow } from "./useSettingsPanelFlow.js";
@@ -52,7 +54,7 @@ import {
   BACKGROUND_DARKEN_STRENGTH_MAX,
   BACKGROUND_DARKEN_STRENGTH_MIN,
   BACKGROUND_DARKEN_STRENGTH_STEP,
-  BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+  BACKGROUND_EFFECT_ACRYLIC,
   BACKGROUND_EFFECT_BLUR,
   BACKGROUND_EFFECT_DIMMED,
   BACKGROUND_EFFECT_NONE,
@@ -84,38 +86,20 @@ import {
   backgroundSourceUsesLiveDesktop,
   normalizeBackgroundAcrylicAppearance,
   normalizeBackgroundAcrylicParams,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 import type {
   BackgroundAcrylicProfileKey,
   WindowEffectAppearance,
   WindowEffectMaterial,
-} from "./useLaunchpadSettingsConfig.js";
+} from "../application/launchpadSettingsConfig.js";
 
-const SETTINGS_ROUTE_TRANSITION_FORWARD = "settings-route-forward";
-const SETTINGS_ROUTE_TRANSITION_BACK = "settings-route-back";
-const SETTINGS_ROUTE_TRANSITION_SWITCH = "settings-route-switch";
 const LIVE_DESKTOP_STATUS_REFRESH_INTERVAL_MS = 1000;
-const ACRYLIC_PARAM_STEP = 0.01;
-const ACRYLIC_TINT_STRENGTH_MIN = 0;
-const ACRYLIC_TINT_STRENGTH_MAX = 0.6;
-const ACRYLIC_BRIGHTNESS_MIN = 0.5;
-const ACRYLIC_BRIGHTNESS_MAX = 1.2;
-const ACRYLIC_CONTRAST_MIN = 0.75;
-const ACRYLIC_CONTRAST_MAX = 1.25;
-const ACRYLIC_SATURATION_MIN = 0.8;
-const ACRYLIC_SATURATION_MAX = 1.8;
+import {
+  ACRYLIC_PARAM_STEP, ACRYLIC_TINT_STRENGTH_MIN, ACRYLIC_TINT_STRENGTH_MAX,
+  ACRYLIC_BRIGHTNESS_MIN, ACRYLIC_BRIGHTNESS_MAX, ACRYLIC_CONTRAST_MIN, ACRYLIC_CONTRAST_MAX,
+  ACRYLIC_SATURATION_MIN, ACRYLIC_SATURATION_MAX,
+} from "../domain/backgroundAcrylicParams.js";
 
-const SETTINGS_TAB_SPECS = Object.freeze([
-  Object.freeze({ id: "general", labelKey: "settings.general.title" }),
-  Object.freeze({ id: "interface", labelKey: "settings.interface.title" }),
-  Object.freeze({ id: "apps", labelKey: "settings.apps.title" }),
-  Object.freeze({ id: "about", labelKey: "settings.about.title" }),
-] as const);
-
-const SETTINGS_SUBPAGE_SPECS = Object.freeze({
-  appsExcludedApps: Object.freeze({ id: "apps.excludedApps", labelKey: "settings.apps.excluded.title", parentTabId: "apps" }),
-  appsAppManager: Object.freeze({ id: "apps.appManager", labelKey: "settings.apps.manager.title", parentTabId: "apps" }),
-});
 
 const GENERAL_CAPABILITIES = [
   "canConfigureLaunchAtLogin",
@@ -333,14 +317,7 @@ export type SettingsPanelModelOptions = Readonly<{
   systemAppearance: ValueOwner<AppearancePreference>;
 }>;
 
-type SettingsTabId = (typeof SETTINGS_TAB_SPECS)[number]["id"];
-type SettingsTabItem = Readonly<{ id: SettingsTabId; label: string }>;
-type SettingsSubPageSpec = Readonly<{
-  id: string;
-  labelKey: string;
-  parentTabId: SettingsTabId;
-}>;
-type SettingsSubPageItem = SettingsSubPageSpec & Readonly<{ label: string }>;
+
 type ExcludedScanApp = SettingsPanelCapabilities["excludedScanApps"]["value"][number];
 
 function pickCapabilities<Source extends object, const Names extends readonly (keyof Source)[]>(
@@ -408,10 +385,11 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     throw new TypeError("useSettingsPanelModel requires developer tools");
   }
 
-  const activeTab = ref<SettingsTabId>("general");
-  const activeSubPage = ref<SettingsSubPageSpec | null>(null);
-  const isNavigationCompact = ref(true);
-  const routeTransitionName = ref(SETTINGS_ROUTE_TRANSITION_SWITCH);
+  const navigation = createSettingsNavigation(vueStateHost,t);
+  type Navigation = typeof navigation;
+  const {activeTab,activeSubPage,isNavigationCompact,routeTransitionName,settingsTabs,settingsSubPages,activeRoute,updateRoute,selectTab,openSubPage,closeSubPage} = navigation as {
+    [Key in keyof Navigation]: Navigation[Key] extends {readonly value:infer Value} ? Ref<Value> : Navigation[Key];
+  };
   const resolvedSettingsTheme = computed(() => resolveAppearancePreference(
     state.draftSettingsThemePreference.value,
     options.systemAppearance.value
@@ -427,75 +405,6 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     { value: LAUNCHPAD_ICON_PASTEL_LIGHT, label: t("settings.general.launchpadIcon.options.pastelLight") },
     { value: LAUNCHPAD_ICON_PASTEL_DARK, label: t("settings.general.launchpadIcon.options.pastelDark") },
   ]);
-  const settingsTabs = computed<SettingsTabItem[]>(() => (
-    SETTINGS_TAB_SPECS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))
-  ));
-  const settingsSubPages = computed(() => Object.fromEntries(
-    Object.entries(SETTINGS_SUBPAGE_SPECS).map(([name, page]) => [name, {
-      id: page.id,
-      label: t(page.labelKey),
-      labelKey: page.labelKey,
-      parentTabId: page.parentTabId,
-    }]),
-  ));
-  const activeTabItem = computed(() => (
-    settingsTabs.value.find((tab) => tab.id === activeTab.value) || settingsTabs.value[0]!
-  ));
-  const activeRoute = computed(() => {
-    const tab = activeTabItem.value;
-    const subPage = activeSubPage.value?.parentTabId === tab.id ? activeSubPage.value : null;
-    return {
-      depth: subPage ? 1 : 0,
-      key: subPage ? `${tab.id}/${subPage.id}` : `${tab.id}/index`,
-      label: subPage?.labelKey ? t(subPage.labelKey) : tab.label,
-      parentLabel: tab.label,
-      subPageId: subPage?.id || null,
-      tabId: tab.id,
-    };
-  });
-
-  function resolveRouteTransition(
-    nextTabId: SettingsTabId,
-    nextSubPage: SettingsSubPageSpec | null,
-  ): string {
-    if (nextTabId !== activeTab.value) return SETTINGS_ROUTE_TRANSITION_SWITCH;
-    const currentDepth = activeSubPage.value ? 1 : 0;
-    const nextDepth = nextSubPage ? 1 : 0;
-    if (nextDepth > currentDepth) return SETTINGS_ROUTE_TRANSITION_FORWARD;
-    if (nextDepth < currentDepth) return SETTINGS_ROUTE_TRANSITION_BACK;
-    if (nextSubPage?.id !== activeSubPage.value?.id) return SETTINGS_ROUTE_TRANSITION_SWITCH;
-    return routeTransitionName.value;
-  }
-
-  function updateRoute(tabId: SettingsTabId, subPage: SettingsSubPageSpec | null): boolean {
-    if (!SETTINGS_TAB_SPECS.some((tab) => tab.id === tabId)) return false;
-    const nextSubPage = subPage ? normalizeSettingsSubPage(subPage) : null;
-    if (nextSubPage && nextSubPage.parentTabId !== tabId) return false;
-    routeTransitionName.value = resolveRouteTransition(tabId, nextSubPage);
-    activeSubPage.value = nextSubPage;
-    activeTab.value = tabId;
-    return true;
-  }
-
-  function selectTab(tabId: SettingsTabId): void {
-    updateRoute(tabId, null);
-  }
-
-  function openSubPage(page: SettingsSubPageSpec): void {
-    const next = normalizeSettingsSubPage(page);
-    if (next) updateRoute(next.parentTabId, next);
-  }
-
-  function normalizeSettingsSubPage(page: SettingsSubPageSpec | null | undefined): SettingsSubPageSpec | null {
-    if (!page?.id || !page?.labelKey || !page?.parentTabId) return null;
-    if (!SETTINGS_TAB_SPECS.some((tab) => tab.id === page.parentTabId)) return null;
-    return { id: page.id, labelKey: page.labelKey, parentTabId: page.parentTabId };
-  }
-
-  function closeSubPage() {
-    if (activeSubPage.value) updateRoute(activeTab.value, null);
-  }
-
   const isRecordingShortcut = ref(false);
   let shortcutRecordingSession = 0;
   let unlistenShortcutCaptured: (() => void) | null = null;
@@ -716,7 +625,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     doesDraftBackgroundUseLayer.value
       ? doesDraftBackgroundUseLiveDesktop.value && !state.canUseLiveDesktopBackgroundEffect(state.draftBackgroundEffect.value)
         ? t("settings.interface.background.effect.hintCss")
-        : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+        : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
           ? t("settings.interface.background.effect.hintAcrylic")
           : state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR
             ? t("settings.interface.background.effect.hintBlur")
@@ -770,7 +679,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     return normalizeBackgroundAcrylicParams(params, appearance);
   });
   const draftBackgroundEffectBlurStrength = computed(() => (
-    state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL
+    state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC
       ? state.draftBackgroundAcrylicBlurStrength.value
       : state.draftBackgroundBlurStrength.value
   ));
@@ -851,7 +760,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
   const backgroundEffectSummary = computed(() => {
     if (!doesDraftBackgroundUseLayer.value) return t("settings.interface.background.effect.unavailable");
     if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_BLUR) return `${t("settings.interface.background.effect.blur")} · ${state.draftBackgroundBlurStrength.value}%`;
-    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC_WEBGL) return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${state.draftBackgroundAcrylicBlurStrength.value}%`;
+    if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_ACRYLIC) return `Acrylic · ${backgroundAcrylicAppearanceLabel.value} · ${state.draftBackgroundAcrylicBlurStrength.value}%`;
     if (state.draftBackgroundEffect.value === BACKGROUND_EFFECT_DIMMED) return `${t("settings.interface.background.effect.dim")} · ${state.draftBackgroundDarkenStrength.value}%`;
     return t("settings.interface.background.effect.original");
   });
@@ -879,7 +788,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
     BACKGROUND_DARKEN_STRENGTH_MAX,
     BACKGROUND_DARKEN_STRENGTH_MIN,
     BACKGROUND_DARKEN_STRENGTH_STEP,
-    BACKGROUND_EFFECT_ACRYLIC_WEBGL,
+    BACKGROUND_EFFECT_ACRYLIC,
     BACKGROUND_EFFECT_BLUR,
     BACKGROUND_EFFECT_DIMMED,
     BACKGROUND_EFFECT_NONE,

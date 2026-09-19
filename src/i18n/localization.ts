@@ -10,6 +10,7 @@ import {
   type Ref,
 } from "vue";
 import { createI18n } from "vue-i18n";
+import { datetimeFormats } from "./dateTimeFormats.js";
 import {
   getBundledMessages,
   getLocaleMetadata,
@@ -23,12 +24,11 @@ import {
   type SupportedLocale,
 } from "./locale.js";
 
-type TranslationPrimitive = string | number;
-type TranslationValues = Readonly<Record<string, TranslationPrimitive>>;
+import type { TranslationPort, TranslationValues } from "./translationPort.js";
 type DateTimeFormatKey = "scanTimestamp";
 type NumberFormatKey = "decimal";
 
-export type LocalizationText = Readonly<{
+export type LocalizationText = TranslationPort & Readonly<{
   availableLocales: readonly LocaleMetadata[];
   d(value: number | Date, formatKey?: DateTimeFormatKey): string;
   direction: ComputedRef<"ltr" | "rtl">;
@@ -36,7 +36,6 @@ export type LocalizationText = Readonly<{
   localePreference: DeepReadonly<Ref<string>>;
   n(value: number, formatKey?: NumberFormatKey): string;
   resolvedLocale: DeepReadonly<Ref<SupportedLocale>>;
-  t(key: unknown, values?: TranslationValues): string;
 }>;
 
 export type LocalizationRuntime = Readonly<{
@@ -46,26 +45,6 @@ export type LocalizationRuntime = Readonly<{
 const LOCALIZATION_KEY: InjectionKey<LocalizationText> = Symbol("lumeria-localization");
 const LOCALIZATION_RUNTIME_KEY: InjectionKey<LocalizationRuntime> = Symbol("lumeria-localization-runtime");
 
-const datetimeFormats = Object.freeze({
-  "zh-CN": {
-    scanTimestamp: {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  },
-  "en-US": {
-    scanTimestamp: {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    },
-  },
-} as const);
 
 const numberFormats = Object.freeze({
   "zh-CN": { decimal: { maximumFractionDigits: 2 } },

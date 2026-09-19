@@ -1,5 +1,6 @@
 import { createMotionRuntime } from "../animation/motionRuntime.js";
 import type { MotionRuntime } from "../animation/motionRuntime.js";
+import { getPageSwipeSpeed,setPageSwipeSpeed } from "../../pageSwipePreview.js";
 import {
   createPageTrackMotionState,
   getPageTrackX,
@@ -23,6 +24,55 @@ function nearlyEqual(a: number, b: number, epsilon = 0.001): boolean {
 }
 
 export function runPageTrackMotionTests(): void {
+  const previousSpeed=getPageSwipeSpeed();
+  for(const speed of [4,6] as const){
+    setPageSwipeSpeed(speed);
+    try{
+      const runtime=createMotionRuntime({autoStart:false}),state=createPageTrackMotionState(),track={x:0};
+      const update=(progress:number,time:number,settle=false)=>updatePageTrackMotion(state,track,{runtime,pageSpan:800,scrub:{fromIndex:0,toIndex:1,progress,continuousWheel:true,sampleTime:time,...(settle?{settle:true,targetProgress:1,settleToken:"speed-release"}:{})}});
+      update(0.01,10);assert(nearlyEqual(track.x,-8),"slow input must follow immediately");
+      runtime.step(.02);update(0.03,30);assert(nearlyEqual(track.x,-24),"slow input must not accumulate lag");
+      update(1,40);assert(nearlyEqual(track.x,-24),"fast input cannot jump to its target");
+      let previous=track.x;
+      for(let frame=0;frame<6;frame++){
+        runtime.step(1/120);assert(Math.abs(track.x-previous)<=speed*800/120+0.01,"active movement respects page-normalized speed");previous=track.x;
+      }
+      const beforeRelease=track.x;update(1,40,true);assert(nearlyEqual(track.x,beforeRelease),"release starts from the actual visible position");
+      const control=state.control;update(1,40,true);assert(state.control===control,"unchanged render commits cannot restart the limiter");
+      updatePageTrackMotion(state,track,{runtime,pageSpan:800,pageIndex:1,scrub:null});assert(state.control===control,"input presentation expiry cannot replace an unfinished limited settle");
+      for(let frame=0;frame<150;frame++){
+        runtime.step(1/120);assert(Math.abs(track.x-previous)<=speed*800/120+0.01,"release remains speed-bounded");assert(track.x>=-800.01,"limited release cannot overshoot");previous=track.x;
+      }
+      assert(nearlyEqual(track.x,-800),"limited release must reach the target");
+      state.control?.cancel();
+      const batched=createPageTrackMotionState(),batchedTrack={x:0};
+      updatePageTrackMotion(batched,batchedTrack,{runtime,pageSpan:800,scrub:{fromIndex:0,toIndex:1,progress:1,continuousWheel:true,sampleTime:100,settle:true,targetProgress:1,settleToken:"batched"}});
+      assert(nearlyEqual(batchedTrack.x,0),"release batched before the first render cannot snap to its input position");
+      runtime.step(1/120);assert(batchedTrack.x<0&&batchedTrack.x>-speed*800/120-.01,"batched release obeys the same speed bound");batched.control?.cancel();
+      const reverseState=createPageTrackMotionState(),reverseTrack={x:0};
+      const reverse=(progress:number,time:number)=>updatePageTrackMotion(reverseState,reverseTrack,{runtime,pageSpan:800,scrub:{fromIndex:0,toIndex:1,progress,continuousWheel:true,sampleTime:time}});
+      reverse(1,0);runtime.step(.05);const beforeReverse=reverseTrack.x;reverse(0,50);assert(nearlyEqual(reverseTrack.x,beforeReverse),"reversal is position-continuous");runtime.step(1/120);assert(reverseTrack.x>beforeReverse,"reversal follows the new target on the next frame");reverseState.control?.cancel();
+      const mouse=createPageTrackMotionState(),mouseTrack={x:0};
+      updatePageTrackMotion(mouse,mouseTrack,{runtime,pageSpan:800,scrub:{fromIndex:0,toIndex:1,progress:.8}});
+      assert(nearlyEqual(mouseTrack.x,-640),"non-wheel scrub retains baseline behavior");mouse.control?.cancel();
+    }finally{setPageSwipeSpeed(previousSpeed);}
+  }
+  // Release states reconstructed from the user's fast touchpad recordings.
+  for(const [progress,velocity] of [[1,20.309367],[0.850115,19.498307],[0.999712,23.329792],[0.61565,16.457004]] as const){
+    for(const sign of [1,-1]){
+      const runtime=createMotionRuntime({autoStart:false}),state=createPageTrackMotionState(),track={x:0};
+      const fromIndex=sign===1?0:1,toIndex=sign===1?1:0,span=695.2;
+      updatePageTrackMotion(state,track,{runtime,pageSpan:span,scrub:{fromIndex,toIndex,progress}});
+      updatePageTrackMotion(state,track,{runtime,pageSpan:span,scrub:{fromIndex,toIndex,progress,settle:true,settleToken:"touchpad-release",targetProgress:1,velocity}});
+      let previous=track.x;
+      for(let frame=0;frame<360;frame++){
+        runtime.step(1/120);
+        assert(sign*(track.x+toIndex*span)>=-0.01,"release must not cross the target page");
+        assert(sign*(track.x-previous)<=0.01,"release must approach the page monotonically");previous=track.x;
+      }
+      assert(nearlyEqual(track.x,-toIndex*span),"release must finish at its page");state.control?.cancel();
+    }
+  }
   {
     assert(getPageTrackX(2, 320) === -640, "page index should project to negative track offset");
   }

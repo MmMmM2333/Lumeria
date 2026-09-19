@@ -75,6 +75,20 @@ export async function runIconTextureRepositoryTests() {
   };
 
   try {
+    {
+      const pending: (() => void)[] = [];
+      const lazy = createIconTextureRepository({ resolveSource: value => value?.id ?? null,
+        loadTexture: () => new Promise<Texture>(resolve => pending.push(() => resolve(makeTexture(99, 4, 4)))) });
+      lazy.retain([{ id: "background" }, { id: "foreground" }]);
+      assert(lazy.snapshot().activeCount === 2 && pending.length === 0, "retain must synchronously update ownership without IO");
+      const background = lazy.prepare([{ id: "background" }]);
+      assert(lazy.pendingWork(new Set(["foreground"])) === undefined, "unrelated work must not block the foreground");
+      const foreground = lazy.prepare([{ id: "foreground" }]);
+      const required = lazy.pendingWork(new Set(["foreground"])); assert(Boolean(required), "foreground work must be observable");
+      pending[1]!(); await required; await foreground;
+      assert(Boolean(lazy.pendingWork()), "background work remains pending independently");
+      pending[0]!(); await background; lazy.dispose();
+    }
     const retirements: (() => void)[] = [];
     const controlled = createControlledLoader();
     const repository = createIconTextureRepository({
@@ -161,6 +175,88 @@ export async function runIconTextureRepositoryTests() {
     await disposedSync;
     assert(disposedTexture.destroyed, "a load completing after repository disposal must destroy its stale texture");
     assert(disposedRepository.snapshot().cached.length === 0, "repository disposal must clear all resident resources");
+
+    const nativeControlled = createControlledLoader();
+    const nativeRepository = createIconTextureRepository({
+      loadTexture: nativeControlled.loadTexture,
+      resolveSource: (item) => item?.customIconPath || item?.iconPath || null,
+    });
+    const nativeItem = { id: "native", iconPath: "C:\\Icons\\native.png" };
+    const nativeTexture = makeTexture(6);
+    const nativeSync = nativeRepository.synchronize([nativeItem]);
+    assert(
+      nativeControlled.requests[0]?.source === "C:\\Icons\\native.png",
+      "a repository-specific source resolver should select native file paths",
+    );
+    nativeControlled.requests[0]!.resolve(nativeTexture);
+    await nativeSync;
+    assert(nativeRepository.resolve(nativeItem) === nativeTexture, "a native-resolved texture should use the normal cache");
+    nativeRepository.dispose();
+    assert(nativeTexture.destroyed, "disposing a native repository should destroy its cached textures");
+
+    const queuedControlled = createControlledLoader();
+    const queuedRepository = createIconTextureRepository({
+      loadTexture: queuedControlled.loadTexture,
+      maxConcurrentLoads: 2,
+    });
+    const queuedItems = Array.from({ length: 5 }, (_, index) => ({
+      id: `queued-${index}`, iconDataUrl: `data:image/png;base64,queued-${index}`,
+    }));
+    const queuedSync = queuedRepository.synchronize(queuedItems);
+    assert(queuedControlled.requests.length === 2, "the concurrency budget must cover the entire loader promise");
+    assert(queuedRepository.snapshot().pending.length === 5, "pending diagnostics must include queued sources");
+    queuedRepository.resolve(queuedItems[4]);
+    queuedControlled.requests[0]!.reject(new Error("queued read failed"));
+    await flushPromises();
+    assert(queuedControlled.requests.length === 3, "a rejected load must release its slot");
+    queuedControlled.requests[1]!.resolve(makeTexture(20));
+    await flushPromises();
+    assert(queuedControlled.requests.length === 4, "a completed load must advance the FIFO queue");
+    queuedControlled.requests[2]!.resolve(makeTexture(21));
+    await flushPromises();
+    queuedControlled.requests[3]!.resolve(makeTexture(22));
+    queuedControlled.requests[4]!.resolve(makeTexture(23));
+    await queuedSync;
+    assert(queuedControlled.requests.length === 5, "resolve and synchronize must deduplicate queued loads");
+    assert(queuedRepository.snapshot().cached.length === 4 && queuedRepository.snapshot().failed.length === 1,
+      "bounded loading must preserve explicit failure reporting and successful resources");
+    queuedRepository.dispose();
+
+    const cancelledControlled = createControlledLoader();
+    const cancelledRepository = createIconTextureRepository({ loadTexture: cancelledControlled.loadTexture, maxConcurrentLoads: 1 });
+    const cancelledSync = cancelledRepository.synchronize(queuedItems);
+    cancelledRepository.dispose();
+    const replacementAfterDispose = cancelledRepository.synchronize([firstItem]);
+    const cancelledTexture = makeTexture(24);
+    cancelledControlled.requests[0]!.resolve(cancelledTexture);
+    await cancelledSync;
+    assert(cancelledTexture.destroyed, "in-flight textures from a disposed generation must be destroyed");
+    assert(cancelledControlled.requests.length === 2 && cancelledControlled.requests[1]!.source === firstItem.iconDataUrl,
+      "disposal must settle queued work without starting its IO, and permit reuse after the old load settles");
+    cancelledControlled.requests[1]!.resolve(makeTexture(25));
+    await replacementAfterDispose;
+    assert(cancelledRepository.snapshot().pending.length === 0, "cancelled work must not leave pending entries behind");
+    cancelledRepository.dispose();
+
+    const obsoleteControlled = createControlledLoader();
+    const obsoleteRepository = createIconTextureRepository({ loadTexture: obsoleteControlled.loadTexture, maxConcurrentLoads: 1 });
+    const obsoleteSync = obsoleteRepository.synchronize(queuedItems);
+    await obsoleteRepository.synchronize([]);
+    obsoleteControlled.requests[0]!.resolve(makeTexture(26));
+    await obsoleteSync;
+    assert(obsoleteControlled.requests.length === 1, "removed queued sources must not start unnecessary decoding");
+    assert(obsoleteRepository.snapshot().pending.length === 0, "skipped obsolete requests must settle normally");
+    obsoleteRepository.dispose();
+
+    let synchronousCalls = 0;
+    const synchronousRepository = createIconTextureRepository({
+      maxConcurrentLoads: 1,
+      loadTexture: () => { synchronousCalls += 1; throw new Error("synchronous loader failure"); },
+    });
+    await synchronousRepository.synchronize(queuedItems);
+    assert(synchronousCalls === 5 && synchronousRepository.snapshot().failed.length === 5,
+      "synchronous loader exceptions must settle and release the queue, like rejected promises");
+    synchronousRepository.dispose();
   } finally {
     console.error = originalConsoleError;
   }

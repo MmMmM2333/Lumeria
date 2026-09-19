@@ -114,7 +114,7 @@ import RenameIcon from "~icons/fluent/rename-20-regular";
 import ScanObjectIcon from "~icons/fluent/scan-object-20-regular";
 import SelectAllOnIcon from "~icons/fluent/select-all-on-20-regular";
 import SettingsIcon from "~icons/fluent/settings-20-regular";
-import { useGsapDomMotion } from "../composables/useGsapDomMotion.js";
+import { useDomMotion } from "../composables/useDomMotion.js";
 import type { LaunchpadController } from "../composables/useLaunchpadController.js";
 import { getIconSource } from "../domain/iconSource.js";
 import type { ReadonlyLaunchpadItem } from "../domain/launchpadLayout.js";
@@ -163,13 +163,13 @@ const launchGhostIconSource = computed(() => (
   getIconSource(props.state.launchGhost.value?.app) || undefined
 ));
 const launchGhostRef = ref<HTMLElement | null>(null);
-useGsapDomMotion(launchGhostRef, {
+useDomMotion(launchGhostRef, {
   initial: { opacity: 1, scale: 1 },
   motion: () => ({
     opacity: 0,
     scale: 1.92,
     duration: resolveLaunchGhostDuration(),
-    ease: "power2.out",
+    ease: "cubic-out",
   }),
 });
 const contextMenu = ref<ContextMenu | null>(null);
