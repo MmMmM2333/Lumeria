@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -10,8 +10,9 @@ import { verifyBunRuntimePin } from "./bun-runtime-pin.mjs";
 export const starterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const lockPath = join(starterRoot, "native-toolchain.lock.json");
 export const devkitPath = join(starterRoot, ".hutch/devkit-dcomp-2.0.1");
+export const localLockPath = join(starterRoot, ".hutch/native-toolchain.local.json");
 export const frameDirectory = join(starterRoot, ".hutch/native-frame");
-const help = "Run npm run native:prepare -- --archive <toolchain.tar.gz> (or --url <HTTPS URL>); see docs/native-toolchain.md.";
+const help = "Run npm run native:prepare:source or native:prepare -- --archive <toolchain.tar.gz>; see docs/native-toolchain.md.";
 const frameRecipe = ["--crate-type", "cdylib", "--target", "x86_64-pc-windows-msvc", "src/platform/native-frame.rs", "-C", "opt-level=3", "-C", "link-arg=/Brepro"];
 export function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, ...options });
@@ -59,7 +60,21 @@ export function readLock(path = lockPath) {
     || !/^[a-f0-9]{64}$/.test(lock.archive.sha256) || lock.archive.file !== `${lock.id}.tar.gz`)) throw new Error("Invalid toolchain archive lock");
   return lock;
 }
-export async function verifyDevkit(directory = devkitPath, lock = readLock()) {
+export function readInstalledLock(recordPath = localLockPath, officialPath = lockPath) {
+  if (!existsSync(recordPath)) return readLock(officialPath);
+  if (lstatSync(recordPath).isSymbolicLink()) throw new Error("Local toolchain receipt must not be a link");
+  const record = JSON.parse(readFileSync(recordPath, "utf8"));
+  if (record.localBuild?.officialLockSha256 !== digest(officialPath)) {
+    throw new Error("Local SDK was built for a different repository toolchain lock; rerun native:prepare:source or prepare an official archive");
+  }
+  const lock = readLock(recordPath), official = readLock(officialPath);
+  if (lock.provenance?.upstreamCommit !== official.provenance?.upstreamCommit
+    || JSON.stringify(lock.provenance?.patches) !== JSON.stringify(official.provenance?.patches)) {
+    throw new Error("Local toolchain provenance does not match the repository");
+  }
+  return lock;
+}
+export async function verifyDevkit(directory = devkitPath, lock = readInstalledLock()) {
   await verifyInventory(directory, lock);
   verifyBunRuntimePin(directory, lock.bun);
   const manifest = JSON.parse(readFileSync(join(directory, "native-devkit.json"), "utf8"));
@@ -120,6 +135,52 @@ export async function installArchive(archive, destination = devkitPath, lock = r
     renameSync(payload, destination);
   } finally { removeTemporary(temporary, cache); }
 }
+
+/** Publish only a verified candidate. Keep the previous SDK/receipt together;
+ * no user installation is deleted, and failed activation rolls back both. */
+export async function activateToolchain(archive, lock, localBuild = null, paths = {}) {
+  const cache = paths.cache ?? localCache();
+  const destination = paths.destination ?? devkitPath, receipt = paths.receipt ?? localLockPath;
+  if (realpathSync(cache) !== resolve(cache) || lstatSync(cache).isSymbolicLink()
+    || dirname(resolve(destination)) !== resolve(cache) || dirname(resolve(receipt)) !== resolve(cache)) {
+    throw new Error("Toolchain activation must stay in its cache directory");
+  }
+  for (const path of [destination, receipt]) if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error("Toolchain activation refuses links");
+  if (existsSync(receipt) && !lstatSync(receipt).isFile()) throw new Error("Local toolchain receipt must be a regular file");
+  const guard = join(cache, "toolchain-activation.lock");
+  let descriptor;
+  try { descriptor = openSync(guard, "wx"); }
+  catch (error) { if (error.code === "EEXIST") throw new Error(`Another SDK activation is running (or was interrupted); inspect ${guard}`); throw error; }
+  let transaction;
+  try { transaction = mkdtempSync(join(cache, "activate-")); }
+  catch (error) { closeSync(descriptor); unlinkSync(guard); throw error; }
+  const candidate = transaction + "-candidate";
+  const saved = join(transaction, "previous-sdk"), savedReceipt = join(transaction, "previous-lock.json");
+  let installed = false, rollbackFailed = false;
+  try {
+    await installArchive(archive, candidate, lock);
+    if (localBuild) writeFileSync(join(transaction, "next-lock.json"), JSON.stringify({ ...lock, localBuild }, null, 2) + "\n");
+    if (existsSync(destination)) renameSync(destination, saved);
+    if (existsSync(receipt)) renameSync(receipt, savedReceipt);
+    renameSync(candidate, destination); installed = true;
+    if (localBuild) renameSync(join(transaction, "next-lock.json"), receipt);
+  } catch (error) {
+    try {
+      if (installed) renameSync(destination, candidate);
+      if (existsSync(saved)) renameSync(saved, destination);
+      if (existsSync(savedReceipt)) renameSync(savedReceipt, receipt);
+    } catch (rollback) {
+      rollbackFailed = true;
+      throw new AggregateError([error, rollback], `Toolchain activation rollback failed; inspect ${transaction}`);
+    }
+    throw error;
+  } finally {
+    try { if (!rollbackFailed && existsSync(candidate)) removeTemporary(candidate, cache); }
+    finally { closeSync(descriptor); unlinkSync(guard); }
+  }
+  console.log(`Toolchain selected: ${lock.id}. Previous installation retained in ${transaction}`);
+  return transaction;
+}
 export async function downloadArchive(url, destination, lock = readLock()) {
   const location = new URL(url);
   if (location.protocol !== "https:" || location.username || location.password) throw new Error("Toolchain download requires an HTTPS URL without credentials");
@@ -172,7 +233,7 @@ export function buildNativeFrame() {
   } finally { removeTemporary(temporary, cache); }
 }
 export async function packToolchain(output, sourceRoot = null, id = null) {
-  let lock = readLock(), input = devkitPath, sourceDiff = null;
+  let lock = sourceRoot ? readLock() : readInstalledLock(), input = devkitPath, sourceDiff = null;
   if (sourceRoot) {
     const source = realpathSync(sourceRoot);
     if (!id || id === lock.id || !/^[a-z0-9][a-z0-9.-]+$/.test(id)) throw new Error("A source build needs a distinct --id");
@@ -222,6 +283,7 @@ export async function packToolchain(output, sourceRoot = null, id = null) {
     if (existsSync(receipt)) writeFileSync(join(target, "build-environment.json"), readFileSync(receipt));
   }
   console.log(`Prepared ${archive}; review/promote the generated lock explicitly. No tracked file changed.`);
+  return { archive, lock: generated };
 }
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -242,11 +304,23 @@ async function main() {
     if (argument("--id") && !argument("--source")) throw new Error("--id requires --source");
     await packToolchain(argument("--output") ?? "artifacts/native-toolchain", argument("--source"), argument("--id")); return;
   }
-  if (command === "check") { await verifyDevkit(); verifyNativeFrame(); console.log("Locked devkit and local native-frame receipt verified"); return; }
+  if (command === "check") { const lock = readInstalledLock(); await verifyDevkit(devkitPath, lock); verifyNativeFrame(); console.log(`Verified ${lock.id} (${lock.localBuild ? "local source build" : "repository lock"}) and native-frame receipt`); return; }
   if (command !== "prepare") throw new Error("Usage: native-toolchain.mjs prepare [--archive FILE | --url HTTPS_URL] | frame | check | pack [--output artifacts/DIR]");
   const archive = argument("--archive"), url = argument("--url");
   if (archive && url) throw new Error("Choose --archive or --url, not both");
-  if (!existsSync(devkitPath)) {
+  if (existsSync(localLockPath) && !archive && !url) readInstalledLock();
+  if (existsSync(localLockPath) && !existsSync(devkitPath) && !archive && !url) throw new Error("Selected local SDK is missing; rerun native:prepare:source or supply an official archive");
+  if (existsSync(localLockPath) && (archive || url)) {
+    const lock = readLock();
+    if (archive) await activateToolchain(resolve(archive), lock);
+    else {
+      const cache = localCache(), temporary = mkdtempSync(join(cache, "download-"));
+      try {
+        const downloaded = join(temporary, "toolchain.tar.gz");
+        await downloadArchive(url, downloaded, lock); await activateToolchain(downloaded, lock);
+      } finally { removeTemporary(temporary, cache); }
+    }
+  } else if (!existsSync(devkitPath)) {
     const lock = readLock();
     if (archive) await installArchive(resolve(archive), devkitPath, lock);
     else {

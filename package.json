@@ -53,6 +53,7 @@
     "typecheck:native": "tsc --noEmit -p tsconfig.electrobun.json",
     "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json",
     "native:prepare": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs prepare",
+    "native:prepare:source": "node vendor/electrobun-pixi-native-starter/tools/prepare-source.mjs",
     "native:toolchain:check": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs check",
     "native:toolchain:pack": "node vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs pack",
     "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs",

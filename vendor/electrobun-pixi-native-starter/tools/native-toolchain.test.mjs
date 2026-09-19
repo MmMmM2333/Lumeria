@@ -3,9 +3,26 @@ import { test } from "node:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { digest, readLock, safeName, validateArchiveListing, verifyDevkit, verifyNativeFrame, installArchive, downloadArchive, removeTemporary, starterRoot, run } from "./native-toolchain.mjs";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { activateToolchain, digest, readInstalledLock, readLock, safeName, validateArchiveListing, verifyDevkit, verifyNativeFrame, installArchive, downloadArchive, removeTemporary, starterRoot, run } from "./native-toolchain.mjs";
+import { parseSourceOptions, sourceDirectory } from "./prepare-source.mjs";
 
 const temporary = () => mkdtempSync(join(tmpdir(), "lumeria-toolchain-test-"));
+test("source command rejects ambiguous options and unsafe checkout locations", () => {
+  assert.deepEqual(parseSourceOptions([]), { source: null });
+  assert.deepEqual(parseSourceOptions(["--source", "build/local"]), { source: "build/local" });
+  for (const args of [["--source"], ["--other", "x"], ["--source", "a", "--source", "b"]]) assert.throws(() => parseSourceOptions(args));
+  const root = temporary();
+  try {
+    assert.equal(sourceDirectory(root, "build/upstream"), join(root, "build/upstream"));
+    if(process.platform === "win32")assert.equal(sourceDirectory(root, join(root.toUpperCase(), "build/upstream")).toLowerCase(), join(root, "build/upstream").toLowerCase());
+    for (const path of ["..", ".", "src/upstream", "build/../../outside"]) assert.throws(() => sourceDirectory(root, path));
+    mkdirSync(join(root, "target")); symlinkSync(join(root, "target"), join(root, "build"), process.platform === "win32" ? "junction" : "dir");
+    assert.throws(() => sourceDirectory(root, "build/upstream"), /links/);
+    unlinkSync(join(root, "build"));
+  } finally { removeTemporary(root, tmpdir()); }
+});
 function fixture(root) {
   const content = {
     "native-devkit.json": JSON.stringify({ product: { version: "2.0.1" }, target: { os: "win", arch: "x64" }, toolchains: { bun: { defaultVersion: "1.4.2" } } }),
@@ -115,5 +132,62 @@ test("installation verifies a private archive copy before publishing; preserves 
   } finally {
     if (existsSync(destination)) removeTemporary(destination, cache);
     removeTemporary(owner, cache); removeTemporary(root, tmpdir());
+  }
+});
+
+test("local SDK selection verifies before replacing, retains backups and restores official selection", { skip: process.platform !== "win32" }, async (t) => {
+  const root = temporary(), cache = join(starterRoot, ".hutch"); mkdirSync(cache, { recursive: true });
+  const destination = mkdtempSync(join(cache, "test-selection-")), receipt = destination + ".json";
+  const transactions = [];
+  try {
+    const old = fixture(destination), source = join(root, "source"), candidate = fixture(source);
+    candidate.id = "local-test-sdk";
+    candidate.provenance = old.provenance = { upstreamCommit: "a".repeat(40), patches: [] };
+    writeFileSync(join(source, "libNativeWrapper.dll"), "locally compiled wrapper");
+    candidate.files = candidate.files.map(file => file.path === "libNativeWrapper.dll" ? { ...file, size: Buffer.byteLength("locally compiled wrapper"), sha256: digest(join(source, file.path)) } : file);
+    const officialPath = join(root, "official.json");writeFileSync(officialPath, JSON.stringify(old));
+    const localBuild = { officialLockSha256: digest(officialPath) };
+    const list = join(root, "files.txt"), archive = join(root, "local-test-sdk.tar.gz");
+    writeFileSync(list, candidate.files.map(file => file.path).join("\n") + "\n");
+    run("tar.exe", ["-czf", archive, "-C", source, "--no-recursion", "-T", list]);
+    candidate.archive = { file: "local-test-sdk.tar.gz", size: readFileSync(archive).length, sha256: digest(archive), url: null };
+    const paths = { destination, receipt };
+    await assert.rejects(activateToolchain(archive, { ...candidate, archive: { ...candidate.archive, sha256: "0".repeat(64) } }, localBuild, paths), /checksum/);
+    await verifyDevkit(destination, old);assert.equal(existsSync(receipt), false);
+    transactions.push(await activateToolchain(archive, candidate, localBuild, paths));
+    assert.equal(readInstalledLock(receipt, officialPath).id, candidate.id);
+    await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
+    await verifyDevkit(join(transactions[0], "previous-sdk"), old);
+    const rename = fs.renameSync;
+    let failed = false;
+    const replacementFailure = t.mock.method(fs, "renameSync", (from, to) => {
+      if(!failed && to === destination && String(from).endsWith("-candidate")) { failed = true; throw new Error("simulated locked SDK destination"); }
+      return rename(from, to);
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(activateToolchain(archive, candidate, null, paths), /locked SDK/); }
+    finally { replacementFailure.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(failed, true);
+    await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
+    assert.equal(readInstalledLock(receipt, officialPath).id, candidate.id, "failed replacement restores the previous local selection receipt");
+    writeFileSync(officialPath, JSON.stringify({ ...old, id: "changed-official" }));
+    assert.throws(() => readInstalledLock(receipt, officialPath), /different repository/);
+    writeFileSync(officialPath, JSON.stringify(old));
+    const record = JSON.parse(readFileSync(receipt, "utf8"));
+    writeFileSync(receipt, JSON.stringify({ ...record, provenance: { ...record.provenance, upstreamCommit: "b".repeat(40) } }));
+    assert.throws(() => readInstalledLock(receipt, officialPath), /provenance/);
+    writeFileSync(receipt, JSON.stringify(record));
+    // The source receipt never blesses later binary drift.
+    writeFileSync(join(destination, "libNativeWrapper.dll"), "tampered");
+    await assert.rejects(verifyDevkit(destination, readInstalledLock(receipt, officialPath)), /drift/);
+    transactions.push(await activateToolchain(archive, candidate, null, paths));
+    assert.equal(existsSync(receipt), false);await verifyDevkit(destination, candidate);
+    assert.ok(existsSync(join(transactions[1], "previous-lock.json")));
+    assert.equal(digest(officialPath), localBuild.officialLockSha256);
+  } finally {
+    if (existsSync(receipt)) unlinkSync(receipt);
+    if (existsSync(destination)) removeTemporary(destination, cache);
+    for (const transaction of transactions) removeTemporary(transaction, cache);
+    removeTemporary(root, tmpdir());
   }
 });

@@ -61,7 +61,7 @@ try {
         sourcePatchSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $starter 'patches/electrobun-2.0.1-dcomp-atomic-resize.patch')).Hash.ToLowerInvariant()
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $sourceRoot 'lumeria-build-environment.json') -Encoding utf8
-    Write-Output 'SDK built in package/dist. Package it with native:toolchain:pack -- --source <checkout> --id <new-id> --output artifacts/<new-directory>, then review the candidate lock. The installed toolchain and tracked lock were not overwritten.'
+    Write-Output 'SDK built in package/dist. This build step did not change the installed SDK or repository lock. native:prepare:source will verify and select the local build automatically; native:toolchain:pack remains available for distribution candidates.'
 } finally {
     $env:PATH = $oldPath
     $env:GITHUB_ACTIONS = $oldActions
