@@ -36,6 +36,8 @@ export class NativeFluentButton extends Container {
   #focused = false;
   #selected = false;
   #disclosureHeader=false;
+  #disclosureExpanded=false;
+  #segmentEdges={left:false,right:false};
   readonly #stateGraphics:{node:Graphics;paint:(color:string)=>void}[]=[];
   #theme: NativeTheme;
 
@@ -77,6 +79,8 @@ export class NativeFluentButton extends Container {
   set hovered(value:boolean){this.#hovered=value;this.#draw();}
   set selected(value:boolean){this.#selected=value;this.#draw();}
   set disclosureHeader(value:boolean){this.#disclosureHeader=value;this.#draw();}
+  set disclosureExpanded(value:boolean){if(this.#disclosureExpanded===value)return;this.#disclosureExpanded=value;this.#draw();}
+  set segmentEdges(value:{left:boolean;right:boolean}){this.#segmentEdges=value;this.#draw();}
   set focused(value:boolean) {if(this.#focused===value)return;this.#focused=value;this.#draw();}
   set theme(value:NativeTheme) {if(this.#theme===value)return;this.#theme=value;this.#draw();}
   #draw():void {
@@ -124,8 +128,22 @@ export class NativeFluentButton extends Container {
       if(this.appearance==="segment"){
         const fill=active?(this.#theme==="dark"?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover)
           :this.#selected?(this.#theme==="dark"?"rgba(75,163,246,0.16)":theme.colorBrandBackground2):"transparent";
-        this.background.rect(0,0,this.controlWidth,this.controlHeight).fill(fill);
-        if(this.#selected)this.background.rect(0,this.controlHeight-2,this.controlWidth,2).fill(style.accent);
+        const w=this.controlWidth,h=this.controlHeight,l=this.#segmentEdges.left?5:0,r=this.#segmentEdges.right?5:0;
+        this.background.moveTo(l,0).lineTo(w-r,0).quadraticCurveTo(w,0,w,r)
+          .lineTo(w,h-r).quadraticCurveTo(w,h,w-r,h).lineTo(l,h).quadraticCurveTo(0,h,0,h-l)
+          .lineTo(0,l).quadraticCurveTo(0,0,l,0).closePath().fill(fill);
+        if(this.#selected){
+          // Follow the bottom two pixels of the same corner curves as the fill.
+          const leftReach=l?Math.sqrt(2*l):0,rightReach=r?Math.sqrt(2*r):0;
+          const leftTop=l?l-2*leftReach+2:0,rightTop=r?w-r+2*rightReach-2:w;
+          this.background.moveTo(leftTop,h-2).lineTo(rightTop,h-2);
+          if(r)this.background.quadraticCurveTo(w-r+rightReach,h,w-r,h);
+          else this.background.lineTo(w,h);
+          this.background.lineTo(l,h);
+          if(l)this.background.quadraticCurveTo(l-leftReach,h,leftTop,h-2);
+          else this.background.lineTo(0,h-2);
+          this.background.closePath().fill(style.accent);
+        }
       }else if(this.appearance==="list-row"){
         const fill=this.#selected?(this.#theme==="dark"?`rgba(75,163,246,${active?0.16:0.12})`:theme.colorBrandBackground2)
           :active?(this.#theme==="dark"?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover):style.row;
@@ -144,7 +162,12 @@ export class NativeFluentButton extends Container {
         :this.#pressed?theme.colorNeutralBackground1Pressed:this.#hovered?theme.colorNeutralBackground1Hover:style.row;
       this.background.clear();
       if(this.#disclosureHeader){
-        if(this.#hovered||this.#pressed)this.background.rect(1,1,this.controlWidth-2,this.controlHeight-1).fill(fill);
+        if(this.#hovered||this.#pressed){
+          const w=this.controlWidth-1,h=this.controlHeight-1,b=this.#disclosureExpanded?0:7;
+          this.background.moveTo(8,1).lineTo(w-7,1).quadraticCurveTo(w,1,w,8)
+            .lineTo(w,h-b).quadraticCurveTo(w,h,w-b,h).lineTo(1+b,h).quadraticCurveTo(1,h,1,h-b)
+            .lineTo(1,8).quadraticCurveTo(1,1,8,1).closePath().fill(fill);
+        }
       }else this.background.roundRect(0,0,this.controlWidth,this.controlHeight,8).fill(fill).stroke({color:style.border,width:1});
       this.caption.style.fill=style.text;
       this.focusRing.clear();if(this.#focused&&!this.#disabled)this.focusRing.roundRect(2,2,this.controlWidth-4,this.controlHeight-4,6).stroke({color:style.accent,width:2});

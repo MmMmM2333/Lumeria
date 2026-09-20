@@ -443,11 +443,13 @@ let saveFailureCount=0;
 saveFailed=error=>{saveFailureCount++;logNativeRuntime("save-error",String(error));notices.showLayoutSaveFailed({error,retryCount:saveFailureCount,onRetry:()=>{void saves.flush().catch(()=>{});}});};
 saveRecovered=()=>{if(saveFailureCount){saveFailureCount=0;notices.showLayoutSaveRecovered();}};
 function removeItems(ids: readonly string[]): void {
-  management.warning({title:t("settings.apps.manager.remove"),message:t("launchpad.batch.removeMessage",{count:ids.length}),intent:"warning",cancelText:t("common.actions.cancel"),confirmText:t("launchpad.batch.remove"),confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{
+  management.warning({title:t("settings.apps.manager.remove"),message:t("launchpad.batch.removeMessage",{count:ids.length}),intent:"warning",cancelText:t("common.actions.cancel"),confirmText:t("launchpad.batch.remove"),confirmAppearance:"outline",confirmTone:"danger",onConfirm:()=>{
+    management.close(true);
     if(apps)apps.removeManagedAppsFromLaunchpad(ids);
     const folders=ids.filter(id=>layoutState.operations.findFolder(layoutState.presentation.pages.value,id));
     if(folders.length)editing!.remove(folders);
-    await saves.flush();
+    // The save queue reports failures through the persistent retry notice.
+    void saves.flush().catch(()=>{});
   }});
 }
 function contextMenu(item:SceneItem|null,x:number,y:number):void{
@@ -1320,6 +1322,7 @@ try {
       openSettings:()=>openSettings(),
       present:description=>present(app,description),
       refreshBackground,
+      removeItems,
       requestQuit:()=>closeCoordinator.requestQuit(),
       restoreCommittedLayout:async(config,pages)=>{
         layoutState.applyConfiguration(config);layoutSettings.syncDraftsFromCommitted();

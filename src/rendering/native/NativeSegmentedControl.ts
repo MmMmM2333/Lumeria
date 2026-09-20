@@ -27,6 +27,7 @@ export class NativeSegmentedControl extends Container {
       const width=widths[index]!*scale;
       const button=new NativeFluentButton(entry.label,width,()=>change(entry.value),invalidate,theme,"segment",false,32);
       button.label=entry.id;button.position.set(x,1);button.caption.style.fontSize=12;
+      button.segmentEdges={left:index===0,right:index===entries.length-1};
       button.selected=entry.value===selected;
       button.disabled=Boolean(entry.disabled);if(button.disabled)button.alpha=0.38;
       content.addChild(button);

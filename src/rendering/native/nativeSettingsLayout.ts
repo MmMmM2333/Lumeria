@@ -28,6 +28,7 @@ export class NativeSettingsLayout {
       const state=progress.get(id),amount=state?.height??(disclosure.expanded?1:0);
       const visibleHeight=wrapper.update(amount,state?.opacity??(disclosure.expanded?1:0),disclosure.expanded);
       card?.update(visibleHeight);
+      if(header)header.disclosureExpanded=visibleHeight>0;
       if(chevron)chevron.rotation=-Math.PI*amount;
       return visibleHeight;
     }});

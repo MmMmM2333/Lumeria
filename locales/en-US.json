@@ -1069,7 +1069,7 @@
           "removeOptions": "Removal options",
           "done": "Done",
           "removeTitle": "Remove selected apps from Launchpad?",
-          "removeMessage": "Remove the selected {count} apps from Launchpad? This will not uninstall the apps or delete files, and cannot currently be undone.",
+          "removeMessage": "The selected {count} apps will be removed from Launchpad without uninstalling the apps or deleting files.",
           "removeConfirm": "Remove",
           "excludeTitle": "Remove and exclude the selected apps from scans?",
           "excludeMessage": "Remove the selected {count} apps and skip them in future scans? You can restore scanning from Excluded apps in Settings.",
@@ -1477,11 +1477,11 @@
           "restoredMany": "{count} apps were removed from the exclusion list and can be added after scanning again.",
           "appFallback": "this app",
           "removedTitle": "Removed from Launchpad",
-          "removedOne": "“{name}” was removed from Launchpad. The app was not uninstalled and no files were deleted.",
-          "removedMany": "{count} apps were removed from Launchpad. The apps were not uninstalled and no files were deleted.",
+          "removedOne": "“{name}” was removed from Launchpad.",
+          "removedMany": "{count} apps were removed from Launchpad.",
           "excludeFailedTitle": "Could not exclude from scans",
           "excludeUnstable": "Some selected apps do not have a stable scan source. No apps were removed.",
-          "excludeSaveFailed": "The apps' scan sources could not be saved. No apps were removed.",
+          "excludeSaveFailed": "The selected apps could not be added to the exclusion list. No apps have been removed at this point.",
           "excludeChangedTitle": "Scan exclusion did not finish",
           "excludeChanged": "App state changed during the operation. Scan again and retry.",
           "excludedTitle": "Excluded from scans",
@@ -1577,7 +1577,7 @@
       },
       "dissolve": {
         "title": "Dissolve “{name}”?",
-        "message": "Apps in this folder will move back to the desktop in their current order. No apps will be deleted.",
+        "message": "Apps in this folder will move back to the desktop in their current order.",
         "confirm": "Dissolve folder"
       }
     },
