@@ -118,6 +118,10 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   const aboutTab=app.stage.getChildByLabel("native-settings-tab:about",true);assert.ok(aboutTab);
   clickWithNativeInput(aboutTab);await present("native about route");
   await waitFor("about entrance settles",()=>!scene.getMotionSnapshot().active);
+  const repository=app.stage.getChildByLabel("native-about:repository",true) as NativeFluentButton;
+  assert.ok(repository);
+  for(let index=0;index<30&&!repository.focused;index++)onKey({type:"down",key:"Tab"});
+  assert.ok(repository.focused,"GitHub repository must be reachable with the keyboard");
   await capture("settings-about");
   const generalTab=app.stage.getChildByLabel("native-settings-tab:general",true);assert.ok(generalTab);
   clickWithNativeInput(generalTab);await present("native general settings");

@@ -1,13 +1,13 @@
 {
   "name": "lumeria",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "devtools:mcp": "node vendor/electrobun-pixi-native-starter/tools/devtools-mcp.mjs",
     "devtools:cli": "node vendor/electrobun-pixi-native-starter/tools/devtools-cli.mjs",
     "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.ts",
-    "check": "npm run check:pixi-patch && npm test && npm run typecheck && npm run check:policy && npm run check:i18n && npm run build",
+    "check": "npm run check:version && npm run check:pixi-patch && npm test && npm run typecheck && npm run check:policy && npm run check:i18n && npm run build",
     "check:i18n": "tsx scripts/checkI18n.ts",
     "check:pixi-patch": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root . --check",
     "check:policy": "tsx scripts/checkProjectPolicy.ts",
@@ -40,7 +40,7 @@
     "prenative:smoke": "npm run native:data:build && npm run native:live-desktop:build",
     "native:smoke": "tsx scripts/runNativeElectrobun.ts",
     "postinstall": "node vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs --consumer-root . --dependencies-only",
-    "test": "npm run test:native-toolchain && tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx scripts/nativeBuildDefines.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeTextPrewarm.test.ts && tsx src/native/nativeStartupPreparation.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/nativeRecoverableIconSource.test.ts && tsx src/native/nativeIconResidency.test.ts && tsx src/native/persistence.test.ts && tsx src/native/nativeDataTransport.test.ts && tsx src/native/nativeLiveDesktop.test.ts && tsx src/native/diagnostics/nativeProductDiagnostics.test.ts && tsx src/native/nativeShortcutPolicy.test.ts && tsx src/native/nativeFrameCallbacks.test.ts && tsx src/native/nativeCloseCoordinator.test.ts && tsx src/native/nativeRuntimeLifecycle.test.ts && npm run test:native-release",
+    "test": "tsx src/application/releaseCheck.test.ts && tsx scripts/productVersion.test.ts && npm run test:native-toolchain && tsx src/domain/runLaunchpadLayoutTests.ts && tsx scripts/checkProjectPolicyTests.ts && tsx scripts/runNativeProcess.test.ts && tsx scripts/nativeBuildDefines.test.ts && tsx src/native/scene.test.ts && tsx src/native/nativeTextPrewarm.test.ts && tsx src/native/nativeStartupPreparation.test.ts && tsx src/native/nativeIconTextureSource.test.ts && tsx src/native/nativeIconTextureLoader.test.ts && tsx src/native/nativeRecoverableIconSource.test.ts && tsx src/native/nativeIconResidency.test.ts && tsx src/native/persistence.test.ts && tsx src/native/nativeDataTransport.test.ts && tsx src/native/nativeLiveDesktop.test.ts && tsx src/native/diagnostics/nativeProductDiagnostics.test.ts && tsx src/native/nativeShortcutPolicy.test.ts && tsx src/native/nativeFrameCallbacks.test.ts && tsx src/native/nativeCloseCoordinator.test.ts && tsx src/native/nativeRuntimeLifecycle.test.ts && npm run test:native-release",
     "test:i18n-ui": "playwright test tests/browser/i18n-search-placeholder.spec.ts --project=chromium --workers=1",
     "test:multi-select-ui": "playwright test tests/browser/launchpad-multi-select-management.spec.ts --project=chromium --workers=1",
     "test:pixi-webgl": "playwright test tests/browser/pixi-drag-preview-mask-batch.spec.ts --project=chromium --workers=1",
@@ -59,7 +59,9 @@
     "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs",
     "dev:motion-lab": "npm run dev --",
     "build:motion-lab": "vite build",
-    "native:live-desktop:build": "cargo build -p lumeria-live-desktop --release --locked"
+    "native:live-desktop:build": "cargo build -p lumeria-live-desktop --release --locked",
+    "check:version": "tsx scripts/productVersion.ts --check",
+    "version:set": "tsx scripts/productVersion.ts"
   },
   "dependencies": {
     "@chenglou/pretext": "0.0.8",

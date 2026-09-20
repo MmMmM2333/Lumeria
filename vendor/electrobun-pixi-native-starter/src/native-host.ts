@@ -5,6 +5,7 @@ import { nativePlatform } from "./platform/native-platform";
 export { GlobalShortcut as NativeGlobalShortcut } from "../.hutch/devkit-dcomp-2.0.1/api/sdks/main/proc/native";
 export { NativeTray, type NativeTrayOptions } from "./runtime/native-tray";
 export { openPath as openNativePath } from "../.hutch/devkit-dcomp-2.0.1/api/sdks/main/core/Utils";
+export { openExternal as openNativeExternalUrl } from "../.hutch/devkit-dcomp-2.0.1/api/sdks/main/core/Utils";
 
 process.once("exit", () => {
 	try { NativeJobs.shutdown(); } catch (error) { console.error("[jobs] shutdown failed", error); }

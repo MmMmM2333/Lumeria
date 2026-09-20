@@ -3,6 +3,17 @@
 Windows x64 产品入口为 `Lumeria.exe`，安装与升级由 `release/windows/` 下的 NSIS 脚本管理。
 产品名、标识和版本分别来自 `src/platform/product.ts` 与根目录 `package.json`。
 
+## 产品版本
+
+产品版本以 `package.json` 为准。使用 `npm run version:set -- 1.0.0` 同步 npm 清单、
+Cargo workspace 版本和两份锁文件；三个 Rust crate 通过 `version.workspace = true` 继承版本。
+`npm run check:version` 检查上述版本是否一致，并已纳入 `npm run check`。
+该命令不创建 Git 提交或标签，也不修改第三方依赖、工具链、数据格式或协议版本。
+关于页、Electrobun 配置、Windows 品牌信息和发行包均通过 `PRODUCT.version` 使用产品版本。
+
+若运行中的开发实例占用默认 Rust 产物，可设置 `CARGO_TARGET_DIR` 使用独立构建目录；
+Native 打包和 smoke 测试会从同一目录读取数据服务与 Live Desktop DLL。
+
 ## 构建
 
 首次克隆先执行 `npm ci` 和 `npm run native:prepare:source`，编译、校验并接入本地 SDK；有匹配附件时也可显式导入。环境要求及切换方式见 [Native 工具链指南](native-toolchain.md)。
@@ -83,7 +94,7 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 
 ```powershell
 # /D 必须是最后一个参数；NSIS 将剩余文本作为完整目录。
-Lumeria-0.1.0-x64-Setup.exe /S /D=C:\Users\example\Apps\Lumeria
+Lumeria-1.0.0-x64-Setup.exe /S /D=C:\Users\example\Apps\Lumeria
 uninstall.exe /S
 uninstall.exe /S /PURGEDATA
 ```

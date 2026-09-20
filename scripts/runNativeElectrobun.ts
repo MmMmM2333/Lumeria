@@ -279,8 +279,7 @@ try {
       ...(stressDir ? { LAUNCHPAD_NATIVE_STRESS_DIR: stressDir,
         LAUNCHPAD_NATIVE_STRESS_MEMORY_SCRIPT: join(projectRoot, "scripts", "Capture-LumeriaMemory.ps1") } : {}),
       ...(!productRuntime||process.env.LAUNCHPAD_NATIVE_DATA_HOST?{LAUNCHPAD_NATIVE_DATA_HOST: process.env.LAUNCHPAD_NATIVE_DATA_HOST??join(
-        projectRoot,
-        "target",
+        resolve(projectRoot,process.env.CARGO_TARGET_DIR??"target"),
         "release",
         "lumeria_native_data.exe",
       )}:{}),

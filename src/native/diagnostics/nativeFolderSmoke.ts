@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { FederatedWheelEvent,Text,type Container } from "pixi.js";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { FederatedWheelEvent,Text,type Container,type FederatedPointerEvent } from "pixi.js";
 import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { NativeBackground } from "../../rendering/native/NativeBackground.js";
 import type { NativeDesktopScene } from "../../rendering/native/NativeDesktopScene.js";
@@ -85,16 +86,52 @@ export async function runNativeFolderSmoke(context: NativeFolderSmokeContext): P
   assert.equal(folderFlow.snapshot().isClosing,true,"pointer down must not reopen closing folder");
   app.nativeInput.emitPointer("pointerup",point.x,point.y,0);
   await waitFor("closing short tap reopens",()=>!folderFlow.snapshot().isClosing&&folderFlow.snapshot().openProgress>.999);
+  // Keep bounded evidence only for a failure; real host input shares the replay mouse ID.
+  const trace:unknown[]=[];
+  const started=performance.now();
+  const mark=(kind:string,detail:unknown)=>{
+    if(trace.length===128)trace.shift();
+    const folder=folderFlow.snapshot();
+    trace.push({ms:performance.now()-started,kind,detail,captured:app.nativeInput.hasPointerCapture(1),
+      dragging:context.editing.drag.isDragActive(),closing:folder.isClosing,folderId:folder.renderedFolder?.id??null});
+  };
+  const offHost=app.nativeInput.onHostEvent(event=>mark("host",{kind:event.kind,x:event.x,y:event.y,
+    buttons:event.buttons,pointerId:event.pointerId,timestamp:String(event.timestamp)}));
+  const offFocus=app.nativeInput.onFocusChange(focused=>mark("focus",focused));
+  const eventTypes=["pointerdowncapture","globalpointermove","pointerupcapture","pointercancel","lostpointercapture"] as const;
+  const listeners=eventTypes.map(type=>{
+    const listener=(event:FederatedPointerEvent)=>mark(type,{x:event.global.x,y:event.global.y,buttons:event.buttons,
+      pointerId:event.pointerId,pointerType:event.pointerType,target:resolveNativePointerTarget(event.target)});
+    app.stage.on(type,listener);return ()=>app.stage.off(type,listener);
+  });
+  const beginDrag=context.editing.beginDrag;
+  context.editing.beginDrag=(id,event)=>{
+    const accepted=beginDrag(id,event);mark("begin-drag",{id,accepted});return accepted;
+  };
+  try{
   closeFolder();await present("closing folder hold baseline");point=closingPoint();
+  mark("before-down",{point,hit:resolveNativePointerTarget(app.renderer.events.rootBoundary.hitTest(point.x,point.y)),closingHit:scene.closingFolderAtPoint(point.x,point.y)});
   app.nativeInput.emitPointer("pointerdown",point.x,point.y,0);
+  mark("after-down",null);
   await new Promise(resolve=>setTimeout(resolve,500));
+  mark("after-hold",null);
   assert.ok(folderFlow.snapshot().renderedFolder===null||folderFlow.snapshot().isClosing,"held closing target must not reopen while waiting");
   app.nativeInput.emitPointer("pointermove",point.x+45,point.y+20,0);
+  mark("after-move",null);
   await waitFor("closing folder hold starts drag",()=>context.editing.drag.isDragActive());
   assert.ok(folderFlow.snapshot().renderedFolder===null||folderFlow.snapshot().isClosing,"dragging closing folder cannot activate it");
   app.nativeInput.emitPointer("pointercancel",point.x+45,point.y+20,0);
   await waitFor("closing folder hold cancellation",()=>!context.editing.drag.isDragActive());
   await waitFor("closing folder fully retired",()=>folderFlow.snapshot().renderedFolder===null);
+  }catch(error){
+    mark("failure",error instanceof Error?error.message:String(error));
+    const path=join(process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR!,"closing-folder-hold-failure.json");
+    try{writeFileSync(path,JSON.stringify({resolution:app.resolution,size:app.contentSize,trace},null,2));}
+    catch(logError){console.error("Could not save closing-folder input trace",logError);}
+    throw error;
+  }finally{
+    offHost();offFocus();for(const off of listeners)off();context.editing.beginDrag=beginDrag;
+  }
   console.log("Closing folder: down does not open, short release opens, hold/move drags and cancellation preserves closure");
   await activateItem(smokeFolder);
   assert.equal(closeFolder(), true, "a close before the first opening present must be accepted");

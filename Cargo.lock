@@ -125,7 +125,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lumeria-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "blake3",
  "log",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "lumeria-live-desktop"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "log",
  "serde",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "lumeria-native-data"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lumeria-core",
  "serde",

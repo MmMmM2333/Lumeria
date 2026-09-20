@@ -1518,7 +1518,18 @@
       "about": {
         "title": "关于",
         "description": "Windows 应用启动台",
-        "version": "版本 {version}"
+        "version": "版本 {version}",
+        "repository": "GitHub 仓库",
+        "openFailed": "无法打开默认浏览器，请稍后重试。",
+        "checkUpdates": "检查更新",
+        "checking": "正在检查",
+        "viewRelease": "查看更新",
+        "retry": "重试",
+        "checkingDetail": "正在获取版本信息…",
+        "updateAvailable": "发现新版本 {version}",
+        "upToDate": "已是最新版本",
+        "noRelease": "暂未获取到发布版本",
+        "checkFailed": "检查失败，请重试。"
       }
     },
     "native": {

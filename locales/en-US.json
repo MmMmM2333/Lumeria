@@ -1518,7 +1518,18 @@
       "about": {
         "title": "About",
         "description": "Windows app launcher",
-        "version": "Version {version}"
+        "version": "Version {version}",
+        "repository": "GitHub repository",
+        "openFailed": "Could not open the default browser. Please try again.",
+        "checkUpdates": "Check for updates",
+        "checking": "Checking",
+        "viewRelease": "View update",
+        "retry": "Retry",
+        "checkingDetail": "Getting release information…",
+        "updateAvailable": "Version {version} is available",
+        "upToDate": "You’re up to date",
+        "noRelease": "No published release is available yet",
+        "checkFailed": "Could not check for updates. Please retry."
       }
     },
     "native": {

@@ -103,9 +103,14 @@ const icons = {
 export function nativeFluentIcon(name:keyof typeof icons,color:ColorSource,size=20):Sprite {
   const icon=icons[name],path=icon.body.match(/ d="([^"]+)"/)?.[1];
   if(!path)throw new Error(`Fluent icon ${name} must contain a vector path`);
+  return nativePathIcon(path,icon.width,icon.height,color,size);
+}
+
+/** Rasterize a single SVG path without requiring a browser DOM. */
+export function nativePathIcon(path:string,width:number,height:number,color:ColorSource,size=20):Sprite {
   // Skia preserves the original SVG winding and close/relative commands.
   const resolution=4,canvas=createCanvas(size*resolution,size*resolution),context=canvas.getContext("2d");
-  context.scale(size*resolution/icon.width,size*resolution/icon.height);
+  context.scale(size*resolution/width,size*resolution/height);
   context.fillStyle=new Color(color).toRgbaString();context.fill(new Path2D(path));
   const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
   // Filter coverage and color together before downsampling thin SVG strokes.

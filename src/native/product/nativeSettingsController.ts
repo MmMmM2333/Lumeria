@@ -6,6 +6,7 @@ import { createSettingsNavigation } from "../../application/settingsNavigation.j
 import { createNativeStateHost } from "../../application/stateHost.js";
 import type { LaunchpadPages } from "../../domain/launchpadLayout.js";
 import { mainWindowShortcutFromKeyboardEvent } from "../../platform/mainWindowShortcutInput.js";
+import { createGitHubReleaseSource } from "../../platform/githubReleaseSource.js";
 import { nativeAboutSettingsPage } from "../../rendering/native/nativeAboutSettingsPage.js";
 import { nativeAppsSettingsPage,type NativeAppsPageState } from "../../rendering/native/nativeAppsSettingsPage.js";
 import type { NativeBackground } from "../../rendering/native/NativeBackground.js";
@@ -39,6 +40,7 @@ export type NativeSettingsControllerPorts = Readonly<{
   app: NativePixiApplication;
   syncLiveDesktop: () => void;
   openLogs: () => void;
+  openExternalUrl: (url:string) => void | Promise<void>;
   cancelNativeGesture: () => void;
   chooseColor: (initial: number) => Promise<number | null>;
   closeFolder: () => boolean;
@@ -140,7 +142,8 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
           management:ports.getManagement(),invalidate:()=>app.invalidate(),redraw:()=>shell?.redraw(),recording:recordingShortcut,
           record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;shell?.redraw();},icons:ports.brandingTextures(),openLogs:ports.openLogs})
         :tab==="about"
-        ?nativeAboutSettingsPage(width,ports.settingsTheme(),ports.brandingTextures().get(settings.draft.launchpadIconVariant.value)!)
+        ?nativeAboutSettingsPage(width,ports.settingsTheme(),ports.brandingTextures().get(settings.draft.launchpadIconVariant.value)!,{
+          invalidate:()=>app.invalidate(),reflow:()=>shell?.refreshContent(),openExternalUrl:ports.openExternalUrl,releaseSource:createGitHubReleaseSource()})
         :nativeLayoutSettingsPage(settings,ports.getSearchBar().host,width,()=>app.invalidate(),
           ports.settingsTheme(),()=>shell?.redraw(),{renderer:app.renderer,renderHost:app,size:app.contentSize,state:backgroundPanelState,systemAppearance:ports.getSystemAppearance(),
             chooseColor:color=>ports.chooseColor(color)},windowPanelState,()=>ports.getEditing()!.pageCommands.confirmForceFillAllPages()),

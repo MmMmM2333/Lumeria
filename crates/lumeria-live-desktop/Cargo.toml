@@ -1,6 +1,6 @@
 [package]
 name = "lumeria-live-desktop"
-version = "0.1.0"
+version.workspace = true
 description = "Lumeria live desktop (DirectComposition desktop background) runtime and C ABI"
 authors = ["Lumeria"]
 edition = "2021"

@@ -1,6 +1,6 @@
 [package]
 name = "lumeria-core"
-version = "0.1.0"
+version.workspace = true
 description = "Framework-independent Lumeria application services"
 authors = ["Lumeria"]
 edition = "2021"

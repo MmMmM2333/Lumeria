@@ -1,5 +1,6 @@
 import { createSettingsNavigation, SETTINGS_SUBPAGE_SPECS, type SettingsTabId, type SettingsSubPageSpec, type SettingsSubPageItem } from "../application/settingsNavigation.js";
 import { vueStateHost } from "./vueStateHost.js";
+import { PRODUCT } from "../platform/product.js";
 import { computed, effectScope, ref, watch } from "vue";
 import type { Ref } from "vue";
 import type {
@@ -979,7 +980,7 @@ function createSettingsPanelModel(options: SettingsPanelModelOptions) {
 
   const pages = Object.freeze({
     about: Object.freeze({
-      appVersion: String(options.appVersion || ""),
+      appVersion: String(options.appVersion || PRODUCT.version),
       draftLaunchpadIconVariant: state.draftLaunchpadIconVariant,
     }),
     apps: appsModel,

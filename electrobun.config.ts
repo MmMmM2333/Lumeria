@@ -2,6 +2,9 @@ import type { ElectrobunConfig } from "electrobun";
 import { nativePixiElectrobunCopy } from "./vendor/electrobun-pixi-native-starter/consumer/electrobun";
 import { nativeBuildDefines } from "./scripts/nativeBuildDefines.js";
 import { PRODUCT } from "./src/platform/product.js";
+import { join } from "node:path";
+
+const rustRelease=join(process.env.CARGO_TARGET_DIR??"target","release");
 
 export default {
   scripts: { postBuild: "scripts/nativePostBuild.ts" },
@@ -18,8 +21,8 @@ export default {
     },
     copy: {
       ...nativePixiElectrobunCopy,
-      "target/release/lumeria_native_data.exe": "bun/lumeria-native-data.exe",
-      "target/release/lumeria_live_desktop.dll": "bun/lumeria_live_desktop.dll",
+      [join(rustRelease,"lumeria_native_data.exe")]: "bun/lumeria-native-data.exe",
+      [join(rustRelease,"lumeria_live_desktop.dll")]: "bun/lumeria_live_desktop.dll",
       "src/assets/branding/lumeria-app-icon.svg": "bun/branding/light.svg",
       "src/assets/branding/lumeria-app-icon-dark.svg": "bun/branding/dark.svg",
       "src/assets/branding/lumeria-app-icon-pastel-grid.svg": "bun/branding/pastelLight.svg",

@@ -5,7 +5,9 @@ import { createLaunchpadGestureEngine } from "../domain/input/launchpadGestureEn
 import { runTouchpadCaptureTests } from "../debug/touchpadCapture.test.js";
 import { runNativeWindowEffectsTests } from "./nativeWindowEffects.test.js";
 import { readFileSync } from "node:fs";
-import { Container, type Text } from "pixi.js";
+import { Container, Texture, type Text } from "pixi.js";
+import { nativeAboutSettingsPage } from "../rendering/native/nativeAboutSettingsPage.js";
+import { PRODUCT } from "../platform/product.js";
 import { resolveNativePointerTarget, routeNativePointerDown } from "../rendering/native/nativePointerTarget.js";
 import { closingFolderTargetLabel } from "../domain/input/launchpadPointerTarget.js";
 import { assertLayoutDocument } from "../domain/layoutDocument.js";
@@ -52,6 +54,22 @@ import {
 
 installNativeCanvasTestAdapter();
 runNativeParagraphTests();
+{
+  let opened="",fail=false;
+  const about=nativeAboutSettingsPage(700,"dark",Texture.EMPTY,{invalidate:()=>{},releaseSource:async()=>null,openExternalUrl:async url=>{
+    if(fail)throw new Error("browser unavailable");opened=url;
+  }});
+  try{
+    const link=about.controls[1]!;
+    link.focus(true);assert.equal((link.node as NativeFluentButton).focused,true);
+    assert.equal(link.handleKey("Enter"),true);assert.equal(link.disabled(),true);
+    await Promise.resolve();await Promise.resolve();
+    assert.equal(opened,PRODUCT.repositoryUrl);assert.equal(link.disabled(),false);
+    fail=true;link.handleKey(" ");await Promise.resolve();await Promise.resolve();
+    assert.ok(about.node.getChildByLabel("native-about:status"),"browser failures remain visible and allow retry");
+    assert.equal(link.disabled(),false);
+  }finally{about.node.destroy({children:true});}
+}
 for(const color of [0,0xffffff,0xff0000,0x00ff00,0x0000ff,0x336699,0x808080]){
   assert.equal(hsvColor(...colorHsv(color)),color,"color picker RGB/HSV conversion must roundtrip");
 }

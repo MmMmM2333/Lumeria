@@ -6,6 +6,7 @@ export const PRODUCT = Object.freeze({
   identifier: "com.lumeria.app",
   version: packageJson.version,
   channel: "stable",
+  repositoryUrl: "https://github.com/MmMmM2333/Lumeria",
 } as const);
 
 export const WINDOWS_RELEASE = Object.freeze({

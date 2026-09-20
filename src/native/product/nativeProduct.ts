@@ -10,7 +10,7 @@ type Sprite
 import {
 NativeGlobalShortcut,
 nativeHost,
-NativeTray,openNativePath,
+NativeTray,openNativePath,openNativeExternalUrl,
 readNativeSystemPreferences,
 subscribeNativeSystemPreferences,
 type NativePixiApplication
@@ -221,6 +221,7 @@ const nativeSettings=createNativeSettingsController({
   refreshBackground:()=>refreshBackground(),
   syncLiveDesktop:()=>syncLiveDesktop(),
   openLogs:()=>{if(!openNativePath(nativeLogDirectory))reportNativeError(new Error("Could not open logs folder"));},
+  openExternalUrl:url=>{if(!openNativeExternalUrl(url))throw new Error("Could not open the default browser");},
   requestSceneRender:()=>requestSceneRender(),
   settings:()=>settings,
   settingsTheme:()=>settingsTheme(),
@@ -1118,6 +1119,13 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_ABOUT_PREVIEW_DIR&&process.env.LUMERIA_NATIVE_DATA_DIR){
+    await (await import("../diagnostics/nativeAboutPreview.js")).nativeAboutPreview({app,texture:brandingTextures.get(settings.draft.launchpadIconVariant.value)!,
+      directory:process.env.LAUNCHPAD_ABOUT_PREVIEW_DIR,openAbout:()=>{openSettings();settingsNavigation.selectTab("about");nativeSettings.redraw();},
+      present:name=>present(app,name),quit:()=>closeCoordinator.requestQuit()});
+    await closed;return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode === "dev" && process.env.LAUNCHPAD_NATIVE_STRESS_DIR){
     await (await import("../diagnostics/nativeStress.js")).runNativeStress({
