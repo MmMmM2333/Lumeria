@@ -1,3 +1,4 @@
+import { createNativeParagraph } from "./nativeParagraph.js";
 import { createNativeText } from "./nativeTypography.js";
 import { t } from "../../native/nativeLocalization.js";
 import { Container, Graphics, Rectangle, Text } from "pixi.js";
@@ -144,9 +145,9 @@ export class NativeManagement extends Container {
       ...(config.cancelText?{cancelText:config.cancelText}:{}),...(config.confirmText?{confirmText:config.confirmText}:{}),
       danger:config.confirmTone==="danger",outlineConfirm:config.confirmAppearance==="outline",confirm:async()=>{await config.onConfirm?.();},
       build:width=>{const node=new Container();
-        const message=createNativeText({text:config.message,eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});message.x=52;node.addChild(message);
+        const message=createNativeParagraph(config.message,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true},width-52);message.x=52;node.addChild(message);
         let height=message.height;
-        if(config.suggestion){const hint=createNativeText({text:t("dialogs.warning.suggestion",{suggestion:config.suggestion}),eventMode:"none",style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true}});hint.position.set(52,height+10);node.addChild(hint);height+=hint.height+10;}
+        if(config.suggestion){const hint=createNativeParagraph(t("dialogs.warning.suggestion",{suggestion:config.suggestion}),{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true},width-52);hint.position.set(52,height+10);node.addChild(hint);height+=hint.height+10;}
         return {node,height,controls:[]};}});
   }
   form(title:string,fields:NativeFormField[],confirm:string,submit:(values:string[])=>void|Promise<void>,message?:string):void{
@@ -203,7 +204,7 @@ export class NativeManagement extends Container {
       button.on("pointerdown",()=>{const index=this.#controls.findIndex(control=>control.node===button);if(index>=0)this.#focus(index,false);});
       this.#controls.push({node:button,activate:()=>button.activate()});button.disabled=Boolean(action.disabled);
       button.position.set(0,rowY);rowY+=stride;this.#scroll!.content.addChild(button);
-      button.caption.anchor.x=0;button.caption.x=selection?19:action.icon?38:12;button.caption.style.fontSize=14;
+      button.caption.anchor.x=0;button.caption.x=action.icon?38:selection?19:12;button.caption.style.fontSize=14;
       if(button.caption.width>panelWidth-button.caption.x-18){let label=action.label;while(label.length&&button.caption.width>panelWidth-button.caption.x-18){label=label.slice(0,-1);button.caption.text=label+"…";}}
       if(action.icon){const icon=nativeFluentIcon(action.icon,action.danger?(this.theme==="dark"?"#ffb4a9":colors.colorPaletteRedForeground1):colors.colorNeutralForeground1,18);icon.position.set(10,8);icon.alpha=action.disabled?0.38:1;button.addChild(icon);}
       if(action.selected){

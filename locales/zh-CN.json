@@ -1069,7 +1069,7 @@
           "removeOptions": "移除选项",
           "done": "完成",
           "removeTitle": "从启动台移除所选应用？",
-          "removeMessage": "将从启动台移除所选的 {count} 个应用。不会卸载应用或删除文件，此操作暂时无法撤销。",
+          "removeMessage": "将从启动台移除所选的 {count} 个应用，不会卸载应用或删除文件。",
           "removeConfirm": "移除",
           "excludeTitle": "移除并从扫描中排除所选应用？",
           "excludeMessage": "将移除所选的 {count} 个应用，并在后续扫描中跳过。可在设置的“已排除的应用”中恢复扫描。",
@@ -1477,11 +1477,11 @@
           "restoredMany": "已将 {count} 个应用从排除列表移出，可在重新扫描后再次添加。",
           "appFallback": "该应用",
           "removedTitle": "已从启动台移除",
-          "removedOne": "“{name}”已从启动台移除。此操作不会卸载应用或删除文件。",
-          "removedMany": "已将 {count} 个应用从启动台移除。此操作不会卸载应用或删除文件。",
+          "removedOne": "“{name}”已从启动台移除。",
+          "removedMany": "已将 {count} 个应用从启动台移除。",
           "excludeFailedTitle": "无法从扫描中排除",
           "excludeUnstable": "所选应用中包含没有稳定扫描来源的项目，未移除任何应用。",
-          "excludeSaveFailed": "无法保存应用的扫描来源，未移除任何应用。",
+          "excludeSaveFailed": "未能将所选应用加入排除列表，当前未移除任何应用。",
           "excludeChangedTitle": "扫描排除未完成",
           "excludeChanged": "应用状态在操作期间发生变化，请重新扫描后重试。",
           "excludedTitle": "已从扫描中排除",
@@ -1577,7 +1577,7 @@
       },
       "dissolve": {
         "title": "解散“{name}”？",
-        "message": "文件夹中的应用将按当前顺序移回桌面。此操作不会删除应用。",
+        "message": "文件夹中的应用将按当前顺序移回桌面。",
         "confirm": "解散文件夹"
       }
     },

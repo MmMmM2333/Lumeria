@@ -22,6 +22,7 @@ import { runNativeDesktopResizeTests } from "../rendering/native/nativeDesktopSc
 import { runNativeDragPerformanceTests } from "../rendering/native/nativeDragPerformance.test.js";
 import { runNativeSearchPerformanceTests } from "../rendering/native/nativeSearchPerformance.test.js";
 import { runNativeLabelRasterTests } from "../rendering/native/nativeLabelRaster.test.js";
+import { runNativeParagraphTests } from "../rendering/native/nativeParagraph.test.js";
 import { runNativeVisualParityTests } from "../rendering/native/nativeVisualParity.test.js";
 import { runNativeSettingsLayoutTests } from "../rendering/native/nativeSettingsLayout.test.js";
 import { NativePageDots } from "../rendering/native/NativePageDots.js";
@@ -50,6 +51,7 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+runNativeParagraphTests();
 for(const color of [0,0xffffff,0xff0000,0x00ff00,0x0000ff,0x336699,0x808080]){
   assert.equal(hsvColor(...colorHsv(color)),color,"color picker RGB/HSV conversion must roundtrip");
 }

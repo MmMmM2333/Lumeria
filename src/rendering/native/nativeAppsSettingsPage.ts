@@ -3,7 +3,7 @@ import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import type { createLaunchpadApps } from "../../application/launchpadApps.js";
 import type { ReadonlyLaunchpadApp } from "../../domain/launchpadLayout.js";
-import type { IconTextureRepository } from "../pixi/assets/iconTextureRepository.js";
+import type { IconTextureRepository, IconTextureItem } from "../pixi/assets/iconTextureRepository.js";
 import { t, formatNativeScanTime } from "../../native/nativeLocalization.js";
 import { NativeFluentButton, nativeSettingsStyle, type NativeTheme } from "./NativeFluentButton.js";
 import { NativeFluentToggle } from "./NativeFluentToggle.js";
@@ -104,12 +104,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     allButton.resizeWidth(Math.ceil(allButton.caption.width));allButton.caption.x=allButton.controlWidth/2;allButton.x=clearButton.x-10-allButton.controlWidth;
     y+=26;return label;
   };
-  const appRow=(app:ReadonlyLaunchpadApp,selected:boolean,select:(checked:boolean)=>void,more:()=>void)=>{
-    const top=y;y+=70;
-    const background=new NativeFluentButton("",width,()=>select(!apps.appManagerSelectedIds.value.includes(app.id)),invalidate,theme,"list-row",false,64);background.label=`native-apps:row-${app.id}`;background.y=top;
-    node.addChild(background);
-    background.selected=selected;
-    const checkbox=toggle(`select-${app.id}`,selected,5,top+16,select,"checkbox");
+  const appArtwork=(app:IconTextureItem & {emoji?:string},top:number)=>{
     const artwork=new Container({eventMode:"none"});node.addChild(artwork);
     const icon=new Sprite({eventMode:"none"});icon.position.set(45,top+19);icon.visible=false;artwork.addChild(icon);
     const fallback=createNativeText({text:app.emoji||"▣",style:{fill:style.text,fontSize:15}});fallback.position.set(58,top+32);fallback.anchor.set(0.5);artwork.addChild(fallback);
@@ -123,6 +118,14 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     };
     const ready=()=>{if(weakArtwork.deref()?.destroyed!==false)return;applyTexture(options.icons.resolve(app));};
     applyTexture(options.icons.resolve(app,ready));
+  };
+  const appRow=(app:ReadonlyLaunchpadApp,selected:boolean,select:(checked:boolean)=>void,more:()=>void)=>{
+    const top=y;y+=70;
+    const background=new NativeFluentButton("",width,()=>select(!apps.appManagerSelectedIds.value.includes(app.id)),invalidate,theme,"list-row",false,64);background.label=`native-apps:row-${app.id}`;background.y=top;
+    node.addChild(background);
+    background.selected=selected;
+    const checkbox=toggle(`select-${app.id}`,selected,5,top+16,select,"checkbox");
+    appArtwork(app,top);
     const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,width-156));name.position.set(87,top+16);node.addChild(name);
     const target=new NativeSingleLineText(apps.getLaunchTargetPath(app)||key("manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:theme==="dark"?"rgba(255,255,255,0.48)":style.muted},Math.max(1,width-156));target.position.set(87,top+33);node.addChild(target);
     const moreButton=button(`more-${app.id}`,key("manager.more",{name:app.name}),width-44,top+16,32,more,false,"subtle");moreButton.caption.visible=false;
@@ -198,8 +201,9 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);redraw();};
       const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
       toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
-      const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-116);nameLabel.position.set(45,top+16);node.addChild(nameLabel);
-      const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-116);subtitle.position.set(45,top+33);node.addChild(subtitle);
+      appArtwork({...entry.app,id:entry.key},top);
+      const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-158);nameLabel.position.set(87,top+16);node.addChild(nameLabel);
+      const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-158);subtitle.position.set(87,top+33);node.addChild(subtitle);
       const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-44,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
       const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
     },index=>filtered[index]!.key);

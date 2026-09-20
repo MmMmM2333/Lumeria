@@ -16,6 +16,8 @@ import { NativeBackground } from "../../rendering/native/NativeBackground.js";
 import type { NativeDesktopScene } from "../../rendering/native/NativeDesktopScene.js";
 import { NativeFluentButton } from "../../rendering/native/NativeFluentButton.js";
 import { NativeFluentToggle } from "../../rendering/native/NativeFluentToggle.js";
+import { NativeSpinButton } from "../../rendering/native/NativeSpinButton.js";
+import { NativeFluentSlider } from "../../rendering/native/NativeFluentSlider.js";
 import { NativeManagement } from "../../rendering/native/NativeManagement.js";
 import { NativeNotice } from "../../rendering/native/NativeNotice.js";
 import { NativeSearchBar } from "../../rendering/native/NativeSearchBar.js";
@@ -63,6 +65,7 @@ export type NativeSettingsSmokeContext = Readonly<{
   openSettings: () => void;
   present: (description: string) => Promise<void>;
   refreshBackground: () => Promise<void>;
+  removeItems: (ids:readonly string[]) => void;
   requestQuit: () => void;
   restoreCommittedLayout: (config: ReturnType<NativeLayoutState["captureConfiguration"]>, pages: LaunchpadPages) => Promise<void>;
   saves: Readonly<{ flush(): Promise<void> }>;
@@ -629,6 +632,18 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
     await present(`background ${label} selected`);
   };
   const originalPickerColor=settings.draft.backgroundBaseColor.value;
+  {
+    const numeric=app.stage.getChildByLabel("native-background:base-opacity-value",true) as NativeSpinButton;
+    const slider=app.stage.getChildByLabel("native-background:base-opacity",true) as NativeFluentSlider;
+    const before=settings.draft.backgroundBaseOpacity.value;
+    numeric.input.value="37";numeric.commit();
+    assert.equal(settings.draft.backgroundBaseOpacity.value,37);assert.equal(slider.value,37);
+    slider.handleKey("ArrowRight");assert.equal(numeric.input.value,"38");
+    numeric.input.value="150";numeric.commit();assert.equal(slider.value,100);
+    numeric.input.value="invalid";numeric.commit();assert.equal(numeric.input.value,"100");
+    await present("editable opacity");await capture("settings-opacity-input");
+    numeric.input.value=String(before);numeric.commit();
+  }
   const pickerLocale=getNativeLocale();setNativeLocale("zh-CN");
   for(const accept of [true,false]){
     settings.actions.setDraftSettingsThemePreference(accept?"dark":"light");(getSettingsShell() as NativeSettingsShell|null)?.redraw();
@@ -695,11 +710,16 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   settings.actions.setDraftSettingsThemePreference(committedTheme);(getSettingsShell() as NativeSettingsShell|null)?.redraw();
   await present("background theme restored after comparison");
   await clickBackgroundControl("profile-light");
-  for(let index=0;index<4;index++)onKey({type:"down",key:"Tab"});
+  const focusParameter=(id:string)=>{
+    const numeric=app.stage.getChildByLabel(`native-background:${id}-value`,true) as NativeSpinButton;
+    for(let index=0;index<120&&!numeric.input.focused;index++)onKey({type:"down",key:"Tab"});
+    assert.ok(numeric.input.focused,`keyboard must reach ${id}`);
+  };
+  focusParameter("brightness");
   await present("acrylic brightness control revealed");
   onKey({type:"down",key:"End"});
   assert.equal(settings.draft.backgroundAcrylicLightParams.value.brightness,1.2,"brightness keyboard control must use the original UI range");
-  onKey({type:"down",key:"Tab"});onKey({type:"down",key:"End"});
+  focusParameter("contrast");onKey({type:"down",key:"End"});
   assert.equal(settings.draft.backgroundAcrylicLightParams.value.contrast,1.25,"contrast control must reach the shared profile");
   await present("acrylic parameter controls settled");await capture("settings-acrylic-parameters");
   clickWithNativeInput(app.stage.getChildByLabel(`native-action:${t("common.actions.apply")}`,true)!);
@@ -776,6 +796,39 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("settings close animation complete",()=>getSettingsShell()===null);
   assert.equal(layoutState.captureConfiguration().rows,baselineConfig.rows,"Cancel must retain the committed configuration");
   await present("settings close restores entry hit target");
+  {
+    const locale=getNativeLocale();setNativeLocale("zh-CN");
+    for(const [id,message] of [
+      ["long-name",t("settings.apps.operations.removedOne",{name:"Tools for Windows Store Apps"})],
+      ["batch",t("settings.apps.operations.removedMany",{count:4})],
+      ["excluded",t("settings.apps.operations.excludedMany",{count:2})],
+    ]){
+      notices.showTransientNotice({title:t(id==="excluded"?"settings.apps.operations.excludedTitle":"settings.apps.operations.removedTitle"),message:message!,intent:"info"});
+      await present("Chinese notice wraps");await capture(`notice-chinese-${id}`);
+    }
+    notices.closeTransientNotice();
+    const removed=baselinePages.flat().find(item=>item.type!=="folder")!;
+    const saveLayout=nativeData.saveLayout.bind(nativeData);
+    let release!:()=>void,started=false;
+    const delayed=new Promise<void>(resolve=>{release=resolve;});
+    nativeData.saveLayout=async document=>{started=true;await delayed;await saveLayout(document);};
+    context.removeItems([removed.id]);
+    await waitFor("Chinese warning settled",()=>management.getChildByLabel("native-form-overlay")?.alpha===1);
+    await present("Chinese warning wraps");await capture("warning-chinese-batch");
+    try{
+      clickWithNativeInput(management.getChildByLabel("native-modal:warning:confirm",true)!);
+      assert.equal(management.modal,false,"remove must dismiss synchronously, before persistence finishes");
+      await waitFor("removal persistence started",()=>started);
+      await present("removal pending save without modal");await capture("remove-pending-save");
+      assert.equal(apps().managedApps.value.some(item=>item.id===removed.id),false);
+    }finally{release();await saves.flush();nativeData.saveLayout=saveLayout;commitEditedPages(baselinePages);await saves.flush();}
+    notices.closeTransientNotice();
+    management.menu(400,120,[{label:t("settings.apps.manager.remove"),icon:"delete-20-regular",run:()=>{}},
+      {label:t("settings.apps.manager.exclude"),icon:"delete-20-regular",danger:true,run:()=>{}}],248,{restore:()=>{}});
+    await waitFor("removal submenu settled",()=>management.getChildByLabel("native-context-menu")?.alpha===1);
+    await present("removal submenu");await capture("selection-remove-menu");management.close(true);
+    setNativeLocale(locale);
+  }
   {
     let noticeActions=0;
     notices.showTransientNotice({title:"Temporary",message:"Replaced notice",durationMs:60});

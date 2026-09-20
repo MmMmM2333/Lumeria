@@ -1,3 +1,4 @@
+import { NativeSpinButton } from "./NativeSpinButton.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Text, type Renderer } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -79,17 +80,24 @@ export function nativeBackgroundSettings(options:{
     y+=44;
   };
   const slider=(label:string,id:string,value:number,change:(value:number)=>void,min=0,max=100,step=1)=>{
-    text(label,14,y+9,12);const start=Math.min(150,fieldWidth*0.4);
-    const format=(value:number)=>`${Math.round(value*(max<=2?100:1))}%`;
-    const valueText=text(format(value),fieldWidth-45,y+9,12);
-    const control=new NativeFluentSlider(fieldWidth-start-55,min,max,step,value,next=>{
-      change(next);valueText.text=format(next);refreshPreviews();
+    const caption=text(label,14,y+9,12),factor=max<=2?100:1;
+    const start=caption.x+caption.width+12,inputWidth=86,inputX=fieldWidth-inputWidth-14;
+    const stacked=inputX-start<72,controlY=stacked?y+30:y,sliderX=stacked?14:start;
+    const numeric=new NativeSpinButton(host,inputWidth,min*factor,max*factor,step*factor,value*factor,next=>{
+      control.value=next/factor;change(next/factor);refreshPreviews();
+    },invalidate,theme,"%");
+    numeric.label=`native-background:${id}-value`;numeric.input.label=`native-background:${id}-input`;
+    numeric.position.set(inputX,controlY);node.addChild(numeric);
+    const control=new NativeFluentSlider(inputX-sliderX-10,min,max,step,value,next=>{
+      change(next);numeric.value=next*factor;refreshPreviews();
     },invalidate,theme);
-    control.label=`native-background:${id}`;control.position.set(start,y);node.addChild(control);
+    control.label=`native-background:${id}`;control.position.set(sliderX,controlY);node.addChild(control);
     const focus=new Graphics({eventMode:"none"});control.addChild(focus);
     controls.push({node:control,disabled:()=>control.disabled,handleKey:k=>control.handleKey(k),focus:active=>{
       focus.clear();if(active)focus.roundRect(0,0,control.controlWidth,32,4).stroke({color:style.accent,width:2});invalidate();
-    }});y+=42;
+    }},{node:numeric.input,commit:()=>numeric.commit(),disabled:()=>numeric.input.disabled,
+      handleKey:k=>numeric.handleKey(k),focus:active=>{if(active)numeric.input.focus();else numeric.input.blur();}});
+    y=controlY+42;
   };
   const color=(label:string,id:string,value:string,change:(value:string)=>void)=>{
     text(label,14,y+9,12);
@@ -147,13 +155,13 @@ export function nativeBackgroundSettings(options:{
   const baseIcon=nativeFluentIcon("paint-brush-24-regular",style.accent,22);baseIcon.position.set(25,baseTop+25);node.addChild(baseIcon);
   text(key("base.title"),70,baseTop+17,13,true);
   const baseDescription=text(key("base.description"),70,baseTop+37,12);baseDescription.style.fill=style.muted;
-  baseDescription.style.wordWrap=true;baseDescription.style.wordWrapWidth=Math.max(100,width-425);
+  baseDescription.style.wordWrap=true;baseDescription.style.wordWrapWidth=Math.max(100,width-485);
   const baseColors=new Container();let start=node.children.length;fieldWidth=180;y=baseTop+19;
   color("","base-color",d.backgroundBaseColor.value,a.setDraftBackgroundBaseColor);
-  const colorChildren=node.children.slice(start);node.removeChildren(start);baseColors.addChild(...colorChildren);baseColors.x=width-408;node.addChild(baseColors);
-  const baseOpacity=new Container();start=node.children.length;fieldWidth=226;y=baseTop+19;
+  const colorChildren=node.children.slice(start);node.removeChildren(start);baseColors.addChild(...colorChildren);baseColors.x=width-468;node.addChild(baseColors);
+  const baseOpacity=new Container();start=node.children.length;fieldWidth=286;y=baseTop+19;
   slider(key("base.opacity"),"base-opacity",d.backgroundBaseOpacity.value,a.setDraftBackgroundBaseOpacity);
-  const opacityChildren=node.children.slice(start);node.removeChildren(start);baseOpacity.addChild(...opacityChildren);baseOpacity.x=width-226;node.addChild(baseOpacity);
+  const opacityChildren=node.children.slice(start);node.removeChildren(start);baseOpacity.addChild(...opacityChildren);baseOpacity.x=width-286;node.addChild(baseOpacity);
   fieldWidth=width;y=baseTop+78;
   const source=d.backgroundSource.value,usesImage=source==="customImage"||source==="windowsWallpaper",usesLive=source==="windowsLiveDesktop";
   const layerName=usesLive?t("debug.panel.tabs.liveDesktop"):key(source==="customImage"?"layer.custom":source==="windowsWallpaper"?"layer.wallpaper":"layer.none");
