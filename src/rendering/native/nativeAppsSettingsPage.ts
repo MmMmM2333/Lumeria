@@ -1,3 +1,4 @@
+import {openNativeImportHelp} from "./NativeImportHelp.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -235,6 +236,24 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       if(locked)metadata("description",key("sources.windowsManaged"));
       if(root.lastScannedAt)metadata("last-scan",key("sources.lastScan",{time:formatNativeScanTime(root.lastScannedAt)}));
       if(stacked){browse.y=remove.y=bottom+10;bottom+=42;}
+      if(!locked){
+        const policy=apps.imports.policies.find(p=>p.id===root.id)!;
+        const ruleY=bottom+10,groupWidth=Math.min(180,detailsWidth);
+        button(`group-${root.id}`,t(policy.grouped?"imports.group":"imports.flat"),detailsX,ruleY,groupWidth,()=>{apps.imports.policy(root.id,!policy.grouped,policy.keepSingle);redraw();});
+        const label=text(t("imports.single"),0,0,12,true);label.visible=policy.grouped;
+        const inline=groupWidth+16+32+label.width+12+28<=detailsWidth;
+        const checkX=inline?detailsX+groupWidth+16:detailsX,checkY=inline?ruleY:ruleY+40;
+        if(policy.grouped){
+          label.position.set(checkX+32,checkY+8);
+          toggle(`single-${root.id}`,policy.keepSingle,checkX,checkY,value=>{apps.imports.policy(root.id,policy.grouped,value);redraw();},"checkbox");
+        }
+        const infoX=policy.grouped?Math.min(width-44,checkX+32+label.width+12):detailsX+groupWidth+12;
+        const info=button(`group-info-${root.id}`,t("imports.groupHelpTitle"),infoX,policy.grouped?checkY:ruleY,28,()=>openNativeImportHelp(options.management,theme,invalidate),false,"subtle",false,32);
+        info.caption.text="i";info.caption.scale.set(1);info.caption.style.fontStyle="italic";
+        info.addChild(new Graphics({eventMode:"none"}).circle(14,16,8).stroke({color:style.muted,width:1.2}));
+        bottom=(policy.grouped?checkY:ruleY)+36;
+
+      }
       const height=Math.max(100,bottom-top+10);
       background.roundRect(0,top,width,height,8).fill(style.row).stroke({color:style.border,width:1});
       toggle(`source-enabled-${root.id}`,root.enabled,12,top+(height-32)/2,checked=>apps.toggleScanRootEnabled(root.id,checked));

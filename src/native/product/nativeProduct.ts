@@ -1,3 +1,5 @@
+import {NativeNewAppsButton} from "../../rendering/native/NativeNewAppsButton.js";
+import {createNativeOnboarding} from "../../rendering/native/NativeOnboarding.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -150,7 +152,7 @@ bindResumeRenderer();
 const offResumePrepare=app.beforeRender(()=>{resumeTiming?.mark("prepareCallbacksReached");});
 configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
-let catalogResult: NativeCatalogScanResult;
+let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
 try {
   await nativeData.connect();
@@ -163,7 +165,11 @@ try {
   let loadAttempts=0;
   const loading=loadNativeLayoutWithRetry(app,async()=>{
     if(startupSmoke&&startupSmoke.shouldInjectNativeStartupLoadFailure(++loadAttempts))throw new Error("smoke: layout read temporarily unavailable");
-    return nativeData.loadLayout();
+    const layout=await nativeData.loadLayout();
+    const request=makeNativeStartupScanRequest(layout);
+    catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
+    if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
+    return layout;
   });
   if(startupSmoke){
     await startupSmoke.driveNativeStartupRetryNotices({app,waitFor,present:description=>present(app,description),click:clickWithNativeInput,capture:name=>smoke!.captureSmokeFrame(app,name),loadAttempts:()=>loadAttempts});
@@ -171,8 +177,7 @@ try {
   const result=await loading;
   if(result.cancelled)return;
   loadedLayout=result.layout;startupLoadRecovered=result.recovered;
-  const scanRequest = makeNativeStartupScanRequest(loadedLayout);
-  catalogResult = await nativeData.scanApps(scanRequest.roots, scanRequest.filters);
+
 } catch (error) {
   throw error;
 }
@@ -187,7 +192,8 @@ let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=nu
 const systemPreferences=readNativeSystemPreferences();
 setNativeUiFontFamily(systemPreferences.ok?systemPreferences.value.uiFontFamily:null);
 let systemAppearance=systemPreferences.ok?systemPreferences.value.appearance:"dark";
-const layoutState = createNativeLayoutState(loadedLayout, catalogResult.apps);
+const needsOnboarding=!loadedLayout||!loadedLayout.settings.importState.completed;
+const layoutState = createNativeLayoutState(loadedLayout, needsOnboarding?[]:catalogResult.apps);
 // The controller is constructed before its later collaborators exist. Every
 // later collaborator is read through a lazy closure. The initial panel profile
 // reads systemAppearance, which is initialized above.
@@ -474,6 +480,8 @@ function contextMenu(item:SceneItem|null,x:number,y:number):void{
     if(!folder.renderedFolder){
       actions.push({label:t("settings.interface.layout.compactAction"),icon:"arrow-sort-20-regular",separatorBefore:true,run:()=>editing!.pageCommands.confirmForceFillAllPages()});
       if(apps?.canScanManagedApps.value)actions.push({label:t(apps.isScanningApps.value?"settings.apps.manager.scanning":"settings.apps.manager.scanApps"),icon:"scan-object-20-regular",disabled:apps.isScanningApps.value,run:()=>{void apps!.rescanManagedApps({announceStart:true});}});
+      if(apps&&!apps.presentation.importState.value.completed)actions.push({label:t("imports.restoreInitial"),icon:"settings-20-regular",run:()=>onboarding?.open()});
+      if(apps?.imports.canUndo)actions.push({label:t("imports.undo"),icon:"arrow-counterclockwise-20-regular",run:()=>{apps!.imports.undo();void saves.flush().catch(()=>{});}});
       actions.push({label:t("launchpad.openSettings"),icon:"settings-20-regular",separatorBefore:Boolean(apps?.canScanManagedApps.value),run:()=>openSettings()});
     }
   }
@@ -551,6 +559,8 @@ app.stage.addChild(selectionToolbar);
 app.stage.on("pointerdowncapture",event=>{let node=event.target as Container|null;while(node&&node!==selectionToolbar)node=node.parent;if(!node)selectionToolbar.clearFocus();});
 const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalidate());
 app.stage.addChild(settingsButton);
+let onboarding:ReturnType<typeof createNativeOnboarding>|null=null;
+const newAppsButton=new NativeNewAppsButton(()=>{if(management.modal)return;if(apps&&!apps.presentation.importState.value.completed)onboarding?.open();else appDialogs?.recent();},()=>app.invalidate());app.stage.addChild(newAppsButton);
 const windowChrome=new NativeWindowChrome(app,reportNativeError,()=>brandingTextures.get(settings.presentation.launchpadIconVariant.value)!);
 refreshWindowChrome=()=>windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
 app.stage.addChild(windowChrome);
@@ -677,6 +687,8 @@ try {
     app.stage.setChildIndex(folderNameInput, app.stage.children.length - 1);
     const headerShown=!editing?.selection.isActive.value&&(!folderHeader.renderedFolder||folderHeader.isClosing)&&(!launchFlow||launchFlow.isDesktopOpen.value);
     settingsButton.reveal(headerShown,headerShown&&!nativeSettings.shell&&!folderHeader.renderedFolder);
+    newAppsButton.update(apps?.imports.count??0,headerShown&&!nativeSettings.shell&&!searchQuery.trim(),!management.modal&&!folderHeader.renderedFolder&&!editing?.drag.isDragActive(),app.contentSize.width<760);
+    newAppsButton.position.set(settingsButton.x-newAppsButton.controlWidth-8,settingsButton.y+(app.contentSize.width<760?42:0));
     searchBar.update(app.contentSize.width, Boolean(editing?.selection.isActive.value || (folderHeader.renderedFolder && !folderHeader.isClosing)),chromeInset(),!nativeSettings.shell);
     const hiddenCount=(editing?.selection.selectedCount.value??0)-getSelectionScope().orderedIds.filter(id=>editing?.selection.isSelected(id)).length;
     selectionToolbar.update({width:app.contentSize.width,chromeInset:chromeInset(),theme:settingsTheme(),
@@ -820,7 +832,8 @@ try {
     commitDesktopPage(index);
   };
   const commitEditedPages = (pages: LaunchpadPages): void => {
-        layoutState.commitPages(pages);
+    apps?.imports.observe(layoutState.presentation.pages.value,pages);
+    layoutState.commitPages(pages);
     layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
     const config = layoutState.captureConfiguration();
     const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),...apps?.persistence.capture(),
@@ -866,6 +879,7 @@ try {
   };
   apps=createLaunchpadApps({
     ...layoutState.operations,pages:layoutState.presentation.pages,
+    importPageSize:()=>layoutState.captureConfiguration().rows*layoutState.captureConfiguration().cols,importFolderSize:()=>layoutState.captureConfiguration().folderRows*layoutState.captureConfiguration().folderCols,
     catalogPort:createNativeCatalogPort(nativeData),localizationText:{t},shouldUseNativeCatalog:()=>true,
     isDragActive:()=>editing!.drag.isDragActive(),commitPages:pages=>editing!.commit(pages),commitPagesAfterDeletion:pages=>editing!.commit(pages),
     commitOpenFolder:id=>{if(!id)closeFolder();},openFolderId:{get value(){return folderFlow.snapshot().renderedFolder?.id??null;}},
@@ -876,7 +890,10 @@ try {
     openWarningDialog:config=>management.warning({...config,onConfirm:async()=>{config.onConfirm?.();await saves.flush();}}),
     showTransientNotice:notice=>notices.showTransientNotice(notice),
   },createNativeStateHost(changedApps));
-  apps.persistence.restore(loadedLayout?.settings??{});appsPersistenceKey=JSON.stringify(apps.persistence.capture());
+  apps.persistence.restore(loadedLayout?.settings??{});
+  apps.imports.setCatalog(catalogResult.apps);
+  if(!needsOnboarding)apps.imports.registerStartup((loadedLayout?.pages??[]) as unknown as import("../../domain/launchpadLayout.js").ReadonlyLaunchpadPages);
+  appsPersistenceKey=JSON.stringify(apps.persistence.capture());
   appDialogs=new NativeAppDialogs({apps,management,host:searchBar.host,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),pickIcon:async()=>{
     const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp,bmp,gif,svg,ico",multiple:false});
     if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
@@ -909,6 +926,7 @@ try {
     getResumeTiming:()=>resumeTiming,
     getSettingsApplying:()=>Boolean(nativeSettings.shell?.applying),
     getSettingsButton:()=>settingsButton,
+    getAdditionalChrome:()=>[newAppsButton],
     getSettingsMaterial:()=>settings.presentation.windowEffectMaterial.value,
     getSettingsShell:()=>nativeSettings.shell,
     getSettingsThemePreference:()=>settings.presentation.windowEffectAppearance.value,
@@ -1018,7 +1036,7 @@ try {
   const interruptWheel = nativeInputRouter.interruptWheel;
   const clearWheelPresentation = nativeInputRouter.clearPresentation;
   const readTouchId = nativeInputRouter.readTouchId;
-  const onKey = createNativeKeyboardRouter({
+  const routeKey = createNativeKeyboardRouter({
     activateItem: (item, event) => { void activateItem(item, event); },
     app,
     cancelNativeGesture: () => cancelNativeGesture(),
@@ -1044,6 +1062,15 @@ try {
     turnFolderPage,
     turnPage,
   }).handleKey;
+  let newAppsFocused=false;
+  const onKey=(event:import("../nativeStartup.js").NativeNavigationKey)=>{
+    if(onboarding?.handleKey(event))return true;
+    if(!management.modal&&!nativeSettings.shell&&newAppsButton.visible&&event.type==="down"){
+      if(event.key==="Tab"&&!newAppsFocused&&searchBar.input.focused&&!event.shiftKey){searchBar.input.blur();newAppsFocused=true;newAppsButton.alpha=.7;app.invalidate();return true;}
+      if(newAppsFocused){if(event.key==="Enter"||event.key===" "){newAppsFocused=false;newAppsButton.alpha=1;newAppsButton.activate();return true;}if(event.key==="Tab"||event.key==="Escape"){newAppsFocused=false;newAppsButton.alpha=1;searchBar.focusEditor();app.invalidate();return true;}}
+    }else if(newAppsFocused){newAppsFocused=false;newAppsButton.alpha=1;}
+    return routeKey(event);
+  };
   searchBar.handleKey=onKey;
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="dev" && process.env.LAUNCHPAD_TOUCHPAD_CAPTURE_DIR){
     await (await import("../diagnostics/nativeTouchpadCapture.js")).attachNativeTouchpadCapture({
@@ -1052,6 +1079,11 @@ try {
       present:description=>present(app,description), requestQuit:()=>closeCoordinator.requestQuit(), smoke:smoke!,
     });
   }
+  onboarding=createNativeOnboarding({apps:apps!,settings,management,icon:()=>brandingTextures.get(settingsTheme()==="dark"?"dark":"light")!,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),
+    scan:async()=>{const request=apps!.nativeIntegration.captureScanRequest();const result=await nativeData.scanApps(request.roots,request.filters);if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));apps!.imports.setCatalog(result.apps);},
+    complete:()=>{requestSceneRender();},
+  });
+  if(needsOnboarding&&nativeMode!=="smoke")onboarding.open();
   if(startupLoadRecovered&&!notices.transientNotice.value)notices.showLayoutLoadRecovered();
   bindApplicationFocus = () => {
     offFocus();
@@ -1579,6 +1611,7 @@ try {
   tray?.remove();tray=null;
   disposeLaunchFlow();
   desktopBackground.destroy();
+  newAppsButton.destroy({children:true});
   mainShortcut.dispose();
   nativeSettings.dispose();
   branding.destroy();

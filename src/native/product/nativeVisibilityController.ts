@@ -43,6 +43,7 @@ export type NativeVisibilityControllerPorts = Readonly<{
   getSettingsMaterial: () => Parameters<ReturnType<typeof createNativeWindowEffects>["set"]>[0];
   getSettingsShell: () => Container | null;
   getSettingsButton: () => Container;
+  getAdditionalChrome?: () => readonly Container[];
   getSettingsThemePreference: () => Parameters<typeof resolveAppearancePreference>[0];
   getSystemAppearance: () => Parameters<typeof resolveAppearancePreference>[1];
   isCloseCoordinatorClosing: () => boolean;
@@ -108,7 +109,7 @@ export function createNativeVisibilityController(
     ports.fadeChrome([ports.desktopBackground], false, true);
     const settingsShell = ports.getSettingsShell();
     ports.fadeChrome([
-      ports.searchBar, ports.getSettingsButton(), ports.windowChrome, ports.management,
+      ports.searchBar, ports.getSettingsButton(), ports.windowChrome, ports.management,...(ports.getAdditionalChrome?.()??[]),
       ...(settingsShell ? [settingsShell] : []),
     ], false);
   };
@@ -132,7 +133,7 @@ export function createNativeVisibilityController(
       if (generation !== visibilityGeneration || ports.isCloseCoordinatorClosing()) return;
       measure("materialRefresh", () => ports.windowEffects.refresh());
       measure("openDesktop", () => ports.getLaunchFlow()!.openDesktop());
-      ports.fadeChrome([ports.desktopBackground, ports.searchBar, ports.windowChrome, ports.management], true);
+      ports.fadeChrome([ports.desktopBackground, ports.searchBar, ports.windowChrome, ports.management,...(ports.getAdditionalChrome?.()??[])], true);
       timing?.mark("revealRequested"); ports.setTextPrewarmRunning(true);
       ports.requestSceneRender(); ports.log("shown", { state: ports.app.state });
     };
