@@ -226,6 +226,12 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     const {sendAltSpace}=await import("../../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js");
     assert.ok(mainShortcut.apply("alt+Space").ok,"Alt+Space must register for the isolated physical input test");
     try{
+      // Earlier monitor tests can leave the window on a different display from
+      // the cursor. Establish the same-display precondition before testing hide;
+      // cross-display activation correctly relocates and shows instead.
+      app.prepareShortcutActivation();
+      await present("shortcut target display prepared");
+      await waitFor("shortcut target display settles",()=>scene.getDesktopAlpha()>.99&&!scene.getMotionSnapshot().active);
       app.window.activate();
       const {getNativePixiApplicationTesting}=await import("../../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js");
       await waitFor("shortcut hide fixture is foreground",()=>getNativePixiApplicationTesting(app).diagnostics().window.snapshot.focused);

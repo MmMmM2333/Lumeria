@@ -20,6 +20,7 @@ export async function runNativeAppsLayoutSmoke(context:NativeSettingsSmokeContex
   const current=():NativeModalPanel=>{assert.ok(panel);return panel;};
   const refresh=()=>panel?.refresh();
   const model={
+    ...original.apps.scanResultModel,
     activeTab:{get value(){return activeTab;}},apps:{value:items},keywordExcludedApps:{value:items.map(app=>({app,matchedKeyword:"uninstall"}))},
     selectedIds:{get value(){return selected;}},selectedCount:{get value(){return selected.length;}},warnings:{value:[]},stats:{value:null},canAdd:{value:true},
     getLaunchTargetPath:()=>"C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Example\\Uninstall.lnk",
