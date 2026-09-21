@@ -13,8 +13,8 @@ import { nativePanelShadow } from "./ui/nativePanelShadow.js";
 export type NativeModalBody={node:Container;height:number;controls:NativeSettingsControl[];
   fixedHeader?:{node:Container;height:number;controls:NativeSettingsControl[]};maxVisibleHeight?:number;
   dispose?():void;update?():boolean;viewport?(top:number,height:number):void};
-export type NativeModalSpec={id:string;title:string;subtitle?:string;width:number;maxHeight?:number;closeLabel?:string;showClose?:boolean;headerIcon?:{name:Parameters<typeof nativeFluentIcon>[0];color:string};
-  cancelText?:string;confirmText?:string;danger?:boolean;outlineConfirm?:boolean;canConfirm?():boolean;confirm?():void|Promise<void>;
+export type NativeModalSpec={id:string;title:string;subtitle?:string;width:number;maxHeight?:number;fixedHeight?:number;scrollGutter?:number;dismissible?:boolean;footerStatus?:string;closeLabel?:string;showClose?:boolean;headerIcon?:{name:Parameters<typeof nativeFluentIcon>[0];color:string};
+  cancelText?:string;confirmText?:string;busyText?:string;danger?:boolean;outlineConfirm?:boolean;canConfirm?():boolean;confirm?():void|boolean|Promise<void|boolean>;cancel?():void;
   onClose?():void;enterSubmit?:boolean;warningAnimation?:boolean;footerGap?:number;build(width:number):NativeModalBody;};
 
 /** Shared modal chrome and input boundary; application models own the drafts. */
@@ -30,6 +30,8 @@ export class NativeModalPanel extends Container{
   #error="";
   #footer:NativeFluentButton[]=[];
   #confirm:NativeFluentButton|null=null;
+  #spinner:Graphics|null=null;
+  #confirmCaption="";
   constructor(readonly spec:NativeModalSpec,readonly host:TextInputHost,readonly size:()=>{width:number;height:number},readonly theme:()=>NativeTheme,
     readonly invalidate:()=>void,readonly dismiss:()=>void){
     super({label:"native-form-overlay",eventMode:"static"});this.addChild(this.#shade,this.panel);
@@ -43,7 +45,7 @@ export class NativeModalPanel extends Container{
   get closing():boolean{return this.#closing;}
   resumeFocus():void{if(this.#focus>=0)this.#setFocus(this.#focus);}
   requestClose(force=false):void{
-    if(this.#closing||this.#busy&&!force)return;
+    if(this.#closing||(!force&&(this.#busy||this.spec.dismissible===false)))return;
     if(!force&&this.spec.warningAnimation){
       this.#closing=true;this.interactiveChildren=false;
       motion(this.panel.scale).duration(0.16).to({x:0.96,y:0.96}).start();
@@ -59,6 +61,7 @@ export class NativeModalPanel extends Container{
   redraw():void{
     const focused=this.host.focused,focusLabel=focused?.label,selection=focused?.selection;
     const previousControl=this.#controls[this.#focus],previousFocus=previousControl?.virtualKey??previousControl?.node.label,offset=this.#scroll?.offset??0;
+    if(this.#spinner){killMotionOf(this.#spinner);this.#spinner=null;}
     this.#body?.dispose?.();this.#body=null;this.#scroll=null;this.#controls=[];this.#footer=[];this.#confirm=null;this.#focus=-1;
     for(const child of this.panel.removeChildren())child.destroy({children:true});
     const size=this.size(),width=Math.max(120,Math.min(this.spec.width,size.width*0.92)),style=nativeSettingsStyle(this.theme());
@@ -68,15 +71,15 @@ export class NativeModalPanel extends Container{
     if(this.spec.headerIcon)title.style.wordWrapWidth=width-92;
     const subtitle=this.spec.subtitle?text(this.spec.subtitle,12,true):null;
     if(subtitle)subtitle.position.set(20,20+title.height+5);
-    const top=Math.ceil(20+Math.max(title.height+(subtitle?subtitle.height+5:0),this.spec.showClose===false?0:32)+(this.spec.headerIcon?7:18));
-    this.#body=this.spec.build(width-40);
+    const top=this.spec.title?Math.ceil(20+Math.max(title.height+(subtitle?subtitle.height+5:0),this.spec.showClose===false?0:32)+(this.spec.headerIcon?7:18)):20;
+    this.#body=this.spec.build(width-40-(this.spec.scrollGutter??0));
     let contentHeight=Math.ceil(this.#body.height);
     const hasFooter=Boolean(this.spec.cancelText||this.spec.confirmText),footerHeight=hasFooter?52+(this.spec.footerGap??14):20;
     const error=this.#error?text(this.#error,12):null;if(error){error.style.fill="#ffb4a9";error.style.wordWrapWidth=width-40;}
     // Error details belong to the scrollable body so long IO errors cannot displace the footer.
     if(error){error.position.set(0,contentHeight+12);this.#body.node.addChild(error);contentHeight+=Math.ceil(error.height)+24;}
     const header=this.#body.fixedHeader,headerHeight=header?.height??0;
-    const height=Math.min(top+headerHeight+Math.min(contentHeight,this.#body.maxVisibleHeight??Infinity)+footerHeight,this.spec.maxHeight??720,Math.max(100,size.height-48));
+    const height=Math.min(this.spec.fixedHeight??(top+headerHeight+Math.min(contentHeight,this.#body.maxVisibleHeight??Infinity)+footerHeight),this.spec.maxHeight??720,Math.max(100,size.height-48));
     this.panel.pivot.set(width/2,height/2);this.panel.position.set(size.width/2,size.height/2);
     this.panel.addChild(nativePanelShadow(width,height,nativeFluentTheme(this.theme()).shadow64));
     this.panel.addChild(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,width-1,height-1,8).fill(style.panel).stroke({color:this.theme()==="dark"?"rgba(255,255,255,0.12)":style.border,width:1}),title);
@@ -91,14 +94,15 @@ export class NativeModalPanel extends Container{
     const bodyHeight=Math.max(1,height-top-headerHeight-footerHeight);
     scroll.content.addChild(this.#body.node);scroll.resize(width-40,bodyHeight,contentHeight);scroll.scrollTo(offset);this.#body.viewport?.(scroll.offset,bodyHeight);this.panel.addChild(scroll);
     this.#controls.push(...this.#body.controls);
+    if(this.spec.footerStatus){const status=text(this.spec.footerStatus,12,true);status.position.set(20,height-43);this.panel.addChild(status);}
     let right=width-20;
     const footer=(label:string,action:()=>void,primary:boolean)=>{
-      const measure=text(label,13),buttonWidth=Math.max(96,measure.width+24);measure.destroy();
+      const measure=text(label,13),busyMeasure=primary&&this.spec.busyText?text(this.spec.busyText,13):null,buttonWidth=Math.max(96,measure.width+24,busyMeasure?busyMeasure.width+54:0);measure.destroy();busyMeasure?.destroy();
       const button=register(new NativeFluentButton(label,buttonWidth,action,this.invalidate,this.theme(),primary&&!this.spec.outlineConfirm?"primary":"outline",primary&&Boolean(this.spec.danger),32));
       right-=buttonWidth;button.position.set(right,height-52);right-=8;this.panel.addChild(button);this.#footer.push(button);return button;
     };
     if(this.spec.confirmText){this.#confirm=footer(this.spec.confirmText,()=>{void this.submit();},true);this.#confirm.label=`native-modal:${this.spec.id}:confirm`;this.#confirm.disabled=!(this.spec.canConfirm?.()??true);}
-    if(this.spec.cancelText){const cancel=footer(this.spec.cancelText,()=>this.requestClose(),false);cancel.label=`native-modal:${this.spec.id}:cancel`;
+    if(this.spec.cancelText){const cancel=footer(this.spec.cancelText,()=>{if(this.spec.cancel)this.spec.cancel();else this.requestClose();},false);cancel.label=`native-modal:${this.spec.id}:cancel`;
       // Keyboard order follows the visual left-to-right footer order.
       if(this.#confirm){const last=this.#controls.pop()!;this.#controls.splice(this.#controls.length-1,0,last);}}
     this.#controls.forEach((control,index)=>{
@@ -108,11 +112,22 @@ export class NativeModalPanel extends Container{
     if(restore>=0){this.#setFocus(restore);if(selection)this.#controls[restore]?.restoreSelection?.(selection);}
     this.setBusy(this.#busy);this.invalidate();
   }
-  setBusy(value:boolean):void{this.#busy=value;for(const b of this.#footer)b.busy=value;if(this.#body){this.#body.node.interactiveChildren=!value;if(this.#body.fixedHeader)this.#body.fixedHeader.node.interactiveChildren=!value;}}
+  setBusy(value:boolean):void{
+    this.#busy=value;for(const b of this.#footer){b.busy=value;b.disabled=value||(b===this.#confirm&&!(this.spec.canConfirm?.()??true));}
+    if(this.#confirm&&this.spec.busyText){
+      if(value&&!this.#spinner){
+        const b=this.#confirm;this.#confirmCaption=b.caption.text;b.caption.text=this.spec.busyText;b.caption.x=b.controlWidth/2+10;
+        const spinner=new Graphics({eventMode:"none",label:"native-modal:busy-spinner"}).arc(0,0,6,0,Math.PI*1.5).stroke({color:b.caption.style.fill as string,width:1.8});
+        spinner.position.set(18,b.controlHeight/2);b.addChild(spinner);this.#spinner=spinner;
+        motion(spinner).duration(.8).ease("none").to({rotation:Math.PI*2,repeat:-1,onUpdate:this.invalidate}).start();
+      }else if(!value&&this.#spinner){killMotionOf(this.#spinner);this.#spinner.destroy();this.#spinner=null;this.#confirm.caption.text=this.#confirmCaption;this.#confirm.caption.x=this.#confirm.controlWidth/2;}
+    }
+    if(this.#body){this.#body.node.interactiveChildren=!value;if(this.#body.fixedHeader)this.#body.fixedHeader.node.interactiveChildren=!value;}this.invalidate();
+  }
   async submit():Promise<void>{
     if(this.#busy||this.#closing||!this.spec.confirm||!(this.spec.canConfirm?.()??true))return;
     this.setBusy(true);this.#error="";
-    try{await this.spec.confirm();if(!this.destroyed){this.setBusy(false);this.requestClose();}}
+    try{const close=await this.spec.confirm();if(!this.destroyed){this.setBusy(false);if(close===false)this.redraw();else this.requestClose(true);}}
     catch(error){if(!this.destroyed){this.#error=error instanceof Error?error.message:String(error);this.setBusy(false);this.redraw();}}
   }
   #setFocus(index:number):void{
@@ -135,5 +150,5 @@ export class NativeModalPanel extends Container{
     if(event.key==="Enter"&&this.spec.enterSubmit){void this.submit();return true;}
     return !this.host.focused;
   }
-  override destroy():void{killMotionOf(this);killMotionOf(this.panel.scale);this.#body?.dispose?.();this.#body=null;super.destroy({children:true});}
+  override destroy():void{if(this.#spinner)killMotionOf(this.#spinner);killMotionOf(this);killMotionOf(this.panel.scale);this.#body?.dispose?.();this.#body=null;super.destroy({children:true});}
 }

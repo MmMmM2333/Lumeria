@@ -124,6 +124,36 @@ fn validate_layout_value(layout: &Value) -> Result<(), String> {
     )
 }
 
+fn validate_import_state(value: &Value) -> Result<(), String> {
+    let object = value.as_object().ok_or("Invalid importState")?;
+    let keys = &["completed", "policies", "bindings", "dismissedGroups", "deferredIds", "recentIds"];
+    require_exact_fields(object, keys, keys, "importState")?;
+    if !object["completed"].is_boolean() { return Err("Invalid importState.completed".into()); }
+    for key in ["dismissedGroups", "deferredIds", "recentIds"] {
+        let values = object[key].as_array().ok_or("Invalid import identifiers")?;
+        let mut seen = std::collections::HashSet::new();
+        for v in values { let id = v.as_str().filter(|s| !s.is_empty()).ok_or("Invalid import identifier")?;
+            if !seen.insert(id) { return Err("Duplicate import identifier".into()); }
+        }
+    }
+    for key in ["policies", "bindings"] {
+        let values = object[key].as_array().ok_or("Invalid import entries")?;
+        let mut seen = std::collections::HashSet::new();
+        for value in values {
+            let entry = value.as_object().ok_or("Invalid import entry")?;
+            let fields: &[&str] = if key == "policies" { &["id", "enabled", "grouped", "keepSingle"] } else { &["folderId", "groupKey"] };
+            require_exact_fields(entry, fields, fields, "import entry")?;
+            let id_key = if key == "policies" { "id" } else { "folderId" };
+            let id = entry[id_key].as_str().filter(|s| !s.is_empty()).ok_or("Invalid import entry id")?;
+            if !seen.insert(id) { return Err("Duplicate import entry".into()); }
+            if key == "policies" {
+                if ["enabled", "grouped", "keepSingle"].iter().any(|k| !entry[*k].is_boolean()) { return Err("Invalid import policy".into()); }
+            } else if entry["groupKey"].as_str().filter(|s| !s.is_empty()).is_none() { return Err("Invalid import group key".into()); }
+        }
+    }
+    Ok(())
+}
+
 fn validate_layout_settings(settings: &Value) -> Result<(), String> {
     let object = settings
         .as_object()
@@ -137,6 +167,7 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         "folderIconSizeMode",
         "folderIconSize",
         "textless",
+        "importState",
         "hiddenAppIds",
         "scanRoots",
         "scanKeywordBlacklist",
@@ -169,6 +200,7 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         "launchpadIconVariant",
     ];
     require_exact_fields(object, FIELDS, FIELDS, "layout settings")?;
+    validate_import_state(object.get("importState").ok_or("Missing importState")?)?;
 
     require_integer_in_range(object, "gridRows", 2, 8, "layout settings")?;
     require_integer_in_range(object, "gridCols", 3, 10, "layout settings")?;

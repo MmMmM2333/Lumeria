@@ -4,11 +4,11 @@ import { createCanvas,loadImage } from "@napi-rs/canvas";
 import { BufferImageSource,Texture } from "pixi.js";
 import { LAUNCHPAD_ICON_VARIANTS,type LaunchpadIconVariant } from "../../domain/launchpadIconVariant.js";
 
-// The largest settings preview is 128 logical pixels; keep the same 2x minimum
+// The welcome preview is 144 logical pixels; rasterize at a 3x minimum
 // as UI text and rerasterize from the vector for higher-DPI displays.
 export function nativeBrandingPixelSize(resolution:number):number{
   if(!Number.isFinite(resolution)||resolution<=0)throw new RangeError("Branding resolution must be positive");
-  return Math.ceil(128*Math.max(2,resolution));
+  return Math.ceil(144*Math.max(3,resolution));
 }
 export async function loadNativeBrandingTexture(path:string,pixels:number):Promise<Texture>{
   if(!Number.isInteger(pixels)||pixels<1||pixels>4096)throw new RangeError("Invalid branding raster size");
@@ -21,8 +21,11 @@ export async function loadNativeBrandingTexture(path:string,pixels:number):Promi
   if(image.width!==pixels||image.height!==pixels)throw new Error("Branding SVG did not rasterize at the requested size");
   const canvas=createCanvas(pixels,pixels),context=canvas.getContext("2d");context.drawImage(image,0,0);
   const rgba=context.getImageData(0,0,pixels,pixels).data;
+  // Premultiply before mip generation so transparent edge RGB cannot bleed
+  // into the thin SVG rim when the welcome icon is downsampled.
+  for(let i=0;i<rgba.length;i+=4){const alpha=rgba[i+3]!/255;rgba[i]=Math.round(rgba[i]!*alpha);rgba[i+1]=Math.round(rgba[i+1]!*alpha);rgba[i+2]=Math.round(rgba[i+2]!*alpha);}
   return new Texture({source:new BufferImageSource({resource:new Uint8Array(rgba.buffer,rgba.byteOffset,rgba.byteLength),width:pixels,height:pixels,
-    format:"rgba8unorm",alphaMode:"no-premultiply-alpha",autoGenerateMipmaps:true})});
+    format:"rgba8unorm",alphaMode:"premultiplied-alpha",autoGenerateMipmaps:true,scaleMode:"linear"})});
 }
 export function createNativeBrandingTextures(directory:string,changed:()=>void){
   const textures=new Map<LaunchpadIconVariant,Texture>();let size=0,requested=0,generation=0,closed=false;

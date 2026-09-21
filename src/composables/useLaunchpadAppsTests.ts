@@ -775,6 +775,8 @@ export async function runLaunchpadAppsTests() {
     assert(excludedApp && "iconUrl" in excludedApp && excludedApp.iconUrl === "http://asset.localhost/C:/Icons/blocked.png", "excluded app rows should expose cached asset URLs");
     const persistedExcludedApp = apps.persistence.capture().scanAppBlacklist[0];
     assert(persistedExcludedApp && !("iconPath" in persistedExcludedApp) && !("iconUrl" in persistedExcludedApp), "excluded app icons should remain runtime-only");
+    assert(!apps.scanResultModel.selectedIds.value.includes("win-app-1"), "removed apps must require explicit selection before re-adding");
+    apps.scanResultModel.actions.toggleSelection("win-app-1", true);
     apps.scanResultModel.actions.toggleSelection("win-app-store", false);
     apps.scanResultModel.actions.addSelected();
 
@@ -791,7 +793,10 @@ export async function runLaunchpadAppsTests() {
     );
     apps.scanResultModel.actions.addSelected();
 
-    assert(hiddenAppIds.value.length === 0, "adding scanned apps should unhide the preserved native id");
+    assert(hiddenAppIds.value.includes("win-app-store"), "rescanning without explicit selection must not restore a hidden app");
+    apps.scanResultModel.actions.toggleSelection("win-app-store", true);
+    apps.scanResultModel.actions.addSelected();
+    assert(hiddenAppIds.value.length === 0, "explicitly adding scanned apps should unhide the preserved native id");
     const windowsApp = requireApp(pages.value.flat().find((app) => app.id === "win-app-store"));
     delete windowsApp.iconUrl;
     delete windowsApp.iconDataUrl;

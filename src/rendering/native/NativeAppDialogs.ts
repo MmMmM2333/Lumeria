@@ -1,3 +1,4 @@
+import {nativeImportPlacement} from "./NativeImportPlacement.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost, TextInput } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -134,13 +135,32 @@ export class NativeAppDialogs{
       return {node,height:y,controls,update:()=>signature!==JSON.stringify([model.isLoading.value,model.error.value,model.choices.value]),viewport:(top,height)=>virtual?.viewport(top-virtual.y,height)};
     }});
   }
+  recent():void{
+    const {apps,management}=this.options,session=apps.imports,expanded=new Set<string>();
+    session.open("recent",[]);
+    management.dialog({id:"import-recent",title:t("imports.title"),width:660,scrollGutter:16,maxHeight:760,cancelText:t("imports.later"),confirmText:t("imports.place"),
+      canConfirm:()=>session.rows.length>0,onClose:()=>session.finish(),confirm:async()=>{session.apply();await this.options.save();},
+      build:width=>nativeImportPlacement(session,width,this.options.theme(),this.options.invalidate,()=>management.refresh(),expanded,(parent,id,x,y)=>{const app=session.catalog.find(a=>a.id===id);if(app)this.#image(parent,getNativeIconTextureSource(app),app.emoji??"",x,y,26);})});
+  }
+  #scanQuery="";
   scan():void{
-    const {apps,management}=this.options,model=apps.scanResultModel;
-    management.dialog({id:"scan-results",title:t("dialogs.scanResults.title"),get subtitle(){return t("dialogs.scanResults.summary",{selected:model.selectedCount.value});},width:720,maxHeight:720,closeLabel:t("dialogs.scanResults.close"),cancelText:t("common.actions.cancel"),confirmText:t("dialogs.scanResults.addSelected"),canConfirm:()=>model.canAdd.value,onClose:()=>model.actions.close(),confirm:async()=>{model.actions.addSelected({keepOpen:true});await this.options.save();},build:width=>this.#scanBody(width)});
+    this.#scanQuery="";
+    const owner=this,{apps,management}=this.options,model=apps.scanResultModel,session=apps.imports,expanded=new Set<string>();let step=1,prepared=false;
+    const prepare=()=>{if(!prepared)session.open("manual",model.selectedIds.value,model.apps.value.map(app=>app.id));else session.rebuild(model.selectedIds.value);prepared=true;step=2;};
+    management.dialog({id:"scan-results",get title(){return t(step===1?"dialogs.scanResults.title":"imports.placementTitle");},get subtitle(){return step===1?t("imports.selectHint"):t("imports.description");},width:720,scrollGutter:16,maxHeight:760,closeLabel:t("dialogs.scanResults.close"),
+      get cancelText(){return t(step===1?"common.actions.cancel":"imports.back");},get confirmText(){return t(step===1?"imports.next":"imports.confirm");},
+      cancel:()=>{if(step===2&&!session.staged){step=1;management.refresh();}else {management.close(true);model.actions.close();session.finish();}},
+      canConfirm:()=>step===1?model.canAdd.value:session.rows.length>0,onClose:()=>{session.finish();model.actions.close();},
+      confirm:async()=>{if(step===1){prepare();return false;}session.apply();await owner.options.save();return true;},
+      build:width=>step===1?this.#scanBody(width):nativeImportPlacement(session,width,this.options.theme(),this.options.invalidate,()=>management.refresh(),expanded,(parent,id,x,y)=>{const app=session.catalog.find(a=>a.id===id);if(app)this.#image(parent,getNativeIconTextureSource(app),app.emoji??"",x,y,26);})});
   }
   #scanBody(width:number):NativeModalBody{
     const {apps,theme,invalidate}=this.options,model=apps.scanResultModel,style=nativeSettingsStyle(theme()),node=new Container(),controls:NativeSettingsControl[]=[];
     let y=0;
+    const search=createNativeSettingsInput(this.options.host,{width,height:34,value:this.#scanQuery,theme:theme(),placeholder:t("settings.apps.manager.search"),invalidate});
+    search.label="native-import:scan-search";node.addChild(search);y+=46;
+    search.on("input",()=>{this.#scanQuery=search.value;queueMicrotask(()=>this.options.management.refresh());});
+    controls.push({node:search,disabled:()=>false,restoreFocus:true,selection:()=>search.selection,restoreSelection:value=>search.setSelectionRange(value.anchor,value.focus),focus:active=>{if(active)search.focus();else if(search.focused)search.blur();},handleKey:()=>false});
     if(model.warnings.value.length){const partial=this.#text(t("dialogs.scanResults.partial"),12,true,width);partial.y=y;node.addChild(partial);y+=partial.height+8;}
     const total=Number(model.stats.value?.keywordExcludedApps)||model.keywordExcludedApps.value.length;
     node.addChild(new Graphics({eventMode:"none"}).roundRect(0.5,y+0.5,width-1,41,8).fill(style.row).stroke({color:style.border,width:1}));
@@ -158,7 +178,10 @@ export class NativeAppDialogs{
       const height=stacked?intro.height+8+32:Math.max(32,intro.height);
       intro.y=y+(stacked?0:(height-intro.height)/2);manage.y=y+(stacked?intro.height+8:(height-32)/2);y+=height+10;
     }
-    const entries=ignored?model.keywordExcludedApps.value:model.apps.value.map(app=>({app,matchedKeyword:""}));
+    const rank=(id:string)=>model.hiddenIds.value.includes(id)?3:model.deferredIds.value.includes(id)?2:apps.presentation.importState.value.recentIds.includes(id)?1:0;
+    const entrySignature=()=>JSON.stringify([this.#scanQuery,model.activeTab.value,theme(),model.apps.value,model.keywordExcludedApps.value,model.hiddenIds.value,model.deferredIds.value,apps.presentation.importState.value.recentIds,model.warnings.value]);
+    const signature=entrySignature();
+    const entries=(ignored?model.keywordExcludedApps.value:model.apps.value.map(app=>({app,matchedKeyword:""}))).filter(entry=>entry.app.name.toLocaleLowerCase().includes(this.#scanQuery.toLocaleLowerCase())).sort((a,b)=>(ignored?0:rank(a.app.id)-rank(b.app.id))||a.app.name.localeCompare(b.app.name,undefined,{numeric:true,sensitivity:"base"}));
     if(entries.length){
       let x=0;for(const [id,label,action] of [["scan-all",t("common.actions.selectAll"),model.actions.selectAll],["scan-clear",t("common.actions.clearSelection"),model.actions.clearSelection]] as const){
         const b=this.#button(node,controls,id,label,x,y,100,action,"subtle",24);b.resizeWidth(Math.ceil(b.caption.width));b.caption.style.fontSize=12;x+=b.controlWidth+16;
@@ -169,7 +192,7 @@ export class NativeAppDialogs{
     const list=new NativeVirtualList(entries.length,70,1,index=>{
       const {app,matchedKeyword}=entries[index]!,row=new Container(),rowControls:NativeSettingsControl[]=[];
       const selected=model.selectedIds.value.includes(app.id);
-      const background=new NativeFluentButton("",width-10,()=>model.actions.toggleSelection(app.id,!selected),invalidate,theme(),"list-row",false,64);background.selected=selected;row.addChild(background);
+      const background=new NativeFluentButton("",width-10,()=>model.actions.toggleSelection(app.id,!model.selectedIds.value.includes(app.id)),invalidate,theme(),"list-row",false,64);background.selected=selected;row.addChild(background);
       const toggle=new NativeFluentToggle("checkbox",value=>model.actions.toggleSelection(app.id,value),invalidate,theme(),16);toggle.checked=selected;toggle.label=`native-scan:select-${app.id}`;toggle.position.set(5,16);row.addChild(toggle);
       rowControls.push({node:toggle,disabled:()=>false,focus:active=>{background.focused=active;},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;toggle.toggle();return true;}});
       this.#image(row,getNativeIconTextureSource(app),app.emoji??"",45,19,26);
@@ -182,11 +205,12 @@ export class NativeAppDialogs{
         detailsRight=badge.x-12;
       }
       const name=new NativeSingleLineText(app.name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},Math.max(1,detailsRight-87));name.position.set(87,16);row.addChild(name);
-      const target=new NativeSingleLineText(model.getLaunchTargetPath(app)||t("settings.apps.manager.targetMissing"),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},Math.max(1,detailsRight-87));target.position.set(87,33);row.addChild(target);
-      return {node:row,controls:rowControls};
+      const status=model.hiddenIds.value.includes(app.id)?t("imports.hidden"):model.deferredIds.value.includes(app.id)?t("imports.deferred"):apps.presentation.importState.value.recentIds.includes(app.id)?t("imports.alreadyAdded"):!ignored?t("imports.newFound"):null;
+      const target=new NativeSingleLineText(status??(model.getLaunchTargetPath(app)||t("settings.apps.manager.targetMissing")),{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},Math.max(1,detailsRight-87));target.position.set(87,33);row.addChild(target);
+      return {node:row,controls:rowControls,update:()=>{const checked=model.selectedIds.value.includes(app.id);if(toggle.checked!==checked)toggle.checked=checked;if(background.selected!==checked)background.selected=checked;}};
     },index=>entries[index]!.app.id);node.addChild(list);controls.push(...list.controls);y+=entries.length*70;
     if(!entries.length){const empty=this.#text(t(ignored?"dialogs.scanResults.ignoredEmpty":"dialogs.scanResults.empty"),13,true,width);empty.y=y+20;node.addChild(empty);y+=empty.height+60;}
     if(ignored&&total>entries.length){const hint=this.#text(t("dialogs.scanResults.ignoredTruncated",{shown:entries.length,total}),12,true,width);hint.y=y;node.addChild(hint);y+=hint.height+12;}
-    return {node,height:y,controls,fixedHeader:header,maxVisibleHeight:430,viewport:(offset,height)=>list.viewport(offset-list.y,height)};
+    return {node,height:y,controls,fixedHeader:header,maxVisibleHeight:430,update:()=>{if(signature!==entrySignature())return true;list.refreshRows();return false;},viewport:(offset,height)=>list.viewport(offset-list.y,height)};
   }
 }

@@ -29,10 +29,16 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.vue",
+    "tests/browser/importLab/**/*.ts",
+    "tests/browser/importLab/**/*.vue",
     "tests/browser/reference/**/*.ts",
     "tests/browser/reference/**/*.vue"
   ],
   "exclude": [
+    "src/rendering/native/NativeImportHelp.ts",
+    "src/rendering/native/NativeOnboarding.ts",
+    "src/rendering/native/NativeImportPlacement.ts",
+    "src/rendering/native/NativeNewAppsButton.ts",
     "src/rendering/native/nativeColorPicker.ts",
     "src/rendering/native/NativeFolderNameInput.ts",
     "src/native/nativeIconRecoverySmoke.test.ts",

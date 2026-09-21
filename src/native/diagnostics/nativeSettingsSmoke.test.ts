@@ -437,6 +437,11 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   assert.ok(apps().scanResultModel.apps.value.some(item=>item.id===firstManaged.id));await capture("settings-apps-scan-results");
   {
     const dialogs=appDialogs()!;
+    apps().scanResultModel.actions.toggleSelection(firstManaged.id,true);
+    await present("scan selection rendered before preview");
+    clickWithNativeInput(management.getChildByLabel("native-modal:scan-results:confirm",true)!);
+    await present("scan placement preview rendered");
+    assert.equal(management.activeId,"scan-results","advancing to placement must retain the scan dialog");
     const saveNormally=dialogs.options.save;
     dialogs.options.save=async()=>{throw new Error("smoke: scan save unavailable");};
     try{

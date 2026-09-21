@@ -132,7 +132,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
       size:()=>app.contentSize,topInset:ports.chromeInset,invalidate:()=>app.invalidate(),close,
       anchor:()=>({x:ports.getSettingsButton().x,y:ports.getSettingsButton().y,width:34,height:34}),
       content:(tab,subPage,width)=>tab==="apps"
-        ?nativeAppsSettingsPage({apps:ports.getApps()!,host:ports.getSearchBar().host,width,theme:ports.settingsTheme(),state:appsPageState,subPage,management:ports.getManagement(),icons:ports.getIconTextures(),
+        ?nativeAppsSettingsPage({refreshSelection:()=>shell?.refreshContent(),apps:ports.getApps()!,host:ports.getSearchBar().host,width,theme:ports.settingsTheme(),state:appsPageState,subPage,management:ports.getManagement(),icons:ports.getIconTextures(),
           invalidate:()=>app.invalidate(),redraw:()=>shell?.redraw(),
           navigate:page=>{navigation.openSubPage({id:page==="manager"?"apps.appManager":"apps.excludedApps",parentTabId:"apps",
             labelKey:page==="manager"?"settings.apps.manager.title":"settings.apps.excluded.title"});shell?.redraw();},

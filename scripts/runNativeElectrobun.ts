@@ -28,7 +28,9 @@ const launchVisualSmoke = process.argv.includes("--launch-visual");
 const searchSmoke = process.argv.includes("--search");
 if (searchSmoke && nativeMode !== "smoke") throw new Error("Search verification requires smoke mode");
 if (launchVisualSmoke && nativeMode !== "smoke") throw new Error("Launch visual verification requires smoke mode");
-const isolated = Boolean(stress) || nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
+const realImport=process.argv.includes("--import-real");
+const importPreview=process.argv.includes("--import-preview")||process.argv.includes("--import-check");
+const isolated = realImport || importPreview || Boolean(stress) || nativeMode === "smoke" || folderRenameSmoke || process.argv.includes("--isolated");
 const runtimeArgument=process.argv.find(argument=>argument.startsWith("--runtime="))?.slice("--runtime=".length);
 const isolatedRuntime=runtimeArgument?resolve(runtimeArgument):null;
 if(isolatedRuntime&&!isolated)throw new Error("A separate runtime requires isolated data");
@@ -44,15 +46,15 @@ const runner = join(
 const artifactDir = join(projectRoot, "artifacts", "native-smoke");
 if (nativeMode === "smoke" || folderRenameSmoke) mkdirSync(artifactDir, { recursive: true });
 const markerPath = join(tmpdir(), `launchpad-native-smoke-${process.pid}.json`);
-const dataDir = stressDir ? join(stressDir, "data") : mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
-if (stressDir) mkdirSync(dataDir);
+const dataDir = realImport ? join(projectRoot,"artifacts","native-import-real-data") : stressDir ? join(stressDir, "data") : mkdtempSync(join(tmpdir(), "launchpad-native-data-"));
+if (stressDir||realImport) mkdirSync(dataDir,{recursive:true});
 const restartPath=join(dataDir,"restart-request.json");
 let restartAttempt=0;
 const iconPath = join(dataDir, "smoke-icon.png");
 const childLaunchHelperPath = join(dataDir, "child-launch.mjs");
 const childLaunchMarkerPath = join(dataDir, "child-launched.txt");
 const scanRoot = join(dataDir, "catalog");
-mkdirSync(scanRoot);
+mkdirSync(scanRoot,{recursive:true});
 writeFileSync(
   join(scanRoot, "Catalog Sample.url"),
   "[InternetShortcut]\r\nURL=https://example.invalid/native-catalog\r\n",
@@ -261,7 +263,23 @@ if (stressDir) {
   writeFileSync(join(stressDir, "config.json"), JSON.stringify(stress, null, 2));
   console.log(`Stress artifacts: ${stressDir}\nCreate stop.request there to stop actions and preserve the process.`);
 }
-writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
+if(importPreview){
+  const sample=(folder:string,name:string)=>{const dir=join(scanRoot,folder);mkdirSync(dir,{recursive:true});writeFileSync(join(dir,name+".url"),`[InternetShortcut]\r\nURL=https://example.invalid/import/${encodeURIComponent(folder)}/${encodeURIComponent(name)}\r\n`);};
+  for(const name of ["应用 A","应用 B","应用 C","应用 D"])sample("示例应用组",name);
+  for(const name of ["工具 A","工具 B","工具 C"])sample("工具合集",name);
+  sample("示例播放器","示例播放器");sample("示例播放器","Uninstall 示例播放器");
+  const userSample=join(dataDir,"user-menu"),windowsSample=join(dataDir,"windows-apps");mkdirSync(userSample);mkdirSync(windowsSample);
+  fixture.settings.scanRoots=[
+    {id:"native-smoke-catalog",type:"startMenuSystem",label:"系统开始菜单",path:scanRoot,enabled:true,removable:true,maxDepth:8,maxEntries:100},
+    {id:"preview-user",type:"startMenuUser",label:"用户开始菜单",path:userSample,enabled:true,removable:true,maxDepth:8,maxEntries:100},
+    {id:"preview-windows",type:"customDirectory",label:"Windows 应用（隔离示例）",path:windowsSample,enabled:true,removable:true,maxDepth:8,maxEntries:100},
+  ];
+  fixture.pages=[[]];fixture.settings.localePreference="zh-CN";fixture.settings.settingsThemePreference="dark";fixture.settings.mainWindowShortcut=null;
+  fixture.settings.scanKeywordBlacklist=["uninstall"];
+  fixture.settings.importState={completed:false,policies:[{id:"native-smoke-catalog",enabled:true,grouped:true,keepSingle:false}],bindings:[],dismissedGroups:[],deferredIds:[],recentIds:[]};
+  fixture.settings.windowMode="windowed";
+}
+if(!realImport)writeFileSync(join(dataDir, "layout.json"), JSON.stringify(fixture), "utf8");
 if (stressDir) copyFileSync(join(dataDir, "layout.json"), join(stressDir, "initial-layout.json"));
 if (nativeMode === "smoke") rmSync(markerPath, { force: true });
 if (nativeMode === "smoke") rmSync(childLaunchMarkerPath, { force: true });
@@ -284,6 +302,8 @@ try {
         "lumeria_native_data.exe",
       )}:{}),
       LAUNCHPAD_NATIVE_MODE: nativeMode,
+      ...(realImport?{LAUNCHPAD_NATIVE_IMPORT_PREVIEW:"1"}:{}),
+      ...(importPreview?{LAUNCHPAD_NATIVE_IMPORT_PREVIEW:"1",LAUNCHPAD_NATIVE_IMPORT_PROOF:join(dataDir,"import-proof.json"),LAUNCHPAD_NATIVE_IMPORT_CHECK:process.argv.includes("--import-check")?"1":"0",LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR:artifactDir}:{}),
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE: launchVisualSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_SEARCH_SMOKE: searchSmoke ? "1" : "0",
@@ -305,6 +325,7 @@ try {
   });
   } while(status===0&&existsSync(restartPath));
   if(process.argv.includes("--restart-smoke")&&restartAttempt!==3)throw new Error(`Restart smoke expected exactly three app processes, got ${restartAttempt}`);
+  if(process.argv.includes("--import-check")&&status!==130&&!existsSync(join(dataDir,"import-proof.json")))throw new Error("Native import targeted check did not finish");
   if (status === 130) process.exitCode = 130;
   else if (status !== 0) throw new Error(`Electrobun exited with status ${status}`);
   if (stressDir && status !== 130) {
@@ -473,6 +494,6 @@ try {
   if(nativeMode==="smoke"&&existsSync(join(dataDir,"logs","native-runtime.log"))){
     copyFileSync(join(dataDir,"logs","native-runtime.log"),join(artifactDir,"native-runtime.log"));
   }
-  if (!stressDir) rmSync(dataDir, { force: true, recursive: true });
+  if (!stressDir&&!realImport) rmSync(dataDir, { force: true, recursive: true });
   if (nativeMode === "smoke" || folderRenameSmoke) rmSync(markerPath, { force: true });
 }

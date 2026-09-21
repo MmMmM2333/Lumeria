@@ -130,8 +130,8 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   button(developer,t("native.tray.logs"),width-170,19,154,options.openLogs).label="native-setting:open-logs";
   const update=()=>{
     const error=settings.presentation.launchAtLoginError.value;
-    startupTitle.y=error?17:(72-17)/2;
-    startupError.setValue(error);startupError.visible=Boolean(error);
+    startupTitle.y=17;
+    startupError.setValue(error||t("settings.general.startup.description"));startupError.visible=true;
     if(toggle.checked!==settings.draft.launchAtLogin.value)toggle.checked=settings.draft.launchAtLogin.value;
     toggle.disabled=!settings.presentation.canConfigureLaunchAtLogin.value||settings.presentation.isRefreshingLaunchAtLogin.value;
   };

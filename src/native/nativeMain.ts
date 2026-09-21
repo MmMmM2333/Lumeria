@@ -26,10 +26,10 @@ await runWithNativeResources(
     titleBarStyle:"hidden",
     antialias: true,
     background: 0x090b14,
-    height: 600,
+    height: __LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_PREVIEW==="1"?760:600,
     resizeMode: "live",
     title: nativeMode === "app" ? PRODUCT.name : (__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"?"LaunchPad · Settings style preview":`LaunchPad · Native WebGPU ${nativeMode}`,
-    width: 900,
+    width: __LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_PREVIEW==="1"?1100:900,
   }),
   (nativeData, app) => runNativeProduct(nativeData, app, session, nativeMode, smoke),
 );

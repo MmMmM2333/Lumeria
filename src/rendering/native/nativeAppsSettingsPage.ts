@@ -1,3 +1,5 @@
+import {NativeSegmentedControl} from "./NativeSegmentedControl.js";
+import {openNativeImportHelp} from "./NativeImportHelp.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { TextInputHost } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
@@ -21,7 +23,7 @@ import { getNativeIconTextureSource } from "./nativeIconTextureSource.js";
 
 export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>;scrollOffsets?:Record<string,number>};
 type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;width:number;theme:NativeTheme;state:NativeAppsPageState;
-  subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;
+  subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;refreshSelection?():void;
   navigate(page:"manager"|"excluded"):void;edit(app:ReadonlyLaunchpadApp|null):void;};
 
 /** Uses the same scan, exclusion and selection commands as the original settings page. */
@@ -194,19 +196,26 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const entries=apps.presentation.excludedScanApps.value.map((app,index)=>({app,index,key:app.catalogId}));
     const valid=new Set(entries.map(item=>item.key));for(const id of state.excludedKeys)if(!valid.has(id))state.excludedKeys.delete(id);
     const filtered=entries.filter(item=>`${item.app.name??""} ${item.key}`.toLowerCase().includes(state.excludedQuery.toLowerCase().trim()));
-    selectionBar(state.excludedKeys.size,()=>{button("restore-selected",key("excluded.removeSelected"),width-160,y,160,()=>{apps.cancelScanAppExclusions(entries.filter(item=>state.excludedKeys.has(item.key)).map(item=>item.index));state.excludedKeys.clear();redraw();});});
-    listActions(key("excluded.results",{count:filtered.length}),()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));redraw();},()=>{state.excludedKeys.clear();redraw();});
-    virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
+    const excludedLabel=selectionBar(state.excludedKeys.size,()=>{button("restore-selected",key("excluded.removeSelected"),width-160,y,160,()=>{apps.cancelScanAppExclusions(entries.filter(item=>state.excludedKeys.has(item.key)).map(item=>item.index));state.excludedKeys.clear();redraw();});});
+    listActions(key("excluded.results",{count:filtered.length}),()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));refreshSelection();},()=>{state.excludedKeys.clear();refreshSelection();});
+    const excludedList=virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
       const top=y,name=entry.app.name||entry.key,selected=state.excludedKeys.has(entry.key);y+=70;
-      const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);redraw();};
-      const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
-      toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
+      const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);refreshSelection();};
+      const background=new NativeFluentButton("",width,()=>select(!state.excludedKeys.has(entry.key)),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
+      const checkbox=toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
       appArtwork({...entry.app,id:entry.key},top);
       const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-158);nameLabel.position.set(87,top+16);node.addChild(nameLabel);
       const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-158);subtitle.position.set(87,top+33);node.addChild(subtitle);
       const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-44,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
       const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
+      return ()=>{const checked=state.excludedKeys.has(entry.key);if(background.selected!==checked)background.selected=checked;if(checkbox.checked!==checked)checkbox.checked=checked;};
     },index=>filtered[index]!.key);
+    update=()=>{excludedList.list.refreshRows();};
+    const refreshSelection=()=>{
+      excludedLabel.text=key("manager.selected",{count:state.excludedKeys.size});
+      layout.setExpanded(`apps.selection.${options.subPage}`,state.excludedKeys.size>0);
+      excludedList.list.refreshRows();options.refreshSelection?.();invalidate();
+    };
     if(!filtered.length){text(key(entries.length?"excluded.noMatch":"excluded.empty"),14,y+24,13,true);y+=80;}
   }else{
     const roots=apps.presentation.scanRoots.value;
@@ -235,6 +244,29 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       if(locked)metadata("description",key("sources.windowsManaged"));
       if(root.lastScannedAt)metadata("last-scan",key("sources.lastScan",{time:formatNativeScanTime(root.lastScannedAt)}));
       if(stacked){browse.y=remove.y=bottom+10;bottom+=42;}
+      if(!locked){
+        const policy=apps.imports.policies.find(p=>p.id===root.id)!;
+        const ruleY=bottom+10;
+        const arrangement=new NativeSegmentedControl([
+          {value:"flat",label:t("imports.arrangeFlat"),id:`native-apps:group-flat-${root.id}`},
+          {value:"group",label:t("imports.arrangeGrouped"),id:`native-apps:group-${root.id}`},
+        ],policy.grouped?"group":"flat",value=>{apps.imports.policy(root.id,value==="group",policy.keepSingle);redraw();},invalidate,theme,detailsWidth-40);
+        arrangement.position.set(detailsX,ruleY);node.addChild(arrangement);controls.push(...arrangement.controls);
+        const groupWidth=arrangement.controlWidth;
+        const label=text(t("imports.single"),0,0,12,true);label.visible=policy.grouped;
+        const inline=groupWidth+16+32+label.width+12+28<=detailsWidth;
+        const checkX=inline?detailsX+groupWidth+16:detailsX,checkY=inline?ruleY:ruleY+40;
+        if(policy.grouped){
+          label.position.set(checkX+32,checkY+8);
+          toggle(`single-${root.id}`,policy.keepSingle,checkX,checkY,value=>{apps.imports.policy(root.id,policy.grouped,value);redraw();},"checkbox");
+        }
+        const infoX=policy.grouped?Math.min(width-44,checkX+32+label.width+12):detailsX+groupWidth+12;
+        const info=button(`group-info-${root.id}`,t("imports.groupHelpTitle"),infoX,policy.grouped?checkY:ruleY,28,()=>openNativeImportHelp(options.management,theme,invalidate,{grouped:policy.grouped,keepSingle:policy.keepSingle}),false,"subtle",false,32);
+        info.caption.text="i";info.caption.scale.set(1);info.caption.style.fontStyle="italic";
+        info.addChild(new Graphics({eventMode:"none"}).circle(14,16,8).stroke({color:style.muted,width:1.2}));
+        bottom=(policy.grouped?checkY:ruleY)+36;
+
+      }
       const height=Math.max(100,bottom-top+10);
       background.roundRect(0,top,width,height,8).fill(style.row).stroke({color:style.border,width:1});
       toggle(`source-enabled-${root.id}`,root.enabled,12,top+(height-32)/2,checked=>apps.toggleScanRootEnabled(root.id,checked));

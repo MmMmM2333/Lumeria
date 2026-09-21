@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
-  optimizeDeps: { entries: ["motion-lab.html"] },
+  optimizeDeps: { entries: ["motion-lab.html", "import-lab.html"] },
   build: {
     emptyOutDir: true,
     outDir: "dist/motion-lab",
@@ -12,7 +12,9 @@ export default defineConfig({
       input: fileURLToPath(new URL("./motion-lab.html", import.meta.url)),
     },
   },
-  server: { watch: { ignored: ["**/target/**", "**/.codex-dev/**", "**/artifacts/**", "**/build/**"] } },
+  // Hutch replaces its generated devkit directory during native builds. Watching
+  // it keeps directory handles open on Windows and blocks that replacement.
+  server: { watch: { ignored: ["**/.hutch/**", "**/target/**", "**/.codex-dev/**", "**/artifacts/**", "**/build/**"] } },
   plugins: [
     vue({
       template: {

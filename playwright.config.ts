@@ -8,6 +8,8 @@ export default defineConfig({
   reporter: "line",
   retries: 0,
   testDir: "./tests/browser",
+  // This suite requires the adapter and launch flags in playwright.webgpu.config.ts.
+  testIgnore: "**/pixi-filter-backends.spec.ts",
   timeout: 20_000,
   use: {
     baseURL: "http://127.0.0.1:4175",
