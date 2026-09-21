@@ -77,5 +77,5 @@ return {total,created,joined,directCount};};
   updates.push(()=>{const v=summaryValues();summary.text=t("imports.totalApps",{count:v.total});detail.text=[v.created?t("imports.summaryNew",{count:v.created}):"",v.joined?t("imports.summaryJoin",{count:v.joined}):"",v.directCount?t("imports.summaryDirect",{count:v.directCount}):""].filter(Boolean).join(t("imports.summarySeparator"));});
   const summaryNode=new Container({label:"native-import:summary"});node.removeChild(summary,detail);summaryNode.addChild(summary,detail);
   const summaryHeight=summary.height+6+Math.max(detail.height,38)+16;
-  return {node,controls,height:y,fixedHeader:{node:summaryNode,height:summaryHeight,controls:[]},maxVisibleHeight:480};
+  return {node,controls,height:y,fixedHeader:{node:summaryNode,height:summaryHeight,controls:[]},maxVisibleHeight:480,update:()=>{if(signature!==structure())return true;for(const update of updates)update();invalidate();return false;}};
 }

@@ -22,7 +22,7 @@ import { getNativeIconTextureSource } from "./nativeIconTextureSource.js";
 
 export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>;scrollOffsets?:Record<string,number>};
 type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;width:number;theme:NativeTheme;state:NativeAppsPageState;
-  subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;
+  subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;refreshSelection?():void;
   navigate(page:"manager"|"excluded"):void;edit(app:ReadonlyLaunchpadApp|null):void;};
 
 /** Uses the same scan, exclusion and selection commands as the original settings page. */
@@ -195,19 +195,26 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const entries=apps.presentation.excludedScanApps.value.map((app,index)=>({app,index,key:app.catalogId}));
     const valid=new Set(entries.map(item=>item.key));for(const id of state.excludedKeys)if(!valid.has(id))state.excludedKeys.delete(id);
     const filtered=entries.filter(item=>`${item.app.name??""} ${item.key}`.toLowerCase().includes(state.excludedQuery.toLowerCase().trim()));
-    selectionBar(state.excludedKeys.size,()=>{button("restore-selected",key("excluded.removeSelected"),width-160,y,160,()=>{apps.cancelScanAppExclusions(entries.filter(item=>state.excludedKeys.has(item.key)).map(item=>item.index));state.excludedKeys.clear();redraw();});});
-    listActions(key("excluded.results",{count:filtered.length}),()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));redraw();},()=>{state.excludedKeys.clear();redraw();});
-    virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
+    const excludedLabel=selectionBar(state.excludedKeys.size,()=>{button("restore-selected",key("excluded.removeSelected"),width-160,y,160,()=>{apps.cancelScanAppExclusions(entries.filter(item=>state.excludedKeys.has(item.key)).map(item=>item.index));state.excludedKeys.clear();redraw();});});
+    listActions(key("excluded.results",{count:filtered.length}),()=>{state.excludedKeys=new Set(filtered.map(item=>item.key));refreshSelection();},()=>{state.excludedKeys.clear();refreshSelection();});
+    const excludedList=virtualRows(filtered.length,2,index=>{const entry=filtered[index]!;
       const top=y,name=entry.app.name||entry.key,selected=state.excludedKeys.has(entry.key);y+=70;
-      const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);redraw();};
-      const background=new NativeFluentButton("",width,()=>select(!selected),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
-      toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
+      const select=(checked:boolean)=>{if(checked)state.excludedKeys.add(entry.key);else state.excludedKeys.delete(entry.key);refreshSelection();};
+      const background=new NativeFluentButton("",width,()=>select(!state.excludedKeys.has(entry.key)),invalidate,theme,"list-row",false,64);background.y=top;background.selected=selected;node.addChild(background);
+      const checkbox=toggle(`excluded-${entry.key}`,selected,5,top+16,select,"checkbox");
       appArtwork({...entry.app,id:entry.key},top);
       const nameLabel=new NativeSingleLineText(name,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:13,fill:style.text},width-158);nameLabel.position.set(87,top+16);node.addChild(nameLabel);
       const subtitle=new NativeSingleLineText(entry.key,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:11,fill:style.muted},width-158);subtitle.position.set(87,top+33);node.addChild(subtitle);
       const restore=button(`restore-${entry.key}`,key("excluded.restoreTitle"),width-44,top+16,32,()=>{apps.cancelScanAppExclusion(entry.index);redraw();},false,"subtle");restore.caption.visible=false;
       const restoreIcon=nativeFluentIcon("arrow-counterclockwise-20-regular",style.text,18);restoreIcon.position.set(7,7);restore.addChild(restoreIcon);
+      return ()=>{const checked=state.excludedKeys.has(entry.key);if(background.selected!==checked)background.selected=checked;if(checkbox.checked!==checked)checkbox.checked=checked;};
     },index=>filtered[index]!.key);
+    update=()=>{excludedList.list.refreshRows();};
+    const refreshSelection=()=>{
+      excludedLabel.text=key("manager.selected",{count:state.excludedKeys.size});
+      layout.setExpanded(`apps.selection.${options.subPage}`,state.excludedKeys.size>0);
+      excludedList.list.refreshRows();options.refreshSelection?.();invalidate();
+    };
     if(!filtered.length){text(key(entries.length?"excluded.noMatch":"excluded.empty"),14,y+24,13,true);y+=80;}
   }else{
     const roots=apps.presentation.scanRoots.value;
