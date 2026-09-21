@@ -144,6 +144,14 @@
     "mainWindowShortcut": "control+alt+KeyL",
     "localePreference": "en-US",
     "settingsThemePreference": "system",
-    "launchpadIconVariant": "pastelDark"
+    "launchpadIconVariant": "pastelDark",
+    "importState": {
+      "completed": true,
+      "policies": [],
+      "bindings": [],
+      "dismissedGroups": [],
+      "deferredIds": [],
+      "recentIds": []
+    }
   }
 }

@@ -3,6 +3,11 @@
   "displayName": "简体中文",
   "direction": "ltr",
   "messages": {
+    "imports": {
+      "changed": "布局或来源已变化，预览已更新。请检查后再次确认。",
+      "empty": "没有待放置的应用。",
+      "partial": "扫描不完整，请检查来源后重新扫描。"
+    },
     "touchpadCapture": {
       "speed": "F9 翻页速度：{mode}",
       "baseline": "基线（不限速）",

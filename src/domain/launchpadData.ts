@@ -1,3 +1,4 @@
+import {emptyAppImportState,copyAppImportState} from "./appImportState.js";
 import {
   clamp,
   type LaunchpadApp,
@@ -115,6 +116,7 @@ type LayoutSnapshotState = {
   folderIconSizeMode: LayoutSettings["folderIconSizeMode"];
   folderIconSize: number;
   textless: boolean;
+  importState?: unknown;
   hiddenAppIds: string[];
 } & Partial<Record<keyof LayoutSettings, unknown>>;
 
@@ -658,7 +660,8 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         })
         .filter(isPresent);
     });
-    const hidden = new Set(hiddenAppIds || []);
+    const deferred=isRecord(document.settings)&&isRecord(document.settings.importState)&&Array.isArray(document.settings.importState.deferredIds)?document.settings.importState.deferredIds:[];
+    const hidden = new Set([...(hiddenAppIds || []),...deferred]);
     const newApps = runtimeApps
       .filter((app) => !usedAppIds.has(app.id) && !hidden.has(app.id))
       .map((app) => makeCatalogRuntimeApp(app));
@@ -757,6 +760,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         folderIconSizeMode: state.folderIconSizeMode,
         folderIconSize: state.folderIconSize,
         textless: state.textless,
+        importState: state.importState===undefined?emptyAppImportState():copyAppImportState(state.importState),
         hiddenAppIds: state.hiddenAppIds,
         scanRoots: normalizeScanRoots(state.scanRoots) as LayoutSettings["scanRoots"],
         scanKeywordBlacklist: normalizeScanKeywordBlacklist(state.scanKeywordBlacklist),

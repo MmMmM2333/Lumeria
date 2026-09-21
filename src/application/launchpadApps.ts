@@ -1,3 +1,5 @@
+import {emptyAppImportState,copyAppImportState} from "../domain/appImportState.js";
+import {createAppImportSession} from "./appImportSession.js";
 import type { StateHost, StateCell } from "./stateHost.js";
 import { readErrorMessage } from "../application/errorMessage.js";
 import {
@@ -75,8 +77,10 @@ export type LaunchpadAppsNotice = Readonly<{
 }>;
 type RescanManagedAppsOptions = Readonly<{
   announceStart?: boolean;
+  automatic?: boolean;
 }>;
 export type LaunchpadAppsPersistenceFragment = Readonly<{
+  importState?: unknown;
   hiddenAppIds?: unknown;
   scanRoots?: unknown;
   scanKeywordBlacklist?: unknown;
@@ -86,6 +90,8 @@ export type LaunchpadAppsPersistenceFragment = Readonly<{
 }>;
 export type LaunchpadAppsOptions = Readonly<{
   appendAppsToPages: (sourcePages: ReadonlyLaunchpadPages, apps: readonly LaunchpadApp[]) => LaunchpadPages;
+  importPageSize?:()=>number;
+  importFolderSize?:()=>number;
   cancelInputGesture?: () => void;
   catalogPort?: CatalogPort;
   clearFocusedIcon?: () => void;
@@ -150,6 +156,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const scanResultSelectedIds = ref<string[]>([]);
   const newScanKeyword = ref("");
   const hiddenAppIds = ref<string[]>([]);
+  const importState=ref(emptyAppImportState());
+  const importRevision=ref(0);
   const scanRoots = ref(createDefaultScanRoots({ roots: DEFAULT_SCAN_ROOTS, translate: t }));
   const scanKeywordBlacklist = ref([...DEFAULT_SCAN_KEYWORD_BLACKLIST]);
   const scanKeywordAllowlist = ref<string[]>([]);
@@ -929,6 +937,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       .filter((app) => app.origin === "catalog")
       .map((app) => app.id);
     hiddenAppIds.value = Array.from(new Set([...hiddenAppIds.value, ...removedCatalogIds]));
+    importState.value={...importState.value,recentIds:importState.value.recentIds.filter(id=>!removedIds.includes(id))};
     options.commitPagesAfterDeletion(next);
     const removedIdSet = new Set(removedIds);
     const focusedId = options.focusedIcon?.value?.id;
@@ -1057,6 +1066,11 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       };
       const scanResult = await catalog.scan(enabledRoots, scanFilters);
       if (!scanResult) throw new Error(t("settings.apps.operations.scanFailedMessage"));
+      if(scanOptions.automatic){
+        if(scanResult.warnings.length||scanResult.stats.limitReached)throw new Error(t("imports.partial"));
+        imports.setCatalog(scanResult.apps);imports.appendAutomatic();return;
+      }
+      imports.setCatalog([...scanResult.apps,...scanResult.keywordExcludedApps.map(entry=>entry.app)]);
       replaceExcludedCatalogApps(scanResult.excludedApps);
       const now = new Date().toISOString();
       const scannedRootIds = new Set(enabledRoots.map((root) => root.id));
@@ -1071,7 +1085,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
           catalog.toAssetUrl
         ))
         .filter((app) => !isAppExcludedFromScan(app, scanFilters.appBlacklist))
-        .filter((app) => !existingIds.has(app.id));
+        .filter((app) => !existingIds.has(app.id)||importState.value.recentIds.includes(app.id));
       const keywordExcludedApps = (scanResult?.keywordExcludedApps || [])
         .map((entry) => ({
           app: applyCachedIconAssetUrlsToApp(normalizeNativeApp(entry.app), catalog.toAssetUrl),
@@ -1085,7 +1099,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       scanResultKeywordExcludedApps.value = keywordExcludedApps;
       scanResultStats.value = scanResult.stats;
       scanResultWarnings.value = [...scanResult.warnings];
-      scanResultSelectedIds.value = missingApps.map((app) => app.id);
+      scanResultSelectedIds.value = missingApps.filter(app=>!hiddenAppIds.value.includes(app.id)&&!importState.value.deferredIds.includes(app.id)).map(app=>app.id);
       isScanResultDialogOpen.value = true;
       syncManagedAppState();
     } catch (error) {
@@ -1175,6 +1189,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
 
   function capturePersistence() {
     return {
+      importState: copyAppImportState(importState.value),
       hiddenAppIds: [...hiddenAppIds.value],
       scanRoots: scanRoots.value.map((root) => ({ ...root })),
       scanKeywordBlacklist: [...scanKeywordBlacklist.value],
@@ -1185,6 +1200,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   }
 
   function restorePersistence(fragment: LaunchpadAppsPersistenceFragment = {}): void {
+    importState.value=fragment.importState===undefined?emptyAppImportState():copyAppImportState(fragment.importState);
     hiddenAppIds.value = Array.isArray(fragment.hiddenAppIds)
       ? Array.from(new Set(fragment.hiddenAppIds.map(String)))
       : [];
@@ -1372,7 +1388,19 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       upload: handleIconChooserUpload,
     }),
   });
+  const imports=createAppImportSession({
+    state:()=>importState.value,write:state=>{importState.value=state;},pages:()=>options.pages.value,
+    commit:pages=>{options.commitPages(pages);options.reclampPageIndices();options.schedulePageGridMetrics();},clone:options.clonePages,
+    pageSize:()=>options.importPageSize?.()??28,folderSize:()=>options.importFolderSize?.()??12,makeId:()=>options.makeId("folder"),
+    hidden:()=>hiddenAppIds.value,hide:ids=>{hiddenAppIds.value=ids;},allow:ids=>{scanKeywordAllowlist.value=normalizeScanKeywordAllowlist([...scanKeywordAllowlist.value,...ids.filter(id=>scanResultKeywordExcludedApps.value.some(e=>e.app.id===id))]);},
+    sources:()=>scanRoots.value,normalize:app=>applyCachedIconAssetUrlsToApp(normalizeNativeApp(app),catalog.toAssetUrl),
+    changed:()=>{importRevision.value++;},t,
+  });
   const scanResultModel = Object.freeze({
+    imports,
+    importRevision: readonly(importRevision),
+    hiddenIds: readonly(hiddenAppIds),
+    deferredIds: computed(()=>importState.value.deferredIds),
     activeTab: readonly(scanResultActiveTab),
     apps: readonly(scanResultApps),
     canAdd: canAddScannedApps,
@@ -1394,6 +1422,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     }),
   });
   const presentation = Object.freeze({
+    importState: readonly(importState),
     excludedScanApps: readonly(excludedScanApps),
     hiddenAppIds: readonly(hiddenAppIds),
     launchTargetStatusById: readonly(launchTargetStatusById),
@@ -1417,6 +1446,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   });
 
   return {
+    imports,
     addScanKeywordBlacklistItem,
     addScanRoot,
     appManagerSearchQuery,

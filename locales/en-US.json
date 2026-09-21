@@ -3,6 +3,11 @@
   "displayName": "English",
   "direction": "ltr",
   "messages": {
+    "imports": {
+      "changed": "Layout or sources changed. The preview has been refreshed. Review and confirm again.",
+      "empty": "No apps to place.",
+      "partial": "The scan is incomplete. Check your sources and scan again."
+    },
     "touchpadCapture": {
       "speed": "F9 Page speed: {mode}",
       "baseline": "Baseline",

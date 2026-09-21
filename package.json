@@ -30,6 +30,7 @@
     "test:native-installer": "tsx scripts/testWindowsInstaller.ts",
     "test:native-product": "tsx scripts/testWindowsProduct.ts",
     "prenative:dev": "npm run native:data:build && npm run native:live-desktop:build",
+    "test:native-import": "tsx src/native/nativeImportSession.test.ts",
     "native:dev": "tsx scripts/runNativeElectrobun.ts --dev",
     "prenative:stress": "npm run native:data:build && npm run native:live-desktop:build",
     "native:stress": "tsx scripts/runNativeElectrobun.ts --dev --stress",

@@ -1,3 +1,4 @@
+import {assertAppImportState,type AppImportState} from "./appImportState.js";
 /**
  * Closed-world persisted layout contract shared by the renderer and native store.
  *
@@ -110,6 +111,7 @@ export type LayoutSettings = {
   folderIconSizeMode: "global" | "custom";
   folderIconSize: number;
   textless: boolean;
+  importState: AppImportState;
   hiddenAppIds: string[];
   scanRoots: ScanRoot[];
   scanKeywordBlacklist: string[];
@@ -196,6 +198,7 @@ const SETTINGS_FIELDS = [
   "folderIconSizeMode",
   "folderIconSize",
   "textless",
+  "importState",
   "hiddenAppIds",
   "scanRoots",
   "scanKeywordBlacklist",
@@ -455,6 +458,7 @@ function assertLayoutSettings(value: unknown): void {
   requireEnum(settings.folderIconSizeMode, ["global", "custom"], `${path}.folderIconSizeMode`);
   requireIntegerInRange(settings.folderIconSize, 32, 128, `${path}.folderIconSize`);
   requireBoolean(settings.textless, `${path}.textless`);
+  assertAppImportState(settings.importState);
   requireNonEmptyStringArray(settings.hiddenAppIds, `${path}.hiddenAppIds`);
   assertScanRoots(settings.scanRoots, `${path}.scanRoots`);
   requireNonEmptyStringArray(settings.scanKeywordAllowlist, `${path}.scanKeywordAllowlist`);
