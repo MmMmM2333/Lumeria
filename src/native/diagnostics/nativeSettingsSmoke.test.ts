@@ -228,6 +228,31 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("apps overview transition",()=>!scene.getMotionSnapshot().active);await present("apps overview rendered");
   await capture("settings-apps-overview");
   {
+    const previousTheme=settings.draft.settingsThemePreference.value;
+    for(const theme of ["dark","light"] as const){
+      settings.actions.setDraftSettingsThemePreference(theme);getSettingsShell()!.redraw();await present(`source ${theme} theme`);
+      const root=apps().presentation.scanRoots.value.find(root=>root.type!=="windowsAppCatalog")!;
+      assert.ok(root,"hover proof requires an editable scan source");
+      const card=app.stage.getChildByLabel(`native-apps:source-card-${root.id}`,true)!;
+      const bounds=card.getBounds();
+      const pixel=async()=>{
+        const data=await smoke.captureScenePixels(app,app.contentSize.width,app.contentSize.height);
+        const offset=(Math.floor(bounds.y+5)*data.width+Math.floor(bounds.x+bounds.width/2))*4;
+        return Array.from(data.pixels.slice(offset,offset+4));
+      };
+      app.nativeInput.emitPointer("pointermove",0,0,0);await present("source card idle");
+      const idle=await pixel();
+      for(const id of ["source-label","source-path","source-enabled","browse","delete"]){
+        const control=app.stage.getChildByLabel(`native-apps:${id}-${root.id}`,true)!;
+        const b=control.getBounds();app.nativeInput.emitPointer("pointermove",b.x+b.width/2,b.y+b.height/2,0);
+        await present(`source ${id} hover`);
+        assert.deepEqual(await pixel(),idle,`${id} hover must not recolor the source card`);
+        if(id==="browse"||id==="source-path")await capture(`settings-source-${theme}-${id}-hover`);
+      }
+    }
+    settings.actions.setDraftSettingsThemePreference(previousTheme);getSettingsShell()!.redraw();await present("source theme restored");
+  }
+  {
     const before=apps().persistence.capture();
     for(const root of apps().presentation.scanRoots.value)if(root.enabled)apps().toggleScanRootEnabled(root.id,false);
     await present("scan disabled");

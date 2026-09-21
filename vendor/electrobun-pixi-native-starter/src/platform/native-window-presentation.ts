@@ -167,7 +167,12 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
       if(nextFullscreen){
         const monitor=user.symbols.MonitorFromWindow(window,2),info=new Int32Array(10);info[0]=40;
         if(!monitor||!user.symbols.GetMonitorInfoW(monitor,ptr(info)))throw new Error("Cannot read the window display bounds");
-        target={style:BigInt.asUintN(32,(previous.style&~0x01000000n)|0x80c70000n),
+        // Fullscreen owns the monitor bounds. WS_THICKFRAME / WS_MAXIMIZEBOX
+        // allow Win+Arrow to snap/maximize it; Windows then constrains the frame
+        // while syncFullscreenBounds tries to restore it, exhausting GPU recovery.
+        // Keep caption/minimize support for shell recognition and Win+Down, and
+        // restore the original resizable style when leaving fullscreen.
+        target={style:BigInt.asUintN(32,(previous.style&~0x01050000n)|0x80c20000n),
           rect:new Int32Array([info[1]!-pixels,info[2]!-pixels,info[3]!+pixels,info[4]!+pixels])};
       }else{
         if(!windowedPlacement)throw new Error("Windowed placement is unavailable");

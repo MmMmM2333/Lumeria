@@ -228,18 +228,17 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       remove.x=width-12-remove.controlWidth;browse.x=remove.x-8-browse.controlWidth;
       const stacked=browse.x-detailsX-14<120;
       const detailsWidth=Math.max(1,(stacked?width-12:browse.x-14)-detailsX);
-      const name=input(`source-label-${root.id}`,root.label,detailsX,top+10,Math.min(320,detailsWidth),value=>apps.changeScanRootLabel(root.id,value));
-      const path=input(`source-path-${root.id}`,root.path,detailsX,top+41,detailsWidth,value=>apps.changeScanRootPath(root.id,value),locked);
+      input(`source-label-${root.id}`,root.label,detailsX,top+10,Math.min(320,detailsWidth),value=>apps.changeScanRootLabel(root.id,value));
+      input(`source-path-${root.id}`,root.path,detailsX,top+41,detailsWidth,value=>apps.changeScanRootPath(root.id,value),locked);
       let bottom=top+71;
       const metadata=(id:string,value:string)=>{const label=text(value,detailsX+10,bottom+5,11,true);label.label=`native-apps:source-${id}-${root.id}`;label.style.lineHeight=13.2;label.style.wordWrap=true;label.style.wordWrapWidth=Math.max(1,detailsWidth-10);bottom=label.y+label.height;return label;};
       if(locked)metadata("description",key("sources.windowsManaged"));
       if(root.lastScannedAt)metadata("last-scan",key("sources.lastScan",{time:formatNativeScanTime(root.lastScannedAt)}));
       if(stacked){browse.y=remove.y=bottom+10;bottom+=42;}
       const height=Math.max(100,bottom-top+10);
-      const draw=(hover:boolean)=>{background.clear().roundRect(0,top,width,height,8).fill(hover?(theme==="dark"?"rgba(255,255,255,0.065)":style.row):style.row).stroke({color:style.border,width:1});invalidate();};draw(false);
-      const switchControl=toggle(`source-enabled-${root.id}`,root.enabled,12,top+(height-32)/2,checked=>apps.toggleScanRootEnabled(root.id,checked));
+      background.roundRect(0,top,width,height,8).fill(style.row).stroke({color:style.border,width:1});
+      toggle(`source-enabled-${root.id}`,root.enabled,12,top+(height-32)/2,checked=>apps.toggleScanRootEnabled(root.id,checked));
       if(!stacked)browse.y=remove.y=top+(height-32)/2;
-      for(const control of [switchControl,name,path,browse,remove]){control.on("pointerover",()=>draw(true));control.on("pointerout",()=>draw(false));}
       y+=height+8;
     }
     y+=16;heading(key("filters.title"));
