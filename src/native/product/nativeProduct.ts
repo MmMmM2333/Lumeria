@@ -1080,7 +1080,7 @@ try {
     });
   }
   onboarding=createNativeOnboarding({apps:apps!,settings,management,icon:()=>brandingTextures.get(settingsTheme()==="dark"?"dark":"light")!,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),
-    scan:async()=>{const request=apps!.nativeIntegration.captureScanRequest();const result=await nativeData.scanApps(request.roots,request.filters);if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));apps!.imports.setCatalog(result.apps);},
+    scan:async()=>{if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_CHECK==="1")await new Promise(resolve=>setTimeout(resolve,700));const request=apps!.nativeIntegration.captureScanRequest();const result=await nativeData.scanApps(request.roots,request.filters);if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));apps!.imports.setCatalog(result.apps);},
     complete:()=>{requestSceneRender();},
   });
   if(needsOnboarding&&nativeMode!=="smoke")onboarding.open();
@@ -1168,6 +1168,10 @@ try {
     await closed;return;
   }
 
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_CHECK==="1"){
+    await (await import("../diagnostics/nativeImportPreview.js")).runNativeImportPreview({app,apps:apps!,settings,management,showSources:()=>{settingsNavigation.selectTab("apps");openSettings();},appDialogs:appDialogs!,onboarding:onboarding!,present:description=>present(app,description),save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});
+    return;
+  }
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_INTERACTION_BENCH){
     await (await import("../diagnostics/nativeInteractionBench.js")).runNativeInteractionBench({app,editing:editing!,scene,
       items:()=>activePageItems,present:name=>present(app,name),waitFor,quit:()=>closeCoordinator.requestQuit()});return;

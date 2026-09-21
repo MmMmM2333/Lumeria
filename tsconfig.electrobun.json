@@ -15,6 +15,10 @@
     "verbatimModuleSyntax": true
   },
   "include": [
+    "src/rendering/native/NativeImportHelp.ts",
+    "src/rendering/native/NativeImportPlacement.ts",
+    "src/rendering/native/NativeNewAppsButton.ts",
+    "src/rendering/native/NativeOnboarding.ts",
     "src/rendering/native/nativeColorPicker.ts",
     "src/rendering/native/NativeFolderNameInput.ts",
     "src/native/nativeIconRecoverySmoke.test.ts",
