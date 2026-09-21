@@ -1,3 +1,4 @@
+import {NativeSegmentedControl} from "./NativeSegmentedControl.js";
 import {openNativeImportHelp} from "./NativeImportHelp.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text } from "pixi.js";
@@ -245,8 +246,13 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       if(stacked){browse.y=remove.y=bottom+10;bottom+=42;}
       if(!locked){
         const policy=apps.imports.policies.find(p=>p.id===root.id)!;
-        const ruleY=bottom+10,groupWidth=Math.min(180,detailsWidth);
-        button(`group-${root.id}`,t(policy.grouped?"imports.group":"imports.flat"),detailsX,ruleY,groupWidth,()=>{apps.imports.policy(root.id,!policy.grouped,policy.keepSingle);redraw();});
+        const ruleY=bottom+10;
+        const arrangement=new NativeSegmentedControl([
+          {value:"flat",label:t("imports.arrangeFlat"),id:`native-apps:group-flat-${root.id}`},
+          {value:"group",label:t("imports.arrangeGrouped"),id:`native-apps:group-${root.id}`},
+        ],policy.grouped?"group":"flat",value=>{apps.imports.policy(root.id,value==="group",policy.keepSingle);redraw();},invalidate,theme,detailsWidth-40);
+        arrangement.position.set(detailsX,ruleY);node.addChild(arrangement);controls.push(...arrangement.controls);
+        const groupWidth=arrangement.controlWidth;
         const label=text(t("imports.single"),0,0,12,true);label.visible=policy.grouped;
         const inline=groupWidth+16+32+label.width+12+28<=detailsWidth;
         const checkX=inline?detailsX+groupWidth+16:detailsX,checkY=inline?ruleY:ruleY+40;
@@ -255,7 +261,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
           toggle(`single-${root.id}`,policy.keepSingle,checkX,checkY,value=>{apps.imports.policy(root.id,policy.grouped,value);redraw();},"checkbox");
         }
         const infoX=policy.grouped?Math.min(width-44,checkX+32+label.width+12):detailsX+groupWidth+12;
-        const info=button(`group-info-${root.id}`,t("imports.groupHelpTitle"),infoX,policy.grouped?checkY:ruleY,28,()=>openNativeImportHelp(options.management,theme,invalidate),false,"subtle",false,32);
+        const info=button(`group-info-${root.id}`,t("imports.groupHelpTitle"),infoX,policy.grouped?checkY:ruleY,28,()=>openNativeImportHelp(options.management,theme,invalidate,{grouped:policy.grouped,keepSingle:policy.keepSingle}),false,"subtle",false,32);
         info.caption.text="i";info.caption.scale.set(1);info.caption.style.fontStyle="italic";
         info.addChild(new Graphics({eventMode:"none"}).circle(14,16,8).stroke({color:style.muted,width:1.2}));
         bottom=(policy.grouped?checkY:ruleY)+36;

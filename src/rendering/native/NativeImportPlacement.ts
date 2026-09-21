@@ -25,14 +25,15 @@ export function nativeImportPlacement(session:ReturnType<typeof createAppImportS
     const paint=(hover=false)=>{fill.clear().roundRect(.5,.5,w-1,39,4).fill(theme==="dark"?(hover?"rgba(255,255,255,.09)":"rgba(255,255,255,.055)"):(hover?"#e9e9e9":"#f0f0f0"));invalidate();};paint();b.on("pointerover",()=>paint(true));b.on("pointerout",()=>paint());
     const arrow=new Graphics({eventMode:"none"}).moveTo(-4,open?2:-2).lineTo(0,open?-2:2).lineTo(4,open?2:-2).stroke({color:style.muted,width:1.4});arrow.position.set(w-20,20);b.addChild(arrow);return b;
   };
+  const memberFill=theme==="dark"?"#303030":"#f3f3f3";
   const names=new Map(session.catalog.map(app=>[app.id,app.name]));
-  const members=(ids:readonly string[])=>{
-    const scroll=new NativeScrollView(invalidate,()=>{},theme);scroll.position.set(16,y);node.addChild(scroll);
-    const height=Math.min(160,ids.length*40);scroll.resize(width-32,height,ids.length*40);
+  const members=(ids:readonly string[],inset=16)=>{
+    const scroll=new NativeScrollView(invalidate,()=>{},theme);scroll.position.set(inset,y);node.addChild(scroll);
+    const height=Math.min(160,ids.length*40);scroll.resize(width-inset*2,height,ids.length*40);
     // Bubble at an edge so the outer modal remains scrollable.
     scroll.removeAllListeners("wheel");scroll.on("wheel",event=>{const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?height:1);if((delta<0&&scroll.offset===0)||(delta>0&&scroll.offset===scroll.maxOffset))return;event.stopPropagation();event.preventDefault();scroll.scrollTo(scroll.offset+delta);});
     ids.forEach((id,index)=>{const yy=index*40;if(artwork)artwork(scroll.content,id,0,yy+5);else{const icon=nativeFluentIcon("window-24-regular",style.accent,24);icon.position.set(0,yy+5);scroll.content.addChild(icon);}
-      const label=createNativeText({text:names.get(id)??id,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.text}});label.position.set(36,yy+9);if(label.width>width-92)label.scale.x=(width-92)/label.width;scroll.content.addChild(label);
+      const label=createNativeText({text:names.get(id)??id,eventMode:"none",style:{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:12,fill:style.text}});label.position.set(36,yy+9);if(label.width>width-inset*2-60)label.scale.x=(width-inset*2-60)/label.width;scroll.content.addChild(label);
     });
     controls.push({node:scroll,disabled:()=>ids.length<=4,focus:active=>{scroll.alpha=active?.85:1;invalidate();},handleKey:key=>{if(!["ArrowUp","ArrowDown","PageUp","PageDown"].includes(key))return false;scroll.scrollTo(scroll.offset+(key.endsWith("Up")?-1:1)*(key.startsWith("Page")?height:40));return true;}});y+=height;
   };
@@ -44,8 +45,10 @@ export function nativeImportPlacement(session:ReturnType<typeof createAppImportS
     const existing=session.folderCount(row.suggested);
     const detail=text(t(row.suggested==="new"?"imports.folderNewDetail":"imports.folderJoinDetail",{count:row.ids.length,before:existing,after:existing+row.ids.length}),56,y,12,true);detail.style.wordWrapWidth=width-76;y+=detail.height+16;
     const open=row.ids.length<=4?!expanded.has(`closed:${row.key}`):expanded.has(row.key);
+    const memberTop=y,memberBg=new Graphics({eventMode:"none",label:"native-import:member-surface"});node.addChild(memberBg);
     const expand=disclosure(t("imports.viewMembers",{count:row.ids.length}),16,y,width-32,open,()=>{const key=row.ids.length<=4?`closed:${row.key}`:row.key;if(expanded.has(key))expanded.delete(key);else expanded.add(key);refresh();});expand.label=`native-import:members:${row.key}`;y+=48;
-    if(open){members(row.ids);y+=12;}
+    if(open){members(row.ids,28);y+=12;}
+    memberBg.roundRect(16,memberTop,width-32,y-memberTop- (open?0:8),6).fill(memberFill).stroke({color:style.border,width:1});y+=12;
     for(const [index,target] of [row.suggested,"desktop"].entries()){
       const label=target==="desktop"?t("imports.placeSeparately"):t(row.suggested==="new"?"imports.placeInNew":"imports.placeInExisting");
       const b=button(label,16,y,width-32,()=>{session.choose(row.key,target);refresh();},42);b.label=`native-import:option:${row.key}:${index}`;b.disabled=session.staged;b.selected=row.target===target;
@@ -66,7 +69,7 @@ export function nativeImportPlacement(session:ReturnType<typeof createAppImportS
     const icon=nativeFluentIcon("apps-24-regular",style.accent,24);icon.position.set(14,8);header.addChild(icon);y+=50;
     const detail=text(t(session.mode==="recent"?"imports.directAlready":"imports.directPending"),16,y,12,true);y+=detail.height+12;
     if(open)members(direct);y+=8;
-    bg.roundRect(0,top,width,y-top,8).fill(style.row).stroke({color:style.border,width:1});y+=16;
+    bg.roundRect(0,top,width,y-top,8).fill(memberFill).stroke({color:style.border,width:1});y+=16;
   }
   const summaryValues=()=>{const total=session.rows.reduce((n,r)=>n+r.ids.length,0),created=session.rows.filter(r=>r.target==="new").length,joined=session.rows.filter(r=>!["desktop","new"].includes(r.target)).reduce((n,r)=>n+r.ids.length,0),directCount=session.rows.filter(r=>r.target==="desktop").reduce((n,r)=>n+r.ids.length,0);
 return {total,created,joined,directCount};};

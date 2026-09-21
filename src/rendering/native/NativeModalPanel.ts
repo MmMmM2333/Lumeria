@@ -55,7 +55,7 @@ export class NativeModalPanel extends Container{
   refresh():void{
     if(this.destroyed||this.#closing)return;
     if(!this.#body?.update||this.#body.update())this.redraw();
-    if(this.#confirm)this.#confirm.disabled=!(this.spec.canConfirm?.()??true);
+    if(this.#confirm)this.#confirm.disabled=this.#busy||!(this.spec.canConfirm?.()??true);
     this.invalidate();
   }
   redraw():void{
@@ -113,7 +113,7 @@ export class NativeModalPanel extends Container{
     this.setBusy(this.#busy);this.invalidate();
   }
   setBusy(value:boolean):void{
-    this.#busy=value;for(const b of this.#footer)b.busy=value;
+    this.#busy=value;for(const b of this.#footer){b.busy=value;b.disabled=value||(b===this.#confirm&&!(this.spec.canConfirm?.()??true));}
     if(this.#confirm&&this.spec.busyText){
       if(value&&!this.#spinner){
         const b=this.#confirm;this.#confirmCaption=b.caption.text;b.caption.text=this.spec.busyText;b.caption.x=b.controlWidth/2+10;

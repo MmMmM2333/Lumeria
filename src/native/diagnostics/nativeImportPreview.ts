@@ -1,3 +1,4 @@
+import fixtures from "./fixtures/importPreviewLabels.json";
 import assert from "node:assert/strict";
 import {mkdirSync,writeFileSync} from "node:fs";
 import {join} from "node:path";
@@ -37,6 +38,7 @@ export async function runNativeImportPreview(o:{app:NativePixiApplication;apps:R
   await wait(()=>Boolean(o.app.stage.getChildByLabel("native-onboarding:step:2",true)));await new Promise(r=>setTimeout(r,200));
   confirm();
   await wait(()=>Boolean(o.app.stage.getChildByLabel("native-modal:busy-spinner",true)));
+  const loadingButton=o.app.stage.getChildByLabel("native-modal:onboarding:confirm",true)!;assert.equal(loadingButton.eventMode,"none");
   const spinner=o.app.stage.getChildByLabel("native-modal:busy-spinner",true)!;const rotation=spinner.rotation;
   await new Promise(r=>setTimeout(r,120));assert.notEqual(spinner.rotation,rotation);await capture("import-native-loading");
   await wait(()=>o.apps.presentation.importState.value.completed&&!o.management.modal);await o.save();
@@ -45,13 +47,13 @@ export async function runNativeImportPreview(o:{app:NativePixiApplication;apps:R
   await capture("import-native-manual-selection");o.management.close(true);o.apps.scanResultModel.actions.close();
   assert.equal(o.apps.imports.count,0);
   const root=o.apps.presentation.scanRoots.value[0]!;
-  const vm=o.apps.managedApps.value.find(app=>app.name==="工具 A");assert.ok(vm);
-  writeFileSync(join(root.path,"工具合集","Config.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/tools-config\r\n");
+  const vm=o.apps.managedApps.value.find(app=>app.name===fixtures.toolA);assert.ok(vm);
+  writeFileSync(join(root.path,fixtures.tools,"Config.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/tools-config\r\n");
   await o.apps.rescanManagedApps({automatic:true});await capture("import-native-new-pill");
   assert.equal(o.apps.imports.count,1);o.appDialogs.recent();await capture("import-native-recent-placement");
   assert.ok(o.apps.imports.rows.some(row=>row.suggested!=="desktop"&&row.suggested!=="new"));
   o.management.close(true);await o.save();
-  writeFileSync(join(root.path,"工具合集","Diagnostics.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/tools-diagnostics\r\n");
+  writeFileSync(join(root.path,fixtures.tools,"Diagnostics.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/tools-diagnostics\r\n");
   writeFileSync(join(root.path,"Direct One.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/direct-one\r\n");
   writeFileSync(join(root.path,"Direct Two.url"),"[InternetShortcut]\r\nURL=https://example.invalid/import/direct-two\r\n");
   await o.apps.rescanManagedApps();await o.present("manual discoveries");
@@ -78,7 +80,9 @@ export async function runNativeImportPreview(o:{app:NativePixiApplication;apps:R
   o.showSources();await new Promise(r=>setTimeout(r,400));await capture("import-native-source-options");
   const help=o.app.stage.getChildByLabel(`native-apps:group-info-${root.id}`,true);assert.ok(help);clickWithNativeInput(o.app,help);
   await new Promise(r=>setTimeout(r,200));await capture("import-native-source-help");
-  for(const stage of ["new","after","before","changes","move","dissolve","flatRule","singleRule"]){const tab=o.app.stage.getChildByLabel(`native-import-help:${stage}`,true);assert.ok(tab);clickWithNativeInput(o.app,tab);await capture(`import-native-help-${stage}`);}
+  for(const mode of ["flat","new","after","group"]){const control=o.app.stage.getChildByLabel(`native-import-help:${mode}`,true);assert.ok(control);clickWithNativeInput(o.app,control);await capture(`import-native-help-mode-${mode}`);}
+  assert.ok(o.app.stage.getChildByLabel("native-import-help:tree-lines",true));
+  for(const stage of ["new","after","before","changes","move","dissolve","settings","flatRule","singleRule","folders"]){const tab=o.app.stage.getChildByLabel(`native-import-help:${stage}`,true);assert.ok(tab);clickWithNativeInput(o.app,tab);await capture(`import-native-help-${stage}`);}
   o.management.close(true);
   const excludedApp=o.apps.managedApps.value.find(a=>a.origin==="catalog");assert.ok(excludedApp);o.apps.excludeManagedAppFromScan(excludedApp);await o.present("excluded fixture");
   const excludedNav=o.app.stage.getChildByLabel("native-apps:excluded",true);assert.ok(excludedNav);let ancestor=excludedNav.parent;while(ancestor&&!(ancestor instanceof NativeScrollView))ancestor=ancestor.parent;if(ancestor instanceof NativeScrollView){ancestor.reveal(ancestor.content.toLocal(excludedNav.toGlobal({x:0,y:0})).y,72);await o.present("excluded navigation visible");}clickWithNativeInput(o.app,excludedNav);await new Promise(r=>setTimeout(r,350));

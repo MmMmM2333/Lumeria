@@ -98,7 +98,7 @@ export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpad
       lines.stroke({color:style.muted,alpha:.4,width:1});
       text("→",width/2-9,top+140,20);
       const resultX=width/2+30,resultWidth=width-resultX-20;
-      const tiles=grouped?[{folder:false,name:t("imports.treeApp",{letter:"A"}),index:0},{folder:false,name:t("imports.treeApp",{letter:"B"}),index:1},{folder:true,name:t("imports.treeGroup"),index:2},{folder:false,name:t("imports.treeApp",{letter:"E"}),index:1}]:[0,1,2,3,4].map(index=>({folder:false,name:t("imports.treeApp",{letter:String.fromCharCode(65+index)}),index:index%3}));
+      const tiles=grouped?[{folder:false,name:t("imports.treeApp",{letter:"A"}),index:0},{folder:false,name:t("imports.treeApp",{letter:"B"}),index:1},{folder:false,name:t("imports.treeApp",{letter:"E"}),index:1},{folder:true,name:t("imports.treeGroup"),index:2}]:[0,1,2,3,4].map(index=>({folder:false,name:t("imports.treeApp",{letter:String.fromCharCode(65+index)}),index:index%3}));
       const tileWidth=resultWidth/3;
       for(const [i,tile] of tiles.entries()){
         const cx=resultX+tileWidth*(i%3+.5),yy=top+65+Math.floor(i/3)*105;
