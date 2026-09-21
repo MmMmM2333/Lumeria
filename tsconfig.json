@@ -29,6 +29,8 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.vue",
+    "tests/browser/importLab/**/*.ts",
+    "tests/browser/importLab/**/*.vue",
     "tests/browser/reference/**/*.ts",
     "tests/browser/reference/**/*.vue"
   ],

@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
-  optimizeDeps: { entries: ["motion-lab.html"] },
+  optimizeDeps: { entries: ["motion-lab.html", "import-lab.html"] },
   build: {
     emptyOutDir: true,
     outDir: "dist/motion-lab",
