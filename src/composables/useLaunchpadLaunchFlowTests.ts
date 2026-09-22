@@ -60,6 +60,8 @@ function createTimerWindow() {
 }
 
 type LaunchFlowOverrides = Readonly<{
+  shouldWaitForElevation?: (app:ReadonlyLaunchpadApp,elevated:boolean)=>boolean;
+  hideCompletion?:()=>Promise<void>;
   folderZoomFadeCloseReason?: string | null;
   getLaunchTargetStatus?: (app: ReadonlyLaunchpadApp) => LaunchTargetStatus;
   hasFolderLayer?: boolean;
@@ -80,6 +82,8 @@ type LaunchFlowOverrides = Readonly<{
 
 function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
   const calls = {
+    restoreAfterLaunchCancelled: 0,
+    elevated: [] as boolean[],
     beginNativeWindowClose: 0,
     cancelInputGesture: 0,
     clearOpeningIcon: 0,
@@ -116,6 +120,8 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
   });
 
   const flow = useLaunchpadLaunchFlow({
+    shouldWaitForElevation:overrides.shouldWaitForElevation,
+    restoreAfterLaunchCancelled:()=>{calls.restoreAfterLaunchCancelled++;},
     beginNativeWindowClose: () => {
       calls.beginNativeWindowClose += 1;
     },
@@ -143,6 +149,7 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
     hasFolderLayer: () => Boolean(overrides.hasFolderLayer),
     hideNativeWindow: () => {
       calls.hideNativeWindow += 1;
+      return overrides.hideCompletion?.();
     },
     finishFolderZoomFadeClose: () => {
       calls.finishFolderZoomFadeClose += 1;
@@ -159,7 +166,8 @@ function createLaunchFlow(overrides: LaunchFlowOverrides = {}) {
     initialDesktopOpen: overrides.initialDesktopOpen,
     keyboardFocusArea,
     localizationText,
-    launchNativeAppIfAvailable: (app) => {
+    launchNativeAppIfAvailable: (app, elevated) => {
+      calls.elevated.push(elevated===true);
       calls.launchNativeAppIfAvailable.push(app.id);
       return overrides.launchNativeAppResult ?? true;
     },
@@ -314,13 +322,29 @@ export async function runLaunchpadLaunchFlowTests() {
     assert(failedLaunch.calls.showNativeLaunchError[0] === launchError, "native launch errors should show after the launch animation");
 
     const cancelledLaunch = createLaunchFlow({ launchNativeAppResult: { kind: "cancelled" } });
-    cancelledLaunch.flow.openApp(launchApp, source);
+    cancelledLaunch.flow.openApp(launchApp, source, true);
+    assert(cancelledLaunch.flow.launchGhost.value?.app.id === launchApp.id, "one-shot elevation uses the ordinary launch animation");
     cancelledLaunch.flow.commitAppLaunchCloseFrame(cancelledLaunch.flow.appLaunchCloseSessionId.value);
     await flushMicrotasks(2);
     timers.runDelay(APP_LAUNCH_DURATION);
     await flushMicrotasks(2);
     assert(cancelledLaunch.calls.hideNativeWindow === 1 && cancelledLaunch.calls.showNativeLaunchError.length === 0,
-      "user cancellation must keep the launcher hidden without reporting a failure");
+      "user cancellation must finish the animation without reporting a failure");
+    assert(cancelledLaunch.calls.restoreAfterLaunchCancelled === 1, "UAC cancellation restores the launcher after animation");
+    assert(cancelledLaunch.calls.elevated[0] === true && !launchApp.runAsAdmin, "one-shot elevation is carried by the launch session without mutating the app");
+
+    let hidden!:()=>void;
+    const deferred=createLaunchFlow({shouldWaitForElevation:(_app,elevated)=>elevated,hideCompletion:()=>new Promise<void>(resolve=>{hidden=resolve;}),launchNativeAppResult:{kind:"cancelled"}});
+    deferred.flow.openApp(launchApp,source,true);
+    deferred.flow.commitAppLaunchCloseFrame(deferred.flow.appLaunchCloseSessionId.value);
+    assert(deferred.calls.elevated.length===0,"deferred UAC must not run on first close frame");
+    timers.runDelay(APP_LAUNCH_DURATION);await flushMicrotasks(2);
+    assert(deferred.calls.elevated.length===0,"deferred UAC waits for actual window hide completion");
+    hidden();await flushMicrotasks(5);
+    assert(deferred.calls.elevated[0]===true&&deferred.calls.restoreAfterLaunchCancelled===1,"deferred cancellation restores after hide");
+    const abandoned=createLaunchFlow({shouldWaitForElevation:()=>true});
+    abandoned.flow.openApp(launchApp,source,true);abandoned.flow.openDesktop();timers.runDelay(APP_LAUNCH_DURATION);await flushMicrotasks(3);
+    assert(abandoned.calls.elevated.length===0,"reopening cancels pending elevation");
 
     let finishVisual!: () => void;
     const delayedLaunch = createLaunchFlow({ waitForAppLaunchAnimation: () => new Promise(resolve => { finishVisual = resolve; }) });

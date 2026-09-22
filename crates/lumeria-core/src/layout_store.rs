@@ -175,6 +175,8 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         "scanAppBlacklist",
         "showMissingLaunchTargetBadge",
         "missingTargetStyle",
+        "showAdminShield",
+        "waitForElevationAnimation",
         "backgroundBaseColor",
         "backgroundBaseOpacity",
         "backgroundSource",
@@ -244,6 +246,8 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             .ok_or_else(|| "layout settings.scanAppBlacklist must be an array".to_string())?,
     )?;
     require_bool_field(object, "showMissingLaunchTargetBadge", "layout settings")?;
+    require_bool_field(object, "showAdminShield", "layout settings")?;
+    require_bool_field(object, "waitForElevationAnimation", "layout settings")?;
     if !matches!(object.get("missingTargetStyle").and_then(Value::as_str), Some("question" | "prohibited" | "none")) {
         return Err("layout settings.missingTargetStyle is invalid".into());
     }
@@ -532,10 +536,11 @@ fn validate_layout_catalog_app_item(
 ) -> Result<(), String> {
     require_exact_fields(
         object,
-        &["id", "type", "overrides"],
+        &["id", "type", "overrides", "runAsAdmin"],
         &["id", "type"],
         &format!("layout item {label}"),
     )?;
+    if object.contains_key("runAsAdmin") { require_bool_field(object, "runAsAdmin", label)?; }
     for forbidden in [
         "name",
         "emoji",
@@ -586,6 +591,7 @@ fn validate_layout_manual_app_item(
     object: &serde_json::Map<String, Value>,
     label: &str,
 ) -> Result<(), String> {
+    if object.contains_key("runAsAdmin") { require_bool_field(object, "runAsAdmin", label)?; }
     require_exact_fields(
         object,
         &[
@@ -597,6 +603,7 @@ fn validate_layout_manual_app_item(
             "customIconPath",
             "launchTarget",
             "launchArgs",
+            "runAsAdmin",
         ],
         &["id", "type", "name", "launchTarget"],
         &format!("layout item {label}"),

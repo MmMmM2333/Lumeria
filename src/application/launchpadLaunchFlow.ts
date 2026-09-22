@@ -69,7 +69,9 @@ export type LaunchpadLaunchFlowOptions = Readonly<{
   isFolderZoomFadeClosing?: Readonly<StateCell<boolean>> | undefined;
   isSearchMode(): boolean;
   keyboardFocusArea: StateCell<string>;
-  launchNativeAppIfAvailable(app: ReadonlyLaunchpadApp): LaunchResult | Promise<LaunchResult>;
+  launchNativeAppIfAvailable(app: ReadonlyLaunchpadApp, elevated?: boolean): LaunchResult | Promise<LaunchResult>;
+  restoreAfterLaunchCancelled?: () => void;
+  shouldWaitForElevation?: ((app: ReadonlyLaunchpadApp, elevated: boolean) => boolean) | undefined;
   waitForAppLaunchAnimation?: (() => Promise<void>) | undefined;
   launchTargetStatusById?: Readonly<StateCell<Readonly<Record<string, Exclude<LaunchTargetStatus, null>>>>> | undefined;
   localizationText?: TranslationPort | undefined;
@@ -86,6 +88,9 @@ export type LaunchpadLaunchFlowOptions = Readonly<{
 }>;
 
 type LaunchSession = {
+  waitForElevation: boolean;
+  elevated: boolean;
+  cancelled: boolean;
   animationDone: boolean;
   app: LaunchpadApp;
   error: LaunchFailureReport | null;
@@ -295,11 +300,15 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
   function startPreparedAppLaunch(
     app: ReadonlyLaunchpadApp,
     source: LaunchSourceInput | null | undefined,
+    elevated = false,
   ): void {
     const launchSource = options.normalizeLaunchSource(app, source);
     const shouldClearSearchAfterLaunch = options.isSearchMode();
     const sessionApp = options.cloneItem(app);
     const launchSession = {
+      waitForElevation: options.shouldWaitForElevation?.(sessionApp,elevated) === true,
+      elevated,
+      cancelled: false,
       animationDone: false,
       app: sessionApp,
       error: null,
@@ -323,12 +332,16 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
       options.clearOpeningIcon();
       isAppLaunching.value = false;
       clearAppLaunchTimer();
-      launchSession.animationDone = true;
       Promise.resolve(options.hideNativeWindow())
-        .finally(() => {
+        .then(() => {
           if (activeAppLaunchSession !== launchSession) return;
+          launchSession.animationDone = true;
+          if(launchSession.waitForElevation)commitAppLaunchCloseFrame(launchSession.id);
           if (options.waitForAppLaunchAnimation) clearLaunchGhost();
           maybeShowLaunchErrorAfterAnimation(launchSession);
+        }).catch(error=>{
+          console.error("Unable to hide launcher before launch",error);
+          if(activeAppLaunchSession===launchSession)options.restoreAfterLaunchCancelled?.();
         });
     };
     appLaunchTimer = scheduler.setTimeout(() => {
@@ -351,17 +364,23 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
     ) {
       return false;
     }
+    if(launchSession.waitForElevation&&!launchSession.animationDone)return false;
     launchSession.nativeLaunchStarted = true;
     appLaunchCloseSessionId.value = null;
     let launchResult;
     try {
-      launchResult = options.launchNativeAppIfAvailable(launchSession.app);
+      launchResult = options.launchNativeAppIfAvailable(launchSession.app, launchSession.elevated);
     } catch (error) {
       console.error(`Failed to launch ${launchSession.app.name}`, error);
       return true;
     }
     Promise.resolve(launchResult)
       .then((result) => {
+        if (result && result !== true && result.kind === "cancelled") {
+          launchSession.cancelled = true;
+          maybeShowLaunchErrorAfterAnimation(launchSession);
+          return;
+        }
         if (result && result !== true && result.kind !== "cancelled" && "message" in result) {
           launchSession.error = result;
           maybeShowLaunchErrorAfterAnimation(launchSession);
@@ -374,12 +393,15 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
   }
 
   function maybeShowLaunchErrorAfterAnimation(launchSession: LaunchSession | null): void {
+    if (launchSession && activeAppLaunchSession === launchSession && launchSession.animationDone && launchSession.cancelled && !launchSession.shown) {
+      launchSession.shown = true; options.restoreAfterLaunchCancelled?.(); return;
+    }
     if (!launchSession || launchSession.shown || !launchSession.animationDone || !launchSession.error) return;
     launchSession.shown = true;
     options.showNativeLaunchError?.(launchSession.error);
   }
 
-  function openApp(app: ReadonlyLaunchpadApp | null | undefined, source?: LaunchSourceInput): void {
+  function openApp(app: ReadonlyLaunchpadApp | null | undefined, source?: LaunchSourceInput, elevated = false): void {
     if (!app || app.type !== "app" || options.isDragActive() || isLaunchpadInteractionBlocked()) return;
     const launchError = getLaunchPreflightError(app);
     if (launchError) {
@@ -391,7 +413,7 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
     const prepared = options.prepareNativeLaunch?.(app);
     if (!isPromiseLike(prepared)) {
       if (prepared === false) return;
-      startPreparedAppLaunch(app, source);
+      startPreparedAppLaunch(app, source, elevated);
       return;
     }
 
@@ -399,7 +421,7 @@ export function createLaunchpadLaunchFlow(options: LaunchpadLaunchFlowOptions, h
       .then((ready) => {
         if (requestId !== launchPrepareRequestId || !ready) return;
         if (!isDesktopOpen.value || isDesktopClosing.value || isAppLaunching.value || options.isDragActive()) return;
-        startPreparedAppLaunch(app, source);
+        startPreparedAppLaunch(app, source, elevated);
       })
       .catch((error) => {
         console.error(`Failed to prepare ${app.name} for launch`, error);

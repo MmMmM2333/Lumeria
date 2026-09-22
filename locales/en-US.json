@@ -1183,7 +1183,7 @@
       }
     },
     "launchpad": {
-      "target": {"missingTitle": "Launch target missing", "missingMessage": "Edit the launch path or check whether the file has been restored.", "openLocation": "Open file location", "openFolder": "Open containing folder", "openShortcutLocation": "Open shortcut location", "recheck": "Check again"},
+      "target": {"adminUnavailable": "This target does not support administrator launch.", "missingTitle": "Launch target missing", "missingMessage": "Edit the launch path or check whether the file has been restored.", "runAsAdmin": "Run as administrator", "openLocation": "Open file location", "openFolder": "Open containing folder", "openShortcutLocation": "Open shortcut location", "recheck": "Check again"},
       "search": {
         "placeholder": "Search",
         "label": "Search apps",
@@ -1256,6 +1256,8 @@
         "chooseFromDisk": "Choose an image from disk"
       },
       "appEditor": {
+        "runAsAdmin": "Always run as administrator",
+        "runAsAdminHint": "Request administrator privileges when launching this app.",
         "editTitle": "Edit app",
         "addTitle": "Add app",
         "addDescription": "Add a custom app to Launchpad",
@@ -1610,8 +1612,12 @@
           "appCount": "{count} apps"
         },
         "overview": {
+          "waitElevation": "Finish animation before showing UAC",
+          "waitElevationDescription": "Wait for the closing animation before showing a permission prompt for apps that need administrator privileges.",
 
           "missingStyle": {"question": "Question mark", "prohibited": "Prohibited", "none": "Do not show"},
+          "adminShield": "Show administrator shield",
+          "adminShieldDescription": "Only changes the indicator, not launch permissions.",
           "appCount": "{count} apps",
           "scanReady": "Refresh apps from enabled scan sources",
           "scanDisabled": "Enable a scan source first",

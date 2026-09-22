@@ -60,6 +60,12 @@ export function drawMissingBadge(
         background.circle(0,0,r).moveTo(-d,-d).lineTo(d,d).stroke({color,width,alpha,cap:"round"});
       }
     }
+    if (spec.admin) {
+      const s=iconSize*0.28,x=iconSize*0.5-s*0.6,y=iconSize*0.5-s*0.6;
+      background.poly([x-s/2,y-s/2,x+s/2,y-s/2,x+s/2,y+s*0.08,x+s*0.3,y+s*0.37,x,y+s*0.6,x-s*0.3,y+s*0.37,x-s/2,y+s*0.08]).fill(0x1672bd).stroke({color:0xffffff,width:Math.max(1,s*0.07)});
+      background.rect(x,y-s/2,s/2,s/2).fill(0xffd74b);
+      background.poly([x-s/2,y,x,y,x,y+s*0.6,x-s*0.3,y+s*0.37,x-s/2,y+s*0.08]).fill(0xffd74b);
+    }
     return;
   }
   textNode.alpha=1;

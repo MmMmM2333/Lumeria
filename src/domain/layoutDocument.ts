@@ -16,6 +16,7 @@ export type CatalogAppOverrides = {
 };
 
 export type CatalogAppLayoutItem = {
+  runAsAdmin?: boolean;
   id: string;
   type: "catalogApp";
   overrides?: CatalogAppOverrides;
@@ -45,6 +46,7 @@ export type LaunchTarget =
   | AppUserModelIdLaunchTarget;
 
 type ManualAppBase = {
+  runAsAdmin?: boolean;
   id: string;
   type: "manualApp";
   name: string;
@@ -119,6 +121,8 @@ export type LayoutSettings = {
   scanAppBlacklist: ScanAppBlacklistEntry[];
   showMissingLaunchTargetBadge: boolean;
   missingTargetStyle: "question" | "prohibited" | "none";
+  showAdminShield: boolean;
+  waitForElevationAnimation: boolean;
   backgroundBaseColor: string;
   backgroundBaseOpacity: number;
   backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
@@ -155,9 +159,10 @@ type UnknownRecord = Record<string, unknown>;
 type ValidationOptions = { maxUtf8Bytes?: number | null };
 
 const ROOT_FIELDS = ["version", "pages", "settings"];
-const CATALOG_APP_FIELDS = ["id", "type", "overrides"];
+const CATALOG_APP_FIELDS = ["id", "type", "overrides", "runAsAdmin"];
 const CATALOG_OVERRIDE_FIELDS = ["name", "emoji", "customIconPath"];
 const MANUAL_APP_FIELDS = [
+  "runAsAdmin",
   "id",
   "type",
   "name",
@@ -207,6 +212,8 @@ const SETTINGS_FIELDS = [
   "scanAppBlacklist",
   "showMissingLaunchTargetBadge",
   "missingTargetStyle",
+  "showAdminShield",
+  "waitForElevationAnimation",
   "backgroundBaseColor",
   "backgroundBaseOpacity",
   "backgroundSource",
@@ -329,6 +336,7 @@ function assertLaunchTarget(value: unknown, path: string): LaunchTarget["kind"] 
 }
 
 function assertCatalogApp(item: UnknownRecord, path: string): void {
+  if (hasOwn(item, "runAsAdmin")) requireBoolean(item.runAsAdmin, `${path}.runAsAdmin`);
   assertExactFields(item, CATALOG_APP_FIELDS, path, ["id", "type"]);
   if (!hasOwn(item, "overrides")) return;
   const overrides = requireObject(item.overrides, `${path}.overrides`);
@@ -339,6 +347,7 @@ function assertCatalogApp(item: UnknownRecord, path: string): void {
 }
 
 function assertManualApp(item: UnknownRecord, path: string): void {
+  if (hasOwn(item, "runAsAdmin")) requireBoolean(item.runAsAdmin, `${path}.runAsAdmin`);
   assertExactFields(item, MANUAL_APP_FIELDS, path, ["id", "type", "name", "launchTarget"]);
   requireNonEmptyString(item.name, `${path}.name`);
   for (const key of ["emoji", "iconPath", "customIconPath", "launchArgs"]) {
@@ -467,6 +476,8 @@ function assertLayoutSettings(value: unknown): void {
   requireNonEmptyStringArray(settings.scanKeywordBlacklist, `${path}.scanKeywordBlacklist`);
   assertScanAppBlacklist(settings.scanAppBlacklist, `${path}.scanAppBlacklist`);
   requireBoolean(settings.showMissingLaunchTargetBadge, `${path}.showMissingLaunchTargetBadge`);
+  requireBoolean(settings.showAdminShield, `${path}.showAdminShield`);
+  requireBoolean(settings.waitForElevationAnimation, `${path}.waitForElevationAnimation`);
   if (!["question", "prohibited", "none"].includes(String(settings.missingTargetStyle))) throw new TypeError(`${path}.missingTargetStyle is invalid`);
 
   requireColor(settings.backgroundBaseColor, `${path}.backgroundBaseColor`);

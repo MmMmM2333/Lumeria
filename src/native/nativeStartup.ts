@@ -38,6 +38,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   scanAppBlacklist: [] as { catalogId: string }[],
   showMissingLaunchTargetBadge: true,
   missingTargetStyle: "question",
+  showAdminShield: false,
+  waitForElevationAnimation: false,
 });
 
 export type NativeStartupScanRequest = Readonly<{

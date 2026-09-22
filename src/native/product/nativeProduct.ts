@@ -484,6 +484,12 @@ function contextMenu(item:SceneItem|null,x:number,y:number,checked=false):void{
     const details=apps?.nativeIntegration.getTargetDetails(item.id);
     actions.push({label:t("common.actions.open"),disabled:details?.status==="missing",icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
     if(item.type==="app"){
+      if(details?.canElevate)actions.push({label:t("launchpad.target.runAsAdmin"),icon:"shield-20-regular",disabled:details.status==="missing",run:()=>{void (async()=>{
+        await refreshOneTarget(item.id);
+        const latest=apps?.nativeIntegration.getTargetDetails(item.id);if(latest?.status==="missing"){await activateItem(item);return;}
+        if(!latest?.canElevate)throw new Error(t("launchpad.target.adminUnavailable"));
+        launchFlow?.openApp(item as ReadonlyLaunchpadApp,undefined,true);
+      })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error);});}});
       const reveal=async(path:string,folder=false)=>{await saves.flush();await nativeData.revealPath(path,folder);preserveViewAfterLocation();launchFlow?.closeDesktop({clearSearch:false});};
       actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(reportNativeError);}});
       if(details?.shortcutLocation)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",run:()=>{void reveal(details.shortcutLocation!).catch(reportNativeError);}});
@@ -1006,8 +1012,11 @@ try {
     isDragActive:()=>editing?.drag.isDragActive()??false,isSearchMode:()=>Boolean(searchQuery.trim()),
     normalizeLaunchSource:item=>({id:item.id,area:folderFlow.snapshot().renderedFolder?"folder":searchQuery?"search":"desktop",pageIndex:getCurrentIconScope().pageIndex}),
     prepareNativeLaunch:async()=>{try{await saves.flush();return true;}catch{return false;}},
-    launchNativeAppIfAvailable:async item=>{
-      try{await nativeData.launchApp(item.id);return true;}
+    restoreAfterLaunchCancelled:()=>visibility.show(),
+    shouldWaitForElevation:(item,elevated)=>apps!.presentation.waitForElevationAnimation.value &&
+      (elevated || item.runAsAdmin === true || apps!.nativeIntegration.getTargetDetails(item.id)?.requiresAdmin === true),
+    launchNativeAppIfAvailable:async (item,elevated)=>{
+      try{await nativeData.launchApp(item.id,elevated);return true;}
       catch(error){
         if(error instanceof NativeLaunchError&&error.kind==="cancelled")return {kind:"cancelled"};
         const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};

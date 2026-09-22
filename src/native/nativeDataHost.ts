@@ -153,9 +153,9 @@ export class NativeDataHost {
     return validateCatalogResult(await this.#transport.request("scanApps", { roots, filters }));
   }
 
-  async launchApp(appId: string): Promise<void> {
+  async launchApp(appId: string, elevated = false): Promise<void> {
     if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
-    await this.#transport.request("launchApp", { appId });
+    await this.#transport.request("launchApp", { appId, elevated });
   }
   async revealPath(path: string, folder = false): Promise<void> {
     if (!isAbsolute(path)) throw new TypeError("File location must be absolute");

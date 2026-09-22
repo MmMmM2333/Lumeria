@@ -231,7 +231,15 @@ fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), La
     Ok((path, launch_args))
 }
 
+#[cfg(test)]
 fn launch_selected_app(app: LaunchableApp) -> Result<(), LaunchFailure> {
+    launch_selected_app_with_mode(app, false)
+}
+
+fn launch_selected_app_with_mode(app: LaunchableApp, elevated: bool) -> Result<(), LaunchFailure> {
+    if elevated && !matches!(app.launch_target.kind.as_str(), "executable" | "shortcut") {
+        return Err(LaunchFailure::new(LaunchFailureKind::UnsupportedTarget, "This target does not support administrator launch".into()));
+    }
     if app.launch_target.kind == "appUserModelId" {
         let app_user_model_id = app
             .launch_target
@@ -247,7 +255,11 @@ fn launch_selected_app(app: LaunchableApp) -> Result<(), LaunchFailure> {
     }
 
     let (path, launch_args) = resolve_launch_path(&app)?;
-    launch_path(&path, launch_args).map_err(LaunchFailure::from_launch_path_error)
+    if elevated {
+        crate::launcher::launch_path_elevated(&path, launch_args).map_err(LaunchFailure::from_launch_path_error)
+    } else {
+        launch_path(&path, launch_args).map_err(LaunchFailure::from_launch_path_error)
+    }
 }
 
 pub fn launch_app(
@@ -256,11 +268,35 @@ pub fn launch_app(
     saved_layout: Option<&serde_json::Value>,
     resolve_icon_dir: impl FnOnce() -> Result<PathBuf, String>,
 ) -> Result<(), LaunchFailure> {
+    launch_app_with_mode(app_id, catalog_app, saved_layout, false, resolve_icon_dir)
+}
+
+fn saved_admin_preference(value: &serde_json::Value, id: &str, depth: usize) -> bool {
+    if depth > 16 { return false; }
+    if value.get("id").and_then(serde_json::Value::as_str) == Some(id)
+        && matches!(value.get("type").and_then(serde_json::Value::as_str), Some("manualApp" | "catalogApp")) {
+        return value.get("runAsAdmin").and_then(serde_json::Value::as_bool) == Some(true);
+    }
+    match value {
+        serde_json::Value::Array(items) => items.iter().any(|item| saved_admin_preference(item, id, depth + 1)),
+        serde_json::Value::Object(items) => items.values().any(|item| saved_admin_preference(item, id, depth + 1)),
+        _ => false,
+    }
+}
+
+pub fn launch_app_with_mode(
+    app_id: &str,
+    catalog_app: Option<AppCatalogItem>,
+    saved_layout: Option<&serde_json::Value>,
+    elevated: bool,
+    resolve_icon_dir: impl FnOnce() -> Result<PathBuf, String>,
+) -> Result<(), LaunchFailure> {
     let app_id = validate_launch_app_id(app_id)?;
     let selected = resolve_launchable_app(app_id, catalog_app, saved_layout, || {
         find_app_in_saved_scan_roots(saved_layout, app_id, resolve_icon_dir)
     })?;
-    launch_selected_app(selected)
+    let elevated = elevated || saved_layout.is_some_and(|layout| saved_admin_preference(layout, app_id, 0));
+    launch_selected_app_with_mode(selected, elevated)
 }
 
 fn find_app_in_saved_scan_roots(
@@ -402,6 +438,13 @@ fn check_launch_target_status(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saved_admin_preference_applies_to_manual_and_catalog_items_only() {
+        let layout=serde_json::json!({"pages":[[{"id":"folder","type":"folder","childPages":[[{"id":"manual","type":"manualApp","runAsAdmin":true},{"id":"catalog","type":"catalogApp","runAsAdmin":true}]]}]],"settings":{"id":"other","runAsAdmin":true}});
+        assert!(super::saved_admin_preference(&layout,"manual",0));
+        assert!(super::saved_admin_preference(&layout,"catalog",0));
+        assert!(!super::saved_admin_preference(&layout,"other",0));
+    }
     use super::*;
     use crate::models::{AppSource, AppSourceType, CatalogIdentityStatus};
     use serde_json::json;

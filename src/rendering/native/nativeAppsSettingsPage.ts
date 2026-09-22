@@ -312,6 +312,10 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
       const activeLine=new Graphics({eventMode:"none"});choice.addChild(activeLine);
       choice.caption.anchor.x=0;choice.caption.x=10;
       choice.addChild(new Graphics({eventMode:"none"}).moveTo(151,14).lineTo(156,19).lineTo(161,14).stroke({color:style.text,width:1.5,cap:"round",join:"round"}));
+      const shieldTop=actionRow(key("overview.adminShield"),key("overview.adminShieldDescription"),"shield-20-regular");
+      toggle("admin-shield",apps.presentation.showAdminShield.value,width-54,shieldTop+20,checked=>{apps.presentation.showAdminShield.value=checked;});
+      const elevationTop=actionRow(key("overview.waitElevation"),key("overview.waitElevationDescription"),"play-circle-24-regular");
+      toggle("wait-elevation",apps.presentation.waitForElevationAnimation.value,width-54,elevationTop+20,checked=>{apps.presentation.waitForElevationAnimation.value=checked;});
   }
   return {node,height:y,controls,layout:layout.finish(y),...(update?{update}:{}),viewport:(_top,height)=>resizeList(height-38),dispose:()=>{for(const run of cleanup)run();}};
 }

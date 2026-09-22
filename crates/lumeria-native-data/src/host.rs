@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use lumeria_core::{
     catalog::{icon_cache_dir, scan_apps_from_roots, ScanFilters, ScanRoot},
     launch::{
-        check_launch_targets_sync, launch_app as launch_selected_catalog_app, LaunchFailure,
+        check_launch_targets_sync, launch_app_with_mode as launch_selected_catalog_app, LaunchFailure,
         LaunchTargetCheckRequest,
     },
     layout_store::{load_layout_from_path, save_layout_to_path},
@@ -83,6 +83,8 @@ enum Request {
         id: u64,
         #[serde(rename = "appId")]
         app_id: String,
+        #[serde(default)]
+        elevated: bool,
     },
 }
 
@@ -247,8 +249,8 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
                 serde_json::to_value(result).map_err(|error| error.to_string())
             })
         }),
-        Request::LaunchApp { app_id, .. } => {
-            return match launch_app(&app_id, data_dir, state) {
+        Request::LaunchApp { app_id, elevated, .. } => {
+            return match launch_app(&app_id, elevated, data_dir, state) {
                 Ok(()) => Response::success(id, Value::Null),
                 Err(error) => Response::launch_failure(id, error),
             };
@@ -283,12 +285,12 @@ fn cache_wallpaper(_data_dir: &Path, _rect: [i32; 4]) -> Result<Value, String> {
     Err("Wallpaper is unavailable on this platform".into())
 }
 
-fn launch_app(app_id: &str, data_dir: &Path, state: &HostState) -> Result<(), LaunchFailure> {
+fn launch_app(app_id: &str, elevated: bool, data_dir: &Path, state: &HostState) -> Result<(), LaunchFailure> {
     let app_id = lumeria_core::launch::validate_launch_app_id(app_id)?;
     let catalog_app = state.catalog.get(app_id).cloned();
     let saved_layout = load_layout_from_path(&data_dir.join("layout.json"))
         .map_err(LaunchFailure::layout_read_failed)?;
-    launch_selected_catalog_app(app_id, catalog_app, saved_layout.as_ref(), || {
+    launch_selected_catalog_app(app_id, catalog_app, saved_layout.as_ref(), elevated, || {
         icon_cache_dir(data_dir)
     })
 }

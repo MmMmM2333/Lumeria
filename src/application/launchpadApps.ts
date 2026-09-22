@@ -88,6 +88,8 @@ export type LaunchpadAppsPersistenceFragment = Readonly<{
   scanAppBlacklist?: unknown;
   showMissingLaunchTargetBadge?: unknown;
   missingTargetStyle?: unknown;
+  showAdminShield?: unknown;
+  waitForElevationAnimation?: unknown;
 }>;
 export type LaunchpadAppsOptions = Readonly<{
   appendAppsToPages: (sourcePages: ReadonlyLaunchpadPages, apps: readonly LaunchpadApp[]) => LaunchpadPages;
@@ -166,6 +168,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const excludedCatalogApps = ref<LaunchpadApp[]>([]);
   const showMissingLaunchTargetBadge = ref(true);
   const missingTargetStyle = ref<"question" | "prohibited" | "none">("question");
+  const showAdminShield = ref(false);
+  const waitForElevationAnimation = ref(false);
   const launchTargetStatusRecordsById = ref<{ [id: string]: LaunchTargetStatusRecord }>({});
   // Native derived cells recompute on read. Preserve the public projection when
   // neither its source nor its status values changed, independently of the host.
@@ -187,6 +191,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const editorName = ref("");
   const editorTarget = ref("");
   const editorArgs = ref("");
+  const editorRunAsAdmin = ref(false);
   const editorIconPath = ref<string | null>(null);
   const editorIconDataUrl = ref<string | null>(null);
   const isEditorIconReset = ref(false);
@@ -584,6 +589,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     editorName.value = "";
     editorTarget.value = "";
     editorArgs.value = "";
+    editorRunAsAdmin.value = false;
     editorIconPath.value = null;
     editorIconDataUrl.value = null;
     isEditorIconReset.value = false;
@@ -685,6 +691,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     editorName.value = app.name || "";
     editorTarget.value = getLaunchTargetPath(app);
     editorArgs.value = typeof app.launchArgs === "string" ? app.launchArgs : "";
+    editorRunAsAdmin.value = app.runAsAdmin === true;
     editorIconPath.value = app.customIconPath || null;
     editorIconDataUrl.value = app.customIconDataUrl || null;
   }
@@ -886,6 +893,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
         delete item.sources;
       }
       item.name = name;
+      item.runAsAdmin = editorRunAsAdmin.value && ["executable", "shortcut"].includes(launchTarget.kind);
       item.emoji = fallbackAppGlyph(name);
       if (!isCatalogApp || targetChanged) {
         item.launchTarget = launchTarget;
@@ -1170,6 +1178,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       launchTarget,
     };
     if (launchArgs) app.launchArgs = launchArgs;
+    if (editorRunAsAdmin.value && ["executable", "shortcut"].includes(launchTarget.kind)) app.runAsAdmin = true;
     if (editorIconPath.value) app.customIconPath = editorIconPath.value;
     if (editorIconDataUrl.value) app.customIconDataUrl = editorIconDataUrl.value;
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
@@ -1199,6 +1208,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       scanAppBlacklist: scanAppBlacklist.value.map((entry) => ({ ...entry })),
       showMissingLaunchTargetBadge: showMissingLaunchTargetBadge.value,
       missingTargetStyle: missingTargetStyle.value,
+      showAdminShield: showAdminShield.value,
+      waitForElevationAnimation: waitForElevationAnimation.value,
     };
   }
 
@@ -1218,6 +1229,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     excludedCatalogApps.value = [];
     showMissingLaunchTargetBadge.value = fragment.showMissingLaunchTargetBadge !== false;
     missingTargetStyle.value = fragment.missingTargetStyle === "prohibited" || fragment.missingTargetStyle === "none" ? fragment.missingTargetStyle : "question";
+    showAdminShield.value = fragment.showAdminShield === true;
+    waitForElevationAnimation.value = fragment.waitForElevationAnimation === true;
     syncManagedAppState();
   }
 
@@ -1356,6 +1369,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const editorModel = Object.freeze({
     app: editingManagedApp,
     args: editorArgs,
+    runAsAdmin: editorRunAsAdmin,
+    canEditAdmin: computed(() => !isEditingAppUserModelId.value && /\.(exe|lnk)$/i.test(editorTarget.value.trim())),
     canBrowseTarget: computed(() => (
       canBrowseLaunchFile.value && !isEditingAppUserModelId.value && !isBrowsingEditorTarget.value
     )),
@@ -1433,7 +1448,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       const record = launchTargetStatusRecordsById.value[app.id];
       const details = record?.targetSignature === launchTargetSignature(app.launchTarget) ? record.details : undefined;
       next[app.id] = {
-        admin: false,
+        admin: showAdminShield.value && (app.runAsAdmin === true || details?.requiresAdmin === true),
         missing: showMissingLaunchTargetBadge.value && getLaunchTargetStatus(app) === "missing" ? missingTargetStyle.value : "none",
       };
     }
@@ -1451,6 +1466,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     scanRoots: readonly(scanRoots),
     showMissingLaunchTargetBadge: readonly(showMissingLaunchTargetBadge),
     missingTargetStyle,
+    showAdminShield,
+    waitForElevationAnimation,
     iconBadgesById,
   });
   const nativeIntegration = Object.freeze({

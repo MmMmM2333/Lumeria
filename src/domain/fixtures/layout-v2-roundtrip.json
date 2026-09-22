@@ -153,6 +153,8 @@
       "deferredIds": [],
       "recentIds": []
     },
-    "missingTargetStyle": "question"
+    "missingTargetStyle": "question",
+    "showAdminShield": true,
+    "waitForElevationAnimation": true
   }
 }
