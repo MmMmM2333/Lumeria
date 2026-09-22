@@ -138,6 +138,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumeria-hot-corners"
+version = "1.0.0"
+
+[[package]]
 name = "lumeria-live-desktop"
 version = "1.0.0"
 dependencies = [

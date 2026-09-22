@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { DEFAULT_HOT_CORNERS } from "../src/domain/hotCorners.js";
 import { assertLayoutDocument } from "../src/domain/layoutDocument.js";
 import { requestNativeSession } from "../src/native/nativeSession.js";
 import { runNativeProcess } from "./runNativeProcess.js";
@@ -38,7 +39,7 @@ const data = mkdtempSync(resolve("artifacts/native-staged-startup-"));
 const fixture = assertLayoutDocument(JSON.parse(readFileSync("src/domain/fixtures/layout-v2-roundtrip.json", "utf8")));
 const layout = assertLayoutDocument({ ...fixture,
   pages: [[{ id: "proof", type: "manualApp", name: "Startup proof", emoji: "S", launchTarget: { kind: "url", path: "https://example.invalid/" } }]],
-  settings: { ...fixture.settings, scanRoots: [], mainWindowShortcut: null, backgroundSource: "windowsLiveDesktop", backgroundEffect: "none", windowEffectMaterial: "none", windowMode: "windowed" },
+  settings: { ...fixture.settings, scanRoots: [], mainWindowShortcut: null, hotCorners: { ...DEFAULT_HOT_CORNERS, enabled: true, modifier: "control" }, backgroundSource: "windowsLiveDesktop", backgroundEffect: "none", windowEffectMaterial: "none", windowMode: "windowed" },
 });
 writeFileSync(join(data, "layout.json"), JSON.stringify(layout));
 type JournalEvent = { pid: number; event: string };
@@ -79,6 +80,7 @@ for (const origin of ["manual", "login"]) {
     assert.ok(!existsSync(join(root, "runtime/bin/app.log")), "runtime must not write logs in the installation directory");
     const modules=spawnSync("powershell.exe",["-NoProfile","-Command",`(Get-Process -Id ${pid} -ErrorAction Stop).Modules.ModuleName | ConvertTo-Json -Compress`],{windowsHide:true,encoding:"utf8"});
     assert.equal(modules.status,0,modules.stderr);
+    assert.ok(modules.stdout.toLowerCase().includes("lumeria_hot_corners.dll"),"enabled hot corners must load the packaged DLL");
     assert.ok(!modules.stdout.toLowerCase().includes("lumeria_live_desktop.dll"),"default-off persisted Live Desktop must not load the DLL");
     assert.ok(!journal().some(event=>event.pid===pid&&event.event==="devtools-ready"),"production must not start a diagnostics server");
     if (origin === "manual") {

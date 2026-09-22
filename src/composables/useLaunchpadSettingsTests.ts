@@ -559,4 +559,29 @@ async function runSettingsForHost(native:boolean) {
     assert(settings.draft.backgroundImagePath.value === "C:/Images/new.png", `${operation}: the current selection must apply`);
     assert(!settings.presentation.isChoosingBackgroundImage.value, `${operation}: current completion must release busy state`);
   }
+  const hotCalls: boolean[] = [];
+  let failHot = false;
+  const hotSettings = useLaunchpadSettings({
+    layout: useLaunchpadLayout({ seedEnabled: false, getNewFolderName: () => "Folder" }),
+    localizationText, liveDesktopSupport: { value: {} },
+    mainWindow: { ...makeMainWindowRuntime(), applyHotCorners: config => {
+      hotCalls.push(config.enabled);
+      if (failHot && config.enabled) throw new Error("detector unavailable");
+    } },
+  });
+  hotSettings.beginEdit();
+  hotSettings.actions.setDraftHotCorners({enabled:true,corners:9,delayMs:500,modifier:"alt",pauseFullscreen:true,toggle:true,allowSeams:true});
+  failHot=true;
+  assert(!(await hotSettings.applyEdit()).ok,"a native detector error must fail settings apply");
+  assert(!hotSettings.presentation.hotCorners.value.enabled,"failed apply preserves committed settings");
+  assert(hotCalls.join(",")==="true,false","failed apply restores native detector configuration");
+  failHot=false;
+  assert((await hotSettings.applyEdit()).ok,"valid hot corner settings apply");
+  assert(hotSettings.persistence.capture().hotCorners.allowSeams,"seam preference survives capture");
+  assert(hotSettings.persistence.capture().hotCorners.toggle,"toggle preference survives capture");
+  hotSettings.beginEdit();hotSettings.actions.setDraftHotCorners({...hotSettings.draft.hotCorners.value,corners:0});
+  assert(!(await hotSettings.applyEdit()).ok,"an enabled detector requires a selected corner");
+  hotSettings.cancelEdit();
+  assert(hotSettings.draft.hotCorners.value.corners===9,"cancel restores the selected corners");
+
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_HOT_CORNERS, readHotCornerSettings, type HotCornerSettings } from "../domain/hotCorners.js";
 import type { StateHost, StateCell } from "./stateHost.js";
 import {createLayoutSettings} from "./layoutSettings.js";
 import { readErrorMessage } from "../application/errorMessage.js";
@@ -105,6 +106,7 @@ export type MainWindowShortcutOutcome =
   | Readonly<{ ok: false; error: unknown }>;
 export type LaunchpadSettingsMainWindow = Readonly<{
   support: Readonly<{ value: Partial<MainWindowEffectsSupport> }>;
+  applyHotCorners?: (config: HotCornerSettings) => void | Promise<void>;
   registerShortcut: (shortcut: string | null) => Promise<MainWindowShortcutOutcome>;
   setEffectsEnabled: (request: Readonly<{
     enabled: boolean;
@@ -208,6 +210,8 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   const windowModeState = ref<LayoutSettings["windowMode"]>(DEFAULT_WINDOW_MODE);
   const fullscreenOverscanEnabledState = ref(DEFAULT_FULLSCREEN_OVERSCAN_ENABLED);
   const showCustomTitlebarState = ref(DEFAULT_SHOW_CUSTOM_TITLEBAR);
+  const hotCornersState = ref<HotCornerSettings>({ ...DEFAULT_HOT_CORNERS });
+  const draftHotCorners = ref<HotCornerSettings>({ ...DEFAULT_HOT_CORNERS });
   const mainWindowShortcutState = ref<string | null>(DEFAULT_MAIN_WINDOW_SHORTCUT);
   const localePreferenceState = ref(DEFAULT_LOCALE_PREFERENCE);
   const settingsThemePreferenceState = ref<AppearancePreference>(DEFAULT_SETTINGS_THEME_PREFERENCE);
@@ -289,6 +293,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     draftFullscreenOverscanEnabled.value = fullscreenOverscanEnabledState.value;
     draftShowCustomTitlebar.value = showCustomTitlebarState.value;
     draftMainWindowShortcut.value = mainWindowShortcutState.value;
+    draftHotCorners.value = { ...hotCornersState.value };
     draftLocalePreference.value = localePreferenceState.value;
     draftSettingsThemePreference.value = settingsThemePreferenceState.value;
     draftLaunchpadIconVariant.value = launchpadIconVariantState.value;
@@ -612,6 +617,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     fullscreenOverscanEnabledState.value = normalizeFullscreenOverscanEnabled(draftFullscreenOverscanEnabled.value);
     showCustomTitlebarState.value = normalizeShowCustomTitlebar(draftShowCustomTitlebar.value);
     mainWindowShortcutState.value = nextShortcut;
+    hotCornersState.value = readHotCornerSettings(draftHotCorners.value);
     localePreferenceState.value = nextLocalePreference;
     settingsThemePreferenceState.value = normalizeAppearancePreference(draftSettingsThemePreference.value);
     launchpadIconVariantState.value = nextLaunchpadIconVariant;
@@ -667,6 +673,13 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
         const outcome = await localeRuntime.applyPreference(nextLocalePreference);
         if (!outcome.ok) throw outcome.error;
         appliedLocaleState = outcome.state;
+      }
+      if(draftHotCorners.value.enabled && !draftHotCorners.value.corners) throw new Error(t("settings.general.hotCorners.selectCorner"));
+      const nextHotCorners = readHotCornerSettings(draftHotCorners.value);
+      if (JSON.stringify(nextHotCorners) !== JSON.stringify(committed.hotCorners)) {
+        if (!mainWindow.applyHotCorners && nextHotCorners.enabled) throw new Error(t("settings.general.hotCorners.unavailable"));
+        undo.push(async () => { await mainWindow.applyHotCorners?.(committed.hotCorners); });
+        await mainWindow.applyHotCorners?.(nextHotCorners);
       }
       if (nextShortcut !== committed.mainWindowShortcut) {
         reportFailure = error => { mainWindowShortcutErrorState.value = errorMessage(error, t("settings.general.shortcut.unavailable")); };
@@ -804,6 +817,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     fullscreenOverscanEnabledState.value = normalizeFullscreenOverscanEnabled(fragment.fullscreenOverscanEnabled);
     showCustomTitlebarState.value = normalizeShowCustomTitlebar(fragment.showCustomTitlebar);
     mainWindowShortcutState.value = normalizeMainWindowShortcut(fragment.mainWindowShortcut);
+    hotCornersState.value = readHotCornerSettings(fragment.hotCorners);
     localePreferenceState.value = normalizeLocalePreference(fragment.localePreference);
     settingsThemePreferenceState.value = normalizeAppearancePreference(fragment.settingsThemePreference);
     launchpadIconVariantState.value = normalizeLaunchpadIconVariant(fragment.launchpadIconVariant);
@@ -838,6 +852,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
       fullscreenOverscanEnabled: fullscreenOverscanEnabledState.value,
       showCustomTitlebar: showCustomTitlebarState.value,
       mainWindowShortcut: mainWindowShortcutState.value,
+      hotCorners: { ...hotCornersState.value },
       localePreference: localePreferenceState.value,
       settingsThemePreference: settingsThemePreferenceState.value,
       launchpadIconVariant: launchpadIconVariantState.value,
@@ -936,6 +951,8 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     launchAtLogin: readonly(launchAtLoginState),
     launchAtLoginError: readonly(launchAtLoginErrorState),
     mainWindowShortcut: readonly(mainWindowShortcutState),
+    hotCorners: readonly(hotCornersState),
+    canConfigureHotCorners: readonly(ref(Boolean(mainWindow.applyHotCorners))),
     mainWindowShortcutError: readonly(mainWindowShortcutErrorState),
     settingsThemePreference: readonly(settingsThemePreferenceState),
     showCustomTitlebar: readonly(showCustomTitlebarState),
@@ -975,6 +992,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     fullscreenOverscanEnabled: draftFullscreenOverscanEnabled,
     showCustomTitlebar: draftShowCustomTitlebar,
     mainWindowShortcut: draftMainWindowShortcut,
+    hotCorners: draftHotCorners,
     localePreference: draftLocalePreference,
     settingsThemePreference: draftSettingsThemePreference,
     launchpadIconVariant: draftLaunchpadIconVariant,
@@ -982,6 +1000,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   });
 
   const actions = Object.freeze({
+    setDraftHotCorners: (value: HotCornerSettings) => { draftHotCorners.value = { ...value }; },
     canUseDraftBackgroundEffect,
     canUseLiveDesktopBackground,
     canUseLiveDesktopBackgroundEffect,

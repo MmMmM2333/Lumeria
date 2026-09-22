@@ -92,7 +92,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
   const windowPanelState={mode:false,material:false,advanced:false};
   const appsPageState:NativeAppsPageState={keywords:false,excludedQuery:"",excludedKeys:new Set()};
   let shell:NativeSettingsShell|null=null;
-  let recordingShortcut=false,expandedIcons=false;
+  let recordingShortcut=false,expandedIcons=false,expandedHotCorners=false;
 
   const stopShortcutRecording=()=>{
     if(!recordingShortcut)return true;
@@ -140,6 +140,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
         :tab==="general"
         ?nativeGeneralSettingsPage({settings,width,theme:ports.settingsTheme(),
           management:ports.getManagement(),invalidate:()=>app.invalidate(),redraw:()=>shell?.redraw(),recording:recordingShortcut,
+          hotCornersExpanded:expandedHotCorners,expandHotCorners:()=>{expandedHotCorners=!expandedHotCorners;shell?.redraw();},
           record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;shell?.redraw();},icons:ports.brandingTextures(),openLogs:ports.openLogs})
         :tab==="about"
         ?nativeAboutSettingsPage(width,ports.settingsTheme(),ports.brandingTextures().get(settings.draft.launchpadIconVariant.value)!,{

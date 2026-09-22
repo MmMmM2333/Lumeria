@@ -142,6 +142,7 @@
     "fullscreenOverscanEnabled": false,
     "showCustomTitlebar": false,
     "mainWindowShortcut": "control+alt+KeyL",
+    "hotCorners": {"enabled": false, "corners": 1, "delayMs": 200, "modifier": "none", "pauseFullscreen": true, "toggle": false, "allowSeams": false},
     "localePreference": "en-US",
     "settingsThemePreference": "system",
     "launchpadIconVariant": "pastelDark",

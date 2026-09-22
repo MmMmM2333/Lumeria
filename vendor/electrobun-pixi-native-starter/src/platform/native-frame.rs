@@ -1,5 +1,12 @@
 #![allow(non_snake_case)]
 
+// Native listeners must remain resident and must not block or call window APIs.
+static DISPLAY_CHANGE_CALLBACK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[no_mangle]
+pub extern "C" fn pixi_set_display_change_callback(callback: usize) {
+    DISPLAY_CHANGE_CALLBACK.store(callback, std::sync::atomic::Ordering::Release);
+}
+
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::collections::HashSet;
@@ -2270,6 +2277,11 @@ unsafe fn input_subclass_proc_inner(
             unsafe { queue_state_event(state, window, INPUT_DPI_CHANGED) };
         }
         0x007e if unsafe { root_window(window) } == window => {
+            let callback = DISPLAY_CHANGE_CALLBACK.load(std::sync::atomic::Ordering::Acquire);
+            if callback != 0 {
+                let notify: extern "C" fn() = unsafe { std::mem::transmute(callback) };
+                notify();
+            }
             unsafe { queue_state_event(state, window, INPUT_DISPLAY_CHANGED) };
         }
         0x0218 if unsafe { root_window(window) } == window => {

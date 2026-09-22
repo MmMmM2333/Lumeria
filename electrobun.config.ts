@@ -23,6 +23,7 @@ export default {
       ...nativePixiElectrobunCopy,
       [join(rustRelease,"lumeria_native_data.exe")]: "bun/lumeria-native-data.exe",
       [join(rustRelease,"lumeria_live_desktop.dll")]: "bun/lumeria_live_desktop.dll",
+      [join(rustRelease,"lumeria_hot_corners.dll")]: "bun/lumeria_hot_corners.dll",
       "src/assets/branding/lumeria-app-icon.svg": "bun/branding/light.svg",
       "src/assets/branding/lumeria-app-icon-dark.svg": "bun/branding/dark.svg",
       "src/assets/branding/lumeria-app-icon-pastel-grid.svg": "bun/branding/pastelLight.svg",

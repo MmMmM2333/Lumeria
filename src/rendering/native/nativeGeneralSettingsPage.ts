@@ -1,3 +1,4 @@
+import { nativeHotCornerSettings } from "./nativeHotCornerSettings.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type { createLaunchpadSettings } from "../../application/launchpadSettings.js";
@@ -18,7 +19,7 @@ import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 type Options={
   settings:ReturnType<typeof createLaunchpadSettings>;width:number;theme:NativeTheme;
   management:NativeManagement;invalidate():void;redraw():void;
-  recording:boolean;record():void;expanded:boolean;expand():void;
+  recording:boolean;record():void;expanded:boolean;expand():void;hotCornersExpanded:boolean;expandHotCorners():void;
   icons:ReadonlyMap<LaunchpadIconVariant,Texture>;
   openLogs():void;
 };
@@ -83,6 +84,8 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
     const icon=nativeFluentIcon("dismiss-16-regular",style.muted,12);icon.position.set(5,5);clear.addChild(icon);
     controls.push({node:clear,focus:active=>{clear.focused=active;},disabled:()=>clear.disabled,handleKey:key=>{if(key!==" "&&key!=="Enter")return false;clear.activate();return true;}});
   }
+  const hotCorners=nativeHotCornerSettings(settings,width,theme,options.management,options.invalidate,options.redraw,options.hotCornersExpanded,options.expandHotCorners);
+  hotCorners.node.y=y;node.addChild(hotCorners.node);controls.push(...hotCorners.controls);layout.child(hotCorners);y+=hotCorners.height+6;
   const language=row(t("settings.general.language.title"),settings.presentation.localePreferenceError.value);
   const languages=[{value:"system",label:t("settings.general.language.system")},...nativeLocaleOptions];
   const current=languages.find(item=>item.value===settings.draft.localePreference.value)!;

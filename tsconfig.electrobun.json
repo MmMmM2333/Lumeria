@@ -16,7 +16,6 @@
   },
   "include": [
     "src/rendering/native/NativeImportHelp.ts",
-    "src/rendering/native/NativeLayoutRecovery.ts",
     "src/rendering/native/NativeImportPlacement.ts",
     "src/rendering/native/NativeNewAppsButton.ts",
     "src/rendering/native/NativeOnboarding.ts",
@@ -44,10 +43,13 @@
     "src/rendering/native/NativeSpinButton.ts",
     "src/rendering/native/nativeLayoutSettingsPage.ts",
     "src/rendering/native/nativeGeneralSettingsPage.ts",
+    "src/rendering/native/nativeHotCornerSettings.ts",
+    "src/rendering/native/NativeLayoutRecovery.ts",
     "src/rendering/native/nativeBackgroundSettings.ts",
     "src/native/product/**/*.ts",
     "src/native/diagnostics/**/*.ts",
     "src/native/nativeClipboard.ts",
-    "src/native/nativeLiveDesktopLibrary.ts"
+    "src/native/nativeLiveDesktopLibrary.ts",
+    "src/native/nativeHotCornersLibrary.ts"
   ]
 }

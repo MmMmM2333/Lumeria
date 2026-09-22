@@ -242,10 +242,12 @@ export function runLaunchpadDataTests() {
     fullscreenOverscanEnabled: false,
     showCustomTitlebar: false,
     mainWindowShortcut: "control+alt+KeyL",
+    hotCorners: { enabled: true, corners: 9, delayMs: 500, modifier: "alt", pauseFullscreen: true, toggle: true },
     launchpadIconVariant: "pastelDark",
     localePreference: "en-US",
     settingsThemePreference: "system",
   });
+  assert(snapshot.settings.hotCorners?.enabled && snapshot.settings.hotCorners.toggle && snapshot.settings.hotCorners.corners === 9, "layout snapshots retain hot corner settings");
   assert(snapshot.version === 2, "layout snapshots should use version 2");
   assert(snapshot.settings.textless === true && snapshot.settings.hiddenAppIds[0] === "hidden", "layout snapshots should include settings");
   assert(snapshot.settings.folderIconSizeMode === "custom" && snapshot.settings.folderIconSize === 88, "layout snapshots should include folder icon size settings");

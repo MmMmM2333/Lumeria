@@ -229,7 +229,7 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
       // Earlier monitor tests can leave the window on a different display from
       // the cursor. Establish the same-display precondition before testing hide;
       // cross-display activation correctly relocates and shows instead.
-      app.prepareShortcutActivation();
+      app.prepareWindowActivation();
       await present("shortcut target display prepared");
       await waitFor("shortcut target display settles",()=>scene.getDesktopAlpha()>.99&&!scene.getMotionSnapshot().active);
       app.window.activate();

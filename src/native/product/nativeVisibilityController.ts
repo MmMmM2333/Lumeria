@@ -11,6 +11,8 @@ import { shouldHideForNativeShortcut } from "../nativeShortcutPolicy.js";
 type LaunchFlow = Readonly<{
   closeDesktop(options?: Readonly<{ clearSearch?: boolean }>): void;
   isDesktopOpen: Readonly<{ value: boolean }>;
+  isDesktopClosing: Readonly<{ value:boolean }>;
+  isAppLaunching: Readonly<{ value:boolean }>;
   isLaunchpadInteractionBlocked(): boolean;
   openDesktop(): void;
 }>;
@@ -72,6 +74,7 @@ export type NativeVisibilityController = Readonly<{
   disposeTimers: () => void;
   hideAfterPresented: () => Promise<void>;
   show: () => void;
+  hotCorner: (point:Readonly<{x:number;y:number;displayId?:number}>,toggle:boolean) => void;
   preserveViewOnNextShow: () => void;
   timers: Scheduler;
   toggle: () => void;
@@ -156,12 +159,23 @@ export function createNativeVisibilityController(
   const shortcut = () => {
     if (ports.isCloseCoordinatorClosing()) return;
     const visible=ports.app.window.isVisible(),minimized=ports.app.window.isMinimized();
-    const target=ports.app.prepareShortcutActivation();
+    const target=ports.app.prepareWindowActivation();
     if(target.displayChanged)ports.backgroundDisplayChanged();
     ports.log("shortcut-target",target);
     if (ports.app.state === "running" && ports.getLaunchFlow()!.isDesktopOpen.value && !visibilityPreparing
       && shouldHideForNativeShortcut({visible,minimized,...target})) dismiss();
     else show();
+  };
+  const hotCorner = (point:Readonly<{x:number;y:number;displayId?:number}>,toggle:boolean) => {
+    if(ports.isCloseCoordinatorClosing()||visibilityPreparing||ports.isDragActive()||ports.getSettingsApplying()
+      ||ports.getSettingsShell()||ports.management.modal||ports.getLaunchFlow()?.isDesktopClosing.value||ports.getLaunchFlow()?.isAppLaunching.value)return;
+    const target=ports.app.prepareWindowActivation(point,true);
+    if(target.displayChanged)ports.backgroundDisplayChanged();
+    const open=ports.app.window.isVisible()&&!ports.app.window.isMinimized()&&ports.getLaunchFlow()!.isDesktopOpen.value;
+    if(open&&target.foreground){if(toggle)dismiss();return;}
+    preserveViewOnNextShow=true;
+    show();
+    ports.log("hot-corner-reveal",{...point,...target});
   };
   const toggle = () => {
     if(ports.isCloseCoordinatorClosing())return;
@@ -171,6 +185,7 @@ export function createNativeVisibilityController(
 
   return Object.freeze({
     beginCloseAnimation,
+    hotCorner,
     dismiss,
     disposeTimers,
     hideAfterPresented,

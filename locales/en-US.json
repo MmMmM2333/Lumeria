@@ -1331,6 +1331,32 @@
         "categories": "Settings categories"
       },
       "general": {
+        "hotCorners": {
+          "custom": "Custom…",
+          "customTitle": "Custom activation delay",
+          "customField": "Delay (milliseconds)",
+          "customRange": "Enter a whole number from 0 to 10000. Use 0 to activate immediately.",
+          "pauseHint": "Ignore corners on a display with a full-screen app. Regular maximized windows are unaffected.",
+          "toggleHint": "When Lumeria is in the foreground, leave the corner and return to hide it. When off, corners only bring Lumeria forward.",
+          "seams": "Allow corners at screen seams",
+          "seamsHint": "Allow corners where displays meet. Leave adjacent hot zones before triggering again.",
+          "title": "Hot corners",
+          "enabled": "Enable hot corners",
+          "description": "Move the pointer to a selected corner to open Lumeria.",
+          "topLeft": "Top left",
+          "topRight": "Top right",
+          "bottomLeft": "Bottom left",
+          "bottomRight": "Bottom right",
+          "delay": "Activation delay",
+          "immediate": "Immediately",
+          "modifier": "Hold a key",
+          "none": "None",
+          "pause": "Pause hot corners in full-screen apps",
+          "toggle": "Hide Lumeria when triggered again",
+          "hint": "Selected corners apply to every display.",
+          "selectCorner": "Select at least one corner.",
+          "unavailable": "Hot corners are unavailable on this platform."
+        },
         "title": "General",
         "startup": {
         "description": "Start after signing in to Windows and stay in the tray",
