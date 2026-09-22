@@ -39,7 +39,7 @@ export function planAppImport(options:Readonly<{
         const key=JSON.stringify([scope,name.toLocaleLowerCase("en-US")]);
         if(!dismissed.has(key)){
           groupKey=key;
-          const group=candidates.get(key)??{key,name,appIds:[],keepSingle:false};
+          const group=candidates.get(key)??{key,name:source.groupDisplayName||name,appIds:[],keepSingle:false};
           group.appIds.push(app.id);group.keepSingle ||= policy.keepSingle;candidates.set(key,group);
         }
       }

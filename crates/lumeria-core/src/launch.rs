@@ -600,6 +600,7 @@ mod tests {
         let mut app = app_item("catalog-app", missing_primary.to_string_lossy().as_ref());
         app.sources = vec![
             AppSource {
+                group_display_name: None,
                 key: "primary".to_string(),
                 source_type: AppSourceType::CustomDirectory,
                 state: AppSourceState::Primary,
@@ -609,6 +610,7 @@ mod tests {
                 absolute_path: missing_primary.to_string_lossy().to_string(),
             },
             AppSource {
+                group_display_name: None,
                 key: "equivalent".to_string(),
                 source_type: AppSourceType::StartMenuUser,
                 state: AppSourceState::Equivalent,
@@ -618,6 +620,7 @@ mod tests {
                 absolute_path: equivalent.to_string_lossy().to_string(),
             },
             AppSource {
+                group_display_name: None,
                 key: "shadowed".to_string(),
                 source_type: AppSourceType::StartMenuSystem,
                 state: AppSourceState::Shadowed,

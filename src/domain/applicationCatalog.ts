@@ -9,6 +9,7 @@ export type CatalogSource = Readonly<{
   rootId: string;
   rootLabel: string;
   relativePath: string;
+  groupDisplayName?: string;
   absolutePath: string;
 }>;
 
@@ -105,6 +106,7 @@ export function assertCatalogSource(value: unknown, path = "catalog source"): Ca
   requireString(source.rootId, `${path}.rootId`);
   requireString(source.rootLabel, `${path}.rootLabel`);
   requireString(source.relativePath, `${path}.relativePath`);
+  requireOptionalString(source, "groupDisplayName", path);
   requireString(source.absolutePath, `${path}.absolutePath`);
   return source as CatalogSource;
 }

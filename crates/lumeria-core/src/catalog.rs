@@ -852,6 +852,8 @@ fn make_catalog_candidate(root: &ScanRoot, root_dir: &Path, path: &Path) -> Cata
         .unwrap_or("Application")
         .trim()
         .to_string();
+    #[cfg(target_os = "windows")]
+    let name = crate::windows_app_catalog::filesystem_display_name(path).unwrap_or(name);
     let path_string = windows_api_path(path);
     let kind = match extension(path).as_deref() {
         Some("exe") => "executable",
@@ -895,7 +897,13 @@ fn make_windows_app_candidate(name: String, app_user_model_id: &str) -> CatalogC
 }
 
 fn make_catalog_item(root: &ScanRoot, candidate: CatalogCandidate) -> AppCatalogItem {
+    #[cfg(windows)]
+    let group_display_name = candidate.relative_path.split('/').next().filter(|_| candidate.relative_path.contains('/'))
+        .and_then(|part| crate::windows_app_catalog::filesystem_display_name(&Path::new(&crate::path_utils::expand_windows_env_vars(&root.path)).join(part)));
+    #[cfg(not(windows))]
+    let group_display_name = None;
     let source = AppSource {
+        group_display_name,
         key: candidate.source_key.clone(),
         source_type: root.root_type,
         state: AppSourceState::Primary,
@@ -935,6 +943,7 @@ fn make_windows_app_item(
     icon_path: Option<String>,
 ) -> AppCatalogItem {
     let source = AppSource {
+        group_display_name: None,
         key: candidate.source_key.clone(),
         source_type: root.root_type,
         state: AppSourceState::Primary,
