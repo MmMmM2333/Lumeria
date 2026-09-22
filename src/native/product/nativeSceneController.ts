@@ -143,6 +143,7 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
       const groupSnapshot=(group?(captureGroup??=createNativeRecordSnapshot<GroupState>())(group):null) as unknown as typeof currentFrame.interaction.groupDragState;
       ports.applyFrame(Object.freeze({ ...currentFrame, interaction:Object.freeze({...interaction,groupDragState:groupSnapshot}),
         diagnostics: captureDiagnostics({ ...currentFrame.diagnostics,
+          iconBadgesById: apps?.presentation.iconBadgesById.value ?? currentFrame.diagnostics.iconBadgesById,
           showMissingLaunchTargetBadge: apps?.presentation.showMissingLaunchTargetBadge.value ?? currentFrame.diagnostics.showMissingLaunchTargetBadge,
           launchTargetStatusById: apps?.presentation.launchTargetStatusById.value ?? currentFrame.diagnostics.launchTargetStatusById }),
         viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) }), true);

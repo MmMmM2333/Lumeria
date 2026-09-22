@@ -25,6 +25,7 @@ const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    RevealPath { version: u32, id: u64, path: String, folder: bool },
     CheckLaunchTargets {
         version: u32,
         id: u64,
@@ -89,6 +90,7 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::RevealPath { id, .. }
             | Self::CheckLaunchTargets { id, .. }
             | Self::CacheBackground { id, .. }
             | Self::Wallpaper { id, .. }
@@ -105,6 +107,7 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::RevealPath { version, .. }
             | Self::CheckLaunchTargets { version, .. }
             | Self::CacheBackground { version, .. }
             | Self::Wallpaper { version, .. }
@@ -213,6 +216,7 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::RevealPath { path, folder, .. } => lumeria_core::target_details::reveal_path(&path, folder).map(|()| Value::Null),
         Request::CheckLaunchTargets { targets, .. } => check_launch_targets_sync(targets)
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
         Request::CacheBackground { path, .. } => cache_background(data_dir, &path),

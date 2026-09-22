@@ -118,6 +118,7 @@ export type LayoutSettings = {
   scanKeywordAllowlist: string[];
   scanAppBlacklist: ScanAppBlacklistEntry[];
   showMissingLaunchTargetBadge: boolean;
+  missingTargetStyle: "question" | "prohibited" | "none";
   backgroundBaseColor: string;
   backgroundBaseOpacity: number;
   backgroundSource: "systemMaterial" | "customImage" | "windowsWallpaper" | "windowsLiveDesktop";
@@ -205,6 +206,7 @@ const SETTINGS_FIELDS = [
   "scanKeywordAllowlist",
   "scanAppBlacklist",
   "showMissingLaunchTargetBadge",
+  "missingTargetStyle",
   "backgroundBaseColor",
   "backgroundBaseOpacity",
   "backgroundSource",
@@ -465,6 +467,7 @@ function assertLayoutSettings(value: unknown): void {
   requireNonEmptyStringArray(settings.scanKeywordBlacklist, `${path}.scanKeywordBlacklist`);
   assertScanAppBlacklist(settings.scanAppBlacklist, `${path}.scanAppBlacklist`);
   requireBoolean(settings.showMissingLaunchTargetBadge, `${path}.showMissingLaunchTargetBadge`);
+  if (!["question", "prohibited", "none"].includes(String(settings.missingTargetStyle))) throw new TypeError(`${path}.missingTargetStyle is invalid`);
 
   requireColor(settings.backgroundBaseColor, `${path}.backgroundBaseColor`);
   requireIntegerInRange(settings.backgroundBaseOpacity, 0, 100, `${path}.backgroundBaseOpacity`);

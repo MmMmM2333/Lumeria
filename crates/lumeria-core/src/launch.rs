@@ -54,6 +54,8 @@ impl From<SavedManualApp> for LaunchableApp {
 pub struct LaunchTargetCheckRequest {
     pub id: String,
     pub launch_target: LaunchTarget,
+    #[serde(default)]
+    pub fallback_paths: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -61,6 +63,8 @@ pub struct LaunchTargetCheckRequest {
 pub struct LaunchTargetCheckResult {
     pub id: String,
     pub status: String,
+    #[serde(flatten)]
+    pub details: crate::target_details::TargetDetails,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -204,11 +208,11 @@ fn resolve_launch_path(app: &LaunchableApp) -> Result<(String, Option<&str>), La
         .filter(|path| !path.trim().is_empty())
         .cloned()
         .ok_or_else(|| LaunchFailure::missing_launch_info("App has no launch path".to_string()))?;
-    if matches!(kind, "executable" | "shortcut") && !std::path::Path::new(&path).exists() {
+    if matches!(kind, "executable" | "shortcut") && crate::target_details::launch_path_status(std::path::Path::new(&path)) == "missing" {
         if let Some(fallback) = app
             .fallback_launch_paths
             .iter()
-            .find(|fallback| std::path::Path::new(fallback).exists())
+            .find(|fallback| std::path::Path::new(fallback).exists() && crate::target_details::launch_path_status(std::path::Path::new(fallback)) != "missing")
         {
             path = fallback.clone();
         } else {
@@ -329,12 +333,23 @@ pub fn check_launch_targets_sync(
 
     Ok(targets
         .into_iter()
-        .map(|target| LaunchTargetCheckResult {
-            id: target.id,
-            status: check_launch_target_status(
-                &target.launch_target,
-                installed_app_user_model_ids.as_ref(),
-            ),
+        .map(|target| {
+            let mut details = crate::target_details::TargetDetails::default();
+            let mut status = check_launch_target_status(&target.launch_target, installed_app_user_model_ids.as_ref());
+            if matches!(target.launch_target.kind.as_str(), "executable" | "shortcut") {
+                if let Some(path) = &target.launch_target.path {
+                    let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(path));
+                    status = checked.into(); details = found;
+                    if status != "ok" {
+                        for fallback in &target.fallback_paths {
+                            let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(fallback));
+                            if checked == "ok" { status = checked.into(); details = found; break; }
+                            if checked == "unknown" && status == "missing" { status = checked.into(); details = found; }
+                        }
+                    }
+                }
+            }
+            LaunchTargetCheckResult { id: target.id, status, details }
         })
         .collect())
 }

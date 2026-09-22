@@ -174,6 +174,7 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         "scanKeywordAllowlist",
         "scanAppBlacklist",
         "showMissingLaunchTargetBadge",
+        "missingTargetStyle",
         "backgroundBaseColor",
         "backgroundBaseOpacity",
         "backgroundSource",
@@ -243,6 +244,9 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
             .ok_or_else(|| "layout settings.scanAppBlacklist must be an array".to_string())?,
     )?;
     require_bool_field(object, "showMissingLaunchTargetBadge", "layout settings")?;
+    if !matches!(object.get("missingTargetStyle").and_then(Value::as_str), Some("question" | "prohibited" | "none")) {
+        return Err("layout settings.missingTargetStyle is invalid".into());
+    }
 
     require_color_field(object, "backgroundBaseColor", "layout settings")?;
     require_integer_in_range(object, "backgroundBaseOpacity", 0, 100, "layout settings")?;

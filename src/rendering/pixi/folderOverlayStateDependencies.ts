@@ -24,6 +24,7 @@ export const FOLDER_OVERLAY_STATE_RENDER_REF_KEYS = Object.freeze([
   "isFolderZoomFadeClosingFromFolderClose",
   "isTextlessMode",
   "launchTargetStatusById",
+  "iconBadgesById",
   "renderedFolder",
   "showMissingLaunchTargetBadge",
   "visualFolderPageIndex",

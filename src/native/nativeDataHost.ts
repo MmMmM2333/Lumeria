@@ -157,13 +157,20 @@ export class NativeDataHost {
     if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
     await this.#transport.request("launchApp", { appId });
   }
+  async revealPath(path: string, folder = false): Promise<void> {
+    if (!isAbsolute(path)) throw new TypeError("File location must be absolute");
+    await this.#transport.request("revealPath", {path, folder});
+  }
   async checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[]):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
     const value=await this.#transport.request("checkLaunchTargets",{targets});
     if(!Array.isArray(value))throw new TypeError("Launch target checks must return an array");
     return value.map(item=>{
       const entry=requireRecord(item,"launch target check");
       if(typeof entry.id!=="string"||!["ok","missing","unknown"].includes(String(entry.status)))throw new TypeError("Invalid launch target check");
-      return {id:entry.id,status:entry.status as "ok"|"missing"|"unknown"};
+      if (typeof entry.canElevate !== "boolean" || typeof entry.requiresAdmin !== "boolean" || typeof entry.adminRequirementKnown !== "boolean" || typeof entry.locationIsFolder !== "boolean"
+        || (entry.fileLocation !== null && typeof entry.fileLocation !== "string") || (entry.shortcutLocation !== null && typeof entry.shortcutLocation !== "string")) throw new TypeError("Invalid launch target capabilities");
+      return {id:entry.id,status:entry.status as "ok"|"missing"|"unknown",canElevate:entry.canElevate,requiresAdmin:entry.requiresAdmin,adminRequirementKnown:entry.adminRequirementKnown,
+        locationIsFolder:entry.locationIsFolder,fileLocation:entry.fileLocation as string|null,shortcutLocation:entry.shortcutLocation as string|null};
     });
   }
 

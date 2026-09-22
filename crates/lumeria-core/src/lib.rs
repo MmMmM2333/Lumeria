@@ -10,6 +10,7 @@ pub mod launchpad_icon;
 pub mod layout_store;
 pub mod models;
 pub mod path_utils;
+pub mod target_details;
 
 #[cfg(target_os = "windows")]
 pub mod native_error;

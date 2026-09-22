@@ -200,6 +200,7 @@ function makeNativeFolderFrame(
       isEditMode: desktopFrame.interaction.isEditMode,
       isTextlessMode: desktopFrame.interaction.isTextlessMode,
       launchTargetStatusById: desktopFrame.diagnostics.launchTargetStatusById,
+      iconBadgesById: desktopFrame.diagnostics.iconBadgesById,
       selectedAppIds: desktopFrame.interaction.selectedAppIds,
       showMissingLaunchTargetBadge: desktopFrame.diagnostics.showMissingLaunchTargetBadge,
     },
@@ -443,6 +444,7 @@ export class NativeDesktopScene {
           isBatchSelectionActive:state.isBatchSelectionActive,isFolderOpeningPreviewFrameGhosted:state.isFolderOpeningPreviewFrameGhosted,
           isTextlessMode:state.isTextlessMode,provisionalFolderRollback:state.provisionalFolderRollback,
           launchTargetStatusById:state.launchTargetStatusById,showMissingLaunchTargetBadge:state.showMissingLaunchTargetBadge,
+          iconBadgesById:state.iconBadgesById,
           singleStageFolderState:state.singleStageFolderState,stageRect:state.stageRect,width:state.width,
         })}]);
       }
@@ -541,6 +543,7 @@ export class NativeDesktopScene {
       isSearchMode: frame.interaction.isSearchMode,
       isTextlessMode: frame.interaction.isTextlessMode,
       launchTargetStatusById: frame.diagnostics.launchTargetStatusById,
+      iconBadgesById: frame.diagnostics.iconBadgesById,
       launchpadVisualAlpha: frame.visual.launchpadVisualAlpha,
       launchpadVisualTransform: frame.visual.launchpadVisualTransform,
       pageTrackScrub: options.pageTrackScrub ?? null,

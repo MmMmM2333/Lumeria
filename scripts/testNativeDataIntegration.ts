@@ -82,7 +82,12 @@ try {
   const scan = await host.scanApps([{ id: "isolated", type: "customDirectory", label: "Isolated", path: scanDirectory, enabled: true }], {});
   assert.equal(scan.apps.length, 1);
   assert.equal(scan.apps[0]!.name, "Example");
-  assert.deepEqual(await host.checkLaunchTargets([{ id: "missing", launchTarget: { kind: "executable", path: join(directory, "missing.exe") } }]), [{ id: "missing", status: "missing" }]);
+  assert.deepEqual(await host.checkLaunchTargets([{ id: "missing", launchTarget: { kind: "executable", path: join(directory, "missing.exe") } }]), [{ id: "missing", status: "missing",canElevate:true,requiresAdmin:false,adminRequirementKnown:false,fileLocation:directory,locationIsFolder:true,shortcutLocation:null }]);
+  const target=join(directory,"restored.exe");
+  let checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);
+  assert.equal(checks[0]?.status,"missing");writeFileSync(target,"");
+  checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);assert.equal(checks[0]?.status,"ok");
+  checks=await host.checkLaunchTargets([{id:"fallback",launchTarget:{kind:"executable",path:join(directory,"missing.exe")},fallbackPaths:[target]}]);assert.equal(checks[0]?.status,"ok");
   await assert.rejects(host.launchApp("does-not-exist"), error => error instanceof NativeLaunchError && error.kind === "missingLaunchInfo");
   writeFileSync(join(directory, "layout.json"), "{damaged");
   await assert.rejects(host.loadLayout(), /Failed to parse layout/);

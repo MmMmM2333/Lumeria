@@ -1,6 +1,7 @@
 import type { SceneDataRecord, SceneItem } from "../../sceneFrame.js";
 
 export type IconVisualState = Readonly<{
+  badge?: import("../../../domain/iconBadge.js").IconBadge | null | undefined;
   area: string | null;
   batchSelected: boolean;
   cellHeight: number;
@@ -80,7 +81,7 @@ export function makeIconVisualState(input: IconVisualState): IconVisualState {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new TypeError("IconVisualState must be an object");
   }
-  const keys = Object.keys(input);
+  const keys = Object.keys(input).filter(key => key !== "badge");
   if (
     keys.length !== ICON_VISUAL_STATE_FIELDS.length ||
     keys.some((key) => !ICON_VISUAL_STATE_FIELDS.includes(key as typeof ICON_VISUAL_STATE_FIELDS[number]))
@@ -106,6 +107,7 @@ function sameSnapshot(a:unknown,b:unknown,depth=4):boolean{
 }
 
 export function canRetainAppVisualState(previous:IconVisualState|undefined,next:IconVisualState):boolean{
+  if (!sameSnapshot(previous?.badge, next.badge)) return false;
   if(!previous||previous.item?.type!=="app"||next.item?.type!=="app"||previous.dragging||next.dragging||previous.ghosted||next.ghosted)return false;
   if(!Object.isFrozen(previous.item)||!Object.isFrozen(next.item))return false;
   return ICON_VISUAL_STATE_FIELDS.every(key=>{

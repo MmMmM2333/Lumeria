@@ -767,6 +767,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         scanKeywordAllowlist: normalizeScanKeywordAllowlist(state.scanKeywordAllowlist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
+        missingTargetStyle: state.missingTargetStyle === "prohibited" || state.missingTargetStyle === "none" ? state.missingTargetStyle : "question",
         backgroundBaseColor,
         backgroundBaseOpacity: Number.isFinite(backgroundBaseOpacity) ? clamp(Math.round(backgroundBaseOpacity), 0, 100) : 28,
         backgroundSource,

@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   scanKeywordAllowlist: [] as string[],
   scanAppBlacklist: [] as { catalogId: string }[],
   showMissingLaunchTargetBadge: true,
+  missingTargetStyle: "question",
 });
 
 export type NativeStartupScanRequest = Readonly<{

@@ -89,6 +89,7 @@ type DesktopSceneFrameValues = Readonly<{
   isSearchMode: boolean;
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
+  iconBadgesById: import("../domain/iconBadge.js").IconBadges;
   launchpadVisualAlpha: number;
   launchpadVisualTransform: SceneVisualTransform;
   pageGridMeasureStyle: ScenePageGridMeasureStyle;
@@ -145,6 +146,7 @@ const FRAME_FIELDS = Object.freeze({
     "dragHitDebugOptions",
     "dragHitDebugState",
     "launchTargetStatusById",
+    "iconBadgesById",
     "showMissingLaunchTargetBadge",
     "singleStageDiagnosticsOptions",
   ] as const),
@@ -333,6 +335,12 @@ const FIELD_VALIDATORS = {
   isSearchMode: requireBoolean,
   isTextlessMode: requireBoolean,
   launchTargetStatusById: requireLaunchTargetStatuses,
+  iconBadgesById: (value: unknown, path: string) => {
+    if (!isPlainRecord(value)) throw new TypeError(`${path} must be a record`);
+    for (const badge of Object.values(value)) {
+      if (!isPlainRecord(badge) || typeof badge.admin !== "boolean" || !["question", "prohibited", "none"].includes(String(badge.missing))) throw new TypeError(`${path} contains an invalid badge`);
+    }
+  },
   launchpadVisualAlpha: requireNumber,
   launchpadVisualTransform: requireVisualTransform,
   pageGridMeasureStyle: requirePageGridMeasureStyle,
@@ -350,7 +358,7 @@ function makeFrameGroup<Fields extends readonly FrameFieldName[]>(
   return Object.freeze(Object.fromEntries(
     fields.map((field) => [
       field,
-      snapshotContractValue(input[field], `DesktopSceneFrame.${field}`),
+      snapshotContractValue(field === "iconBadgesById" ? input[field] ?? {} : input[field], `DesktopSceneFrame.${field}`),
     ])
   ));
 }

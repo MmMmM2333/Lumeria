@@ -2348,6 +2348,7 @@ export class FolderOverlayLayer extends Container {
         isIconOpening: typeof state.isIconOpening === "function" ? state.isIconOpening : null,
         isTextlessMode: state.isTextlessMode,
         launchTargetStatusById: state.launchTargetStatusById,
+        iconBadgesById: state.iconBadgesById,
         selectedAppIds: state.selectedAppIds,
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge,
         stageHeight: state.height,

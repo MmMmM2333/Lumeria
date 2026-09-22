@@ -57,6 +57,7 @@ type DesktopLayerStateValues = Readonly<{
   isSearchMode: boolean;
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
+  iconBadgesById?: import("../../../domain/iconBadge.js").IconBadges | undefined;
   launchpadVisualAlpha: number;
   launchpadVisualTransform: SceneVisualTransform;
   pageTrackScrub: ScenePageTrackScrub | null;
@@ -106,6 +107,7 @@ const STRUCTURE_FIELDS = Object.freeze([
   "isSearchMode",
   "isTextlessMode",
   "launchTargetStatusById",
+  "iconBadgesById",
   "launchpadVisualAlpha",
   "launchpadVisualTransform",
   "pageTrackScrub",
@@ -137,6 +139,7 @@ const INTERACTION_FIELDS = Object.freeze([
   "isTextlessMode",
   "provisionalFolderRollback",
   "launchTargetStatusById",
+  "iconBadgesById",
   "showMissingLaunchTargetBadge",
   "singleStageFolderState",
   "stageRect",
@@ -230,12 +233,12 @@ function makeExactFrame<Fields extends readonly (keyof DesktopLayerStateValues)[
   return Object.freeze(input);
 }
 
-export function makeDesktopStructureFrame(input: DesktopStructureFrame): DesktopStructureFrame {
-  return makeExactFrame(input, STRUCTURE_FIELDS, "DesktopStructureFrame");
+export function makeDesktopStructureFrame(input: Omit<DesktopStructureFrame,"iconBadgesById"> & {iconBadgesById?: DesktopStructureFrame["iconBadgesById"]}): DesktopStructureFrame {
+  return makeExactFrame({...input,iconBadgesById:input.iconBadgesById??{}}, STRUCTURE_FIELDS, "DesktopStructureFrame");
 }
 
-export function makeDesktopInteractionFrame(input: DesktopInteractionFrame): DesktopInteractionFrame {
-  return makeExactFrame(input, INTERACTION_FIELDS, "DesktopInteractionFrame");
+export function makeDesktopInteractionFrame(input: Omit<DesktopInteractionFrame,"iconBadgesById"> & {iconBadgesById?: DesktopInteractionFrame["iconBadgesById"]}): DesktopInteractionFrame {
+  return makeExactFrame({...input,iconBadgesById:input.iconBadgesById??{}}, INTERACTION_FIELDS, "DesktopInteractionFrame");
 }
 
 export function makeDesktopVisualFrame(input: DesktopVisualFrame): DesktopVisualFrame {

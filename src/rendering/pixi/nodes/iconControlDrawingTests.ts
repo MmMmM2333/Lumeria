@@ -122,7 +122,7 @@ export function runIconControlDrawingTests() {
     "missing",
   );
   assert(badge.visible, "missing badge should show for missing status");
-  assert(textNode.text === "!" && textNode.style.fontSize === layout.fontSize, "missing badge should configure its text");
+  assert(textNode.text === "?" && textNode.style.fontSize === layout.fontSize, "missing badge should configure its text");
   assert(background.calls.some((call) => call[0] === "circle"), "missing badge should draw a circular background");
 
   const hiddenButton = {

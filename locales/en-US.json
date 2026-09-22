@@ -490,7 +490,6 @@
       "notice": {
         "detail": "Generate status dialogs and layout notices to inspect the real Fluent dialog and bottom-right notice styles used by Lumeria.",
         "transient": "Transient notice",
-        "recovery": "Recovery notice",
         "dialogs": {
           "section": "Status dialogs",
           "actions": {
@@ -1184,6 +1183,7 @@
       }
     },
     "launchpad": {
+      "target": {"missingTitle": "Launch target missing", "missingMessage": "Edit the launch path or check whether the file has been restored.", "openLocation": "Open file location", "openFolder": "Open containing folder", "openShortcutLocation": "Open shortcut location", "recheck": "Check again"},
       "search": {
         "placeholder": "Search",
         "label": "Search apps",
@@ -1610,14 +1610,16 @@
           "appCount": "{count} apps"
         },
         "overview": {
+
+          "missingStyle": {"question": "Question mark", "prohibited": "Prohibited", "none": "Do not show"},
           "appCount": "{count} apps",
           "scanReady": "Refresh apps from enabled scan sources",
           "scanDisabled": "Enable a scan source first",
           "scan": "Scan",
           "addDescription": "Add a custom app manually",
           "add": "Add",
-          "missingTarget": "Invalid launch target badge",
-          "missingTargetDescription": "Show a warning when an app's launch path or URL is unavailable",
+          "missingTarget": "Missing app indicator",
+          "missingTargetDescription": "Keep the original icon with an unavailable indicator.",
           "showMissingTarget": "Show invalid launch target badge"
         },
         "operations": {

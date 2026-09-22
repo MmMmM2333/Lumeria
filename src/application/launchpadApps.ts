@@ -87,6 +87,7 @@ export type LaunchpadAppsPersistenceFragment = Readonly<{
   scanKeywordAllowlist?: unknown;
   scanAppBlacklist?: unknown;
   showMissingLaunchTargetBadge?: unknown;
+  missingTargetStyle?: unknown;
 }>;
 export type LaunchpadAppsOptions = Readonly<{
   appendAppsToPages: (sourcePages: ReadonlyLaunchpadPages, apps: readonly LaunchpadApp[]) => LaunchpadPages;
@@ -122,8 +123,8 @@ export type LaunchpadAppsOptions = Readonly<{
 }>;
 
 type RuntimeKeywordExcludedApp = Readonly<{ app: LaunchpadApp; matchedKeyword: string }>;
-type LaunchTargetStatusRecord = Readonly<{ status: LaunchTargetStatus; targetSignature: string }>;
-type LaunchTargetCheck = Readonly<{ id: string; launchTarget: LaunchTarget; targetSignature: string }>;
+type LaunchTargetStatusRecord = Readonly<{ status: LaunchTargetStatus; targetSignature: string; details?: LaunchTargetCheckResult }>;
+type LaunchTargetCheck = Readonly<{ id: string; launchTarget: LaunchTarget; targetSignature: string; fallbackPaths?: readonly string[] }>;
 type ReadonlyLaunchTarget = NonNullable<ReadonlyLaunchpadApp["launchTarget"]>;
 type OperationErrorConfig = Readonly<{ title: string; message: string; suggestion: string }>;
 type FileInputEvent = Readonly<{ target?: (HTMLInputElement & { value: string }) | null }> | null | undefined;
@@ -164,6 +165,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const scanAppBlacklist = ref<ScanAppBlacklistEntry[]>([]);
   const excludedCatalogApps = ref<LaunchpadApp[]>([]);
   const showMissingLaunchTargetBadge = ref(true);
+  const missingTargetStyle = ref<"question" | "prohibited" | "none">("question");
   const launchTargetStatusRecordsById = ref<{ [id: string]: LaunchTargetStatusRecord }>({});
   // Native derived cells recompute on read. Preserve the public projection when
   // neither its source nor its status values changed, independently of the host.
@@ -1196,6 +1198,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       scanKeywordAllowlist: [...scanKeywordAllowlist.value],
       scanAppBlacklist: scanAppBlacklist.value.map((entry) => ({ ...entry })),
       showMissingLaunchTargetBadge: showMissingLaunchTargetBadge.value,
+      missingTargetStyle: missingTargetStyle.value,
     };
   }
 
@@ -1214,6 +1217,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     scanAppBlacklist.value = normalizeScanAppBlacklist(fragment.scanAppBlacklist);
     excludedCatalogApps.value = [];
     showMissingLaunchTargetBadge.value = fragment.showMissingLaunchTargetBadge !== false;
+    missingTargetStyle.value = fragment.missingTargetStyle === "prohibited" || fragment.missingTargetStyle === "none" ? fragment.missingTargetStyle : "question";
     syncManagedAppState();
   }
 
@@ -1234,6 +1238,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
         id: String(app.id),
         launchTarget: app.launchTarget as LaunchTarget,
         targetSignature: launchTargetSignature(app.launchTarget),
+        fallbackPaths: (app.sources ?? []).filter(source => source.state === "equivalent" && typeof source.absolutePath === "string").map(source => source.absolutePath as string),
       }));
   }
 
@@ -1259,16 +1264,16 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     const currentSignatureById = new Map(
       listLaunchTargets().map((app) => [app.id, app.targetSignature])
     );
-    launchTargetStatusRecordsById.value = Object.fromEntries(
+    launchTargetStatusRecordsById.value = {...launchTargetStatusRecordsById.value,...Object.fromEntries(
       (results || [])
-        .map((result) => {
+        .map((result): [string, LaunchTargetStatusRecord] | null => {
           const id = String(result?.id || "");
           const expectedSignature = requestedSignatureById.get(id);
           if (!id || !expectedSignature || currentSignatureById.get(id) !== expectedSignature) return null;
-          return [id, { status: result.status, targetSignature: expectedSignature }];
+          return [id, { status: result.status, targetSignature: expectedSignature, details: result }];
         })
         .filter((entry): entry is [string, LaunchTargetStatusRecord] => entry !== null)
-    );
+    )};
     return launchTargetStatusById.value;
   }
 
@@ -1421,6 +1426,20 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       toggleSelection: toggleScanResultSelection,
     }),
   });
+  let previousBadges: import("../domain/iconBadge.js").IconBadges = Object.freeze({});
+  const iconBadgesById = computed(() => {
+    const next: Record<string, import("../domain/iconBadge.js").IconBadge> = {};
+    for (const app of managedApps.value) {
+      const record = launchTargetStatusRecordsById.value[app.id];
+      const details = record?.targetSignature === launchTargetSignature(app.launchTarget) ? record.details : undefined;
+      next[app.id] = {
+        admin: false,
+        missing: showMissingLaunchTargetBadge.value && getLaunchTargetStatus(app) === "missing" ? missingTargetStyle.value : "none",
+      };
+    }
+    if (Object.keys(next).length !== Object.keys(previousBadges).length || Object.entries(next).some(([id,badge]) => previousBadges[id]?.admin !== badge.admin || previousBadges[id]?.missing !== badge.missing)) previousBadges=Object.freeze(next);
+    return previousBadges;
+  });
   const presentation = Object.freeze({
     importState: readonly(importState),
     excludedScanApps: readonly(excludedScanApps),
@@ -1431,6 +1450,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     scanKeywordBlacklist: readonly(scanKeywordBlacklist),
     scanRoots: readonly(scanRoots),
     showMissingLaunchTargetBadge: readonly(showMissingLaunchTargetBadge),
+    missingTargetStyle,
+    iconBadgesById,
   });
   const nativeIntegration = Object.freeze({
     applyLaunchTargetStatuses,
@@ -1442,7 +1463,11 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     markScanRootsScanned,
     pruneLaunchTargetStatuses,
     scanInitialCatalog,
-    shouldCheckLaunchTargets: () => showMissingLaunchTargetBadge.value,
+    shouldCheckLaunchTargets: () => true,
+    getTargetDetails: (id: string) => {
+      const app=managedApps.value.find(app=>app.id===id),record=launchTargetStatusRecordsById.value[id];
+      return app&&record?.targetSignature===launchTargetSignature(app.launchTarget)?record.details:undefined;
+    },
   });
 
   return {

@@ -63,9 +63,10 @@ export type BackgroundLayoutContext = Readonly<{
 }>;
 export type AppIconChoice = Readonly<{ id: string; iconPath: string; iconDataUrl: string }>;
 export type CachedCustomIconResult = Readonly<{ iconPath: string; iconDataUrl: string }>;
-export type LaunchTargetCheckRequest = Readonly<{ id: string; launchTarget: LaunchTarget }>;
+export type LaunchTargetCheckRequest = Readonly<{ id: string; launchTarget: LaunchTarget; fallbackPaths?: readonly string[] }>;
 export type LaunchTargetCheckStatus = "ok" | "missing" | "unknown";
-export type LaunchTargetCheckResult = Readonly<{ id: string; status: LaunchTargetCheckStatus }>;
+export type LaunchTargetDetails = Readonly<{ canElevate: boolean; requiresAdmin: boolean; adminRequirementKnown: boolean; fileLocation: string | null; locationIsFolder: boolean; shortcutLocation: string | null }>;
+export type LaunchTargetCheckResult = Readonly<{ id: string; status: LaunchTargetCheckStatus } & Partial<LaunchTargetDetails>>;
 export type LaunchableApp = Readonly<{ id: string; name?: string }>;
 export type LaunchFailureReport = Readonly<{
   kind: string;

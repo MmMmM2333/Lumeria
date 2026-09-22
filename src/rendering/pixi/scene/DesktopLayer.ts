@@ -885,6 +885,7 @@ function makePointerOnlyPlanSnapshot(
       state.focusedIcon,
       state.iconGesturePresentation,
       state.launchTargetStatusById,
+      state.iconBadgesById,
       state.getDesktopPageRenderMode,
       state.getVisibleDesktopPage,
       state.isIconOpening,
@@ -2249,6 +2250,7 @@ export class DesktopLayer extends Container {
       iconSize: state.iconSize,
       isTextlessMode: state.isTextlessMode,
       launchTargetStatusById: state.launchTargetStatusById,
+      iconBadgesById: state.iconBadgesById,
       releasePrewarmCount: state.isBatchSelectionActive
         ? Math.max(
           1,

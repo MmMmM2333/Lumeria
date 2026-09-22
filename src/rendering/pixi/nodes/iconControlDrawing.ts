@@ -40,9 +40,29 @@ export function drawMissingBadge(
   textNode: Text,
   iconSize: number,
   status: string | null | undefined,
+  spec?: import("../../../domain/iconBadge.js").IconBadge | null,
 ): void {
   badge.visible = false;
   background.clear();
+  textNode.visible = true;
+  if (spec) {
+    badge.position.set(0,0);
+    badge.visible = spec.admin || spec.missing !== "none";
+    textNode.visible = spec.missing === "question";
+    if (spec.missing === "question") {
+      textNode.text="?";textNode.style.fontSize=iconSize*0.85;textNode.style.lineHeight=iconSize;
+      textNode.style.fill=0xffffff;textNode.style.stroke={color:0x263238,width:Math.max(1,iconSize*0.025)};
+      textNode.alpha=0.8;textNode.position.set(0,0);
+    } else if (spec.missing === "prohibited") {
+      background.circle(0,0,iconSize*0.46).fill({color:0xffffff,alpha:0.25});
+      const r=iconSize*0.29,w=iconSize*0.075,d=r*0.707;
+      for(const [color,width,alpha] of [[0x263238,w+2,0.35],[0xffffff,w,0.78]] as const){
+        background.circle(0,0,r).moveTo(-d,-d).lineTo(d,d).stroke({color,width,alpha,cap:"round"});
+      }
+    }
+    return;
+  }
+  textNode.alpha=1;
   if (!status || status !== "missing") return;
 
   const layout = getMissingBadgeLayout(iconSize);
@@ -52,7 +72,7 @@ export function drawMissingBadge(
     .circle(0, 0, layout.radius)
     .fill({ color: 0xb84a54, alpha: 1 })
     .stroke({ color: 0xffffff, alpha: 0.92, width: Math.max(1, layout.radius * 0.18) });
-  textNode.text = "!";
+  textNode.text = "?";
   textNode.style.fontSize = layout.fontSize;
   textNode.style.lineHeight = layout.fontSize;
   textNode.position.set(0, layout.textOffsetY);
