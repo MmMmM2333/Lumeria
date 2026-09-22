@@ -3,8 +3,6 @@ use png::{BitDepth, ColorType, Encoder};
 use std::{
     collections::HashSet,
     fs,
-    fs::File,
-    io::BufWriter,
     path::{Path, PathBuf},
     slice,
 };
@@ -54,26 +52,16 @@ pub(crate) fn cache_app_icon_for_identity(
     app_id: &str,
     cache_identity: &str,
 ) -> Option<String> {
-    let icon_path = icon_dir.join(format!("{app_id}-v4.png"));
-    let identity_path = icon_dir.join(format!("{app_id}-v4.identity"));
-    if icon_path.exists()
-        && fs::read_to_string(&identity_path).is_ok_and(|identity| identity == cache_identity)
-    {
+    let revision = icon_cache_revision(path, cache_identity).ok()?;
+    // Changing the URL also invalidates in-memory textures. Older files may still
+    // be referenced by user-selected icons and must not be removed here.
+    let icon_path = icon_dir.join(format!("{app_id}-v5-{revision}.png"));
+    if icon_path.exists() {
         return Some(icon_path.to_string_lossy().to_string());
     }
 
     match extract_icon_png(path, &icon_path) {
-        Ok(()) => {
-            if let Err(error) = fs::write(&identity_path, cache_identity) {
-                log::warn!(
-                    target: "icons",
-                    "Failed to write app icon cache identity {}: {}",
-                    identity_path.display(),
-                    error
-                );
-            }
-            Some(icon_path.to_string_lossy().to_string())
-        }
+        Ok(()) => Some(icon_path.to_string_lossy().to_string()),
         Err(error) => {
             log::debug!(
                 target: "icons",
@@ -123,11 +111,12 @@ pub(crate) fn cache_app_icon_choices(
 ) -> Result<Vec<PathBuf>, String> {
     let mut output_paths = Vec::new();
     let mut seen = HashSet::new();
+    let revision = icon_cache_revision(path, "choices-v2")?;
 
     for (source_index, source) in icon_choice_sources(path)?.into_iter().enumerate() {
         for icon_index in icon_choice_indexes(&source.path, source.icon_index) {
             let output_path = icon_dir.join(format!(
-                "{app_id}-choice-v1-{source_index}-{}.png",
+                "{app_id}-choice-v2-{revision}-{source_index}-{}.png",
                 icon_index_key(icon_index)
             ));
             if !output_path.exists()
@@ -145,6 +134,30 @@ pub(crate) fn cache_app_icon_choices(
     }
 
     Ok(output_paths)
+}
+
+#[cfg(target_os = "windows")]
+fn icon_cache_revision(path: &Path, identity: &str) -> Result<String, String> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(identity.as_bytes());
+    fn add_file(hasher: &mut blake3::Hasher, path: &Path) -> Result<(), String> {
+        let metadata = fs::metadata(path).map_err(|error| {
+            format!("Failed to inspect icon source {}: {error}", path.display())
+        })?;
+        let modified = metadata
+            .modified()
+            .map_err(|error| format!("Failed to read icon source modification time: {error}"))?;
+        hasher.update(format!("\n{:?}|{}|{modified:?}", path, metadata.len()).as_bytes());
+        Ok(())
+    }
+    add_file(&mut hasher, path)?;
+    for source in icon_choice_sources(path)? {
+        hasher.update(format!("\nindex:{:?}", source.icon_index).as_bytes());
+        if source.path != path {
+            add_file(&mut hasher, &source.path)?;
+        }
+    }
+    Ok(hasher.finalize().to_hex()[..32].to_string())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -584,7 +597,8 @@ fn select_group_icon_name(
                 return Ok(name);
             }
         } else {
-            let resource_id = icon_index.unsigned_abs() as u16;
+            let resource_id = u16::try_from(icon_index.unsigned_abs())
+                .map_err(|_| "Icon resource ID is out of range".to_string())?;
             if let Some(name) = names
                 .iter()
                 .find(|name| matches!(name, ResourceName::Id(id) if *id == resource_id))
@@ -593,67 +607,131 @@ fn select_group_icon_name(
                 return Ok(name);
             }
         }
+        return Err(format!("Icon group index {icon_index} was not found"));
     }
-    if let Some(name) = names
-        .iter()
-        .find(|name| matches!(name, ResourceName::Id(1)))
-        .cloned()
-    {
-        return Ok(name);
-    }
+    // Resource IDs are application-defined; ID 1 can be a document icon.
     Ok(names[0].clone())
 }
 
 #[cfg(target_os = "windows")]
 fn write_best_icon_candidate(
-    mut candidates: Vec<IconCandidate>,
+    candidates: Vec<IconCandidate>,
     output_path: &Path,
 ) -> Result<(), String> {
-    if candidates.is_empty() {
-        return Err("No icon candidates found".to_string());
-    }
-
+    // Directory dimensions are only hints (0 encodes 256). Real applications
+    // also store 512px and larger frames behind those entries.
+    let mut candidates: Vec<_> = candidates
+        .into_iter()
+        .filter_map(
+            |mut candidate| match icon_image_dimensions(&candidate.data) {
+                Ok((width, height, bit_count)) => {
+                    candidate.width = width;
+                    candidate.height = height;
+                    // Some ICO writers expand 4/8-bit artwork into RGBA PNGs.
+                    // Retain the directory's lower color-depth hint so those
+                    // dithered variants cannot displace the full-color frame.
+                    candidate.bit_count = if candidate.is_png && candidate.bit_count != 0 {
+                        bit_count.min(candidate.bit_count)
+                    } else {
+                        bit_count
+                    };
+                    Some(candidate)
+                }
+                Err(error) => {
+                    log::debug!(target: "icons", "Skipping invalid icon frame: {error}");
+                    None
+                }
+            },
+        )
+        .collect();
     candidates.sort_by_key(|candidate| {
-        let area = candidate.width.saturating_mul(candidate.height);
-        let kind_score = if candidate.is_png { 2 } else { 1 };
-        (kind_score, area, candidate.bit_count)
+        std::cmp::Reverse((
+            candidate.width * candidate.height,
+            candidate.bit_count,
+            candidate.is_png,
+        ))
     });
-
-    let selected = candidates
-        .iter()
-        .filter(|candidate| candidate.is_png)
-        .max_by_key(|candidate| {
-            (
-                candidate.width.saturating_mul(candidate.height),
-                candidate.bit_count,
-            )
-        })
-        .or_else(|| {
-            candidates
-                .iter()
-                .filter(|candidate| candidate.width <= 48 && candidate.height <= 48)
-                .max_by_key(|candidate| {
-                    (
-                        candidate.width.saturating_mul(candidate.height),
-                        candidate.bit_count,
-                    )
-                })
-        })
-        .or_else(|| {
-            candidates.iter().min_by_key(|candidate| {
-                (
-                    candidate.width.saturating_mul(candidate.height),
-                    candidate.bit_count,
-                )
-            })
-        })
-        .ok_or_else(|| "No icon candidates found".to_string())?;
-
-    if selected.is_png {
-        write_bytes(output_path, &selected.data)
-    } else {
-        write_dib_icon_as_png(&selected.data, selected.width, selected.height, output_path)
+    let mut last_error = "No valid icon candidates found".to_string();
+    for candidate in candidates {
+        if candidate.is_png {
+            if let Err(error) = validate_icon_png(&candidate.data) {
+                last_error = error;
+                continue;
+            }
+            return write_bytes(output_path, &candidate.data);
+        }
+        match decode_dib_icon(&candidate.data) {
+            Ok(image) => {
+                return write_rgba_png(output_path, image.width, image.height, &image.pixels)
+            }
+            Err(error) => last_error = error,
+        }
     }
+    Err(last_error)
+}
+
+#[cfg(target_os = "windows")]
+const MAX_ICON_DIMENSION: u32 = 4096;
+#[cfg(target_os = "windows")]
+const MAX_ICON_BYTES: usize = 64 * 1024 * 1024;
+
+#[cfg(target_os = "windows")]
+fn icon_image_dimensions(data: &[u8]) -> Result<(u32, u32, u16), String> {
+    let (width, height, bit_count) = if is_png(data) {
+        if data.len() < 33 || &data[12..16] != b"IHDR" {
+            return Err("Invalid icon PNG header".into());
+        }
+        let width = u32::from_be_bytes(data[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(data[20..24].try_into().unwrap());
+        let samples = match data[25] {
+            0 | 3 => 1,
+            2 => 3,
+            4 => 2,
+            6 => 4,
+            _ => return Err("Invalid PNG color type".into()),
+        };
+        (width, height, u16::from(data[24]) * samples)
+    } else {
+        let header_size = read_u32(data, 0)? as usize;
+        if !matches!(header_size, 40 | 108 | 124) || data.len() < header_size {
+            return Err("Unsupported icon bitmap header".into());
+        }
+        let width = read_i32(data, 4)?;
+        let raw_height = read_i32(data, 8)?.unsigned_abs();
+        let bit_count = read_u16(data, 14)?;
+        if width <= 0 || raw_height == 0 || raw_height % 2 != 0 || read_u16(data, 12)? != 1 {
+            return Err("Invalid icon bitmap dimensions or planes".into());
+        }
+        if read_u32(data, 16)? != BI_RGB.0 || !matches!(bit_count, 1 | 4 | 8 | 24 | 32) {
+            return Err("Unsupported icon bitmap compression or bit depth".into());
+        }
+        (width as u32, raw_height / 2, bit_count)
+    };
+    if width == 0 || height == 0 || width > MAX_ICON_DIMENSION || height > MAX_ICON_DIMENSION {
+        return Err("Icon dimensions exceed supported limits".into());
+    }
+    Ok((width, height, bit_count))
+}
+
+#[cfg(target_os = "windows")]
+fn validate_icon_png(data: &[u8]) -> Result<(), String> {
+    icon_image_dimensions(data)?;
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
+    decoder.set_limits(png::Limits {
+        bytes: MAX_ICON_BYTES,
+    });
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| format!("Invalid icon PNG: {error}"))?;
+    let size = reader.output_buffer_size();
+    if size > MAX_ICON_BYTES {
+        return Err("Icon PNG exceeds decoded size limit".into());
+    }
+    let mut pixels = vec![0; size];
+    reader
+        .next_frame(&mut pixels)
+        .map_err(|error| format!("Invalid icon PNG pixels: {error}"))?;
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -714,35 +792,12 @@ fn read_resource(module: HMODULE, name: PCWSTR, resource_type: PCWSTR) -> Result
 }
 
 #[cfg(target_os = "windows")]
-fn write_dib_icon_as_png(
-    data: &[u8],
-    directory_width: u32,
-    directory_height: u32,
-    output_path: &Path,
-) -> Result<(), String> {
+fn decode_dib_icon(data: &[u8]) -> Result<ShellIconBitmap, String> {
+    let (width, height, bit_count) = icon_image_dimensions(data)?;
     let header_size = read_u32(data, 0)? as usize;
-    if header_size < 40 || data.len() < header_size {
-        return Err("Unsupported icon bitmap header".to_string());
-    }
-
-    let dib_width = read_i32(data, 4)?.unsigned_abs();
-    let raw_height = read_i32(data, 8)?.unsigned_abs();
-    let bit_count = read_u16(data, 14)?;
-    let colors_used = read_u32(data, 32).unwrap_or(0);
-    let width = if directory_width > 0 {
-        directory_width
-    } else {
-        dib_width
-    };
-    let height = if directory_height > 0 {
-        directory_height
-    } else if raw_height > 1 {
-        raw_height / 2
-    } else {
-        raw_height
-    };
-    if width == 0 || height == 0 {
-        return Err("Icon bitmap has invalid dimensions".to_string());
+    let colors_used = read_u32(data, 32)?;
+    if bit_count <= 8 && colors_used > (1u32 << bit_count) {
+        return Err("Icon bitmap palette is too large".into());
     }
 
     let palette_entries = if bit_count <= 8 {
@@ -768,6 +823,9 @@ fn write_dib_icon_as_png(
             let row_offset = xor_offset + row * xor_stride;
             (0..width as usize).any(|column| data[row_offset + column * 4 + 3] != 0)
         });
+    if !has_alpha && data.len() < mask_offset + mask_stride * height as usize {
+        return Err("Icon bitmap transparency mask is truncated".into());
+    }
     let mut rgba = vec![0u8; (width as usize) * (height as usize) * 4];
 
     for y in 0..height as usize {
@@ -801,7 +859,11 @@ fn write_dib_icon_as_png(
         }
     }
 
-    write_rgba_png(output_path, width, height, &rgba)
+    Ok(ShellIconBitmap {
+        width,
+        height,
+        pixels: rgba,
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -912,24 +974,33 @@ fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
             )
         })?;
     }
-    fs::write(path, bytes)
-        .map_err(|error| format!("Failed to write icon file {}: {error}", path.display()))
+    // A failed write must not leave a partial file that looks like a cache hit.
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
+    let temporary = path.with_extension(format!(
+        "{}-{}.tmp",
+        std::process::id(),
+        NEXT_WRITE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|error| format!("Failed to create icon temporary file: {error}"))?;
+    let result = file.write_all(bytes);
+    drop(file);
+    let result = result.and_then(|()| fs::rename(&temporary, path));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result.map_err(|error| format!("Failed to write icon file {}: {error}", path.display()))
 }
 
 #[cfg(target_os = "windows")]
 fn write_rgba_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create icon output directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let file = File::create(path)
-        .map_err(|error| format!("Failed to create icon file {}: {error}", path.display()))?;
-    let writer = BufWriter::new(file);
-    let mut encoder = Encoder::new(writer, width, height);
+    let mut bytes = Vec::new();
+    let mut encoder = Encoder::new(&mut bytes, width, height);
     encoder.set_color(ColorType::Rgba);
     encoder.set_depth(BitDepth::Eight);
     let mut png_writer = encoder
@@ -937,7 +1008,11 @@ fn write_rgba_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<(
         .map_err(|error| format!("Failed to write PNG header: {error}"))?;
     png_writer
         .write_image_data(rgba)
-        .map_err(|error| format!("Failed to write PNG data: {error}"))
+        .map_err(|error| format!("Failed to write PNG data: {error}"))?;
+    png_writer
+        .finish()
+        .map_err(|error| format!("Failed to finish PNG: {error}"))?;
+    write_bytes(path, &bytes)
 }
 
 #[cfg(target_os = "windows")]
@@ -1081,36 +1156,5 @@ fn read_hbitmap_rgba(
 }
 
 #[cfg(all(test, target_os = "windows"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn app_icon_cache_is_invalidated_when_the_primary_catalog_source_changes() {
-        let dir = std::env::temp_dir().join(format!(
-            "lumeria-app-icon-cache-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system time")
-                .as_nanos()
-        ));
-        fs::create_dir_all(&dir).expect("create icon cache test directory");
-        let icon_path = dir.join("catalog-app-v4.png");
-        let identity_path = dir.join("catalog-app-v4.identity");
-        fs::write(&icon_path, b"cached-icon").expect("write cached icon");
-        fs::write(&identity_path, "source:user").expect("write cached identity");
-        let missing_source = dir.join("missing-source.lnk");
-
-        assert!(
-            cache_app_icon_for_identity(&missing_source, &dir, "catalog-app", "source:user")
-                .is_some(),
-            "a matching primary source identity should reuse the cached icon"
-        );
-        assert!(
-            cache_app_icon_for_identity(&missing_source, &dir, "catalog-app", "source:custom")
-                .is_none(),
-            "a changed primary source identity must not reuse the previous source icon"
-        );
-
-        fs::remove_dir_all(dir).expect("remove icon cache test directory");
-    }
-}
+#[path = "icons_tests.rs"]
+mod tests;
