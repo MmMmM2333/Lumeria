@@ -834,6 +834,7 @@ try {
   const commitEditedPages = (pages: LaunchpadPages): void => {
     apps?.imports.observe(layoutState.presentation.pages.value,pages);
     layoutState.commitPages(pages);
+    folderFlow.reconcile(snapshotContractValue(pages.flat()) as SceneItem[]);
     layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
     const config = layoutState.captureConfiguration();
     const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),...apps?.persistence.capture(),
@@ -887,6 +888,7 @@ try {
     reclampPageIndices:()=>layoutState.commitPageIndex(layoutState.presentation.pageIndex.value),schedulePageGridMetrics:requestSceneRender,
     openScanKeywordSettings:()=>{settingsNavigation.selectTab("apps");appsPageState.keywords=true;if(nativeSettings.shell)nativeSettings.redraw();else openSettings();},
     clearFocusedIcon:()=>setFocusedIcon(null),
+    focusedIcon:{get value(){return currentFrame.interaction.focusedIcon;}},
     openWarningDialog:config=>management.warning({...config,onConfirm:async()=>{config.onConfirm?.();await saves.flush();}}),
     showTransientNotice:notice=>notices.showTransientNotice(notice),
   },createNativeStateHost(changedApps));

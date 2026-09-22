@@ -28,6 +28,7 @@ export type NativeFolderFlow = Readonly<{
   notifyInternalActivity(active: boolean, folderId: string | null): void;
   commitPresented(closingFolderId: string | null): void;
   open(item: SceneItem): boolean;
+  reconcile(items: readonly SceneItem[]): void;
   setPageIndex(pageIndex: number): boolean;
   snapshot(): NativeFolderPresentation;
 }>;
@@ -218,6 +219,19 @@ export function createNativeFolderFlow(
       if (pendingOpen) open(pendingOpen);
     },
     open,
+    reconcile(items: readonly SceneItem[]): void {
+      if (destroyed) return;
+      if (pendingOpen) {
+        const next = items.find(item => item.id === pendingOpen!.id && item.type === "folder");
+        pendingOpen = next ? requireFolder(next) : null;
+      }
+      if (!renderedFolder || isClosing) return;
+      const next = items.find(item => item.id === renderedFolder!.id && item.type === "folder");
+      if (!next) { close(); return; }
+      renderedFolder = requireFolder(next);
+      folderPageIndex = Math.max(0, Math.min(folderPageIndex, renderedFolder.childPages.length - 1));
+      publish();
+    },
     setPageIndex,
     snapshot,
   });
