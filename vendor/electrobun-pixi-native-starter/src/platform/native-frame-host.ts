@@ -198,6 +198,7 @@ if (configuredLibrary && !isAbsolute(configuredLibrary)) {
 	throw new Error("ELECTROBUN_PIXI_NATIVE_FRAME_DLL must be an absolute path");
 }
 const library = (BunFFI as any).dlopen(configuredLibrary || join(import.meta.dir, "native-frame.dll"), {
+  pixi_set_display_change_callback: { args: ["ptr"], returns: "void" },
 	pixi_host_abi_version: { args: [], returns: "u32" },
 	pixi_host_capabilities: { args: [], returns: "u64" },
 	pixi_submit_bundles: {
@@ -252,6 +253,7 @@ const library = (BunFFI as any).dlopen(configuredLibrary || join(import.meta.dir
 });
 
 const symbols = library.symbols as {
+  pixi_set_display_change_callback(callback:Pointer|null):void;
 	pixi_host_abi_version(): number;
 	pixi_host_capabilities(): bigint | number;
 	pixi_submit_bundles(
@@ -431,6 +433,8 @@ const setInputWake = (handler: () => void) => {
 };
 
 export const nativeFrameHost = {
+  /** Callback is native, nonblocking, and must remain resident until process exit. */
+  setDisplayChangeCallback(callback:Pointer|null){symbols.pixi_set_display_change_callback(callback);},
 	abiVersion,
 	capabilities,
 

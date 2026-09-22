@@ -1,0 +1,14 @@
+[package]
+name = "native-frame"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "../../src/platform/native-frame.rs"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3

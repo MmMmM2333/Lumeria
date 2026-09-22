@@ -1,3 +1,5 @@
+import { createNativeHotCorners } from "../nativeHotCorners.js";
+import { nativeHotCorners } from "../nativeHotCornersLibrary.js";
 import {NativeNewAppsButton} from "../../rendering/native/NativeNewAppsButton.js";
 import {createNativeOnboarding} from "../../rendering/native/NativeOnboarding.js";
 import { readFileSync } from "node:fs";
@@ -269,6 +271,8 @@ const folderLayout = Object.freeze({
   get rows(){return layoutState.presentation.folderRows.value;},
 });
 
+let hotCornerActivate: (point:{x:number;y:number},toggle:boolean)=>void=()=>{};
+const hotCorners=createNativeHotCorners(nativeHotCorners,event=>{logNativeRuntime("hot-corner-trigger",event);hotCornerActivate(event,event.toggle);},error=>logNativeRuntime("hot-corner-error",String(error)));
 let toggleLaunchpad=()=>{};
 let shortcutLaunchpad=()=>{};
 const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
@@ -311,7 +315,7 @@ const settings=createLaunchpadSettings({
       return selected.value[0]?nativeData.background({path:selected.value[0]}):null;
     },
   },
-  mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},registerShortcut:async value=>mainShortcut.apply(value),
+  mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},registerShortcut:async value=>mainShortcut.apply(value),applyHotCorners:config=>hotCorners.apply(config),
     setMode:request=>{
       app.setWindowMode(request.mode,request.fullscreenOverscanEnabled?1:0);return {ok:true};
     },
@@ -832,6 +836,7 @@ try {
     // back to its finally. Stop queued commits synchronously at this boundary.
     if (state === "closing" || state === "closed") {
       try{liveDesktop.dispose();}catch(error){logNativeRuntime("live-desktop-stop-error",error);}
+      hotCorners.dispose();
       sceneUpdates.dispose();
       cancelNativeGesture();
       resolveClosed();
@@ -1041,6 +1046,8 @@ try {
   preserveViewAfterLocation=visibility.preserveViewOnNextShow;
   dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
+  hotCornerActivate=visibility.hotCorner;
+  try{hotCorners.apply(settings.presentation.hotCorners.value);}catch(error){reportNativeError(error);}
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
     if(!outcome.ok){
@@ -1680,6 +1687,7 @@ try {
   disposeLaunchFlow();
   desktopBackground.destroy();
   newAppsButton.destroy({children:true});
+  hotCorners.dispose();
   mainShortcut.dispose();
   nativeSettings.dispose();
   branding.destroy();

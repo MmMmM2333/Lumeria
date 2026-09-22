@@ -144,7 +144,7 @@ export interface NativePixiApplication {
   readonly nativeWindowHandle: number;
   readonly nativeSurfaceHandle: number;
   readonly nativeDisplayId: number;
-  prepareShortcutActivation(): Readonly<{foreground:boolean;displayChanged:boolean}>;
+  prepareWindowActivation(targetPoint?:Readonly<{x:number;y:number;displayId?:number}>,preserveForeground?:boolean): Readonly<{foreground:boolean;displayChanged:boolean}>;
   readonly supportsColorDialog: boolean;
   chooseColor(color: number): Promise<NativePlatformResult<number>>;
   setWindowMode(mode: "fullscreen" | "windowed", overscanPixels?: number): void;
@@ -825,7 +825,7 @@ export async function createNativePixiApplication(
       get nativeWindowHandle(){if(closed)throw new Error("Window is closed");return windowPresentation?.handle??0;},
       get nativeSurfaceHandle(){if(closed)throw new Error("Window is closed");return Number(surfaceWindow);},
       get nativeDisplayId(){if(closed)throw new Error("Window is closed");return windowPresentation?.displayId??0;},
-      prepareShortcutActivation(){if(closed||state==="closing")throw new Error("Window is closed");if(!windowPresentation)throw new Error("Shortcut display activation is unavailable");return windowPresentation.prepareShortcutActivation();},
+      prepareWindowActivation(targetPoint?:Readonly<{x:number;y:number;displayId?:number}>,preserveForeground=false){if(closed||state==="closing")throw new Error("Window is closed");if(!windowPresentation)throw new Error("Window display activation is unavailable");return windowPresentation.prepareWindowActivation(targetPoint,preserveForeground);},
       setWindowPresentation(material,appearance){if(!windowPresentation)throw new Error("Window presentation is unavailable");windowPresentation.set(material,appearance);},
       supportsWindowIcon:windowIcon!==null,
       setWindowIcon(png){if(!windowIcon)throw new Error("Window icons are unavailable on this platform");windowIcon.set(png);},

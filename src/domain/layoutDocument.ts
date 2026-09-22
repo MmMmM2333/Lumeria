@@ -1,3 +1,4 @@
+import { assertHotCornerSettings, type HotCornerSettings } from "./hotCorners.js";
 import {assertAppImportState,type AppImportState} from "./appImportState.js";
 /**
  * Closed-world persisted layout contract shared by the renderer and native store.
@@ -144,6 +145,7 @@ export type LayoutSettings = {
   fullscreenOverscanEnabled: boolean;
   showCustomTitlebar: boolean;
   mainWindowShortcut: string | null;
+  hotCorners?: HotCornerSettings;
   localePreference: string;
   settingsThemePreference: "system" | "dark" | "light";
   launchpadIconVariant: "light" | "dark" | "pastelLight" | "pastelDark";
@@ -235,6 +237,7 @@ const SETTINGS_FIELDS = [
   "fullscreenOverscanEnabled",
   "showCustomTitlebar",
   "mainWindowShortcut",
+  "hotCorners",
   "localePreference",
   "settingsThemePreference",
   "launchpadIconVariant",
@@ -459,7 +462,8 @@ function assertAcrylicParameters(value: unknown, path: string): void {
 function assertLayoutSettings(value: unknown): void {
   const path = "LayoutDocument.settings";
   const settings = requireObject(value, path);
-  assertExactFields(settings, SETTINGS_FIELDS, path);
+  assertExactFields(settings, SETTINGS_FIELDS, path, SETTINGS_FIELDS.filter(key => key !== "hotCorners"));
+  if (Object.hasOwn(settings, "hotCorners")) assertHotCornerSettings(settings.hotCorners);
 
   requireIntegerInRange(settings.gridRows, 2, 8, `${path}.gridRows`);
   requireIntegerInRange(settings.gridCols, 3, 10, `${path}.gridCols`);

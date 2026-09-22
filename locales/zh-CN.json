@@ -1331,6 +1331,32 @@
         "categories": "设置分类"
       },
       "general": {
+        "hotCorners": {
+          "custom": "自定义…",
+          "customTitle": "自定义停留时间",
+          "customField": "停留时间（毫秒）",
+          "customRange": "请输入 0–10000 的整数，0 表示立即触发。",
+          "pauseHint": "触发角所在屏幕有全屏应用时，不响应触发。普通最大化窗口不受影响。",
+          "toggleHint": "Lumeria 已在前台时，移出角落再进入可将其隐藏。关闭后，触发角只用于呼出。",
+          "seams": "在屏幕接缝处也触发",
+          "seamsHint": "开启后，显示器接缝处的角落也可触发。移出相邻热区后才能再次触发。",
+          "title": "触发角",
+          "enabled": "启用触发角",
+          "description": "将鼠标移到选中的屏幕角落，呼出 Lumeria。",
+          "topLeft": "左上角",
+          "topRight": "右上角",
+          "bottomLeft": "左下角",
+          "bottomRight": "右下角",
+          "delay": "停留时间",
+          "immediate": "立即",
+          "modifier": "按住修饰键",
+          "none": "无",
+          "pause": "全屏使用时暂停触发角",
+          "toggle": "再次触发可隐藏 Lumeria",
+          "hint": "所选角落适用于每块显示器。",
+          "selectCorner": "请至少选择一个角落。",
+          "unavailable": "当前平台不支持触发角。"
+        },
         "title": "通用",
         "startup": {
         "description": "登录 Windows 后自动启动，并驻留托盘",

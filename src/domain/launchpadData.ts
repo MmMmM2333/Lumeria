@@ -1,3 +1,4 @@
+import { readHotCornerSettings } from "./hotCorners.js";
 import {emptyAppImportState,copyAppImportState} from "./appImportState.js";
 import {
   clamp,
@@ -798,6 +799,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         fullscreenOverscanEnabled,
         showCustomTitlebar,
         mainWindowShortcut,
+        hotCorners: readHotCornerSettings(state.hotCorners),
         localePreference: normalizeLocalePreference(state.localePreference),
         settingsThemePreference: normalizeAppearancePreference(state.settingsThemePreference),
         launchpadIconVariant: normalizeLaunchpadIconVariant(state.launchpadIconVariant),

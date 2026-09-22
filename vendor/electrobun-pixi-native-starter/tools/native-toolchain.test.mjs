@@ -85,9 +85,12 @@ test("native frame receipts bind output to current source inputs", () => {
   try {
     const sources = [{ path: "frame.rs", sha256: "a".repeat(64) }];
     writeFileSync(join(root, "native-frame.dll"), "fixture");
-    const recipe = ["--crate-type", "cdylib", "--target", "x86_64-pc-windows-msvc", "src/platform/native-frame.rs", "-C", "opt-level=3", "-C", "link-arg=/Brepro"];
+    const recipe = ["build", "--manifest-path", "native/frame/Cargo.toml", "--release", "--locked", "--target", "x86_64-pc-windows-msvc"];
     writeFileSync(join(root, "build.json"), JSON.stringify({ schemaVersion: 1, target: "x86_64-pc-windows-msvc", recipe, sources, binarySha256: digest(join(root, "native-frame.dll")) }));
     verifyNativeFrame(root, sources);
+    writeFileSync(join(root, "build.json"), JSON.stringify({ schemaVersion: 1, target: "x86_64-pc-windows-msvc", recipe: recipe.slice(1), sources, binarySha256: digest(join(root, "native-frame.dll")) }));
+    assert.throws(() => verifyNativeFrame(root, sources), /changed/, "a stale build recipe must rebuild the DLL");
+    writeFileSync(join(root, "build.json"), JSON.stringify({ schemaVersion: 1, target: "x86_64-pc-windows-msvc", recipe, sources, binarySha256: digest(join(root, "native-frame.dll")) }));
     assert.throws(() => verifyNativeFrame(root, [{ path: "frame.rs", sha256: "b".repeat(64) }]), /changed/);
     writeFileSync(join(root, "native-frame.dll"), "modified");
     assert.throws(() => verifyNativeFrame(root, sources), /changed/);

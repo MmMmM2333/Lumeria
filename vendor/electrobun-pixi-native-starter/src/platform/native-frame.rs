@@ -1,5 +1,12 @@
 #![allow(non_snake_case)]
 
+// Native listeners must remain resident and must not block or call window APIs.
+static DISPLAY_CHANGE_CALLBACK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[no_mangle]
+pub extern "C" fn pixi_set_display_change_callback(callback: usize) {
+    DISPLAY_CHANGE_CALLBACK.store(callback, std::sync::atomic::Ordering::Release);
+}
+
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::collections::HashSet;
@@ -2270,6 +2277,11 @@ unsafe fn input_subclass_proc_inner(
             unsafe { queue_state_event(state, window, INPUT_DPI_CHANGED) };
         }
         0x007e if unsafe { root_window(window) } == window => {
+            let callback = DISPLAY_CHANGE_CALLBACK.load(std::sync::atomic::Ordering::Acquire);
+            if callback != 0 {
+                let notify: extern "C" fn() = unsafe { std::mem::transmute(callback) };
+                notify();
+            }
             unsafe { queue_state_event(state, window, INPUT_DISPLAY_CHANGED) };
         }
         0x0218 if unsafe { root_window(window) } == window => {
@@ -4341,7 +4353,7 @@ mod tests {
             }
         }
 
-        let read_path = b"src/platform/native-frame.rs";
+        let read_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/platform/native-frame.rs").as_bytes();
         let read_id = unsafe {
             pixi_start_job(1, read_path.as_ptr(), read_path.len() as u64)
         };
@@ -4349,7 +4361,7 @@ mod tests {
         let (read_meta, read_data) = wait_for_job(read_id);
         assert_eq!((read_meta.event_kind, &read_data[..2]), (JOB_RESULT, &b"#!"[..]));
 
-        let scan_path = b"src";
+        let scan_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src").as_bytes();
         let scan_id = unsafe {
             pixi_start_job(2, scan_path.as_ptr(), scan_path.len() as u64)
         };

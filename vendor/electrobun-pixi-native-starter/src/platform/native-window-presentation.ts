@@ -118,14 +118,19 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     support,
     get handle(){return Number(window);},
     get displayId(){const monitor=user.symbols.MonitorFromWindow(window,2);if(!monitor)throw new Error("Window display is unavailable");return Number(monitor);},
-    prepareShortcutActivation(){
+    prepareWindowActivation(targetPoint?:Readonly<{x:number;y:number;displayId?:number}>,preserveForeground=false){
       if(!user.symbols.IsWindow(window))throw new Error("Presentation window is closed");
       const foreground=user.symbols.GetForegroundWindow()===window;
+      if(preserveForeground&&foreground)return {foreground,displayChanged:false};
       const point=new Int32Array(2);
-      if(!user.symbols.GetCursorPos(ptr(point)))throw new Error("Cannot read the cursor position");
+      if(targetPoint){
+        if(![targetPoint.x,targetPoint.y].every(value=>Number.isInteger(value)&&value>=-2147483648&&value<=2147483647))throw new Error("Invalid activation point");
+        point[0]=targetPoint.x;point[1]=targetPoint.y;
+      }else if(!user.symbols.GetCursorPos(ptr(point)))throw new Error("Cannot read the cursor position");
       const packed=BigInt.asIntN(64,BigInt(point[0]!>>>0)|(BigInt(point[1]!>>>0)<<32n));
-      const target=user.symbols.MonitorFromPoint(packed,2),currentMonitor=user.symbols.MonitorFromWindow(window,2);
+      const target=user.symbols.MonitorFromPoint(packed,targetPoint?0:2),currentMonitor=user.symbols.MonitorFromWindow(window,2);
       if(!target||!currentMonitor)throw new Error("Cannot resolve shortcut display");
+      if(targetPoint?.displayId!==undefined&&Number(target)!==targetPoint.displayId)throw new Error("Hot corner display changed before activation");
       const displayChanged=target!==currentMonitor;
       if(displayChanged){
         const info=new Int32Array(10);info[0]=40;

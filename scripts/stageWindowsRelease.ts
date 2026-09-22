@@ -51,7 +51,7 @@ try {
     visualCppRuntime,
   }, null, 2) + "\n");
   for (const path of [WINDOWS_RELEASE.launcher, WINDOWS_RELEASE.runtime, WINDOWS_RELEASE.main, WINDOWS_RELEASE.control,
-    WINDOWS_RELEASE.dataHost, "runtime/bin/ElectrobunCore.dll", "runtime/Resources/app/bun/native-frame.dll"]) {
+    WINDOWS_RELEASE.dataHost, "runtime/bin/ElectrobunCore.dll", "runtime/Resources/app/bun/native-frame.dll", "runtime/Resources/app/bun/lumeria_hot_corners.dll"]) {
     if (!existsSync(join(payload, path))) throw new Error(`Required product file is missing: ${path}`);
   }
   for (const name of ["LICENSE", "THIRD_PARTY_NOTICES.txt"]) {

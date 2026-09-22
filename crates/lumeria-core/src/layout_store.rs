@@ -202,7 +202,21 @@ fn validate_layout_settings(settings: &Value) -> Result<(), String> {
         "settingsThemePreference",
         "launchpadIconVariant",
     ];
-    require_exact_fields(object, FIELDS, FIELDS, "layout settings")?;
+    let mut allowed = FIELDS.to_vec();
+    allowed.push("hotCorners");
+    require_exact_fields(object, &allowed, FIELDS, "layout settings")?;
+    if let Some(value) = object.get("hotCorners") {
+        let hot = value.as_object().ok_or("layout settings.hotCorners must be an object")?;
+        let fields = &["enabled", "corners", "delayMs", "modifier", "pauseFullscreen", "toggle"];
+        let mut allowed_hot=fields.to_vec();allowed_hot.push("allowSeams");
+        require_exact_fields(hot, &allowed_hot, fields, "hotCorners")?;
+        if hot.contains_key("allowSeams") { require_bool_field(hot,"allowSeams","hotCorners")?; }
+        for field in ["enabled", "pauseFullscreen", "toggle"] { require_bool_field(hot, field, "hotCorners")?; }
+        require_integer_in_range(hot, "corners", 0, 15, "hotCorners")?;
+        if hot["enabled"] == true && hot["corners"] == 0 { return Err("Select at least one hot corner".into()); }
+        if !matches!(hot["delayMs"].as_u64(), Some(0..=10_000)) { return Err("Invalid hot corner delay".into()); }
+        require_enum_field(hot, "modifier", &["none", "alt", "control", "shift"], "hotCorners")?;
+    }
     validate_import_state(object.get("importState").ok_or("Missing importState")?)?;
 
     require_integer_in_range(object, "gridRows", 2, 8, "layout settings")?;
@@ -1381,6 +1395,30 @@ mod tests {
         assert!(error.contains("mainWindowShortcut"));
         assert!(!path.exists(), "invalid layout should not be written");
         fs::remove_dir_all(dir).expect("remove test directory");
+    }
+
+    #[test]
+    fn hot_corner_settings_are_optional_but_strict_when_present() {
+        let dir = test_dir("hot-corners");
+        let path = dir.join("layout.json");
+        let mut layout = valid_layout();
+        layout["settings"].as_object_mut().unwrap().remove("hotCorners");
+        save_layout_to_path(&path, &layout).expect("legacy layout remains valid");
+        layout["settings"]["hotCorners"] = json!({"enabled":true,"corners":9,"delayMs":500,"modifier":"alt","pauseFullscreen":true,"toggle":true});
+        save_layout_to_path(&path, &layout).unwrap();
+        assert_eq!(load_layout_from_path(&path).unwrap().unwrap()["settings"]["hotCorners"], layout["settings"]["hotCorners"]);
+        layout["settings"]["hotCorners"]["allowSeams"]=json!(true);
+        save_layout_to_path(&path,&layout).unwrap();
+        for delay in [0, 80, 100, 137, 10000] {
+            layout["settings"]["hotCorners"]["delayMs"] = json!(delay);
+            save_layout_to_path(&path, &layout).unwrap();
+            assert_eq!(load_layout_from_path(&path).unwrap().unwrap()["settings"]["hotCorners"]["delayMs"], json!(delay));
+        }
+        for (field, bad) in [("allowSeams",json!(1)),("corners", json!(0)), ("delayMs", json!(10001)), ("modifier", json!("meta")), ("toggle", json!(1))] {
+            let mut invalid=layout.clone();invalid["settings"]["hotCorners"][field]=bad;
+            assert!(save_layout_to_path(&path,&invalid).is_err());
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
