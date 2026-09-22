@@ -92,7 +92,8 @@ try {
   writeFileSync(join(directory, "layout.json"), "{damaged");
   await assert.rejects(host.loadLayout(), /Failed to parse layout/);
   assert.equal(readFileSync(join(directory, "layout.json"), "utf8"), "{damaged", "a failed read must not overwrite damaged user data");
-  rmSync(join(directory, "layout.json"));
+  const backup=await host.backupResetLayout();
+  assert.equal(readFileSync(backup,"utf8"),"{damaged","recovery backs up the exact invalid bytes before resetting");
   assert.equal(await host.loadLayout(), null);
   await host.saveLayout(layout);
   await host.dispose();

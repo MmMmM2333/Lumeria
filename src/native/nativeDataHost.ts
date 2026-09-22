@@ -115,6 +115,12 @@ export class NativeDataHost {
     const value = await this.#transport.request("loadLayout");
     return value === null ? null : assertLayoutDocument(value);
   }
+  async revealLayout():Promise<void>{await this.#transport.request("revealLayout");}
+  async backupResetLayout():Promise<string>{
+    const result=requireRecord(await this.#transport.request("backupResetLayout"),"backupResetLayout");
+    if(typeof result.backupPath!=="string")throw new TypeError("Missing layout backup path");
+    return result.backupPath;
+  }
 
   async saveLayout(layout: LayoutDocument): Promise<void> {
     await this.#transport.request("saveLayout", { layout: assertLayoutDocument(layout) });

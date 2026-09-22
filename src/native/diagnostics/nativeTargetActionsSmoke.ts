@@ -100,6 +100,6 @@ export async function runNativeTargetActionsSmoke(o:{app:NativePixiApplication;a
   await o.present("return to style setting");
   const selector=o.app.stage.getChildByLabel("native-apps:missing-style",true)!;clickWithNativeInput(o.app,selector);await capture("targets-style-dropdown");
   const options=collect(o.management).map(button=>button.caption.text);assert.deepEqual(options.slice(-3),["none","question","prohibited"].map(value=>t(`settings.apps.overview.missingStyle.${value}`)));o.management.close();
-  writeFileSync(join(directory,"proof.json"),JSON.stringify({status:"passed",cases:["question","prohibited","admin-editor","admin-animation-cancel","location-hide","location-folder-return","style-dropdown","settings-persistence","missing-menu","folder-single-removal","folder-batch-removal"]},null,2));
+  writeFileSync(join(directory,"proof.json"),JSON.stringify({status:"passed",cases:["recovery-panel","recovery-confirm","question","prohibited","admin-editor","admin-animation-cancel","location-hide","location-folder-return","style-dropdown","settings-persistence","missing-menu","folder-single-removal","folder-batch-removal"]},null,2));
   await o.quit();
 }

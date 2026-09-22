@@ -3,6 +3,7 @@
   "displayName": "English",
   "direction": "ltr",
   "messages": {
+    "recovery": {"configFile": "Configuration file", "exit": "Exit", "resetLink": "Back up and reset…", "title": "Unable to load local layout", "message": "The layout has not been loaded. Fix the configuration and retry. No layout changes will be saved.", "retry": "Retry loading", "location": "Open configuration folder", "reset": "Back up and reset layout", "resetTitle": "Reset layout and settings?", "resetMessage": "The original configuration will be backed up before starting fresh. Reset stops if the backup fails.", "copy": "Copy error details"},
     "imports": {
       "helpContext_singleRule": "Example: folder grouping is enabled and E is separate; now enable single-app folders.",
       "helpContext_flatRule": "Example: Tools already exists; now switch to showing all apps individually.",
@@ -490,6 +491,7 @@
       "notice": {
         "detail": "Generate status dialogs and layout notices to inspect the real Fluent dialog and bottom-right notice styles used by Lumeria.",
         "transient": "Transient notice",
+        "recovery": "Recovery notice",
         "dialogs": {
           "section": "Status dialogs",
           "actions": {

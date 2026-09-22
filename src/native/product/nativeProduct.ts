@@ -156,6 +156,12 @@ let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
 try {
   await nativeData.connect();
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
+    process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR=process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF;
+    const recoverySmoke=await import("../diagnostics/nativeStartupSmoke.js");
+    const support=await import("../nativeSmokeSupport.js");
+    await recoverySmoke.verifyNativeRecoveryPanel({app,waitFor,present:name=>present(app,name),click:target=>support.clickWithNativeInput(app,target),capture:name=>support.captureSmokeFrame(app,name)});
+  }
   // Diagnostic scenarios are loaded only in diagnostic builds; the compile-time
   // flag keeps them out of the production bundle.
   const startupSmoke=(__LUMERIA_DIAGNOSTICS__&&nativeMode==="smoke")?await import("../diagnostics/nativeStartupSmoke.js"):null;
@@ -163,14 +169,17 @@ try {
     await startupSmoke.verifyNativeStartupCancellation({app,waitFor,present:description=>present(app,description),click:clickWithNativeInput,capture:name=>smoke!.captureSmokeFrame(app,name)});
   }
   let loadAttempts=0;
+  let layoutReadFailed=true;
   const loading=loadNativeLayoutWithRetry(app,async()=>{
+    layoutReadFailed=true;
     if(startupSmoke&&startupSmoke.shouldInjectNativeStartupLoadFailure(++loadAttempts))throw new Error("smoke: layout read temporarily unavailable");
     const layout=await nativeData.loadLayout();
+    layoutReadFailed=false;
     const request=makeNativeStartupScanRequest(layout);
     catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
     if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
     return layout;
-  });
+  },{reveal:()=>nativeData.revealLayout(),reset:()=>nativeData.backupResetLayout(),canReset:()=>layoutReadFailed});
   if(startupSmoke){
     await startupSmoke.driveNativeStartupRetryNotices({app,waitFor,present:description=>present(app,description),click:clickWithNativeInput,capture:name=>smoke!.captureSmokeFrame(app,name),loadAttempts:()=>loadAttempts});
   }

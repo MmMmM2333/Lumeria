@@ -3,6 +3,7 @@
   "displayName": "简体中文",
   "direction": "ltr",
   "messages": {
+    "recovery": {"configFile": "配置文件", "exit": "退出", "resetLink": "备份并重置…", "title": "无法读取本地布局", "message": "布局尚未载入。修复配置后可重试；当前不会保存任何布局更改。", "retry": "重试读取", "location": "打开配置所在文件夹", "reset": "备份并重置布局", "resetTitle": "确认重置布局和设置？", "resetMessage": "先备份原配置，再重新开始。备份失败时不会重置。", "copy": "复制错误详情"},
     "imports": {
       "helpContext_singleRule": "示例前提：使用文件夹整理，E 已单独显示；现在开启“单个应用也创建文件夹”。",
       "helpContext_flatRule": "示例前提：已有“工具合集”，现在改为“所有应用单独显示”。",
@@ -490,6 +491,7 @@
       "notice": {
         "detail": "生成状态弹窗与布局通知，用来检查 Lumeria 真实弹窗和右下角 notice 的 Fluent 样式。",
         "transient": "临时通知",
+        "recovery": "恢复通知",
         "dialogs": {
           "section": "状态弹窗",
           "actions": {
