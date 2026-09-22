@@ -115,8 +115,17 @@ export function drawEditButton(
     .circle(0, 0, 11)
     .fill({ color: 0x111827, alpha: 0.84 })
     .stroke({ color: 0xffffff, alpha: 0.7, width: 1 });
-  button.textNode.text = label;
-  button.textNode.style.fontSize = label === "×" ? 17 : 13;
+  button.textNode.visible = false;
+  const g=button.background;
+  if(label === "×") {
+    const d=3.5;
+    g.moveTo(-d,-d).lineTo(d,d).moveTo(-d,d).lineTo(d,-d);
+  } else if(label === "+") {
+    g.moveTo(-5,0).lineTo(5,0).moveTo(0,-5).lineTo(0,5);
+  } else {
+    g.arc(0,0,4.5,-Math.PI*0.65,Math.PI*0.9).moveTo(-4.5,-3).lineTo(-1.7,-3.7).lineTo(-1,-6.3);
+  }
+  g.stroke({color:0xffffff,width:1.8,cap:"round",join:"round"});
 }
 
 reloadOnPixiHotUpdate(import.meta.hot);

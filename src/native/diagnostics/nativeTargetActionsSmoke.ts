@@ -33,6 +33,7 @@ export async function runNativeTargetActionsSmoke(o:{app:NativePixiApplication;a
   assert.equal(o.apps.nativeIntegration.getTargetDetails(missing.id)?.status,"missing");
   assert.equal(icon(admin.id).state?.badge?.admin,true);assert.equal(icon(missing.id).state?.badge?.missing,"question");
   await capture("targets-question");
+  o.editing.mode.value=true;await capture("targets-alt-controls");o.editing.mode.value=false;await o.present("leave edit mode");
   const originalCheck=o.data.checkLaunchTargets,originalClickLaunch=o.data.launchApp;let clickChecks=0;
   o.data.checkLaunchTargets=async()=>{clickChecks++;throw new Error("click should not await catalog check");};
   o.data.launchApp=async()=>{throw new NativeLaunchError("cancelled","diagnostic cancellation");};
