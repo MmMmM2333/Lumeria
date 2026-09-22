@@ -15,6 +15,7 @@ export type FolderGhostIconFrame = Readonly<{
   height: number;
   isTextlessMode?: boolean | undefined;
   launchTargetStatusById?: Readonly<Record<string, string>> | undefined;
+  iconBadgesById?: import("../../../domain/iconBadge.js").IconBadges | undefined;
   showMissingLaunchTargetBadge?: boolean | undefined;
   width: number;
 }>;
@@ -41,6 +42,7 @@ export type FolderGhostIconNodeState = Readonly<{
   interactive: false;
   item: SceneItem | undefined;
   launchTargetStatus: string | null | undefined;
+  badge?: import("../../../domain/iconBadge.js").IconBadge | undefined;
   opening: false;
   preserveNodeScale: true;
   removable: false;
@@ -74,6 +76,7 @@ export function makeFolderGhostIconNodeState(
     iconSize: target.iconSize,
     interactive: false,
     item,
+    badge: item ? state.iconBadgesById?.[item.id] : undefined,
     launchTargetStatus: item?.type === "app" && state.showMissingLaunchTargetBadge
       ? state.launchTargetStatusById?.[item.id]
       : null,

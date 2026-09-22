@@ -80,6 +80,7 @@ type FolderLayerUiInput = Readonly<{
   isEditMode?: boolean | undefined;
   isTextlessMode?: boolean | undefined;
   launchTargetStatusById?: Readonly<Record<string, string>> | null | undefined;
+  iconBadgesById?: import("../../domain/iconBadge.js").IconBadges | undefined;
   selectedAppIds?: ReadonlySet<string> | readonly string[] | null | undefined;
   showMissingLaunchTargetBadge?: boolean | undefined;
 }>;
@@ -159,6 +160,7 @@ export type FolderOverlayFrame = Readonly<{
   isIconOpening: FolderLayerCallbacks["isIconOpening"];
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
+  iconBadgesById?: import("../../domain/iconBadge.js").IconBadges | undefined;
   renderedFolder: FolderLayerFolder | null;
   selectedAppIds: ReadonlySet<string> | readonly string[];
   setFolderPageRef: FolderLayerCallbacks["setFolderPageRef"];
@@ -259,6 +261,7 @@ export function createFolderLayerState(groups: FolderOverlayFrameInput): FolderO
     isIconOpening: callbacks.isIconOpening,
     isTextlessMode: ui.isTextlessMode === true,
     launchTargetStatusById: ui.launchTargetStatusById || Object.freeze({}),
+    iconBadgesById: ui.iconBadgesById,
     renderedFolder,
     selectedAppIds: ui.selectedAppIds || Object.freeze([]),
     setFolderPageRef: callbacks.setFolderPageRef,

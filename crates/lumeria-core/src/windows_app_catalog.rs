@@ -16,6 +16,18 @@ use windows::{
 use crate::{native_error::NativeError, windows_com::ComGuard};
 
 const APPS_FOLDER_PARSING_NAME: &str = "shell:AppsFolder";
+
+pub fn filesystem_display_name(path: &std::path::Path) -> Option<String> {
+    let _guard = ComGuard::new().ok()?;
+    let name = HSTRING::from(crate::path_utils::windows_api_path(path));
+    let item: IShellItem = unsafe { SHCreateItemFromParsingName(&name, None::<&IBindCtx>) }.ok()?;
+    read_display_name(&item).map(|name| {
+        let suffix = path.extension().and_then(|extension| extension.to_str()).map(|extension| format!(".{extension}"));
+        if path.is_file() && suffix.as_ref().is_some_and(|suffix| name.to_lowercase().ends_with(&suffix.to_lowercase())) {
+            name[..name.len()-suffix.unwrap().len()].to_string()
+        } else { name }
+    })
+}
 const AUMID_PROPERTY_NAME: &str = "System.AppUserModel.ID";
 const PACKAGE_FAMILY_PROPERTY_NAME: &str = "System.AppUserModel.PackageFamilyName";
 const PACKAGE_FULL_NAME_PROPERTY_NAME: &str = "System.AppUserModel.PackageFullName";

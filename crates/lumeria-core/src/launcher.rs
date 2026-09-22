@@ -27,6 +27,25 @@ impl LaunchPathError {
 
 #[cfg(target_os = "windows")]
 pub fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
+    launch_path_options(path, launch_args, false, None, 1)
+}
+
+#[cfg(target_os = "windows")]
+pub fn launch_path_elevated(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
+    if extension(std::path::Path::new(path)).as_deref() == Some("lnk") {
+        let link = crate::windows_shell_link::load_shell_link(std::path::Path::new(path))
+            .map_err(|detail| LaunchPathError::new(LaunchPathErrorKind::BrokenShortcut, detail))?;
+        let target = link.target_path.ok_or_else(|| LaunchPathError::new(LaunchPathErrorKind::BrokenShortcut, "Shortcut has no filesystem target".into()))?;
+        if extension(&target).as_deref() != Some("exe") {
+            return Err(LaunchPathError::new(LaunchPathErrorKind::NoAssociation, "This shortcut does not support administrator launch".into()));
+        }
+        return launch_path_options(&target.to_string_lossy(), Some(&link.arguments), true, link.working_directory.as_deref(), link.show_command);
+    }
+    launch_path_options(path, launch_args, true, None, 1)
+}
+
+#[cfg(target_os = "windows")]
+fn launch_path_options(path: &str, launch_args: Option<&str>, elevated: bool, directory: Option<&std::path::Path>, show: i32) -> Result<(), LaunchPathError> {
     use windows::{
         core::{HSTRING, PCWSTR},
         Win32::UI::{
@@ -47,14 +66,18 @@ pub fn launch_path(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPa
         .filter(|value| !value.is_empty())
         .map(HSTRING::from);
 
+    let verb = HSTRING::from("runas");
+    let directory = directory.map(|path| HSTRING::from(path.to_string_lossy().as_ref()));
     let mut request = SHELLEXECUTEINFOW {
         cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
         lpFile: PCWSTR(file.as_ptr()),
+        lpVerb: if elevated { PCWSTR(verb.as_ptr()) } else { PCWSTR::null() },
+        lpDirectory: directory.as_ref().map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
         lpParameters: parameters
             .as_ref()
             .map_or(PCWSTR::null(), |value| PCWSTR(value.as_ptr())),
-        nShow: SW_SHOWNORMAL.0,
+        nShow: if show == 0 { SW_SHOWNORMAL.0 } else { show },
         ..Default::default()
     };
     unsafe { ShellExecuteExW(&mut request) }
@@ -150,6 +173,11 @@ fn classify_activation_error(
         kind,
         format!("{context} failed for {app_user_model_id}: {source} (HRESULT 0x{code:08X})"),
     )
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn launch_path_elevated(path: &str, launch_args: Option<&str>) -> Result<(), LaunchPathError> {
+    launch_path(path, launch_args)
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -1549,11 +1549,11 @@ export class IconNode extends Container {
     this.tweenAppFolderCreateIconAlpha(1);
   }
 
-  renderMissingBadge(state: Pick<IconVisualState, "launchTargetStatus">): void {
-    const sig = `${numberSig(this.iconSize)}:${state.launchTargetStatus || ""}`;
+  renderMissingBadge(state: Pick<IconVisualState, "launchTargetStatus" | "badge">): void {
+    const sig = `${numberSig(this.iconSize)}:${state.launchTargetStatus || ""}:${state.badge?.admin}:${state.badge?.missing}`;
     if (this.missingBadgeSig === sig) return;
     this.missingBadgeSig = sig;
-    drawMissingBadge(this.missingBadge, this.missingBadgeBackground, this.missingBadgeText, this.iconSize, state.launchTargetStatus);
+    drawMissingBadge(this.missingBadge, this.missingBadgeBackground, this.missingBadgeText, this.iconSize, state.launchTargetStatus, state.badge);
   }
 
   renderLabel(state: IconVisualState): void {

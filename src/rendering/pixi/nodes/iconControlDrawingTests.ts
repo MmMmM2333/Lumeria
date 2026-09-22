@@ -122,7 +122,7 @@ export function runIconControlDrawingTests() {
     "missing",
   );
   assert(badge.visible, "missing badge should show for missing status");
-  assert(textNode.text === "!" && textNode.style.fontSize === layout.fontSize, "missing badge should configure its text");
+  assert(textNode.text === "?" && textNode.style.fontSize === layout.fontSize, "missing badge should configure its text");
   assert(background.calls.some((call) => call[0] === "circle"), "missing badge should draw a circular background");
 
   const hiddenButton = {
@@ -142,7 +142,7 @@ export function runIconControlDrawingTests() {
   };
   drawEditButton(button as unknown as EditButton, 3, 4, "×", true);
   assert(button.visible && button.position.x === 3 && button.position.y === 4, "visible edit buttons should move into position");
-  assert(button.textNode.text === "×" && button.textNode.style.fontSize === 17, "remove edit button should use the larger glyph size");
+  assert(button.background.calls.filter(call=>call[0]==="lineTo").length===2, "remove uses two centered vector strokes instead of font metrics");
   assert(button.background.calls.some((call) => call[0] === "circle"), "visible edit buttons should draw a circular background");
 
   const check = makeGraphicsRecorder();

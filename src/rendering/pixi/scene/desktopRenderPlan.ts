@@ -107,6 +107,7 @@ export type DesktopRenderPlanState = DesktopFolderHandoffState & Readonly<{
   isSearchMode: boolean;
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
+  iconBadgesById?: import("../../../domain/iconBadge.js").IconBadges | undefined;
   pageTrackScrub: ScenePageTrackScrub | null;
   selectedAppIds: ReadonlySet<string>;
   shouldSnapTrack: boolean;
@@ -698,6 +699,7 @@ export function buildDesktopRenderPlan(
         interactive: isInteractivePage && !isFolderClosingHandoff,
         item,
         jiggleSeed: pageIndex * 100 + index,
+        badge: state.iconBadgesById?.[item.id],
         launchTargetStatus: isInteractivePage &&
           !isFolderClosingHandoff &&
           state.showMissingLaunchTargetBadge

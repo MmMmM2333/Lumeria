@@ -152,6 +152,9 @@
       "dismissedGroups": [],
       "deferredIds": [],
       "recentIds": []
-    }
+    },
+    "missingTargetStyle": "question",
+    "showAdminShield": true,
+    "waitForElevationAnimation": true
   }
 }

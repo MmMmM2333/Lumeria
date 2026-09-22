@@ -477,6 +477,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
     };
     next.type = "app";
     next.origin = "catalog";
+    next.runAsAdmin = savedReference?.runAsAdmin === true;
     next.presentationOverrides = overrides;
     if (overrides.name) next.name = overrides.name;
     if (overrides.emoji) next.emoji = overrides.emoji;
@@ -695,6 +696,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
 
     if (item.origin === "catalog") {
       const clean: CatalogAppLayoutItem = { id: item.id, type: "catalogApp" };
+      if (item.runAsAdmin) clean.runAsAdmin = true;
       const overrides = normalizePresentationOverrides(item.presentationOverrides);
       if (Object.keys(overrides).length) clean.overrides = overrides;
       return clean;
@@ -706,6 +708,7 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
       name: item.name,
       emoji: typeof item.emoji === "string" ? item.emoji : undefined,
     } as ManualAppLayoutItem;
+    if (item.runAsAdmin) clean.runAsAdmin = true;
     if (typeof item.customIconPath === "string" && item.customIconPath) clean.customIconPath = item.customIconPath;
     if (typeof item.iconPath === "string" && item.iconPath) clean.iconPath = item.iconPath;
     const launchTarget = isRecord(item.launchTarget) ? item.launchTarget as LaunchTarget : null;
@@ -767,6 +770,9 @@ export function createLaunchpadDataHelpers(options: DataHelperOptions) {
         scanKeywordAllowlist: normalizeScanKeywordAllowlist(state.scanKeywordAllowlist),
         scanAppBlacklist: normalizeScanAppBlacklist(state.scanAppBlacklist),
         showMissingLaunchTargetBadge: state.showMissingLaunchTargetBadge !== false,
+        missingTargetStyle: state.missingTargetStyle === "prohibited" || state.missingTargetStyle === "none" ? state.missingTargetStyle : "question",
+        showAdminShield: state.showAdminShield === true,
+        waitForElevationAnimation: state.waitForElevationAnimation === true,
         backgroundBaseColor,
         backgroundBaseOpacity: Number.isFinite(backgroundBaseOpacity) ? clamp(Math.round(backgroundBaseOpacity), 0, 100) : 28,
         backgroundSource,

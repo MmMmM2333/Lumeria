@@ -88,7 +88,18 @@ export class NativeAppDialogs{
         const target=field("target",t(model.targetReadOnly.value?"dialogs.appEditor.windowsIdManaged":"dialogs.appEditor.target"),model.target,model.targetReadOnly.value,true);
         const browse=this.#button(node,controls,"editor-browse",t("common.actions.browse"),width-88,target.y,88,()=>{void model.actions.browseTarget();});
         const argsShown=model.canEditArgs.value;if(argsShown)field("args",t("dialogs.appEditor.args"),model.args);
+        const admin = new NativeFluentToggle("checkbox", checked => { model.runAsAdmin.value = checked; }, invalidate, theme(), 16);
+        admin.label="native-editor:run-as-admin";admin.checked=model.runAsAdmin.value;admin.disabled=!model.canEditAdmin.value;
+        y+=6;admin.position.set(-8,y);node.addChild(admin);
+        const adminLabel=this.#text(t("dialogs.appEditor.runAsAdmin"),13);adminLabel.position.set(28,y+(32-adminLabel.height)/2);node.addChild(adminLabel);
+        adminLabel.eventMode="static";adminLabel.cursor="pointer";adminLabel.on("pointertap",()=>admin.toggle());
+        const adminFocus=new Graphics({eventMode:"none"});admin.addChild(adminFocus);
+        controls.push({node:admin,disabled:()=>admin.disabled,focus:active=>{adminFocus.clear();if(active)adminFocus.roundRect(-3,-2,width+6,30,4).stroke({color:style.accent,width:2});invalidate();},handleKey:key=>{if(key!=="Enter"&&key!==" ")return false;admin.toggle();return true;}});
+        const adminHint=this.#text(t("dialogs.appEditor.runAsAdminHint"),12,true,width-28);adminHint.position.set(28,y+32);node.addChild(adminHint);
+        adminHint.eventMode="static";adminHint.cursor="pointer";adminHint.on("pointertap",()=>admin.toggle());y+=adminHint.height+54;
         return {node,height:y-14,controls,update:()=>{
+          admin.disabled=!model.canEditAdmin.value;admin.checked=model.runAsAdmin.value;
+          adminLabel.alpha=adminHint.alpha=admin.disabled?0.45:1;
           if(argsShown!==model.canEditArgs.value)return true;
           for(const entry of fields)if(entry.input.value!==entry.read()&&!entry.input.composing)entry.input.value=entry.read();
           browse.disabled=!model.canBrowseTarget.value;browse.caption.text=t(model.isBrowsingTarget.value?"dialogs.appEditor.choosing":"common.actions.browse");refreshIcon();return false;

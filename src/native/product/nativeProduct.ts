@@ -156,6 +156,12 @@ let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
 try {
   await nativeData.connect();
+  if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
+    process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR=process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF;
+    const recoverySmoke=await import("../diagnostics/nativeStartupSmoke.js");
+    const support=await import("../nativeSmokeSupport.js");
+    await recoverySmoke.verifyNativeRecoveryPanel({app,waitFor,present:name=>present(app,name),click:target=>support.clickWithNativeInput(app,target),capture:name=>support.captureSmokeFrame(app,name)});
+  }
   // Diagnostic scenarios are loaded only in diagnostic builds; the compile-time
   // flag keeps them out of the production bundle.
   const startupSmoke=(__LUMERIA_DIAGNOSTICS__&&nativeMode==="smoke")?await import("../diagnostics/nativeStartupSmoke.js"):null;
@@ -163,14 +169,17 @@ try {
     await startupSmoke.verifyNativeStartupCancellation({app,waitFor,present:description=>present(app,description),click:clickWithNativeInput,capture:name=>smoke!.captureSmokeFrame(app,name)});
   }
   let loadAttempts=0;
+  let layoutReadFailed=true;
   const loading=loadNativeLayoutWithRetry(app,async()=>{
+    layoutReadFailed=true;
     if(startupSmoke&&startupSmoke.shouldInjectNativeStartupLoadFailure(++loadAttempts))throw new Error("smoke: layout read temporarily unavailable");
     const layout=await nativeData.loadLayout();
+    layoutReadFailed=false;
     const request=makeNativeStartupScanRequest(layout);
     catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
     if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
     return layout;
-  });
+  },{reveal:()=>nativeData.revealLayout(),reset:()=>nativeData.backupResetLayout(),canReset:()=>layoutReadFailed});
   if(startupSmoke){
     await startupSmoke.driveNativeStartupRetryNotices({app,waitFor,present:description=>present(app,description),click:clickWithNativeInput,capture:name=>smoke!.captureSmokeFrame(app,name),loadAttempts:()=>loadAttempts});
   }
@@ -241,7 +250,8 @@ const openSettings=()=>nativeSettings.open();
 const closeSettings=()=>nativeSettings.close();
 let apps:ReturnType<typeof createLaunchpadApps>|null=null;
 let appDialogs:NativeAppDialogs|null=null;
-let refreshTargetChecks=()=>{};
+let refreshTargetChecks: (force?: boolean) => Promise<void> = async()=>{};
+let refreshOneTarget: (id:string)=>Promise<void> = async()=>{};
 let saveFailed=(error:unknown)=>{logNativeRuntime("save-error",String(error));},saveRecovered=()=>{};
 const saves = createLayoutSaveQueue(async document=>{try{await nativeData.saveLayout(document);saveRecovered();}catch(error){saveFailed(error);throw error;}});
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
@@ -421,6 +431,12 @@ async function activateItem(item: SceneItem, event: {shiftKey?:boolean} = {}): P
     }
     return;
   }
+  if(apps?.nativeIntegration.getTargetDetails(item.id)?.status === "missing") await refreshOneTarget(item.id);
+  if(apps?.nativeIntegration.getTargetDetails(item.id)?.status === "missing") {
+    management.warning({title:t("launchpad.target.missingTitle"),message:t("launchpad.target.missingMessage"),confirmText:t("common.actions.edit"),cancelText:t("launchpad.target.recheck"),
+      onConfirm:()=>editItem(item),onCancel:()=>{void refreshOneTarget(item.id);}});
+    return;
+  }
   launchFlow?.openApp(item as ReadonlyLaunchpadApp);
 }
 
@@ -459,7 +475,14 @@ function removeItems(ids: readonly string[]): void {
     void saves.flush().catch(()=>{});
   }});
 }
-function contextMenu(item:SceneItem|null,x:number,y:number):void{
+let targetMenuRequest=0;
+let preserveViewAfterLocation=()=>{};
+function contextMenu(item:SceneItem|null,x:number,y:number,checked=false):void{
+  if(item?.type==="app"&&!checked){
+    const request=++targetMenuRequest;
+    void refreshOneTarget(item.id).then(()=>{if(request===targetMenuRequest&&!sceneUpdates.disposed&&!management.modal&&getCurrentIconScope().items.some(current=>current.id===item.id))contextMenu(item,x,y,true);});
+    return;
+  }
   const folder = folderFlow.snapshot();
   // Closing retains renderedFolder for animation, but no menu may use that retiring scope.
   // Both stage right-clicks and menu relocation requests pass through this entry.
@@ -467,7 +490,20 @@ function contextMenu(item:SceneItem|null,x:number,y:number):void{
   const actions:import("../../rendering/native/NativeManagement.js").NativeMenuAction[]=[];
   const beginBatch=()=>{editing!.alt.cancelAltEditMode();editing!.selection.begin({});};
   if(item){
-    actions.push({label:t("common.actions.open"),icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
+    const details=apps?.nativeIntegration.getTargetDetails(item.id);
+    actions.push({label:t("common.actions.open"),disabled:details?.status==="missing",icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
+    if(item.type==="app"){
+      if(details?.canElevate)actions.push({label:t("launchpad.target.runAsAdmin"),icon:"shield-20-regular",disabled:details.status==="missing",run:()=>{void (async()=>{
+        await refreshOneTarget(item.id);
+        const latest=apps?.nativeIntegration.getTargetDetails(item.id);if(latest?.status==="missing"){await activateItem(item);return;}
+        if(!latest?.canElevate)throw new Error(t("launchpad.target.adminUnavailable"));
+        launchFlow?.openApp(item as ReadonlyLaunchpadApp,undefined,true);
+      })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error);});}});
+      const reveal=async(path:string,folder=false)=>{await saves.flush();await nativeData.revealPath(path,folder);preserveViewAfterLocation();launchFlow?.closeDesktop({clearSearch:false});};
+      actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(reportNativeError);}});
+      if(details?.shortcutLocation)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",run:()=>{void reveal(details.shortcutLocation!).catch(reportNativeError);}});
+      if(details?.status!=="ok")actions.push({label:t("launchpad.target.recheck"),icon:"arrow-sync-20-regular",run:()=>{void refreshOneTarget(item.id);}});
+    }
     actions.push({label:t(item.type==="folder"?"common.actions.rename":"common.actions.edit"),icon:item.type==="folder"?"rename-20-regular":"edit-20-regular",run:()=>editItem(item)});
     if(item.type==="folder")actions.push({label:t("launchpad.contextMenu.dissolve"),icon:"folder-arrow-right-20-regular",separatorBefore:true,danger:true,run:()=>editing!.pageCommands.confirmDissolveFolder(item.id)});
     else {
@@ -834,6 +870,7 @@ try {
   const commitEditedPages = (pages: LaunchpadPages): void => {
     apps?.imports.observe(layoutState.presentation.pages.value,pages);
     layoutState.commitPages(pages);
+    folderFlow.reconcile(snapshotContractValue(pages.flat()) as SceneItem[]);
     layoutState.commitPageIndex(layoutState.presentation.pageIndex.value);
     const config = layoutState.captureConfiguration();
     const document = layoutState.operations.createLayoutSnapshot({ ...loadedLayout?.settings,...settings.persistence.capture(),...apps?.persistence.capture(),
@@ -887,6 +924,7 @@ try {
     reclampPageIndices:()=>layoutState.commitPageIndex(layoutState.presentation.pageIndex.value),schedulePageGridMetrics:requestSceneRender,
     openScanKeywordSettings:()=>{settingsNavigation.selectTab("apps");appsPageState.keywords=true;if(nativeSettings.shell)nativeSettings.redraw();else openSettings();},
     clearFocusedIcon:()=>setFocusedIcon(null),
+    focusedIcon:{get value(){return currentFrame.interaction.focusedIcon;}},
     openWarningDialog:config=>management.warning({...config,onConfirm:async()=>{config.onConfirm?.();await saves.flush();}}),
     showTransientNotice:notice=>notices.showTransientNotice(notice),
   },createNativeStateHost(changedApps));
@@ -899,21 +937,37 @@ try {
     if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
     const path=result.value[0];return path?nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path)):null;
   }});
-  let targetCheckKey="",targetCheckGeneration=0;
-  refreshTargetChecks=()=>{
+  let targetCheckKey="",targetCheckGeneration=0,targetCheckedAt=0;
+  let targetCheckPending: Promise<void> | null = null;
+  refreshTargetChecks=async(force=false)=>{
     if(!apps||sceneUpdates.disposed)return;
     const checks=apps.nativeIntegration.listLaunchTargets();
     const key=apps.nativeIntegration.shouldCheckLaunchTargets()?apps.nativeIntegration.launchTargetCheckSignature(checks):"off";
-    if(key===targetCheckKey)return;targetCheckKey=key;const generation=++targetCheckGeneration;
+    if(key===targetCheckKey && targetCheckPending) return targetCheckPending;
+    if(!force&&key===targetCheckKey&&Date.now()-targetCheckedAt<15000)return;
+    targetCheckKey=key;const generation=++targetCheckGeneration;
     if(key==="off"){apps.nativeIntegration.clearLaunchTargetStatuses();return;}
-    void nativeData.checkLaunchTargets(checks.map(({id,launchTarget})=>({id,launchTarget}))).then(results=>{
-      if(generation===targetCheckGeneration&&!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,checks);
-    }).catch(error=>{if(!sceneUpdates.disposed)logNativeRuntime("launch-target-check-error",error);});
+    targetCheckPending=(async()=>{
+      for(let offset=0;offset<checks.length;offset+=4){
+        await new Promise(resolve=>setTimeout(resolve,0));
+        if(generation!==targetCheckGeneration||sceneUpdates.disposed)return;
+        const batch=checks.slice(offset,offset+4);
+        const results=await nativeData.checkLaunchTargets(batch.map(({id,launchTarget,fallbackPaths})=>({id,launchTarget,fallbackPaths})));
+        if(generation===targetCheckGeneration&&!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,batch);
+      }
+      if(generation===targetCheckGeneration)targetCheckedAt=Date.now();
+    })().catch(error=>{if(!sceneUpdates.disposed){logNativeRuntime("launch-target-check-error",error);if(generation===targetCheckGeneration){targetCheckedAt=0;apps?.nativeIntegration.clearLaunchTargetStatuses();}}}).finally(()=>{if(generation===targetCheckGeneration)targetCheckPending=null;});
+    return targetCheckPending;
+  };
+  refreshOneTarget=async id=>{
+    const check=apps?.nativeIntegration.listLaunchTargets().find(check=>check.id===id);if(!check)return;
+    try{const results=await nativeData.checkLaunchTargets([check]);if(!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,[check]);}
+    catch(error){logNativeRuntime("launch-target-check-error",error);}
   };
   refreshTargetChecks();
   const flowState=createNativeStateHost(requestSceneRender),openingIcon=flowState.cell<import("../../application/launchpadLaunchFlow.js").LaunchIconFocus|null>(null);
   const visibility=createNativeVisibilityController({
-    backgroundVisible:visible=>liveDesktop.setVisible(visible),
+    backgroundVisible:visible=>{liveDesktop.setVisible(visible);if(visible)void refreshTargetChecks();},
     backgroundDisplayChanged:()=>liveDesktop.restart(backgroundConfig(),systemAppearance),
     activateStartupPreparation:()=>startupPreparation?.activate(),
     app,
@@ -967,8 +1021,11 @@ try {
     isDragActive:()=>editing?.drag.isDragActive()??false,isSearchMode:()=>Boolean(searchQuery.trim()),
     normalizeLaunchSource:item=>({id:item.id,area:folderFlow.snapshot().renderedFolder?"folder":searchQuery?"search":"desktop",pageIndex:getCurrentIconScope().pageIndex}),
     prepareNativeLaunch:async()=>{try{await saves.flush();return true;}catch{return false;}},
-    launchNativeAppIfAvailable:async item=>{
-      try{await nativeData.launchApp(item.id);return true;}
+    restoreAfterLaunchCancelled:()=>visibility.show(),
+    shouldWaitForElevation:(item,elevated)=>apps!.presentation.waitForElevationAnimation.value &&
+      (elevated || item.runAsAdmin === true || apps!.nativeIntegration.getTargetDetails(item.id)?.requiresAdmin === true),
+    launchNativeAppIfAvailable:async (item,elevated)=>{
+      try{await nativeData.launchApp(item.id,elevated);return true;}
       catch(error){
         if(error instanceof NativeLaunchError&&error.kind==="cancelled")return {kind:"cancelled"};
         const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};
@@ -981,6 +1038,7 @@ try {
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{...visibility.timers,afterCommit:queueMicrotask});
   showLaunchpad=visibility.show;
+  preserveViewAfterLocation=visibility.preserveViewOnNextShow;
   dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
@@ -1151,6 +1209,12 @@ try {
     }),
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
+
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
+    await (await import("../diagnostics/nativeTargetActionsSmoke.js")).runNativeTargetActionsSmoke({app,apps:apps!,editing:editing!,folder:folderFlow,management,dialogs:appDialogs!,data:nativeData,
+      present:name=>present(app,name),check:refreshTargetChecks,menu:contextMenu,search:query=>changeSearch(query),show:showLaunchpad,launching:()=>launchFlow!.isAppLaunching.value,showSettings:()=>{settingsNavigation.selectTab("apps");openSettings();},save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});
+    await closed;return;
+  }
 
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_ABOUT_PREVIEW_DIR&&process.env.LUMERIA_NATIVE_DATA_DIR){
     await (await import("../diagnostics/nativeAboutPreview.js")).nativeAboutPreview({app,texture:brandingTextures.get(settings.draft.launchpadIconVariant.value)!,

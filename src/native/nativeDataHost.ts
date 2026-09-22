@@ -115,6 +115,12 @@ export class NativeDataHost {
     const value = await this.#transport.request("loadLayout");
     return value === null ? null : assertLayoutDocument(value);
   }
+  async revealLayout():Promise<void>{await this.#transport.request("revealLayout");}
+  async backupResetLayout():Promise<string>{
+    const result=requireRecord(await this.#transport.request("backupResetLayout"),"backupResetLayout");
+    if(typeof result.backupPath!=="string")throw new TypeError("Missing layout backup path");
+    return result.backupPath;
+  }
 
   async saveLayout(layout: LayoutDocument): Promise<void> {
     await this.#transport.request("saveLayout", { layout: assertLayoutDocument(layout) });
@@ -153,9 +159,13 @@ export class NativeDataHost {
     return validateCatalogResult(await this.#transport.request("scanApps", { roots, filters }));
   }
 
-  async launchApp(appId: string): Promise<void> {
+  async launchApp(appId: string, elevated = false): Promise<void> {
     if (!appId.trim()) throw new TypeError("launchApp appId must be a non-empty string");
-    await this.#transport.request("launchApp", { appId });
+    await this.#transport.request("launchApp", { appId, elevated });
+  }
+  async revealPath(path: string, folder = false): Promise<void> {
+    if (!isAbsolute(path)) throw new TypeError("File location must be absolute");
+    await this.#transport.request("revealPath", {path, folder});
   }
   async checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[]):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
     const value=await this.#transport.request("checkLaunchTargets",{targets});
@@ -163,7 +173,10 @@ export class NativeDataHost {
     return value.map(item=>{
       const entry=requireRecord(item,"launch target check");
       if(typeof entry.id!=="string"||!["ok","missing","unknown"].includes(String(entry.status)))throw new TypeError("Invalid launch target check");
-      return {id:entry.id,status:entry.status as "ok"|"missing"|"unknown"};
+      if (typeof entry.canElevate !== "boolean" || typeof entry.requiresAdmin !== "boolean" || typeof entry.adminRequirementKnown !== "boolean" || typeof entry.locationIsFolder !== "boolean"
+        || (entry.fileLocation !== null && typeof entry.fileLocation !== "string") || (entry.shortcutLocation !== null && typeof entry.shortcutLocation !== "string")) throw new TypeError("Invalid launch target capabilities");
+      return {id:entry.id,status:entry.status as "ok"|"missing"|"unknown",canElevate:entry.canElevate,requiresAdmin:entry.requiresAdmin,adminRequirementKnown:entry.adminRequirementKnown,
+        locationIsFolder:entry.locationIsFolder,fileLocation:entry.fileLocation as string|null,shortcutLocation:entry.shortcutLocation as string|null};
     });
   }
 

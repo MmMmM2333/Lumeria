@@ -301,7 +301,21 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
     const scanTop=actionRow(key(apps.isScanningApps.value?"manager.scanning":"manager.scanApps"),key(apps.canScanManagedApps.value?"overview.scanReady":"overview.scanDisabled"),"arrow-sync-20-regular");
     button("scan",key(apps.isScanningApps.value?"manager.scanning":"overview.scan"),width-110,scanTop+20,96,scan,!apps.canScanManagedApps.value||apps.isScanningApps.value);
     const addTop=actionRow(key("manager.addApp"),key("overview.addDescription"),"add-20-regular");button("add",key("overview.add"),width-110,addTop+20,96,()=>options.edit(null));
-    const topBadge=actionRow(key("overview.missingTarget"),key("overview.missingTargetDescription"),"folder-prohibited-24-regular");toggle("missing-badge",apps.presentation.showMissingLaunchTargetBadge.value,width-54,topBadge+20,apps.toggleMissingLaunchTargetBadge);
+      const topBadge=actionRow(key("overview.missingTarget"),key("overview.missingTargetDescription"),"tab-prohibited-24-regular");
+      const styles=["none","question","prohibited"] as const;
+      const choice=button("missing-style",key(`overview.missingStyle.${apps.presentation.missingTargetStyle.value}`),width-186,topBadge+19,172,()=>{
+        activeLine.clear().moveTo(2,33).lineTo(170,33).stroke({color:style.accent,width:2});
+        const point=choice.toGlobal({x:0,y:34});options.management.menu(point.x,point.y,styles.map(value=>({label:key(`overview.missingStyle.${value}`),selected:apps.presentation.missingTargetStyle.value===value,run:()=>{
+          apps.presentation.missingTargetStyle.value=value;apps.toggleMissingLaunchTargetBadge(true);redraw();
+        }})),176,{restore:()=>{if(!choice.destroyed){activeLine.clear();choice.focused=true;invalidate();}}});
+      });
+      const activeLine=new Graphics({eventMode:"none"});choice.addChild(activeLine);
+      choice.caption.anchor.x=0;choice.caption.x=10;
+      choice.addChild(new Graphics({eventMode:"none"}).moveTo(151,14).lineTo(156,19).lineTo(161,14).stroke({color:style.text,width:1.5,cap:"round",join:"round"}));
+      const shieldTop=actionRow(key("overview.adminShield"),key("overview.adminShieldDescription"),"shield-20-regular");
+      toggle("admin-shield",apps.presentation.showAdminShield.value,width-54,shieldTop+20,checked=>{apps.presentation.showAdminShield.value=checked;});
+      const elevationTop=actionRow(key("overview.waitElevation"),key("overview.waitElevationDescription"),"play-circle-24-regular");
+      toggle("wait-elevation",apps.presentation.waitForElevationAnimation.value,width-54,elevationTop+20,checked=>{apps.presentation.waitForElevationAnimation.value=checked;});
   }
   return {node,height:y,controls,layout:layout.finish(y),...(update?{update}:{}),viewport:(_top,height)=>resizeList(height-38),dispose:()=>{for(const run of cleanup)run();}};
 }

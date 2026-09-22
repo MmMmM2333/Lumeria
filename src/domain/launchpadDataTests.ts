@@ -177,7 +177,7 @@ export function runLaunchpadDataTests() {
     version: 2,
     pages: [
       [
-        { id: "a", type: "catalogApp", overrides: { name: "Renamed A", customIconPath: "C:/Icons/custom-a.png" } },
+        { id: "a", type: "catalogApp", runAsAdmin: true, overrides: { name: "Renamed A", customIconPath: "C:/Icons/custom-a.png" } },
         {
           id: "folder",
           type: "folder",
@@ -202,6 +202,7 @@ export function runLaunchpadDataTests() {
   const mergedFolder = merged[0]![1]!;
   assert(mergedCatalog.type === "app" && mergedCatalog.name === "Renamed A", "saved app names should override catalog names");
   assert(mergedCatalog.iconDataUrl === "data:a", "saved catalog icon data should not override native catalog icons");
+  assert(mergedCatalog.runAsAdmin === true, "catalog refresh preserves administrator launch preference");
   assert(mergedCatalog.customIconPath === "C:/Icons/custom-a.png", "saved custom icon paths should be preserved");
   assert(mergedFolder.type === "folder", "saved folders should be preserved");
   assert(mergedFolder.childPages.flat().filter(Boolean).map((item) => item!.id).join(",") === "b,custom", "folder merge should keep custom apps and remove duplicate app ids");
@@ -323,6 +324,7 @@ export function runLaunchpadDataTests() {
   const snapshotCatalog = snapshot.pages[0]![0]!;
   const snapshotFolder = snapshot.pages[0]![1]!;
   assert(snapshotCatalog.type === "catalogApp", "layout snapshots should persist catalog references");
+  assert(snapshotCatalog.runAsAdmin === true, "catalog administrator preference survives serialization");
   assert(!("iconDataUrl" in snapshotCatalog), "catalog references should omit runtime icon data");
   assert(!("iconPath" in snapshotCatalog), "catalog references should omit scanned icon paths");
   assert(!("launchTarget" in snapshotCatalog), "catalog references should omit scanned launch targets");

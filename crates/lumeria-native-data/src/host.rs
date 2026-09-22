@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use lumeria_core::{
     catalog::{icon_cache_dir, scan_apps_from_roots, ScanFilters, ScanRoot},
     launch::{
-        check_launch_targets_sync, launch_app as launch_selected_catalog_app, LaunchFailure,
+        check_launch_targets_sync, launch_app_with_mode as launch_selected_catalog_app, LaunchFailure,
         LaunchTargetCheckRequest,
     },
     layout_store::{load_layout_from_path, save_layout_to_path},
@@ -25,6 +25,9 @@ const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    RevealLayout { version: u32, id: u64 },
+    BackupResetLayout { version: u32, id: u64 },
+    RevealPath { version: u32, id: u64, path: String, folder: bool },
     CheckLaunchTargets {
         version: u32,
         id: u64,
@@ -82,6 +85,8 @@ enum Request {
         id: u64,
         #[serde(rename = "appId")]
         app_id: String,
+        #[serde(default)]
+        elevated: bool,
     },
 }
 
@@ -89,6 +94,9 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::RevealLayout { id, .. }
+            | Self::BackupResetLayout { id, .. }
+            | Self::RevealPath { id, .. }
             | Self::CheckLaunchTargets { id, .. }
             | Self::CacheBackground { id, .. }
             | Self::Wallpaper { id, .. }
@@ -105,6 +113,9 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::RevealLayout { version, .. }
+            | Self::BackupResetLayout { version, .. }
+            | Self::RevealPath { version, .. }
             | Self::CheckLaunchTargets { version, .. }
             | Self::CacheBackground { version, .. }
             | Self::Wallpaper { version, .. }
@@ -213,6 +224,13 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::RevealLayout { .. } => {
+            let path=data_dir.join("layout.json");
+            let (target,folder)=if path.exists(){(path,false)}else{(data_dir.to_path_buf(),true)};
+            lumeria_core::target_details::reveal_path(&target.to_string_lossy(),folder).map(|()|Value::Null)
+        },
+        Request::BackupResetLayout { .. } => backup_reset_layout(data_dir).map(|path|json!({"backupPath":path})),
+        Request::RevealPath { path, folder, .. } => lumeria_core::target_details::reveal_path(&path, folder).map(|()| Value::Null),
         Request::CheckLaunchTargets { targets, .. } => check_launch_targets_sync(targets)
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
         Request::CacheBackground { path, .. } => cache_background(data_dir, &path),
@@ -243,8 +261,8 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
                 serde_json::to_value(result).map_err(|error| error.to_string())
             })
         }),
-        Request::LaunchApp { app_id, .. } => {
-            return match launch_app(&app_id, data_dir, state) {
+        Request::LaunchApp { app_id, elevated, .. } => {
+            return match launch_app(&app_id, elevated, data_dir, state) {
                 Ok(()) => Response::success(id, Value::Null),
                 Err(error) => Response::launch_failure(id, error),
             };
@@ -254,6 +272,20 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
         Ok(value) => Response::success(id, value),
         Err(error) => Response::failure(id, error),
     }
+}
+
+fn backup_reset_layout(data_dir:&Path)->Result<String,String>{
+    let path=data_dir.join("layout.json");
+    let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|error|error.to_string())?.as_nanos();
+    let backup=data_dir.join(format!("layout.backup.{stamp}.json"));
+    // Reserve a unique destination. Failed backup leaves the original untouched.
+    let mut output=std::fs::OpenOptions::new().write(true).create_new(true).open(&backup).map_err(|error|error.to_string())?;
+    let mut input=std::fs::File::open(&path).map_err(|error|error.to_string())?;
+    std::io::copy(&mut input,&mut output).map_err(|error|error.to_string())?;
+    output.sync_all().map_err(|error|error.to_string())?;
+    drop(input);drop(output);
+    std::fs::remove_file(&path).map_err(|error|error.to_string())?;
+    Ok(backup.to_string_lossy().into_owned())
 }
 
 #[cfg(target_os = "windows")]
@@ -279,18 +311,26 @@ fn cache_wallpaper(_data_dir: &Path, _rect: [i32; 4]) -> Result<Value, String> {
     Err("Wallpaper is unavailable on this platform".into())
 }
 
-fn launch_app(app_id: &str, data_dir: &Path, state: &HostState) -> Result<(), LaunchFailure> {
+fn launch_app(app_id: &str, elevated: bool, data_dir: &Path, state: &HostState) -> Result<(), LaunchFailure> {
     let app_id = lumeria_core::launch::validate_launch_app_id(app_id)?;
     let catalog_app = state.catalog.get(app_id).cloned();
     let saved_layout = load_layout_from_path(&data_dir.join("layout.json"))
         .map_err(LaunchFailure::layout_read_failed)?;
-    launch_selected_catalog_app(app_id, catalog_app, saved_layout.as_ref(), || {
+    launch_selected_catalog_app(app_id, catalog_app, saved_layout.as_ref(), elevated, || {
         icon_cache_dir(data_dir)
     })
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn backup_reset_failure_preserves_original() {
+        let directory=std::env::temp_dir().join(format!("lumeria-reset-failure-{}",std::process::id()));
+        std::fs::create_dir_all(directory.join("layout.json")).unwrap();
+        assert!(super::backup_reset_layout(&directory).is_err());
+        assert!(directory.join("layout.json").is_dir());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     use super::*;
     use std::{
         env, fs,

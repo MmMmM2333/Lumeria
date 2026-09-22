@@ -72,6 +72,7 @@ export type NativeVisibilityController = Readonly<{
   disposeTimers: () => void;
   hideAfterPresented: () => Promise<void>;
   show: () => void;
+  preserveViewOnNextShow: () => void;
   timers: Scheduler;
   toggle: () => void;
   shortcut: () => void;
@@ -84,6 +85,7 @@ export function createNativeVisibilityController(
   let nextLaunchTimer = 0;
   let visibilityGeneration = 0;
   let visibilityPreparing = false;
+  let preserveViewOnNextShow=false;
 
   const timers: Scheduler = {
     setTimeout: (callback, delay) => {
@@ -124,7 +126,8 @@ export function createNativeVisibilityController(
     const generation = visibilityGeneration;
     ports.log("show-request", { state: ports.app.state, minimized: ports.app.window.isMinimized() });
     if (ports.app.state === "failed") { ports.log("show-failed", "Renderer failed; use tray restart to recover"); return; }
-    if (ports.isFolderRendered()) ports.resetFolder();
+    if (!preserveViewOnNextShow && ports.isFolderRendered()) ports.resetFolder();
+    preserveViewOnNextShow=false;
     if (ports.app.window.isMinimized()) measure("unminimize", () => ports.app.window.unminimize());
     measure("materialSet", () => ports.windowEffects.set(ports.getSettingsMaterial(), resolveAppearancePreference(ports.getSettingsThemePreference(), ports.getSystemAppearance())));
     measure("show", () => ports.app.window.show()); measure("activate", () => ports.app.window.activate());
@@ -172,6 +175,7 @@ export function createNativeVisibilityController(
     disposeTimers,
     hideAfterPresented,
     show,
+    preserveViewOnNextShow:()=>{preserveViewOnNextShow=true;},
     timers,
     toggle,
     shortcut,

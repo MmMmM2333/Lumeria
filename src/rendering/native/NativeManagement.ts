@@ -137,13 +137,14 @@ export class NativeManagement extends Container {
     const modal=new NativeModalPanel(spec,this.host,this.size,()=>this.theme,this.invalidate,()=>{if(this.#custom===modal)this.close(true);});
     this.#custom=modal;this.#panel=modal;this.addChild(modal);this.invalidate();
   }
-  warning(config:LaunchpadWarningDialog & {onConfirm?:()=>void|Promise<void>}):void{
+  warning(config:LaunchpadWarningDialog & {onConfirm?:()=>void|Promise<void>;onCancel?:()=>void}):void{
     const intent=config.intent??"warning",style=nativeSettingsStyle(this.theme);
     const color={error:"#ffb4a9",warning:"#f2b24a",success:"#8fd9a8",info:"#4ba3f6"}[intent];
     this.dialog({id:"warning",title:config.title,width:420,showClose:false,warningAnimation:true,
       headerIcon:{name:intent==="error"?"error-circle-20-regular":intent==="success"?"checkmark-circle-20-regular":intent==="info"?"info-20-regular":"warning-20-regular",color},
       ...(config.cancelText?{cancelText:config.cancelText}:{}),...(config.confirmText?{confirmText:config.confirmText}:{}),
-      danger:config.confirmTone==="danger",outlineConfirm:config.confirmAppearance==="outline",confirm:async()=>{await config.onConfirm?.();},
+        danger:config.confirmTone==="danger",outlineConfirm:config.confirmAppearance==="outline",confirm:async()=>{await config.onConfirm?.();},
+        ...(config.onCancel?{cancel:()=>{this.close();config.onCancel?.();}}:{}),
       build:width=>{const node=new Container();
         const message=createNativeParagraph(config.message,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:13,lineHeight:18.85,fill:style.muted,wordWrap:true,wordWrapWidth:width-52,breakWords:true},width-52);message.x=52;node.addChild(message);
         let height=message.height;
@@ -183,8 +184,9 @@ export class NativeManagement extends Container {
     layer.on("rightclick",event=>{if(event.target===layer){this.close();this.emit("context-request",event.global.x,event.global.y);}event.stopPropagation();});
     const panel=new Container();
     this.#selectionMenu=Boolean(selection);this.#menuRestore=selection?.restore??null;
-    const measured=actions.map(action=>{const label=createNativeText({text:action.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:14}});const w=label.width+(action.icon?52:32);label.destroy();return w;});
-    const panelWidth=Math.min(selection?Math.max(176,minimumWidth):Math.max(minimumWidth,Math.min(240,...[Math.max(...measured)])),Math.max(1,width-16));
+    const hasIcons=actions.some(action=>Boolean(action.icon));
+    const measured=actions.map(action=>{const label=createNativeText({text:action.label,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:14}});const w=label.width+(hasIcons?60:40);label.destroy();return w;});
+      const panelWidth=Math.min(selection?Math.max(176,minimumWidth):Math.max(minimumWidth,Math.min(360,...[Math.max(...measured)])),Math.max(1,width-16));
     const stride=selection?38:36;
     const contentHeight=actions.length*stride+actions.filter(action=>action.separatorBefore).length*9;
     const panelHeight=Math.min(contentHeight+8,Math.max(1,height-16));
@@ -204,7 +206,7 @@ export class NativeManagement extends Container {
       button.on("pointerdown",()=>{const index=this.#controls.findIndex(control=>control.node===button);if(index>=0)this.#focus(index,false);});
       this.#controls.push({node:button,activate:()=>button.activate()});button.disabled=Boolean(action.disabled);
       button.position.set(0,rowY);rowY+=stride;this.#scroll!.content.addChild(button);
-      button.caption.anchor.x=0;button.caption.x=action.icon?38:selection?19:12;button.caption.style.fontSize=14;
+      button.caption.anchor.x=0;button.caption.x=hasIcons?38:selection?19:12;button.caption.style.fontSize=14;
       if(button.caption.width>panelWidth-button.caption.x-18){let label=action.label;while(label.length&&button.caption.width>panelWidth-button.caption.x-18){label=label.slice(0,-1);button.caption.text=label+"…";}}
       if(action.icon){const icon=nativeFluentIcon(action.icon,action.danger?(this.theme==="dark"?"#ffb4a9":colors.colorPaletteRedForeground1):colors.colorNeutralForeground1,18);icon.position.set(10,8);icon.alpha=action.disabled?0.38:1;button.addChild(icon);}
       if(action.selected){

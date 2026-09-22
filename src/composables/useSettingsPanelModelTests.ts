@@ -155,6 +155,8 @@ function createCapabilities() {
   const editorTarget = ref("");
   const editorModel = Object.freeze({
     app: computed(() => editorApp.value),
+    runAsAdmin: ref(false),
+    canEditAdmin: computed(() => true),
     args: editorArgs,
     canBrowseTarget: computed(() => !editorIsBrowsingTarget.value),
     canEditArgs: computed(() => editorSession.value?.originalTargetKind !== "appUserModelId"),

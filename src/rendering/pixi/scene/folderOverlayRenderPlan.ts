@@ -68,6 +68,7 @@ export type FolderOverlayPlanFrame = Readonly<{
   ) => boolean) | null;
   isTextlessMode: boolean;
   launchTargetStatusById: Readonly<Record<string, string>>;
+  iconBadgesById?: import("../../../domain/iconBadge.js").IconBadges | undefined;
   selectedAppIds: ReadonlySet<string> | readonly string[];
   showMissingLaunchTargetBadge: boolean;
   stageHeight: number;
@@ -340,6 +341,7 @@ export function makeFolderOverlayRenderPlan(
         interactive: isInteractivePage,
         item,
         jiggleSeed: Math.max(0, pageIndex) * 100 + iconLayout.source.index,
+        badge: frame.iconBadgesById?.[item.id],
         launchTargetStatus: isInteractivePage && frame.showMissingLaunchTargetBadge
           ? frame.launchTargetStatusById[item.id] ?? null
           : null,

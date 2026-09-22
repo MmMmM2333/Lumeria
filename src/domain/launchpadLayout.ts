@@ -24,6 +24,7 @@ export type LaunchpadApp = {
   customIconUrl?: string | null;
   launchTarget?: { kind?: string; path?: string; appUserModelId?: string };
   launchArgs?: string;
+  runAsAdmin?: boolean;
   sources?: { key?: string; [key: string]: unknown }[];
   trackingKey?: string;
   identityStatus?: "exact" | "unresolved";

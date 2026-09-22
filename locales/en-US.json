@@ -3,6 +3,7 @@
   "displayName": "English",
   "direction": "ltr",
   "messages": {
+    "recovery": {"configFile": "Configuration file", "exit": "Exit", "resetLink": "Back up and reset…", "title": "Unable to load local layout", "message": "The layout has not been loaded. Fix the configuration and retry. No layout changes will be saved.", "retry": "Retry loading", "location": "Open configuration folder", "reset": "Back up and reset layout", "resetTitle": "Reset layout and settings?", "resetMessage": "The original configuration will be backed up before starting fresh. Reset stops if the backup fails.", "copy": "Copy error details"},
     "imports": {
       "helpContext_singleRule": "Example: folder grouping is enabled and E is separate; now enable single-app folders.",
       "helpContext_flatRule": "Example: Tools already exists; now switch to showing all apps individually.",
@@ -1184,6 +1185,7 @@
       }
     },
     "launchpad": {
+      "target": {"adminUnavailable": "This target does not support administrator launch.", "missingTitle": "Launch target missing", "missingMessage": "Edit the launch path or check whether the file has been restored.", "runAsAdmin": "Run as administrator", "openLocation": "Open file location", "openFolder": "Open containing folder", "openShortcutLocation": "Open shortcut location", "recheck": "Check again"},
       "search": {
         "placeholder": "Search",
         "label": "Search apps",
@@ -1256,6 +1258,8 @@
         "chooseFromDisk": "Choose an image from disk"
       },
       "appEditor": {
+        "runAsAdmin": "Always run as administrator",
+        "runAsAdminHint": "Request administrator privileges when launching this app.",
         "editTitle": "Edit app",
         "addTitle": "Add app",
         "addDescription": "Add a custom app to Launchpad",
@@ -1610,14 +1614,20 @@
           "appCount": "{count} apps"
         },
         "overview": {
+          "waitElevation": "Finish animation before showing UAC",
+          "waitElevationDescription": "Wait for the closing animation before showing a permission prompt for apps that need administrator privileges.",
+
+          "missingStyle": {"question": "Question mark", "prohibited": "Prohibited", "none": "Do not show"},
+          "adminShield": "Show administrator shield",
+          "adminShieldDescription": "Only changes the indicator, not launch permissions.",
           "appCount": "{count} apps",
           "scanReady": "Refresh apps from enabled scan sources",
           "scanDisabled": "Enable a scan source first",
           "scan": "Scan",
           "addDescription": "Add a custom app manually",
           "add": "Add",
-          "missingTarget": "Invalid launch target badge",
-          "missingTargetDescription": "Show a warning when an app's launch path or URL is unavailable",
+          "missingTarget": "Missing app indicator",
+          "missingTargetDescription": "Keep the original icon with an unavailable indicator.",
           "showMissingTarget": "Show invalid launch target badge"
         },
         "operations": {

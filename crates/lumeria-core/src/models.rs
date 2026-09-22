@@ -63,6 +63,8 @@ pub struct AppSource {
     pub root_id: String,
     pub root_label: String,
     pub relative_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_display_name: Option<String>,
     pub absolute_path: String,
 }
 

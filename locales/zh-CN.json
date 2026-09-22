@@ -3,6 +3,7 @@
   "displayName": "简体中文",
   "direction": "ltr",
   "messages": {
+    "recovery": {"configFile": "配置文件", "exit": "退出", "resetLink": "备份并重置…", "title": "无法读取本地布局", "message": "布局尚未载入。修复配置后可重试；当前不会保存任何布局更改。", "retry": "重试读取", "location": "打开配置所在文件夹", "reset": "备份并重置布局", "resetTitle": "确认重置布局和设置？", "resetMessage": "先备份原配置，再重新开始。备份失败时不会重置。", "copy": "复制错误详情"},
     "imports": {
       "helpContext_singleRule": "示例前提：使用文件夹整理，E 已单独显示；现在开启“单个应用也创建文件夹”。",
       "helpContext_flatRule": "示例前提：已有“工具合集”，现在改为“所有应用单独显示”。",
@@ -1184,6 +1185,7 @@
       }
     },
     "launchpad": {
+      "target": {"adminUnavailable": "此启动目标不支持以管理员身份运行。", "missingTitle": "启动目标不存在", "missingMessage": "可以编辑启动路径，或重新检查文件是否已恢复。", "runAsAdmin": "以管理员身份运行", "openLocation": "打开文件所在位置", "openFolder": "打开所在文件夹", "openShortcutLocation": "打开快捷方式所在位置", "recheck": "重新检查"},
       "search": {
         "placeholder": "搜索",
         "label": "搜索应用",
@@ -1256,6 +1258,8 @@
         "chooseFromDisk": "从硬盘选择图片"
       },
       "appEditor": {
+        "runAsAdmin": "始终以管理员身份运行",
+        "runAsAdminHint": "从启动台启动此应用时请求管理员权限。",
         "editTitle": "编辑应用",
         "addTitle": "新增应用",
         "addDescription": "添加自定义应用到启动台",
@@ -1610,14 +1614,20 @@
           "appCount": "{count} 个应用"
         },
         "overview": {
+          "waitElevation": "先播完动画，再弹出 UAC",
+          "waitElevationDescription": "启动需要管理员权限的应用时，等待关闭动画结束后再显示权限提示。",
+
+          "missingStyle": {"question": "问号", "prohibited": "禁止符号", "none": "不显示"},
+          "adminShield": "显示管理员权限盾牌",
+          "adminShieldDescription": "仅影响标记显示，不改变启动权限。",
           "appCount": "{count} 个应用",
           "scanReady": "从启用的扫描来源刷新应用",
           "scanDisabled": "需要启用扫描来源",
           "scan": "扫描",
           "addDescription": "手动添加自定义应用",
           "add": "新增",
-          "missingTarget": "失效启动目标标记",
-          "missingTargetDescription": "应用的启动路径或 URL 不可用时显示提示",
+          "missingTarget": "失效应用标记",
+          "missingTargetDescription": "保留原图标，叠加失效标记。",
           "showMissingTarget": "显示失效启动目标标记"
         },
         "operations": {

@@ -164,6 +164,7 @@ export type GroupDragUpdateState = Readonly<{
   iconSize: number;
   isTextlessMode?: boolean | undefined;
   launchTargetStatusById?: Readonly<Record<string, string>> | undefined;
+  iconBadgesById?: import("../../../domain/iconBadge.js").IconBadges | undefined;
   releasePrewarmCount?: number | undefined;
   showMissingLaunchTargetBadge?: boolean | undefined;
   stageRect: StageRect;
@@ -407,6 +408,7 @@ function makeVisualStateKey(
   const stageRect = state.stageRect || {};
   return [
     group.key,
+    JSON.stringify(state.iconBadgesById?.[item.id]),
     group.phase || "",
     item.id || "",
     item.type || "",
@@ -524,6 +526,7 @@ function applyNodeVisualState(
       iconSize: visualSpec.iconSize,
       interactive: false,
       item: entry.item,
+      badge: state.iconBadgesById?.[entry.item.id],
       launchTargetStatus: state.showMissingLaunchTargetBadge
         ? state.launchTargetStatusById?.[entry.item.id] || null
         : null,

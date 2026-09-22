@@ -813,6 +813,18 @@ assert.equal(folderFlow.snapshot().renderedFolder, null, "folder close should fi
 assert.ok(flowSnapshot, "folder flow should publish presentation changes");
 folderFlow.destroy();
 
+const refreshedFlow = createNativeFolderFlow(() => {});
+refreshedFlow.open({ ...folderItem, childPages: [[], [], []] });
+refreshedFlow.setPageIndex(2);
+const updatedFolder = { ...folderItem, name: "Updated", childPages: [[]] };
+refreshedFlow.reconcile([updatedFolder]);
+assert.equal(refreshedFlow.snapshot().renderedFolder, updatedFolder, "layout edits replace the open folder contents immediately");
+assert.equal(refreshedFlow.snapshot().folderPageIndex, 0, "deleting the last page clamps the current page");
+refreshedFlow.close();
+refreshedFlow.reconcile([]);
+assert.equal(refreshedFlow.snapshot().renderedFolder, updatedFolder, "closing retains its animation snapshot");
+refreshedFlow.destroy();
+
 const earlyHandoffFlow = createNativeFolderFlow(() => {});
 earlyHandoffFlow.open(folderItem);
 for (let frameIndex = 0; frameIndex < 600 && earlyHandoffFlow.snapshot().openProgress < 0.999; frameIndex += 1) {
