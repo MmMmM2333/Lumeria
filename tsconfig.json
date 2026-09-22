@@ -36,6 +36,7 @@
   ],
   "exclude": [
     "src/rendering/native/NativeImportHelp.ts",
+    "src/rendering/native/NativeLayoutRecovery.ts",
     "src/rendering/native/NativeOnboarding.ts",
     "src/rendering/native/NativeImportPlacement.ts",
     "src/rendering/native/NativeNewAppsButton.ts",

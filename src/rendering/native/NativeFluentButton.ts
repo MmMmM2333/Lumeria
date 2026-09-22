@@ -114,6 +114,7 @@ export class NativeFluentButton extends Container {
     }
     if(this.appearance==="option"||this.appearance==="preview"){
       const style=nativeSettingsStyle(this.#theme),dark=this.#theme==="dark",hover=!this.#disabled&&this.#hovered;
+      this.caption.style.fill=this.#disabled?theme.colorNeutralForegroundDisabled:style.text;
       const fill=hover?(dark?"rgba(255,255,255,0.065)":theme.colorNeutralBackground1Hover)
         :this.#selected?(dark?"rgba(75,163,246,0.16)":theme.colorBrandBackground2):dark?"rgba(0,0,0,0.1)":theme.colorNeutralBackground1;
       const border=this.#selected?(this.appearance==="preview"&&dark?"rgba(75,163,246,0.42)":style.accent):hover?theme.colorNeutralStroke1:style.border;
