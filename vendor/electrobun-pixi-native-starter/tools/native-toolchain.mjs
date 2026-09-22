@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -13,7 +13,7 @@ export const devkitPath = join(starterRoot, ".hutch/devkit-dcomp-2.0.1");
 export const localLockPath = join(starterRoot, ".hutch/native-toolchain.local.json");
 export const frameDirectory = join(starterRoot, ".hutch/native-frame");
 const help = "Run npm run native:prepare:source or native:prepare -- --archive <toolchain.tar.gz>; see docs/native-toolchain.md.";
-const frameRecipe = ["--crate-type", "cdylib", "--target", "x86_64-pc-windows-msvc", "src/platform/native-frame.rs", "-C", "opt-level=3", "-C", "link-arg=/Brepro"];
+const frameRecipe = ["build", "--manifest-path", "native/frame/Cargo.toml", "--release", "--locked", "--target", "x86_64-pc-windows-msvc"];
 export function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: "utf8", windowsHide: true, ...options });
   if (result.error) throw result.error;
@@ -198,7 +198,7 @@ export async function downloadArchive(url, destination, lock = readLock()) {
   await pipeline(Readable.fromWeb(response.body), bounded, createWriteStream(destination, { flags: "wx" }));
   if (size !== lock.archive.size || await hashFile(destination) !== lock.archive.sha256) throw new Error("Downloaded toolchain does not match lock");
 }
-const frameSources = ["src/platform/native-frame.rs", "src/platform/native-frame-window-tests.rs"];
+const frameSources = ["native/frame/Cargo.toml", "native/frame/Cargo.lock", "native/frame/build.rs", "src/platform/native-frame.rs", "src/platform/native-frame-window-tests.rs"];
 function frameInputs() { return frameSources.map(path => ({ path, sha256: digest(join(starterRoot, path)) })); }
 export function verifyNativeFrame(directory = frameDirectory, sources = frameInputs()) {
   const path = join(directory, "build.json");
@@ -219,8 +219,9 @@ export function buildNativeFrame() {
   const temporary = mkdtempSync(join(cache, "frame-"));
   try {
     const output = join(temporary, "native-frame.dll");
-    const args = [...frameRecipe, "-o", output];
-    run("rustc", args, { cwd: starterRoot, stdio: "inherit" });
+    const target = join(cache, "frame-target");
+    run("cargo", [...frameRecipe, "--target-dir", target], { cwd: starterRoot, stdio: "inherit" });
+    copyFileSync(join(target, "x86_64-pc-windows-msvc/release/native_frame.dll"), output);
     if (JSON.stringify(sources) !== JSON.stringify(frameInputs())) throw new Error("Native sources changed while compiling; retry");
     const record = { schemaVersion: 1, target: "x86_64-pc-windows-msvc", compiler, recipe: frameRecipe, sources, binarySha256: digest(output) };
     mkdirSync(frameDirectory, { recursive: true });

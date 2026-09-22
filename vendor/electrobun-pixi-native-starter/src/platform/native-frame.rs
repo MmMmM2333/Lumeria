@@ -4341,7 +4341,7 @@ mod tests {
             }
         }
 
-        let read_path = b"src/platform/native-frame.rs";
+        let read_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/platform/native-frame.rs").as_bytes();
         let read_id = unsafe {
             pixi_start_job(1, read_path.as_ptr(), read_path.len() as u64)
         };
@@ -4349,7 +4349,7 @@ mod tests {
         let (read_meta, read_data) = wait_for_job(read_id);
         assert_eq!((read_meta.event_kind, &read_data[..2]), (JOB_RESULT, &b"#!"[..]));
 
-        let scan_path = b"src";
+        let scan_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../src").as_bytes();
         let scan_id = unsafe {
             pixi_start_job(2, scan_path.as_ptr(), scan_path.len() as u64)
         };
