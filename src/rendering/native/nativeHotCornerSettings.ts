@@ -86,13 +86,10 @@ export function nativeHotCornerSettings(settings:ReturnType<typeof createLaunchp
   ] as const){
     label(body,t(`settings.general.hotCorners.${key}`),20,y+7,13,width-100);
     check(body,value,width-60,y,action).label=`native-setting:hot-corners-${key}`;
-    if(key!=="seams"){
-      const detail=label(body,t(`settings.general.hotCorners.${key}Hint`),20,y+30,12,width-100);detail.style.fill=style.muted;
-      y+=30+detail.height+16;
-    }else y+=44;
+    const detail=label(body,t(`settings.general.hotCorners.${key}Hint`),20,y+30,12,width-100);detail.style.fill=style.muted;
+    y+=30+detail.height+(key==="seams"?20:16);
   }
-  const seamHint=label(body,t("settings.general.hotCorners.seamsHint"),20,y,12,width-40);seamHint.style.fill=style.muted;
-  const height=y+seamHint.height+20;
+  const height=y;
   layout.disclosure("general.hotCorners",expanded,start,72,height,controls.slice(controlStart),chevron,true,header);
   return {node,controls,height:72+height,layout:layout.finish(72+height),update:()=>{},dispose:()=>{}};
 }
