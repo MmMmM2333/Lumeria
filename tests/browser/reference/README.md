@@ -4,7 +4,7 @@
 它取代了此前的仓库根 `index.html` + `src/main.ts` + `src/App.vue` 组合：
 
 - `index.html`：浏览器参考测试入口页面，只在 Vite 开发服务器（`import.meta.env.DEV`）下挂载。
-- `main.ts`：旧 `src/main.ts` 的迁移版本，移除 MotionLab query 分流（MotionLab 已独立为 `motion-lab.html`）。
+- `main.ts`：旧 `src/main.ts` 的迁移版本，移除 MotionLab query 分流（MotionLab 入口为 `src/motionLab/index.html`）。
 - `ReferenceApp.vue`：旧 `src/App.vue` 的迁移版本，业务代码仍从 `src/` 复用，只改写相对路径。
 - `vue-sfc-module.d.ts`：`main.ts` 由 `tsconfig.tools.json`（纯 `tsc`）检查，需要 SFC 模块声明。
 
@@ -31,7 +31,7 @@
 
 ```powershell
 # 开发服务器（Playwright 配置会自动启动同样的命令）
-npm run dev -- --host 127.0.0.1 --port 4175 --strictPort
+npm run dev:motion-lab -- --host 127.0.0.1 --port 4175 --strictPort
 
 # 打开参考宿主
 #   http://127.0.0.1:4175/tests/browser/reference/index.html
@@ -39,9 +39,9 @@ npm run dev -- --host 127.0.0.1 --port 4175 --strictPort
 
 # 浏览器回归
 npm run test:ui                      # 全部 chromium 规格
-npm run test:i18n-ui                 # 单规格示例
-npm run test:multi-select-ui
-npm run test:trusted-mouse-ui
+npm run test:ui -- tests/browser/i18n-search-placeholder.spec.ts
+npm run test:ui -- tests/browser/launchpad-multi-select-management.spec.ts
+npm run test:ui -- tests/browser/launchpad-provisional-folder-mouse.spec.ts
 ```
 
 `tests/browser/fixtures/*.html` 是独立的 fixture-only 页面，不经过参考宿主，保持原样。

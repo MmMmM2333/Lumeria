@@ -47,7 +47,7 @@ npm run native:toolchain:check
 
 也支持 `native:prepare -- --url <HTTPS地址>`，内容仍须匹配官方锁。显式导入官方包会验证后备份当前 SDK，再移除本地选择记录；不带参数的 prepare 保留已选中的有效本地 SDK。
 
-`npm ci` 只安装 npm 依赖并应用 Pixi 补丁，不隐式构建 SDK。准备 SDK 后才能执行 Native 类型检查和完整 `npm run check`。原生桥接 DLL 按需从当前源码构建；手动构建可用 `npm run native:host:build`。工具不会为覆盖已加载 DLL 自动结束用户实例。
+`npm ci` 只安装 npm 依赖并应用 Pixi 补丁，不隐式构建 SDK。准备 SDK 后才能执行 Native 类型检查和完整 `npm run check`。原生桥接 DLL 由 Starter 的独立 Cargo crate（`native/frame/Cargo.toml`）按需构建，edition、链接参数和测试随 crate 维护；手动构建可用 `npm run native:host:build`。工具不会为覆盖已加载 DLL 自动结束用户实例。`npm run test:native-frame` 可独立运行桥接测试；构建记录同时校验 Cargo 清单、锁文件、构建脚本和 Rust 源码。应用自己的触发角 DLL 属于根 Rust workspace，由 `native:dev`／`native:build` 自动构建和复制。
 
 ## 清单、来源与本地记录
 

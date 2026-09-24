@@ -18,6 +18,7 @@ import { nativePanelShadow } from "./ui/nativePanelShadow.js";
 
 export type NativeFormField = { label: string; value: string; readOnly?: boolean; browse?:()=>Promise<string|null> };
 export type NativeMenuAction={label:string;run:()=>void;selected?:boolean;disabled?:boolean;danger?:boolean;separatorBefore?:boolean;icon?:Parameters<typeof nativeFluentIcon>[0]};
+export type NativeMenuSession = Readonly<{ update(actions: readonly NativeMenuAction[]): boolean }>;
 type ModalFrame = {
   panel:Container;
   controls:{node:Container;activate?:()=>void}[];
@@ -175,7 +176,7 @@ export class NativeManagement extends Container {
         return {node,height:y,controls,update:()=>false};
       }});
   }
-  menu(x:number,y:number,actions:readonly NativeMenuAction[],minimumWidth=204,selection?:{restore():void}):void {
+  menu(x:number,y:number,actions:readonly NativeMenuAction[],minimumWidth=204,selection?:{restore():void}):NativeMenuSession|undefined {
     if(!this.#begin())return;
     const {width,height}=this.size();
     const layer=new Container({eventMode:"static",label:"native-context-menu"});
@@ -200,15 +201,23 @@ export class NativeManagement extends Container {
     this.#scroll.position.set(4,4);this.#scroll.resize(panelWidth-8,panelHeight-8,contentHeight);
     panel.addChild(this.#scroll);
     let rowY=0;
+    const rows: {button:NativeFluentButton;icon:Container|null;action:NativeMenuAction}[]=[];
+    const setCaption=(button:NativeFluentButton,label:string)=>{
+      button.label=`native-action:${label}`;
+      button.caption.text=label;
+      while(label.length&&button.caption.width>panelWidth-button.caption.x-18){label=label.slice(0,-1);button.caption.text=label+"…";}
+    };
     actions.forEach(action=>{
       if(action.separatorBefore){this.#scroll!.content.addChild(new Graphics({eventMode:"none"}).rect(8,rowY+4,panelWidth-24,1).fill({color:colors.colorNeutralStroke2,alpha:0.56}));rowY+=9;}
-      const button=new NativeFluentButton(action.label,panelWidth-10,()=>{this.close();action.run();},this.invalidate,this.theme,"subtle",Boolean(action.danger));
+      const row:{button:NativeFluentButton;icon:Container|null;action:NativeMenuAction}={button:null!,icon:null,action};
+      const button=new NativeFluentButton(action.label,panelWidth-10,()=>{this.close();row.action.run();},this.invalidate,this.theme,"subtle",Boolean(action.danger));
+      row.button=button;rows.push(row);
       button.on("pointerdown",()=>{const index=this.#controls.findIndex(control=>control.node===button);if(index>=0)this.#focus(index,false);});
       this.#controls.push({node:button,activate:()=>button.activate()});button.disabled=Boolean(action.disabled);
       button.position.set(0,rowY);rowY+=stride;this.#scroll!.content.addChild(button);
       button.caption.anchor.x=0;button.caption.x=hasIcons?38:selection?19:12;button.caption.style.fontSize=14;
-      if(button.caption.width>panelWidth-button.caption.x-18){let label=action.label;while(label.length&&button.caption.width>panelWidth-button.caption.x-18){label=label.slice(0,-1);button.caption.text=label+"…";}}
-      if(action.icon){const icon=nativeFluentIcon(action.icon,action.danger?(this.theme==="dark"?"#ffb4a9":colors.colorPaletteRedForeground1):colors.colorNeutralForeground1,18);icon.position.set(10,8);icon.alpha=action.disabled?0.38:1;button.addChild(icon);}
+      setCaption(button,action.label);
+      if(action.icon){const icon=nativeFluentIcon(action.icon,action.danger?(this.theme==="dark"?"#ffb4a9":colors.colorPaletteRedForeground1):colors.colorNeutralForeground1,18);icon.position.set(10,8);icon.alpha=action.disabled?0.38:1;button.addChild(icon);row.icon=icon;}
       if(action.selected){
         if(selection)button.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,panelWidth-10,36,4).fill(colors.colorNeutralBackground1Selected),0);
         button.addChild(new Graphics({eventMode:"none",label:"native-menu:selected-indicator"}).roundRect(selection?8:4,selection?10:8,3,selection?16:18,1.5).fill(0x4ba3f6));
@@ -218,6 +227,21 @@ export class NativeManagement extends Container {
     // Opening a pointer menu keeps its keyboard anchor without painting keyboard focus.
     this.#menu=true;const first=actions.findIndex(action=>action.selected&&!action.disabled);const focus=first>=0?first:actions.findIndex(action=>!action.disabled);if(focus>=0)this.#focus(focus,false);
     if(selection){layer.alpha=0;layer.y=-3;motion(layer).duration(0.1).ease("power2.out").to({alpha:1,y:0}).start();}
+    this.invalidate();
+    return {update:next=>{
+      if(layer.destroyed||this.#panel!==layer||!this.#menu)return false;
+      if(next.length!==rows.length)throw new Error("Menu updates must preserve action slots");
+      next.forEach((action,index)=>{
+        const row=rows[index]!;
+        if(action.icon!==row.action.icon||Boolean(action.separatorBefore)!==Boolean(row.action.separatorBefore)
+          ||Boolean(action.selected)!==Boolean(row.action.selected)||Boolean(action.danger)!==Boolean(row.action.danger))throw new Error("Menu updates must preserve action structure");
+        row.action=action;row.button.disabled=Boolean(action.disabled);setCaption(row.button,action.label);
+        if(row.icon)row.icon.alpha=action.disabled?0.38:1;
+      });
+      // A newly disabled focused action cannot retain the keyboard activation anchor.
+      if(rows[this.#focusIndex]?.button.disabled){const visible=this.#focusRing.parent!==null;this.focusNext();if(!visible)this.#focusRing.removeFromParent();}
+      this.invalidate();return true;
+    }};
   }
   override destroy():void {
     this.#restoreInput=null;

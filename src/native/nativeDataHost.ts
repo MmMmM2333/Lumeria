@@ -1,4 +1,5 @@
 import { NativeDataTransport } from "./nativeDataTransport.js";
+import { NativeTargetCheckCache } from "./nativeTargetCheckCache.js";
 import { NATIVE_DATA_PROTOCOL_VERSION as PROTOCOL_VERSION, requireNativeRecord as requireRecord } from "./nativeDataProtocol.js";
 import { isAbsolute, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +98,7 @@ function resolveExecutable(): string {
 export class NativeDataHost {
   autostartAvailable = false;
   readonly #transport: NativeDataTransport;
+  readonly #targetChecks = new NativeTargetCheckCache((targets, force) => this.#checkLaunchTargets(targets, force));
 
   constructor(executable = resolveExecutable()) {
     this.#transport = new NativeDataTransport(executable);
@@ -156,7 +158,9 @@ export class NativeDataHost {
   ): Promise<NativeCatalogScanResult> {
     roots.forEach((root, index) => assertCatalogScanRoot(root, `scanApps roots[${index}]`));
     assertCatalogScanFilters(filters);
-    return validateCatalogResult(await this.#transport.request("scanApps", { roots, filters }));
+    this.#targetChecks.clear();
+    try { return validateCatalogResult(await this.#transport.request("scanApps", { roots, filters })); }
+    finally { this.#targetChecks.clear(); }
   }
 
   async launchApp(appId: string, elevated = false): Promise<void> {
@@ -167,8 +171,16 @@ export class NativeDataHost {
     if (!isAbsolute(path)) throw new TypeError("File location must be absolute");
     await this.#transport.request("revealPath", {path, folder});
   }
-  async checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[]):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
-    const value=await this.#transport.request("checkLaunchTargets",{targets});
+  retainLaunchTargets(targets: readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[]): void {
+    this.#targetChecks.retain(targets);
+  }
+
+  checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[], force=false):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
+    return this.#targetChecks.check(targets, force);
+  }
+
+  async #checkLaunchTargets(targets:readonly import("../platform/launchpadContracts.js").LaunchTargetCheckRequest[], force:boolean):Promise<readonly import("../platform/launchpadContracts.js").LaunchTargetCheckResult[]>{
+    const value=await this.#transport.request("checkLaunchTargets",{targets,force});
     if(!Array.isArray(value))throw new TypeError("Launch target checks must return an array");
     return value.map(item=>{
       const entry=requireRecord(item,"launch target check");
@@ -180,5 +192,5 @@ export class NativeDataHost {
     });
   }
 
-  dispose(): Promise<void> { return this.#transport.dispose(); }
+  dispose(): Promise<void> { this.#targetChecks.clear(); return this.#transport.dispose(); }
 }

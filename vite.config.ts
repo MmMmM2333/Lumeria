@@ -3,13 +3,19 @@ import Icons from "unplugin-icons/vite";
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
-export default defineConfig({
-  optimizeDeps: { entries: ["motion-lab.html", "import-lab.html"] },
+export default defineConfig(({ command }) => ({
+  // Development serves both labs and browser fixtures from the repository.
+  // Building uses the lab root so the artifact is dist/motion-lab/index.html.
+  root: fileURLToPath(new URL(command === "build" ? "./src/motionLab/" : "./", import.meta.url)),
+  optimizeDeps: { entries: [
+    fileURLToPath(new URL("./src/motionLab/index.html", import.meta.url)),
+    fileURLToPath(new URL("./tests/browser/importLab/index.html", import.meta.url)),
+  ] },
   build: {
     emptyOutDir: true,
-    outDir: "dist/motion-lab",
+    outDir: fileURLToPath(new URL("./dist/motion-lab/", import.meta.url)),
     rollupOptions: {
-      input: fileURLToPath(new URL("./motion-lab.html", import.meta.url)),
+      input: fileURLToPath(new URL("./src/motionLab/index.html", import.meta.url)),
     },
   },
   // Hutch replaces its generated devkit directory during native builds. Watching
@@ -25,4 +31,4 @@ export default defineConfig({
     }),
     Icons({ compiler: "vue3" }),
   ],
-});
+}));

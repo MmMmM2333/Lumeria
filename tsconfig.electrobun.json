@@ -15,6 +15,7 @@
     "verbatimModuleSyntax": true
   },
   "include": [
+    "src/native/nativeContextMenu.test.ts",
     "src/rendering/native/NativeImportHelp.ts",
     "src/rendering/native/NativeImportPlacement.ts",
     "src/rendering/native/NativeNewAppsButton.ts",

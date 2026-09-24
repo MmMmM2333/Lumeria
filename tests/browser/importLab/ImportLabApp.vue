@@ -75,7 +75,7 @@ function dialogKey(event:KeyboardEvent){if(event.key==="Escape"){panel.value=nul
 
 <template>
   <div class="lab-shell">
-    <header class="lab-header" :inert="panel!==null"><a class="brand" href="/import-lab.html"><span class="brand-mark">L</span><span>Lumeria <small>LAB / 02</small></span></a><div class="header-title">应用导入实验室 <span class="pill">交互原型</span></div><button class="quiet" @click="explain=!explain">{{ explain?'隐藏':'显示' }}变化说明</button></header>
+    <header class="lab-header" :inert="panel!==null"><a class="brand" href="/tests/browser/importLab/index.html"><span class="brand-mark">L</span><span>Lumeria <small>LAB / 02</small></span></a><div class="header-title">应用导入实验室 <span class="pill">交互原型</span></div><button class="quiet" @click="explain=!explain">{{ explain?'隐藏':'显示' }}变化说明</button></header>
     <div v-if="error" class="error" role="alert">{{ error }} <button @click="reset">重置实验</button></div>
     <main class="lab-layout" :class="{'no-inspector':!explain}" :inert="panel!==null">
       <aside class="scenario-panel">

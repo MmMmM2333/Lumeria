@@ -62,6 +62,33 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 
 增删或升级分发依赖时，同步更新第三方声明中的组件和许可原文。发布二进制时提供对应版本的源码与构建脚本，具体说明见 [LICENSING.md](../LICENSING.md)。
 
+## GitHub 标签构建
+
+`.github/workflows/release.yml` 只在推送 `v*` 标签时运行，普通提交和 PR 不触发。标签必须是
+`vMAJOR.MINOR.PATCH`，并与项目版本一致；暂不接受预发布后缀。工作流文件必须包含在标签对应的提交中。
+
+版本修改、提交和本地验收完成后，由维护者推送对应标签，例如：
+
+```powershell
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+Windows 构建任务准备固定版本的 Node/npm、Rust、Bun、Zig 和 NSIS，使用 runner 的 MSVC、
+Windows SDK 与 CMake。它调用 `native:prepare:source` 从固定源码生成并校验 SDK，不依赖已发布的
+工具链附件；第一版不缓存 SDK。然后运行 `npm run check`、数据服务集成测试与 Live Desktop Rust
+测试，再执行 `native:release`。首次云端构建仍需确认 runner 的磁盘、耗时和上游下载是否满足要求。
+
+构建成功后，独立发布任务只创建或更新该标签的 **Release 草稿**，附件仅包含安装包 `.exe`
+及其 `.exe.sha256`。`.exe.json`、工具链生成记录和步骤日志留在 Actions artifacts，保留 14 天。
+GitHub 在发布页面另提供标签对应的源码下载。草稿不会自动公开，仍须验收该安装包后手动发布。
+
+重跑失败任务可补齐草稿附件；工作流拒绝修改已公开版本、含其他附件的草稿或构建后被移动的标签。
+发布任务使用 GitHub 自动提供的 `GITHUB_TOKEN`，不需要额外 PAT；仓库／组织须允许 Actions 运行
+及该任务的 `contents: write` 权限。不要将这个仅标签触发的任务设为 PR 必须通过的检查。
+
+云端检查不替代 GPU 界面、UAC、托盘、快捷键及真实安装／升级／卸载验收。当前安装包仍未签名。
+
 ## 安装和使用
 
 ```text
