@@ -1698,6 +1698,10 @@ try {
       visibleNodes,
     }, null, 2));
     if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_SETTINGS_ONLY : undefined)==="1"){
+      if(process.env.LAUNCHPAD_NATIVE_TOGGLE_PROOF){
+        await (await import("../diagnostics/nativeToggleSmoke.js")).runNativeToggleSmoke({app,nativeData,settings,open:openSettings,close:()=>nativeSettings.close(),shell:()=>nativeSettings.shell!,directory:process.env.LAUNCHPAD_NATIVE_TOGGLE_PROOF});
+        closeCoordinator.requestQuit();return;
+      }
       if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_WINDOW_CARD_PREVIEW : undefined)==="1"){settingsNavigation.selectTab("interface");windowPanelState.mode=true;}
       if((__LUMERIA_DIAGNOSTICS__ ? process.env.LAUNCHPAD_NATIVE_APPS_PREVIEW : undefined)==="1")settingsNavigation.selectTab("apps");
       openSettings();

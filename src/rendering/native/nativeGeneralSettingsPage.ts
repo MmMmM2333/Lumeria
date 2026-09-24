@@ -134,7 +134,9 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   const update=()=>{
     const error=settings.presentation.launchAtLoginError.value;
     startupTitle.y=17;
-    startupError.setValue(error||t("settings.general.startup.description"));startupError.visible=true;
+    const hint=!settings.presentation.canConfigureLaunchAtLogin.value?"settings.general.startup.unavailableHint"
+      :settings.presentation.isRefreshingLaunchAtLogin.value?"settings.general.startup.loading":"settings.general.startup.description";
+    startupError.setValue(error||t(hint));startupError.visible=true;
     if(toggle.checked!==settings.draft.launchAtLogin.value)toggle.checked=settings.draft.launchAtLogin.value;
     toggle.disabled=!settings.presentation.canConfigureLaunchAtLogin.value||settings.presentation.isRefreshingLaunchAtLogin.value;
   };

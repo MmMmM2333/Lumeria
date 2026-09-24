@@ -16,6 +16,9 @@ export class NativeFluentToggle extends Container {
     super({eventMode:"static",cursor:"pointer"});
     this.hitArea=new Rectangle(0,0,kind==="switch"?40:32,32);
     this.addChild(this.#track,this.#mark);
+    // The thumb shape is fixed. Animate its transform/tint, keeping the GPU
+    // geometry stable when settings update an existing switch in place.
+    if(kind==="switch")this.#mark.circle(0,16,7).fill(0xffffff);
     this.on("pointerdown",event=>{event.stopPropagation();if(event.button===0){this.#pressed=true;this.#draw();}});
     for(const event of ["pointerup","pointerupoutside","pointercancel"] as const)this.on(event,()=>{this.#pressed=false;this.#draw();});
     this.on("pointertap",event=>{event.stopPropagation();if(event.button===0)this.toggle();});
@@ -46,7 +49,7 @@ export class NativeFluentToggle extends Container {
       :this.#checked?(this.#hover?colors.colorBrandBackgroundHover:colors.colorBrandBackground):colors.colorNeutralBackground1;
     const foreground=this.#disabled?colors.colorNeutralForegroundDisabled
       :this.#checked?colors.colorNeutralForegroundOnBrand:colors.colorNeutralForeground2;
-    this.#track.clear();this.#mark.clear();
+    this.#track.clear();
     if(this.kind==="switch"){
       const state=nativeUiTheme(this.theme);
       const progress=this.#transition.value;
@@ -55,9 +58,12 @@ export class NativeFluentToggle extends Container {
       const track=this.#disabled?{color:colors.colorNeutralBackgroundDisabled}:mix(state.switchOff,on);
       const border=this.#disabled?{color:colors.colorNeutralStrokeDisabled}:mix(colors.colorNeutralStrokeAccessible,on);
       this.#track.roundRect(0.5,6.5,39,19,9.5).fill(track).stroke({...border,width:1});
-      this.#mark.circle(0,16,7).fill(this.#disabled?{color:colors.colorNeutralForegroundDisabled}:mix(state.switchOffThumb,state.switchThumb));
+      const disabledThumb=new Color(colors.colorNeutralForegroundDisabled);
+      const thumb=this.#disabled?{color:disabledThumb.toNumber(),alpha:disabledThumb.alpha}:mix(state.switchOffThumb,state.switchThumb);
+      this.#mark.tint=thumb.color;this.#mark.alpha=thumb.alpha;
       this.#mark.x=10+20*progress;
     }else{
+      this.#mark.clear();
       const size=this.checkboxSize,inset=(32-size)/2,compact=size===16;
       this.#track.roundRect(inset+0.5,inset+0.5,size-1,size-1,compact?2:4).fill(compact&&!this.#checked?"transparent":fill).stroke({color:colors.colorNeutralStrokeAccessible,width:1});
       if(this.#checked)this.#mark.moveTo(inset+size*0.2,16).lineTo(inset+size*0.4,inset+size*0.7).lineTo(inset+size*0.8,inset+size*0.3).stroke({color:foreground,width:compact?1.6:2});
