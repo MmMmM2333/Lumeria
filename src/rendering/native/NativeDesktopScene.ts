@@ -119,9 +119,14 @@ function makeNativeFolderFrame(
   chromeInset: number,
   openingIconId:string|null,
 ): FolderOverlayFrame | null {
-  const folder = presentation?.renderedFolder;
+  if (!presentation) return null;
+  const sourceFolder = presentation.renderedFolder;
+  const folder = sourceFolder && !presentation.isClosing
+    ? (desktopFrame.viewport.activePages.flat().find(item => item?.id === sourceFolder.id && item.type === "folder") as typeof sourceFolder | undefined) ?? sourceFolder
+    : sourceFolder;
   if (!folder) return null;
-  const pages = folder.childPages;
+  const pages = presentation.folderPageIndex === folder.childPages.length
+    ? [...folder.childPages, []] : folder.childPages;
   const visibleRowCount = Math.min(layout.rows, Math.max(1, ...pages.map((page) => (
     Math.ceil(visibleItems(page).length / layout.cols) || 1
   ))));

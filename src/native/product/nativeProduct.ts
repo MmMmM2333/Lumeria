@@ -411,8 +411,8 @@ function closeFolder(): boolean {
   return true;
 }
 
-function setFolderPageIndex(pageIndex: number): boolean {
-  if (!folderFlow.setPageIndex(pageIndex)) return false;
+function setFolderPageIndex(pageIndex: number, options?: { allowCreate?: boolean }): boolean {
+  if (!folderFlow.setPageIndex(pageIndex, options)) return false;
   setFocusedIcon(null);
   return true;
 }
@@ -906,7 +906,7 @@ try {
     size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
     selectionToolbarRect:()=>selectionToolbar.cancelZoneRect(),
     confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
-    page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
+    page: index => onDesktopPageIndexCommit(index), dragPage: commitDesktopPage, folderPage: setFolderPageIndex,
     open: id => {
       if(!id) { closeFolder(); return; }
       const item = editing?.projectedPages().flat().find(item => item.id === id);

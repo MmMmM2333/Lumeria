@@ -2195,6 +2195,37 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     intentTimer = window.setTimeout(evaluateIntent, GROUP_DROP_INTENT_DELAY_MS);
   }
 
+  // Navigation belongs to the current drag. Callers must not cancel the pointer
+  // gesture when committing its page, and callbacks may still revoke ownership.
+  function navigateDragPage(targetIndex: number, folderId: string | null = null, allowCreate = false): boolean {
+    const drag = activeDrag;
+    if (!drag || !isInteractiveGroupTransferPhase(drag.group.phase) || !Number.isInteger(targetIndex)) return false;
+    if ((options.openFolderId.value || null) !== folderId) return false;
+    const pageCount = folderId ? options.folderPages.value.length : options.pages.value.length;
+    if (targetIndex < 0 || targetIndex > pageCount || (targetIndex === pageCount && !allowCreate)) return false;
+    if (targetIndex === pageCount && makePlan(folderId
+      ? { type: "folder-slot", folderId, folderPageIndex: targetIndex, index: 0 }
+      : { type: "desktop-slot", pageIndex: targetIndex, index: 0 }).status !== "accepted") return false;
+    clearIntentTimer();
+    clearPageTurn();
+    clearFolderPageTurn();
+    clearPendingTarget();
+    if (folderId) {
+      const token = options.requestFolderPageTurn?.(targetIndex, { allowCreate, folderId, phase: "open", source: "group-drag" });
+      const committed = token != null && options.commitFolderPageTurnRequest?.(token, { allowCreate, folderId, phase: "open" });
+      if (!committed) options.commitFolderPageIndex(targetIndex, { allowCreate });
+      if (activeDrag !== drag) return false;
+      drag.group.virtualFolderPageIndex = targetIndex === pageCount ? targetIndex : null;
+    } else {
+      drag.group.desktopPageIndex = targetIndex;
+      if (targetIndex < pageCount) options.commitPageIndex(targetIndex);
+      if (activeDrag !== drag) return false;
+    }
+    drag.group.intentKey = null;
+    evaluateIntent({ force: true });
+    return activeDrag === drag;
+  }
+
   function scheduleDesktopPageTurn(clientX: number, clientY: number): void {
     const direction = getDesktopPageTurnDirection(clientX, clientY);
     const currentIndex = getVisualDesktopPageIndex();
@@ -2224,12 +2255,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
         const pending = pageTurnTimer;
         pageTurnTimer = null;
         if (!activeDrag || !pending) return;
-        activeDrag.group.desktopPageIndex = pending.targetIndex;
-        if (pending.targetIndex < options.pages.value.length) {
-          options.commitPageIndex(pending.targetIndex);
-        }
-        activeDrag.group.intentKey = null;
-        evaluateIntent({ force: true });
+        navigateDragPage(pending.targetIndex, null, true);
       }, PAGE_TURN_DELAY),
     };
   }
@@ -2326,33 +2352,12 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     armedState.timer = window.setTimeout(() => {
       const drag = activeDrag;
       if (!drag || folderPageTurnState !== armedState || options.openFolderId.value !== folderId) return;
-      const token = options.requestFolderPageTurn?.(armedState.targetIndex, {
-        allowCreate: armedState.allowCreate,
-        folderId,
-        phase: "open",
-        source: "group-drag",
-      });
-      const committed = token != null
-        ? options.commitFolderPageTurnRequest?.(token, {
-          allowCreate: armedState.allowCreate,
-          folderId,
-          phase: "open",
-        })
-        : false;
-      if (!committed) {
-        options.commitFolderPageIndex(armedState.targetIndex, {
-          allowCreate: armedState.allowCreate,
-        });
-      }
-      if (activeDrag !== drag) return;
-      if (armedState.allowCreate) drag.group.virtualFolderPageIndex = armedState.targetIndex;
+      if (!navigateDragPage(armedState.targetIndex, folderId, armedState.allowCreate)) return;
       folderPageTurnState = {
         ...armedState,
         phase: "latched",
         timer: null,
       };
-      drag.group.intentKey = null;
-      evaluateIntent({ force: true });
     }, PAGE_TURN_DELAY);
     folderPageTurnState = armedState;
   }
@@ -3121,6 +3126,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     finishDrag,
     groupDragState,
     isDragActive,
+    navigateDragPage,
     startCommittedGroupTransfer,
     projectedPages,
     startDrag,

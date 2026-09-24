@@ -487,7 +487,7 @@ export function createLaunchpadGestureEngine(
       return {handled:true,presentation:null,commands:[],deadline:null};
     }
     if(input.wheelPhase==="end")return finishWheel(input);
-    if (pointer || input.ctrlKey || input.metaKey) {
+    if ((pointer && !pointer.dragging) || input.ctrlKey || input.metaKey) {
       return { handled: false, presentation: null, commands: [], deadline: null };
     }
     const viewport = normalizeViewport(input.viewport);

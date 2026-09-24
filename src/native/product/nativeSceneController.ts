@@ -146,7 +146,9 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
           iconBadgesById: apps?.presentation.iconBadgesById.value ?? currentFrame.diagnostics.iconBadgesById,
           showMissingLaunchTargetBadge: apps?.presentation.showMissingLaunchTargetBadge.value ?? currentFrame.diagnostics.showMissingLaunchTargetBadge,
           launchTargetStatusById: apps?.presentation.launchTargetStatusById.value ?? currentFrame.diagnostics.launchTargetStatusById }),
-        viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages }) }), true);
+        viewport: Object.freeze({ ...currentFrame.viewport, activePages: pages,
+          activePageIndex: ports.getSearchQuery().trim() ? currentFrame.viewport.activePageIndex
+            : Math.max(0, Math.min(pages.length - 1, editing.presentationPageIndex())) }) }), true);
     }
     const currentFrame = frameAt();
     const layoutPages = ports.getLayoutPages();

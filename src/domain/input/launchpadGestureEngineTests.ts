@@ -279,6 +279,10 @@ export function runLaunchpadGestureEngineTests() {
       dragStart.targetPresentation === null,
     "moving a held icon beyond the drag threshold should start icon dragging and clear the armed presentation"
   );
+  const dragWheel = dragEngine.dispatch({type:"wheel",time:460,deltaY:120,deltaX:0,deltaMode:0,
+    viewport:{scope:"desktop",pageIndex:0,pageCount:3,pageWidth:500}});
+  assert(firstCommandOfType(dragWheel,"commitPage")?.pageIndex === 1 && !dragWheel.releasesPointer,
+    "wheel paging during a drag must retain pointer ownership");
   const dragFinish = dispatch(dragEngine, "pointerUp", {
     target: { id: "app-e", kind: "icon" },
     time: 480,

@@ -29,7 +29,7 @@ export type NativeFolderFlow = Readonly<{
   commitPresented(closingFolderId: string | null): void;
   open(item: SceneItem): boolean;
   reconcile(items: readonly SceneItem[]): void;
-  setPageIndex(pageIndex: number): boolean;
+  setPageIndex(pageIndex: number, options?: { allowCreate?: boolean }): boolean;
   snapshot(): NativeFolderPresentation;
 }>;
 
@@ -186,10 +186,10 @@ export function createNativeFolderFlow(
     animateProgress(1);
     return true;
   };
-  const setPageIndex = (pageIndex: number): boolean => {
+  const setPageIndex = (pageIndex: number, options?: { allowCreate?: boolean }): boolean => {
     if (destroyed || !renderedFolder || isClosing) return false;
     if (!Number.isInteger(pageIndex)) return false;
-    const next = Math.max(0, Math.min(renderedFolder.childPages.length - 1, pageIndex));
+    const next = Math.max(0, Math.min(renderedFolder.childPages.length - (options?.allowCreate ? 0 : 1), pageIndex));
     if (next === folderPageIndex) return false;
     folderPageIndex = next;
     publish();

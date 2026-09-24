@@ -1,6 +1,7 @@
 import type { FederatedPointerEvent,FederatedWheelEvent } from "pixi.js";
 import { readNativeTouchpad,type NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { activeTouchpadCapture } from "../../debug/touchpadCapture.js";
+import { isInteractiveGroupTransferPhase } from "../../domain/groupTransferSession.js";
 import type { LaunchpadIconScope } from "../../domain/iconFocus.js";
 import {
 createLaunchpadGestureEngine,
@@ -195,6 +196,10 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
         dismissLaunchpad();
       }
       if (command.type !== "commitPage") continue;
+      if (editing?.drag.isDragActive()) {
+        editing.drag.navigateDragPage(command.pageIndex, command.scope.startsWith("folder:") ? command.scope.slice(7) : null);
+        continue;
+      }
       if (command.scope.startsWith("folder:")) {
         if (command.scope === `folder:${folderFlow.snapshot().renderedFolder?.id}`) {
           setFolderPageIndex(command.pageIndex);
@@ -213,18 +218,25 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   };
   const onWheel = (event: FederatedWheelEvent): void => {
     if(isInteractionBlocked())return;
-    if(getSettingsShell()||management.modal || searchBar.input.focused || getEditing()?.drag.isDragActive())return;
-    const folder = folderFlow.snapshot();
-    if (folder.renderedFolder && folder.isClosing) {
+    if(getSettingsShell()||management.modal || searchBar.input.focused)return;
+    const group = getEditing()?.drag.groupDragState.value;
+    if (group && !isInteractiveGroupTransferPhase(group.phase)) {
       event.preventDefault();
       return;
     }
-    const scope = folder.renderedFolder ? `folder:${folder.renderedFolder.id}` : "desktop";
-    const pageIndex = folder.renderedFolder
+    const folder = folderFlow.snapshot();
+    const dragging = getEditing()?.drag.isDragActive();
+    if (folder.renderedFolder && folder.isClosing && !dragging) {
+      event.preventDefault();
+      return;
+    }
+    const inFolder = folder.renderedFolder && !folder.isClosing;
+    const scope = inFolder ? `folder:${folder.renderedFolder!.id}` : "desktop";
+    const pageIndex = inFolder
       ? folder.folderPageIndex
       : getDesktopPageIndex();
-    const pageCount = folder.renderedFolder
-      ? folder.renderedFolder.childPages.length
+    const pageCount = inFolder
+      ? Math.max(folder.renderedFolder!.childPages.length, folder.folderPageIndex + 1)
       : getDesktopPageCount();
     const timeStamp = Number(event.timeStamp);
     const time = Number.isFinite(timeStamp) && timeStamp >= 0 ? timeStamp : performance.now();

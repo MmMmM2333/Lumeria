@@ -61,6 +61,7 @@ type ProvisionalDiscardOptions = Parameters<
 type OpenFolderCommitOptions = Parameters<LaunchpadDragOptions["commitOpenFolder"]>[1];
 
 type AtomicDragHarnessOptions = Readonly<{
+  onPageCommit?: () => void;
   cancelZoneRect?: Rect;
   desktopMainRect?: Rect;
   folderPageSize?: number;
@@ -373,6 +374,7 @@ function createAtomicDragHarness(
       openFolderId.value = next;
     },
     commitPageIndex: (next) => {
+      options.onPageCommit?.();
       calls.pageIndexes.push(next);
       pageIndex.value = next;
     },
@@ -460,6 +462,19 @@ function createAtomicDragHarness(
 }
 
 export async function runLaunchpadDragTests() {
+  await withMockPointerEnvironment(({ timers }) => {
+    const a = app("edge-cancel-a");
+    const harness = createAtomicDragHarness([[app("edge-cancel-b")], [a]], {
+      onPageCommit: () => harness.drag.cancelDrag({ pointerId: 161, type: "pointercancel" }),
+    });
+    harness.pageIndex.value = 1;
+    const target = { getBoundingClientRect: () => ({height:64,left:16,top:120,width:64}) };
+    harness.drag.startDrag(makePointerEvent(161,target,{clientX:48,clientY:152}),a,{type:"page",pageIndex:1,index:0});
+    harness.drag.updateDragPointer(makePointerEvent(161,target,{clientX:10,clientY:152,timeStamp:140}));
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY), "edge dwell must execute the page callback");
+    assert(!harness.drag.isDragActive(), "a callback that revokes drag ownership must not be followed by stale access");
+    harness.drag.disposeDrag();
+  });
   assert(isPrimaryPointerStartEvent({ button: 0, buttons: 1 }), "left pointer ownership should be accepted");
   assert(!isPrimaryPointerStartEvent({ button: 2, buttons: 2 }), "right pointer ownership should be rejected");
   assert(isPrimaryPointerMoveEvent({ buttons: 1 }), "held primary pointer movement should be accepted");

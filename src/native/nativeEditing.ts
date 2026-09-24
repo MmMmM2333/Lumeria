@@ -5,6 +5,7 @@ import { createNativeStateHost } from "../application/stateHost.js";
 import { createLaunchpadPageCommands, type LaunchpadWarningDialogConfig } from "../application/launchpadPageCommands.js";
 import { createLaunchpadSelectionSession } from "../application/launchpadSelectionSession.js";
 import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
+import { isInteractiveGroupTransferPhase } from "../domain/groupTransferSession.js";
 import { createProvisionalFolderRollback } from "../application/provisionalFolderRollback.js";
 import type { LaunchpadPages, ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
 import type { createNativeLayoutState } from "./nativeStartup.js";
@@ -23,7 +24,8 @@ type Options = {
   commit(pages: LaunchpadPages): void;
   open(id: string | null): void;
   page(index: number): void;
-  folderPage(index: number): void;
+  dragPage(index: number): void;
+  folderPage(index: number, options?: { allowCreate?: boolean }): void;
   confirm(config: LaunchpadWarningDialogConfig): void;
 };
 
@@ -76,7 +78,7 @@ export function createNativeEditing(options: Options) {
     finishHomeRevealSettleWindow: () => {},
     getGroupLayoutRevision: () => revision,
     getNewFolderName: () => t("launchpad.newFolder"),
-    commitPageIndex: options.page,
+    commitPageIndex: options.dragPage,
     commitFolderPageIndex: options.folderPage,
     commitOpenFolder: options.open,
     planGroupTransfer: request => planGroupTransfer({ basePages: request.basePages,
@@ -123,6 +125,10 @@ export function createNativeEditing(options: Options) {
   });
   return {
     drag, selection, mode, alt, projectedPages,rollback,pageCommands,
+    presentationPageIndex: () => {
+      const group = drag.groupDragState.value;
+      return group && isInteractiveGroupTransferPhase(group.phase) ? group.desktopPageIndex : cells.pageIndex.value;
+    },
     commit,
     beginDrag(id: string, event: LaunchpadDragPointerEvent): boolean {
       const pages = cells.pages.value;
