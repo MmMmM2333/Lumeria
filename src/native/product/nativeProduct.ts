@@ -1320,6 +1320,17 @@ try {
     if(searchOutcome.kind==="search")return;
   }
 
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_DRAG_NAVIGATION_SMOKE==="1"){
+    await (await import("../../rendering/native/nativeDragNavigationSmoke.test.js")).runNativeDragNavigationSmoke({
+      app,editing:()=>editing,layoutState,scene,folderFlow,currentFrame:()=>currentFrame,
+      onDesktopPageIndexCommit:index=>onDesktopPageIndexCommit(index),present:description=>present(app,description),
+      waitFor,capture:name=>smoke!.captureSmokeFrame(app,name),saves,
+    });
+    const {writeFileSync}=await import("node:fs");
+    writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({dragNavigation:"verified"}));
+    return;
+  }
+
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE==="1"){
     const launchOutcome = await (await import("../diagnostics/nativeLaunchSearchSmoke.test.js")).runNativeLaunchVisualSmoke({
       activateItem:item=>activateItem(item),

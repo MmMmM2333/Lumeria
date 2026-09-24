@@ -24,6 +24,7 @@
     "src/rendering/native/NativeFolderNameInput.ts",
     "src/native/nativeIconRecoverySmoke.test.ts",
     "src/rendering/native/nativeDragVisualSmoke.test.ts",
+    "src/rendering/native/nativeDragNavigationSmoke.test.ts",
     "src/rendering/native/nativeToolbarVisualSmoke.test.ts",
     "src/native/nativeLayoutLoad.ts",
     "src/rendering/native/NativeAppDialogs.ts",
