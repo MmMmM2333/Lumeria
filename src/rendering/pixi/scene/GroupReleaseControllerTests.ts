@@ -367,19 +367,20 @@ export function runGroupReleaseControllerTests() {
     createdOverflowNode.position.set(100, 60);
     createdOverflowNode.scale.set(1);
     createdOverflowNode.alpha = 1;
+    let createdTargetOffset = 0;
     const createdFolderNode: GroupReleaseFolderNode = Object.assign(new Container(), {
       getFolderPreviewChildReleasePose: (
         _relativeTo: Container | null,
         slotIndex: number | null | undefined,
         options: FolderReleasePreviewPoseOptions = {},
       ) => ({
-        center: { x: slotIndex === 0 ? 180 : 260, y: 120 },
+        center: { x: (slotIndex === 0 ? 180 : 260) + createdTargetOffset, y: 120 },
         matrix: { a: 0.25, b: 0, c: 0, d: 0.25 },
         ...(options.expectedChildId === undefined ? {} : { targetChildId: options.expectedChildId }),
       }),
       getFolderThumbBounds: (_stageRect: StageOrigin | null | undefined) => ({
         height: 64,
-        left: 148,
+        left: 148 + createdTargetOffset,
         top: 88,
         width: 64,
       }),
@@ -476,8 +477,8 @@ export function runGroupReleaseControllerTests() {
         .filter((lane): lane is GroupReleaseFolderLane => lane.kind === "folder" && lane.controller !== null)
         .map((lane) => lane.controller?.getTargetPose(lane.controller.active)?.center.x);
       assert(
-        createdTargetCenters.includes(180) && createdTargetCenters.includes(260),
-        "created-folder pair ghosts should resolve to their distinct committed preview slots"
+        createdTargetCenters.length === 2 && createdTargetCenters[0] !== createdTargetCenters[1],
+        "created-folder pair ghosts should resolve to distinct slots on the moving shell"
       );
       assert(
         createdController.folderShellFrame?.visible === true,
@@ -499,8 +500,22 @@ export function runGroupReleaseControllerTests() {
         folderShellFrame.position.x > frameStartX,
         "created-folder frame should animate from the target app origin toward the committed folder"
       );
-      for (let index = 0; index < 30 && completedFolderShells.length === 0; index += 1) {
+      for (let frame = 0; frame < 24; frame++) {
+        const before = {x:folderShellFrame.x,y:folderShellFrame.y,scale:folderShellFrame.scale.x};
+        createdTargetOffset += 6;
+        createdController.renderFrame();
+        assert(folderShellFrame.x === before.x && folderShellFrame.y === before.y && folderShellFrame.scale.x === before.scale,
+          "changing a moving creation destination must not overwrite the presented shell pose");
+        const slots = createdLanes.filter((lane): lane is GroupReleaseFolderLane => lane.kind === "folder" && lane.controller !== null)
+          .map(lane => lane.controller!.getTargetPose(lane.controller!.active)!.center.x);
+        assert(Math.abs((slots[1]! - slots[0]!) / folderShellFrame.scale.x - 80) < 0.001,
+          "preview slots must retain their local separation on the moving shell");
+        assert(completedFolderShells.length === 0, "moving target must not hand off an unaligned shell");
         motionRuntime.step(1 / 60);
+      }
+      for (let index = 0; index < 180 && completedFolderShells.length === 0; index += 1) {
+        motionRuntime.step(1 / 60);
+        createdController.renderFrame();
       }
       assert(
         completedFolderShells.length === 1 &&

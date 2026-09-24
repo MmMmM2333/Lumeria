@@ -370,6 +370,7 @@ export function makeFolderOverlayRenderPlan(
       entries.push({
         closingGhostInput: isInteractivePage &&
           transitions.isFolderClosing &&
+          !frame.groupTransferOwnedItemIds.has(item.id) &&
           pageIndex === frame.folderPageIndex
           ? {
             cellHeight: slot.height,
@@ -419,11 +420,16 @@ export function makeFolderOverlayRenderPlan(
   });
 
   return {
-    closingPreviewSwapTargets: transitions.isFolderClosing && frame.folderPageIndex > 0
+    closingPreviewSwapTargets: transitions.isFolderClosing
       ? makeClosingPreviewSwapTargets({
         folderId: frame.folderId,
         folderRect: transitions.closeThumbRect,
-        previewSlots: transitions.previewSlots,
+        // Keep slot indices, but synthesize only previews without a visible
+        // closing actor (including children promoted from another folder page).
+        previewSlots: transitions.previewSlots.map(item => item && (
+          frame.groupTransferOwnedItemIds.has(item.id)
+          || entries.some(entry => entry.closingGhostInput?.item.id === item.id)
+        ) ? null : item),
         stableFolderCloseTarget: stableLayout.closeTarget,
       })
       : [],

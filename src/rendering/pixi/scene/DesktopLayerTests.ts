@@ -159,6 +159,10 @@ function makePageTrack(children: TestNode[]): TestPageTrack {
 
 function makeNode(id: string): TestNode {
   return {
+    get x() { return this.position.x; },
+    set x(value: number) { this.position.x = value; },
+    get y() { return this.position.y; },
+    set y(value: number) { this.position.y = value; },
     alpha: 0,
     cursor: "pointer",
     destroyed: false,
@@ -2163,8 +2167,10 @@ export async function runDesktopLayerTests() {
     assert(!Object.prototype.hasOwnProperty.call(layer, "folderHandoffNode"), "primary handoff node should be derived from the handoff map");
     const primaryHandoff = assumePresent(layer.folderHandoffNode);
     assert(primaryHandoff.node === asDesktopIconNode(folder), "handoff state should reference the real node");
-    assert(folder.position.x === 12 && folder.position.y === 34, "handoff should snap node to the target");
-    assert(folder.scale.x === 1 && folder.scale.y === 1, "handoff should reset node scale");
+    assert(folder.position.x === 0 && folder.position.y === 0, "handoff must retain the presented position before advancing time");
+    for (let frame = 0; frame < 180; frame++) motionRuntime.step(1 / 60);
+    assert(Math.abs(folder.position.x - 12) < 0.01 && Math.abs(folder.position.y - 34) < 0.01, "handoff should animate to the target");
+    assert(Math.abs(folder.scale.x - 1) < 0.001 && Math.abs(folder.scale.y - 1) < 0.001, "handoff should animate node scale");
     assert(folder.visible === true && folder.alpha === 1, "handoff should make the real node visible");
     assert(folder.visualWrap.visible === false, "handoff should hide the real folder artwork while the Pixi overlay owns the thumbnail");
     assert(folder.eventMode === "static" && folder.cursor === "pointer", "handoff should restore folder interaction once the real node owns the icon");
@@ -2556,7 +2562,9 @@ export async function runDesktopLayerTests() {
 
     assert(layer.startClosingFolderHandoffNow("folder-1"), "ready handoff should find the current desktop folder node");
     assert(pageTrack.children[1] === folder, "ready handoff should raise the folder node");
-    assert(folder.position.x === 22 && folder.position.y === 44, "ready handoff should snap to the current desktop target");
+    assert(folder.position.x === 0 && folder.position.y === 0, "ready handoff must preserve the current pose");
+    for (let frame = 0; frame < 180; frame++) motionRuntime.step(1 / 60);
+    assert(Math.abs(folder.position.x - 22) < 0.01 && Math.abs(folder.position.y - 44) < 0.01, "ready handoff should reach the current desktop target continuously");
     assert(folder.visualWrap.visible === false, "ready handoff should keep the real folder artwork hidden under the overlay");
     assert(folder.labelRevealCount === 0, "ready handoff should keep the real folder label hidden while the overlay owns the transition");
     assert(folder.labelText.renderable === false && folder.labelText.alpha === 0, "ready handoff should park the folder label as non-renderable at a hidden alpha");
@@ -2575,6 +2583,9 @@ export async function runDesktopLayerTests() {
     assert((folder.labelRevealCount as number) === 1, "exact visual release should not restart the early folder label fade");
     assert((folder.visualWrap.visible as boolean) === true, "exact visual release should restore the real folder artwork");
     assert(folder.labelRestoreCount === 0 && (folder.labelText.renderable as boolean) === true && folder.labelText.alpha === 0.4, "exact visual release should preserve the in-progress label alpha");
+    // This handoff-only fixture does not install a complete bounds registration.
+    layer.boundsRegistration = null;
+    motionRuntime.reset();
   }
 
   {
@@ -2649,8 +2660,10 @@ export async function runDesktopLayerTests() {
       y: 42,
     });
 
-    assert(folder.position.x === 18 && folder.position.y === 42, "handoff should apply the pinned position");
-    assert(folder.scale.x === 1.087 && folder.scale.y === 1.086, "handoff should apply inverse shell scale");
+    assert(folder.position.x === 0 && folder.position.y === 0, "handoff must not snap to the pinned position");
+    for (let frame = 0; frame < 180; frame++) motionRuntime.step(1 / 60);
+    assert(Math.abs(folder.position.x - 18) < 0.01 && Math.abs(folder.position.y - 42) < 0.01, "handoff should reach the pinned position");
+    assert(Math.abs(folder.scale.x - 1.087) < 0.001 && Math.abs(folder.scale.y - 1.086) < 0.001, "handoff should reach inverse shell scale");
   }
 
   {

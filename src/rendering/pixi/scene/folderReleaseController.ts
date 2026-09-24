@@ -116,6 +116,8 @@ export type FolderReleasePreparePayload = Readonly<{
 }>;
 
 export type FolderReleaseControllerOptions = Readonly<{
+  mapTargetPose?: (pose: FolderReleaseTargetPose) => FolderReleaseTargetPose;
+  canComplete?: () => boolean;
   installRenderHook?: boolean;
   onPrepareTargetVisual?: (payload: FolderReleasePreparePayload) => boolean;
   onReleaseAbort?: (release: FolderRelease, reason: string) => void;
@@ -418,6 +420,8 @@ function readCreatedFolderFallbackPose(
 }
 
 export class FolderReleaseController {
+  declare readonly mapTargetPose: (pose: FolderReleaseTargetPose) => FolderReleaseTargetPose;
+  declare readonly canComplete: () => boolean;
   declare layer: Container | null;
   declare readonly onReleaseComplete: (release: FolderRelease) => void;
   declare readonly onReleaseAbort: (release: FolderRelease, reason: string) => void;
@@ -445,6 +449,8 @@ export class FolderReleaseController {
   ) {
     if (!layer) throw new Error("FolderReleaseController requires a release layer");
     this.layer = layer;
+    this.mapTargetPose = options.mapTargetPose ?? (pose => pose);
+    this.canComplete = options.canComplete ?? (() => true);
     this.onReleaseComplete = options.onReleaseComplete || (() => {});
     this.onReleaseAbort = options.onReleaseAbort || (() => {});
     this.onPrepareTargetVisual = options.onPrepareTargetVisual || (() => false);
@@ -535,7 +541,7 @@ export class FolderReleaseController {
     if (!matrix) return null;
     if (![center.x, center.y, matrix.a, matrix.b, matrix.c, matrix.d].every(Number.isFinite)) return null;
     if (resolvedPose.targetChildId && resolvedPose.targetChildId !== release!.item?.id) return null;
-    return { ...resolvedPose, center, matrix };
+    return this.mapTargetPose({ ...resolvedPose, center, matrix });
   }
 
   update(options: FolderReleaseUpdateOptions = {}): boolean {
@@ -915,7 +921,7 @@ export class FolderReleaseController {
       }
     }
 
-    if (!this.isAligned(targetPose)) {
+    if (!this.canComplete() || !this.isAligned(targetPose)) {
       active.alignedRenderFrames = 0;
       active.alignmentFrameRequested = false;
       return;

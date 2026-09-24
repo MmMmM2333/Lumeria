@@ -205,8 +205,8 @@ function makeGhost(id = "ghost"): TestGhost {
     setFolderSlotReleaseVisualMix(value: unknown) {
       const mix = Math.max(0, Math.min(1, Number(value) || 0));
       this.folderSlotReleaseMix = mix;
-      this.folderSlotReleaseSourceAlpha = 1 - mix;
-      this.folderSlotReleaseTargetAlpha = mix;
+      this.folderSlotReleaseSourceAlpha = mix < 1 ? 1 : 0;
+      this.folderSlotReleaseTargetAlpha = mix < 1 ? 0 : 1;
       return true;
     },
   };
@@ -744,12 +744,12 @@ export function runFolderClosingGhostControllerTests() {
     runFrameArrive(harness.layer);
     assert(!lease.snapshot().handoffReady, "a thumbnail child should keep handoff pending after frame arrival");
     assert(!lease.snapshot().presentationReady, "a thumbnail child should keep presentation pending after frame arrival");
-    let sawComplementaryCrossfade = false;
+    let sawRasterTransition = false;
     for (let frame = 0; frame < 40 && ghost.folderSlotReleaseMix <= 0; frame += 1) {
       motionRuntime.step(0.025);
     }
     assert(ghost.folderSlotReleaseMix > 0 && ghost.folderSlotReleaseMix < 1, "thumbnail close should begin crossfading before arrival");
-    sawComplementaryCrossfade = true;
+    sawRasterTransition = true;
     const mixBeforeRetarget = ghost.folderSlotReleaseMix;
     lease.present({
       folderRect: { height: 58.88, left: 12, top: 22, width: 58.88 },
@@ -772,14 +772,14 @@ export function runFolderClosingGhostControllerTests() {
     for (let frame = 0; frame < 80 && !ghost.folderSlotReleaseCommitted; frame += 1) {
       motionRuntime.step(0.025);
       if (ghost.folderSlotReleaseMix > 0 && ghost.folderSlotReleaseMix < 1) {
-        sawComplementaryCrossfade = true;
+        sawRasterTransition = true;
         assert(
-          Math.abs(ghost.folderSlotReleaseSourceAlpha + ghost.folderSlotReleaseTargetAlpha - 1) < 0.0001,
-          "the source and native slot visual should use complementary alpha during geometry motion",
+          Math.abs(ghost.folderSlotReleaseTargetAlpha + ghost.folderSlotReleaseSourceAlpha * (1 - ghost.folderSlotReleaseTargetAlpha) - 1) < 0.0001,
+          "the source-over raster handoff must retain full coverage during geometry motion",
         );
       }
     }
-    assert(sawComplementaryCrossfade, "thumbnail close should crossfade before geometry reaches its target");
+    assert(sawRasterTransition, "thumbnail close should crossfade before geometry reaches its target");
     assert(ghost.folderSlotReleaseCommitted, "thumbnail close should commit the native slot visual at geometric arrival");
     assert(!lease.snapshot().handoffReady, "the native slot visual should remain visible until real rendered geometry is stable");
     ghost.boundsOffsetX = 0.41;
@@ -930,8 +930,8 @@ export function runFolderClosingGhostControllerTests() {
     const currentControl = harness.controller.activeGhostsByItemId.get("app-1")?.motionControl;
     assert(harness.layer.closingGhostLayer.children.length === 1 && harness.layer.closingGhostLayer.children[0] === ghost, "retarget should preserve the existing ghost object");
     assert(ghost.alpha === 0.4, "retarget should preserve the closing motion owner's physical alpha");
-    assert(currentControl === originalControl && originalControl?.released === false, "moving close targets should retain one residual motion owner instead of restarting the spring");
-    assert(ghost.position.x === xBeforeRetarget + 124, "retarget should move the reference pose while preserving the ghost's current residual distance");
+    assert(currentControl !== originalControl, "a changed close destination should update the physical motion target");
+    assert(ghost.position.x === xBeforeRetarget, "retarget must preserve the currently presented position rather than jumping by the target delta");
     assert(harness.calls.some((call) => hasCallType(call, "retarget-frame")), "retarget should update the active frame instead of creating a second frame");
     assert(lease.snapshot().handoffRect?.left === 44, "retarget geometry should replace the lease-owned handoff metadata");
     assert(lease.detachedGhostMotion(ghost)?.x === 230, "retarget should update detached motion through the reporter port");

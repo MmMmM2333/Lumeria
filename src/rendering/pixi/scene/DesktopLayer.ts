@@ -1653,6 +1653,16 @@ export class DesktopLayer extends Container {
         if (shouldRetireStaleHandoff) this.clearFolderHandoffNode(item.id);
         seen.add(key);
         let node = this.iconNodes.get(key);
+        // A folder crossing a page boundary keeps its presented pose and close
+        // handoff owner. Page-local keys must not turn a move into replacement.
+        if (!node && item.type === "folder" && !pageTrackScopeChanged) {
+          const previous = [...this.iconNodes].find(([, candidate]) => candidate.item?.id === item.id);
+          if (previous) {
+            this.iconNodes.delete(previous[0]);
+            node = previous[1];
+            this.iconNodes.set(key, node);
+          }
+        }
         const isNewNode = !node;
         if(!node&&this.detachedPageNodes?.has(key)){
           node=this.detachedPageNodes.get(key)!;this.detachedPageNodes.delete(key);
@@ -2685,12 +2695,15 @@ export class DesktopLayer extends Container {
     if (!entry || !node || node.destroyed || this.isIconNodeRetired(node)) return false;
     const target = layoutTarget || entry.layoutTarget;
     if (!target) return false;
+    const changed = isLayoutTargetChanged(entry.layoutTarget, target);
     entry.node = node;
     entry.layoutTarget = target;
-    killMotionOf(node);
-    killMotionOf(node.scale);
-    node.position.set(target.x, target.y);
-    node.scale.set(target.scaleX || 1, target.scaleY || target.scaleX || 1);
+    if (changed) {
+      springIconLayoutPosition(node, target, () => this.markInteractiveBoundsDirty());
+      motion(node.scale).layout().spring(motionSprings.layout).interrupt("retarget")
+        .to({ x: target.scaleX || 1, y: target.scaleY || target.scaleX || 1,
+          onUpdate: () => this.markInteractiveBoundsDirty() }).start();
+    }
     node.alpha = 1;
     node.visible = true;
     node.eventMode = "static";

@@ -1,6 +1,7 @@
 import { Graphics } from "pixi.js";
 import type { Container, PointData } from "pixi.js";
 import { motionRuntime } from "../animation/motionRuntime.js";
+import { motionSprings } from "../animation/motionPresets.js";
 import { killMotionOf, motion, parallel } from "../animation/motionTween.js";
 import type { MotionControl, MotionNumericValues } from "../animation/motionTween.js";
 import { reloadOnPixiHotUpdate } from "../devHmr.js";
@@ -40,7 +41,6 @@ const TARGET_SCALE_RETARGET_EPSILON = 0.002;
 const MAX_MISSING_POINT_FRAMES = 2;
 const ALIGNED_POINT_RENDER_FRAMES = 2;
 const POINT_ALIGNMENT_DEVICE_EPSILON = 0.5;
-const FOLDER_SHELL_DURATION = 0.18;
 const FOLDER_SHELL_RETARGET_EPSILON = 0.5;
 
 export type GroupReleasePointPose = Readonly<{
@@ -477,6 +477,7 @@ export class GroupReleaseController {
   declare folderShellFrameContext: FolderShellFrameContext | null;
   declare folderShellFrameSize: number | null;
   declare folderShellCompletionKey: string | null;
+  folderShellAlignedFrames = 0;
   declare readonly lanes: Map<string, GroupReleaseLane>;
   declare planKey: string | null;
   declare previousOnRender: Container["onRender"];
@@ -678,27 +679,20 @@ export class GroupReleaseController {
     };
     if (!frameTargetEqual(this.folderShellFrameTarget, nextTarget)) {
       this.folderShellFrameTarget = nextTarget;
-      this.folderShellFrameMotion?.cancel?.("group-transfer-folder-shell-retarget");
+      this.folderShellAlignedFrames = 0;
+      this.folderShellCompletionKey = null;
       this.folderShellFrameMotion = parallel([
         motion(this.folderShellFrame!)
-          .duration(context.group?.reducedMotion ? 0 : FOLDER_SHELL_DURATION)
-          .ease("power3.out")
+          .spring(motionSprings.handoff)
           .handoff()
           .interrupt("retarget")
-          .to({ x: nextTarget.center.x, y: nextTarget.center.y }),
+          .to({ x: nextTarget.center.x, y: nextTarget.center.y, snap: context.group?.reducedMotion === true }),
         motion(this.folderShellFrame!.scale)
-          .duration(context.group?.reducedMotion ? 0 : FOLDER_SHELL_DURATION)
-          .ease("power3.out")
+          .spring(motionSprings.handoff)
           .handoff()
           .interrupt("retarget")
-          .to({ x: nextTarget.scale, y: nextTarget.scale }),
-      ], {
-        onComplete: () => {
-          if (this.folderShellFrameKey !== frameKey) return;
-          this.folderShellFrameMotion = null;
-          this.completeFolderShellActor(frameKey);
-        },
-      });
+          .to({ x: nextTarget.scale, y: nextTarget.scale, snap: context.group?.reducedMotion === true }),
+      ]);
     }
   }
 
@@ -707,6 +701,7 @@ export class GroupReleaseController {
     this.folderShellCompletionKey = frameKey;
     motionRuntime.afterFrame(() => {
       if (this.folderShellFrameKey !== frameKey || this.folderShellCompletionKey !== frameKey) return;
+      if (!this.isFolderShellAligned()) { this.folderShellCompletionKey = null; return; }
       const saved = this.folderShellFrameContext;
       const actorKey = saved?.shellActor?.key || null;
       if (!actorKey) return;
@@ -719,6 +714,7 @@ export class GroupReleaseController {
   }
 
   clearFolderShellActor(reason = "group-transfer-folder-shell-clear"): void {
+    this.folderShellAlignedFrames = 0;
     this.folderShellFrameMotion?.cancel?.(reason);
     this.folderShellFrameMotion = null;
     if (this.folderShellFrame) {
@@ -764,6 +760,17 @@ export class GroupReleaseController {
       };
       lane.controller = new FolderReleaseController(this.layer!, {
         installRenderHook: false,
+        mapTargetPose: pose => {
+          if (lane!.context?.entry.mode !== GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER || !this.folderShellFrame?.visible || !this.folderShellFrameTarget) return pose;
+          const frame = this.folderShellFrame, target = this.folderShellFrameTarget;
+          const scale = frame.scale.x / Math.max(0.0001, target.scale);
+          return { ...pose, center: {
+            x: frame.x + (pose.center.x - target.center.x) * scale,
+            y: frame.y + (pose.center.y - target.center.y) * scale,
+          }, matrix: { a: pose.matrix.a * scale, b: pose.matrix.b * scale, c: pose.matrix.c * scale, d: pose.matrix.d * scale } };
+        },
+        canComplete: () => lane!.context?.entry.mode !== GROUP_TRANSFER_RUNTIME_MODE.CREATED_FOLDER
+          || !this.folderShellFrame?.visible || this.isFolderShellAligned(),
         onReleaseAbort: (release, reason) => this.settleLane(lane!, "aborted", release, reason),
         onReleaseComplete: (release) => this.settleLane(lane!, "settled", release),
         onPrepareTargetVisual: (payload) => this.prepareFolderSlotVisual({
@@ -1075,6 +1082,9 @@ export class GroupReleaseController {
     if (this.folderShellFrameContext) {
       const saved = this.folderShellFrameContext;
       this.updateFolderShellActor(saved.shellActor, [saved.context], saved.state, saved.plan);
+      this.folderShellAlignedFrames = this.isFolderShellAligned() ? this.folderShellAlignedFrames + 1 : 0;
+      if (this.folderShellAlignedFrames >= 2 && this.folderShellFrameKey) this.completeFolderShellActor(this.folderShellFrameKey);
+      else this.onRenderRequest("group-transfer-folder-shell-alignment");
     }
     for (const lane of this.lanes.values()) {
       if (lane.kind === "folder") {
@@ -1104,6 +1114,14 @@ export class GroupReleaseController {
         this.settleLane(lane, "aborted", null, "target-unavailable");
       }
     }
+  }
+
+  isFolderShellAligned(): boolean {
+    const frame = this.folderShellFrame, target = this.folderShellFrameTarget;
+    if (!frame || !target || !this.folderShellFrameMotion?.completed) return false;
+    const resolution = this.folderShellFrameContext?.state.deviceResolution ?? 1;
+    return Math.max(Math.abs(frame.x - target.center.x), Math.abs(frame.y - target.center.y),
+      Math.abs(frame.scale.x - target.scale) * (this.folderShellFrameSize ?? 64)) * resolution <= 0.5;
   }
 
   clearLane(lane: GroupReleaseLane | null | undefined, reason: string): void {
