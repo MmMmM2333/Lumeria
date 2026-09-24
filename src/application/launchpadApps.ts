@@ -204,7 +204,24 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   const isLoadingIconChoices = ref(false);
   let iconChooserRequestId = 0;
 
-  const managedApps = computed(() => options.collectAppsFromPages(options.pages.value).sort(compareAppsByDefaultOrder));
+  // Layout edits commit a new pages value (including import/undo and folder edits).
+  // Native derived cells do not memoize: keep this projection tied to that source.
+  let managedPages: ReadonlyLaunchpadPages | null = null;
+  let managedById = new Map<string, LaunchpadApp>();
+  let sortedManagedApps: LaunchpadApp[] | null = null;
+  function managedAppIndex(): ReadonlyMap<string, LaunchpadApp> {
+    const pages = options.pages.value;
+    if (pages !== managedPages) {
+      managedById = new Map(options.collectAppsFromPages(pages).map(app => [app.id, app]));
+      managedPages = pages;
+      sortedManagedApps = null;
+    }
+    return managedById;
+  }
+  const managedApps = computed(() => {
+    const index = managedAppIndex();
+    return sortedManagedApps ??= [...index.values()].sort(compareAppsByDefaultOrder);
+  });
   const selectedManagedApps = computed(() => {
     const selectedIds = new Set(appManagerSelectedIds.value);
     return managedApps.value.filter((app) => selectedIds.has(app.id));
@@ -1245,14 +1262,20 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   }
 
   function listLaunchTargets(): LaunchTargetCheck[] {
-    return managedApps.value
+    return [...managedAppIndex().values()]
       .filter((app) => app?.id && app.launchTarget)
-      .map((app) => ({
-        id: String(app.id),
-        launchTarget: app.launchTarget as LaunchTarget,
-        targetSignature: launchTargetSignature(app.launchTarget),
-        fallbackPaths: (app.sources ?? []).filter(source => source.state === "equivalent" && typeof source.absolutePath === "string").map(source => source.absolutePath as string),
-      }));
+      .map(makeLaunchTargetCheck);
+  }
+
+  function makeLaunchTargetCheck(app: ReadonlyLaunchpadApp): LaunchTargetCheck {
+    const fallbackPaths = (app.sources ?? []).filter(source => source.state === "equivalent" && typeof source.absolutePath === "string").map(source => source.absolutePath as string);
+    return { id: app.id, launchTarget: app.launchTarget as LaunchTarget,
+      targetSignature: JSON.stringify([launchTargetSignature(app.launchTarget), fallbackPaths]), fallbackPaths };
+  }
+
+  function getLaunchTargetCheck(id: string): LaunchTargetCheck | undefined {
+    const app = managedAppIndex().get(id);
+    return app?.launchTarget ? makeLaunchTargetCheck(app) : undefined;
   }
 
   function launchTargetCheckSignature(checks: readonly LaunchTargetCheck[] = listLaunchTargets()): string {
@@ -1274,19 +1297,20 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     const requestedSignatureById = new Map(
       requestedChecks.map((app) => [String(app.id), app.targetSignature])
     );
-    const currentSignatureById = new Map(
-      listLaunchTargets().map((app) => [app.id, app.targetSignature])
-    );
-    launchTargetStatusRecordsById.value = {...launchTargetStatusRecordsById.value,...Object.fromEntries(
+    const source = launchTargetStatusRecordsById.value;
+    const accepted = Object.fromEntries(
       (results || [])
         .map((result): [string, LaunchTargetStatusRecord] | null => {
           const id = String(result?.id || "");
           const expectedSignature = requestedSignatureById.get(id);
-          if (!id || !expectedSignature || currentSignatureById.get(id) !== expectedSignature) return null;
+          if (!id || !expectedSignature || getLaunchTargetCheck(id)?.targetSignature !== expectedSignature) return null;
+          const previous = source[id];
+          if (previous?.targetSignature === expectedSignature && JSON.stringify(previous.details) === JSON.stringify(result)) return null;
           return [id, { status: result.status, targetSignature: expectedSignature, details: result }];
         })
         .filter((entry): entry is [string, LaunchTargetStatusRecord] => entry !== null)
-    )};
+    );
+    if (Object.keys(accepted).length) launchTargetStatusRecordsById.value = {...source, ...accepted};
     return launchTargetStatusById.value;
   }
 
@@ -1302,7 +1326,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
 
   function getLaunchTargetStatus(app: ReadonlyLaunchpadApp | null | undefined): LaunchTargetStatus | null {
     const record = launchTargetStatusRecordsById.value[String(app?.id || "")];
-    return record?.targetSignature === launchTargetSignature(app?.launchTarget)
+    return app && record?.targetSignature === makeLaunchTargetCheck(app).targetSignature
       ? record.status
       : null;
   }
@@ -1446,7 +1470,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     const next: Record<string, import("../domain/iconBadge.js").IconBadge> = {};
     for (const app of managedApps.value) {
       const record = launchTargetStatusRecordsById.value[app.id];
-      const details = record?.targetSignature === launchTargetSignature(app.launchTarget) ? record.details : undefined;
+      const details = record?.targetSignature === makeLaunchTargetCheck(app).targetSignature ? record.details : undefined;
       next[app.id] = {
         admin: showAdminShield.value && (app.runAsAdmin === true || details?.requiresAdmin === true),
         missing: showMissingLaunchTargetBadge.value && getLaunchTargetStatus(app) === "missing" ? missingTargetStyle.value : "none",
@@ -1475,6 +1499,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     captureScanRequest: captureNativeScanRequest,
     clearLaunchTargetStatuses,
     getLaunchTargetStatus,
+    getLaunchTargetCheck,
+    getManagedApp: (id: string) => managedAppIndex().get(id),
     launchTargetCheckSignature,
     listLaunchTargets,
     markScanRootsScanned,
@@ -1482,8 +1508,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     scanInitialCatalog,
     shouldCheckLaunchTargets: () => true,
     getTargetDetails: (id: string) => {
-      const app=managedApps.value.find(app=>app.id===id),record=launchTargetStatusRecordsById.value[id];
-      return app&&record?.targetSignature===launchTargetSignature(app.launchTarget)?record.details:undefined;
+      const record=launchTargetStatusRecordsById.value[id];
+      return record&&record.targetSignature===getLaunchTargetCheck(id)?.targetSignature?record.details:undefined;
     },
   });
 

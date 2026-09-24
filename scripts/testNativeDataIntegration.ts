@@ -86,7 +86,8 @@ try {
   const target=join(directory,"restored.exe");
   let checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);
   assert.equal(checks[0]?.status,"missing");writeFileSync(target,"");
-  checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);assert.equal(checks[0]?.status,"ok");
+  checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);assert.equal(checks[0]?.status,"missing","ordinary reads reuse the short-lived result");
+  checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}],true);assert.equal(checks[0]?.status,"ok","explicit recheck bypasses cached results");
   checks=await host.checkLaunchTargets([{id:"fallback",launchTarget:{kind:"executable",path:join(directory,"missing.exe")},fallbackPaths:[target]}]);assert.equal(checks[0]?.status,"ok");
   await assert.rejects(host.launchApp("does-not-exist"), error => error instanceof NativeLaunchError && error.kind === "missingLaunchInfo");
   writeFileSync(join(directory, "layout.json"), "{damaged");

@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, path::PathBuf, time::{Duration, Instant}};
 
 use serde::{Deserialize, Serialize};
 
@@ -360,34 +360,57 @@ fn saved_scan_filters(settings: &serde_json::Value) -> ScanFilters {
 pub fn check_launch_targets_sync(
     targets: Vec<LaunchTargetCheckRequest>,
 ) -> Result<Vec<LaunchTargetCheckResult>, String> {
-    let needs_app_user_model_ids = targets
-        .iter()
-        .any(|target| target.launch_target.kind == "appUserModelId");
-    let installed_app_user_model_ids = needs_app_user_model_ids
-        .then(installed_app_user_model_ids_for_status)
-        .transpose()?;
+    LaunchTargetChecker::default().check(targets, true)
+}
 
-    Ok(targets
-        .into_iter()
-        .map(|target| {
-            let mut details = crate::target_details::TargetDetails::default();
-            let mut status = check_launch_target_status(&target.launch_target, installed_app_user_model_ids.as_ref());
-            if matches!(target.launch_target.kind.as_str(), "executable" | "shortcut") {
-                if let Some(path) = &target.launch_target.path {
-                    let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(path));
-                    status = checked.into(); details = found;
-                    if status != "ok" {
-                        for fallback in &target.fallback_paths {
-                            let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(fallback));
-                            if checked == "ok" { status = checked.into(); details = found; break; }
-                            if checked == "unknown" && status == "missing" { status = checked.into(); details = found; }
+#[derive(Default)]
+pub struct LaunchTargetChecker {
+    installed_ids: Option<(Instant, HashSet<String>)>,
+}
+
+impl LaunchTargetChecker {
+    pub fn invalidate(&mut self) { self.installed_ids = None; }
+
+    fn installed_ids(&mut self, force: bool, now: Instant, load: impl FnOnce() -> Result<HashSet<String>, String>) -> Result<&HashSet<String>, String> {
+        if force || self.installed_ids.as_ref().is_none_or(|(at, _)| now.duration_since(*at) >= Duration::from_secs(15)) {
+            // Failed refreshes must not make an expired snapshot look fresh.
+            self.invalidate();
+            let ids = load()?;
+            self.installed_ids = Some((now, ids));
+        }
+        Ok(&self.installed_ids.as_ref().unwrap().1)
+    }
+
+    pub fn check(&mut self, targets: Vec<LaunchTargetCheckRequest>, force: bool) -> Result<Vec<LaunchTargetCheckResult>, String> {
+        let needs_app_user_model_ids = targets
+            .iter()
+            .any(|target| target.launch_target.kind == "appUserModelId");
+        let installed_app_user_model_ids = if needs_app_user_model_ids {
+            Some(self.installed_ids(force, Instant::now(), installed_app_user_model_ids_for_status)?)
+        } else { None };
+
+        Ok(targets
+            .into_iter()
+            .map(|target| {
+                let mut details = crate::target_details::TargetDetails::default();
+                let mut status = check_launch_target_status(&target.launch_target, installed_app_user_model_ids);
+                if matches!(target.launch_target.kind.as_str(), "executable" | "shortcut") {
+                    if let Some(path) = &target.launch_target.path {
+                        let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(path));
+                        status = checked.into(); details = found;
+                        if status != "ok" {
+                            for fallback in &target.fallback_paths {
+                                let (checked, found) = crate::target_details::inspect_path(std::path::Path::new(fallback));
+                                if checked == "ok" { status = checked.into(); details = found; break; }
+                                if checked == "unknown" && status == "missing" { status = checked.into(); details = found; }
+                            }
                         }
                     }
                 }
-            }
-            LaunchTargetCheckResult { id: target.id, status, details }
-        })
-        .collect())
+                LaunchTargetCheckResult { id: target.id, status, details }
+            })
+            .collect())
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -438,6 +461,19 @@ fn check_launch_target_status(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installed_id_cache_expires_invalidates_and_does_not_cache_failures() {
+        let mut checker = super::LaunchTargetChecker::default();
+        let now = std::time::Instant::now();
+        checker.installed_ids(false, now, || Ok(std::collections::HashSet::from(["first".into()]))).unwrap();
+        assert!(checker.installed_ids(false, now + std::time::Duration::from_secs(14), || panic!("must reuse enumeration")).unwrap().contains("first"));
+        assert!(checker.installed_ids(false, now + std::time::Duration::from_secs(15), || Ok(std::collections::HashSet::from(["new".into()]))).unwrap().contains("new"));
+        assert!(checker.installed_ids(true, now + std::time::Duration::from_secs(15), || Err("unavailable".into())).is_err());
+        assert!(checker.installed_ids.is_none());
+        checker.installed_ids(false, now, || Ok(std::collections::HashSet::new())).unwrap();
+        checker.invalidate();
+        assert!(checker.installed_ids.is_none());
+    }
     #[test]
     fn saved_admin_preference_applies_to_manual_and_catalog_items_only() {
         let layout=serde_json::json!({"pages":[[{"id":"folder","type":"folder","childPages":[[{"id":"manual","type":"manualApp","runAsAdmin":true},{"id":"catalog","type":"catalogApp","runAsAdmin":true}]]}]],"settings":{"id":"other","runAsAdmin":true}});

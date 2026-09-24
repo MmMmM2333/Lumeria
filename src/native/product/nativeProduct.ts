@@ -253,7 +253,7 @@ const closeSettings=()=>nativeSettings.close();
 let apps:ReturnType<typeof createLaunchpadApps>|null=null;
 let appDialogs:NativeAppDialogs|null=null;
 let refreshTargetChecks: (force?: boolean) => Promise<void> = async()=>{};
-let refreshOneTarget: (id:string)=>Promise<void> = async()=>{};
+let refreshOneTarget: (id:string,force?:boolean)=>Promise<void> = async()=>{};
 let saveFailed=(error:unknown)=>{logNativeRuntime("save-error",String(error));},saveRecovered=()=>{};
 const saves = createLayoutSaveQueue(async document=>{try{await nativeData.saveLayout(document);saveRecovered();}catch(error){saveFailed(error);throw error;}});
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
@@ -435,10 +435,10 @@ async function activateItem(item: SceneItem, event: {shiftKey?:boolean} = {}): P
     }
     return;
   }
-  if(apps?.nativeIntegration.getTargetDetails(item.id)?.status === "missing") await refreshOneTarget(item.id);
+  if(apps?.nativeIntegration.getTargetDetails(item.id)?.status === "missing") await refreshOneTarget(item.id,true);
   if(apps?.nativeIntegration.getTargetDetails(item.id)?.status === "missing") {
     management.warning({title:t("launchpad.target.missingTitle"),message:t("launchpad.target.missingMessage"),confirmText:t("common.actions.edit"),cancelText:t("launchpad.target.recheck"),
-      onConfirm:()=>editItem(item),onCancel:()=>{void refreshOneTarget(item.id);}});
+      onConfirm:()=>editItem(item),onCancel:()=>{void refreshOneTarget(item.id,true);}});
     return;
   }
   launchFlow?.openApp(item as ReadonlyLaunchpadApp);
@@ -479,53 +479,65 @@ function removeItems(ids: readonly string[]): void {
     void saves.flush().catch(()=>{});
   }});
 }
-let targetMenuRequest=0;
 let preserveViewAfterLocation=()=>{};
-function contextMenu(item:SceneItem|null,x:number,y:number,checked=false):void{
-  if(item?.type==="app"&&!checked){
-    const request=++targetMenuRequest;
-    void refreshOneTarget(item.id).then(()=>{if(request===targetMenuRequest&&!sceneUpdates.disposed&&!management.modal&&getCurrentIconScope().items.some(current=>current.id===item.id))contextMenu(item,x,y,true);});
-    return;
-  }
+function contextMenu(item:SceneItem|null,x:number,y:number):void{
   const folder = folderFlow.snapshot();
   // Closing retains renderedFolder for animation, but no menu may use that retiring scope.
   // Both stage right-clicks and menu relocation requests pass through this entry.
   if (folder.isClosing) return;
-  const actions:import("../../rendering/native/NativeManagement.js").NativeMenuAction[]=[];
-  const beginBatch=()=>{editing!.alt.cancelAltEditMode();editing!.selection.begin({});};
-  if(item){
-    const details=apps?.nativeIntegration.getTargetDetails(item.id);
-    actions.push({label:t("common.actions.open"),disabled:details?.status==="missing",icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
-    if(item.type==="app"){
-      if(details?.canElevate)actions.push({label:t("launchpad.target.runAsAdmin"),icon:"shield-20-regular",disabled:details.status==="missing",run:()=>{void (async()=>{
-        await refreshOneTarget(item.id);
-        const latest=apps?.nativeIntegration.getTargetDetails(item.id);if(latest?.status==="missing"){await activateItem(item);return;}
-        if(!latest?.canElevate)throw new Error(t("launchpad.target.adminUnavailable"));
-        launchFlow?.openApp(item as ReadonlyLaunchpadApp,undefined,true);
-      })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error);});}});
-      const reveal=async(path:string,folder=false)=>{await saves.flush();await nativeData.revealPath(path,folder);preserveViewAfterLocation();launchFlow?.closeDesktop({clearSearch:false});};
-      actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(reportNativeError);}});
-      if(details?.shortcutLocation)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",run:()=>{void reveal(details.shortcutLocation!).catch(reportNativeError);}});
-      if(details?.status!=="ok")actions.push({label:t("launchpad.target.recheck"),icon:"arrow-sync-20-regular",run:()=>{void refreshOneTarget(item.id);}});
+  const scope=getCurrentIconScope();
+  const check=item?.type==="app"?apps?.nativeIntegration.getLaunchTargetCheck(item.id):undefined;
+  const initialDetails=item?apps?.nativeIntegration.getTargetDetails(item.id):undefined;
+  const filesystem=check&&["executable","shortcut"].includes(check.launchTarget.kind);
+  const showAdmin=filesystem||initialDetails?.canElevate;
+  const showShortcut=initialDetails?.shortcutLocation||check?.launchTarget.kind==="shortcut"
+    ||[check?.launchTarget.path,...(check?.fallbackPaths??[])].some(path=>path?.toLowerCase().endsWith(".lnk"));
+  const appItem=item?apps?.nativeIntegration.getManagedApp(item.id):undefined;
+  const buildActions=()=>{
+    const actions:import("../../rendering/native/NativeManagement.js").NativeMenuAction[]=[];
+    const beginBatch=()=>{editing!.alt.cancelAltEditMode();editing!.selection.begin({});};
+    if(item){
+      const details=apps?.nativeIntegration.getTargetDetails(item.id);
+      actions.push({label:t("common.actions.open"),disabled:details?.status==="missing",icon:item.type==="folder"?"folder-open-20-regular":"open-20-regular",run:()=>{void activateItem(item);}});
+      if(item.type==="app"){
+        if(showAdmin)actions.push({label:t("launchpad.target.runAsAdmin"),icon:"shield-20-regular",disabled:!details?.canElevate||details.status==="missing",run:()=>{void (async()=>{
+          await refreshOneTarget(item.id,true);
+          const latest=apps?.nativeIntegration.getTargetDetails(item.id);if(latest?.status==="missing"){await activateItem(item);return;}
+          if(!latest?.canElevate)throw new Error(t("launchpad.target.adminUnavailable"));
+          launchFlow?.openApp(item as ReadonlyLaunchpadApp,undefined,true);
+        })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error);});}});
+        const reveal=async(path:string,folder=false)=>{await saves.flush();await nativeData.revealPath(path,folder);preserveViewAfterLocation();launchFlow?.closeDesktop({clearSearch:false});};
+        actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(reportNativeError);}});
+        if(showShortcut)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",disabled:!details?.shortcutLocation,run:()=>{if(details?.shortcutLocation)void reveal(details.shortcutLocation).catch(reportNativeError);}});
+        actions.push({label:t("launchpad.target.recheck"),icon:"arrow-sync-20-regular",run:()=>{void refreshOneTarget(item.id,true);}});
+      }
+      actions.push({label:t(item.type==="folder"?"common.actions.rename":"common.actions.edit"),icon:item.type==="folder"?"rename-20-regular":"edit-20-regular",run:()=>editItem(item)});
+      if(item.type==="folder")actions.push({label:t("launchpad.contextMenu.dissolve"),icon:"folder-arrow-right-20-regular",separatorBefore:true,danger:true,run:()=>editing!.pageCommands.confirmDissolveFolder(item.id)});
+      else {
+        actions.push({label:t("launchpad.contextMenu.remove"),icon:"delete-20-regular",separatorBefore:true,run:()=>apps!.removeManagedAppFromLaunchpad(item.id)});
+        if(appItem&&apps!.canExcludeManagedAppFromScan(appItem))actions.push({label:t("launchpad.contextMenu.exclude"),icon:"delete-dismiss-20-regular",danger:true,run:()=>apps!.excludeManagedAppFromScan(appItem)});
+      }
+    }else{
+      actions.push({label:t("launchpad.contextMenu.batchManage"),icon:"select-all-on-20-regular",run:beginBatch});
+      if(!folder.renderedFolder){
+        actions.push({label:t("settings.interface.layout.compactAction"),icon:"arrow-sort-20-regular",separatorBefore:true,run:()=>editing!.pageCommands.confirmForceFillAllPages()});
+        if(apps?.canScanManagedApps.value)actions.push({label:t(apps.isScanningApps.value?"settings.apps.manager.scanning":"settings.apps.manager.scanApps"),icon:"scan-object-20-regular",disabled:apps.isScanningApps.value,run:()=>{void apps!.rescanManagedApps({announceStart:true});}});
+        if(apps&&!apps.presentation.importState.value.completed)actions.push({label:t("imports.restoreInitial"),icon:"settings-20-regular",run:()=>onboarding?.open()});
+        if(apps?.imports.canUndo)actions.push({label:t("imports.undo"),icon:"arrow-counterclockwise-20-regular",run:()=>{apps!.imports.undo();void saves.flush().catch(()=>{});}});
+        actions.push({label:t("launchpad.openSettings"),icon:"settings-20-regular",separatorBefore:Boolean(apps?.canScanManagedApps.value),run:()=>openSettings()});
+      }
     }
-    actions.push({label:t(item.type==="folder"?"common.actions.rename":"common.actions.edit"),icon:item.type==="folder"?"rename-20-regular":"edit-20-regular",run:()=>editItem(item)});
-    if(item.type==="folder")actions.push({label:t("launchpad.contextMenu.dissolve"),icon:"folder-arrow-right-20-regular",separatorBefore:true,danger:true,run:()=>editing!.pageCommands.confirmDissolveFolder(item.id)});
-    else {
-      actions.push({label:t("launchpad.contextMenu.remove"),icon:"delete-20-regular",separatorBefore:true,run:()=>apps!.removeManagedAppFromLaunchpad(item.id)});
-      const appItem=apps?.managedApps.value.find(app=>app.id===item.id);
-      if(appItem&&apps!.canExcludeManagedAppFromScan(appItem))actions.push({label:t("launchpad.contextMenu.exclude"),icon:"delete-dismiss-20-regular",danger:true,run:()=>apps!.excludeManagedAppFromScan(appItem)});
-    }
-  }else{
-    actions.push({label:t("launchpad.contextMenu.batchManage"),icon:"select-all-on-20-regular",run:beginBatch});
-    if(!folder.renderedFolder){
-      actions.push({label:t("settings.interface.layout.compactAction"),icon:"arrow-sort-20-regular",separatorBefore:true,run:()=>editing!.pageCommands.confirmForceFillAllPages()});
-      if(apps?.canScanManagedApps.value)actions.push({label:t(apps.isScanningApps.value?"settings.apps.manager.scanning":"settings.apps.manager.scanApps"),icon:"scan-object-20-regular",disabled:apps.isScanningApps.value,run:()=>{void apps!.rescanManagedApps({announceStart:true});}});
-      if(apps&&!apps.presentation.importState.value.completed)actions.push({label:t("imports.restoreInitial"),icon:"settings-20-regular",run:()=>onboarding?.open()});
-      if(apps?.imports.canUndo)actions.push({label:t("imports.undo"),icon:"arrow-counterclockwise-20-regular",run:()=>{apps!.imports.undo();void saves.flush().catch(()=>{});}});
-      actions.push({label:t("launchpad.openSettings"),icon:"settings-20-regular",separatorBefore:Boolean(apps?.canScanManagedApps.value),run:()=>openSettings()});
-    }
-  }
-  management.menu(x,y,actions);
+    return actions;
+  };
+  const menu=management.menu(x,y,buildActions());
+  if(menu&&item?.type==="app")void refreshOneTarget(item.id).then(()=>{
+    if(sceneUpdates.disposed||folderFlow.snapshot().isClosing)return;
+    const current=getCurrentIconScope();
+    if(current.area!==scope.area||current.folderId!==scope.folderId||current.pageIndex!==scope.pageIndex
+      ||!current.items.some(candidate=>candidate.id===item.id)
+      ||apps?.nativeIntegration.getLaunchTargetCheck(item.id)?.targetSignature!==check?.targetSignature)return;
+    menu.update(buildActions());
+  });
 }
 async function updateIcon(item:SceneItem, reset:boolean):Promise<void> {
   if(!reset){apps?.openExistingAppIconChooser(item.id);appDialogs?.sync();return;}
@@ -947,8 +959,9 @@ try {
   refreshTargetChecks=async(force=false)=>{
     if(!apps||sceneUpdates.disposed)return;
     const checks=apps.nativeIntegration.listLaunchTargets();
+    nativeData.retainLaunchTargets(checks);
     const key=apps.nativeIntegration.shouldCheckLaunchTargets()?apps.nativeIntegration.launchTargetCheckSignature(checks):"off";
-    if(key===targetCheckKey && targetCheckPending) return targetCheckPending;
+    if(!force&&key===targetCheckKey && targetCheckPending) return targetCheckPending;
     if(!force&&key===targetCheckKey&&Date.now()-targetCheckedAt<15000)return;
     targetCheckKey=key;const generation=++targetCheckGeneration;
     if(key==="off"){apps.nativeIntegration.clearLaunchTargetStatuses();return;}
@@ -957,16 +970,16 @@ try {
         await new Promise(resolve=>setTimeout(resolve,0));
         if(generation!==targetCheckGeneration||sceneUpdates.disposed)return;
         const batch=checks.slice(offset,offset+4);
-        const results=await nativeData.checkLaunchTargets(batch.map(({id,launchTarget,fallbackPaths})=>({id,launchTarget,fallbackPaths})));
+        const results=await nativeData.checkLaunchTargets(batch.map(({id,launchTarget,fallbackPaths})=>({id,launchTarget,fallbackPaths})),force);
         if(generation===targetCheckGeneration&&!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,batch);
       }
       if(generation===targetCheckGeneration)targetCheckedAt=Date.now();
     })().catch(error=>{if(!sceneUpdates.disposed){logNativeRuntime("launch-target-check-error",error);if(generation===targetCheckGeneration){targetCheckedAt=0;apps?.nativeIntegration.clearLaunchTargetStatuses();}}}).finally(()=>{if(generation===targetCheckGeneration)targetCheckPending=null;});
     return targetCheckPending;
   };
-  refreshOneTarget=async id=>{
-    const check=apps?.nativeIntegration.listLaunchTargets().find(check=>check.id===id);if(!check)return;
-    try{const results=await nativeData.checkLaunchTargets([check]);if(!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,[check]);}
+  refreshOneTarget=async(id,force=false)=>{
+    const check=apps?.nativeIntegration.getLaunchTargetCheck(id);if(!check)return;
+    try{const results=await nativeData.checkLaunchTargets([check],force);if(!sceneUpdates.disposed)apps?.nativeIntegration.applyLaunchTargetStatuses(results,[check]);}
     catch(error){logNativeRuntime("launch-target-check-error",error);}
   };
   refreshTargetChecks();
@@ -1217,6 +1230,11 @@ try {
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_CONTEXT_MENU_PROOF){
+    await (await import("../diagnostics/nativeContextMenuSmoke.js")).runNativeContextMenuSmoke({app,apps:apps!,editing:editing!,management,data:nativeData,
+      present:name=>present(app,name),menu:contextMenu,quit:()=>closeCoordinator.requestQuit()});
+    await closed;return;
+  }
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
     await (await import("../diagnostics/nativeTargetActionsSmoke.js")).runNativeTargetActionsSmoke({app,apps:apps!,editing:editing!,folder:folderFlow,management,dialogs:appDialogs!,data:nativeData,
       present:name=>present(app,name),check:refreshTargetChecks,menu:contextMenu,search:query=>changeSearch(query),show:showLaunchpad,launching:()=>launchFlow!.isAppLaunching.value,showSettings:()=>{settingsNavigation.selectTab("apps");openSettings();},save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});

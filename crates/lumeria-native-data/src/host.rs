@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use lumeria_core::{
     catalog::{icon_cache_dir, scan_apps_from_roots, ScanFilters, ScanRoot},
     launch::{
-        check_launch_targets_sync, launch_app_with_mode as launch_selected_catalog_app, LaunchFailure,
+        LaunchTargetChecker, launch_app_with_mode as launch_selected_catalog_app, LaunchFailure,
         LaunchTargetCheckRequest,
     },
     layout_store::{load_layout_from_path, save_layout_to_path},
@@ -32,6 +32,8 @@ enum Request {
         version: u32,
         id: u64,
         targets: Vec<LaunchTargetCheckRequest>,
+        #[serde(default)]
+        force: bool,
     },
     CacheBackground {
         version: u32,
@@ -177,6 +179,7 @@ impl Response {
 #[derive(Default)]
 struct HostState {
     catalog: HashMap<String, AppCatalogItem>,
+    target_checker: LaunchTargetChecker,
 }
 
 pub fn run() -> Result<(), String> {
@@ -231,7 +234,7 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
         },
         Request::BackupResetLayout { .. } => backup_reset_layout(data_dir).map(|path|json!({"backupPath":path})),
         Request::RevealPath { path, folder, .. } => lumeria_core::target_details::reveal_path(&path, folder).map(|()| Value::Null),
-        Request::CheckLaunchTargets { targets, .. } => check_launch_targets_sync(targets)
+        Request::CheckLaunchTargets { targets, force, .. } => state.target_checker.check(targets, force)
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
         Request::CacheBackground { path, .. } => cache_background(data_dir, &path),
         Request::Wallpaper { rect, .. } => cache_wallpaper(data_dir, rect),
@@ -253,6 +256,7 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
         Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
             .and_then(|layout| serde_json::to_value(layout).map_err(|error| error.to_string())),
         Request::ScanApps { roots, filters, .. } => icon_cache_dir(data_dir).and_then(|icon_dir| {
+            state.target_checker.invalidate();
             scan_apps_from_roots(&roots, &icon_dir, &filters).and_then(|result| {
                 state.catalog.clear();
                 state
