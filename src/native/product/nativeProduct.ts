@@ -1187,7 +1187,10 @@ try {
   // Input/state work is now frame-coalesced. Apply the initial presentation
   // before testing its endpoint; untouched nodes can still have alpha=1.
   sceneUpdates.flush();
-  await waitFor(
+  // Only the controlled smoke scenario requires a globally settled scene.
+  // Product readiness is the first presented frame + startupPreparation; users
+  // may already open a folder, drag, or hide the window after that boundary.
+  if (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke") await waitFor(
     "the LaunchPad entrance motion to make every node visible",
     () => app.state === "closing" || app.state === "closed"
       || (!sceneUpdates.pending&&!scene.getMotionSnapshot().active
@@ -1599,7 +1602,7 @@ try {
   const visibleNodes = iconNodes.filter((node) => (
     node.alpha >= 0.999 && node.renderable && node.visible
   )).length;
-  if (visibleNodes !== iconNodes.length) {
+  if (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke" && visibleNodes !== iconNodes.length) {
     throw new Error(`Only ${visibleNodes}/${iconNodes.length} LaunchPad nodes became visible`);
   }
 
