@@ -749,6 +749,9 @@ scene.commit(
   },
 );
 const scrubbedFolderMotion = scene.getMotionSnapshot();
+assert.equal(scene.getPageWidth(`folder:${folderItem.id}`,0),scene.getFolderPanelRect()!.width,
+  "wheel input must use the actual folder panel page span, not its inset grid width");
+assert.equal(scene.getPageWidth("desktop",0),1180,"desktop wheel input must use the full page track span");
 assert.ok(
   scrubbedFolderMotion.folderPageTrackX !== null && scrubbedFolderMotion.folderPageTrackX < 0,
   "the native folder scene should apply the gesture engine's live page scrub",

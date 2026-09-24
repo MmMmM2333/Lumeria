@@ -53,6 +53,8 @@ export type NativePageTrackScrub = Readonly<{
 }>;
 
 export type NativeInputRouter = Readonly<{
+  resetWheelNavigation: () => void;
+  isWheelNavigationActive: () => boolean;
   cancelGesture: () => void;
   clearPresentation: () => void;
   dispose: () => void;
@@ -85,6 +87,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   // outside the window must not be read as a short tap that reopens the folder.
   let closingFolderGesture = false;
   let lastWheelGestureTime = 0;
+  let wheelActive = false;
   let touchpadOwner:{sequence:number;settings:NativeSettingsShell|null;dialog:string|null;folder:string|null}|null=null;
 
   const releaseGesturePointer = () => {
@@ -102,6 +105,14 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     desktopPageTrackScrub = null;
     folderPageTrackScrub = null;
     requestSceneRender();
+  };
+  const resetWheelNavigation = (): void => {
+    wheelGestures.dispatch({type:"resetWheel"});
+    clearWheelDeadline("wheelEnd");
+    clearWheelDeadline("clearPresentation");
+    wheelActive = false;
+    touchpadOwner = null;
+    clearWheelPresentation();
   };
   const toPageTrackScrub = (
     presentation: LaunchpadPagePresentation,
@@ -123,40 +134,55 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     output: LaunchpadGestureOutput,
     event: FederatedWheelEvent | null,
     time: number,
+    source?: "pointer" | "wheel",
   ) => void;
   const scheduleWheelDeadline = (
     deadline: LaunchpadGestureDeadline | null | undefined,
+    source: "pointer" | "wheel",
   ): void => {
     if (!deadline) {
-      clearWheelDeadline("wheelEnd");
-      clearWheelDeadline("hold");
+      clearWheelDeadline(source === "pointer" ? "hold" : "wheelEnd");
       return;
     }
     clearWheelDeadline(deadline.kind);
     const timer = setTimeout(() => {
+      if (wheelDeadlines.get(deadline.kind) !== timer) return;
       wheelDeadlines.delete(deadline.kind);
       if (deadline.kind === "clearPresentation") {
         clearWheelPresentation();
         return;
       }
+      if (deadline.kind === "wheelEnd") wheelActive = false;
       applyWheelOutput(
         wheelGestures.dispatch({ type: "deadline", kind: deadline.kind, time: deadline.at }),
         null,
         deadline.at,
+        deadline.kind === "hold" ? "pointer" : "wheel",
       );
     }, Math.max(0, deadline.at - lastWheelGestureTime));
     wheelDeadlines.set(deadline.kind, timer);
   };
-  applyWheelOutput = (output, event, time): void => {
+  applyWheelOutput = (output, event, time, source = "wheel"): void => {
     const editing = getEditing();
     // Release before commands: activation can synchronously hide the window or
     // trigger another cancellation, which must not observe a stale pointer.
-    if (output.releasesPointer) releaseGesturePointer();
+    if (output.releasesPointer) { resetWheelNavigation(); releaseGesturePointer(); }
     activeTouchpadCapture?.decision(output);
     lastWheelGestureTime = time;
     if (output.presentation) {
       clearWheelDeadline("clearPresentation");
       const scrub = toPageTrackScrub(output.presentation);
+      if (editing?.drag.isDragActive() && scrub.settle && !scrub.continuousWheel) {
+        // A wheel notch may interrupt an unfinished edge/page spring. Start
+        // the new settle at the displayed position, not the logical page edge.
+        const folder = scrub.scope.startsWith("folder:");
+        const motion = scene.getMotionSnapshot();
+        const liveX = folder ? motion.folderPageTrackX : motion.desktopPageTrackX;
+        const span = scene.getPageWidth(scrub.scope, scrub.fromIndex, app.contentSize.width);
+        if (liveX !== null && span > 0) {
+          Object.assign(scrub, {fromIndex: -liveX / span, progress: 0});
+        }
+      }
       if (scrub.scope.startsWith("folder:")) {
         desktopPageTrackScrub = null;
         folderPageTrackScrub = scrub;
@@ -166,6 +192,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
       }
       requestSceneRender();
     }
+    let rejectedNavigation = false;
     for (const command of output.commands) {
       if(command.type === "startDrag" && command.target.kind === "icon" && command.target.id) {
         editing?.beginDrag(command.target.id, {
@@ -197,7 +224,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
       }
       if (command.type !== "commitPage") continue;
       if (editing?.drag.isDragActive()) {
-        editing.drag.navigateDragPage(command.pageIndex, command.scope.startsWith("folder:") ? command.scope.slice(7) : null);
+        const accepted = editing.drag.navigateDragPage(command.pageIndex, command.scope.startsWith("folder:") ? command.scope.slice(7) : null, false, "wheel");
+        if (!accepted) { resetWheelNavigation(); rejectedNavigation = true; }
         continue;
       }
       if (command.scope.startsWith("folder:")) {
@@ -208,8 +236,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
         commitDesktopPage(command.pageIndex);
       }
     }
-    if (Object.prototype.hasOwnProperty.call(output, "deadline")) {
-      scheduleWheelDeadline(output.deadline);
+    if (!rejectedNavigation && Object.prototype.hasOwnProperty.call(output, "deadline")) {
+      scheduleWheelDeadline(output.deadline, source);
     }
     if (output.handled) {
       event?.preventDefault();
@@ -241,7 +269,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     const timeStamp = Number(event.timeStamp);
     const time = Number.isFinite(timeStamp) && timeStamp >= 0 ? timeStamp : performance.now();
     const touchpad=readNativeTouchpad(event);
-    applyWheelOutput(wheelGestures.dispatch({
+    if (dragging) getEditing()!.drag.refreshEdgeNavigation();
+    const output = wheelGestures.dispatch({
       type: "wheel",
       time,
       ctrlKey: event.ctrlKey,
@@ -257,7 +286,12 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
         pageCount,
         pageWidth: scene.getPageWidth(scope, pageIndex, app.contentSize.width),
       },
-    }), event, time);
+    });
+    if (!event.ctrlKey && !event.metaKey && output.handled) {
+      wheelActive = touchpad ? !["end","cancel","inertia"].includes(touchpad.phase)
+        : output.deadline?.kind === "wheelEnd";
+    }
+    applyWheelOutput(output, event, time);
   };
   const interruptWheel = (event: Readonly<{ timeStamp?: unknown }>): void => {
     if (touchId !== null) return;
@@ -272,6 +306,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     applyWheelOutput(output, null, time);
     for (const timer of wheelDeadlines.values()) clearTimeout(timer);
     wheelDeadlines.clear();
+    wheelActive = false;
+    touchpadOwner = null;
     clearWheelPresentation();
   };
   const guardTouchpadRoute=(event:FederatedWheelEvent)=>{
@@ -335,7 +371,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
       clearWheelPresentation();
       app.nativeInput.capturePointer(event.pointerId);
     }
-    applyWheelOutput(output, null, event.timeStamp);
+    applyWheelOutput(output, null, event.timeStamp, "pointer");
     event.stopPropagation();
   };
   const touchDown = (event: FederatedPointerEvent) => touch("pointerDown", event);
@@ -376,6 +412,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   };
 
   return Object.freeze({
+    resetWheelNavigation,
+    isWheelNavigationActive: () => wheelActive,
     cancelGesture,
     clearPresentation: clearWheelPresentation,
     dispose,

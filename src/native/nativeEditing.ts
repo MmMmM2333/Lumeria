@@ -25,6 +25,8 @@ type Options = {
   open(id: string | null): void;
   page(index: number): void;
   dragPage(index: number): void;
+  resetWheelNavigation(): void;
+  isWheelNavigationActive(): boolean;
   folderPage(index: number, options?: { allowCreate?: boolean }): void;
   confirm(config: LaunchpadWarningDialogConfig): void;
 };
@@ -79,6 +81,18 @@ export function createNativeEditing(options: Options) {
     getGroupLayoutRevision: () => revision,
     getNewFolderName: () => t("launchpad.newFolder"),
     commitPageIndex: options.dragPage,
+    beforePageNavigation: source => { if (source === "edge") options.resetWheelNavigation(); },
+    isPageNavigationSettled: folderId => {
+      if (options.isWheelNavigationActive()) return false;
+      const motion = options.scene.getMotionSnapshot();
+      const target = folderId ? motion.folderPageTrackTargetX : motion.desktopPageTrackTargetX;
+      const current = folderId ? motion.folderPageTrackX : motion.desktopPageTrackX;
+      const index = folderId ? options.folder.snapshot().folderPageIndex
+        : drag.groupDragState.value?.desktopPageIndex ?? cells.pageIndex.value;
+      const span = options.scene.getPageWidth(folderId ? `folder:${folderId}` : "desktop", index, options.size().width);
+      const expected = -index * span;
+      return target !== null && current !== null && Math.abs(target - expected) < 0.5 && Math.abs(expected - current) < 0.5;
+    },
     commitFolderPageIndex: options.folderPage,
     commitOpenFolder: options.open,
     planGroupTransfer: request => planGroupTransfer({ basePages: request.basePages,
@@ -100,7 +114,7 @@ export function createNativeEditing(options: Options) {
       return true;
     },
     onGroupDragStart: payload => { if(!payload.standalone) selection.freeze("drag"); },
-    onGroupDragEnd: () => selection.unfreeze("drag"),
+    onGroupDragEnd: () => { options.resetWheelNavigation(); selection.unfreeze("drag"); },
   }, state, {
     setTimeout: schedule, clearTimeout: clear,
     requestAnimationFrame: options.frames.request, cancelAnimationFrame: options.frames.cancel,

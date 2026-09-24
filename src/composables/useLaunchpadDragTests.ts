@@ -61,6 +61,7 @@ type ProvisionalDiscardOptions = Parameters<
 type OpenFolderCommitOptions = Parameters<LaunchpadDragOptions["commitOpenFolder"]>[1];
 
 type AtomicDragHarnessOptions = Readonly<{
+  navigationSettled?: () => boolean;
   onPageCommit?: () => void;
   cancelZoneRect?: Rect;
   desktopMainRect?: Rect;
@@ -70,6 +71,7 @@ type AtomicDragHarnessOptions = Readonly<{
   gridRows?: number;
   openFolderId?: string | null;
   pageRect?: Rect;
+  staleNextPageRect?: Rect;
   pageSize?: number;
 }>;
 
@@ -321,7 +323,7 @@ function createAtomicDragHarness(
   };
   const pageRefs = [
     { getBoundingClientRect: () => pageRect },
-    { getBoundingClientRect: () => pageRect },
+    { getBoundingClientRect: () => options.staleNextPageRect ?? pageRect },
   ];
   const folderPageRefs = [
     { getBoundingClientRect: () => ({ ...pageRect, left: 150, right: 350, width: 200 }) },
@@ -347,6 +349,7 @@ function createAtomicDragHarness(
   const folderPageSize = Math.max(1, Number(options.folderPageSize) || 4);
 
   const drag = useLaunchpadDrag({
+    ...(options.navigationSettled ? {isPageNavigationSettled: options.navigationSettled} : {}),
     clearFolderPageTurnRequest: () => {
       folderPageTurnRequest.value = null;
     },
@@ -462,6 +465,47 @@ function createAtomicDragHarness(
 }
 
 export async function runLaunchpadDragTests() {
+  await withMockPointerEnvironment(({timers}) => {
+    const a=app("virtual-stale-a"),h=createAtomicDragHarness([[a,app("virtual-keep")]],{
+      staleNextPageRect:{left:800,top:100,right:1200,bottom:500,width:400,height:400},
+    });
+    const target={getBoundingClientRect:()=>({left:16,top:120,width:64,height:64})};
+    h.drag.startDrag(makePointerEvent(3,target,{clientX:48,clientY:152}),a,{type:"page",pageIndex:0,index:0});
+    h.drag.updateDragPointer(makePointerEvent(3,target,{clientX:399,clientY:152,timeStamp:140}));
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY),"virtual-page navigation must run despite stale retained geometry");
+    assert(h.drag.projectedPages.value?.length===2,"virtual page must have a renderable projection before fresh hit geometry exists");
+    assert(h.pages.value.length===1,"virtual projection must not mutate the saved pages");
+    h.drag.disposeDrag();
+  });
+  await withMockPointerEnvironment(({timers}) => {
+    let arrived = true;
+    const a=app("repeat-a"),h=createAtomicDragHarness([[a],[app("repeat-b")],[app("repeat-c")]],{navigationSettled:()=>arrived});
+    const target={getBoundingClientRect:()=>({left:16,top:120,width:64,height:64})};
+    h.drag.startDrag(makePointerEvent(1,target,{clientX:48,clientY:152}),a,{type:"page",pageIndex:0,index:0});
+    h.drag.updateDragPointer(makePointerEvent(1,target,{clientX:399,clientY:152,timeStamp:140}));
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY) && Number(h.pageIndex.value)===1,"edge dwell must navigate once");
+    arrived=false;
+    assert(flushTimerByDelay(timers,50) && Number(h.pageIndex.value)===1,"repeat must wait while page movement or wheel navigation is active");
+    arrived=true;
+    assert(flushTimerByDelay(timers,50) && Number(h.pageIndex.value)===1,"arrival should start a full new dwell interval");
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY) && Number(h.pageIndex.value)===2,"stationary pointer must continue to the next page");
+    assert(flushTimerByDelay(timers,50),"next repeat must observe the new page before its dwell");
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY),"last page may create one virtual page");
+    assert(!flushTimerByDelay(timers,PAGE_TURN_DELAY),"stationary edge must not create an infinite series of empty pages");
+    h.drag.disposeDrag();
+  });
+  await withMockPointerEnvironment(({timers}) => {
+    const f={id:"repeat-folder",name:"repeat",type:"folder" as const,childPages:[[app("a")],[app("b")],[app("c")]]};
+    const h=createAtomicDragHarness([[f]],{openFolderId:f.id});
+    const target={getBoundingClientRect:()=>({left:220,top:180,width:56,height:56})};
+    h.drag.startDrag(makePointerEvent(2,target,{clientX:248,clientY:208}),f.childPages[0]![0]!,{type:"folder",folderId:f.id,pageIndex:0,index:0});
+    h.drag.updateDragPointer(makePointerEvent(2,target,{clientX:345,clientY:220,timeStamp:140}));
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY) && Number(h.folderPageIndex.value)===1,"folder edge must navigate once");
+    assert(flushTimerByDelay(timers,PAGE_TURN_DELAY) && Number(h.folderPageIndex.value)===2,"folder edge must repeat without reentering the panel");
+    h.drag.updateDragPointer(makePointerEvent(2,target,{clientX:260,clientY:220,timeStamp:1800}));
+    assert(!flushTimerByDelay(timers,PAGE_TURN_DELAY),"leaving the edge must cancel the pending repeat");
+    h.drag.disposeDrag();
+  });
   await withMockPointerEnvironment(({ timers }) => {
     const a = app("edge-cancel-a");
     const harness = createAtomicDragHarness([[app("edge-cancel-b")], [a]], {
@@ -1118,7 +1162,7 @@ export async function runLaunchpadDragTests() {
     }));
     assert(
       readRefValue(harness.folderPageIndex) === 2 && readRefValue(harness.visualFolderPageIndex) === 2,
-      "a completed folder edge turn should stay latched through a small inward retreat"
+      "moving away from the edge should stop further folder navigation"
     );
     harness.drag.finishDrag(makePointerEvent(17, target, {
       button: 0,
@@ -1174,7 +1218,7 @@ export async function runLaunchpadDragTests() {
     }));
     assert(
       !flushTimerByDelay(timers, PAGE_TURN_DELAY) && harness.folderPageIndex.value === 1,
-      "a small retreat after a border turn should stay latched instead of immediately reversing direction"
+      "leaving the border zone should cancel the repeat without reversing direction"
     );
     harness.drag.cancelDrag(makePointerEvent(171, target, {
       button: 0,

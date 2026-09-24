@@ -3,7 +3,6 @@ import type { DragHost } from "./dragHost.js";
 import {
   FOLDER_PAGE_EDGE_MAX_SIZE,
   FOLDER_PAGE_EDGE_MIN_SIZE,
-  FOLDER_PAGE_EDGE_NEUTRAL_INSET,
   FOLDER_PAGE_EDGE_RATIO,
   FOLDER_HOVER_STICKY_MARGIN,
   PAGE_EDGE_SIZE,
@@ -328,6 +327,8 @@ export type CompleteGroupReleaseResult = Readonly<{
 }>;
 
 export type LaunchpadDragOptions = Readonly<{
+  beforePageNavigation?: (source: "edge" | "wheel") => void;
+  isPageNavigationSettled?: (folderId: string | null) => boolean;
   clearFolderPageTurnRequest?: (reason: string) => unknown;
   cloneItem: (item: ReadonlyLaunchpadItem) => LaunchpadItem;
   clonePages: (pages: ReadonlyLaunchpadPages) => LaunchpadPages;
@@ -495,7 +496,7 @@ type FolderPageTurnState =
     allowCreate: boolean;
     direction: -1 | 1;
     fromIndex: number;
-    phase: "armed" | "latched";
+    phase: "armed";
     targetIndex: number;
     timer: number | null;
   };
@@ -2198,15 +2199,19 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
 
   // Navigation belongs to the current drag. Callers must not cancel the pointer
   // gesture when committing its page, and callbacks may still revoke ownership.
-  function navigateDragPage(targetIndex: number, folderId: string | null = null, allowCreate = false): boolean {
+  function navigateDragPage(targetIndex: number, folderId: string | null = null, allowCreate = false, source: "edge" | "wheel" = "edge"): boolean {
     const drag = activeDrag;
     if (!drag || !isInteractiveGroupTransferPhase(drag.group.phase) || !Number.isInteger(targetIndex)) return false;
     if ((options.openFolderId.value || null) !== folderId) return false;
     const pageCount = folderId ? options.folderPages.value.length : options.pages.value.length;
     if (targetIndex < 0 || targetIndex > pageCount || (targetIndex === pageCount && !allowCreate)) return false;
-    if (targetIndex === pageCount && makePlan(folderId
+    const provisionalIntent: LaunchpadDragIntent = folderId
       ? { type: "folder-slot", folderId, folderPageIndex: targetIndex, index: 0 }
-      : { type: "desktop-slot", pageIndex: targetIndex, index: 0 }).status !== "accepted") return false;
+      : { type: "desktop-slot", pageIndex: targetIndex, index: 0 };
+    const provisionalPlan = targetIndex === pageCount ? makePlan(provisionalIntent) : null;
+    if (provisionalPlan && provisionalPlan.status !== "accepted") return false;
+    options.beforePageNavigation?.(source);
+    if (activeDrag !== drag) return false;
     clearIntentTimer();
     clearPageTurn();
     clearFolderPageTurn();
@@ -2223,11 +2228,24 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
       if (activeDrag !== drag) return false;
     }
     drag.group.intentKey = null;
+    // A virtual page has no current layout yet; old retained page refs may
+    // describe a prior document. Establish the projection before hit testing.
+    if (provisionalPlan) updateLayoutProjection(drag.group, provisionalIntent, provisionalPlan);
     evaluateIntent({ force: true });
+    refreshEdgeNavigation();
     return activeDrag === drag;
   }
 
-  function scheduleDesktopPageTurn(clientX: number, clientY: number): void {
+  function refreshEdgeNavigation(): void {
+    clearPageTurn();
+    clearFolderPageTurn();
+    const drag = activeDrag;
+    if (!drag || !isInteractiveGroupTransferPhase(drag.group.phase) || drag.group.cancelArmed) return;
+    if (options.openFolderId.value) scheduleFolderPageTurn(drag.pointer.x, drag.pointer.y, true);
+    else scheduleDesktopPageTurn(drag.pointer.x, drag.pointer.y, true);
+  }
+
+  function scheduleDesktopPageTurn(clientX: number, clientY: number, afterNavigation = false): void {
     const direction = getDesktopPageTurnDirection(clientX, clientY);
     const currentIndex = getVisualDesktopPageIndex();
     const targetIndex = currentIndex + direction;
@@ -2250,15 +2268,25 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     }
     if (pageTurnTimer?.targetIndex === targetIndex) return;
     clearPageTurn();
-    pageTurnTimer = {
-      targetIndex,
-      timer: window.setTimeout(() => {
-        const pending = pageTurnTimer;
-        pageTurnTimer = null;
-        if (!activeDrag || !pending) return;
-        navigateDragPage(pending.targetIndex, null, true);
-      }, PAGE_TURN_DELAY),
+    const pending = {targetIndex, timer: 0};
+    let waitingForArrival = Boolean(afterNavigation && options.isPageNavigationSettled) || options.isPageNavigationSettled?.(null) === false;
+    const turn = () => {
+      if (!activeDrag || pageTurnTimer !== pending) return;
+      if (options.isPageNavigationSettled?.(null) === false) {
+        waitingForArrival = true;
+        pending.timer = window.setTimeout(turn, 50);
+        return;
+      }
+      if (waitingForArrival) {
+        waitingForArrival = false;
+        pending.timer = window.setTimeout(turn, PAGE_TURN_DELAY);
+        return;
+      }
+      pageTurnTimer = null;
+      navigateDragPage(pending.targetIndex, null, true);
     };
+    pending.timer = window.setTimeout(turn, waitingForArrival ? 50 : PAGE_TURN_DELAY);
+    pageTurnTimer = pending;
   }
 
   function getFolderPageTurnGeometry(): Readonly<{
@@ -2275,7 +2303,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     return { panelRect, viewportRect };
   }
 
-  function scheduleFolderPageTurn(clientX: number, clientY: number): void {
+  function scheduleFolderPageTurn(clientX: number, clientY: number, afterNavigation = false): void {
     const geometry = getFolderPageTurnGeometry();
     const point = { x: clientX, y: clientY };
     if (!geometry) {
@@ -2307,15 +2335,6 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
         ? 1
         : 0;
 
-    if (folderPageTurnState.phase === "latched") {
-      const neutralLeft = leftInnerEdge + FOLDER_PAGE_EDGE_NEUTRAL_INSET;
-      const neutralRight = rightInnerEdge - FOLDER_PAGE_EDGE_NEUTRAL_INSET;
-      if (point.x > neutralLeft && point.x < neutralRight) {
-        disarmFolderPageTurn();
-      }
-      return;
-    }
-
     if (folderPageTurnState.phase === "armed") {
       if (direction === folderPageTurnState.direction) return;
       disarmFolderPageTurn();
@@ -2342,7 +2361,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
       return;
     }
 
-    const armedState: Extract<FolderPageTurnState, { phase: "armed" | "latched" }> = {
+    const armedState: Extract<FolderPageTurnState, { phase: "armed" }> = {
       allowCreate,
       direction,
       fromIndex: currentIndex,
@@ -2350,16 +2369,23 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
       targetIndex,
       timer: null,
     };
-    armedState.timer = window.setTimeout(() => {
+    let waitingForArrival = Boolean(afterNavigation && options.isPageNavigationSettled) || options.isPageNavigationSettled?.(folderId) === false;
+    const turn = () => {
       const drag = activeDrag;
       if (!drag || folderPageTurnState !== armedState || options.openFolderId.value !== folderId) return;
-      if (!navigateDragPage(armedState.targetIndex, folderId, armedState.allowCreate)) return;
-      folderPageTurnState = {
-        ...armedState,
-        phase: "latched",
-        timer: null,
-      };
-    }, PAGE_TURN_DELAY);
+      if (options.isPageNavigationSettled?.(folderId) === false) {
+        waitingForArrival = true;
+        armedState.timer = window.setTimeout(turn, 50);
+        return;
+      }
+      if (waitingForArrival) {
+        waitingForArrival = false;
+        armedState.timer = window.setTimeout(turn, PAGE_TURN_DELAY);
+        return;
+      }
+      navigateDragPage(armedState.targetIndex, folderId, armedState.allowCreate);
+    };
+    armedState.timer = window.setTimeout(turn, waitingForArrival ? 50 : PAGE_TURN_DELAY);
     folderPageTurnState = armedState;
   }
 
@@ -3132,6 +3158,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
     groupDragState,
     isDragActive,
     navigateDragPage,
+    refreshEdgeNavigation,
     startCommittedGroupTransfer,
     projectedPages,
     startDrag,

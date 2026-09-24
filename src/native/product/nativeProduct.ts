@@ -907,7 +907,10 @@ try {
     selectionToolbarRect:()=>selectionToolbar.cancelZoneRect(),
     confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
     page: index => onDesktopPageIndexCommit(index), dragPage: commitDesktopPage, folderPage: setFolderPageIndex,
+    resetWheelNavigation: () => nativeInputRouter?.resetWheelNavigation(),
+    isWheelNavigationActive: () => nativeInputRouter?.isWheelNavigationActive() ?? false,
     open: id => {
+      nativeInputRouter?.resetWheelNavigation();
       if(!id) { closeFolder(); return; }
       const item = editing?.projectedPages().flat().find(item => item.id === id);
       if(item) { folderFlow.open(snapshotContractValue(item) as SceneItem);setFocusedIcon(null);requestSceneRender(); }

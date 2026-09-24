@@ -12,6 +12,7 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
   "app" | "editing" | "layoutState" | "scene" | "folderFlow" | "currentFrame" | "onDesktopPageIndexCommit" | "present" | "waitFor" | "capture" | "saves">): Promise<void> {
   const editing = c.editing()!;
   const baseline = c.layoutState.operations.clonePages(c.layoutState.presentation.pages.value);
+  const folderNavigationSamples:unknown[]=[];
   const template = baseline.flat().find((item): item is LaunchpadApp => item.type === "app")!;
   const app = (id: string): LaunchpadApp => ({ ...template, id, name: id });
   const fixture: LaunchpadPages = [[app("drag-a"), app("keep-a")], [app("drag-b"), app("keep-b")], [app("drag-c"), app("keep-c")]];
@@ -23,7 +24,9 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
   const restore = async (pages: LaunchpadPages, page = 0) => {
     c.folderFlow.reset(); editing.selection.clear(); editing.commit(pages); c.onDesktopPageIndexCommit(page); await settle();
   };
-  const pointer = (type: string, x: number, y: number) => c.app.nativeInput.emitPointer(type, x, y, 0);
+  // Keep the injected drag distinct from incidental OS mouse-motion packets.
+  const pointer = (type: string, x: number, y: number) => c.app.nativeInput.emitPointer(type, x, y, 0,0,undefined,
+    {pointerId:71,pointerType:"mouse",isPrimary:true});
   const pickup = async (id: string) => {
     const r = c.scene.createDragPointerEvent(id, {}).currentTarget.getBoundingClientRect();
     const x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -35,6 +38,9 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
   const cancel = async (p: {x:number;y:number}) => {
     pointer("pointercancel",p.x,p.y); pointer("pointerup",p.x,p.y); await settle();
   };
+  const desktopArrived = (index:number) => c.currentFrame().viewport.activePageIndex===index
+    && editing.drag.groupDragState.value?.desktopPageIndex===index
+    && Math.abs(c.scene.getMotionSnapshot().desktopPageTrackX + index*c.app.contentSize.width)<0.5;
   try {
     await restore(fixture);
     let p = await pickup("drag-a");
@@ -44,9 +50,40 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
     await c.capture("drag-wheel-page");
     pointer("pointermove", c.app.contentSize.width - 3, p.y);
     await c.waitFor("edge changes page during drag", () => c.currentFrame().viewport.activePageIndex === 2);
+    await c.waitFor("mixed wheel and edge actually display third page",()=>desktopArrived(2));
     assert.ok(editing.drag.isDragActive(), "edge page commit must not cancel its own drag");
     await cancel(p);
     assert.deepEqual(c.layoutState.presentation.pages.value, fixture, "cancel after navigation must preserve layout");
+
+    const mixedFixture:LaunchpadPages=[...fixture,[app("drag-d"),app("keep-d")],[app("drag-e"),app("keep-e")]];
+    await restore(mixedFixture);
+    p=await pickup("drag-a");
+    pointer("pointermove",c.app.contentSize.width-3,p.y);
+    await c.waitFor("stationary edge first page",()=>desktopArrived(1));
+    await c.waitFor("stationary edge second page",()=>desktopArrived(2));
+    c.app.nativeInput.emitWheel(c.app.contentSize.width-3,p.y,0,-120,0,0,performance.now());
+    await c.waitFor("wheel reverses edge navigation",()=>desktopArrived(1));
+    await c.waitFor("edge resumes after wheel idle without pointer movement",()=>desktopArrived(2));
+    pointer("pointermove",c.app.contentSize.width/2,p.y);
+    await delay(950);assert.ok(desktopArrived(2),"leaving edge must stop automatic navigation");
+    let time=performance.now(),sequence=900;
+    const touchpad=(phase:"begin"|"update"|"inertia"|"end",dx=0)=>{
+      time+=16;c.app.nativeInput.emitWheel(c.app.contentSize.width/2,p.y,dx,0,0,0,time,{source:"touchpad",phase,sequence});
+    };
+    touchpad("begin");touchpad("update",c.app.contentSize.width*.3);
+    pointer("pointermove",c.app.contentSize.width-3,p.y);
+    await delay(900);
+    assert.equal(c.currentFrame().viewport.activePageIndex,2,"active touchpad must postpone edge repeats");
+    assert.ok(editing.drag.isDragActive(),"drag must remain held during the active touchpad session");
+    touchpad("end");await c.waitFor("touchpad settles on fourth page",()=>desktopArrived(3));
+    await c.waitFor("edge follows completed touchpad",()=>desktopArrived(4));
+    touchpad("end");touchpad("inertia",100);
+    pointer("pointermove",c.app.contentSize.width/2,c.app.contentSize.height-100);
+    await delay(100);assert.ok(desktopArrived(4),"late wheel end/inertia must not overwrite the edge destination");
+    pointer("pointerup",c.app.contentSize.width/2,c.app.contentSize.height-100);await settle();
+    assert.equal(c.layoutState.operations.findTopLevel(c.layoutState.presentation.pages.value,"drag-a")?.pageIndex,4,
+      "drop must commit into the page actually displayed after mixed navigation");
+    await c.capture("drag-mixed-navigation-drop");
 
     await restore(fixture, 2);
     p = await pickup("drag-c");
@@ -58,6 +95,24 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
 
     const folder = {id:"drag-folder",name:"Drag folder",type:"folder" as const,childPages:[[app("child-a"),app("child-b"),app("child-c")]]};
     const folderFixture: LaunchpadPages = [[app("outside"),folder],[app("other")]];
+    const pagedFolder={...folder,childPages:[[app("child-a"),app("child-b")],[app("folder-page-two")],[app("folder-page-three")]]};
+    await restore([[pagedFolder,app("folder-keep")]]);
+    c.folderFlow.open(snapshotContractValue(pagedFolder) as SceneItem);await settle();
+    p=await pickup("child-a");
+    const repeatedPanel=c.scene.getFolderPanelRect()!;
+    pointer("pointermove",repeatedPanel.left+repeatedPanel.width-3,p.y);
+    const folderArrived=(index:number)=>{
+      const motion=c.scene.getMotionSnapshot();
+      folderNavigationSamples.push({time:performance.now(),index:c.folderFlow.snapshot().folderPageIndex,x:motion.folderPageTrackX,target:motion.folderPageTrackTargetX});
+      return c.folderFlow.snapshot().folderPageIndex===index&&motion.folderPageTrackTargetX!==null
+        && Math.abs((motion.folderPageTrackX??0)-motion.folderPageTrackTargetX)<0.5;
+    };
+    await c.waitFor("folder stationary repeat reaches second page",()=>folderArrived(1));
+    await c.waitFor("folder stationary repeat reaches third page",()=>folderArrived(2));
+    c.app.nativeInput.emitWheel(repeatedPanel.left+repeatedPanel.width-3,p.y,0,-120,0,0,performance.now());
+    await c.waitFor("folder wheel reverses edge",()=>folderArrived(1));
+    await c.waitFor("folder edge resumes after wheel",()=>folderArrived(2));
+    pointer("pointermove",repeatedPanel.left+repeatedPanel.width/2,p.y);await cancel(p);
     await restore(folderFixture);
     c.folderFlow.open(snapshotContractValue(folder) as SceneItem); await settle();
     p = await pickup("child-a");
@@ -195,7 +250,9 @@ export async function runNativeDragNavigationSmoke(c: Pick<NativeDesktopSmokeCon
     await cancel(p);
   } catch(error) {
     console.error("Drag navigation failure state",JSON.stringify({folder:c.folderFlow.snapshot(),drag:editing.drag.groupDragState.value?.phase,
-      source:editing.drag.dragMeta.value?.source,page:c.currentFrame().viewport.activePageIndex}));
+      source:editing.drag.dragMeta.value?.source,page:c.currentFrame().viewport.activePageIndex,motion:c.scene.getMotionSnapshot(),
+      groupPage:editing.drag.groupDragState.value?.desktopPageIndex,intent:editing.drag.groupDragState.value?.intent,
+      folderNavigationSamples:folderNavigationSamples.filter((_,i)=>i%8===0)}));
     await c.capture("drag-navigation-failure");throw error;
   } finally {
     if(editing.drag.isDragActive()){editing.drag.cancelDrag({type:"pointercancel"});pointer("pointerup",0,0);}

@@ -704,6 +704,13 @@ export class NativeDesktopScene {
   }
 
   getPageWidth(scope: string, pageIndex: number, fallback = 1): number {
+    // Folder pages translate by the panel span, not the inset grid width.
+    if (scope.startsWith("folder:")) {
+      const span = this.getFolderPanelRect()?.width;
+      if (span && span > 0) return span;
+    } else if (this.#committed) {
+      return this.#committed.viewport.width;
+    }
     const element = scope.startsWith("folder:")
       ? this.#folderPageRefs.get(pageIndex)
       : this.#pageRefs.get(pageIndex);
