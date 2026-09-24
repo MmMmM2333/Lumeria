@@ -45,7 +45,7 @@
     "native:import-real": "tsx scripts/runNativeElectrobun.ts --dev --import-real",
     "dev:motion-lab": "vite --host 127.0.0.1",
     "build:motion-lab": "vite build",
-    "dev:import-lab": "vite --host 127.0.0.1 --port 4186 --strictPort --open /import-lab.html",
+    "dev:import-lab": "vite --host 127.0.0.1 --port 4186 --strictPort --open /tests/browser/importLab/index.html",
     "devtools:mcp": "node vendor/electrobun-pixi-native-starter/tools/devtools-mcp.mjs",
     "devtools:cli": "node vendor/electrobun-pixi-native-starter/tools/devtools-cli.mjs",
     "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.ts",

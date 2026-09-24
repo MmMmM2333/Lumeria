@@ -12,9 +12,9 @@ npm run dev:motion-lab
 
 该命令使用根目录的 `vite.config.ts`，也为浏览器参考宿主测试提供开发服务器。`npm run dev` 启动 Native 产品。
 
-打开终端输出的地址，再加 `/motion-lab.html`，通常为 `http://127.0.0.1:5173/motion-lab.html`。交互入口只在 Vite 开发模式启用。
+打开终端输出的地址，再加 `/src/motionLab/index.html`，通常为 `http://127.0.0.1:5173/src/motionLab/index.html`。交互入口只在 Vite 开发模式启用。
 
-用 `npm run build:motion-lab` 检查工具是否能独立构建，产物位于 `dist/motion-lab/`。构建只包含这个工具，不包含旧产品入口；Vue 是工具自身的依赖。
+用 `npm run build:motion-lab` 检查工具是否能独立构建，入口产物为 `dist/motion-lab/index.html`。构建只包含这个工具，不包含旧产品入口；Vue 是工具自身的依赖。
 
 ## 可以做什么
 

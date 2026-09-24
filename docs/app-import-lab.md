@@ -1,6 +1,6 @@
 # 应用导入实验页
 
-运行 `npm run dev:import-lab`，打开 http://127.0.0.1:4186/import-lab.html 。
+运行 `npm run dev:import-lab`，打开 http://127.0.0.1:4186/tests/browser/importLab/index.html 。
 
 此页是中文开发原型，使用独立浏览器存储 `lumeria.import-lab.generic.v1`，不读取真实目录或正式布局。`重置全部实验` 只重置此页。快捷键、窗口模式和登录启动仅用于演示首次引导，不修改系统设置。入口仅在 Vite 开发模式下挂载，不加入 Native 或 Motion Lab 发布构建。
 

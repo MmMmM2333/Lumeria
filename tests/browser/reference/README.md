@@ -4,7 +4,7 @@
 它取代了此前的仓库根 `index.html` + `src/main.ts` + `src/App.vue` 组合：
 
 - `index.html`：浏览器参考测试入口页面，只在 Vite 开发服务器（`import.meta.env.DEV`）下挂载。
-- `main.ts`：旧 `src/main.ts` 的迁移版本，移除 MotionLab query 分流（MotionLab 已独立为 `motion-lab.html`）。
+- `main.ts`：旧 `src/main.ts` 的迁移版本，移除 MotionLab query 分流（MotionLab 入口为 `src/motionLab/index.html`）。
 - `ReferenceApp.vue`：旧 `src/App.vue` 的迁移版本，业务代码仍从 `src/` 复用，只改写相对路径。
 - `vue-sfc-module.d.ts`：`main.ts` 由 `tsconfig.tools.json`（纯 `tsc`）检查，需要 SFC 模块声明。
 

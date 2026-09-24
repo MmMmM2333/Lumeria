@@ -1,6 +1,6 @@
 import {test,expect} from "@playwright/test";
 test.use({viewport:{width:1440,height:1000}});
-test.beforeEach(async({page})=>{await page.goto('/import-lab.html');await page.evaluate(()=>localStorage.removeItem('lumeria.import-lab.generic.v1'));await page.reload();});
+test.beforeEach(async({page})=>{await page.goto('/tests/browser/importLab/index.html');await page.evaluate(()=>localStorage.removeItem('lumeria.import-lab.generic.v1'));await page.reload();});
 test('initial grouping, incremental suggestion, undo and removed app restoration',async({page})=>{
   await expect(page.getByText('让常用应用，')).toBeVisible();
   await page.screenshot({path:'artifacts/import-lab-welcome.png',fullPage:true});
