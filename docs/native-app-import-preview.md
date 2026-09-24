@@ -7,12 +7,10 @@
 先准备项目依赖和 Native 工具链，然后运行：
 
 ```powershell
-npm run native:data:build
-npm run native:live-desktop:build
 npm run native:import-preview
 ```
 
-预览使用独立临时数据和示例应用组、工具合集、示例播放器等 `.url` 样本，地址为 `example.invalid`。退出后清理临时数据。窗口默认 1100×760，仅影响预览模式。
+`native:import-preview` 和 `native:import-real` 都会先通过 `native:deps:build` 构建数据服务、Live Desktop 和触发角组件，再构建当前应用。预览使用独立临时数据和示例应用组、工具合集、示例播放器等 `.url` 样本，地址为 `example.invalid`。退出后清理临时数据。窗口默认 1100×760，仅影响预览模式。
 
 真实来源测试：
 

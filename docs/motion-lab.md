@@ -10,7 +10,7 @@ Motion Lab 是独立的动画调试页面，可运行预设场景、录制回放
 npm run dev:motion-lab
 ```
 
-`npm run dev` 是同一个开发入口，两者共用根目录的 `vite.config.ts`。
+该命令使用根目录的 `vite.config.ts`，也为浏览器参考宿主测试提供开发服务器。`npm run dev` 启动 Native 产品。
 
 打开终端输出的地址，再加 `/motion-lab.html`，通常为 `http://127.0.0.1:5173/motion-lab.html`。交互入口只在 Vite 开发模式启用。
 

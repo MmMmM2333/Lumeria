@@ -30,4 +30,4 @@ Native 使用宿主的帧调度，不另外启动一套 RAF。纯位置、透明
 
 实现：[场景控制器](../src/native/product/nativeSceneController.ts)、[场景调度](../src/native/nativeSceneScheduler.ts)、[Native 场景](../src/rendering/native/NativeDesktopScene.ts)。
 
-复用节点时，清空 mask 几何不等于解除绑定。离开使用 mask 的状态时应先解除关系，再隐藏或清空；恢复时重新绑定。相关回归见 [mask 生命周期测试](../tests/browser/pixi-drag-preview-mask-batch.spec.ts)，运行 `npm run test:pixi-webgl`。
+复用节点时，清空 mask 几何不等于解除绑定。离开使用 mask 的状态时应先解除关系，再隐藏或清空；恢复时重新绑定。相关回归见 [mask 生命周期测试](../tests/browser/pixi-drag-preview-mask-batch.spec.ts)，运行 `npm run test:ui -- tests/browser/pixi-drag-preview-mask-batch.spec.ts`。

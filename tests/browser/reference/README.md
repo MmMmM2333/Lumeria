@@ -31,7 +31,7 @@
 
 ```powershell
 # 开发服务器（Playwright 配置会自动启动同样的命令）
-npm run dev -- --host 127.0.0.1 --port 4175 --strictPort
+npm run dev:motion-lab -- --host 127.0.0.1 --port 4175 --strictPort
 
 # 打开参考宿主
 #   http://127.0.0.1:4175/tests/browser/reference/index.html
@@ -39,9 +39,9 @@ npm run dev -- --host 127.0.0.1 --port 4175 --strictPort
 
 # 浏览器回归
 npm run test:ui                      # 全部 chromium 规格
-npm run test:i18n-ui                 # 单规格示例
-npm run test:multi-select-ui
-npm run test:trusted-mouse-ui
+npm run test:ui -- tests/browser/i18n-search-placeholder.spec.ts
+npm run test:ui -- tests/browser/launchpad-multi-select-management.spec.ts
+npm run test:ui -- tests/browser/launchpad-provisional-folder-mouse.spec.ts
 ```
 
 `tests/browser/fixtures/*.html` 是独立的 fixture-only 页面，不经过参考宿主，保持原样。
