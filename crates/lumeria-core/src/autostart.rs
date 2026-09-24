@@ -15,10 +15,38 @@ const STARTUP_APPROVED_ENABLED_VALUE: [u8; 12] = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
 
 pub fn autostart_run_command(executable: &Path) -> OsString {
     let mut command = OsString::from("\"");
-    command.push(executable.as_os_str());
+    command.push(shell_path(executable));
     command.push("\" ");
     command.push(AUTOSTART_ARGUMENT);
     command
+}
+
+// canonicalize() uses Windows verbatim paths. Keep those for installation
+// validation, but use DOS/UNC paths at the Windows shell boundary.
+fn shell_path(executable: &Path) -> OsString {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let units: Vec<u16> = executable.as_os_str().encode_wide().collect();
+        let prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
+        if units.starts_with(&prefix) {
+            let unc: Vec<u16> = r"UNC\".encode_utf16().collect();
+            if units[4..].starts_with(&unc) {
+                let mut normal: Vec<u16> = r"\\".encode_utf16().collect();
+                normal.extend_from_slice(&units[8..]);
+                return OsString::from_wide(&normal);
+            }
+            if units.len() >= 7
+                && units[5] == b':' as u16
+                && units[6] == b'\\' as u16
+                && ((b'A' as u16..=b'Z' as u16).contains(&units[4])
+                    || (b'a' as u16..=b'z' as u16).contains(&units[4]))
+            {
+                return OsString::from_wide(&units[4..]);
+            }
+        }
+    }
+    executable.as_os_str().to_os_string()
 }
 
 fn autostart_status(
@@ -100,11 +128,17 @@ fn get_autostart_status_inner(expected_command: &OsStr) -> Result<bool, String> 
 
 #[cfg(target_os = "windows")]
 fn enable_autostart(command: &OsStr) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
     use winreg::{
         enums::{RegType::REG_BINARY, HKEY_CURRENT_USER, KEY_SET_VALUE},
         RegKey, RegValue,
     };
 
+    if command.encode_wide().count() > 260 {
+        return Err(
+            "The Lumeria autostart command exceeds the Windows Run limit of 260 characters".into(),
+        );
+    }
     let root = RegKey::predef(HKEY_CURRENT_USER);
     let (run_key, _) = root
         .create_subkey_with_flags(RUN_REGISTRY_PATH, KEY_SET_VALUE)
@@ -194,6 +228,51 @@ mod tests {
             autostart_run_command(Path::new(r"D:\自定义 安装\Lumeria.exe")),
             OsString::from(r#""D:\自定义 安装\Lumeria.exe" --lumeria-autostart"#)
         );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn canonical_install_paths_are_registered_in_shell_format() {
+        for (verbatim, normal) in [
+            (
+                r"\\?\C:\Users\用户\Lumeria.exe",
+                r"C:\Users\用户\Lumeria.exe",
+            ),
+            (
+                r"\\?\UNC\server\share\Lumeria.exe",
+                r"\\server\share\Lumeria.exe",
+            ),
+        ] {
+            assert_eq!(
+                autostart_run_command(Path::new(verbatim)),
+                autostart_run_command(Path::new(normal))
+            );
+        }
+        // Do not turn an unrelated device namespace into a different path.
+        assert_eq!(
+            shell_path(Path::new(r"\\?\Volume{abc}\Lumeria.exe")),
+            OsString::from(r"\\?\Volume{abc}\Lumeria.exe")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn shell_conversion_preserves_non_unicode_windows_names() {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let mut path: Vec<u16> = r"\\?\C:\".encode_utf16().collect();
+        path.push(0xd800);
+        path.extend(r"\Lumeria.exe".encode_utf16());
+        let converted = shell_path(Path::new(&OsString::from_wide(&path)));
+        assert_eq!(converted.encode_wide().collect::<Vec<_>>(), path[4..]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn oversized_run_commands_fail_before_touching_the_registry() {
+        let command = OsString::from("x".repeat(261));
+        assert!(enable_autostart(&command)
+            .unwrap_err()
+            .contains("260 characters"));
     }
 
     #[test]

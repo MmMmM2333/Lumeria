@@ -6,6 +6,7 @@ SetCompressor /SOLID lzma
 !define MUI_UNICON "${PRODUCT_ICON}"
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "${__FILEDIR__}\autostart.nsh"
 !include "FileFunc.nsh"
 !include "WordFunc.nsh"
 !include "WinVer.nsh"
@@ -320,6 +321,7 @@ Section "Lumeria" SEC_MAIN
     !endif
     Call RegisterInstallation
     IfErrors rollback
+    !insertmacro LumeriaMigrateAutostart "Software\Microsoft\Windows\CurrentVersion\Run" rollback
     ${If} $HasPrevious == 1
       ClearErrors
       ExecWait '$\"$Backup\uninstall.exe$\" /S /UPGRADE _?=$Backup' $0
@@ -535,11 +537,7 @@ Section "Uninstall"
   !insertmacro LumeriaRemove "$INSTDIR" uninstall_failed
   ${If} $UpgradeCleanup != 1
     ClearErrors
-    ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Lumeria"
-    ${If} $0 == '$\"$INSTDIR\Lumeria.exe$\" --lumeria-autostart'
-      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Lumeria"
-      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Lumeria"
-    ${EndIf}
+    !insertmacro LumeriaRemoveAutostart "Software\Microsoft\Windows\CurrentVersion\Run" "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
     Delete "$DESKTOP\Lumeria.lnk"
     Delete "$SMPROGRAMS\Lumeria.lnk"
     DeleteRegKey HKCU "Software\com.lumeria.app"

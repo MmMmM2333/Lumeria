@@ -159,6 +159,13 @@ mod tests {
             installed_launcher(&data).unwrap(),
             fs::canonicalize(&root).unwrap().join("Lumeria.exe")
         );
+        let command =
+            lumeria_core::autostart::autostart_run_command(&installed_launcher(&data).unwrap());
+        assert_eq!(
+            command,
+            lumeria_core::autostart::autostart_run_command(&root.join("Lumeria.exe"))
+        );
+        assert!(!command.to_string_lossy().contains(r"\\?\"));
         fs::write(
             root.join("lumeria.json"),
             r#"{"schemaVersion":1,"identifier":"other","platform":"win32","arch":"x64"}"#,

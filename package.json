@@ -62,6 +62,8 @@
     "test:native-release": "tsx src/native/runtimePaths.test.ts && tsx src/native/nativeSession.test.ts && tsx scripts/windowsRelease.test.ts",
     "test:native-launcher": "tsx scripts/testWindowsLauncher.ts",
     "test:native-installer": "tsx scripts/testWindowsInstaller.ts",
+    "test:native-autostart-installer": "tsx scripts/testWindowsAutostartInstaller.ts",
+    "test:native-toggle": "tsx scripts/runNativeElectrobun.ts --dev --isolated --settings-only --toggle-smoke",
     "test:native-staged": "tsx scripts/testNativeStagedStartup.ts",
     "test:native-product": "tsx scripts/testWindowsProduct.ts",
     "test:ui": "playwright test --project=chromium --workers=1",
