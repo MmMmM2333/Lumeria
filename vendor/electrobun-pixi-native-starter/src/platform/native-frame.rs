@@ -3071,8 +3071,10 @@ pub unsafe extern "C" fn pixi_update_caret_rect(
     }
     if error != 0 { return error; }
     let Some(state) = (unsafe { attached_input_state(window) }) else { return -3; };
-    if !unsafe { (*state).text_active } { return -4; }
     let Some(caret) = make_caret_rect(x, y, width, height) else { return -4; };
+    // WM_KILLFOCUS can stop the session before the worker consumes INPUT_BLUR.
+    // A valid in-flight update is then inactive (0), not an invalid request (-4).
+    if !unsafe { (*state).text_active } { return 0; }
     unsafe { (*state).caret = caret };
     let positioned = unsafe { position_ime(text_focus_window(window, state), window, state) };
     match positioned {

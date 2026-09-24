@@ -655,6 +655,7 @@ export const nativeFrameHost = {
 		return symbols.pixi_begin_text_input(window, rect.x, rect.y, rect.width, rect.height);
 	},
 
+	/** 0: session ended (including native blur); 1/2: updated; negative: error. */
 	updateTextInput(window: Pointer, rect: TextInputRect): number {
 		assertPointer(window, "window");
 		assertTextInputRect(rect);
