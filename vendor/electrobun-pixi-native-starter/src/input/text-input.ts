@@ -176,6 +176,10 @@ export class TextInputHost {
 		this.requestFrame();
 	}
 
+	updateCaretBlink(input: TextInput): void {
+		if (this.focused === input) this.resetCaretBlink();
+	}
+
 	recover(): void {
 		for (const input of this.inputs) input.refresh(false);
 		this.syncFocused();
@@ -199,6 +203,7 @@ export class TextInputHost {
 			if (userInput) input.emitEvent("input", input.value);
 		}
 		if (input.selectionKey() !== beforeSelection) input.emitEvent("selectionchange", input.selection);
+		input.emitEvent("textviewchange");
 		this.requestFrame();
 	}
 
@@ -236,8 +241,9 @@ export class TextInputHost {
 
 	private resetCaretBlink(): void {
 		if (!this.focused) return;
-		this.focused.setCaretVisible(true);
 		this.stopCaretBlink();
+		this.focused.setCaretVisible(this.focused.caretBlinkEnabled);
+		if (!this.focused.caretBlinkEnabled) return;
 		this.blinkTimer = setInterval(() => {
 			if (!this.focused) return;
 			this.focused.setCaretVisible(!this.focused.caretVisible);
@@ -364,6 +370,7 @@ export class TextInput extends Container {
 	private readonly focusLayer = new Graphics();
 	private layoutSnapshot!: TextEditorLayout;
 	private focusedState = false;
+	private blinkEnabled = true;
 	private dragging = false;
 	private dragAnchor = 0;
 	private dragPoint = { x: 0, y: 0 };
@@ -430,7 +437,15 @@ export class TextInput extends Container {
 	}
 
 	get value(): string { return this.editor.state.value; }
+	/** Display text includes uncommitted IME text without mutating the value. */
+	get displayValue(): string { return this.editor.view.text; }
 	get focused(): boolean { return this.focusedState; }
+	get caretBlinkEnabled(): boolean { return this.blinkEnabled; }
+	set caretBlinkEnabled(enabled: boolean) {
+		if (enabled === this.blinkEnabled) return;
+		this.blinkEnabled = enabled;
+		this.host.updateCaretBlink(this);
+	}
 	get composing(): boolean { return this.editor.view.composition != null; }
 	set value(value: string) { this.setValue(value); }
 	get selection(): Readonly<TextSelection> {
@@ -554,7 +569,7 @@ export class TextInput extends Container {
 		const beforeSelection = this.selectionKey();
 		if (mutate() !== false) this.host.didChange(this, beforeValue, beforeSelection, userInput);
 	}
-	private syncView(): void { this.refresh(true); this.host.syncFocused(); }
+	private syncView(): void { this.refresh(true); this.host.syncFocused(); this.emitEvent("textviewchange"); }
 	private innerSize() {
 		const padding = this.inputStyle.padding;
 		return { width: Math.max(1, this.inputWidth - (this.inputStyle.paddingHorizontal ?? padding) * 2), height: Math.max(1, this.inputHeight - padding * 2) };

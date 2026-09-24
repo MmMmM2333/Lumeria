@@ -202,7 +202,8 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
     app.nativeInput.emitText("ew");assert.equal(searchQuery(),"pagew","native text must continue without reactivating the input");
     searchBar.input.beginComposition();searchBar.input.updateComposition(SEARCH_COMPOSITION_TEXT,1);
     assert.equal(onKey({type:"down",key:"ArrowDown",isComposing:true}),false,"IME arrows must remain with composition");
-    assert.equal(searchQuery(),"pagew","IME preedit must not run search");
+    assert.equal(searchQuery(),`pagew${SEARCH_COMPOSITION_TEXT}`,"IME preedit must preview search without committing editor text");
+    assert.equal(searchBar.input.value,"pagew");
     app.textInput.commit(SEARCH_COMPOSITION_TEXT);assert.equal(searchQuery(),`pagew${SEARCH_COMPOSITION_TEXT}`,"IME commit must survive implicit navigation");
     await present("implicit search before explicit pointer focus");
     click(searchBar.input);
@@ -221,7 +222,8 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
   click(searchBar.input);
   assert.equal(searchBar.input.focused,true,"pointer click on search editor must not start a desktop gesture");
   searchBar.input.beginComposition();searchBar.input.updateComposition("\u5df2\u52a0\u8f7d",3);
-  assert.equal(searchQuery(),"","IME preedit must not submit a search");
+  assert.equal(searchQuery(),"\u5df2\u52a0\u8f7d","IME preedit must preview Chinese search");
+  assert.equal(searchBar.input.value,"","IME preedit must not commit the editor value");
   searchBar.input.commitText("\u5df2\u52a0\u8f7d");
   assert.equal(activePageItems().length,1,"Chinese search should use shared matching");
   assert.equal(activePageItems()[0]?.id,"native-layout-icon");

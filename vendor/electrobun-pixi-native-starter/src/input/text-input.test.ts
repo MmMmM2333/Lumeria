@@ -57,16 +57,33 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	root.addChild(input);
 	input.focus();
 	expect(nativeState).toMatchObject({ surroundingText: "A中", selection: { start: 2, end: 2 } });
+	input.caretBlinkEnabled=false;
+	expect(input.focused).toBe(true);
+	expect(input.caretVisible).toBe(false);
+	input.caretBlinkEnabled=true;
+	expect(input.caretVisible).toBe(true);
 
 	for (const listener of keyListeners) listener({ type: "down", key: "ArrowLeft", ctrlKey: false, shiftKey: false, isComposing: false });
 	for (const listener of keyListeners) listener({ type: "down", key: "Backspace", ctrlKey: false, shiftKey: false, isComposing: false });
 	expect(input.value).toBe("中");
+	const views:string[]=[];
+	input.on("textviewchange",()=>views.push(input.displayValue));
 
 	for (const listener of compositionStart) listener({ timestamp: 1n });
 	for (const listener of compositionUpdate) listener({ timestamp: 2n, text: "ni", cursorUtf16: 2 });
 	expect(input.value).toBe("中");
+	expect(input.displayValue).toBe("ni中");
+	expect(views.at(-1)).toBe("ni中");
 	for (const listener of commit) listener({ timestamp: 3n, text: "你" });
 	expect(input.value).toBe("你中");
+	expect(views.at(-1)).toBe("你中");
+	input.selectAll();
+	input.beginComposition();input.updateComposition("wechat",6);
+	expect(input.displayValue).toBe("wechat");
+	expect(input.value).toBe("你中");
+	input.cancelComposition();
+	expect(input.displayValue).toBe("你中");
+	expect(views.at(-1)).toBe("你中");
 
 	input.selectAll();
 	for (const listener of keyListeners) listener({ type: "down", key: "c", ctrlKey: true, shiftKey: false, isComposing: false });

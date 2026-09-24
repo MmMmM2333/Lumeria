@@ -20,10 +20,16 @@ export class NativeSearchBar extends Container {
   #width = 348;
   #hidden = false;
   #explicitEditing = false;
+  #publishedQuery = "";
+  /** Establish IME ownership before the first key without stealing another editor. */
+  prepareForTyping(enabled: boolean): void {
+    if (!enabled) { if (this.input.focused) this.input.blur(); return; }
+    if (!this.host.focused && !this.#hidden) this.focusForTyping();
+  }
   /** Native text focus also serves type-to-search. Only explicit focus edits the caret. */
   get explicitEditing():boolean{return this.#explicitEditing;}
-  focusForTyping():void{this.input.focus();this.#explicitEditing=false;}
-  focusEditor():void{this.input.focus();this.#explicitEditing=true;}
+  focusForTyping():void{this.input.focus();this.#explicitEditing=false;this.#sync();}
+  focusEditor():void{this.input.focus();this.#explicitEditing=true;this.#sync();}
   readonly #offRecovered: () => void;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void, clipboard: NativeClipboardPort) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });
@@ -55,10 +61,19 @@ export class NativeSearchBar extends Container {
     this.on("pointerdown", event => { event.stopPropagation(); this.focusEditor(); });
     this.input.on("focus", () => {this.#explicitEditing=true;this.#sync();});
     this.input.on("blur", () => {this.#explicitEditing=false;this.#sync();});
-    this.input.on("input", () => { this.#sync(); this.onQuery(this.input.value); });
+    this.input.on("textviewchange", () => {
+      this.#sync();
+      const query = this.input.displayValue;
+      if (query === this.#publishedQuery) return;
+      this.#publishedQuery = query;
+      this.onQuery(query);
+    });
     this.#sync();
   }
-  setQuery(value: string): void { this.input.value = value; this.#sync(); this.onQuery(value); }
+  setQuery(value: string): void {
+    this.input.value = value; this.#sync();
+    if (this.#publishedQuery !== value) { this.#publishedQuery = value; this.onQuery(value); }
+  }
   setPlaceholder(value:string):void {this.#placeholder.text=value;this.#sync();}
   update(width: number, hidden: boolean, topInset=width<=760?14:20, interactive=true): void {
     const nextWidth = Math.min(348, Math.max(180, width - 40));
@@ -73,15 +88,19 @@ export class NativeSearchBar extends Container {
     }
   }
   #sync(): void {
-    const active = this.input.value.trim().length > 0;
-    const left = active || this.input.focused;
+    const active = this.input.displayValue.trim().length > 0;
+    const left = active || this.#explicitEditing || this.input.composing;
+    this.input.caretBlinkEnabled = left;
     this.#background.clear().roundRect(0, 0, this.#width, 35, 6)
       .fill({ color: 0xffffff, alpha: active ? 0.13 : 0.09 })
       .stroke({ color: 0xffffff, alpha: active ? 0.22 : 0.16, width: 1 });
     this.#placeholder.visible = !left;
     this.input.alpha = left ? 1 : 0;
     this.#clear.visible = active; this.#clear.position.set(this.#width - 20, 17.5);
-    motion(this.#content).duration(0.18).to({ x: left ? 12 : (this.#width - this.#placeholder.width - 21) / 2, y: 10 }).start();
+    motion(this.#content).duration(0.18).to({
+      x: left ? 12 : (this.#width - this.#placeholder.width - 21) / 2, y: 10,
+      onUpdate: () => { if (this.input.focused) this.host.syncFocused(); },
+    }).start();
   }
   override destroy(): void {
     this.#offRecovered();

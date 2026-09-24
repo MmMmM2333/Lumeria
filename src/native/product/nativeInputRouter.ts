@@ -246,7 +246,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   };
   const onWheel = (event: FederatedWheelEvent): void => {
     if(isInteractionBlocked())return;
-    if(getSettingsShell()||management.modal || searchBar.input.focused)return;
+    if(getSettingsShell()||management.modal || searchBar.explicitEditing || searchBar.input.composing)return;
     const group = getEditing()?.drag.groupDragState.value;
     if (group && !isInteractiveGroupTransferPhase(group.phase)) {
       event.preventDefault();

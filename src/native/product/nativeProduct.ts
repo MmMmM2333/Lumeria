@@ -365,7 +365,9 @@ const inputFrames=createNativeFrameCallbacks(()=>app.invalidate());
 const sceneUpdates = createNativeSceneScheduler(task=>{inputFrames.request(task);});
 const renderScene = sceneUpdates.run;
 const requestSceneRender = sceneUpdates.request;
-const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();});
+let prepareSearchInput=()=>{};
+let newAppsFocused=false;
+const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();prepareSearchInput();});
 let lastFolderPresentation:ReturnType<ReturnType<typeof createNativeFolderFlow>["snapshot"]>|null=null;
 let folderNamePresentationItem:Readonly<{id:string;name?:string}>|null=null;
 let folderNamePresentationBlocked=false;
@@ -586,7 +588,7 @@ const textPrewarm=createNativeTextPrewarm({renderer:()=>timedRenderer,
 startupPreparation=createNativeStartupPreparation(loginStartup,{
   start:()=>{textPrewarm.prioritize(currentFrame.viewport.activePageIndex,currentFrame.viewport.activePageIndex);textPrewarm.start();iconTextures.startBackground();},
   ready:()=>{const text=textPrewarm.snapshot();return (!text.enabled||text.pending===0)&&!iconTextures.isPreparing();},
-  reveal:()=>{if(app.state!=="running")return;app.window.show();app.window.activate();windowEffects.refresh();app.invalidate();},
+  reveal:()=>{if(app.state!=="running")return;app.window.show();app.window.activate();windowEffects.refresh();prepareSearchInput();app.invalidate();},
 });
 app.stage.addChild(searchBar);
 app.stage.addChild(management);
@@ -1017,6 +1019,7 @@ try {
     reportError:error=>reportNativeError(error),
     requestSceneRender,
     resetFolder:()=>folderFlow.reset(),
+    prepareSearchInput:()=>prepareSearchInput(),
     searchBar,
     setTextPrewarmRunning:start=>{if(start)textPrewarm.start();else textPrewarm.pause();},
     waitFor,
@@ -1059,6 +1062,12 @@ try {
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{...visibility.timers,afterCommit:queueMicrotask});
   showLaunchpad=visibility.show;
+  let searchWindowFocused = app.window.isVisible() && !app.window.isMinimized();
+  prepareSearchInput=()=>searchBar.prepareForTyping(searchWindowFocused && app.state==="running"
+    && app.window.isVisible() && !app.window.isMinimized() && Boolean(launchFlow?.isDesktopOpen.value)
+    && !launchFlow?.isLaunchpadInteractionBlocked() && !management.modal && !nativeSettings.shell
+    && !folderFlow.snapshot().renderedFolder && !editing?.selection.isActive.value && !editing?.drag.isDragActive()
+    && !noticeView.hasFocus && !newAppsFocused);
   preserveViewAfterLocation=visibility.preserveViewOnNextShow;
   dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
@@ -1143,11 +1152,10 @@ try {
     turnFolderPage,
     turnPage,
   }).handleKey;
-  let newAppsFocused=false;
   const onKey=(event:import("../nativeStartup.js").NativeNavigationKey)=>{
     if(onboarding?.handleKey(event))return true;
     if(!management.modal&&!nativeSettings.shell&&newAppsButton.visible&&event.type==="down"){
-      if(event.key==="Tab"&&!newAppsFocused&&searchBar.input.focused&&!event.shiftKey){searchBar.input.blur();newAppsFocused=true;newAppsButton.alpha=.7;app.invalidate();return true;}
+      if(event.key==="Tab"&&!newAppsFocused&&searchBar.input.focused&&searchBar.explicitEditing&&!event.shiftKey){searchBar.input.blur();newAppsFocused=true;newAppsButton.alpha=.7;app.invalidate();return true;}
       if(newAppsFocused){if(event.key==="Enter"||event.key===" "){newAppsFocused=false;newAppsButton.alpha=1;newAppsButton.activate();return true;}if(event.key==="Tab"||event.key==="Escape"){newAppsFocused=false;newAppsButton.alpha=1;searchBar.focusEditor();app.invalidate();return true;}}
     }else if(newAppsFocused){newAppsFocused=false;newAppsButton.alpha=1;}
     return routeKey(event);
@@ -1168,7 +1176,11 @@ try {
   if(startupLoadRecovered&&!notices.transientNotice.value)notices.showLayoutLoadRecovered();
   bindApplicationFocus = () => {
     offFocus();
-    offFocus=app.nativeInput.onFocusChange(focused=>{if(focused)windowEffects.refresh();else {cancelNativeGesture();editing?.alt.handleWindowBlur();}});
+    offFocus=app.nativeInput.onFocusChange(focused=>{
+      searchWindowFocused=focused;
+      if(focused){windowEffects.refresh();prepareSearchInput();}
+      else {cancelNativeGesture();editing?.alt.handleWindowBlur();}
+    });
   };
   bindApplicationFocus();
   searchBar.input.on("submit", () => {
