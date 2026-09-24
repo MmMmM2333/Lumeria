@@ -25,6 +25,20 @@ export async function runNativeImportPreview(o:{app:NativePixiApplication;apps:R
   await capture("import-native-welcome-dark");confirm();
   await wait(()=>Boolean(o.app.stage.getChildByLabel("native-onboarding:step:1",true)));await new Promise(r=>setTimeout(r,200));
   assert.equal(panel().getBounds().height,height);await capture("import-native-preferences-light");
+  if(o.settings.draft.mainWindowShortcut.value===null){
+    const field=o.app.stage.getChildByLabel("native-onboarding:shortcut",true);assert.ok(field);
+    clickWithNativeInput(o.app,field);o.onboarding.handleKey({type:"down",key:"k",ctrlKey:true,altKey:true});
+    await o.present("onboarding shortcut set before clear");
+  }
+  const clearShortcut=o.app.stage.getChildByLabel("native-onboarding:clear-shortcut",true);assert.ok(clearShortcut);
+  clickWithNativeInput(o.app,clearShortcut);await o.present("onboarding shortcut cleared");
+  assert.equal(o.settings.draft.mainWindowShortcut.value,null);
+  assert.equal(o.app.stage.getChildByLabel("native-onboarding:clear-shortcut",true),null);
+  await capture("import-native-shortcut-cleared");
+  const shortcut=o.app.stage.getChildByLabel("native-onboarding:shortcut",true);assert.ok(shortcut);
+  clickWithNativeInput(o.app,shortcut);o.onboarding.handleKey({type:"down",key:"k",ctrlKey:true,altKey:true});
+  await o.present("onboarding shortcut recorded");assert.ok(o.settings.draft.mainWindowShortcut.value);
+  assert.ok(o.app.stage.getChildByLabel("native-onboarding:clear-shortcut",true));
   const theme=o.app.stage.getChildByLabel("native-onboarding:theme:dark",true);assert.ok(theme);clickWithNativeInput(o.app,theme);await capture("import-native-preferences-dark");confirm();
   await wait(()=>Boolean(o.app.stage.getChildByLabel("native-onboarding:step:2",true)));await new Promise(r=>setTimeout(r,200));
   assert.equal(panel().getBounds().height,height);await capture("import-native-sources-dark");
