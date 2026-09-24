@@ -1,0 +1,215 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.deleted == false
+    runs-on: windows-2025
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate the release tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or $env:RELEASE_TAG -cne "v$version") {
+            throw 'The tag must be vMAJOR.MINOR.PATCH and match package.json.'
+          }
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve the checked-out commit.' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '26.5.0'
+          package-manager-cache: false
+
+      - name: Set up the SDK build host
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+
+      - name: Prepare Windows build tools
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Force artifacts/ci-logs | Out-Null
+          Start-Transcript -Path artifacts/ci-logs/environment.log
+          try {
+            rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
+            'RUSTUP_TOOLCHAIN=1.97.1-x86_64-pc-windows-msvc' >> $env:GITHUB_ENV
+            npm install --global npm@11.17.0
+            cmake --version
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if (!$vs) { throw 'MSVC C++ tools and Windows SDK are required.' }
+            Write-Output "MSVC: $vs"
+            Get-PSDrive C, D -ErrorAction SilentlyContinue | Format-Table Name, Used, Free
+
+            $zigZip = Join-Path $env:RUNNER_TEMP 'zig-0.16.0.zip'
+            Invoke-WebRequest 'https://ziglang.org/download/0.16.0/zig-x86_64-windows-0.16.0.zip' -OutFile $zigZip
+            if ((Get-FileHash $zigZip -Algorithm SHA256).Hash -ne '68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e') {
+              throw 'Zig archive checksum mismatch.'
+            }
+            $zigDirectory = Join-Path $env:RUNNER_TEMP 'lumeria-zig'
+            Expand-Archive -LiteralPath $zigZip -DestinationPath $zigDirectory
+            $zig = Join-Path $zigDirectory 'zig-x86_64-windows-0.16.0/zig.exe'
+            if ((& $zig version) -ne '0.16.0') { throw 'Unexpected Zig version.' }
+            "LUMERIA_ZIG=$zig" >> $env:GITHUB_ENV
+
+            choco install nsis --version=3.11 --yes --no-progress --allow-downgrade --force
+            $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS/makensis.exe'
+            if ((& $nsis -VERSION) -ne 'v3.11') { throw 'NSIS 3.11 is required.' }
+            "LUMERIA_NSIS=$nsis" >> $env:GITHUB_ENV
+          } finally { Stop-Transcript }
+
+      - name: Install dependencies and check project versions
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm ci
+          npm run check:version
+
+      - name: Build and verify the pinned SDK from source
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Start-Transcript -Path artifacts/ci-logs/toolchain.log
+          try {
+            npm run native:prepare:source
+            npm run native:toolchain:check
+          } finally { Stop-Transcript }
+
+      - name: Run checks and data-service integration tests
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Start-Transcript -Path artifacts/ci-logs/checks.log
+          try {
+            npm run check
+            npm run test:native-data
+            cargo test -p lumeria-live-desktop --locked
+          } finally { Stop-Transcript }
+
+      - name: Build the Windows installer
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          Start-Transcript -Path artifacts/ci-logs/package.log
+          try { npm run native:release } finally { Stop-Transcript }
+
+      - name: Verify and collect only this version's release files
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $name = "Lumeria-$env:RELEASE_VERSION-x64-Setup.exe"
+          $installer = Join-Path 'artifacts' $name
+          $metadata = Get-Content "$installer.json" -Raw | ConvertFrom-Json
+          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($metadata.version -cne $env:RELEASE_VERSION -or $metadata.file -cne $name -or
+              $metadata.platform -ne 'win32' -or $metadata.arch -ne 'x64' -or
+              $metadata.size -ne (Get-Item $installer).Length -or $metadata.sha256 -cne $hash -or
+              (Get-Content "$installer.sha256" -Raw).Trim() -cne "$hash  $name") {
+            throw 'Installer metadata or checksum does not match the tagged release.'
+          }
+          New-Item -ItemType Directory -Force artifacts/release-upload | Out-Null
+          Copy-Item -LiteralPath $installer, "$installer.sha256" -Destination artifacts/release-upload
+
+      - name: Upload release files for the draft job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-installer-${{ github.ref_name }}
+          path: artifacts/release-upload/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          overwrite: true
+
+      - name: Retain build records in Actions only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-build-records-${{ github.ref_name }}-${{ github.run_attempt }}
+          path: |
+            artifacts/ci-logs/
+            artifacts/Lumeria-${{ steps.version.outputs.version }}-x64-Setup.exe.json
+            build/electrobun-source/lumeria-build-environment.json
+            vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  draft:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download this run's verified installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-installer-${{ github.ref_name }}
+          path: release-files
+
+      - name: Create or update an unpublished release draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_TAG" == "v$RELEASE_VERSION" ]]
+          installer="Lumeria-${RELEASE_VERSION}-x64-Setup.exe"
+          cd release-files
+          [[ -f "$installer" && -f "$installer.sha256" ]]
+          [[ $(find . -mindepth 1 -maxdepth 1 | wc -l) -eq 2 ]]
+          actual=$(sha256sum "$installer" | cut -d ' ' -f 1)
+          [[ "$(cat "$installer.sha256")" == "$actual  $installer" ]]
+
+          # Resolve annotated and lightweight tags through the commits endpoint.
+          remote_commit=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq '.sha')
+          [[ "$remote_commit" == "$RELEASE_COMMIT" ]] || { echo 'Tag moved after the build.' >&2; exit 1; }
+
+          # List with authentication so existing drafts are visible; API errors fail
+          # instead of being mistaken for a missing release.
+          gh api "repos/$GH_REPO/releases?per_page=100" --paginate --slurp > ../releases.json
+          jq --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)]' ../releases.json > ../matching.json
+          count=$(jq 'length' ../matching.json)
+          if [[ "$count" -eq 0 ]]; then
+            printf 'Windows 11 x64 installer.\n\nBuilt from `%s`.\n\nThe installer is unsigned. Review this exact installer on Windows before publishing.\n' "$RELEASE_COMMIT" > ../release-notes.md
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Lumeria $RELEASE_VERSION" --notes-file ../release-notes.md
+          else
+            [[ "$count" -eq 1 ]]
+            jq -e '.[0].draft == true' ../matching.json > /dev/null || { echo 'Refusing to modify a published release.' >&2; exit 1; }
+            jq -e --arg exe "$installer" 'all(.[0].assets[]; .name == $exe or .name == ($exe + ".sha256"))' ../matching.json > /dev/null || { echo 'Draft has unexpected assets; review it manually.' >&2; exit 1; }
+          fi
+          # Reruns may replace these two assets only while the release is a draft.
+          gh release upload "$RELEASE_TAG" "$installer" "$installer.sha256" --clobber
+          gh release view "$RELEASE_TAG" --json isDraft,assets | jq -e --arg exe "$installer" '.isDraft and ([.assets[].name] | sort) == ([$exe, ($exe + ".sha256")] | sort)' > /dev/null
+          printf '### Release draft ready\n\nTag: `%s`\n\nCommit: `%s`\n\nOnly the installer and SHA-256 file were attached. Publishing remains manual.\n' "$RELEASE_TAG" "$RELEASE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
