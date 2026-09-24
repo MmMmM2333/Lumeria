@@ -94,7 +94,7 @@ export function createNativeKeyboardRouter(ports: NativeKeyboardRouterPorts): Re
       return true;
     }
     if (searchBar.input.focused) {
-      if(event.key==="Escape") {searchBar.setQuery("");searchBar.input.blur();return true;}
+      if(event.key==="Escape" && (searchBar.input.value || searchBar.explicitEditing)) {searchBar.setQuery("");searchBar.input.blur();return true;}
       // Keep the native text session alive while arrows navigate type-to-search results.
       if(event.key?.startsWith("Arrow")&&searchBar.explicitEditing)return false;
       if(event.key==="Tab"){
@@ -106,7 +106,8 @@ export function createNativeKeyboardRouter(ports: NativeKeyboardRouterPorts): Re
         return true;
       }
       if(event.key==="Enter")searchBar.input.blur();
-      else if(!event.key?.startsWith("Arrow"))return false;
+      else if(event.key!=="Escape" && !event.key?.startsWith("Arrow") && !event.altKey
+        && !["Alt","F2"].includes(event.key??""))return false;
     }
     editing?.alt.handleAltKeyDown(event);
     if(editing?.alt.isAltKeyEvent(event))return true;
@@ -128,7 +129,7 @@ export function createNativeKeyboardRouter(ports: NativeKeyboardRouterPorts): Re
       else searchBar.focusEditor();
       return true;
     }
-    if(event.type==="down" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key?.length===1 && event.key!==" " && !folderFlow.snapshot().renderedFolder) {
+    if(event.type==="down" && !searchBar.input.focused && !event.ctrlKey && !event.altKey && !event.metaKey && event.key?.length===1 && event.key!==" " && !folderFlow.snapshot().renderedFolder) {
       // The native text session starts after this key's character message; transfer its first character once.
       searchBar.focusForTyping();searchBar.input.commitText(event.key);return true;
     }

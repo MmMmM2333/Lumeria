@@ -58,6 +58,7 @@ export type NativeVisibilityControllerPorts = Readonly<{
   prioritizeTextPrewarm: (pageIndex: number, targetIndex: number) => void;
   reportError: (error: unknown) => void;
   requestSceneRender: () => void;
+  prepareSearchInput: () => void;
   resetFolder: () => void;
   searchBar: NativeSearchBar;
   setTextPrewarmRunning: (start: boolean) => void;
@@ -139,6 +140,7 @@ export function createNativeVisibilityController(
       if (generation !== visibilityGeneration || ports.isCloseCoordinatorClosing()) return;
       measure("materialRefresh", () => ports.windowEffects.refresh());
       measure("openDesktop", () => ports.getLaunchFlow()!.openDesktop());
+      ports.prepareSearchInput();
       ports.fadeChrome([ports.desktopBackground, ports.searchBar, ports.windowChrome, ports.management,...(ports.getAdditionalChrome?.()??[])], true);
       timing?.mark("revealRequested"); ports.setTextPrewarmRunning(true);
       ports.requestSceneRender(); ports.log("shown", { state: ports.app.state });
