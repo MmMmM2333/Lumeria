@@ -1250,6 +1250,20 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       }
     }
 
+    // A group transfer can take ownership while this close is already running.
+    // Retire those actors without restarting the panel or leaving two owners.
+    const nextIds = new Set(targets.map(target => target.item?.id));
+    for (const [itemId, active] of this.activeGhostsByItemId) {
+      if (nextIds.has(itemId)) continue;
+      active.motionControl?.cancel("folder-close-source-transferred");
+      if (active.motionControl) this.motionControls.delete(active.motionControl);
+      this.activeGhostsByItemId.delete(itemId);
+      this.layer.closingGhostLayer.removeChild(active.ghost);
+      reporter.deleteDetachedGhostMotion(active.ghost);
+      destroyDisplayObjectAfterFrame(active.ghost, {children:true});
+      reporter.ghostVisualReady(itemId);
+      reporter.ghostComplete(itemId, getClosingControllerGhostKey(active.state, active.target));
+    }
     const usableTargets = (targets || []).filter((target) => target?.item?.id &&
       hasUsableFolderGhostTarget(target) &&
       snapshot.ghostIds.includes(target.item.id)) as UsableFolderClosingTarget[];

@@ -936,6 +936,11 @@ export function runFolderClosingGhostControllerTests() {
     assert(lease.snapshot().handoffRect?.left === 44, "retarget geometry should replace the lease-owned handoff metadata");
     assert(lease.detachedGhostMotion(ghost)?.x === 230, "retarget should update detached motion through the reporter port");
   assert(harness.controller.snapshot().motionControlCount === 1, "retarget should replace, not accumulate, controller-local motion ownership");
+    lease.present({folderRect:{height:80,left:30,top:40,width:80},panelRect:{height:360,left:180,top:200,width:800},state:makeState(),targets:[]});
+    assert(!harness.controller.activeGhostsByItemId.has("app-1"),"removing a transferred child from the close plan must retire the old actor");
+    assert(Number(harness.layer.closingGhostLayer.children.length) === 0,"the transferred child must not keep playing its old close motion");
+    assert(!lease.snapshot().ghostIds.includes("app-1"),"ownership transfer must settle the old session participant");
+    assert(harness.session.close({folderId:"folder-1"})===lease,"transferring a child must not restart the folder close session");
     lease.cancel({ restorePageTrack: false, reveal: false });
     motionRuntime.reset();
   }

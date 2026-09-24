@@ -169,14 +169,31 @@ export function createNativeEditing(options: Options) {
     },
     createFolder(): boolean {
       const ids = [...selection.selectedIds.value];
-      const lead = ids[0];
+      const sourceFolder = options.folder.snapshot();
+      const sourcePoses = sourceFolder.isClosing && sourceFolder.renderedFolder
+        ? options.scene.captureClosingSourcePoses(sourceFolder.renderedFolder.id, ids) : undefined;
+      const openFolder = !sourceFolder.isClosing && sourceFolder.renderedFolder
+        ? layout.operations.findFolder(cells.pages.value, sourceFolder.renderedFolder.id) : null;
+      const pageIndex = openFolder?.pageIndex ?? cells.pageIndex.value;
+      const page = cells.pages.value[pageIndex] ?? [];
+      const selected = new Set(ids);
+      const anchorIndex = page.findIndex(item => item.type === "app" && selected.has(item.id));
+      const visibleChild = openFolder?.item.childPages[sourceFolder.folderPageIndex]?.find(item => item && selected.has(item.id));
+      const lead = visibleChild?.id ?? (anchorIndex >= 0 ? page[anchorIndex]!.id : ids[0]);
       if(ids.length < 2 || !lead) return false;
+      const destination = { pageIndex, index: openFolder ? openFolder.index + 1 : anchorIndex >= 0 ? anchorIndex : page.length };
       const plan = planGroupTransfer({ basePages: cells.pages.value, baseRevision: revision, currentRevision: revision,
-        selectedIds: ids, leadId: lead, intent: { type: "toolbar-folder-create", anchorId: lead },
+        selectedIds: ids, leadId: lead, intent: { type: "toolbar-folder-create", anchorId: lead, destination },
         makeFolderId: () => layout.operations.makeId("folder"), folderName: t("launchpad.newFolder"), pageSize: cells.pageSize.value, folderPageSize: cells.folderPageSize.value });
       if(plan.status !== "accepted") return false;
       return drag.startCommittedGroupTransfer({ baseRevision: revision, draggedIds: ids, leadId: lead,
-        selectionRevision: selection.revision.value, plan, commit: accepted => { commit(accepted.nextPages); selection.clear(); return true; } });
+        ...(sourcePoses ? {sourcePoses} : {}),
+        selectionRevision: selection.revision.value, plan, commit: accepted => {
+          // Source poses were captured by startCommittedGroupTransfer before
+          // closing. Keep the old panel out of the new desktop presentation.
+          if (openFolder) options.open(null);
+          commit(accepted.nextPages); selection.clear(); return true;
+        } });
     },
     dispose(): void { drag.disposeDrag(); rollback.dispose(); for(const timer of timers.values()) clearTimeout(timer); timers.clear(); },
   };

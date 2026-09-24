@@ -307,6 +307,7 @@ type DragDomRefNode =
   | undefined;
 
 export type StartCommittedGroupTransferRequest = Readonly<{
+  sourcePoses?: ReadonlyMap<string, Readonly<{rect: Rect; alpha: number}>>;
   basePages?: ReadonlyLaunchpadPages;
   baseRevision: number;
   commit: (plan: LaunchpadDragAcceptedPlan) => boolean | void;
@@ -2639,7 +2640,7 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
         x: (Number(globalThis.innerWidth) || 1) / 2,
         y: (Number(globalThis.innerHeight) || 1) / 2,
       };
-    const leadRect = getGatherSourceRect(
+    const leadRect = request.sourcePoses?.get(leadId)?.rect ?? getGatherSourceRect(
       leadLocation,
       activePageIndex,
       activeFolderPageIndex,
@@ -2713,7 +2714,11 @@ export function createLaunchpadDrag(options: LaunchpadDragOptions, state: StateH
       pages: basePages,
       pointer,
     });
-    activeDrag.group.allEntries = gatherPopulation.allEntries;
+    activeDrag.group.allEntries = gatherPopulation.allEntries.map(entry => {
+      const pose = request.sourcePoses?.get(entry.item.id);
+      return pose ? { ...entry, origin: centerRect(pose.rect), originScale: pose.rect.width / iconExtent,
+        originAlpha: pose.alpha, delayMs: 0 } : entry;
+    });
     activeDrag.group.sourceMembers = gatherPopulation.sourceMembers;
     updateGroupPresentation(activeDrag, "gather");
     dragMeta.value = {

@@ -102,7 +102,7 @@ type NormalizedIntent =
   | Readonly<{ folderId: string; folderPageIndex: number; index: number; type: "folder-slot" }>
   | Readonly<{ folderId: string; type: "folder-thumbnail" }>
   | Readonly<{ targetAppId: string; type: "application" }>
-  | Readonly<{ anchorId: string; type: "toolbar-folder-create" }>
+  | Readonly<{ anchorId: string; destination?: Readonly<{ pageIndex: number; index: number }>; type: "toolbar-folder-create" }>
   | Readonly<{ reason: string; type: "invalid" }>;
 
 type MemberDescriptor = Readonly<{
@@ -487,7 +487,9 @@ function normalizeIntent(intent: Readonly<Record<string, unknown>> | null | unde
     return { targetAppId: String(source.targetAppId || "").trim(), type };
   }
   if (type === "toolbar-folder-create") {
-    return { anchorId: String(source.anchorId || "").trim(), type };
+    const destination = source.destination as { pageIndex?: unknown; index?: unknown } | undefined;
+    return { anchorId: String(source.anchorId || "").trim(), type,
+      ...(destination ? { destination: { pageIndex: normalizeIndex(destination.pageIndex), index: normalizeIndex(destination.index) } } : {}) };
   }
   return { reason: String(source.reason || "invalid-target"), type: "invalid" };
 }
@@ -560,9 +562,10 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
     if (!toolbarAnchor || !selectedSet.has(anchorId) || toolbarAnchor.item.type !== "app") {
       return rejected("folder-anchor-missing", { orderedSelectedIds });
     }
-    preserveDesktopPageIndex = toolbarAnchor.kind === "desktop"
+    if (intent.destination && intent.destination.pageIndex >= basePages.length) return rejected("desktop-page-missing", { orderedSelectedIds });
+    preserveDesktopPageIndex = intent.destination?.pageIndex ?? (toolbarAnchor.kind === "desktop"
       ? toolbarAnchor.pageIndex
-      : toolbarAnchor.ownerPageIndex;
+      : toolbarAnchor.ownerPageIndex);
   }
 
   const removal = removeSelectedItems(basePages, selectedSet, folderPageSize, {
@@ -684,7 +687,10 @@ export function planGroupTransfer(options: GroupTransferPlanOptions = {}): Group
     const anchor = toolbarAnchor!;
     let targetPageIndex: number | undefined;
     let targetIndex: number;
-    if (anchor.kind === "desktop") {
+    if (intent.destination) {
+      targetPageIndex = removal.desktopPageMap.get(intent.destination.pageIndex);
+      targetIndex = adjustedTopLevelIndex(basePages[intent.destination.pageIndex]!, intent.destination.index, selectedSet, removal.emptiedFolderIds);
+    } else if (anchor.kind === "desktop") {
       targetPageIndex = removal.desktopPageMap.get(anchor.pageIndex);
       targetIndex = adjustedTopLevelIndex(
         basePages[anchor.pageIndex]!,

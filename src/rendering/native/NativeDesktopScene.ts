@@ -666,6 +666,19 @@ export class NativeDesktopScene {
   getPageRefs(): unknown[] { return Array.from({ length: this.#pageRefs.size }, (_, index) => this.#pageRefs.get(index)); }
   getFolderPageRefs(): unknown[] { return Array.from({ length: this.#folderPageRefs.size }, (_, index) => this.#folderPageRefs.get(index)); }
   getFolderPanelRect() { return this.#layer.singleStageFolderLayer.panelGeometry; }
+
+  captureClosingSourcePoses(folderId: string, ids: readonly string[]) {
+    const overlay=this.#layer.singleStageFolderLayer;
+    const result=new Map<string,{rect:{left:number;top:number;width:number;height:number;right:number;bottom:number};alpha:number}>();
+    if(overlay.folderVisualSession.snapshot().closing?.folderId!==folderId)return result;
+    for(const id of ids){
+      const active=overlay.closingGhosts.activeGhostsByItemId.get(id);
+      const ghost=active?.ghost;
+      const rect=ghost?.getIconBounds(overlay.stageRect ?? {left:0,top:0});
+      if(ghost&&!ghost.destroyed&&rect)result.set(id,{rect:{...rect,right:rect.left+rect.width,bottom:rect.top+rect.height},alpha:ghost.alpha});
+    }
+    return result;
+  }
   getDesktopAlpha():number { return this.#layer.visualRoot.alpha; }
 
   getMotionSnapshot(): Readonly<{

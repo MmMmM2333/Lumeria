@@ -127,6 +127,15 @@ export function runGroupTransferPlannerTests() {
   };
 
   const desktop = planGroupTransfer(commonRequest());
+  for (const selectedIds of [["a", "b", "c"], ["a", "b"]]) {
+    const created = planGroupTransfer({basePages:[[app("a"),app("keep-a")],[app("b"),app("keep-b")],[app("c")]],
+      baseRevision:0,currentRevision:0,selectedIds,leadId:"a",pageSize:4,folderPageSize:4,
+      makeFolderId:()=>"current-page-folder",folderName:"New",
+      intent:{type:"toolbar-folder-create",anchorId:"a",destination:{pageIndex:2,index:selectedIds.includes("c")?0:1}}});
+    assert(created.status === "accepted", "current-page creation must support both a local selection and remote-only selections");
+    assert(created.effects.finalDesktopPageIndex === 2, "creation must stay on the requested page even when its last application is selected");
+    assert(created.nextPages[2]?.some(item=>item.id==="current-page-folder"), "folder must occupy the current page");
+  }
   assert(desktop.status === "accepted", "a six-source desktop transfer should be accepted");
   assert(
     desktop.members.filter((member) => member.selected !== false).map((member) => member.id).join(",") ===
