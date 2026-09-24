@@ -281,24 +281,69 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
     await saves.flush();assert.ok((await nativeData.loadLayout())!.settings.scanKeywordBlacklist.includes("enter-keyword"));
     await capture("settings-keyword-placeholder-fixed");
     {
-      const badge=()=>app.stage.getChildByLabel("native-apps:missing-badge",true)!;
-      const scroll=()=>badge().parent!.parent!.parent as import("../../rendering/native/NativeScrollView.js").NativeScrollView;
+      const choice=()=>{
+        const node=app.stage.getChildByLabel("native-apps:missing-style",true);
+        assert.ok(node instanceof NativeFluentButton,"missing-target style selector must exist");return node;
+      };
+      const scroll=()=>{
+        let node=choice().parent;while(node&&!(node instanceof NativeScrollView))node=node.parent;
+        assert.ok(node instanceof NativeScrollView,"apps overview must have a scroll view");return node;
+      };
+      scroll().scrollTo(scroll().maxOffset);await present("missing-target style selector revealed");
+      const styleOffset=scroll().offset,stylePosition=choice().getGlobalPosition().y;
+      const styles=["none","question","prohibited"] as const;
+      const styleLabel=(value:typeof styles[number])=>t(`settings.apps.overview.missingStyle.${value}`);
+      const option=(value:typeof styles[number])=>{
+        const node=management.getChildByLabel(`native-action:${styleLabel(value)}`,true);
+        assert.ok(node instanceof NativeFluentButton,`missing-target style option ${value} must exist`);return node;
+      };
+      const openStyles=async()=>{
+        clickWithNativeInput(choice());
+        await waitFor("missing-target style menu settled",()=>management.getChildByLabel("native-context-menu")?.alpha===1);
+        await present("missing-target style options ready");
+        for(const value of styles){
+          assert.equal(option(value).disabled,false);
+          assert.equal(Boolean(option(value).getChildByLabel("native-menu:selected-indicator")),value===apps().presentation.missingTargetStyle.value);
+        }
+      };
+      for(const value of styles){
+        await openStyles();clickWithNativeInput(option(value));
+        await waitFor("missing-target style selection settled",()=>!management.modal&&!scene.getMotionSnapshot().active);
+        await present(`missing-target style ${value} applied`);
+        assert.equal(apps().presentation.missingTargetStyle.value,value);
+        assert.equal(choice().caption.text,styleLabel(value));
+        assert.equal(scroll().offset,styleOffset,"style selection must retain the scroll offset after redraw");
+        assert.equal(choice().getGlobalPosition().y,stylePosition,"style selector must stay under the pointer after redraw");
+        await saves.flush();
+        const saved=(await nativeData.loadLayout())!.settings;
+        assert.equal(saved.missingTargetStyle,value);assert.equal(saved.showMissingLaunchTargetBadge,true);
+        await openStyles();await capture(`settings-missing-style-${value}`);
+        onKey({type:"down",key:"Escape"});await present("missing-target style menu dismissed");
+        assert.equal(management.modal,false);assert.equal(choice().caption.text,styleLabel(value));
+      }
+      // The old badge switch became a selector. Keep switch-animation and bottom
+      // scroll coverage on the actual last switch in the current overview.
+      const bottomSwitch=()=>{
+        const node=app.stage.getChildByLabel("native-apps:wait-elevation",true);
+        assert.ok(node instanceof NativeFluentToggle,"bottom elevation switch must exist");return node;
+      };
       scroll().scrollTo(scroll().maxOffset);await present("apps bottom toggle before click");
-      const offset=scroll().offset,position=badge().getGlobalPosition().y;
-      const from=(badge() as NativeFluentToggle).transitionProgress;
-      clickWithNativeInput(badge());
-      await waitFor("switch animation intermediate after page rebuild",()=>{const value=(badge() as NativeFluentToggle).transitionProgress;return value>0.05&&value<0.95;});
+      const offset=scroll().offset,position=bottomSwitch().getGlobalPosition().y;
+      const from=bottomSwitch().transitionProgress;
+      clickWithNativeInput(bottomSwitch());
+      await waitFor("switch animation intermediate after page rebuild",()=>{const value=bottomSwitch().transitionProgress;return value>0.05&&value<0.95;});
       await capture("settings-switch-animation-middle");
       await present("switch hit geometry after asynchronous target checks");
-      clickWithNativeInput(badge());
-      await waitFor("switch rapid reversal settled",()=>Math.abs((badge() as NativeFluentToggle).transitionProgress-from)<0.001&&!scene.getMotionSnapshot().active);
+      clickWithNativeInput(bottomSwitch());
+      await waitFor("switch rapid reversal settled",()=>Math.abs(bottomSwitch().transitionProgress-from)<0.001&&!scene.getMotionSnapshot().active);
       assert.equal(scroll().offset,offset);
       for(let repeat=0;repeat<2;repeat++){
-        clickWithNativeInput(badge());await present("apps bottom toggle after click");
+        clickWithNativeInput(bottomSwitch());await present("apps bottom toggle after click");
         assert.equal(scroll().offset,offset,"clicking the last switch must retain the bottom scroll offset");
-        assert.equal(badge().getGlobalPosition().y,position,"bottom switch must stay under the pointer after redraw");
+        assert.equal(bottomSwitch().getGlobalPosition().y,position,"bottom switch must stay under the pointer after redraw");
       }
       await capture("settings-apps-bottom-scroll-stable");
+      console.log("Missing-target style: all three choices, selection markers, persistence and scroll retention passed; bottom switch animation/reversal retained");
     }
     apps().persistence.restore(before);appsPageState.keywords=false;(getSettingsShell() as NativeSettingsShell).redraw();
     await waitFor("keyword audit restored",()=>!scene.getMotionSnapshot().active);
