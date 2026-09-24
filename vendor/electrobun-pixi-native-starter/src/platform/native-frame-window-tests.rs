@@ -116,3 +116,28 @@ fn different_child_route_cannot_read_or_preserve_root_text_session() {
         assert!(!(*state).text_active);
     }
 }
+
+#[test]
+fn caret_update_after_native_blur_reports_inactive_without_restarting_input() {
+    unsafe {
+        let windows = Windows::new(880007);
+        assert!(pixi_begin_text_input(windows.root, 30, 40, 2, 20) > 0);
+        assert!(pixi_update_caret_rect(windows.root, 31, 40, 2, 20) > 0);
+        SendMessageW(windows.root, 0x0008, windows.child as usize, 0);
+        assert!(pixi_update_caret_rect(windows.root, 32, 40, 2, 20) > 0);
+        SendMessageW(windows.child, 0x0008, 0, 0);
+        let state = attached_input_state(windows.root).unwrap();
+        for _ in 0..3 {
+            assert_eq!(pixi_update_caret_rect(windows.root, 33, 40, 2, 20), 0);
+            assert!(!(*state).text_active);
+        }
+        assert_eq!(pixi_update_caret_rect(windows.root, 0, 0, -1, 20), -4);
+        assert_eq!(pixi_update_caret_rect(windows.root, i32::MAX, 0, 2, 20), -4);
+        SendMessageW(windows.child, 0x0102, 'x' as usize, 0);
+        assert_eq!(windows.text(), "", "late updates must not restart text capture");
+        assert_eq!(pixi_end_text_input(windows.root), 0);
+        assert!(pixi_begin_text_input(windows.root, 30, 40, 2, 20) > 0);
+        SendMessageW(windows.child, 0x0102, 'y' as usize, 0);
+        assert_eq!(windows.text(), "y", "an explicit new session must accept input");
+    }
+}

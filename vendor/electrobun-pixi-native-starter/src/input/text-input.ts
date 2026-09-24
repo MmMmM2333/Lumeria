@@ -39,6 +39,7 @@ export interface TextInputNativeSession {
 	onCompositionUpdate(listener: (event: { timestamp: bigint; text: string; cursorUtf16: number }) => void): Off;
 	onCompositionCancel(listener: (event: { timestamp: bigint }) => void): Off;
 	onCommit(listener: (event: { timestamp: bigint; text: string }) => void): Off;
+	onEnd(listener: () => void): Off;
 }
 
 type ClipboardResult<T> = { ok: true; value: T } | { ok: false; error?: unknown };
@@ -131,6 +132,8 @@ export class TextInputHost {
 				this.focused?.updateComposition(text, cursorUtf16)),
 			this.nativeTextInput.onCompositionCancel(() => this.focused?.cancelComposition()),
 			this.nativeTextInput.onCommit(({ text }) => this.focused?.commitText(text)),
+			// Read-only editors retain selection focus when their IME session ends.
+			this.nativeTextInput.onEnd(() => { if (!this.focused?.readOnly) this.blur(); }),
 		];
 	}
 
@@ -161,11 +164,14 @@ export class TextInputHost {
 
 	blur(input = this.focused): void {
 		if (!input || this.focused !== input) return;
-		input.cancelComposition();
 		if (this.nativeTextInput.active) this.nativeTextInput.end();
+		if (this.focused !== input) return; // onEnd may already have cleared ownership.
 		this.focused = null;
 		this.focusEpoch++;
 		this.stopCaretBlink();
+		// Cancelling composition emits textviewchange; clear ownership first so
+		// its callbacks cannot restart input while the window is losing focus.
+		input.cancelComposition();
 		input.setFocused(false);
 		input.emitEvent("blur");
 		this.requestFrame();

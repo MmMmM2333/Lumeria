@@ -34,6 +34,7 @@ export interface NativeTextInputState {
 }
 
 export interface NativeTextInputStatus {
+	/** 0 means the session has ended; 1/2 mean the operation was applied. */
 	status: number;
 	degraded: boolean;
 }
@@ -90,7 +91,7 @@ export class NativeTextInputOperationError extends Error {
 }
 
 type Listener<T> = (event: T) => void;
-type RoutedSession = { active: () => boolean; dispatch: (event: NativeTextEvent) => void };
+type RoutedSession = { active: () => boolean; dispatch: (event: NativeTextEvent) => void; finishEnd: () => void };
 const sessions = new Map<bigint, RoutedSession>();
 let polling = false;
 
@@ -136,8 +137,10 @@ export function createNativeTextInputSession({
 	const compositionCancelListeners = new Set<Listener<NativeTextTimestampedEvent>>();
 	const commitListeners = new Set<Listener<NativeTextCommitEvent>>();
 	const errorListeners = new Set<Listener<NativeTextInputErrorEvent>>();
+	const endListeners = new Set<Listener<void>>();
 	let state: NativeTextInputState | null = null;
 	let destroyed = false;
+	let ending = false;
 	let ignoreNextCompositionEnd = false;
 
 	const emit = <T>(listeners: Set<Listener<T>>, event: T) => {
@@ -197,6 +200,14 @@ export function createNativeTextInputSession({
 			activity("error");
 		}
 	};
+	const finishEnd = () => {
+		if (!ending) return;
+		state = null;
+		ending = false;
+		ignoreNextCompositionEnd = false;
+		emit(endListeners, undefined);
+		activity("end");
+	};
 	const drain = () => {
 		if (destroyed || polling) return 0;
 		polling = true;
@@ -210,21 +221,27 @@ export function createNativeTextInputSession({
 			return count;
 		} finally {
 			polling = false;
+			// An editor may discover native blur while handling a queued commit.
+			// Keep delivering the remaining commits before notifying it of session end.
+			for (const target of [...sessions.values()]) target.finishEnd();
 		}
 	};
 
-	sessions.set(route, { active: () => state !== null && !destroyed, dispatch });
+	sessions.set(route, { active: () => state !== null && !destroyed, dispatch, finishEnd });
 
 	const end = () => {
+		if (ending) return { status: 0, degraded: false } satisfies NativeTextInputStatus;
 		if (!state) {
 			ignoreNextCompositionEnd = false;
 			return { status: 0, degraded: false } satisfies NativeTextInputStatus;
 		}
-		const result = checkedStatus("endTextInput", nativeHost.endTextInput(windowHandle), [0, 1]);
+		ending = true;
+		let result: NativeTextInputStatus;
+		try {
+			result = checkedStatus("endTextInput", nativeHost.endTextInput(windowHandle), [0, 1]);
+		} catch (error) { ending = false; throw error; }
+		// If already polling, the outer drain retires us after all queued events.
 		drain();
-		state = null;
-		ignoreNextCompositionEnd = false;
-		activity("end");
 		return result;
 	};
 
@@ -233,6 +250,7 @@ export function createNativeTextInputSession({
 		get state(): Readonly<NativeTextInputState> | null { return state; },
 		begin(options: TextInputBeginOptions): NativeTextInputStatus {
 			if (destroyed) throw new Error("text input session is destroyed");
+			if (ending) throw new Error("text input session is ending");
 			ignoreNextCompositionEnd = false;
 			assertSelection(options.surroundingText, options.selection);
 			if (state) end();
@@ -258,12 +276,14 @@ export function createNativeTextInputSession({
 			if (destroyed) throw new Error("text input session is destroyed");
 			if (!state) throw new Error("text input session is not active");
 			assertSelection(options.surroundingText, options.selection);
+			if (ending) return { status: 0, degraded: false };
 			const caretRect = freezeRect(options.caretRect);
 			const result = checkedStatus(
 				"updateTextInput",
 				nativeHost.updateTextInput(windowHandle, toPhysicalRect(caretRect)),
-				[1, 2],
+				[0, 1, 2],
 			);
+			if (result.status === 0) { end(); return result; }
 			state = Object.freeze({
 				...state,
 				caretRect,
@@ -321,6 +341,8 @@ export function createNativeTextInputSession({
 			subscribe(compositionCancelListeners, listener),
 		onCommit: (listener: Listener<NativeTextCommitEvent>) => subscribe(commitListeners, listener),
 		onError: (listener: Listener<NativeTextInputErrorEvent>) => subscribe(errorListeners, listener),
+		/** Runs after queued text events are delivered and the JS session is inactive. */
+		onEnd: (listener: Listener<void>) => subscribe(endListeners, listener),
 		destroy() {
 			if (destroyed) return;
 			try { end(); } catch (error) {
@@ -335,6 +357,7 @@ export function createNativeTextInputSession({
 				compositionCancelListeners.clear();
 				commitListeners.clear();
 				errorListeners.clear();
+				endListeners.clear();
 			}
 		},
 	};

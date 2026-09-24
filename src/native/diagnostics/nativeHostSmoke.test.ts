@@ -280,6 +280,8 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     await waitFor("tray settings close animation finished",()=>!getSettingsShell());
     console.log("Tray left toggle, right-menu restore and settings actions passed");
   }
+  await (await import("./nativeTextInputFocusSmoke.js")).runNativeTextInputFocusSmoke({app,searchBar,present,waitFor});
+  await smoke.captureSmokeFrame(app,"text-input-focus-recovered");
   if(settings.presentation.windowMode.value==="fullscreen"){
     await present("restored fullscreen background settled");
     assert.equal(desktopBackground.getLocalBounds().width,app.contentSize.width,"startup background must cover the fullscreen width");

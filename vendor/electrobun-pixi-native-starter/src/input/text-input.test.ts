@@ -12,6 +12,7 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	const compositionUpdate = new Set<(event: any) => void>();
 	const compositionCancel = new Set<(event: any) => void>();
 	const commit = new Set<(event: any) => void>();
+	const end = new Set<() => void>();
 	let nativeState: any = null;
 	let nativeUpdates = 0;
 	let clipboardText = "";
@@ -28,12 +29,13 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 		get state() { return nativeState; },
 		begin(options: any) { nativeState = options; return { status: 1, degraded: false }; },
 		update(options: any) { nativeUpdates++; nativeState = options; return { status: 1, degraded: false }; },
-		end() { nativeState = null; return { status: 1, degraded: false }; },
+		end() { nativeState = null; for (const listener of end) listener(); return { status: 1, degraded: false }; },
 		commit(text: string) { for (const listener of commit) listener({ text, timestamp: 1n }); },
 		onCompositionStart: (listener: (event: any) => void) => subscribe(compositionStart, listener),
 		onCompositionUpdate: (listener: (event: any) => void) => subscribe(compositionUpdate, listener),
 		onCompositionCancel: (listener: (event: any) => void) => subscribe(compositionCancel, listener),
 		onCommit: (listener: (event: any) => void) => subscribe(commit, listener),
+		onEnd: (listener: () => void) => subscribe(end, listener),
 	};
 	const root = new Container();
 	const host = createTextInputHost({
@@ -188,6 +190,12 @@ test("TextInput routes keyboard, IME, focus, and clipboard through one editor se
 	root.addChild(plain);
 	plain.focus();
 	expect(plain.focused).toBe(true);
+	plain.readOnly = true;
+	expect(plain.focused).toBe(true);
+	expect(nativeState).toBeNull();
+	plain.readOnly = false;
+	expect(plain.focused).toBe(true);
+	expect(nativeState).not.toBeNull();
 	expect((plain as any).background.context.instructions.length).toBe(0);
 	expect((plain as any).focusLayer.context.instructions.length).toBe(0);
 	plain.beginComposition();
