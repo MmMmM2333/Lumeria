@@ -26,6 +26,7 @@ if (stressDir) mkdirSync(stressDir, { recursive: true });
 const folderRenameSmoke = process.argv.includes("--folder-rename");
 const launchVisualSmoke = process.argv.includes("--launch-visual");
 const searchSmoke = process.argv.includes("--search");
+const dragNavigationSmoke = process.argv.includes("--drag-navigation");
 if (searchSmoke && nativeMode !== "smoke") throw new Error("Search verification requires smoke mode");
 if (launchVisualSmoke && nativeMode !== "smoke") throw new Error("Launch visual verification requires smoke mode");
 const realImport=process.argv.includes("--import-real");
@@ -198,6 +199,7 @@ fixture.settings.gridCols = 7;
 fixture.settings.iconSize = 64;
 fixture.settings.folderRows = 2;
 fixture.settings.folderCols = 2;
+if(dragNavigationSmoke){fixture.settings.folderRows=3;fixture.settings.folderCols=4;}
 fixture.settings.folderIconSizeMode = "global";
 fixture.settings.textless = false;
 fixture.settings.scanRoots = [{
@@ -307,6 +309,7 @@ try {
       LAUNCHPAD_NATIVE_FOLDER_RENAME_SMOKE: folderRenameSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE: launchVisualSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_SEARCH_SMOKE: searchSmoke ? "1" : "0",
+      LAUNCHPAD_NATIVE_DRAG_NAVIGATION_SMOKE: dragNavigationSmoke ? "1" : "0",
       LAUNCHPAD_NATIVE_WALLPAPER_FAILURE_SMOKE:invalidWallpaper??"",
       ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
@@ -349,7 +352,10 @@ try {
     const journal=readFileSync(join(dataDir,"logs/native-runtime.log"),"utf8");
     if(/"event":"(?:uncaught-exception|unhandled-rejection|fatal)"/.test(journal))throw new Error("Live Desktop smoke journal contains runtime failures");
   }
-  if (searchSmoke && status !== 130) {
+  if (dragNavigationSmoke && status !== 130) {
+    if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).dragNavigation !== "verified") throw new Error("Native drag navigation verification did not complete");
+    console.log("Native drag navigation verification passed");
+  } else if (searchSmoke && status !== 130) {
     if (!existsSync(markerPath) || JSON.parse(readFileSync(markerPath,"utf8")).search !== "verified") throw new Error("Native search verification did not complete");
     console.log("Native search verification passed");
   } else if (launchVisualSmoke && status !== 130) {
@@ -364,7 +370,7 @@ try {
     }
     console.log("Native folder rename smoke passed");
   }
-  if (nativeMode === "smoke" && !folderRenameSmoke && !launchVisualSmoke && !searchSmoke && !invalidWallpaper && status !== 130) {
+  if (nativeMode === "smoke" && !folderRenameSmoke && !launchVisualSmoke && !searchSmoke && !dragNavigationSmoke && !invalidWallpaper && status !== 130) {
     if (!existsSync(markerPath)) throw new Error("Electrobun worker exited without completing the native smoke test");
     const proof = JSON.parse(readFileSync(markerPath, "utf8")) as {
       backingHeight?: unknown;

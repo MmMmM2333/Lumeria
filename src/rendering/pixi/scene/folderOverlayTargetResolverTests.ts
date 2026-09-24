@@ -232,6 +232,18 @@ export function runFolderOverlayTargetResolverTests() {
   });
   assert(reused.stableFolderCloseTarget === reusedStableTarget, "resolver should reuse an existing stable close target while not closing");
 
+  const compactedFolder = { ...folder, childPages: [[{ id: "app-b" }, { id: "app-c" }]] };
+  registry.registerBounds(K.TOP_LEVEL, V.RENDERED, folder.id, liveIconRect, { item: compactedFolder } as IconBoundsMeta & {item:typeof compactedFolder});
+  registry.registerBounds(K.PREVIEW_CHILD, V.RENDERED, { childId: "app-b", folderId: folder.id, slotIndex: 0 }, liveChildRect);
+  const compactedClose = resolveFolderOverlayTargets({folder,folderPageSize:9,iconBoundsRegistry:registry,isClosing:true});
+  assert(compactedClose.previewSlots.map(item=>item?.id).filter(Boolean).join(",") === "app-b,app-c",
+    "closing must use the committed desktop children instead of the retained panel's old slots");
+  assert(compactedClose.stableFolderCloseTarget?.previewChildRects.has("app-b:0"),
+    "a surviving child must target its compacted preview slot");
+  assert(folder.childPages[0]?.[0]?.id === "app-a", "resolving the destination must preserve the source panel snapshot");
+  const unchangedOpen = resolveFolderOverlayTargets({folder,folderPageSize:9,iconBoundsRegistry:registry,isClosing:false});
+  assert(unchangedOpen.previewSlots[0]?.id === "app-a", "opening must continue to use its source preview slots");
+
   registry.clearBounds();
   const capturedOnly = resolveFolderOverlayTargets({
     folder,

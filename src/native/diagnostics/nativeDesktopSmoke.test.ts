@@ -372,6 +372,7 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
     console.log(`Native drag visual parity: ${proof.samples.length} presented white-frame samples across ${proof.hoverReentries} reentries passed`);
   }
   editing()!.rename("native-layout-icon","Save roundtrip");await saves.flush();
+  await (await import("../../rendering/native/nativeDragNavigationSmoke.test.js")).runNativeDragNavigationSmoke(context);
   const persisted=await nativeData.loadLayout();assert.ok(persisted);
   assert.equal(makeNativeStartupFrame(persisted,catalogApps).viewport.activePages[0]?.[0]?.name,"Save roundtrip");
   editing()!.commit(baselinePages);await saves.flush();

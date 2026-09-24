@@ -277,6 +277,7 @@ type ActiveClosingGhost = {
   target: UsableFolderClosingTarget;
   targetKey: string;
   targetMotion: ClosingGhostMotion;
+  retargetMotion: () => MotionControl;
 };
 
 type ClosingFolderSlotVisualState = {
@@ -446,8 +447,8 @@ function animateClosingGhost(
         ...motionOptions,
         ...(onUpdate ? { onUpdate } : {}),
         velocity: options.positionVelocity,
-        x: 0,
-        y: 0,
+        x: ghostMotion.toX,
+        y: ghostMotion.toY,
       }),
     motion(follower.scale)
       .spring(scaleSpring)
@@ -457,8 +458,8 @@ function animateClosingGhost(
         ...motionOptions,
         ...(onUpdate ? { onUpdate } : {}),
         velocity: options.scaleVelocity,
-        x: 0,
-        y: 0,
+        x: ghostMotion.scale,
+        y: ghostMotion.scale,
       }),
   ];
   if (target.isThumbnailChild) {
@@ -1048,13 +1049,13 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     }
     const follower: ClosingGhostFollower = {
       position: {
-        x: ghost.position.x - ghostMotion.toX,
-        y: ghost.position.y - ghostMotion.toY,
+        x: ghost.position.x,
+        y: ghost.position.y,
       },
       progress: { value: 0 },
       scale: {
-        x: ghost.scale.x - ghostMotion.scale,
-        y: ghost.scale.y - ghostMotion.scale,
+        x: ghost.scale.x,
+        y: ghost.scale.y,
       },
     };
     const active: ActiveClosingGhost = {
@@ -1071,43 +1072,52 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       target,
       targetKey: makeClosingGhostTargetKey(target),
       targetMotion: ghostMotion,
+      retargetMotion: () => { throw new Error("Closing motion not initialized"); },
     };
     this.activeGhostsByItemId.set(itemId, active);
     const applyFollower = () => this.applyClosingGhostFollower(active);
     applyFollower();
-    const motionControl = animateClosingGhost(ghost, ghostMotion, target, follower, applyFollower, () => {
-      reporter.ghostArrived(itemId);
-    }, () => {
-      active.motionSettled = true;
-      follower.position.x = 0;
-      follower.position.y = 0;
-      follower.scale.x = 0;
-      follower.scale.y = 0;
-      follower.progress.value = 1;
-      applyFollower();
-      if (active.motionControl) this.motionControls.delete(active.motionControl);
-      if (active.folderSlotVisualState) {
-        active.folderSlotVisualState.mix = 1;
-        ghost.commitFolderSlotReleaseVisual?.();
-      }
-      if (!active.target.isThumbnailChild && this.activeGhostsByItemId.get(itemId) === active) {
+    active.retargetMotion = () => {
+      const previous = active.motionControl;
+      const nextPositionVelocity = previous ? { x: getActiveMotionVelocity(follower.position, "x"), y: getActiveMotionVelocity(follower.position, "y") } : positionVelocity;
+      const nextScaleVelocity = previous ? { x: getActiveMotionVelocity(follower.scale, "x"), y: getActiveMotionVelocity(follower.scale, "y") } : scaleVelocity;
+      if (previous) { this.motionControls.delete(previous); previous.cancel("folder-close-target-changed"); }
+      active.motionSettled = false;
+      const motionControl = animateClosingGhost(ghost, { ...active.targetMotion, delay: previous ? 0 : active.targetMotion.delay }, active.target, follower, applyFollower, () => {
+        reporter.ghostArrived(itemId);
+      }, () => {
+        active.motionSettled = true;
+        follower.position.x = active.targetMotion.toX;
+        follower.position.y = active.targetMotion.toY;
+        follower.scale.x = active.targetMotion.scale;
+        follower.scale.y = active.targetMotion.scale;
+        follower.progress.value = 1;
+        applyFollower();
+        if (active.motionControl) this.motionControls.delete(active.motionControl);
+        if (active.folderSlotVisualState) {
+          active.folderSlotVisualState.mix = 1;
+          ghost.commitFolderSlotReleaseVisual?.();
+        }
+        if (!active.target.isThumbnailChild && this.activeGhostsByItemId.get(itemId) === active) {
+          this.activeGhostsByItemId.delete(itemId);
+          this.completeGhost(active.state, active.target, ghost, reporter);
+        }
+      }, {
+        animateAlpha: !previous && options.animateAlpha !== false,
+        positionVelocity: nextPositionVelocity,
+        scaleVelocity: nextScaleVelocity,
+        scheduler: this.scheduler,
+      });
+      active.motionControl = motionControl;
+      const closeSnapshot = reporter.snapshot();
+      if (this.activeGhostsByItemId.get(itemId) === active && closeSnapshot?.ghostIds.includes(itemId)) {
+        if (!motionControl.completed) this.motionControls.add(motionControl);
+      } else {
         this.activeGhostsByItemId.delete(itemId);
-        this.completeGhost(active.state, active.target, ghost, reporter);
       }
-    }, {
-      animateAlpha: options.animateAlpha !== false,
-      positionVelocity,
-      scaleVelocity,
-      scheduler: this.scheduler,
-    });
-    active.motionControl = motionControl;
-    const closeSnapshot = reporter.snapshot();
-    if (this.activeGhostsByItemId.get(itemId) === active && closeSnapshot?.ghostIds.includes(itemId)) {
-      if (!motionControl.completed) this.motionControls.add(motionControl);
-    } else {
-      this.activeGhostsByItemId.delete(itemId);
-    }
-    return motionControl;
+      return motionControl;
+    };
+    return active.retargetMotion();
   }
 
   getMotionDebugSnapshot() {
@@ -1139,12 +1149,12 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     const { follower, ghost, targetMotion } = active;
     if (!ghost || ghost.destroyed) return;
     ghost.position.set(
-      targetMotion.toX + follower.position.x,
-      targetMotion.toY + follower.position.y,
+      follower.position.x,
+      follower.position.y,
     );
     ghost.scale.set(
-      targetMotion.scale + follower.scale.x,
-      targetMotion.scale + follower.scale.y,
+      follower.scale.x,
+      follower.scale.y,
     );
     this.activeReporter?.setDetachedGhostMotion(ghost, {
       alpha: active.target.isThumbnailChild ? 1 : 0,
@@ -1185,6 +1195,7 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
     active.alignedRenderFrames = 0;
     active.alignmentGeneration += 1;
     active.completionScheduled = false;
+    active.retargetMotion();
     this.applyClosingGhostFollower(active);
   }
 
@@ -1239,6 +1250,20 @@ export class FolderClosingGhostController implements FolderClosingVisualAdapter<
       }
     }
 
+    // A group transfer can take ownership while this close is already running.
+    // Retire those actors without restarting the panel or leaving two owners.
+    const nextIds = new Set(targets.map(target => target.item?.id));
+    for (const [itemId, active] of this.activeGhostsByItemId) {
+      if (nextIds.has(itemId)) continue;
+      active.motionControl?.cancel("folder-close-source-transferred");
+      if (active.motionControl) this.motionControls.delete(active.motionControl);
+      this.activeGhostsByItemId.delete(itemId);
+      this.layer.closingGhostLayer.removeChild(active.ghost);
+      reporter.deleteDetachedGhostMotion(active.ghost);
+      destroyDisplayObjectAfterFrame(active.ghost, {children:true});
+      reporter.ghostVisualReady(itemId);
+      reporter.ghostComplete(itemId, getClosingControllerGhostKey(active.state, active.target));
+    }
     const usableTargets = (targets || []).filter((target) => target?.item?.id &&
       hasUsableFolderGhostTarget(target) &&
       snapshot.ghostIds.includes(target.item.id)) as UsableFolderClosingTarget[];

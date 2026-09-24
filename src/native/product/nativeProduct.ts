@@ -411,8 +411,8 @@ function closeFolder(): boolean {
   return true;
 }
 
-function setFolderPageIndex(pageIndex: number): boolean {
-  if (!folderFlow.setPageIndex(pageIndex)) return false;
+function setFolderPageIndex(pageIndex: number, options?: { allowCreate?: boolean }): boolean {
+  if (!folderFlow.setPageIndex(pageIndex, options)) return false;
   setFocusedIcon(null);
   return true;
 }
@@ -906,8 +906,11 @@ try {
     size: () => app.contentSize, chromeInset, changed: requestSceneRender, commit: commitEditedPages,
     selectionToolbarRect:()=>selectionToolbar.cancelZoneRect(),
     confirm:config=>management.warning({...config,cancelText:t("common.actions.cancel"),intent:"warning",confirmAppearance:"outline",confirmTone:"danger",onConfirm:async()=>{config.onConfirm();await saves.flush();}}),
-    page: index => onDesktopPageIndexCommit(index), folderPage: setFolderPageIndex,
+    page: index => onDesktopPageIndexCommit(index), dragPage: commitDesktopPage, folderPage: setFolderPageIndex,
+    resetWheelNavigation: () => nativeInputRouter?.resetWheelNavigation(),
+    isWheelNavigationActive: () => nativeInputRouter?.isWheelNavigationActive() ?? false,
     open: id => {
+      nativeInputRouter?.resetWheelNavigation();
       if(!id) { closeFolder(); return; }
       const item = editing?.projectedPages().flat().find(item => item.id === id);
       if(item) { folderFlow.open(snapshotContractValue(item) as SceneItem);setFocusedIcon(null);requestSceneRender(); }
@@ -1187,7 +1190,10 @@ try {
   // Input/state work is now frame-coalesced. Apply the initial presentation
   // before testing its endpoint; untouched nodes can still have alpha=1.
   sceneUpdates.flush();
-  await waitFor(
+  // Only the controlled smoke scenario requires a globally settled scene.
+  // Product readiness is the first presented frame + startupPreparation; users
+  // may already open a folder, drag, or hide the window after that boundary.
+  if (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke") await waitFor(
     "the LaunchPad entrance motion to make every node visible",
     () => app.state === "closing" || app.state === "closed"
       || (!sceneUpdates.pending&&!scene.getMotionSnapshot().active
@@ -1315,6 +1321,17 @@ try {
       waitFor,
     });
     if(searchOutcome.kind==="search")return;
+  }
+
+  if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_DRAG_NAVIGATION_SMOKE==="1"){
+    await (await import("../../rendering/native/nativeDragNavigationSmoke.test.js")).runNativeDragNavigationSmoke({
+      app,editing:()=>editing,layoutState,scene,folderFlow,currentFrame:()=>currentFrame,
+      onDesktopPageIndexCommit:index=>onDesktopPageIndexCommit(index),present:description=>present(app,description),
+      waitFor,capture:name=>smoke!.captureSmokeFrame(app,name),saves,
+    });
+    const {writeFileSync}=await import("node:fs");
+    writeFileSync(process.env.LAUNCHPAD_NATIVE_SMOKE_MARKER!,JSON.stringify({dragNavigation:"verified"}));
+    return;
   }
 
   if(__LUMERIA_DIAGNOSTICS__ && nativeMode==="smoke" && process.env.LAUNCHPAD_NATIVE_LAUNCH_VISUAL_SMOKE==="1"){
@@ -1599,7 +1616,7 @@ try {
   const visibleNodes = iconNodes.filter((node) => (
     node.alpha >= 0.999 && node.renderable && node.visible
   )).length;
-  if (visibleNodes !== iconNodes.length) {
+  if (__LUMERIA_DIAGNOSTICS__ && nativeMode === "smoke" && visibleNodes !== iconNodes.length) {
     throw new Error(`Only ${visibleNodes}/${iconNodes.length} LaunchPad nodes became visible`);
   }
 

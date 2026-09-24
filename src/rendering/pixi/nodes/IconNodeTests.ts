@@ -145,9 +145,19 @@ export async function runIconNodeTests(): Promise<void> {
     );
     node.setFolderSlotReleaseVisualMix(0.25);
     assert(
-      nearlyEqual(node.visualWrap.alpha, 0.75) && nearlyEqual(node.folderSlotReleaseVisual.alpha, 0.25),
-      "folder-slot handoff should use complementary alpha instead of brightening two fully visible rasters",
+      nearlyEqual(node.visualWrap.alpha, 1) && nearlyEqual(node.folderSlotReleaseVisual.alpha, 0),
+      "folder-slot handoff must render a single raster until the thumbnail takes over",
     );
+    for (const mix of [0,0.25,0.5,0.75,1]) {
+      node.setFolderSlotReleaseVisualMix(mix);
+      const coverage=node.folderSlotReleaseVisual.alpha+node.visualWrap.alpha*(1-node.folderSlotReleaseVisual.alpha);
+      assert(nearlyEqual(coverage,1), "source-over raster handoff must not expose the background at intermediate progress");
+      const textureAlpha=0.5;
+      const translucent=node.folderSlotReleaseVisual.alpha*textureAlpha+node.visualWrap.alpha*textureAlpha*(1-node.folderSlotReleaseVisual.alpha*textureAlpha);
+      assert(nearlyEqual(translucent,textureAlpha),"handoff must preserve texture alpha instead of double-compositing translucent pixels");
+    }
+    assert(Number(node.visualWrap.alpha) === 0 && Number(node.folderSlotReleaseVisual.alpha) === 1,
+      "completed handoff must retain only the thumbnail raster");
     node.clearFolderSlotReleaseVisual();
     node.setState({ ...interactionNodeState, iconSize: 128 });
     assert(node.prepareFolderSlotReleaseVisual(32), "large folder icons should prepare the matching native preview size");

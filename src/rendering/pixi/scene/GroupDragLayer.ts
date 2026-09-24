@@ -81,6 +81,7 @@ export type GroupDragEntry = Readonly<{
   origin: PointData;
   originKind?: string | undefined;
   originScale?: number | undefined;
+  originAlpha?: number | undefined;
   releaseRole?: GroupTransferRuntimeRole | "member" | undefined;
   releaseStart?: GroupTransferReleaseStart | undefined;
   source?: SceneDataRecord | undefined;
@@ -1470,7 +1471,7 @@ export class GroupDragLayer extends Container {
         }
         node.alpha = entry.originKind === "folder-hidden" ? 0 : 0.82;
         if (group.phase === GROUP_TRANSFER_PHASE.COMMITTING) {
-          node.alpha = 1;
+          node.alpha = Number.isFinite(entry.originAlpha) ? Math.max(0, entry.originAlpha!) : 1;
           continue;
         }
         if (isReleasePhase) {

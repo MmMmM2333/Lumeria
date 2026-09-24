@@ -487,7 +487,7 @@ export function createLaunchpadGestureEngine(
       return {handled:true,presentation:null,commands:[],deadline:null};
     }
     if(input.wheelPhase==="end")return finishWheel(input);
-    if (pointer || input.ctrlKey || input.metaKey) {
+    if ((pointer && !pointer.dragging) || input.ctrlKey || input.metaKey) {
       return { handled: false, presentation: null, commands: [], deadline: null };
     }
     const viewport = normalizeViewport(input.viewport);
@@ -674,7 +674,10 @@ export function createLaunchpadGestureEngine(
   }
 
   function cancelAll(input: LaunchpadGestureInput): LaunchpadGestureOutput {
+    // Pointer dragging and wheel navigation may coexist. A full cancellation
+    // must invalidate both, without settling an old wheel destination later.
     if (pointer) {
+      wheel = null;
       return cancelPointer({
         ...input,
         pointerId: pointer.id,
@@ -807,6 +810,10 @@ export function createLaunchpadGestureEngine(
   }
 
   function dispatch(input: LaunchpadGestureInput = {}): LaunchpadGestureOutput {
+    if (input.type === "resetWheel") {
+      wheel = null;
+      return { handled: true, presentation: null, commands: [], deadline: null };
+    }
     if (input.type === "pointerDown") return beginPointer(input);
     if (input.type === "pointerMove") return movePointer(input);
     if (input.type === "pointerUp") return finishPointer(input);

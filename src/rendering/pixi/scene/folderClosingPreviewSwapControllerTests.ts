@@ -289,7 +289,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
   {
     const { controller, layer } = createController();
     const reporter = makeReporter();
-    controller.start(makeState(), [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {}, { reporter });
+    controller.start({...makeState(),folderPageIndex:0}, [makeTarget()], { iconDuration: 0.01, progress: 1 }, () => {}, { reporter });
 
     assert(reporter.keys.size === 1, "start should register preview participation through the closing reporter");
     assert(layer.closingPreviewSwapLayer.children.length === 1, "start should install one preview root");
@@ -314,7 +314,7 @@ export function runFolderClosingPreviewSwapControllerTests() {
     const root = requireContainer(layer.closingPreviewSwapLayer.children[0], "retarget preview root");
     const iconsWrap = requireContainer(root.children[1], "retarget icon wrapper");
     const ghost = requireContainer(iconsWrap.children[0], "retarget icon ghost");
-    const retargeted = controller.retarget(makeState(), [makeTarget(80, 90)]);
+    const retargeted = controller.retarget({...makeState(),folderPageIndex:0}, [makeTarget(80, 90)]);
 
     assert(retargeted, "retarget should accept a changed active target");
     assert(layer.closingPreviewSwapLayer.children[0] === root, "retarget should reuse the active preview root");

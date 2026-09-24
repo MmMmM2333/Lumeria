@@ -24,6 +24,17 @@ function nearlyEqual(a: number, b: number, epsilon = 0.001): boolean {
 }
 
 export function runPageTrackMotionTests(): void {
+  {
+    const runtime=createMotionRuntime({autoStart:false}),state=createPageTrackMotionState(),track={x:-540};
+    updatePageTrackMotion(state,track,{runtime,pageIndex:0,pageSpan:900,
+      scrub:{fromIndex:0.6,toIndex:0,progress:0,settle:true,settleToken:"wheel-interrupt-edge",targetProgress:1}});
+    assert(nearlyEqual(track.x,-540),"wheel settle interrupting an edge spring must retain the displayed start position");
+    assert(runUntil(runtime,()=>state.control?.completed===true),"interrupted page settle must complete");
+    assert(nearlyEqual(track.x,0),"reverse wheel must finish at its committed page");
+    updatePageTrackMotion(state,track,{runtime,pageIndex:2,pageSpan:900,scrub:null});
+    assert(runUntil(runtime,()=>state.control?.completed===true),"edge may take ownership after the old scrub is cleared");
+    assert(nearlyEqual(track.x,-1800),"edge page and rendered track must agree after navigation ownership changes");
+  }
   const previousSpeed=getPageSwipeSpeed();
   for(const speed of [4,6] as const){
     setPageSwipeSpeed(speed);

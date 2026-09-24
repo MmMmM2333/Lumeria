@@ -279,12 +279,34 @@ export function runLaunchpadGestureEngineTests() {
       dragStart.targetPresentation === null,
     "moving a held icon beyond the drag threshold should start icon dragging and clear the armed presentation"
   );
+  const dragWheel = dragEngine.dispatch({type:"wheel",time:460,deltaY:120,deltaX:0,deltaMode:0,
+    viewport:{scope:"desktop",pageIndex:0,pageCount:3,pageWidth:500}});
+  assert(firstCommandOfType(dragWheel,"commitPage")?.pageIndex === 1 && !dragWheel.releasesPointer,
+    "wheel paging during a drag must retain pointer ownership");
   const dragFinish = dispatch(dragEngine, "pointerUp", {
     target: { id: "app-e", kind: "icon" },
     time: 480,
     x: 320,
   });
   assert(dragFinish.commands.length === 1 && firstCommandOfType(dragFinish, "finishDrag") != null, "releasing the owned drag pointer should finish icon dragging");
+
+  const mixedEngine=createLaunchpadGestureEngine();
+  dispatch(mixedEngine,"pointerDown",{target:{id:"mixed",kind:"icon"}});
+  mixedEngine.dispatch({type:"deadline",kind:"hold",time:420});
+  dispatch(mixedEngine,"pointerMove",{buttons:1,time:440,x:330});
+  mixedEngine.dispatch({type:"wheel",time:460,deltaX:120,deltaY:0,wheelSource:"touchpad",wheelPhase:"update",
+    viewport:{scope:"desktop",pageIndex:0,pageCount:4,pageWidth:500}});
+  const reset=mixedEngine.dispatch({type:"resetWheel",time:480});
+  assert(!reset.releasesPointer && reset.commands.length===0,"wheel reset must not cancel the held icon");
+  const staleEnd=mixedEngine.dispatch({type:"wheel",time:500,wheelSource:"touchpad",wheelPhase:"end"});
+  assert(staleEnd.commands.length===0,"a reset wheel's late end must not commit its old page");
+  const continued=dispatch(mixedEngine,"pointerMove",{buttons:1,time:520,x:350});
+  assert(firstCommandOfType(continued,"updateDrag"),"wheel reset must preserve pointer drag ownership");
+  mixedEngine.dispatch({type:"wheel",time:540,deltaX:120,deltaY:0,wheelSource:"touchpad",wheelPhase:"update",
+    viewport:{scope:"desktop",pageIndex:2,pageCount:4,pageWidth:500}});
+  mixedEngine.dispatch({type:"cancel",time:560});
+  assert(mixedEngine.dispatch({type:"wheel",time:580,wheelSource:"touchpad",wheelPhase:"end"}).commands.length===0,
+    "full cancellation must invalidate both pointer and wheel sessions");
 
   const cancelEngine = createLaunchpadGestureEngine();
   dispatch(cancelEngine, "pointerDown", { x: 300 });

@@ -225,7 +225,7 @@ export function resolveFolderOverlayTargets(
     wasClosing = false,
   } = options;
   const folderId = folder?.id || null;
-  const previewSlots = getFolderPreviewSlots<FolderOverlayItem>(folder ?? [], folderPageSize);
+  let previewSlots = getFolderPreviewSlots<FolderOverlayItem>(folder ?? [], folderPageSize);
   if (!folderId) {
     return {
       capturedOriginBounds: null,
@@ -251,6 +251,15 @@ export function resolveFolderOverlayTargets(
     warnIfMissing: true,
   });
   const liveFolderClientRect = liveFolderRecord;
+  // The overlay retains the old children to preserve their closing origins.
+  // Its destination is the current desktop folder, whose children may already
+  // have been removed and compacted by a committed group transfer.
+  const destinationFolder: unknown = liveFolderRecord?.meta ? Reflect.get(liveFolderRecord.meta, "item") : null;
+  if (isClosing && destinationFolder && typeof destinationFolder === "object"
+    && "id" in destinationFolder && destinationFolder.id === folderId
+    && "childPages" in destinationFolder && Array.isArray(destinationFolder.childPages)) {
+    previewSlots = getFolderPreviewSlots<FolderOverlayItem>(destinationFolder as FolderOverlayTargetFolder, folderPageSize);
+  }
   const liveFolderThumbClientRect = iconBoundsRegistry.getBounds(BOUNDS_KIND.FOLDER_THUMB, BOUNDS_VARIANT.RENDERED, folderId) || liveFolderClientRect;
   const folderClientRect = capturedOriginBounds?.iconRect || liveFolderClientRect;
   const folderThumbClientRect = capturedOriginBounds?.thumbRect || liveFolderThumbClientRect || folderClientRect;

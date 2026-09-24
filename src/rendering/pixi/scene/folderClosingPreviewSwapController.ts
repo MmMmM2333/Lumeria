@@ -325,7 +325,7 @@ export class FolderClosingPreviewSwapController<
     options?: FolderClosingPreviewSwapStartOptions,
   ): void {
     this.clear();
-    if (!targets?.length || state.folderPageIndex <= 0) return;
+    if (!targets?.length) return;
 
     const plan = makeClosingPreviewSwapPlan(targets, {
       mapClientRectToLocal: (rect) => this.layer.mapClosingTargetRectToLocal(state, rect),
@@ -428,7 +428,7 @@ export class FolderClosingPreviewSwapController<
     targets: readonly ClosingPreviewSwapTarget[],
   ): boolean {
     const active = this.activeSwap;
-    if (!active || !targets?.length || state.folderPageIndex <= 0) return false;
+    if (!active || !targets?.length) return false;
     const targetKey = makeClosingPreviewSwapTargetsKey(targets);
     if (active.targetKey === targetKey) return false;
 

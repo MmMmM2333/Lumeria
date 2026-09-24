@@ -446,4 +446,23 @@ export function runFolderOverlayRenderPlanTests(): void {
   const closingSwapTarget = requireValue(closingPlan.closingPreviewSwapTargets[0], "closing plan should contain its preview swap target");
   const closingSwapRect = requireValue(closingSwapTarget.targetStageLayoutRect, "closing preview swap target should expose a stage-layout rect");
   assert(closingSwapRect.left === 30, "preview swap should reuse stable stage layout target rects");
+  const draggingClose = makeFolderOverlayRenderPlan({
+    folderId:folder.id,folderPages:[[appA,appC]],folderPageIndex:0,visualFolderPageIndex:0,
+    geometry,localMetrics,cols:2,iconSize:56,isFolderClosing:true,
+    groupTransferOwnedItemIds:new Set([appA.id]),groupDragState:{phase:"dragging"},
+    getFolderPageRenderMode:()=>"interactive",getVisibleFolderPage:getVisibleTestFolderPage,previewSlots:[appA,appC],
+  });
+  assert(!draggingClose.entries.find(entry=>entry.item.id===appA.id)?.closingGhostInput,
+    "closing the source folder must not duplicate an icon owned by the drag layer");
+  assert(draggingClose.entries.find(entry=>entry.item.id===appC.id)?.closingGhostInput,
+    "unselected folder children must retain their closing animation");
+  const promotedClose = makeFolderOverlayRenderPlan({
+    folderId:folder.id,folderPages:[[appA],[appC]],folderPageIndex:0,visualFolderPageIndex:0,
+    geometry,localMetrics,cols:2,iconSize:56,isFolderClosing:true,
+    groupTransferOwnedItemIds:new Set([appA.id]),groupDragState:{phase:"releasing"},
+    getFolderPageRenderMode:()=>"interactive",getVisibleFolderPage:getVisibleTestFolderPage,
+    previewSlots:[appC],closeThumbRect:{height:72,left:10,top:20,width:72},
+  });
+  assert(promotedClose.closingPreviewSwapTargets.some(target=>target.item.id===appC.id),
+    "closing page zero must fill preview slots promoted from an offscreen folder page");
 }

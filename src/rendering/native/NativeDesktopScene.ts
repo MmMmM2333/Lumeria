@@ -119,9 +119,14 @@ function makeNativeFolderFrame(
   chromeInset: number,
   openingIconId:string|null,
 ): FolderOverlayFrame | null {
-  const folder = presentation?.renderedFolder;
+  if (!presentation) return null;
+  const sourceFolder = presentation.renderedFolder;
+  const folder = sourceFolder && !presentation.isClosing
+    ? (desktopFrame.viewport.activePages.flat().find(item => item?.id === sourceFolder.id && item.type === "folder") as typeof sourceFolder | undefined) ?? sourceFolder
+    : sourceFolder;
   if (!folder) return null;
-  const pages = folder.childPages;
+  const pages = presentation.folderPageIndex === folder.childPages.length
+    ? [...folder.childPages, []] : folder.childPages;
   const visibleRowCount = Math.min(layout.rows, Math.max(1, ...pages.map((page) => (
     Math.ceil(visibleItems(page).length / layout.cols) || 1
   ))));
@@ -661,6 +666,19 @@ export class NativeDesktopScene {
   getPageRefs(): unknown[] { return Array.from({ length: this.#pageRefs.size }, (_, index) => this.#pageRefs.get(index)); }
   getFolderPageRefs(): unknown[] { return Array.from({ length: this.#folderPageRefs.size }, (_, index) => this.#folderPageRefs.get(index)); }
   getFolderPanelRect() { return this.#layer.singleStageFolderLayer.panelGeometry; }
+
+  captureClosingSourcePoses(folderId: string, ids: readonly string[]) {
+    const overlay=this.#layer.singleStageFolderLayer;
+    const result=new Map<string,{rect:{left:number;top:number;width:number;height:number;right:number;bottom:number};alpha:number}>();
+    if(overlay.folderVisualSession.snapshot().closing?.folderId!==folderId)return result;
+    for(const id of ids){
+      const active=overlay.closingGhosts.activeGhostsByItemId.get(id);
+      const ghost=active?.ghost;
+      const rect=ghost?.getIconBounds(overlay.stageRect ?? {left:0,top:0});
+      if(ghost&&!ghost.destroyed&&rect)result.set(id,{rect:{...rect,right:rect.left+rect.width,bottom:rect.top+rect.height},alpha:ghost.alpha});
+    }
+    return result;
+  }
   getDesktopAlpha():number { return this.#layer.visualRoot.alpha; }
 
   getMotionSnapshot(): Readonly<{
@@ -686,6 +704,13 @@ export class NativeDesktopScene {
   }
 
   getPageWidth(scope: string, pageIndex: number, fallback = 1): number {
+    // Folder pages translate by the panel span, not the inset grid width.
+    if (scope.startsWith("folder:")) {
+      const span = this.getFolderPanelRect()?.width;
+      if (span && span > 0) return span;
+    } else if (this.#committed) {
+      return this.#committed.viewport.width;
+    }
     const element = scope.startsWith("folder:")
       ? this.#folderPageRefs.get(pageIndex)
       : this.#pageRefs.get(pageIndex);

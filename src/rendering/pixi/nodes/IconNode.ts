@@ -848,8 +848,11 @@ export class IconNode extends Container {
   setFolderSlotReleaseVisualMix(value: unknown): boolean {
     if (!this.folderSlotReleaseVisual.visible) return false;
     const mix = Math.max(0, Math.min(1, Number(value) || 0));
-    this.visualWrap.alpha = 1 - mix;
-    this.folderSlotReleaseVisual.alpha = mix;
+    // A texture may contain translucent pixels. Drawing it twice changes their
+    // coverage even when node alphas sum to one (or the source remains opaque).
+    // Geometry is already identical here: exchange the raster atomically.
+    this.visualWrap.alpha = mix < 1 ? 1 : 0;
+    this.folderSlotReleaseVisual.alpha = mix < 1 ? 0 : 1;
     return true;
   }
 

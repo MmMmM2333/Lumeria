@@ -5,6 +5,7 @@ import { createNativeStateHost } from "../application/stateHost.js";
 import { createLaunchpadPageCommands, type LaunchpadWarningDialogConfig } from "../application/launchpadPageCommands.js";
 import { createLaunchpadSelectionSession } from "../application/launchpadSelectionSession.js";
 import { planGroupTransfer } from "../domain/groupTransferPlanner.js";
+import { isInteractiveGroupTransferPhase } from "../domain/groupTransferSession.js";
 import { createProvisionalFolderRollback } from "../application/provisionalFolderRollback.js";
 import type { LaunchpadPages, ReadonlyLaunchpadPages } from "../domain/launchpadLayout.js";
 import type { createNativeLayoutState } from "./nativeStartup.js";
@@ -23,7 +24,10 @@ type Options = {
   commit(pages: LaunchpadPages): void;
   open(id: string | null): void;
   page(index: number): void;
-  folderPage(index: number): void;
+  dragPage(index: number): void;
+  resetWheelNavigation(): void;
+  isWheelNavigationActive(): boolean;
+  folderPage(index: number, options?: { allowCreate?: boolean }): void;
   confirm(config: LaunchpadWarningDialogConfig): void;
 };
 
@@ -76,7 +80,19 @@ export function createNativeEditing(options: Options) {
     finishHomeRevealSettleWindow: () => {},
     getGroupLayoutRevision: () => revision,
     getNewFolderName: () => t("launchpad.newFolder"),
-    commitPageIndex: options.page,
+    commitPageIndex: options.dragPage,
+    beforePageNavigation: source => { if (source === "edge") options.resetWheelNavigation(); },
+    isPageNavigationSettled: folderId => {
+      if (options.isWheelNavigationActive()) return false;
+      const motion = options.scene.getMotionSnapshot();
+      const target = folderId ? motion.folderPageTrackTargetX : motion.desktopPageTrackTargetX;
+      const current = folderId ? motion.folderPageTrackX : motion.desktopPageTrackX;
+      const index = folderId ? options.folder.snapshot().folderPageIndex
+        : drag.groupDragState.value?.desktopPageIndex ?? cells.pageIndex.value;
+      const span = options.scene.getPageWidth(folderId ? `folder:${folderId}` : "desktop", index, options.size().width);
+      const expected = -index * span;
+      return target !== null && current !== null && Math.abs(target - expected) < 0.5 && Math.abs(expected - current) < 0.5;
+    },
     commitFolderPageIndex: options.folderPage,
     commitOpenFolder: options.open,
     planGroupTransfer: request => planGroupTransfer({ basePages: request.basePages,
@@ -98,7 +114,7 @@ export function createNativeEditing(options: Options) {
       return true;
     },
     onGroupDragStart: payload => { if(!payload.standalone) selection.freeze("drag"); },
-    onGroupDragEnd: () => selection.unfreeze("drag"),
+    onGroupDragEnd: () => { options.resetWheelNavigation(); selection.unfreeze("drag"); },
   }, state, {
     setTimeout: schedule, clearTimeout: clear,
     requestAnimationFrame: options.frames.request, cancelAnimationFrame: options.frames.cancel,
@@ -123,6 +139,10 @@ export function createNativeEditing(options: Options) {
   });
   return {
     drag, selection, mode, alt, projectedPages,rollback,pageCommands,
+    presentationPageIndex: () => {
+      const group = drag.groupDragState.value;
+      return group && isInteractiveGroupTransferPhase(group.phase) ? group.desktopPageIndex : cells.pageIndex.value;
+    },
     commit,
     beginDrag(id: string, event: LaunchpadDragPointerEvent): boolean {
       const pages = cells.pages.value;
@@ -163,14 +183,31 @@ export function createNativeEditing(options: Options) {
     },
     createFolder(): boolean {
       const ids = [...selection.selectedIds.value];
-      const lead = ids[0];
+      const sourceFolder = options.folder.snapshot();
+      const sourcePoses = sourceFolder.isClosing && sourceFolder.renderedFolder
+        ? options.scene.captureClosingSourcePoses(sourceFolder.renderedFolder.id, ids) : undefined;
+      const openFolder = !sourceFolder.isClosing && sourceFolder.renderedFolder
+        ? layout.operations.findFolder(cells.pages.value, sourceFolder.renderedFolder.id) : null;
+      const pageIndex = openFolder?.pageIndex ?? cells.pageIndex.value;
+      const page = cells.pages.value[pageIndex] ?? [];
+      const selected = new Set(ids);
+      const anchorIndex = page.findIndex(item => item.type === "app" && selected.has(item.id));
+      const visibleChild = openFolder?.item.childPages[sourceFolder.folderPageIndex]?.find(item => item && selected.has(item.id));
+      const lead = visibleChild?.id ?? (anchorIndex >= 0 ? page[anchorIndex]!.id : ids[0]);
       if(ids.length < 2 || !lead) return false;
+      const destination = { pageIndex, index: openFolder ? openFolder.index + 1 : anchorIndex >= 0 ? anchorIndex : page.length };
       const plan = planGroupTransfer({ basePages: cells.pages.value, baseRevision: revision, currentRevision: revision,
-        selectedIds: ids, leadId: lead, intent: { type: "toolbar-folder-create", anchorId: lead },
+        selectedIds: ids, leadId: lead, intent: { type: "toolbar-folder-create", anchorId: lead, destination },
         makeFolderId: () => layout.operations.makeId("folder"), folderName: t("launchpad.newFolder"), pageSize: cells.pageSize.value, folderPageSize: cells.folderPageSize.value });
       if(plan.status !== "accepted") return false;
       return drag.startCommittedGroupTransfer({ baseRevision: revision, draggedIds: ids, leadId: lead,
-        selectionRevision: selection.revision.value, plan, commit: accepted => { commit(accepted.nextPages); selection.clear(); return true; } });
+        ...(sourcePoses ? {sourcePoses} : {}),
+        selectionRevision: selection.revision.value, plan, commit: accepted => {
+          // Source poses were captured by startCommittedGroupTransfer before
+          // closing. Keep the old panel out of the new desktop presentation.
+          if (openFolder) options.open(null);
+          commit(accepted.nextPages); selection.clear(); return true;
+        } });
     },
     dispose(): void { drag.disposeDrag(); rollback.dispose(); for(const timer of timers.values()) clearTimeout(timer); timers.clear(); },
   };

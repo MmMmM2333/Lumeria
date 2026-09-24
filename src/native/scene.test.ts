@@ -749,6 +749,9 @@ scene.commit(
   },
 );
 const scrubbedFolderMotion = scene.getMotionSnapshot();
+assert.equal(scene.getPageWidth(`folder:${folderItem.id}`,0),scene.getFolderPanelRect()!.width,
+  "wheel input must use the actual folder panel page span, not its inset grid width");
+assert.equal(scene.getPageWidth("desktop",0),1180,"desktop wheel input must use the full page track span");
 assert.ok(
   scrubbedFolderMotion.folderPageTrackX !== null && scrubbedFolderMotion.folderPageTrackX < 0,
   "the native folder scene should apply the gesture engine's live page scrub",
@@ -799,6 +802,10 @@ for (let frameIndex = 0; frameIndex < 600 && folderFlow.snapshot().openProgress 
 assert.ok(folderFlow.snapshot().openProgress >= 0.999, "the native folder opening spring should settle");
 assert.equal(folderFlow.setPageIndex(Number.NaN), false, "folder paging must reject non-finite indexes");
 assert.equal(folderFlow.setPageIndex(0.5), false, "folder paging must reject fractional indexes");
+assert.equal(folderFlow.setPageIndex(folderItem.childPages.length, {allowCreate:true}), true, "drag navigation may present one virtual page");
+assert.equal(folderFlow.snapshot().folderPageIndex, folderItem.childPages.length);
+assert.equal(folderFlow.snapshot().renderedFolder?.childPages.length, folderItem.childPages.length, "virtual navigation must not persist an empty page");
+folderFlow.setPageIndex(0);
 assert.equal(folderFlow.close(), true);
 folderFlow.notifyInternalActivity(true, folderItem.id);
 for (let frameIndex = 0; frameIndex < 600 && folderFlow.snapshot().openProgress > 0.001; frameIndex += 1) {
