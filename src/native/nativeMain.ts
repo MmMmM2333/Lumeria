@@ -19,6 +19,7 @@ const smoke = __LUMERIA_DIAGNOSTICS__ ? await import("./nativeSmokeSupport.js") 
 await runWithNativeResources(
   () => new NativeDataHost(),
   () => createNativePixiApplication({
+    hidden: true,
     // FIFO presentation supplies display pacing; do not impose a 60 Hz timer cap.
     maxFps: 0,
     presentationMode: "fifo",

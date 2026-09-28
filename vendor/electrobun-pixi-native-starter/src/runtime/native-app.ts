@@ -68,6 +68,8 @@ export type NativePresentationMode = "fifo" | "mailbox";
 export type NativeAppState = "running" | "suspended" | "recovering" | "failed" | "closing" | "closed";
 
 export interface NativePixiApplicationOptions {
+	/** Keep the native window hidden until the product explicitly reveals it. */
+	hidden?: boolean;
 	title?: string;
 	width?: number;
 	height?: number;
@@ -236,7 +238,7 @@ export async function createNativePixiApplication(
 	const startupCleanup: Array<() => void | Promise<void>> = [];
 	try {
 		await initializePlatform();
-		const window = new GpuWindow({ title: options.title ?? "PixiJS · Native WebGPU", frame: { width, height }, transparent:options.transparent??false, titleBarStyle:options.titleBarStyle??"default" });
+		const window = new GpuWindow({ title: options.title ?? "PixiJS · Native WebGPU", frame: { width, height }, transparent:options.transparent??false, titleBarStyle:options.titleBarStyle??"default", hidden: options.hidden ?? false, activate: !options.hidden });
 		startupCleanup.push(() => window.close());
 		let runtimeContext: NativeWebGpuContext = createContext(window);
 		startupCleanup.push(() => { releaseContext(runtimeContext); });

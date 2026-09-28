@@ -111,8 +111,7 @@ export async function runNativeProduct(
 ): Promise<void> {
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 app.stage.label = "launchpad-native-stage";
-// The native host creates its HWND before returning. Hide immediately while
-// loading data; retry notices explicitly reveal the window when action is needed.
+// Creation is hidden; retry notices explicitly reveal it when action is needed.
 app.window.hide();
 const resumeTiming=__LUMERIA_DIAGNOSTICS__?createNativeResumeTiming(sample=>logNativeRuntime("resume-timing",sample)):null;
 let diagnosticBackground:Partial<ReturnType<typeof backgroundConfig>>={};

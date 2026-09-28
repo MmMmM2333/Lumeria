@@ -33,6 +33,20 @@ if (!dependenciesOnly && !existsSync(adapterPath)) {
 }
 
 if (!dependenciesOnly) {
+// The native ABI supports hidden creation; GpuWindow 2.0.1 omitted the option.
+const gpuWindowPath = join(selectedDevkit, "api/sdks/main/core/GpuWindow.ts");
+let gpuWindowSource = readFileSync(gpuWindowPath, "utf8").replaceAll("\r\n", "\n");
+for (const [before, after] of [
+  ["\tactivate?: boolean;", "\thidden?: boolean;\n\tactivate?: boolean;"],
+  ["{ styleMask, titleBarStyle, transparent, activate }", "{ styleMask, titleBarStyle, transparent, activate, hidden }"],
+  ["\t\t\tactivate: activate ?? true,", "\t\t\thidden: hidden ?? false,\n\t\t\tactivate: activate ?? true,"],
+]) {
+  if (gpuWindowSource.includes(after)) continue;
+  if (checkOnly) throw new Error("GpuWindow hidden creation patch is not applied; prepare the source SDK");
+  if (!gpuWindowSource.includes(before)) throw new Error("GpuWindow creation anchor changed");
+  gpuWindowSource = gpuWindowSource.replace(before, after);
+}
+if (!checkOnly) writeFileSync(gpuWindowPath, gpuWindowSource);
 verifyBunRuntimePin(selectedDevkit, bunVersion, { apply: !checkOnly && (sdkOnly || consumerRootIndex < 0) });
 console.log(`Bun runtime pin verified: ${bunVersion}`);
 
