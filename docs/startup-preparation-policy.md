@@ -24,6 +24,8 @@ Pixi 8.20.1 的 `CanvasTextPipe` 接管新 renderer 数据时必须标记文字�
 
 `startup-phase` 记录会话、数据进程创建、GPU、目录、背景及首屏阶段。`node --import tsx scripts/benchmarkNativeStartup.ts <dev runtime目录> <标签> [布局文件]` 使用隔离布局副本，采集三次主动和一次后台启动，并通过 Python WinEvent 观察器验证原生窗口在首屏前不显示、后台启动不显示；产物写入 `artifacts/startup-*`。该测试不触发真实系统休眠或注册开机自启。
 
+首次无缓存仍需完整扫描。Windows 原生启动器在 Bun 之前启动数据服务，通过本机专用命名管道连接，避免 Bun 父进程在 `NtCreateUserProcess` 中出现的数秒阻塞。直接独立运行客户端（测试等场景）仍支持标准输入输出子进程；产品启动器创建失败会报错，不静默退回慢路径。
+
 基准脚本可追加次数参数，例如 `[布局文件] 11`，采集一次无目录缓存、十次缓存启动及一次后台启动。`launchToSceneMs` 为首屏准备日志，`launchToReadyMs` 为显示/激活和输入准备完成；后台入口对应隐藏预热完成，不等同真实系统登录。
 
 ## 为什么不固定等待

@@ -1,4 +1,5 @@
 import { NativeDataTransport } from "./nativeDataTransport.js";
+import { NativeDataPipe } from "./nativeDataPipe.js";
 import { NativeTargetCheckCache } from "./nativeTargetCheckCache.js";
 import { NATIVE_DATA_PROTOCOL_VERSION as PROTOCOL_VERSION, requireNativeRecord as requireRecord } from "./nativeDataProtocol.js";
 import { isAbsolute, dirname, join } from "node:path";
@@ -98,7 +99,7 @@ function resolveExecutable(): string {
 
 export class NativeDataHost {
   autostartAvailable = false;
-  readonly #transport: NativeDataTransport;
+  readonly #transport: NativeDataTransport | NativeDataPipe;
   readonly #catalogCache = createNativeCatalogCache(nativeRuntimePaths().data, validateCatalogResult,
     error=>console.warn("Native catalog cache unavailable", error));
   #backgroundScanning=false;
@@ -108,7 +109,10 @@ export class NativeDataHost {
   readonly #targetChecks = new NativeTargetCheckCache((targets, force) => this.#checkLaunchTargets(targets, force));
 
   constructor(executable = resolveExecutable()) {
-    this.#transport = new NativeDataTransport(executable);
+    const pipe=process.env.LUMERIA_DATA_PIPE;
+    delete process.env.LUMERIA_DATA_PIPE; // Do not pass our private connection to launched apps.
+    delete process.env.LUMERIA_DATA_PID;
+    this.#transport = pipe ? new NativeDataPipe(pipe) : new NativeDataTransport(executable);
   }
 
   async connect(): Promise<void> {

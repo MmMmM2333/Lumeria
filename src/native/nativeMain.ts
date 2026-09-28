@@ -2,6 +2,7 @@ import { Utils } from "../../vendor/electrobun-pixi-native-starter/src/platform/
 import { createNativePixiApplication } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
 import { PRODUCT } from "../platform/product.js";
 import { NativeDataHost } from "./nativeDataHost.js";
+import { NativeDataPipe } from "./nativeDataPipe.js";
 import { runWithNativeResources } from "./nativeRuntimeLifecycle.js";
 import { acquireNativeSession,type NativeSession } from "./nativeSession.js";
 import { resolveNativeMode,type NativeMode } from "./product/nativeEntryMode.js";
@@ -46,7 +47,13 @@ async function runNativeEntry(): Promise<void> {
   const start=performance.now();
   const session=await acquireNativeSession(nativeRuntimePaths(),process.env.LUMERIA_LAUNCH_ORIGIN==="login"?"login":"manual");
   logNativeRuntime("startup-phase",{phase:"session",ms:performance.now()-start});
-  if(!session){Utils.quit();return;}
+  if(!session){
+    // A second invocation only activates the existing owner. Close its unused
+    // prestarted service promptly instead of waiting for the launcher's timeout.
+    const pipe=process.env.LUMERIA_DATA_PIPE;
+    if(pipe)await new NativeDataPipe(pipe).dispose();
+    Utils.quit();return;
+  }
   try { await runNativeApplication(session); }
   finally { await session.dispose(); }
 }

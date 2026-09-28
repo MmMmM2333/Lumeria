@@ -50,7 +50,7 @@
     "devtools:cli": "node vendor/electrobun-pixi-native-starter/tools/devtools-cli.mjs",
     "benchmark:diagnostics": "node --expose-gc --import tsx scripts/benchmarkMotionDiagnostics.ts",
     "test:native-toolchain": "node --test vendor/electrobun-pixi-native-starter/tools/native-toolchain.test.mjs",
-    "test:native-data": "cargo test -p lumeria-core -p lumeria-native-data --locked && npm run native:data:build && tsx scripts/testNativeDataIntegration.ts",
+    "test:native-data": "cargo test -p lumeria-core -p lumeria-native-data --locked && npm run native:data:build && tsx scripts/testNativeDataIntegration.ts && tsx scripts/testNativeDataPipe.ts",
     "test:native-hot-corners": "cargo test -p lumeria-hot-corners --locked",
     "test:native-frame": "cargo test --manifest-path vendor/electrobun-pixi-native-starter/native/frame/Cargo.toml --locked",
     "test:context-menu": "tsx src/native/nativeTargetCheckCache.test.ts && tsx src/native/nativeContextMenu.test.ts",

@@ -206,7 +206,7 @@ pub fn run() -> Result<(), String> {
     run_with_io(stdin.lock(), stdout.lock(), &data_dir)
 }
 
-fn run_with_io(input: impl BufRead, mut output: impl Write, data_dir: &Path) -> Result<(), String> {
+pub(crate) fn run_with_io(input: impl BufRead, mut output: impl Write, data_dir: &Path) -> Result<(), String> {
     let mut state = HostState::default();
     for line in input.lines() {
         let line = line.map_err(|error| format!("Failed to read native data request: {error}"))?;
