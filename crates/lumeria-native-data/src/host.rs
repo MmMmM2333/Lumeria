@@ -25,6 +25,9 @@ const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    StartCatalogScan { version: u32, id: u64, roots: Vec<ScanRoot>, #[serde(default)] filters: ScanFilters },
+    PollCatalogScan { version: u32, id: u64 },
+    AdoptCatalog { version: u32, id: u64, apps: Vec<AppCatalogItem> },
     RevealLayout { version: u32, id: u64 },
     BackupResetLayout { version: u32, id: u64 },
     RevealPath { version: u32, id: u64, path: String, folder: bool },
@@ -96,6 +99,9 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::AdoptCatalog { id, .. }
+            | Self::StartCatalogScan { id, .. }
+            | Self::PollCatalogScan { id, .. }
             | Self::RevealLayout { id, .. }
             | Self::BackupResetLayout { id, .. }
             | Self::RevealPath { id, .. }
@@ -115,6 +121,9 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::AdoptCatalog { version, .. }
+            | Self::StartCatalogScan { version, .. }
+            | Self::PollCatalogScan { version, .. }
             | Self::RevealLayout { version, .. }
             | Self::BackupResetLayout { version, .. }
             | Self::RevealPath { version, .. }
@@ -178,8 +187,16 @@ impl Response {
 
 #[derive(Default)]
 struct HostState {
+    scan: Option<std::thread::JoinHandle<Result<Value, String>>>,
     catalog: HashMap<String, AppCatalogItem>,
     target_checker: LaunchTargetChecker,
+}
+
+impl Drop for HostState {
+    fn drop(&mut self) {
+        // Let in-progress icon writes finish before the pipe owner exits.
+        if let Some(scan) = self.scan.take() { let _ = scan.join(); }
+    }
 }
 
 pub fn run() -> Result<(), String> {
@@ -256,6 +273,8 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
         Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
             .and_then(|layout| serde_json::to_value(layout).map_err(|error| error.to_string())),
         Request::ScanApps { roots, filters, .. } => icon_cache_dir(data_dir).and_then(|icon_dir| {
+            // An explicit scan supersedes startup refresh. Serialize icon cache writes.
+            if let Some(scan) = state.scan.take() { let _ = scan.join(); }
             state.target_checker.invalidate();
             scan_apps_from_roots(&roots, &icon_dir, &filters).and_then(|result| {
                 state.catalog.clear();
@@ -265,6 +284,30 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
                 serde_json::to_value(result).map_err(|error| error.to_string())
             })
         }),
+        Request::AdoptCatalog { apps, .. } => {
+            state.target_checker.invalidate();
+            state.catalog = apps.into_iter().map(|app| (app.id.clone(), app)).collect();
+            Ok(Value::Null)
+        }
+        Request::StartCatalogScan { roots, filters, .. } => {
+            if state.scan.is_some() { Err("A background catalog scan is already running".into()) }
+            else {
+                icon_cache_dir(data_dir).and_then(|icon_dir| {
+                    let scan = std::thread::Builder::new().name("catalog-scan".into()).spawn(move || {
+                        scan_apps_from_roots(&roots, &icon_dir, &filters)
+                            .and_then(|result| serde_json::to_value(result).map_err(|error| error.to_string()))
+                    }).map_err(|error| error.to_string())?;
+                    state.scan = Some(scan);
+                    Ok(Value::Null)
+                })
+            }
+        }
+        Request::PollCatalogScan { .. } => {
+            if state.scan.as_ref().is_some_and(|scan| scan.is_finished()) {
+                state.scan.take().unwrap().join().map_err(|_| "Background catalog scan panicked".to_string()).and_then(|result| result)
+            } else if state.scan.is_some() { Ok(Value::Null) }
+            else { Err("No background catalog scan is running".into()) }
+        }
         Request::LaunchApp { app_id, elevated, .. } => {
             return match launch_app(&app_id, elevated, data_dir, state) {
                 Ok(()) => Response::success(id, Value::Null),
@@ -327,6 +370,26 @@ fn launch_app(app_id: &str, elevated: bool, data_dir: &Path, state: &HostState) 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn background_scan_keeps_protocol_responsive_and_reports_failure_once() {
+        let (send, receive) = std::sync::mpsc::channel();
+        let mut state = HostState::default();
+        state.scan = Some(std::thread::spawn(move || { receive.recv().unwrap(); Err("fixture scan failed".into()) }));
+        let dir = std::env::temp_dir();
+        let pending = handle_line(r#"{"version":1,"id":1,"operation":"pollCatalogScan"}"#, &dir, &mut state);
+        assert!(pending.ok); assert_eq!(pending.value, Some(Value::Null));
+        assert!(handle_line(r#"{"version":1,"id":2,"operation":"hello"}"#, &dir, &mut state).ok);
+        assert!(!handle_line(r#"{"version":1,"id":3,"operation":"startCatalogScan","roots":[]}"#, &dir, &mut state).ok);
+        send.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !state.scan.as_ref().unwrap().is_finished() {
+            assert!(std::time::Instant::now() < deadline); std::thread::yield_now();
+        }
+        let failed = handle_line(r#"{"version":1,"id":4,"operation":"pollCatalogScan"}"#, &dir, &mut state);
+        assert!(!failed.ok); assert_eq!(failed.error, Some(json!("fixture scan failed")));
+        assert!(state.scan.is_none()); assert!(state.catalog.is_empty());
+        assert!(!handle_line(r#"{"version":1,"id":5,"operation":"pollCatalogScan"}"#, &dir, &mut state).ok);
+    }
     #[test]
     fn backup_reset_failure_preserves_original() {
         let directory=std::env::temp_dir().join(format!("lumeria-reset-failure-{}",std::process::id()));

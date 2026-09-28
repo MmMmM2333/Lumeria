@@ -87,6 +87,8 @@ setNativeDesktopPage,
 type NativePageTurn,
 } from "../nativeStartup.js";
 import { createNativeStartupPreparation } from "../nativeStartupPreparation.js";
+import { nativeCatalogCacheKey } from "../nativeCatalogCache.js";
+import { normalizeNativeApp } from "../../domain/launchpadData.js";
 import { createLaunchpadTray } from "../nativeTray.js";
 import { createNativeWindowEffects } from "../nativeWindowEffects.js";
 import { type NativeMode } from "../product/nativeEntryMode.js";
@@ -157,6 +159,7 @@ configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
+let startupCatalogCached=false;
 try {
   await nativeData.connect();
   startupPhase("data-connect");
@@ -181,7 +184,12 @@ try {
     startupPhase("layout-read");
     layoutReadFailed=false;
     const request=makeNativeStartupScanRequest(layout);
-    catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
+    const startupScanRequest={...request,roots:layout?.settings.importState.completed?request.roots:[]};
+    const cached=nativeMode!=="smoke"&&layout?.settings.importState.completed
+      ?await nativeData.cachedCatalog(startupScanRequest.roots,request.filters):null;
+    startupCatalogCached=cached!==null;
+    catalogResult=cached??await nativeData.scanApps(startupScanRequest.roots,request.filters);
+    logNativeRuntime("startup-catalog",{cached:startupCatalogCached,apps:catalogResult.apps.length});
     startupPhase("catalog-scan");
     if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
     return layout;
@@ -201,6 +209,7 @@ setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat()
 const loginStartup=process.env.LUMERIA_LAUNCH_ORIGIN==="login";
 app.window.hide();
 let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=null;
+let catalogRefreshTimer:ReturnType<typeof setTimeout>|null=null;
 // System preferences are read before the settings controller so its initial
 // background profile matches the real appearance; the controller must not
 // observe an eager default that later changes.
@@ -1211,6 +1220,46 @@ try {
   const startupWait=startupPreparation.start();
   if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
   else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
+  if(startupCatalogCached){
+    const request=makeNativeStartupScanRequest(loadedLayout);
+    const key=nativeCatalogCacheKey(request.roots,request.filters);
+    const catalogRevision=nativeData.catalogRevision;
+    const stillCurrent=()=>{
+      if(sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
+      const current=apps.nativeIntegration.captureScanRequest();
+      return nativeCatalogCacheKey(current.roots,current.filters)===key;
+    };
+    const busy=()=>app.state!=="running"||Boolean(editing?.drag.isDragActive()||editing?.selection.isActive.value||management.modal||nativeSettings.shell||folderFlow.snapshot().renderedFolder||launchFlow?.isLaunchpadInteractionBlocked());
+    // The sidecar scans on a worker thread; launching and saving stay responsive.
+    void nativeData.refreshCatalog(request.roots,request.filters).then(result=>{
+      if(!stillCurrent())return;
+      if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));
+      const apply=()=>{
+        catalogRefreshTimer=null;if(!stillCurrent())return;
+        if(busy()){
+          catalogRefreshTimer=setTimeout(apply,200);return;
+        }
+        void nativeData.adoptCatalog(result).then(()=>{
+          if(!stillCurrent())return;
+          if(busy()){catalogRefreshTimer=setTimeout(apply,200);return;}
+          const previous=layoutState.presentation.pages.value;
+          const config=layoutState.captureConfiguration();
+          // Reconcile consumes persisted items: runtime nodes carry presentationOverrides,
+          // while the document uses overrides and also owns deferred import decisions.
+          const document=layoutState.operations.createLayoutSnapshot({...loadedLayout?.settings,...settings.persistence.capture(),...apps!.persistence.capture(),
+            pages:previous,gridRows:config.rows,gridCols:config.cols,folderRows:config.folderRows,folderCols:config.folderCols,
+            iconSize:config.iconSize,folderIconSizeMode:config.folderIconSizeMode,folderIconSize:config.folderIconSize,
+            textless:layoutSettings.isTextlessModeState.value,hiddenAppIds:[...apps!.presentation.hiddenAppIds.value]});
+          const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
+          apps!.imports.setCatalog(result.apps);
+          commitEditedPages(pages);
+          apps!.imports.registerStartup(previous);
+          logNativeRuntime("catalog-refreshed",{apps:result.apps.length});
+        }).catch(reportNativeError);
+      };
+      apply();
+    }).catch(error=>{if(stillCurrent()){logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);}});
+  }
   presentCount += 1;
   // Input/state work is now frame-coalesced. Apply the initial presentation
   // before testing its endpoint; untouched nodes can still have alpha=1.
@@ -1742,7 +1791,7 @@ try {
   if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
-  sceneUpdates.dispose();startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  sceneUpdates.dispose();if(catalogRefreshTimer)clearTimeout(catalogRefreshTimer);startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
   if(productDiagnostics){const result=await productDiagnostics.dispose();if(result.errors.length)logNativeRuntime("diagnostics-dispose-errors",result.errors);}
   unbindResumeRenderer();
   windowEffects.dispose();

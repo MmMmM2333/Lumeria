@@ -82,6 +82,16 @@ try {
   const scan = await host.scanApps([{ id: "isolated", type: "customDirectory", label: "Isolated", path: scanDirectory, enabled: true }], {});
   assert.equal(scan.apps.length, 1);
   assert.equal(scan.apps[0]!.name, "Example");
+  const roots=[{ id: "isolated", type: "customDirectory" as const, label: "Isolated", path: scanDirectory, enabled: true }];
+  assert.deepEqual(await host.cachedCatalog(roots,{}),scan,"a complete scan is reusable without scanning");
+  assert.equal(await host.cachedCatalog(roots,{keywordBlacklist:["changed"]}),null,"changed filters invalidate startup cache");
+  writeFileSync(join(scanDirectory,"New.url"),"[InternetShortcut]\r\nURL=https://example.invalid/new\r\n");
+  const refresh=host.refreshCatalog(roots,{});
+  await host.saveLayout(layout);
+  assert.deepEqual(await host.loadLayout(),layout,"background scanner leaves the data channel usable");
+  const refreshed=await refresh;assert.equal(refreshed.apps.length,2);
+  await host.adoptCatalog(refreshed);
+  assert.deepEqual(await host.cachedCatalog(roots,{}),refreshed);
   assert.deepEqual(await host.checkLaunchTargets([{ id: "missing", launchTarget: { kind: "executable", path: join(directory, "missing.exe") } }]), [{ id: "missing", status: "missing",canElevate:true,requiresAdmin:false,adminRequirementKnown:false,fileLocation:directory,locationIsFolder:true,shortcutLocation:null }]);
   const target=join(directory,"restored.exe");
   let checks=await host.checkLaunchTargets([{id:"restored",launchTarget:{kind:"executable",path:target}}]);

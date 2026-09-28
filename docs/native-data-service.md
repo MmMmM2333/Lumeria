@@ -20,6 +20,9 @@ Rust 工作区将共享 Windows/数据能力放在 `lumeria-core`，按行收发
 | `loadLayout` | — | 校验后的布局或 `null` |
 | `saveLayout` | `layout` | 校验并原子保存后返回 `null` |
 | `scanApps` | `roots`，可选 `filters` | 应用目录、排除项、警告与统计 |
+| `startCatalogScan` | `roots`，可选 `filters` | 启动一个后台扫描线程，返回 `null`；重复启动报错 |
+| `pollCatalogScan` | — | 未完成返回 `null`，完成返回扫描结果或错误并释放任务 |
+| `adoptCatalog` | `apps` | 将已校验的缓存或刷新结果用于后续启动解析，返回 `null` |
 | `launchApp` | `appId` | 成功返回 `null`；启动错误保留 `kind` 和 `detail` |
 | `checkLaunchTargets` | `targets` | 各 ID 对应的 `ok`、`missing` 或 `unknown` 状态 |
 | `loadIconChoices` | `targetPath` | 图标候选，含缓存路径与 PNG data URL |
@@ -32,9 +35,11 @@ Rust 工作区将共享 Windows/数据能力放在 `lumeria-core`，按行收发
 
 ## 数据与兼容性
 
-数据保存在 `%APPDATA%/com.lumeria.app` 下，包括 `layout.json`、`icons/` 和 `backgrounds/`。测试可用绝对路径环境变量 `LUMERIA_NATIVE_DATA_DIR` 指定隔离目录。
+数据保存在 `%APPDATA%/com.lumeria.app` 下，包括 `layout.json`、`catalog-cache.json`、`icons/` 和 `backgrounds/`。测试可用绝对路径环境变量 `LUMERIA_NATIVE_DATA_DIR` 指定隔离目录。目录缓存不是布局的替代品，损坏时重新扫描。
 
 工作区拆分没有迁移用户数据，也没有改变布局版本 2、缓存命名、启动错误类别或协议版本。TypeScript 客户端保持请求顺序，正常退出前等待未完成请求收尾。
+
+后台目录扫描在独立线程执行，轮询本身不阻塞主通道。显式扫描会等待并取代旧后台扫描，避免并发改写图标缓存；正常 EOF 退出也等待线程完成图标写入。客户端用配置键和扫描版本丢弃过期刷新，缓存与后台结果的接管不会跳过实际启动目标校验。
 
 Native 运行时声明收集以 `lumeria-native-data` 和 Live Desktop 库为入口。旧 Tauri 代码保存在历史中，不代表当前数据服务依赖 Tauri。实际依赖图可在根目录查看：
 
