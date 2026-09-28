@@ -70,6 +70,7 @@ export type NativeAppState = "running" | "suspended" | "recovering" | "failed" |
 export interface NativePixiApplicationOptions {
 	/** Keep the native window hidden until the product explicitly reveals it. */
 	hidden?: boolean;
+	onStartupPhase?(phase: string, elapsedMs: number): void;
 	title?: string;
 	width?: number;
 	height?: number;
@@ -236,8 +237,13 @@ export async function createNativePixiApplication(
 	if (!(startupPreference in gpuPowerPreferences)) { activeApplication = false; throw new RangeError("gpuPreference is invalid"); }
 
 	const startupCleanup: Array<() => void | Promise<void>> = [];
+	let phaseStarted = performance.now();
+	const startupPhase = (phase: string) => {
+		const now = performance.now(); options.onStartupPhase?.(phase, now - phaseStarted); phaseStarted = now;
+	};
 	try {
 		await initializePlatform();
+		startupPhase("platform");
 		const window = new GpuWindow({ title: options.title ?? "PixiJS · Native WebGPU", frame: { width, height }, transparent:options.transparent??false, titleBarStyle:options.titleBarStyle??"default", hidden: options.hidden ?? false, activate: !options.hidden });
 		startupCleanup.push(() => window.close());
 		let runtimeContext: NativeWebGpuContext = createContext(window);
@@ -342,9 +348,12 @@ export async function createNativePixiApplication(
 			return result;
 		};
 
+		startupPhase("window-context");
 		let { adapter, device, generation: deviceGeneration } = await createGpu(startupPreference);
+		startupPhase("gpu-device");
 		startupCleanup.push(() => { try { releaseContext(runtimeContext); } catch {} try { device.destroy(); } catch {} });
 		let renderer = await createRenderer(adapter, device);
+		startupPhase("renderer");
 		startupCleanup.push(() => { try { destroyRenderer(renderer); } catch {} });
 		const stage = new Container();
 		stage.eventMode = "static";
@@ -971,6 +980,7 @@ export async function createNativePixiApplication(
 		});
 		window.on("close", () => { void dispose(); });
 		startupCleanup.length = 0;
+		startupPhase("input-host");
 		return application;
 	} catch (error) {
 		for (const cleanup of startupCleanup.reverse()) { try { await cleanup(); } catch {} }

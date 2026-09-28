@@ -109,6 +109,8 @@ export async function runNativeProduct(
   nativeMode: NativeMode,
   smoke: typeof import("../nativeSmokeSupport.js") | null,
 ): Promise<void> {
+let startupPhaseAt=performance.now();
+const startupPhase=(phase:string)=>{const now=performance.now();logNativeRuntime("startup-phase",{phase,ms:now-startupPhaseAt});startupPhaseAt=now;};
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 app.stage.label = "launchpad-native-stage";
 // Creation is hidden; retry notices explicitly reveal it when action is needed.
@@ -157,6 +159,7 @@ let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
 try {
   await nativeData.connect();
+  startupPhase("data-connect");
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
     process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR=process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF;
     const recoverySmoke=await import("../diagnostics/nativeStartupSmoke.js");
@@ -175,9 +178,11 @@ try {
     layoutReadFailed=true;
     if(startupSmoke&&startupSmoke.shouldInjectNativeStartupLoadFailure(++loadAttempts))throw new Error("smoke: layout read temporarily unavailable");
     const layout=await nativeData.loadLayout();
+    startupPhase("layout-read");
     layoutReadFailed=false;
     const request=makeNativeStartupScanRequest(layout);
     catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
+    startupPhase("catalog-scan");
     if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
     return layout;
   },{reveal:()=>nativeData.revealLayout(),reset:()=>nativeData.backupResetLayout(),canReset:()=>layoutReadFailed});
@@ -281,6 +286,7 @@ const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
 let refreshWindowChrome=()=>{};
 const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{refreshWindowChrome();nativeSettings.redraw();app.invalidate();});
 await branding.synchronize(app.resolution);
+startupPhase("state-branding");
 const brandingTextures=branding.textures;
 const windowEffects=createNativeWindowEffects({
   apply:(material,appearance)=>app.setWindowPresentation(material,appearance),
@@ -711,8 +717,11 @@ try {
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
   windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
   await present(app, "the native host startup frame");
+  startupPhase("ui-assembly");
   await refreshBackground().catch(reportNativeError);
+  startupPhase("background");
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
+  startupPhase("icon-repository");
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
@@ -1192,6 +1201,7 @@ try {
   });
 
   await present(app, "the first LaunchPad scene frame");
+  startupPhase("scene-first-present");
   const toolbarPrepareStart=performance.now();
   selectionToolbar.prepare(app.renderer,app.contentSize.width,chromeInset(),settingsTheme());
   logNativeRuntime("selection-toolbar-prepared",{ms:performance.now()-toolbarPrepareStart});
