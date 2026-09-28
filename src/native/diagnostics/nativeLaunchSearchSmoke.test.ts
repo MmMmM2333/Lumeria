@@ -65,6 +65,7 @@ export async function runNativeSearchSmoke(
   } = context;
   await iconTextures.prepareItems(collectTextureItems(currentFrame(), getLayoutPages()));
   await present("search benchmark warmed layout");
+  await (await import("./nativeRecoverySearchSmoke.js")).runNativeRecoverySearchSmoke(context);
   await waitFor("search text session prepared before first key",()=>searchBar.input.focused && app.textInput.active);
   assert.equal(searchBar.explicitEditing,false,"ready text session must preserve result navigation mode");
   app.textInput.updateComposition("Word");

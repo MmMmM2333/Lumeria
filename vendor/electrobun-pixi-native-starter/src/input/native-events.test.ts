@@ -1,6 +1,19 @@
 import { expect, test } from "bun:test";
 import { attachNativePixiEvents, normalizeNativeWheel } from "./native-events";
 
+test("hidden recovery preserves native focus and delivers the first activation", () => {
+  const input=attachNativePixiEvents({id:1,wgpuViewId:1,on:()=>()=>{}} as any,
+    {events:{rootBoundary:{mappingState:{trackingData:{}}}}} as any,
+    {pollEvent:()=>null,initialFocused:false});
+  const focus:boolean[]=[];
+  input.onFocusChange(value=>focus.push(value));
+  expect(input.focused).toBe(false);
+  input.emitFocus(true); input.emitFocus(true);
+  expect(input.focused).toBe(true);
+  expect(focus).toEqual([true]);
+  input.destroy();
+});
+
 test("native wheel exposes browser-compatible pixel deltas without losing precision", () => {
 	expect(normalizeNativeWheel(0, 120)).toEqual({ deltaX: 0, deltaY: -100, deltaMode: 0 });
 	expect(normalizeNativeWheel(0, -120)).toEqual({ deltaX: 0, deltaY: 100, deltaMode: 0 });

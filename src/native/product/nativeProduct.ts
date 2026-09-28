@@ -641,7 +641,9 @@ const offPresented = app.on("presented", () => {
   if(session&&currentFrame.visual.appLaunchCloseSessionId===session)launchFlow?.commitAppLaunchCloseFrame(session);
 });
 let offStateChange = (): void => {};
-const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
+const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:event.error instanceof Error?{message:event.error.message,stack:event.error.stack}:String(event.error??"")});});
+const offFrameError=app.on("frameerror",event=>logNativeRuntime("frame-error",event));
+const offRecoveryPresented=app.on("recoverypresented",event=>logNativeRuntime("recovery-presented",event));
 let bindApplicationFocus = () => {};
 let cancelNativeGesture = () => {};
 let nativeInputRouter: NativeInputRouter | null = null;
@@ -1181,6 +1183,8 @@ try {
       if(focused){windowEffects.refresh();prepareSearchInput();}
       else {cancelNativeGesture();editing?.alt.handleWindowBlur();}
     });
+    searchWindowFocused=app.nativeInput.focused;
+    prepareSearchInput();
   };
   bindApplicationFocus();
   searchBar.input.on("submit", () => {
@@ -1753,7 +1757,7 @@ try {
   offBackgroundResize();
   offPresented();
   offStateChange();
-  offFatal();offRecovered();logNativeRuntime("shutdown");
+  offFatal();offRecovered();offFrameError();offRecoveryPresented();logNativeRuntime("shutdown");
   scene.destroy();
   app.stage.off("rightclick",onContext);
   management.destroy();

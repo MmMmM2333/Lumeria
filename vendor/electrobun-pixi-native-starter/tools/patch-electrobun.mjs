@@ -382,4 +382,16 @@ const pixiMjsChanged = patchPixiBindGroups("mjs", "BindGroup");
 const pixiJsChanged = patchPixiBindGroups("js", "BindGroup.BindGroup");
 const pixiChanged = pixiMjsChanged || pixiJsChanged;
 console.log(`PixiJS texture BindGroup lifecycle patch ${pixiChanged ? "applied" : "verified"}`);
+// A Text can outlive its renderer (including off-stage cached UI). Its global
+// dirty bit may be false even though this renderer has never rasterized it.
+for (const extension of ["mjs", "js"]) {
+  const path = join(dependencyRoot, "node_modules/pixi.js/lib/scene/text/canvas/CanvasTextPipe." + extension);
+  const source = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const before = '    batchableText.currentKey = "--";';
+  const after = before + '\n    text._didTextUpdate = true; // New renderer data always needs a texture.';
+  if (source.includes(after)) continue;
+  if (checkOnly) throw new Error(`PixiJS ${extension} text recovery patch is not applied`);
+  if (!source.includes(before)) throw new Error("Pixi CanvasTextPipe initialization changed");
+  writeFileSync(path, source.replace(before, after));
+}
 }

@@ -120,6 +120,8 @@ export interface NativeWindowFrame {
 type NativeInput = ReturnType<typeof attachNativePixiEvents>;
 type NativeTextInput = ReturnType<typeof createNativeTextInputSession>;
 type NativeAppEvents = {
+	frameerror: Readonly<{ message: string; stack?: string; phase: string; deviceGeneration: number; surfaceGeneration: number }>;
+	recoverypresented: NativeAppRecoveredEvent;
 	presented: NativeAppPresentedEvent;
 	resize: NativeAppResizeEvent;
 	statechange: NativeAppStateChangeEvent;
@@ -370,6 +372,9 @@ export async function createNativePixiApplication(
 		let lastFrameAt = performance.now();
 		let inputPollingEnabled = false;
 		let recoveryPromise: Promise<void> | null = null;
+		let resumeHandled = false;
+		let recoveryAwaitingPresent: NativeAppRecoveredEvent | null = null;
+		let lastFrameError: unknown;
 		let pendingRecovery: { reason: string; mode: "device" | "surface"; preference: NativeGpuPreference; automatic: boolean } | null = null;
 		const recoveryTimes: number[] = [];
 		const retiredGenerations = new Set<number>();
@@ -393,6 +398,8 @@ export async function createNativePixiApplication(
 			for (const waiter of waiters) waiter.reject(error);
 		};
 		const listeners = {
+			frameerror: new Set<(event: NativeAppEvents["frameerror"]) => void>(),
+			recoverypresented: new Set<(event: NativeAppRecoveredEvent) => void>(),
 			presented: new Set<(event: NativeAppPresentedEvent) => void>(),
 			resize: new Set<(event: NativeAppResizeEvent) => void>(),
 			statechange: new Set<(event: NativeAppStateChangeEvent) => void>(),
@@ -431,6 +438,7 @@ export async function createNativePixiApplication(
     let pendingTouchpad:import("../input/native-events").NativeHostInputEvent|null=null;
     let pendingRaw:import("../input/native-events").NativeHostInputEvent|null=null;
 		const inputHooks: NativeInputHostHooks = {
+			get initialFocused() { return nativeFrameHost.getWindowSnapshot(inputWindow).focused; },
 			route,
 			pollEvent: () => {
         pendingTouchpad??=touchpad?.poll()??null;pendingRaw??=nativeFrameHost.pollInputEvent(route);
@@ -487,9 +495,15 @@ export async function createNativePixiApplication(
 				if (event.kind === nativeInputKinds.windowMove || event.kind === nativeInputKinds.windowResize) handleWindowChange();
 				else if (event.kind === nativeInputKinds.dpiChanged) { requestWindowSync(true); syncWindow(); }
 				else if (event.kind === nativeInputKinds.displayChanged) requestWindowSync(true);
-				else if (event.kind === nativeInputKinds.minimized || event.kind === nativeInputKinds.suspend) suspendRuntime(event.kind === nativeInputKinds.minimized ? "minimized" : "system");
+				else if (event.kind === nativeInputKinds.minimized || event.kind === nativeInputKinds.suspend) {
+					if (event.kind === nativeInputKinds.suspend) resumeHandled = false;
+					suspendRuntime(event.kind === nativeInputKinds.minimized ? "minimized" : "system");
+				}
 				else if (event.kind === nativeInputKinds.restored) restoreRuntime();
-				else if (event.kind === nativeInputKinds.resume) void requestRecovery("system resume", "surface");
+				else if (event.kind === nativeInputKinds.resume && !resumeHandled) {
+					resumeHandled = true;
+					void requestRecovery("system resume", "surface");
+				}
 			});
 		};
 
@@ -565,6 +579,10 @@ export async function createNativePixiApplication(
 		const presentFailureCode = (status: Exclude<NativePresentStatus, "success" | "suboptimal"> | null) => ({ outdated: -3, timeout: -2, "surface-lost": -4, "out-of-memory": -6, "device-lost": -5, fatal: -15 }[status ?? "fatal"]);
 		const markPresented = (status: NativePresentStatus) => {
 			lastPresentedAt = performance.now(); renderCount++;
+			if (recoveryAwaitingPresent?.deviceGeneration === deviceGeneration) {
+				const recovered = recoveryAwaitingPresent; recoveryAwaitingPresent = null;
+				emit("recoverypresented", recovered);
+			}
 			try {
 				const event = Object.freeze({ frameNumber: renderCount, deviceGeneration, surfaceGeneration });
 				for (const listener of [...listeners.presented]) listener(event);
@@ -633,10 +651,13 @@ export async function createNativePixiApplication(
 					installFastPath(renderer); nativeInput = attachNativePixiEvents(window, renderer, inputHooks); bindInputObservers();
 					if (mode === "device") retireDevice(previous.device, previous.generation);
 					activePreference = preference; snapshot = nativeFrameHost.getWindowSnapshot(inputWindow); minimized = snapshot.minimized;
-					setState(minimized ? "suspended" : "running", reason); inputPollingEnabled = true; nativeInput.poll(); textInput.poll();
+					setState(minimized ? "suspended" : "running", reason);
 					lastError = null; recoveryCount++; pendingWindowSync = true; pendingBackingSync = true; lastFrameAt = performance.now();
 					recordEvent("recovered", { reason, mode, deviceGeneration, surfaceGeneration });
 					emit("recovered", { reason, mode, deviceGeneration, surfaceGeneration });
+					recoveryAwaitingPresent = { reason, mode, deviceGeneration, surfaceGeneration };
+					// Product listeners must bind to the new input before queued events are drained.
+					inputPollingEnabled = true; nativeInput.poll(); textInput.poll();
 					if (!minimized) { syncWindow(); frameScheduler?.resume(); requestFrame(); }
 					return;
 				} catch (error) {
@@ -651,17 +672,21 @@ export async function createNativePixiApplication(
 		};
 		function requestRecovery(reason: string, mode: "device" | "surface", preference = activePreference, automatic = true) {
 			if (closed || state === "closing" || state === "closed") return recoveryPromise ?? Promise.resolve();
-			if (state === "recovering") { pendingRecovery = { reason, mode, preference, automatic }; return recoveryPromise ?? Promise.resolve(); }
+			if (recoveryPromise || state === "recovering") {
+				// Keep a real device loss even if a less severe surface request follows it.
+				if (!pendingRecovery || mode === "device" || pendingRecovery.mode !== "device") pendingRecovery = { reason, mode, preference, automatic };
+				return recoveryPromise ?? Promise.resolve();
+			}
 			if (automatic) {
 				const now = Date.now(); while (recoveryTimes.length && now - recoveryTimes[0]! > 30_000) recoveryTimes.shift();
-				if (recoveryTimes.length >= 5) { fail("recovery-limit", reason); return Promise.resolve(); }
+				if (recoveryTimes.length >= 5) { fail("recovery-limit", reason, lastFrameError); return Promise.resolve(); }
 				recoveryTimes.push(now);
 			}
 			recordEvent("recovery-started", { reason, mode, preference });
 			setState("recovering", reason); frameScheduler?.suspend();
 			recoveryPromise = rebuildGpu(reason, preference, mode).finally(() => {
 				recoveryPromise = null; const next = pendingRecovery; pendingRecovery = null;
-				if (next && !closed) void requestRecovery(next.reason, next.mode, next.preference, next.automatic);
+				if (next && !closed && state !== "failed") void requestRecovery(next.reason, next.mode, next.preference, next.automatic);
 			});
 			return recoveryPromise;
 		}
@@ -735,12 +760,16 @@ export async function createNativePixiApplication(
 		const tick = () => {
 			if (closed || state !== "running" || (paused && stepFrames <= 0)) return;
 			if (framePreparation.pending) { lastFrameAt = performance.now(); return; }
+			let phase = "gpu-events";
 			try {
 				pollGpu(); if (state !== "running") return;
+				phase = "window-sync";
 				if (pendingWindowSync) syncWindow(); if (state !== "running") return;
 				const now = performance.now(); const delta = Math.max(0, now - lastFrameAt); lastFrameAt = now;
 				for (const update of [...animations]) { try { update(delta); } catch (error) { fail("animation", error instanceof Error ? error.message : String(error), error); return; } }
+				phase = "resource-preparation";
 				if (!framePreparation.prepare()) return;
+				phase = "scene-render";
 				if (rootFastPlan && stage.renderGroup?.structureDidChange) invalidateFastPath();
 				if (stage.renderGroup) updateRenderGroupTransforms(stage.renderGroup);
 				if (!rootFastPlan) {
@@ -758,7 +787,11 @@ export async function createNativePixiApplication(
 			} catch (error) {
 				const surfaceStatus = Number((error as any)?.surfaceStatus);
 				if (Number.isInteger(surfaceStatus)) handleFrameFailure({ 3: -2, 4: -3, 5: -4, 6: -6 }[surfaceStatus] ?? -5);
-				else void requestRecovery(`frame exception: ${error instanceof Error ? error.message : String(error)}`, "surface");
+				else {
+					lastFrameError = error;
+					emit("frameerror", { message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, phase, deviceGeneration, surfaceGeneration });
+					void requestRecovery(`frame exception: ${error instanceof Error ? error.message : String(error)}`, "surface");
+				}
 			}
 		};
 		frameScheduler = createFrameScheduler({ mode: "product", maxFps, frame: tick, schedule: (callback, delay) => delay > 0 ? setTimeout(callback, delay) : setImmediate(callback), cancel: (handle) => { clearTimeout(handle as any); clearImmediate(handle as any); }, clock: () => performance.now() });

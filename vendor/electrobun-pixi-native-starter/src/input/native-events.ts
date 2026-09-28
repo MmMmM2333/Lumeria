@@ -35,6 +35,7 @@ export interface NativeKeyEvent {
 }
 
 export interface NativeInputHostHooks {
+	initialFocused?: boolean;
 	setCursor?(cursor: string): void;
 	/** Return true only after the OS has granted window-level mouse capture. */
 	setPointerCapture?(captured: boolean): boolean;
@@ -315,7 +316,7 @@ export function attachNativePixiEvents(
 	const pressedKeys = new Set<string>();
 	let buttons = 0;
 	let currentModifiers = 0;
-	let focused = true;
+	let focused = hooks.initialFocused ?? true;
 	let closed = false;
 	const capturedPointers = new Set<number>();
 	const capturePaths = new Map<number, any[]>();
@@ -656,6 +657,7 @@ export function attachNativePixiEvents(
 		return () => { listeners.delete(listener); };
 	};
 	return {
+		get focused() { return focused; },
 		poll,
 		emitPointer,
 		/** Replay through the same normalizer/listeners as host events. Wheel deltas are Pixi pixels. */
