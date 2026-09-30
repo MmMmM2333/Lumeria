@@ -991,6 +991,19 @@ stage.destroy();
   assert.equal(tick,null,"a stationary open folder must release the native animation host");
   commit();await advance();
   assert.equal(tick,null,"committing unchanged folder geometry must not restart a perpetual frame loop");
+  // Resetting during an opening must release the source in the same retained
+  // scene commit. The old overlay ownership must not be copied into that frame.
+  for(const progress of [.03,.15,.6,1]){
+    presentation={renderedFolder:folder,folderPageIndex:0,isClosing:false,openProgress:progress,openProgressTarget:1,openingCancelRequest:null};
+    commit();
+    presentation=null;commit();await advance();
+    const restored=root.getChildByLabel("launchpad-item:handoff-regression",true) as Container;
+    assert.equal(restored.visible,true,`reset at ${progress} restores the source icon`);
+    assert.equal(restored.eventMode,"static");
+    assert.equal(subject.isFolderOverlayVisible(),false);
+  }
+  presentation={renderedFolder:folder,folderPageIndex:0,isClosing:false,openProgress:1,openProgressTarget:1,openingCancelRequest:null};
+  commit();await advance();
   presentation={renderedFolder:folder,folderPageIndex:0,isClosing:true,openProgress:0,openProgressTarget:0,openingCancelRequest:null};
   commit();await advance();
   const layer=root.getChildByLabel("launchpad-native-desktop") as Container & {

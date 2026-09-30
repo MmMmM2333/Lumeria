@@ -33,7 +33,7 @@ export function windowsBuildTools(project = process.cwd()) {
       if (!existsSync(output)) {
         const probe = spawnSync(zig, ["version"], { encoding: "utf8", windowsHide: true });
         if (probe.error || probe.status !== 0 || probe.stdout.trim() !== "0.16.0") throw new Error("Install Zig 0.16.0 or set LUMERIA_ZIG to its executable");
-        runWindowsBuildTool(zig, ["build-exe", product ? "product.zig" : "main.zig", "-O", "ReleaseSafe", "-target", "x86_64-windows-gnu", "-lc", ...(product ? ["-luser32", "-lshell32"] : []),
+        runWindowsBuildTool(zig, ["build-exe", product ? "product.zig" : "main.zig", "-O", "ReleaseSafe", "-target", "x86_64-windows-gnu", "-lc", "-ladvapi32", ...(product ? ["-luser32", "-lshell32"] : []),
           "--subsystem", "windows", "--cache-dir", join(cache, "zig-cache"), "--global-cache-dir", join(project, ".codex-dev/zig-global-cache"), "-femit-bin=" + output], source);
       }
       return output;

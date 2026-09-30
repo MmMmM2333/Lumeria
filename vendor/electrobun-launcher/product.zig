@@ -2,6 +2,7 @@
 //! installation, extraction and uninstall are exclusively owned by NSIS.
 const std = @import("std");
 const windows_spawn = @import("windows_spawn.zig");
+const data_service = @import("data_service.zig");
 const win = std.os.windows;
 
 const ProcessInformation = extern struct { process: win.HANDLE, thread: win.HANDLE, pid: u32, thread_id: u32 };
@@ -84,6 +85,11 @@ fn run(init: std.process.Init) !u32 {
         try std.Io.Dir.cwd().createDirPath(io, logs);
         break :blk logs;
     };
+    _ = env.swapRemove("LUMERIA_DATA_PIPE");
+    _ = env.swapRemove("LUMERIA_DATA_PID");
+    const data = if (!control) try data_service.start(allocator, env,
+        try std.fs.path.join(allocator, &.{ root, "runtime", "Resources", "app", "bun", "lumeria-native-data.exe" })) else null;
+    defer if (data) |service| service.close();
     const environment = try env.createWindowsBlock(allocator, .{});
     const command_line = try windows_spawn.commandLine(allocator, argv.items);
     const wide_command = try std.unicode.wtf8ToWtf16LeAllocZ(allocator, command_line);

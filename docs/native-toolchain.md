@@ -127,6 +127,8 @@ npm run native:release:bytecode
 
 ## 原生补丁边界
 
+启动隐藏需要 `GpuWindow` 的 `hidden` 参数投影补丁，底层 ABI 已支持该能力。已有 r3 SDK 请通过 `native:prepare:source` 重建并选择本地 SDK；不要手工修改受清单保护的缓存文件。`check:pixi-patch` 同时检查该映射与 Pixi 文字恢复补丁。
+
 DComp 合成桥接和 CopySrc surface 是固定 SDK 补丁的一部分。构建应使用匹配的源码、补丁和锁文件，不能通过手工替换缓存 DLL 跳过校验。CopySrc 按设备实际能力启用，不支持时保留回退，详见[渲染说明](rendering.md)。Live Desktop 的宿主边界见[实现说明](native-live-desktop.md)。
 
 ## 构建格式

@@ -335,6 +335,13 @@ export function runLaunchpadDataTests() {
   assert(snapshotFolder.childPages.flat().length === 2, "folder snapshots should persist canonical child pages");
   assert(!("children" in snapshotFolder), "layout snapshots should not persist a duplicate flat children representation");
   assert(!("launchArgs" in snapshotFolder.childPages.flat()[1]!), "layout snapshots should omit non-executable launch args");
+  const refreshedPages = dataHelpers.reconcileDocument(catalogApps, snapshot, snapshot.settings.hiddenAppIds).pages;
+  const refreshedSnapshot = dataHelpers.createLayoutSnapshot({ ...snapshot.settings, pages: refreshedPages });
+  const refreshedCatalog = refreshedSnapshot.pages[0]![0]!;
+  assert(refreshedCatalog.type === "catalogApp" && refreshedCatalog.overrides?.customIconPath === "C:/Icons/custom-a.png",
+    "background catalog reconciliation must preserve current presentation overrides through document serialization");
+  assert(refreshedCatalog.type === "catalogApp" && refreshedCatalog.runAsAdmin === true,
+    "background catalog reconciliation must preserve administrator preference");
 
   const issueResult = dataHelpers.reconcileDocument(
     catalogApps,

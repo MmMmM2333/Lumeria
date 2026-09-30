@@ -87,6 +87,8 @@ setNativeDesktopPage,
 type NativePageTurn,
 } from "../nativeStartup.js";
 import { createNativeStartupPreparation } from "../nativeStartupPreparation.js";
+import { nativeCatalogCacheKey } from "../nativeCatalogCache.js";
+import { normalizeNativeApp } from "../../domain/launchpadData.js";
 import { createLaunchpadTray } from "../nativeTray.js";
 import { createNativeWindowEffects } from "../nativeWindowEffects.js";
 import { type NativeMode } from "../product/nativeEntryMode.js";
@@ -109,10 +111,11 @@ export async function runNativeProduct(
   nativeMode: NativeMode,
   smoke: typeof import("../nativeSmokeSupport.js") | null,
 ): Promise<void> {
+let startupPhaseAt=performance.now();
+const startupPhase=(phase:string)=>{const now=performance.now();logNativeRuntime("startup-phase",{phase,ms:now-startupPhaseAt});startupPhaseAt=now;};
 const NATIVE_BACKGROUND = [9, 11, 20, 255] as const;
 app.stage.label = "launchpad-native-stage";
-// The native host creates its HWND before returning. Hide immediately while
-// loading data; retry notices explicitly reveal the window when action is needed.
+// Creation is hidden; retry notices explicitly reveal it when action is needed.
 app.window.hide();
 const resumeTiming=__LUMERIA_DIAGNOSTICS__?createNativeResumeTiming(sample=>logNativeRuntime("resume-timing",sample)):null;
 let diagnosticBackground:Partial<ReturnType<typeof backgroundConfig>>={};
@@ -156,8 +159,10 @@ configureNativeTextResolution(app.resolution,app.stage);
 let loadedLayout: LayoutDocument | null;
 let catalogResult!: NativeCatalogScanResult;
 let startupLoadRecovered=false;
+let startupCatalogCached=false;
 try {
   await nativeData.connect();
+  startupPhase("data-connect");
   if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF){
     process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR=process.env.LAUNCHPAD_TARGET_ACTIONS_PROOF;
     const recoverySmoke=await import("../diagnostics/nativeStartupSmoke.js");
@@ -176,9 +181,16 @@ try {
     layoutReadFailed=true;
     if(startupSmoke&&startupSmoke.shouldInjectNativeStartupLoadFailure(++loadAttempts))throw new Error("smoke: layout read temporarily unavailable");
     const layout=await nativeData.loadLayout();
+    startupPhase("layout-read");
     layoutReadFailed=false;
     const request=makeNativeStartupScanRequest(layout);
-    catalogResult=await nativeData.scanApps(layout?.settings.importState.completed?request.roots:[],request.filters);
+    const startupScanRequest={...request,roots:layout?.settings.importState.completed?request.roots:[]};
+    const cached=nativeMode!=="smoke"&&layout?.settings.importState.completed
+      ?await nativeData.cachedCatalog(startupScanRequest.roots,request.filters):null;
+    startupCatalogCached=cached!==null;
+    catalogResult=cached??await nativeData.scanApps(startupScanRequest.roots,request.filters);
+    logNativeRuntime("startup-catalog",{cached:startupCatalogCached,apps:catalogResult.apps.length});
+    startupPhase("catalog-scan");
     if(catalogResult.warnings.length||catalogResult.stats.limitReached)throw new Error(t("imports.partial"));
     return layout;
   },{reveal:()=>nativeData.revealLayout(),reset:()=>nativeData.backupResetLayout(),canReset:()=>layoutReadFailed});
@@ -197,6 +209,7 @@ setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat()
 const loginStartup=process.env.LUMERIA_LAUNCH_ORIGIN==="login";
 app.window.hide();
 let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=null;
+let catalogRefreshTimer:ReturnType<typeof setTimeout>|null=null;
 // System preferences are read before the settings controller so its initial
 // background profile matches the real appearance; the controller must not
 // observe an eager default that later changes.
@@ -282,6 +295,7 @@ const mainShortcut=createNativeShortcut(NativeGlobalShortcut,()=>{
 let refreshWindowChrome=()=>{};
 const branding=createNativeBrandingTextures(join(import.meta.dir,"branding"),()=>{refreshWindowChrome();nativeSettings.redraw();app.invalidate();});
 await branding.synchronize(app.resolution);
+startupPhase("state-branding");
 const brandingTextures=branding.textures;
 const windowEffects=createNativeWindowEffects({
   apply:(material,appearance)=>app.setWindowPresentation(material,appearance),
@@ -632,7 +646,8 @@ management.captureReturnFocus=()=>nativeSettings.shell?.captureFocus()??(()=>app
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
-  resumeTiming?.mark("presented");resumeTiming?.presented();textPrewarm.presented();
+  const visible=app.window.isVisible()&&!app.window.isMinimized();
+  if(visible)resumeTiming?.mark("presented");resumeTiming?.presented(visible);textPrewarm.presented();
   // Maximize state may settle after the resize notification. Refresh caption
   // controls against the HWND state of the frame that actually reached screen.
   windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
@@ -641,7 +656,9 @@ const offPresented = app.on("presented", () => {
   if(session&&currentFrame.visual.appLaunchCloseSessionId===session)launchFlow?.commitAppLaunchCloseFrame(session);
 });
 let offStateChange = (): void => {};
-const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:String(event.error??"")});});
+const offFatal=app.on("fatal",event=>{logNativeRuntime("fatal",{type:event.type,message:event.message,error:event.error instanceof Error?{message:event.error.message,stack:event.error.stack}:String(event.error??"")});});
+const offFrameError=app.on("frameerror",event=>logNativeRuntime("frame-error",event));
+const offRecoveryPresented=app.on("recoverypresented",event=>logNativeRuntime("recovery-presented",event));
 let bindApplicationFocus = () => {};
 let cancelNativeGesture = () => {};
 let nativeInputRouter: NativeInputRouter | null = null;
@@ -710,8 +727,11 @@ try {
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
   windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
   await present(app, "the native host startup frame");
+  startupPhase("ui-assembly");
   await refreshBackground().catch(reportNativeError);
+  startupPhase("background");
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
+  startupPhase("icon-repository");
   if (iconTextureSnapshot.pending.length !== 0) {
     throw new Error(`Native icon texture did not become ready: ${JSON.stringify(iconTextureSnapshot)}`);
   }
@@ -1009,6 +1029,7 @@ try {
     getSettingsThemePreference:()=>settings.presentation.windowEffectAppearance.value,
     getSystemAppearance:()=>systemAppearance,
     isCloseCoordinatorClosing:()=>closeCoordinator.closing,
+    isDesktopFrameVisible:()=>scene.getDesktopAlpha()>0,
     isDragActive:()=>editing?.drag.isDragActive()??false,
     isFolderRendered:()=>Boolean(folderFlow.snapshot().renderedFolder),
     log:(event,value)=>logNativeRuntime(event,value),
@@ -1181,6 +1202,8 @@ try {
       if(focused){windowEffects.refresh();prepareSearchInput();}
       else {cancelNativeGesture();editing?.alt.handleWindowBlur();}
     });
+    searchWindowFocused=app.nativeInput.focused;
+    prepareSearchInput();
   };
   bindApplicationFocus();
   searchBar.input.on("submit", () => {
@@ -1189,6 +1212,7 @@ try {
   });
 
   await present(app, "the first LaunchPad scene frame");
+  startupPhase("scene-first-present");
   const toolbarPrepareStart=performance.now();
   selectionToolbar.prepare(app.renderer,app.contentSize.width,chromeInset(),settingsTheme());
   logNativeRuntime("selection-toolbar-prepared",{ms:performance.now()-toolbarPrepareStart});
@@ -1198,6 +1222,46 @@ try {
   const startupWait=startupPreparation.start();
   if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
   else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
+  if(startupCatalogCached){
+    const request=makeNativeStartupScanRequest(loadedLayout);
+    const key=nativeCatalogCacheKey(request.roots,request.filters);
+    const catalogRevision=nativeData.catalogRevision;
+    const stillCurrent=()=>{
+      if(sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
+      const current=apps.nativeIntegration.captureScanRequest();
+      return nativeCatalogCacheKey(current.roots,current.filters)===key;
+    };
+    const busy=()=>app.state!=="running"||Boolean(editing?.drag.isDragActive()||editing?.selection.isActive.value||management.modal||nativeSettings.shell||folderFlow.snapshot().renderedFolder||launchFlow?.isLaunchpadInteractionBlocked());
+    // The sidecar scans on a worker thread; launching and saving stay responsive.
+    void nativeData.refreshCatalog(request.roots,request.filters).then(result=>{
+      if(!stillCurrent())return;
+      if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));
+      const apply=()=>{
+        catalogRefreshTimer=null;if(!stillCurrent())return;
+        if(busy()){
+          catalogRefreshTimer=setTimeout(apply,200);return;
+        }
+        void nativeData.adoptCatalog(result).then(()=>{
+          if(!stillCurrent())return;
+          if(busy()){catalogRefreshTimer=setTimeout(apply,200);return;}
+          const previous=layoutState.presentation.pages.value;
+          const config=layoutState.captureConfiguration();
+          // Reconcile consumes persisted items: runtime nodes carry presentationOverrides,
+          // while the document uses overrides and also owns deferred import decisions.
+          const document=layoutState.operations.createLayoutSnapshot({...loadedLayout?.settings,...settings.persistence.capture(),...apps!.persistence.capture(),
+            pages:previous,gridRows:config.rows,gridCols:config.cols,folderRows:config.folderRows,folderCols:config.folderCols,
+            iconSize:config.iconSize,folderIconSizeMode:config.folderIconSizeMode,folderIconSize:config.folderIconSize,
+            textless:layoutSettings.isTextlessModeState.value,hiddenAppIds:[...apps!.presentation.hiddenAppIds.value]});
+          const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
+          apps!.imports.setCatalog(result.apps);
+          commitEditedPages(pages);
+          apps!.imports.registerStartup(previous);
+          logNativeRuntime("catalog-refreshed",{apps:result.apps.length});
+        }).catch(reportNativeError);
+      };
+      apply();
+    }).catch(error=>{if(stillCurrent()){logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);}});
+  }
   presentCount += 1;
   // Input/state work is now frame-coalesced. Apply the initial presentation
   // before testing its endpoint; untouched nodes can still have alpha=1.
@@ -1729,7 +1793,7 @@ try {
   if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
-  sceneUpdates.dispose();startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  sceneUpdates.dispose();if(catalogRefreshTimer)clearTimeout(catalogRefreshTimer);startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
   if(productDiagnostics){const result=await productDiagnostics.dispose();if(result.errors.length)logNativeRuntime("diagnostics-dispose-errors",result.errors);}
   unbindResumeRenderer();
   windowEffects.dispose();
@@ -1753,7 +1817,7 @@ try {
   offBackgroundResize();
   offPresented();
   offStateChange();
-  offFatal();offRecovered();logNativeRuntime("shutdown");
+  offFatal();offRecovered();offFrameError();offRecoveryPresented();logNativeRuntime("shutdown");
   scene.destroy();
   app.stage.off("rightclick",onContext);
   management.destroy();

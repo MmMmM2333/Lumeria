@@ -4,6 +4,7 @@ const automation = @import("automation.zig");
 const linux_dependencies = @import("linux_dependencies.zig");
 const uninstall = @import("uninstall.zig");
 const windows_spawn = @import("windows_spawn.zig");
+const data_service = @import("data_service.zig");
 const launcher_pid_environment_variable = "ELECTROBUN_LAUNCHER_PID";
 const c = @cImport({
     @cInclude("signal.h");
@@ -486,6 +487,10 @@ pub fn main(init: std.process.Init) !void {
         exe_dir,
     );
     defer if (installed_channel_root) |root| arena_alloc.free(root);
+    const data = if (builtin.os.tag == .windows and main_process == .bun)
+        try data_service.start(arena_alloc, env_map, env_map.get("LAUNCHPAD_NATIVE_DATA_HOST") orelse
+            try std.fs.path.join(arena_alloc, &.{exe_dir, "..", "Resources", "app", "bun", "lumeria-native-data.exe"})) else null;
+    defer if (data) |service| service.close();
 
     // Handle platform-specific environment setup
     if (builtin.os.tag == .linux) {

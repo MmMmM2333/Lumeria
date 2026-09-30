@@ -33,6 +33,20 @@ if (!dependenciesOnly && !existsSync(adapterPath)) {
 }
 
 if (!dependenciesOnly) {
+// The native ABI supports hidden creation; GpuWindow 2.0.1 omitted the option.
+const gpuWindowPath = join(selectedDevkit, "api/sdks/main/core/GpuWindow.ts");
+let gpuWindowSource = readFileSync(gpuWindowPath, "utf8").replaceAll("\r\n", "\n");
+for (const [before, after] of [
+  ["\tactivate?: boolean;", "\thidden?: boolean;\n\tactivate?: boolean;"],
+  ["{ styleMask, titleBarStyle, transparent, activate }", "{ styleMask, titleBarStyle, transparent, activate, hidden }"],
+  ["\t\t\tactivate: activate ?? true,", "\t\t\thidden: hidden ?? false,\n\t\t\tactivate: activate ?? true,"],
+]) {
+  if (gpuWindowSource.includes(after)) continue;
+  if (checkOnly) throw new Error("GpuWindow hidden creation patch is not applied; prepare the source SDK");
+  if (!gpuWindowSource.includes(before)) throw new Error("GpuWindow creation anchor changed");
+  gpuWindowSource = gpuWindowSource.replace(before, after);
+}
+if (!checkOnly) writeFileSync(gpuWindowPath, gpuWindowSource);
 verifyBunRuntimePin(selectedDevkit, bunVersion, { apply: !checkOnly && (sdkOnly || consumerRootIndex < 0) });
 console.log(`Bun runtime pin verified: ${bunVersion}`);
 
@@ -382,4 +396,16 @@ const pixiMjsChanged = patchPixiBindGroups("mjs", "BindGroup");
 const pixiJsChanged = patchPixiBindGroups("js", "BindGroup.BindGroup");
 const pixiChanged = pixiMjsChanged || pixiJsChanged;
 console.log(`PixiJS texture BindGroup lifecycle patch ${pixiChanged ? "applied" : "verified"}`);
+// A Text can outlive its renderer (including off-stage cached UI). Its global
+// dirty bit may be false even though this renderer has never rasterized it.
+for (const extension of ["mjs", "js"]) {
+  const path = join(dependencyRoot, "node_modules/pixi.js/lib/scene/text/canvas/CanvasTextPipe." + extension);
+  const source = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const before = '    batchableText.currentKey = "--";';
+  const after = before + '\n    text._didTextUpdate = true; // New renderer data always needs a texture.';
+  if (source.includes(after)) continue;
+  if (checkOnly) throw new Error(`PixiJS ${extension} text recovery patch is not applied`);
+  if (!source.includes(before)) throw new Error("Pixi CanvasTextPipe initialization changed");
+  writeFileSync(path, source.replace(before, after));
+}
 }

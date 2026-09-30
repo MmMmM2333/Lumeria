@@ -501,7 +501,9 @@ export class NativeDesktopScene {
     );
     const folderId = folderState?.renderedFolder?.id ?? null;
     const folderSourceGhostedIds = new Set(frame.folder.folderSourceGhostedIds);
-    for (const id of this.#layer.singleStageFolderLayer.getDesktopSourceGhostedIds()) folderSourceGhostedIds.add(id);
+    // Overlay ownership is read live by DesktopLayer after updating the overlay.
+    // Copying it into the retained frame would keep a source hidden after reset
+    // releases the ownership during that same commit.
     if (folderId) folderSourceGhostedIds.add(folderId);
     const folderIsOpen = Boolean(folderState && !folderState.isFolderClosing);
     this.#pageDots.update(frame, viewport.width, viewport.height, folderIsOpen || frame.interaction.isDesktopClosing);

@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) void {
     // For production Windows builds, use GUI subsystem to hide console window
     // For dev builds (Debug mode), use default console subsystem for CLI interaction
     const is_windows = target.result.os.tag == .windows;
+    if (is_windows) exe.root_module.linkSystemLibrary("advapi32", .{});
     const is_production = optimize != .Debug;
     if (is_windows and is_production) {
         exe.subsystem = .Windows;

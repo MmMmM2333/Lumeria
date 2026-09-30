@@ -49,6 +49,7 @@ export type NativeVisibilityControllerPorts = Readonly<{
   getSettingsThemePreference: () => Parameters<typeof resolveAppearancePreference>[0];
   getSystemAppearance: () => Parameters<typeof resolveAppearancePreference>[1];
   isCloseCoordinatorClosing: () => boolean;
+  isDesktopFrameVisible: () => boolean;
   isDragActive: () => boolean;
   isFolderRendered: () => boolean;
   log: (event: string, value?: unknown) => void;
@@ -133,17 +134,37 @@ export function createNativeVisibilityController(
     if (!preserveViewOnNextShow && ports.isFolderRendered()) ports.resetFolder();
     preserveViewOnNextShow=false;
     if (ports.app.window.isMinimized()) measure("unminimize", () => ports.app.window.unminimize());
-    measure("materialSet", () => ports.windowEffects.set(ports.getSettingsMaterial(), resolveAppearancePreference(ports.getSettingsThemePreference(), ports.getSystemAppearance())));
-    measure("show", () => ports.app.window.show()); measure("activate", () => ports.app.window.activate());
-    ports.backgroundVisible(true);
-    const reveal = () => {
-      if (generation !== visibilityGeneration || ports.isCloseCoordinatorClosing()) return;
-      measure("materialRefresh", () => ports.windowEffects.refresh());
-      measure("openDesktop", () => ports.getLaunchFlow()!.openDesktop());
+    const current = () => generation === visibilityGeneration && !ports.isCloseCoordinatorClosing();
+    const showPreparedWindow = () => {
+      if (!current() || ports.app.state !== "running" || ports.app.window.isMinimized()) return;
+      measure("materialSet", () => ports.windowEffects.set(ports.getSettingsMaterial(), resolveAppearancePreference(ports.getSettingsThemePreference(), ports.getSystemAppearance())));
+      // GpuWindow.show() already activates the window. A second activation and
+      // immediate backdrop refresh delay the first visible scene unnecessarily.
+      measure("show", () => ports.app.window.show());
+      ports.backgroundVisible(true);
       ports.prepareSearchInput();
-      ports.fadeChrome([ports.desktopBackground, ports.searchBar, ports.windowChrome, ports.management,...(ports.getAdditionalChrome?.()??[])], true);
-      timing?.mark("revealRequested"); ports.setTextPrewarmRunning(true);
-      ports.requestSceneRender(); ports.log("shown", { state: ports.app.state });
+      timing?.mark("windowShown"); ports.setTextPrewarmRunning(true);
+      ports.log("shown", { state: ports.app.state });
+    };
+    const reveal = () => {
+      if (!current()) return;
+      measure("openDesktop", () => ports.getLaunchFlow()!.openDesktop());
+      // Closing leaves a transparent frame in the swap chain. Prepare a real
+      // background before exposing the window instead of fading it from zero.
+      ports.fadeChrome([ports.desktopBackground], true, true);
+      ports.fadeChrome([ports.searchBar, ports.windowChrome, ports.management,...(ports.getAdditionalChrome?.()??[])], true);
+      timing?.mark("revealRequested"); ports.requestSceneRender();
+      if (ports.app.window.isVisible()) showPreparedWindow();
+      else void (async () => {
+        // The entrance motion's initial frame has desktop alpha zero. Wait for
+        // a presented frame with actual desktop content, including resource preparation.
+        do { await ports.present("desktop reveal first visible frame"); }
+        while (current() && ports.app.state === "running" && !ports.isDesktopFrameVisible());
+        showPreparedWindow();
+      })().catch(error => {
+        if (!current()) return;
+        ports.log("show-frame-failed", error); ports.reportError(error);
+      });
     };
     if (ports.app.state === "running") reveal();
     else void ports.waitFor("window restored before reveal", () => ports.app.state === "running" && !ports.app.window.isMinimized()).then(reveal)
