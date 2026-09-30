@@ -8,6 +8,8 @@ Rust 工作区将共享 Windows/数据能力放在 `lumeria-core`，按行收发
 
 `npm run test:native-data` 运行 Rust 测试，并通过生产使用的 TypeScript 客户端调用实际 release 数据服务，验证通信与数据行为。
 
+`npm run test:data-optimization` 验证刷新调度、图标临时引用、保存去重和真实数据服务。先运行 `native:data:build`。`npm run test:native-data-icons` 在隔离 Native 窗口验证真实候选、可见项加载、滚动复用、重开、设备恢复、键盘导航和选图保存，结果与截图保存在 `artifacts/data-icons-native-*`。
+
 ## 通信协议
 
 Windows 产品和开发启动器预启动数据服务，传入 `--pipe` 与随机管道名。管道只允许所有者访问、拒绝远程客户端且只接受一个连接。Bun 从 `LUMERIA_DATA_PIPE` 连接后删除私有环境标记，避免传给用户启动的应用。启动器用 kill-on-close Job 持有数据进程；正常关闭先排空请求并断开，异常退出回收进程，未连接服务有超时。控制入口不预启动服务，二次激活已有实例会立即关闭自己的多余服务。
@@ -29,7 +31,8 @@ Windows 产品和开发启动器预启动数据服务，传入 `--pipe` 与随�
 | `adoptCatalog` | `apps` | 将已校验的缓存或刷新结果用于后续启动解析，返回 `null` |
 | `launchApp` | `appId` | 成功返回 `null`；启动错误保留 `kind` 和 `detail` |
 | `checkLaunchTargets` | `targets` | 各 ID 对应的 `ok`、`missing` 或 `unknown` 状态 |
-| `loadIconChoices` | `targetPath` | 图标候选，含缓存路径与 PNG data URL |
+| `startIconChoicesLoad` | `targetPath` | 后台提取图标候选，返回 `null`；已有任务时拒绝重复启动 |
+| `pollIconChoicesLoad` | — | 未完成返回 `null`，完成返回候选 ID／缓存路径或错误并释放任务 |
 | `cacheCustomIcon` | `dataUrl` | 以内容确定缓存标识的 PNG 结果 |
 | `cacheBackground` | `path` | 校验后的背景图片缓存结果 |
 | `wallpaper` | `rect` | 桌面壁纸缓存或 `null` |
@@ -39,11 +42,27 @@ Windows 产品和开发启动器预启动数据服务，传入 `--pipe` 与随�
 
 ## 数据与兼容性
 
-数据保存在 `%APPDATA%/com.lumeria.app` 下，包括 `layout.json`、`catalog-cache.json`、`icons/` 和 `backgrounds/`。测试可用绝对路径环境变量 `LUMERIA_NATIVE_DATA_DIR` 指定隔离目录。目录缓存不是布局的替代品，损坏时重新扫描。
+数据保存在 `%APPDATA%/com.lumeria.app` 下，包括 `layout.json`、`catalog-cache.json`、`catalog-metadata.json`、`icons/` 和 `backgrounds/`。测试可用绝对路径环境变量 `LUMERIA_NATIVE_DATA_DIR` 指定隔离目录。两份目录缓存都是派生数据，损坏时重新扫描。
 
-工作区拆分没有迁移用户数据，也没有改变布局版本 2、缓存命名、启动错误类别或协议版本。TypeScript 客户端保持请求顺序，正常退出前等待未完成请求收尾。
+布局保持版本 2，启动错误类别与协议封套保持版本 1。图标候选已迁移至成套后台操作，不再传输全量 PNG Base64；客户端和服务必须来自同一构建。旧布局中的图标路径保持有效。TypeScript 客户端保持请求顺序，正常退出先排空任务，再关闭通道。
 
-后台目录扫描在独立线程执行，轮询本身不阻塞主通道。显式扫描会等待并取代旧后台扫描，避免并发改写图标缓存；正常 EOF 退出也等待线程完成图标写入。客户端用配置键和扫描版本丢弃过期刷新，缓存与后台结果的接管不会跳过实际启动目标校验。
+产品的手动和自动扫描统一在后台线程执行，同类扫描按顺序排队；过期结果不接管。图标候选另有一个后台线程，冷提取期间仍可启动和保存。正常 EOF 等待线程完成写入。原始 `scanApps` 保留给同步服务调用，并先等待旧扫描；产品客户端使用 `startCatalogScan`／`pollCatalogScan`。
+
+## 增量复用与刷新
+
+每轮仍枚举扫描目录和 Windows AppsFolder，按现有规则完成全局来源覆盖、身份合并与筛选。快捷方式解析、Internet Shortcut URL 和 Shell 显示名称按路径、文件大小、创建／修改时间持久复用；显示名称还校验相邻 `desktop.ini`。一次扫描内共享结果，扫描结束释放线程内会话。失败结果不持久缓存，完整扫描删除未访问项，部分扫描保留未访问缓存。统计包含 `metadataCacheHits` 和 `metadataReads`。
+
+目录通知以 250 ms 合并触发刷新，配置变化重建监听；每 5 分钟重新绑定监听并枚举校准。首次缓存启动继续校准，Windows 应用、目录重命名、未出现通知以及扫描目录外的图标资源依赖由校准检查。服务复核图标来源修订与缓存文件修订。相同大小和时间元数据的内容替换不在检测范围内；这是元数据增量复用的边界。新安装应用发现有时需要等待一次校准。
+
+## 布局快照
+
+服务缓存成功校验的布局，保存后重新确认磁盘状态，并建立应用 ID 索引供启动解析。每次读取或启动先检查文件修订；外部变化重新读取与校验，连续变化重试后返回错误。损坏文件不能用旧快照假装读取成功，失败保存不会更新成功状态。前端写队列与服务跳过内容相同的成功保存，显式保存、启动前和退出的排空语义保持。
+
+## 性能与清理工具
+
+`node --import tsx scripts/benchmarkNativeData.ts <标签> [layout.json]` 只读取给定布局的扫描配置，全部写入隔离目录，记录扫描、布局和选图的耗时与响应字节。首次样本并未清空 OS 文件缓存，不能当作稳定性能保证。
+
+`node --import tsx scripts/auditNativeIconCache.ts [数据目录] [报告路径]` 只读核对当前布局、目录缓存、备份和最近 7 天文件，生成候选及重复内容统计。存在活动会话或无法读取的引用文件时需继续检查；工具不提供删除选项。
 
 Native 运行时声明收集以 `lumeria-native-data` 和 Live Desktop 库为入口。旧 Tauri 代码保存在历史中，不代表当前数据服务依赖 Tauri。实际依赖图可在根目录查看：
 

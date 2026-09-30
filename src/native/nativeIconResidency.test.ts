@@ -3,9 +3,18 @@ import { Container, Sprite, Texture, type WebGPURenderer } from "pixi.js";
 import { createResidentIconRepository } from "../rendering/native/nativeIconResidency.js";
 import { NativeRecoverableIconSource } from "../rendering/native/nativeRecoverableIconSource.js";
 import { collectDesktopPreparationItems } from "../rendering/native/nativeDesktopPreparation.js";
+import { createIconTextureRepository } from "../rendering/pixi/assets/iconTextureRepository.js";
 
 const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
 const item = (id: string) => ({ id, iconPath: `C:/icons/${id}.png` });
+{
+  let loads=0;
+  const texture=new Texture({source:new NativeRecoverableIconSource(Buffer.from("snapshot"),{width:1,height:1,pixels:new Uint8Array(4)})});
+  const repository=createIconTextureRepository({resolveSource:app=>app?.iconPath??null,temporaryRetentionMs:2,loadTexture:async()=>{loads++;return texture;}});
+  const temporary=item("idle"),release=repository.retainTemporary(temporary);
+  repository.resolve(temporary);await repository.pendingWork();release();await sleep(10);
+  assert.equal(loads,1);assert.equal(texture.destroyed,true,"last released temporary view expires and destroys its unreferenced texture");repository.dispose();
+}
 {
   const children=Array.from({length:20},(_,index)=>({...item(`child-${index}`),type:"app"}));
   const pages=[[{type:"folder",id:"folder",childPages:[children.slice(0,15),children.slice(15)]},
@@ -35,6 +44,27 @@ function harness(budget = 1024) {
     const texture = new Texture({ source }); requests[index]!.resolve(texture); return texture;
   };
   return { stage, repository, requests, complete, uploads, callbacks, host, recover() { uid++; } };
+}
+
+{
+  const h=harness(),temporary=item("dialog");
+  const releaseFirst=h.repository.retainTemporary(temporary),releaseSecond=h.repository.retainTemporary(temporary);
+  assert.equal(h.repository.resolve(temporary),null);h.repository.resolve(temporary);
+  assert.equal(h.requests.length,1,"temporary views share one in-flight decode");
+  const texture=h.complete(0);await sleep();releaseFirst();releaseSecond();
+  const releaseReopened=h.repository.retainTemporary(temporary);
+  assert.equal(h.repository.resolve(temporary),texture,"reopening reuses the idle texture");
+  assert.equal(h.requests.length,1);releaseReopened();h.repository.dispose();
+  assert.equal(texture.destroyed,true,"temporary retention ends on repository disposal");
+}
+{
+  const h=harness(),recoverable=item("restored-file");let settled=0;
+  h.repository.retainLayout([recoverable]);h.repository.resolve(recoverable,()=>{settled++;});
+  h.requests[0]!.reject(new Error("missing file fixture"));await sleep();assert.equal(h.repository.snapshot().failed.length,1);
+  const retry=h.repository.retryFailedSources();assert.equal(h.requests.length,2);
+  const texture=h.complete(1);await retry;
+  assert.equal(h.repository.resolve(recoverable),texture);assert.equal(h.repository.snapshot().failed.length,0);
+  assert.equal(settled,2,"resource restoration notifies the original failed scene observer");h.repository.dispose();
 }
 
 {

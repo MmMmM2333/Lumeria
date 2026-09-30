@@ -383,7 +383,6 @@ function validateAppIconChoice(value: unknown, index: number): AppIconChoice {
   const record = requireRecord(value, `app icon choices[${index}]`);
   requireString(record.id, `app icon choices[${index}].id`);
   requireString(record.iconPath, `app icon choices[${index}].iconPath`);
-  requireString(record.iconDataUrl, `app icon choices[${index}].iconDataUrl`);
   return record as AppIconChoice;
 }
 

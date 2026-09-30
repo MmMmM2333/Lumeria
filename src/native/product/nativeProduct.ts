@@ -88,6 +88,7 @@ type NativePageTurn,
 } from "../nativeStartup.js";
 import { createNativeStartupPreparation } from "../nativeStartupPreparation.js";
 import { nativeCatalogCacheKey } from "../nativeCatalogCache.js";
+import { createNativeCatalogRefresh } from "../nativeCatalogRefresh.js";
 import { normalizeNativeApp } from "../../domain/launchpadData.js";
 import { createLaunchpadTray } from "../nativeTray.js";
 import { createNativeWindowEffects } from "../nativeWindowEffects.js";
@@ -210,6 +211,7 @@ const loginStartup=process.env.LUMERIA_LAUNCH_ORIGIN==="login";
 app.window.hide();
 let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=null;
 let catalogRefreshTimer:ReturnType<typeof setTimeout>|null=null;
+let catalogRefresh:ReturnType<typeof createNativeCatalogRefresh<{result:NativeCatalogScanResult;revision:number}>>|null=null;
 // System preferences are read before the settings controller so its initial
 // background profile matches the real appearance; the controller must not
 // observe an eager default that later changes.
@@ -921,6 +923,7 @@ try {
     changeSearch(searchQuery,true);
     refreshTargetChecks();
     requestSceneRender();
+    catalogRefresh?.sync();
   };
   commitEditedPagesForSettings = commitEditedPages;
   editing = createNativeEditing({ layout: layoutState, scene, folder: folderFlow,
@@ -974,7 +977,7 @@ try {
   apps.imports.setCatalog(catalogResult.apps);
   if(!needsOnboarding)apps.imports.registerStartup((loadedLayout?.pages??[]) as unknown as import("../../domain/launchpadLayout.js").ReadonlyLaunchpadPages);
   appsPersistenceKey=JSON.stringify(apps.persistence.capture());
-  appDialogs=new NativeAppDialogs({apps,management,host:searchBar.host,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),pickIcon:async()=>{
+  appDialogs=new NativeAppDialogs({apps,icons:iconTextures,management,host:searchBar.host,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),pickIcon:async()=>{
     const result=await nativeHost.platform.dialogs.openFiles({allowedFileTypes:"png,jpg,jpeg,webp,bmp,gif,svg,ico",multiple:false});
     if(!result.ok){if(result.error.code==="CANCELLED")return null;throw new Error(result.error.message);}
     const path=result.value[0];return path?nativeData.cacheCustomIcon(await normalizeNativeCustomIcon(path)):null;
@@ -1222,20 +1225,21 @@ try {
   const startupWait=startupPreparation.start();
   if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
   else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
-  if(startupCatalogCached){
-    const request=makeNativeStartupScanRequest(loadedLayout);
+  catalogRefresh=createNativeCatalogRefresh({
+    request:()=>apps&&apps.persistence.capture().importState.completed?apps.nativeIntegration.captureScanRequest():null,
+    scan:async request=>{const revision=nativeData.catalogRevision;const result=await nativeData.refreshCatalog(request.roots,request.filters);return{result,revision};},
+    report:error=>{logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);},
+    apply:({result,revision:catalogRevision},request,current)=>{
     const key=nativeCatalogCacheKey(request.roots,request.filters);
-    const catalogRevision=nativeData.catalogRevision;
     const stillCurrent=()=>{
-      if(sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
-      const current=apps.nativeIntegration.captureScanRequest();
-      return nativeCatalogCacheKey(current.roots,current.filters)===key;
+      if(!current()||sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
+      const currentRequest=apps.nativeIntegration.captureScanRequest();
+      return nativeCatalogCacheKey(currentRequest.roots,currentRequest.filters)===key;
     };
     const busy=()=>app.state!=="running"||Boolean(editing?.drag.isDragActive()||editing?.selection.isActive.value||management.modal||nativeSettings.shell||folderFlow.snapshot().renderedFolder||launchFlow?.isLaunchpadInteractionBlocked());
     // The sidecar scans on a worker thread; launching and saving stay responsive.
-    void nativeData.refreshCatalog(request.roots,request.filters).then(result=>{
       if(!stillCurrent())return;
-      if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));
+      if(result.warnings.length||result.stats.limitReached){reportNativeError(new Error(t("imports.partial")));return;}
       const apply=()=>{
         catalogRefreshTimer=null;if(!stillCurrent())return;
         if(busy()){
@@ -1255,13 +1259,15 @@ try {
           const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
           apps!.imports.setCatalog(result.apps);
           commitEditedPages(pages);
+          void iconTextures.retryFailedSources().then(()=>requestSceneRender()).catch(reportNativeError);
           apps!.imports.registerStartup(previous);
           logNativeRuntime("catalog-refreshed",{apps:result.apps.length});
         }).catch(reportNativeError);
       };
       apply();
-    }).catch(error=>{if(stillCurrent()){logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);}});
-  }
+    },
+  });
+  catalogRefresh.start(startupCatalogCached);
   presentCount += 1;
   // Input/state work is now frame-coalesced. Apply the initial presentation
   // before testing its endpoint; untouched nodes can still have alpha=1.
@@ -1312,6 +1318,9 @@ try {
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_DATA_ICONS_PROOF){
+    await (await import("../diagnostics/nativeDataIconsSmoke.js")).runNativeDataIconsSmoke({app,apps:apps!,dialogs:appDialogs!,management,icons:iconTextures,directory:process.env.LAUNCHPAD_DATA_ICONS_PROOF,save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});return;
+  }
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_CONTEXT_MENU_PROOF){
     await (await import("../diagnostics/nativeContextMenuSmoke.js")).runNativeContextMenuSmoke({app,apps:apps!,editing:editing!,management,data:nativeData,
       present:name=>present(app,name),menu:contextMenu,quit:()=>closeCoordinator.requestQuit()});
@@ -1793,7 +1802,7 @@ try {
   if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
-  sceneUpdates.dispose();if(catalogRefreshTimer)clearTimeout(catalogRefreshTimer);startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  sceneUpdates.dispose();catalogRefresh?.dispose();if(catalogRefreshTimer)clearTimeout(catalogRefreshTimer);startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
   if(productDiagnostics){const result=await productDiagnostics.dispose();if(result.errors.length)logNativeRuntime("diagnostics-dispose-errors",result.errors);}
   unbindResumeRenderer();
   windowEffects.dispose();

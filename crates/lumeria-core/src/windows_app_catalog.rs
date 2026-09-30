@@ -18,6 +18,10 @@ use crate::{native_error::NativeError, windows_com::ComGuard};
 const APPS_FOLDER_PARSING_NAME: &str = "shell:AppsFolder";
 
 pub fn filesystem_display_name(path: &std::path::Path) -> Option<String> {
+    crate::catalog_metadata::cached("name", path, || filesystem_display_name_uncached(path).ok_or(())).ok()
+}
+
+fn filesystem_display_name_uncached(path: &std::path::Path) -> Option<String> {
     let _guard = ComGuard::new().ok()?;
     let name = HSTRING::from(crate::path_utils::windows_api_path(path));
     let item: IShellItem = unsafe { SHCreateItemFromParsingName(&name, None::<&IBindCtx>) }.ok()?;

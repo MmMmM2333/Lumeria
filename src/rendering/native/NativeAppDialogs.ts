@@ -12,13 +12,13 @@ import { NativeSingleLineText } from "./ui/NativeSingleLineText.js";
 import { NativeVirtualList } from "./ui/NativeVirtualList.js";
 import { createNativeSettingsInput } from "./nativeSettingsInput.js";
 import { getNativeIconTextureSource } from "./nativeIconTextureSource.js";
-import { loadNativeIconTexture } from "./nativeIconTextureLoader.js";
+import type { NativeIconRepository } from "./nativeIconResidency.js";
 import { NATIVE_UI_FONT_FAMILY } from "./nativeTypography.js";
 import { t } from "../../native/nativeLocalization.js";
 import { killMotionOf, motion } from "../pixi/animation/motionTween.js";
 import { cubicBezier } from "../pixi/animation/motionRuntime.js";
 
-type Options={apps:ReturnType<typeof createLaunchpadApps>;management:NativeManagement;host:TextInputHost;theme():NativeTheme;invalidate():void;save():Promise<void>;pickIcon():Promise<ManagedAppIcon|null>};
+type Options={apps:ReturnType<typeof createLaunchpadApps>;icons:NativeIconRepository;management:NativeManagement;host:TextInputHost;theme():NativeTheme;invalidate():void;save():Promise<void>;pickIcon():Promise<ManagedAppIcon|null>};
 export class NativeAppDialogs{
   constructor(readonly options:Options){}
   sync():void{
@@ -40,11 +40,18 @@ export class NativeAppDialogs{
   #image(parent:Container,source:string|null,glyph:string,x:number,y:number,size:number):void{
     const fallback=this.#text(glyph,Math.min(36,size*0.65));fallback.anchor.set(0.5);fallback.position.set(x+size/2,y+size/2);parent.addChild(fallback);
     if(!source)return;
-    void loadNativeIconTexture(source).then(texture=>{
-      if(parent.destroyed){texture.destroy(true);return;}
-      const sprite=new Sprite({texture,eventMode:"none"});const ratio=Math.min(size/texture.width,size/texture.height);sprite.scale.set(ratio);sprite.position.set(x+(size-sprite.width)/2,y+(size-sprite.height)/2);parent.addChild(sprite);fallback.visible=false;
-      sprite.on("destroyed",()=>texture.destroy(true));this.options.invalidate();
-    },()=>{});
+    const item={iconPath:source},release=this.options.icons.retainTemporary(item);
+    parent.on("destroyed",release);
+    const weak=new WeakRef(parent);
+    const weakFallback=new WeakRef(fallback);
+    const listenerKey=Symbol("dialog-icon");
+    const apply=()=>{
+      const current=weak.deref();if(!current||current.destroyed)return;
+      const texture=this.options.icons.resolve(item,apply,listenerKey);if(!texture)return;
+      const sprite=new Sprite({texture,eventMode:"none"});const ratio=Math.min(size/texture.width,size/texture.height);sprite.scale.set(ratio);sprite.position.set(x+(size-sprite.width)/2,y+(size-sprite.height)/2);current.addChild(sprite);const glyph=weakFallback.deref();if(glyph)glyph.visible=false;
+      this.options.invalidate();
+    };
+    apply();
   }
   #emptyPlate(width:number,height:number):Container{
     const style=nativeSettingsStyle(this.options.theme()),node=new Container({eventMode:"none"}),plate=new Graphics({eventMode:"none"});
@@ -67,7 +74,7 @@ export class NativeAppDialogs{
         let iconKey="";const image=new Container();node.addChild(image);
         node.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,54,54,8).fill(style.row),0);
         const refreshIcon=()=>{
-          const app=model.app.value,source=model.iconDataUrl.value||model.iconPath.value||(model.isIconReset.value?getNativeIconTextureSource(app?{iconDataUrl:app.iconDataUrl??null,iconPath:app.iconPath??null}:null):getNativeIconTextureSource(app));
+          const app=model.app.value,source=model.iconPath.value||model.iconDataUrl.value||(model.isIconReset.value?getNativeIconTextureSource(app?{iconDataUrl:app.iconDataUrl??null,iconPath:app.iconPath??null}:null):getNativeIconTextureSource(app));
           const key=source??model.glyph.value;if(key===iconKey)return;iconKey=key;for(const child of image.removeChildren())child.destroy({children:true});const content=new Container();image.addChild(content);this.#image(content,source,model.glyph.value,6,6,42);
         };
         refreshIcon();
@@ -110,7 +117,7 @@ export class NativeAppDialogs{
   iconChooser():void{
     const {apps,management}=this.options,model=apps.iconChooserModel,chooser=model.chooser.value;if(!chooser)return;
     management.dialog({id:"icon-chooser",title:chooser.title,subtitle:chooser.subtitle,width:560,maxHeight:720,closeLabel:t("dialogs.iconChooser.close"),onClose:()=>model.actions.close(),build:width=>{
-      const node=new Container(),controls:NativeSettingsControl[]=[],signature=JSON.stringify([model.isLoading.value,model.error.value,model.choices.value]);let y=0;
+      const node=new Container(),controls:NativeSettingsControl[]=[],choicesAtBuild=model.choices.value,loadingAtBuild=model.isLoading.value,errorAtBuild=model.error.value;let y=0;
       const title=this.#text(t("dialogs.iconChooser.embedded"),13);title.style.fontWeight="600";node.addChild(title);y+=27;
       const choices=model.choices.value;
       if(choices.length){const count=this.#text(t("dialogs.iconChooser.count",{count:choices.length}),12,true);count.anchor.x=1;count.x=width;node.addChild(count);}
@@ -133,7 +140,7 @@ export class NativeAppDialogs{
             const button=this.#button(row,rowControls,`icon-choice-${index*columns+column}`,t("dialogs.iconChooser.chooseEmbedded"),column*stride,0,tileWidth,()=>{if(choice)model.actions.choose(choice);},"list-row",tileWidth);button.caption.visible=false;button.disabled=!choice;
             const lift=(y:number)=>{killMotionOf(button);motion(button).duration(0.16).ease(cubicBezier(0.25,0.1,0.25,1)).to({y}).start();};
             button.on("pointerover",()=>lift(-1));button.on("pointerout",()=>lift(0));button.on("destroyed",()=>killMotionOf(button));
-            if(choice)this.#image(button,choice.iconDataUrl,"",(tileWidth-42)/2,(tileWidth-42)/2,42);else button.visible=false;
+            if(choice)this.#image(button,choice.iconPath||choice.iconDataUrl,"",(tileWidth-42)/2,(tileWidth-42)/2,42);else button.visible=false;
           }
           return {node:row,controls:rowControls};
         },index=>String(index),(index,part)=>index*columns+part>=choices.length);virtual.y=top;node.addChild(virtual);controls.push(...virtual.controls);y+=rows*stride+6;
@@ -143,7 +150,7 @@ export class NativeAppDialogs{
         upload.disabled=true;
         void this.options.pickIcon().then(icon=>{if(icon&&model.chooser.value===chooser)model.actions.choose({id:"local",...icon});},error=>{if(model.chooser.value===chooser)management.warning({title:t("settings.apps.icon.errorTitle"),message:String(error),intent:"error",confirmText:t("notices.acknowledge")});}).finally(()=>{if(!upload.destroyed)upload.disabled=false;});
       },"secondary",36);upload.resizeWidth(Math.max(96,Math.ceil(upload.caption.width)+28));y+=36;
-      return {node,height:y,controls,update:()=>signature!==JSON.stringify([model.isLoading.value,model.error.value,model.choices.value]),viewport:(top,height)=>virtual?.viewport(top-virtual.y,height)};
+      return {node,height:y,controls,update:()=>choicesAtBuild!==model.choices.value||loadingAtBuild!==model.isLoading.value||errorAtBuild!==model.error.value,viewport:(top,height)=>virtual?.viewport(top-virtual.y,height)};
     }});
   }
   recent():void{

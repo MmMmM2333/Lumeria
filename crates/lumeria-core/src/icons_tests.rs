@@ -272,9 +272,32 @@ fn default_and_choice_caches_follow_shortcut_resource_changes_without_overwritin
         cache_app_icon_choices(&link, &dir.0, "app").unwrap(),
         choices
     );
+    fs::write(&choices[0], "corrupt cached candidate").unwrap();
+    assert_eq!(
+        cache_app_icon_choices(&link, &dir.0, "app").unwrap(),
+        choices
+    );
+    assert_eq!(
+        fs::read(&choices[0]).unwrap(),
+        previous_choice,
+        "candidate manifest detects and repairs modified PNG data"
+    );
+    fs::remove_file(&choices[0]).unwrap();
+    assert_eq!(
+        cache_app_icon_choices(&link, &dir.0, "app").unwrap(),
+        choices
+    );
+    assert_eq!(
+        fs::read(&choices[0]).unwrap(),
+        previous_choice,
+        "missing candidate files are rebuilt without changing their content identity"
+    );
     let changed_identity =
         cache_app_icon_for_identity(&link, &dir.0, "app", "source:custom").unwrap();
-    assert_ne!(changed_identity, default);
+    assert_eq!(
+        changed_identity, default,
+        "different sources with identical PNG content share a snapshot"
+    );
     write_ico(&source, 256); // .lnk itself is unchanged
     let updated = cache_app_icon_for_identity(&link, &dir.0, "app", "source:user").unwrap();
     let updated_choices = cache_app_icon_choices(&link, &dir.0, "app").unwrap();
@@ -322,4 +345,72 @@ fn failed_output_does_not_leave_partial_cached_images_or_temporary_files() {
     fs::create_dir(&destination).unwrap();
     assert!(write_rgba_png(&destination, 1, 1, &[0, 0, 0, 255]).is_err());
     assert_eq!(fs::read_dir(&dir.0).unwrap().count(), 1);
+}
+
+#[test]
+fn content_snapshots_recover_corruption_and_keep_old_package_artwork() {
+    let dir = TestDir::new();
+    let first = dir.0.join("package-v1.json");
+    let second = dir.0.join("package-v2.json");
+    let old = cache_extracted_icon(&dir.0, &first, |path| {
+        write_rgba_png(path, 1, 1, &[255, 0, 0, 255])
+    })
+    .unwrap();
+    let duplicate = cache_extracted_icon(&dir.0, &second, |path| {
+        write_rgba_png(path, 1, 1, &[255, 0, 0, 255])
+    })
+    .unwrap();
+    assert_eq!(old, duplicate);
+    let previous = fs::read(&old).unwrap();
+    fs::write(&old, "damaged").unwrap();
+    assert_eq!(
+        cache_extracted_icon(&dir.0, &first, |path| write_rgba_png(
+            path,
+            1,
+            1,
+            &[255, 0, 0, 255]
+        ))
+        .unwrap(),
+        old
+    );
+    assert_eq!(fs::read(&old).unwrap(), previous);
+    fs::remove_file(&second).unwrap();
+    let new = cache_extracted_icon(&dir.0, &second, |path| {
+        write_rgba_png(path, 1, 1, &[0, 255, 0, 255])
+    })
+    .unwrap();
+    assert_ne!(new, old);
+    assert_eq!(fs::read(&old).unwrap(), previous);
+    assert!(fs::read_dir(&dir.0).unwrap().all(|entry| !entry
+        .unwrap()
+        .path()
+        .extension()
+        .is_some_and(|extension| extension == "tmp" || extension == "extract")));
+}
+
+#[test]
+fn concurrent_extraction_has_independent_staging_and_complete_content() {
+    let dir = TestDir::new();
+    let reference = dir.0.join("concurrent.json");
+    let barrier = std::sync::Barrier::new(2);
+    std::thread::scope(|scope| {
+        let extract = || {
+            cache_extracted_icon(&dir.0, &reference, |path| {
+                barrier.wait();
+                write_rgba_png(path, 1, 1, &[1, 2, 3, 255])
+            })
+            .unwrap()
+        };
+        let first = scope.spawn(extract);
+        let second = scope.spawn(extract);
+        let first = first.join().unwrap();
+        let second = second.join().unwrap();
+        assert_eq!(first, second);
+        assert_eq!(read_png(&first).pixels, [1, 2, 3, 255]);
+    });
+    assert!(fs::read_dir(&dir.0).unwrap().all(|entry| !entry
+        .unwrap()
+        .path()
+        .extension()
+        .is_some_and(|extension| extension == "tmp" || extension == "extract")));
 }

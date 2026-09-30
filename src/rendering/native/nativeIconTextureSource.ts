@@ -25,12 +25,12 @@ export function getNativeIconTextureSource(
   item: NativeIconTextureItem | null | undefined,
 ): string | null {
   const candidates = [
-    item?.customIconDataUrl,
     item?.customIconPath,
     item?.customIconUrl,
-    item?.iconDataUrl,
+    item?.customIconDataUrl,
     item?.iconPath,
     item?.iconUrl,
+    item?.iconDataUrl,
   ];
   return candidates.find(isNativeImageSource) || null;
 }

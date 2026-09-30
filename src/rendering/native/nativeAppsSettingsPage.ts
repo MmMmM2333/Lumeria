@@ -23,7 +23,7 @@ import { getNativeIconTextureSource } from "./nativeIconTextureSource.js";
 
 export type NativeAppsPageState={keywords:boolean;excludedQuery:string;excludedKeys:Set<string>;scrollOffsets?:Record<string,number>};
 type Options={apps:ReturnType<typeof createLaunchpadApps>;host:TextInputHost;width:number;theme:NativeTheme;state:NativeAppsPageState;
-  subPage:string|null;management:NativeManagement;icons:IconTextureRepository;invalidate():void;redraw():void;refreshSelection?():void;
+  subPage:string|null;management:NativeManagement;icons:IconTextureRepository & {retainTemporary?(item:IconTextureItem):()=>void};invalidate():void;redraw():void;refreshSelection?():void;
   navigate(page:"manager"|"excluded"):void;edit(app:ReadonlyLaunchpadApp|null):void;};
 
 /** Uses the same scan, exclusion and selection commands as the original settings page. */
@@ -108,6 +108,7 @@ export function nativeAppsSettingsPage(options:Options):NativeSettingsContent{
   };
   const appArtwork=(app:IconTextureItem & {emoji?:string},top:number)=>{
     const artwork=new Container({eventMode:"none"});node.addChild(artwork);
+    const release=options.icons.retainTemporary?.(app);if(release)artwork.on("destroyed",release);
     const icon=new Sprite({eventMode:"none"});icon.position.set(45,top+19);icon.visible=false;artwork.addChild(icon);
     const fallback=createNativeText({text:app.emoji||"▣",style:{fill:style.text,fontSize:15}});fallback.position.set(58,top+32);fallback.anchor.set(0.5);artwork.addChild(fallback);
     // Settlement listeners are removed by the repository before invocation. A

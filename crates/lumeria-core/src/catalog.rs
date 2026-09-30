@@ -109,6 +109,8 @@ pub struct ScanWarning {
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanStats {
+    pub metadata_cache_hits: usize,
+    pub metadata_reads: usize,
     pub dirs_visited: usize,
     pub entries_seen: usize,
     pub physical_apps_found: usize,
@@ -154,6 +156,7 @@ pub fn scan_apps_from_roots(
     icon_dir: &Path,
     filters: &ScanFilters,
 ) -> Result<ScanAppsResult, String> {
+    let metadata_scan = crate::catalog_metadata::MetadataScan::begin(icon_dir);
     let mut apps = Vec::new();
     let mut seen_app_user_model_ids = HashSet::new();
     let filters = NormalizedScanFilters::from(filters);
@@ -258,6 +261,7 @@ pub fn scan_apps_from_roots(
             .then_with(|| left.id.cmp(&right.id))
     });
     stats.apps_found = apps.len();
+    (stats.metadata_cache_hits, stats.metadata_reads) = metadata_scan.finish(warnings.is_empty() && !stats.limit_reached);
     Ok(ScanAppsResult {
         apps,
         excluded_apps,
@@ -416,6 +420,10 @@ fn shell_link_launch_identity(path: &Path) -> Option<String> {
 }
 
 fn read_internet_shortcut_url(path: &Path) -> Option<String> {
+    crate::catalog_metadata::cached("internet-shortcut", path, || read_internet_shortcut_url_uncached(path).ok_or(())).ok()
+}
+
+fn read_internet_shortcut_url_uncached(path: &Path) -> Option<String> {
     let bytes = fs::read(path).ok()?;
     let text = decode_shortcut_text(&bytes)?;
     text.lines().find_map(|line| {

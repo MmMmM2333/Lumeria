@@ -4,12 +4,14 @@ import type { LayoutDocument } from "../domain/layoutDocument.js";
 export function createLayoutSaveQueue(write: (document: LayoutDocument) => Promise<void>) {
   let latest: LayoutDocument | null = null;
   let pending: Promise<void> | null = null;
+  let savedSignature: string | null = null;
   const flush = (): Promise<void> => {
     if (pending) return pending;
     pending = (async () => {
       while (latest) {
         const document = latest;
-        await write(document);
+        const signature = JSON.stringify(document);
+        if(signature !== savedSignature) { await write(document); savedSignature = signature; }
         if(latest === document) latest = null;
       }
     })().finally(() => { pending = null; });

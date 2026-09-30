@@ -13,7 +13,6 @@ use lumeria_core::{
         LaunchTargetChecker, launch_app_with_mode as launch_selected_catalog_app, LaunchFailure,
         LaunchTargetCheckRequest,
     },
-    layout_store::{load_layout_from_path, save_layout_to_path},
     models::AppCatalogItem,
 };
 
@@ -25,6 +24,8 @@ const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
+    StartIconChoicesLoad { version: u32, id: u64, #[serde(rename = "targetPath")] target_path: String },
+    PollIconChoicesLoad { version: u32, id: u64 },
     StartCatalogScan { version: u32, id: u64, roots: Vec<ScanRoot>, #[serde(default)] filters: ScanFilters },
     PollCatalogScan { version: u32, id: u64 },
     AdoptCatalog { version: u32, id: u64, apps: Vec<AppCatalogItem> },
@@ -52,12 +53,6 @@ enum Request {
         version: u32,
         id: u64,
         enabled: Option<bool>,
-    },
-    LoadIconChoices {
-        version: u32,
-        id: u64,
-        #[serde(rename = "targetPath")]
-        target_path: String,
     },
     CacheCustomIcon {
         version: u32,
@@ -99,6 +94,8 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Hello { id, .. }
+            | Self::StartIconChoicesLoad { id, .. }
+            | Self::PollIconChoicesLoad { id, .. }
             | Self::AdoptCatalog { id, .. }
             | Self::StartCatalogScan { id, .. }
             | Self::PollCatalogScan { id, .. }
@@ -109,7 +106,6 @@ impl Request {
             | Self::CacheBackground { id, .. }
             | Self::Wallpaper { id, .. }
             | Self::Autostart { id, .. }
-            | Self::LoadIconChoices { id, .. }
             | Self::CacheCustomIcon { id, .. }
             | Self::SaveLayout { id, .. }
             | Self::LoadLayout { id, .. }
@@ -121,6 +117,8 @@ impl Request {
     fn version(&self) -> u32 {
         match self {
             Self::Hello { version, .. }
+            | Self::StartIconChoicesLoad { version, .. }
+            | Self::PollIconChoicesLoad { version, .. }
             | Self::AdoptCatalog { version, .. }
             | Self::StartCatalogScan { version, .. }
             | Self::PollCatalogScan { version, .. }
@@ -131,7 +129,6 @@ impl Request {
             | Self::CacheBackground { version, .. }
             | Self::Wallpaper { version, .. }
             | Self::Autostart { version, .. }
-            | Self::LoadIconChoices { version, .. }
             | Self::CacheCustomIcon { version, .. }
             | Self::SaveLayout { version, .. }
             | Self::LoadLayout { version, .. }
@@ -187,6 +184,8 @@ impl Response {
 
 #[derive(Default)]
 struct HostState {
+    icon_choices: Option<std::thread::JoinHandle<Result<Value, String>>>,
+    layout: crate::layout_cache::LayoutCache,
     scan: Option<std::thread::JoinHandle<Result<Value, String>>>,
     catalog: HashMap<String, AppCatalogItem>,
     target_checker: LaunchTargetChecker,
@@ -196,6 +195,7 @@ impl Drop for HostState {
     fn drop(&mut self) {
         // Let in-progress icon writes finish before the pipe owner exits.
         if let Some(scan) = self.scan.take() { let _ = scan.join(); }
+        if let Some(choices) = self.icon_choices.take() { let _ = choices.join(); }
     }
 }
 
@@ -244,6 +244,21 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
     }
 
     let result = match request {
+        Request::StartIconChoicesLoad { target_path, .. } => {
+            if state.icon_choices.is_some() { Err("Icon choices are already loading".into()) }
+            else { icon_cache_dir(data_dir).and_then(|dir| {
+                state.icon_choices = Some(std::thread::Builder::new().name("icon-choices".into()).spawn(move || {
+                    lumeria_core::app_icon_cache::load_app_icon_choices_from_dir(&target_path, &dir)
+                        .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string()))
+                }).map_err(|error| error.to_string())?); Ok(Value::Null)
+            }) }
+        }
+        Request::PollIconChoicesLoad { .. } => {
+            if state.icon_choices.as_ref().is_some_and(|task| task.is_finished()) {
+                state.icon_choices.take().unwrap().join().map_err(|_| "Icon choice loading panicked".to_string()).and_then(|result| result)
+            } else if state.icon_choices.is_some() { Ok(Value::Null) }
+            else { Err("No icon choices are loading".into()) }
+        }
         Request::RevealLayout { .. } => {
             let path=data_dir.join("layout.json");
             let (target,folder)=if path.exists(){(path,false)}else{(data_dir.to_path_buf(),true)};
@@ -256,11 +271,6 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
         Request::CacheBackground { path, .. } => cache_background(data_dir, &path),
         Request::Wallpaper { rect, .. } => cache_wallpaper(data_dir, rect),
         Request::Autostart { enabled, .. } => native_autostart(enabled).map(Value::Bool),
-        Request::LoadIconChoices { target_path, .. } => icon_cache_dir(data_dir)
-            .and_then(|dir| {
-                lumeria_core::app_icon_cache::load_app_icon_choices_from_dir(&target_path, &dir)
-            })
-            .and_then(|choices| serde_json::to_value(choices).map_err(|error| error.to_string())),
         Request::CacheCustomIcon { data_url, .. } => icon_cache_dir(data_dir)
             .and_then(|dir| lumeria_core::app_icon_cache::cache_custom_icon_to_dir(&data_url, &dir))
             .and_then(|icon| serde_json::to_value(icon).map_err(|error| error.to_string())),
@@ -268,9 +278,9 @@ fn handle_line(line: &str, data_dir: &Path, state: &mut HostState) -> Response {
             json!({ "protocolVersion": PROTOCOL_VERSION, "autostartAvailable": native_autostart_available() }),
         ),
         Request::SaveLayout { layout, .. } => {
-            save_layout_to_path(&data_dir.join("layout.json"), &layout).map(|()| Value::Null)
+            state.layout.save(&data_dir.join("layout.json"), &layout).map(|()| Value::Null)
         }
-        Request::LoadLayout { .. } => load_layout_from_path(&data_dir.join("layout.json"))
+        Request::LoadLayout { .. } => state.layout.load(&data_dir.join("layout.json"))
             .and_then(|layout| serde_json::to_value(layout).map_err(|error| error.to_string())),
         Request::ScanApps { roots, filters, .. } => icon_cache_dir(data_dir).and_then(|icon_dir| {
             // An explicit scan supersedes startup refresh. Serialize icon cache writes.
@@ -358,18 +368,38 @@ fn cache_wallpaper(_data_dir: &Path, _rect: [i32; 4]) -> Result<Value, String> {
     Err("Wallpaper is unavailable on this platform".into())
 }
 
-fn launch_app(app_id: &str, elevated: bool, data_dir: &Path, state: &HostState) -> Result<(), LaunchFailure> {
+fn launch_app(app_id: &str, elevated: bool, data_dir: &Path, state: &mut HostState) -> Result<(), LaunchFailure> {
     let app_id = lumeria_core::launch::validate_launch_app_id(app_id)?;
     let catalog_app = state.catalog.get(app_id).cloned();
-    let saved_layout = load_layout_from_path(&data_dir.join("layout.json"))
+    let saved_layout = state.layout.load(&data_dir.join("layout.json"))
         .map_err(LaunchFailure::layout_read_failed)?;
-    launch_selected_catalog_app(app_id, catalog_app, saved_layout.as_ref(), elevated, || {
+    // The index points only to validated saved items. Settings still supply the
+    // existing saved-root fallback when the catalog does not contain this ID.
+    let indexed_layout = saved_layout.as_ref().map(|layout| json!({
+        "settings": layout["settings"], "pages": [state.layout.items.get(app_id).into_iter().collect::<Vec<_>>()]
+    }));
+    launch_selected_catalog_app(app_id, catalog_app, indexed_layout.as_ref(), elevated, || {
         icon_cache_dir(data_dir)
     })
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn icon_worker_leaves_protocol_responsive_and_releases_failed_task() {
+        let (send,receive)=std::sync::mpsc::channel();let mut state=HostState::default();
+        state.icon_choices=Some(std::thread::spawn(move||{receive.recv().unwrap();Err("choice fixture failed".into())}));
+        let dir=std::env::temp_dir();
+        assert_eq!(handle_line(r#"{"version":1,"id":1,"operation":"pollIconChoicesLoad"}"#,&dir,&mut state).value,Some(Value::Null));
+        assert!(handle_line(r#"{"version":1,"id":2,"operation":"hello"}"#,&dir,&mut state).ok);
+        assert!(!handle_line(r#"{"version":1,"id":3,"operation":"startIconChoicesLoad","targetPath":""}"#,&dir,&mut state).ok);
+        send.send(()).unwrap();
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(2);
+        while !state.icon_choices.as_ref().unwrap().is_finished(){assert!(std::time::Instant::now()<deadline);std::thread::yield_now();}
+        let response=handle_line(r#"{"version":1,"id":4,"operation":"pollIconChoicesLoad"}"#,&dir,&mut state);
+        assert_eq!(response.error,Some(json!("choice fixture failed")));assert!(state.icon_choices.is_none());
+    }
+    use lumeria_core::layout_store::load_layout_from_path;
     #[test]
     fn background_scan_keeps_protocol_responsive_and_reports_failure_once() {
         let (send, receive) = std::sync::mpsc::channel();
@@ -410,7 +440,7 @@ mod tests {
         let dir = env::temp_dir().join(format!("lumeria-native-background-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let image = dir.join("source.png");
-        fs::write(&image,lumeria_core::encoding::decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1sAAAAASUVORK5CYII=").unwrap()).unwrap();
+        fs::write(&image,lumeria_core::encoding::decode_base64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==").unwrap()).unwrap();
         let value = cache_background(&dir, image.to_str().unwrap()).unwrap();
         let cached = PathBuf::from(value["imagePath"].as_str().unwrap());
         assert!(cached.starts_with(dir.join("backgrounds")));
@@ -699,7 +729,7 @@ mod tests {
             &mut state,
         );
         assert!(!invalid.ok);
-        let request = json!({"version":1,"id":2,"operation":"cacheCustomIcon","dataUrl":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1sAAAAASUVORK5CYII="});
+        let request = json!({"version":1,"id":2,"operation":"cacheCustomIcon","dataUrl":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="});
         let response = handle_line(&request.to_string(), &data_dir, &mut state);
         assert!(response.ok, "{:?}", response.error);
         let value = response.value.unwrap();

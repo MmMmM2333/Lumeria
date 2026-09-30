@@ -2,6 +2,8 @@ pub mod app_icon_cache;
 pub mod autostart;
 pub mod background;
 pub mod catalog;
+mod catalog_metadata;
+pub mod file_cache;
 pub mod encoding;
 pub mod icons;
 pub mod launch;

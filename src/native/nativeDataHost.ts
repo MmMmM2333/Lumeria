@@ -56,6 +56,9 @@ function validateCatalogResult(value: unknown): NativeCatalogScanResult {
       throw new TypeError(`scanApps result.stats.${field} must be a non-negative safe integer`);
     }
   }
+  for(const field of ["metadataCacheHits","metadataReads"]) {
+    if(stats[field]!==undefined&&(!Number.isSafeInteger(stats[field])||Number(stats[field])<0))throw new TypeError(`Invalid scan metric ${field}`);
+  }
   if (typeof stats.limitReached !== "boolean") {
     throw new TypeError("scanApps result.stats.limitReached must be a boolean");
   }
@@ -102,7 +105,8 @@ export class NativeDataHost {
   readonly #transport: NativeDataTransport | NativeDataPipe;
   readonly #catalogCache = createNativeCatalogCache(nativeRuntimePaths().data, validateCatalogResult,
     error=>console.warn("Native catalog cache unavailable", error));
-  #backgroundScanning=false;
+  #catalogScanTail:Promise<void>=Promise.resolve();
+  #iconChoiceTail:Promise<void>=Promise.resolve();
   #disposed=false;
   #catalogRevision=0;
   get catalogRevision():number{return this.#catalogRevision;}
@@ -139,12 +143,23 @@ export class NativeDataHost {
     await this.#transport.request("saveLayout", { layout: assertLayoutDocument(layout) });
   }
   async loadIconChoices(targetPath:string):Promise<readonly AppIconChoice[]> {
-    const result=await this.#transport.request("loadIconChoices",{targetPath});
+    const task=this.#iconChoiceTail.then(async()=>{
+      if(this.#disposed)throw new Error("Native data host disposed before loading icon choices");
+      await this.#transport.request("startIconChoicesLoad",{targetPath});
+      while(!this.#disposed){
+        const result=await this.#transport.request("pollIconChoicesLoad");
+        if(result!==null)return result;
+        await new Promise(resolve=>setTimeout(resolve,25));
+      }
+      throw new Error("Native data host disposed while loading icon choices");
+    });
+    this.#iconChoiceTail=task.then(()=>{},()=>{});
+    const result=await task;
     if(!Array.isArray(result))throw new TypeError("Native icon choices must be an array");
     return result.map(value=>{
       const entry=requireRecord(value,"icon choice");
-      if(typeof entry.id!=="string"||!entry.id)throw new TypeError("Native icon choice must have an id");
-      return {id:entry.id,...validateCachedIcon(entry)};
+      if(typeof entry.id!=="string"||!entry.id||typeof entry.iconPath!=="string"||!isAbsolute(entry.iconPath))throw new TypeError("Native icon choice must have an id and absolute path");
+      return {id:entry.id,iconPath:entry.iconPath};
     });
   }
   async cacheCustomIcon(dataUrl:string):Promise<CachedCustomIconResult> {
@@ -170,10 +185,11 @@ export class NativeDataHost {
     roots.forEach((root, index) => assertCatalogScanRoot(root, `scanApps roots[${index}]`));
     assertCatalogScanFilters(filters);
     this.#catalogRevision++;
+    const revision=this.#catalogRevision;
     this.#targetChecks.clear();
     try {
-      const result=validateCatalogResult(await this.#transport.request("scanApps", { roots, filters }));
-      await this.#catalogCache.save(nativeCatalogCacheKey(roots,filters),result);
+      const result=await this.refreshCatalog(roots,filters);
+      if(revision===this.#catalogRevision)await this.adoptCatalog(result);
       return result;
     }
     finally { this.#targetChecks.clear(); }
@@ -188,10 +204,9 @@ export class NativeDataHost {
 
   async refreshCatalog(roots:readonly CatalogScanRoot[],filters:CatalogScanFilters):Promise<NativeCatalogScanResult>{
     roots.forEach((root,index)=>assertCatalogScanRoot(root,`background catalog roots[${index}]`));assertCatalogScanFilters(filters);
-    if(this.#backgroundScanning)throw new Error("Background catalog scan is already running");
-    this.#backgroundScanning=true;
     const revision=this.#catalogRevision;
-    try{
+    const task=this.#catalogScanTail.then(async()=>{
+      if(this.#disposed)throw new Error("Native data host disposed before catalog scan");
       await this.#transport.request("startCatalogScan",{roots,filters});
       while(!this.#disposed){
         const value=await this.#transport.request("pollCatalogScan");
@@ -203,7 +218,9 @@ export class NativeDataHost {
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       throw new Error("Native data host disposed during background scan");
-    }finally{this.#backgroundScanning=false;}
+    });
+    this.#catalogScanTail=task.then(()=>{},()=>{});
+    return task;
   }
 
   async adoptCatalog(result:NativeCatalogScanResult):Promise<void>{
@@ -240,6 +257,6 @@ export class NativeDataHost {
   }
 
   async dispose(): Promise<void> {
-    this.#disposed=true;this.#targetChecks.clear();await this.#transport.dispose();
+    this.#disposed=true;this.#targetChecks.clear();await Promise.all([this.#catalogScanTail,this.#iconChoiceTail]);await this.#transport.dispose();
   }
 }

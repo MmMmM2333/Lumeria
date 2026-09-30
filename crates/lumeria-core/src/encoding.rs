@@ -117,8 +117,9 @@ pub(crate) fn cache_content_addressed(
 ) -> Result<std::path::PathBuf, CacheContentAddressedError> {
     let file_name = format!("{prefix}-{}.{ext}", short_blake3_hex(bytes));
     let path = dir.join(file_name);
-    if !path.exists() {
-        std::fs::write(&path, bytes).map_err(|source| CacheContentAddressedError {
+    if !(std::fs::metadata(&path).is_ok_and(|meta|meta.len()==bytes.len() as u64)
+        &&std::fs::read(&path).is_ok_and(|existing| existing == bytes)) {
+        crate::file_cache::write_cache_atomic(&path, bytes).map_err(|source| CacheContentAddressedError {
             path: path.clone(),
             source,
         })?;

@@ -17,5 +17,6 @@ assert.equal(
   "C:\\Icons\\custom.png",
 );
 assert.equal(getNativeIconTextureSource({ iconUrl: "https://example.com/app.png" }), null);
+assert.equal(getNativeIconTextureSource({customIconPath:"C:/icons/icon-content-one.png",customIconDataUrl:"data:image/png;base64,one"}),"C:/icons/icon-content-one.png","cached content paths share one texture identity across upload and restart");
 
 console.log("Native icon texture source tests passed");
