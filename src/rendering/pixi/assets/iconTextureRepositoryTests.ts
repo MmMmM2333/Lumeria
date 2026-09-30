@@ -64,6 +64,18 @@ async function flushPromises() {
 }
 
 export async function runIconTextureRepositoryTests() {
+  {
+    let loads = 0;
+    const texture = makeTexture(808);
+    const repository = createIconTextureRepository({ resolveSource: item => item?.iconPath ?? null,
+      temporaryRetentionMs: 0, scheduleAfterFrame: callback => callback(), loadTexture: async () => { loads++; return texture; } });
+    const temporary = { id: "idle", iconPath: "C:/icons/idle.png" }, release = repository.retainTemporary(temporary);
+    repository.resolve(temporary); await repository.pendingWork(); release();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert(loads === 1, "temporary ownership starts only one decode");
+    assert(texture.destroyed, "last released temporary view expires and destroys its unreferenced texture");
+    repository.dispose();
+  }
   function assert(condition: unknown, message: string): void {
     if (!condition) throw new Error(`[Pixi icon texture repository test failed] ${message}`);
   }

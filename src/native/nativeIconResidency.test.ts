@@ -3,18 +3,9 @@ import { Container, Sprite, Texture, type WebGPURenderer } from "pixi.js";
 import { createResidentIconRepository } from "../rendering/native/nativeIconResidency.js";
 import { NativeRecoverableIconSource } from "../rendering/native/nativeRecoverableIconSource.js";
 import { collectDesktopPreparationItems } from "../rendering/native/nativeDesktopPreparation.js";
-import { createIconTextureRepository } from "../rendering/pixi/assets/iconTextureRepository.js";
 
 const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
 const item = (id: string) => ({ id, iconPath: `C:/icons/${id}.png` });
-{
-  let loads=0;
-  const texture=new Texture({source:new NativeRecoverableIconSource(Buffer.from("snapshot"),{width:1,height:1,pixels:new Uint8Array(4)})});
-  const repository=createIconTextureRepository({resolveSource:app=>app?.iconPath??null,temporaryRetentionMs:2,loadTexture:async()=>{loads++;return texture;}});
-  const temporary=item("idle"),release=repository.retainTemporary(temporary);
-  repository.resolve(temporary);await repository.pendingWork();release();await sleep(10);
-  assert.equal(loads,1);assert.equal(texture.destroyed,true,"last released temporary view expires and destroys its unreferenced texture");repository.dispose();
-}
 {
   const children=Array.from({length:20},(_,index)=>({...item(`child-${index}`),type:"app"}));
   const pages=[[{type:"folder",id:"folder",childPages:[children.slice(0,15),children.slice(15)]},

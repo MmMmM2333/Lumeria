@@ -95,6 +95,17 @@ try {
   const roots=[{ id: "isolated", type: "customDirectory" as const, label: "Isolated", path: scanDirectory, enabled: true }];
   assert.deepEqual(await host.cachedCatalog(roots,{}),scan,"a complete scan is reusable without scanning");
   assert.equal(await host.cachedCatalog(roots,{keywordBlacklist:["changed"]}),null,"changed filters invalidate startup cache");
+  const completedScans:string[]=[];
+  const offCompleted=host.onCatalogScanComplete(key=>completedScans.push(key));
+  const automaticScan=host.refreshCatalog(roots,{}),manualScan=host.scanApps(roots,{});
+  const [automaticResult,manualResult]=await Promise.all([automaticScan,manualScan]);
+  assert.deepEqual(automaticResult,manualResult);
+  assert.equal(completedScans.length,1,"manual and automatic callers share one actual scan of identical inputs");
+  const relabeled=await host.refreshCatalog([{...roots[0]!,label:"Renamed source"}],{},{labelsOnly:true});
+  assert.equal(completedScans.length,1,"relabeling reuses the last complete catalog without filesystem scanning");
+  assert.equal(relabeled.apps[0]?.sources[0]?.rootLabel,"Renamed source");
+  assert.equal(manualResult.apps[0]?.sources[0]?.rootLabel,"Isolated","relabeling does not mutate an earlier result");
+  await host.refreshCatalog(roots,{},{labelsOnly:true});offCompleted();
   writeFileSync(join(scanDirectory,"New.url"),"[InternetShortcut]\r\nURL=https://example.invalid/new\r\n");
   const refresh=host.refreshCatalog(roots,{});
   await host.saveLayout(layout);

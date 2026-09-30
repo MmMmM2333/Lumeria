@@ -6,6 +6,8 @@ import { isAbsolute, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { nativeDataExecutableName, nativePlatform, nativeRuntimePaths } from "./runtimePaths.js";
 import { createNativeCatalogCache, nativeCatalogCacheKey } from "./nativeCatalogCache.js";
+import { createNativeCatalogScanQueue } from "./nativeCatalogScanQueue.js";
+import { nativeCatalogEnumerationKey, relabelNativeCatalog, type NativeCatalogRequest } from "./nativeCatalogIdentity.js";
 import {
   assertCatalogScanFilters,
   assertCatalogScanRoot,
@@ -105,7 +107,10 @@ export class NativeDataHost {
   readonly #transport: NativeDataTransport | NativeDataPipe;
   readonly #catalogCache = createNativeCatalogCache(nativeRuntimePaths().data, validateCatalogResult,
     error=>console.warn("Native catalog cache unavailable", error));
-  #catalogScanTail:Promise<void>=Promise.resolve();
+  readonly #catalogScans=createNativeCatalogScanQueue<NativeCatalogScanResult>();
+  readonly #catalogCompleted=new Set<(key:string,startedAt:number)=>void>();
+  #lastCatalog:{request:NativeCatalogRequest;result:NativeCatalogScanResult}|null=null;
+  #adoptedCatalogKey:string|null=null;
   #iconChoiceTail:Promise<void>=Promise.resolve();
   #disposed=false;
   #catalogRevision=0;
@@ -189,7 +194,7 @@ export class NativeDataHost {
     this.#targetChecks.clear();
     try {
       const result=await this.refreshCatalog(roots,filters);
-      if(revision===this.#catalogRevision)await this.adoptCatalog(result);
+      if(revision===this.#catalogRevision){await this.adoptCatalog(result);await this.#catalogCache.save(nativeCatalogCacheKey(roots,filters),result);}
       return result;
     }
     finally { this.#targetChecks.clear(); }
@@ -198,33 +203,45 @@ export class NativeDataHost {
   async cachedCatalog(roots:readonly CatalogScanRoot[],filters:CatalogScanFilters):Promise<NativeCatalogScanResult|null>{
     roots.forEach((root,index)=>assertCatalogScanRoot(root,`cached catalog roots[${index}]`));assertCatalogScanFilters(filters);
     const result=await this.#catalogCache.load(nativeCatalogCacheKey(roots,filters));
-    if(result)await this.adoptCatalog(result);
+    if(result){this.#lastCatalog={request:structuredClone({roots,filters}),result};await this.adoptCatalog(result);}
     return result;
   }
 
-  async refreshCatalog(roots:readonly CatalogScanRoot[],filters:CatalogScanFilters):Promise<NativeCatalogScanResult>{
+  onCatalogScanComplete(listener:(key:string,startedAt:number)=>void):()=>void{this.#catalogCompleted.add(listener);return()=>{this.#catalogCompleted.delete(listener);};}
+
+  async refreshCatalog(roots:readonly CatalogScanRoot[],filters:CatalogScanFilters,options:{labelsOnly?:boolean;notBefore?:number}={}):Promise<NativeCatalogScanResult>{
     roots.forEach((root,index)=>assertCatalogScanRoot(root,`background catalog roots[${index}]`));assertCatalogScanFilters(filters);
+    if(this.#disposed)throw new Error("Native data host disposed before catalog scan");
+    const request=structuredClone({roots,filters}),key=nativeCatalogCacheKey(request.roots,request.filters);
+    if(options.labelsOnly&&this.#catalogScans.idle&&this.#lastCatalog&&nativeCatalogEnumerationKey(request)===nativeCatalogEnumerationKey(this.#lastCatalog.request)){
+      const result=relabelNativeCatalog(this.#lastCatalog.result,request);
+      this.#lastCatalog={request,result};await this.#catalogCache.save(key,result);return result;
+    }
     const revision=this.#catalogRevision;
-    const task=this.#catalogScanTail.then(async()=>{
+    return this.#catalogScans.run(key,async()=>{
       if(this.#disposed)throw new Error("Native data host disposed before catalog scan");
-      await this.#transport.request("startCatalogScan",{roots,filters});
+      const startedAt=performance.now();
+      await this.#transport.request("startCatalogScan",request);
       while(!this.#disposed){
         const value=await this.#transport.request("pollCatalogScan");
         if(value!==null){
           const result=validateCatalogResult(value);
-          if(revision===this.#catalogRevision&&!this.#disposed)await this.#catalogCache.save(nativeCatalogCacheKey(roots,filters),result);
+          if(revision===this.#catalogRevision&&!this.#disposed)await this.#catalogCache.save(key,result);
+          if(!result.warnings.length&&!result.stats.limitReached&&!this.#disposed){
+            this.#lastCatalog={request,result};
+            for(const listener of this.#catalogCompleted){try{listener(key,startedAt);}catch(error){console.warn("Catalog scan completion observer failed",error);}}
+          }
           return result;
         }
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       throw new Error("Native data host disposed during background scan");
-    });
-    this.#catalogScanTail=task.then(()=>{},()=>{});
-    return task;
+    },options.notBefore);
   }
 
   async adoptCatalog(result:NativeCatalogScanResult):Promise<void>{
-    await this.#transport.request("adoptCatalog",{apps:result.apps});this.#targetChecks.clear();
+    const key=JSON.stringify(result.apps);if(key===this.#adoptedCatalogKey)return;
+    await this.#transport.request("adoptCatalog",{apps:result.apps});this.#adoptedCatalogKey=key;this.#targetChecks.clear();
   }
 
   async launchApp(appId: string, elevated = false): Promise<void> {
@@ -257,6 +274,6 @@ export class NativeDataHost {
   }
 
   async dispose(): Promise<void> {
-    this.#disposed=true;this.#targetChecks.clear();await Promise.all([this.#catalogScanTail,this.#iconChoiceTail]);await this.#transport.dispose();
+    this.#disposed=true;this.#catalogCompleted.clear();this.#targetChecks.clear();await Promise.all([this.#catalogScans.drain(),this.#iconChoiceTail]);await this.#transport.dispose();
   }
 }

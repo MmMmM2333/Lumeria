@@ -89,6 +89,7 @@ type NativePageTurn,
 import { createNativeStartupPreparation } from "../nativeStartupPreparation.js";
 import { nativeCatalogCacheKey } from "../nativeCatalogCache.js";
 import { createNativeCatalogRefresh } from "../nativeCatalogRefresh.js";
+import { nativeCatalogContentKey } from "../nativeCatalogIdentity.js";
 import { normalizeNativeApp } from "../../domain/launchpadData.js";
 import { createLaunchpadTray } from "../nativeTray.js";
 import { createNativeWindowEffects } from "../nativeWindowEffects.js";
@@ -210,8 +211,9 @@ setNativeLocale(loadedLayout?.settings.localePreference ?? Intl.DateTimeFormat()
 const loginStartup=process.env.LUMERIA_LAUNCH_ORIGIN==="login";
 app.window.hide();
 let startupPreparation:ReturnType<typeof createNativeStartupPreparation>|null=null;
-let catalogRefreshTimer:ReturnType<typeof setTimeout>|null=null;
 let catalogRefresh:ReturnType<typeof createNativeCatalogRefresh<{result:NativeCatalogScanResult;revision:number}>>|null=null;
+let offCatalogCompleted=()=>{};
+let appliedCatalogKey="";
 // System preferences are read before the settings controller so its initial
 // background profile matches the real appearance; the controller must not
 // observe an eager default that later changes.
@@ -380,10 +382,10 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
 const inputFrames=createNativeFrameCallbacks(()=>app.invalidate());
 const sceneUpdates = createNativeSceneScheduler(task=>{inputFrames.request(task);});
 const renderScene = sceneUpdates.run;
-const requestSceneRender = sceneUpdates.request;
+const requestSceneRender = () => { sceneUpdates.request(); catalogRefresh?.notifyReady(); };
 let prepareSearchInput=()=>{};
 let newAppsFocused=false;
-const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();prepareSearchInput();});
+const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();prepareSearchInput();catalogRefresh?.notifyReady();});
 let lastFolderPresentation:ReturnType<ReturnType<typeof createNativeFolderFlow>["snapshot"]>|null=null;
 let folderNamePresentationItem:Readonly<{id:string;name?:string}>|null=null;
 let folderNamePresentationBlocked=false;
@@ -880,6 +882,7 @@ try {
     }
     if(state!=="running")cancelNativeGesture();
     if(state==="running"&&previous!=="running")windowEffects.refresh();
+    if(state==="running")catalogRefresh?.notifyReady();
   });
 
   let presentCount = 0;
@@ -1225,48 +1228,52 @@ try {
   const startupWait=startupPreparation.start();
   if(loginStartup){void startupWait.then(result=>logNativeRuntime("startup-prepared",{...result,background:true}));}
   else logNativeRuntime("startup-prepared",{...await startupWait,background:false});
+  appliedCatalogKey=nativeCatalogContentKey(catalogResult);
+  const catalogInteractionBusy=()=>sceneUpdates.disposed||closeCoordinator.closing||app.state!=="running"||Boolean(editing?.drag.isDragActive()||editing?.selection.isActive.value||management.modal||nativeSettings.shell||folderFlow.snapshot().renderedFolder||launchFlow?.isLaunchpadInteractionBlocked());
   catalogRefresh=createNativeCatalogRefresh({
     request:()=>apps&&apps.persistence.capture().importState.completed?apps.nativeIntegration.captureScanRequest():null,
-    scan:async request=>{const revision=nativeData.catalogRevision;const result=await nativeData.refreshCatalog(request.roots,request.filters);return{result,revision};},
+    scan:async(request,mode)=>{
+      const revision=nativeData.catalogRevision;const result=await nativeData.refreshCatalog(request.roots,request.filters,mode);
+      if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));
+      return{result,revision};
+    },
+    canApply:()=>!catalogInteractionBusy(),
     report:error=>{logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);},
-    apply:({result,revision:catalogRevision},request,current)=>{
-    const key=nativeCatalogCacheKey(request.roots,request.filters);
-    const stillCurrent=()=>{
-      if(!current()||sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
-      const currentRequest=apps.nativeIntegration.captureScanRequest();
-      return nativeCatalogCacheKey(currentRequest.roots,currentRequest.filters)===key;
-    };
-    const busy=()=>app.state!=="running"||Boolean(editing?.drag.isDragActive()||editing?.selection.isActive.value||management.modal||nativeSettings.shell||folderFlow.snapshot().renderedFolder||launchFlow?.isLaunchpadInteractionBlocked());
-    // The sidecar scans on a worker thread; launching and saving stay responsive.
-      if(!stillCurrent())return;
-      if(result.warnings.length||result.stats.limitReached){reportNativeError(new Error(t("imports.partial")));return;}
-      const apply=()=>{
-        catalogRefreshTimer=null;if(!stillCurrent())return;
-        if(busy()){
-          catalogRefreshTimer=setTimeout(apply,200);return;
-        }
-        void nativeData.adoptCatalog(result).then(()=>{
-          if(!stillCurrent())return;
-          if(busy()){catalogRefreshTimer=setTimeout(apply,200);return;}
-          const previous=layoutState.presentation.pages.value;
-          const config=layoutState.captureConfiguration();
-          // Reconcile consumes persisted items: runtime nodes carry presentationOverrides,
-          // while the document uses overrides and also owns deferred import decisions.
-          const document=layoutState.operations.createLayoutSnapshot({...loadedLayout?.settings,...settings.persistence.capture(),...apps!.persistence.capture(),
-            pages:previous,gridRows:config.rows,gridCols:config.cols,folderRows:config.folderRows,folderCols:config.folderCols,
-            iconSize:config.iconSize,folderIconSizeMode:config.folderIconSizeMode,folderIconSize:config.folderIconSize,
-            textless:layoutSettings.isTextlessModeState.value,hiddenAppIds:[...apps!.presentation.hiddenAppIds.value]});
-          const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
-          apps!.imports.setCatalog(result.apps);
-          commitEditedPages(pages);
-          void iconTextures.retryFailedSources().then(()=>requestSceneRender()).catch(reportNativeError);
-          apps!.imports.registerStartup(previous);
-          logNativeRuntime("catalog-refreshed",{apps:result.apps.length});
-        }).catch(reportNativeError);
+    apply:async({result,revision:catalogRevision},request,current)=>{
+      const key=nativeCatalogCacheKey(request.roots,request.filters);
+      const stillCurrent=()=>{
+        if(!current()||sceneUpdates.disposed||closeCoordinator.closing||!apps||nativeData.catalogRevision!==catalogRevision)return false;
+        const currentRequest=apps.nativeIntegration.captureScanRequest();
+        return nativeCatalogCacheKey(currentRequest.roots,currentRequest.filters)===key;
       };
-      apply();
+      if(!stillCurrent())return true;
+      if(catalogInteractionBusy())return false;
+      const contentKey=nativeCatalogContentKey(result);
+      if(contentKey===appliedCatalogKey){
+        await iconTextures.retryFailedSources();
+        logNativeRuntime("catalog-refreshed",{apps:result.apps.length,changed:false});return true;
+      }
+      await nativeData.adoptCatalog(result);
+      if(!stillCurrent())return true;
+      if(catalogInteractionBusy())return false;
+      const previous=layoutState.presentation.pages.value;
+      const config=layoutState.captureConfiguration();
+      // Reconcile consumes persisted items: runtime nodes carry presentationOverrides,
+      // while the document uses overrides and also owns deferred import decisions.
+      const document=layoutState.operations.createLayoutSnapshot({...loadedLayout?.settings,...settings.persistence.capture(),...apps!.persistence.capture(),
+        pages:previous,gridRows:config.rows,gridCols:config.cols,folderRows:config.folderRows,folderCols:config.folderCols,
+        iconSize:config.iconSize,folderIconSizeMode:config.folderIconSizeMode,folderIconSize:config.folderIconSize,
+        textless:layoutSettings.isTextlessModeState.value,hiddenAppIds:[...apps!.presentation.hiddenAppIds.value]});
+      const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
+      apps!.imports.setCatalog(result.apps);
+      commitEditedPages(pages);
+      void iconTextures.retryFailedSources().then(()=>requestSceneRender()).catch(reportNativeError);
+      apps!.imports.registerStartup(previous);
+      appliedCatalogKey=contentKey;
+      logNativeRuntime("catalog-refreshed",{apps:result.apps.length,changed:true});return true;
     },
   });
+  offCatalogCompleted=nativeData.onCatalogScanComplete((key,startedAt)=>catalogRefresh?.completed(key,startedAt));
   catalogRefresh.start(startupCatalogCached);
   presentCount += 1;
   // Input/state work is now frame-coalesced. Apply the initial presentation
@@ -1320,6 +1327,9 @@ try {
 
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_DATA_ICONS_PROOF){
     await (await import("../diagnostics/nativeDataIconsSmoke.js")).runNativeDataIconsSmoke({app,apps:apps!,dialogs:appDialogs!,management,icons:iconTextures,directory:process.env.LAUNCHPAD_DATA_ICONS_PROOF,save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});return;
+  }
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_AUTO_SCAN_PROOF){
+    await (await import("../diagnostics/nativeAutoScanSmoke.js")).runNativeAutoScanSmoke({app,apps:apps!,data:nativeData,pages:()=>layoutState.presentation.pages.value,trigger:()=>catalogRefresh!.trigger(),openSettings,closeSettings,showLastPage:()=>{commitDesktopPage(layoutState.presentation.pages.value.length-1);},pageSettled:()=>!scene.getMotionSnapshot().active,save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit(),directory:process.env.LAUNCHPAD_AUTO_SCAN_PROOF});return;
   }
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_CONTEXT_MENU_PROOF){
     await (await import("../diagnostics/nativeContextMenuSmoke.js")).runNativeContextMenuSmoke({app,apps:apps!,editing:editing!,management,data:nativeData,
@@ -1802,7 +1812,7 @@ try {
   if(liveDesktopTimer)clearInterval(liveDesktopTimer);
   // Disconnect the renderer and invalidate queued tasks before any disposer can
   // publish state changes or schedule drag/animation completion callbacks.
-  sceneUpdates.dispose();catalogRefresh?.dispose();if(catalogRefreshTimer)clearTimeout(catalogRefreshTimer);startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
+  sceneUpdates.dispose();offCatalogCompleted();catalogRefresh?.dispose();startupPreparation?.dispose();textPrewarm.dispose();offResumePrepare();
   if(productDiagnostics){const result=await productDiagnostics.dispose();if(result.errors.length)logNativeRuntime("diagnostics-dispose-errors",result.errors);}
   unbindResumeRenderer();
   windowEffects.dispose();
