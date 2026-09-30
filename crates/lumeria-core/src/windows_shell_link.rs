@@ -18,7 +18,7 @@ use crate::{
 
 const SHELL_LINK_STRING_CAPACITY: usize = 32_768;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ShellLinkMetadata {
     pub(crate) target_path: Option<PathBuf>,
     pub(crate) arguments: String,
@@ -30,6 +30,10 @@ pub(crate) struct ShellLinkMetadata {
 }
 
 pub(crate) fn load_shell_link(path: &Path) -> Result<ShellLinkMetadata, String> {
+    crate::catalog_metadata::cached("shortcut", path, || load_shell_link_uncached(path))
+}
+
+fn load_shell_link_uncached(path: &Path) -> Result<ShellLinkMetadata, String> {
     let _com_guard = ComGuard::new()?;
     let shell_link: IShellLinkW = unsafe {
         CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).map_err(|source| {

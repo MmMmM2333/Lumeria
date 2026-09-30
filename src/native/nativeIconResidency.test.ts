@@ -38,6 +38,27 @@ function harness(budget = 1024) {
 }
 
 {
+  const h=harness(),temporary=item("dialog");
+  const releaseFirst=h.repository.retainTemporary(temporary),releaseSecond=h.repository.retainTemporary(temporary);
+  assert.equal(h.repository.resolve(temporary),null);h.repository.resolve(temporary);
+  assert.equal(h.requests.length,1,"temporary views share one in-flight decode");
+  const texture=h.complete(0);await sleep();releaseFirst();releaseSecond();
+  const releaseReopened=h.repository.retainTemporary(temporary);
+  assert.equal(h.repository.resolve(temporary),texture,"reopening reuses the idle texture");
+  assert.equal(h.requests.length,1);releaseReopened();h.repository.dispose();
+  assert.equal(texture.destroyed,true,"temporary retention ends on repository disposal");
+}
+{
+  const h=harness(),recoverable=item("restored-file");let settled=0;
+  h.repository.retainLayout([recoverable]);h.repository.resolve(recoverable,()=>{settled++;});
+  h.requests[0]!.reject(new Error("missing file fixture"));await sleep();assert.equal(h.repository.snapshot().failed.length,1);
+  const retry=h.repository.retryFailedSources();assert.equal(h.requests.length,2);
+  const texture=h.complete(1);await retry;
+  assert.equal(h.repository.resolve(recoverable),texture);assert.equal(h.repository.snapshot().failed.length,0);
+  assert.equal(settled,2,"resource restoration notifies the original failed scene observer");h.repository.dispose();
+}
+
+{
   const h=harness();h.repository.retainLayout([item("desktop"),item("unopened")],[item("desktop")]);h.repository.startBackground();
   await sleep(25);assert.equal(h.requests.length,1);h.complete(0);await sleep(45);
   assert.equal(h.requests.length,1,"background warming must not decode owned but unopened folder items");

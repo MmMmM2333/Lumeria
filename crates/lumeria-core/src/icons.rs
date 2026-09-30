@@ -49,19 +49,15 @@ pub fn cache_app_icon(path: &Path, icon_dir: &Path, app_id: &str) -> Option<Stri
 pub(crate) fn cache_app_icon_for_identity(
     path: &Path,
     icon_dir: &Path,
-    app_id: &str,
+    _app_id: &str,
     cache_identity: &str,
 ) -> Option<String> {
     let revision = icon_cache_revision(path, cache_identity).ok()?;
-    // Changing the URL also invalidates in-memory textures. Older files may still
-    // be referenced by user-selected icons and must not be removed here.
-    let icon_path = icon_dir.join(format!("{app_id}-v5-{revision}.png"));
-    if icon_path.exists() {
-        return Some(icon_path.to_string_lossy().to_string());
-    }
-
-    match extract_icon_png(path, &icon_path) {
-        Ok(()) => Some(icon_path.to_string_lossy().to_string()),
+    let reference = icon_dir.join(format!("file-v6-{revision}.json"));
+    match cache_extracted_icon(icon_dir, &reference, |output| {
+        extract_icon_png(path, output)
+    }) {
+        Ok(icon_path) => Some(icon_path.to_string_lossy().to_string()),
         Err(error) => {
             log::debug!(
                 target: "icons",
@@ -81,24 +77,15 @@ pub(crate) fn cache_shell_item_icon(
     app_id: &str,
     cache_identity: &str,
 ) -> Result<String, String> {
-    let icon_path = icon_dir.join(format!("{app_id}-windows-app-v1.png"));
-    let identity_path = icon_dir.join(format!("{app_id}-windows-app-v1.identity"));
-    if icon_path.exists()
-        && fs::read_to_string(&identity_path).is_ok_and(|identity| identity == cache_identity)
-    {
-        return Ok(icon_path.to_string_lossy().to_string());
-    }
-
-    let factory: IShellItemImageFactory = item.cast().map_err(|source| NativeError::Shell {
-        context: "IShellItem::cast(IShellItemImageFactory)",
-        source,
-    })?;
-    write_shell_icon_png(&factory, &icon_path)?;
-    fs::write(&identity_path, cache_identity).map_err(|error| {
-        format!(
-            "Failed to write icon cache identity {}: {error}",
-            identity_path.display()
-        )
+    let revision =
+        crate::encoding::short_blake3_hex(format!("{app_id}\n{cache_identity}").as_bytes());
+    let reference = icon_dir.join(format!("windows-app-v2-{revision}.json"));
+    let icon_path = cache_extracted_icon(icon_dir, &reference, |output| {
+        let factory: IShellItemImageFactory = item.cast().map_err(|source| NativeError::Shell {
+            context: "IShellItem::cast(IShellItemImageFactory)",
+            source,
+        })?;
+        write_shell_icon_png(&factory, output)
     })?;
     Ok(icon_path.to_string_lossy().to_string())
 }
@@ -112,28 +99,158 @@ pub(crate) fn cache_app_icon_choices(
     let mut output_paths = Vec::new();
     let mut seen = HashSet::new();
     let revision = icon_cache_revision(path, "choices-v2")?;
+    let manifest_path = icon_dir.join(format!("{app_id}-choices-v3-{revision}.json"));
+    if let Some(references) = fs::metadata(&manifest_path)
+        .ok()
+        .filter(|meta| meta.len() < 32 * 1024 * 1024)
+        .and_then(|_| fs::read(&manifest_path).ok())
+        .and_then(|bytes| serde_json::from_slice::<Vec<IconReference>>(&bytes).ok())
+    {
+        if let Some(paths) = references
+            .iter()
+            .map(|reference| cached_reference_path(icon_dir, reference))
+            .collect::<Option<Vec<_>>>()
+        {
+            return Ok(paths);
+        }
+    }
+    let mut complete = true;
 
     for (source_index, source) in icon_choice_sources(path)?.into_iter().enumerate() {
         for icon_index in icon_choice_indexes(&source.path, source.icon_index) {
-            let output_path = icon_dir.join(format!(
-                "{app_id}-choice-v2-{revision}-{source_index}-{}.png",
-                icon_index_key(icon_index)
+            let staging = icon_dir.join(format!(
+                "{app_id}-choice-v3-{revision}-{source_index}-{}.{}-{}.extract",
+                icon_index_key(icon_index),
+                std::process::id(),
+                next_icon_extraction()
             ));
-            if !output_path.exists()
-                && extract_resource_icon_png(&source.path, &output_path, icon_index).is_err()
-            {
-                continue;
-            }
-            if let Ok(bytes) = fs::read(&output_path) {
-                let fingerprint = (bytes.len(), *blake3::hash(&bytes).as_bytes());
-                if seen.insert(fingerprint) {
+            if let Ok(output_path) = publish_extracted_icon(icon_dir, &staging, |output| {
+                extract_resource_icon_png(&source.path, output, icon_index)
+            }) {
+                if seen.insert(output_path.clone()) {
                     output_paths.push(output_path);
                 }
+            } else {
+                complete = false;
             }
         }
     }
-
+    if complete && !output_paths.is_empty() {
+        let references = output_paths
+            .iter()
+            .map(|path| {
+                Ok(IconReference {
+                    file: path.file_name().unwrap().to_string_lossy().into_owned(),
+                    revision: crate::file_cache::file_revision(path)
+                        .map_err(|error| error.to_string())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        write_bytes(
+            &manifest_path,
+            &serde_json::to_vec(&references).map_err(|error| error.to_string())?,
+        )?;
+    }
     Ok(output_paths)
+}
+
+#[cfg(target_os = "windows")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IconReference {
+    file: String,
+    revision: crate::file_cache::FileRevision,
+}
+
+#[cfg(target_os = "windows")]
+fn cached_reference_path(icon_dir: &Path, reference: &IconReference) -> Option<PathBuf> {
+    if !reference.file.starts_with("icon-content-")
+        || !reference.file.ends_with(".png")
+        || reference.file.contains(['/', '\\'])
+    {
+        return None;
+    }
+    let path = icon_dir.join(&reference.file);
+    crate::file_cache::file_revision(&path)
+        .is_ok_and(|revision| revision == reference.revision)
+        .then_some(path)
+}
+
+#[cfg(target_os = "windows")]
+fn cache_extracted_icon(
+    icon_dir: &Path,
+    reference: &Path,
+    extract: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<PathBuf, String> {
+    if let Some(cached) = fs::metadata(reference)
+        .ok()
+        .filter(|meta| meta.len() < 2048)
+        .and_then(|_| fs::read(reference).ok())
+        .and_then(|bytes| serde_json::from_slice::<IconReference>(&bytes).ok())
+    {
+        if let Some(path) = cached_reference_path(icon_dir, &cached) {
+            return Ok(path);
+        }
+    }
+    let staging = reference.with_extension(format!(
+        "{}-{}.extract",
+        std::process::id(),
+        next_icon_extraction()
+    ));
+    let path = publish_extracted_icon(icon_dir, &staging, extract)?;
+    let file = path.file_name().unwrap().to_string_lossy().into_owned();
+    let revision = crate::file_cache::file_revision(&path).map_err(|error| error.to_string())?;
+    write_bytes(
+        reference,
+        &serde_json::to_vec(&IconReference { file, revision })
+            .map_err(|error| error.to_string())?,
+    )?;
+    Ok(path)
+}
+
+#[cfg(target_os = "windows")]
+fn next_icon_extraction() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+#[cfg(target_os = "windows")]
+fn publish_extracted_icon(
+    icon_dir: &Path,
+    staging: &Path,
+    extract: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<PathBuf, String> {
+    let result = (|| {
+        extract(&staging)?;
+        let bytes = fs::read(&staging).map_err(|error| error.to_string())?;
+        // Resource PNG frames were already decoded/validated by extraction;
+        // DIB/Shell frames were encoded from bounded RGBA. Avoid decoding each
+        // freshly generated candidate a second time just to publish its cache.
+        if !is_png(&bytes) {
+            return Err("Icon extractor did not produce a PNG".into());
+        }
+        icon_image_dimensions(&bytes)?;
+        let file = format!(
+            "icon-content-{}.png",
+            crate::encoding::short_blake3_hex(&bytes)
+        );
+        let path = icon_dir.join(&file);
+        if !(fs::metadata(&path).is_ok_and(|meta| meta.len() == bytes.len() as u64)
+            && fs::read(&path).is_ok_and(|existing| existing == bytes))
+        {
+            // Extraction already published a complete staging PNG atomically.
+            // Move it into its content address instead of encoding/writing again.
+            fs::rename(&staging, &path)
+                .map_err(|error| format!("Failed to publish content icon: {error}"))?;
+        }
+        Ok(path)
+    })();
+    if let Err(error) = fs::remove_file(&staging) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            log::warn!("Failed to remove icon staging file: {error}");
+        }
+    }
+    result
 }
 
 #[cfg(target_os = "windows")]
@@ -714,7 +831,7 @@ fn icon_image_dimensions(data: &[u8]) -> Result<(u32, u32, u16), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn validate_icon_png(data: &[u8]) -> Result<(), String> {
+pub(crate) fn validate_icon_png(data: &[u8]) -> Result<(), String> {
     icon_image_dimensions(data)?;
     let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
     decoder.set_limits(png::Limits {
@@ -966,35 +1083,8 @@ fn dib_xor_stride(width: u32, bit_count: u16) -> Result<usize, String> {
 
 #[cfg(target_os = "windows")]
 fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create icon output directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    // A failed write must not leave a partial file that looks like a cache hit.
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT_WRITE: AtomicU64 = AtomicU64::new(0);
-    let temporary = path.with_extension(format!(
-        "{}-{}.tmp",
-        std::process::id(),
-        NEXT_WRITE.fetch_add(1, Ordering::Relaxed)
-    ));
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(|error| format!("Failed to create icon temporary file: {error}"))?;
-    let result = file.write_all(bytes);
-    drop(file);
-    let result = result.and_then(|()| fs::rename(&temporary, path));
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    result.map_err(|error| format!("Failed to write icon file {}: {error}", path.display()))
+    crate::file_cache::write_cache_atomic(path, bytes)
+        .map_err(|error| format!("Failed to write icon file {}: {error}", path.display()))
 }
 
 #[cfg(target_os = "windows")]

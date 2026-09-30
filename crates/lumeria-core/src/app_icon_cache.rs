@@ -17,7 +17,6 @@ const MAX_CUSTOM_ICON_BYTES: usize = 1_048_576;
 pub struct AppIconChoice {
     pub id: String,
     pub icon_path: String,
-    pub icon_data_url: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -39,14 +38,11 @@ pub fn load_app_icon_choices_from_dir(
     let app_id = stable_app_id(target_path);
     let choices = cache_app_icon_choices(path, icon_dir, &app_id)?
         .into_iter()
-        .enumerate()
-        .filter_map(|(index, path)| {
-            let icon_data_url = icon_file_data_url(path.to_str()?)?;
-            Some(AppIconChoice {
-                id: format!("{app_id}-icon-{index}"),
+        .map(|path| {
+            AppIconChoice {
+                id: path.file_stem().unwrap_or_default().to_string_lossy().into_owned(),
                 icon_path: path.to_string_lossy().to_string(),
-                icon_data_url,
-            })
+            }
         })
         .collect();
     Ok(choices)
@@ -57,8 +53,10 @@ pub fn cache_custom_icon_to_dir(
     icon_dir: &Path,
 ) -> Result<CachedCustomIconResult, String> {
     let bytes = decode_custom_icon_data_url(data_url)?;
+    #[cfg(target_os = "windows")]
+    crate::icons::validate_icon_png(&bytes)?;
     let icon_path =
-        cache_content_addressed(icon_dir, "custom-icon", "png", &bytes).map_err(|error| {
+        cache_content_addressed(icon_dir, "icon-content", "png", &bytes).map_err(|error| {
             format!(
                 "Failed to write custom icon {}: {error}",
                 error.path().display(),

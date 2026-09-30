@@ -21,6 +21,8 @@ export type {
 export type LaunchContext = Readonly<{ origin: "loginStartup" | "manual" }>;
 export type NativeLocaleState = LocaleState;
 export type ScanStats = Readonly<{
+  metadataCacheHits?: number;
+  metadataReads?: number;
   dirsVisited: number;
   entriesSeen: number;
   physicalAppsFound: number;
@@ -61,7 +63,7 @@ export type BackgroundLayoutContext = Readonly<{
   windowPhysicalX: number;
   windowPhysicalY: number;
 }>;
-export type AppIconChoice = Readonly<{ id: string; iconPath: string; iconDataUrl: string }>;
+export type AppIconChoice = Readonly<{ id: string; iconPath: string }>;
 export type CachedCustomIconResult = Readonly<{ iconPath: string; iconDataUrl: string }>;
 export type LaunchTargetCheckRequest = Readonly<{ id: string; launchTarget: LaunchTarget; fallbackPaths?: readonly string[] }>;
 export type LaunchTargetCheckStatus = "ok" | "missing" | "unknown";

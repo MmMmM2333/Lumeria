@@ -15,6 +15,11 @@ if (modeArgument !== "--dev" && modeArgument !== "--smoke") {
 }
 const nativeMode: "dev" | "smoke" = modeArgument === "--dev" ? "dev" : "smoke";
 const toggleSmoke=process.argv.includes("--toggle-smoke");
+const dataIconsSmoke=process.argv.includes("--data-icons");
+const autoScanSmoke=process.argv.includes("--auto-scan");
+if(autoScanSmoke&&(nativeMode!=="dev"||!process.argv.includes("--isolated")||process.argv.includes("--settings-only")))throw new Error("Auto-scan verification requires --dev --isolated desktop mode");
+if(dataIconsSmoke&&(nativeMode!=="dev"||!process.argv.includes("--isolated")))throw new Error("Data/icon verification requires --dev --isolated");
+if(dataIconsSmoke&&process.argv.includes("--settings-only"))throw new Error("Data/icon verification requires the desktop scene");
 if(toggleSmoke&&(nativeMode!=="dev"||!process.argv.includes("--settings-only")||!process.argv.includes("--isolated")))throw new Error("Toggle smoke requires --dev --isolated --settings-only");
 const stress = process.argv.includes("--stress") ? parseNativeStressOptions(process.argv) : null;
 if (stress && nativeMode !== "dev") throw new Error("Stress testing requires dev mode");
@@ -47,6 +52,8 @@ const runner = join(
   "run-electrobun.mjs",
 );
 const artifactDir = join(projectRoot, "artifacts", "native-smoke");
+const dataIconsProofDir=dataIconsSmoke?mkdtempSync(join(projectRoot,"artifacts","data-icons-native-")):null;
+const autoScanProofDir=autoScanSmoke?mkdtempSync(join(projectRoot,"artifacts","auto-scan-native-")):null;
 const toggleProofDir=toggleSmoke?mkdtempSync(join(tmpdir(),"lumeria-toggle-proof-")):null;
 if (nativeMode === "smoke" || folderRenameSmoke) mkdirSync(artifactDir, { recursive: true });
 const markerPath = join(tmpdir(), `launchpad-native-smoke-${process.pid}.json`);
@@ -317,6 +324,8 @@ try {
       ...(process.argv.includes("--touchpad-capture")?{LAUNCHPAD_TOUCHPAD_CAPTURE_DIR:join(projectRoot,"artifacts","touchpad-captures")}:{}),
       LAUNCHPAD_NATIVE_SETTINGS_ONLY:process.argv.includes("--settings-only")?"1":"0",
       ...(toggleProofDir?{LAUNCHPAD_NATIVE_TOGGLE_PROOF:toggleProofDir}:{}),
+      ...(dataIconsProofDir?{LAUNCHPAD_DATA_ICONS_PROOF:dataIconsProofDir}:{}),
+      ...(autoScanProofDir?{LAUNCHPAD_AUTO_SCAN_PROOF:autoScanProofDir}:{}),
       LAUNCHPAD_NATIVE_RESTART_FILE:restartPath,
       LAUNCHPAD_NATIVE_RESTART_ATTEMPT:String(restartAttempt++),
       LAUNCHPAD_NATIVE_RESTART_SMOKE:process.argv.includes("--restart-smoke")?"1":"0",
@@ -339,6 +348,20 @@ try {
     const proof=join(toggleProofDir,"proof.json");
     if(!existsSync(proof))throw new Error(`Native toggle pixel checks did not finish; evidence: ${toggleProofDir}`);
     console.log(`Native toggle GPU proof: ${toggleProofDir}`);
+  }
+  if(dataIconsProofDir&&status!==130){
+    const proofPath=join(dataIconsProofDir,"result.json");
+    if(!existsSync(proofPath)||JSON.parse(readFileSync(proofPath,"utf8")).passed!==true)throw new Error(`Native data/icon checks did not finish; evidence: ${dataIconsProofDir}`);
+    const journal=readFileSync(join(dataDir,"logs/native-runtime.log"),"utf8");
+    if(/"event":"(?:uncaught-exception|unhandled-rejection|fatal|frame-error)"/.test(journal))throw new Error("Native data/icon journal contains runtime failures");
+    console.log(`Native data/icon GPU proof: ${dataIconsProofDir}`);
+  }
+  if(autoScanProofDir&&status!==130){
+    const proofPath=join(autoScanProofDir,"result.json");
+    if(!existsSync(proofPath)||JSON.parse(readFileSync(proofPath,"utf8")).passed!==true)throw new Error(`Native auto-scan checks did not finish; evidence: ${autoScanProofDir}`);
+    const journal=readFileSync(join(dataDir,"logs/native-runtime.log"),"utf8");
+    if(/"event":"(?:uncaught-exception|unhandled-rejection|fatal|frame-error)"/.test(journal))throw new Error("Native auto-scan journal contains runtime failures");
+    console.log(`Native auto-scan proof: ${autoScanProofDir}`);
   }
   if (stressDir && status !== 130) {
     const proofPath = join(stressDir, "result.json");

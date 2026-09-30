@@ -20,6 +20,8 @@ export type NativeIconRepository = IconTextureRepository & {
   prepareItems(items: readonly IconTextureItem[]): Promise<void>;
   prepareFrame(): void | Promise<void>;
   startBackground(): void;
+  retainTemporary(item: IconTextureItem): () => void;
+  retryFailedSources(): Promise<void>;
   isPreparing():boolean;
   residency(): { budgetBytes: number; gpuBytes: number; resident: number; backgroundPending: number };
 };
@@ -152,6 +154,8 @@ export function createResidentIconRepository(host: Host, load: (source: string) 
       return base.snapshot();
     },
     retainLayout,
+    retainTemporary:base.retainTemporary,
+    retryFailedSources:base.retryFailedSources,
     prepareItems: base.prepare,
     snapshot: base.snapshot,
     prepareFrame,

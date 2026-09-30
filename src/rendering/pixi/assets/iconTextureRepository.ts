@@ -51,6 +51,7 @@ export type IconTextureRepository = Readonly<{
 type RepositoryOptions = Readonly<{
   loadTexture?: (source: string) => Promise<Texture>;
   maxConcurrentLoads?: number;
+  temporaryRetentionMs?: number;
   resolveSource?: (item: IconTextureItem | null | undefined) => string | null;
   scheduleAfterFrame?: (callback: () => void) => void;
   isTextureInUse?: (texture: Texture) => boolean;
@@ -130,6 +131,8 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
   retireUnused(): void;
   prepare(items: readonly IconTextureItem[]): Promise<void>;
   pendingWork(sources?: ReadonlySet<string>): Promise<void> | undefined;
+  retainTemporary(item: IconTextureItem): () => void;
+  retryFailedSources(): Promise<void>;
 } {
   const loadTexture = options.loadTexture || loadTextureFromImage;
   const maxConcurrentLoads = options.maxConcurrentLoads ?? Infinity;
@@ -149,6 +152,9 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
   const currentSourceByItemKey = new Map<string, string>();
   const fallbackSourceByItemKey = new Map<string, string>();
   const activeSourceCounts = new Map<string, number>();
+  const temporarySourceCounts = new Map<string, number>();
+  const temporaryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const failedLoadListeners = new Map<string, Map<unknown, () => void>>();
   const scheduledRetirements = new Set<string>();
   const recentTextureErrors: TextureErrorEntry[] = [];
   const recentTextureObserverErrors: TextureErrorEntry[] = [];
@@ -199,7 +205,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
 
   function isSourceRetained(source: string): boolean {
     const texture = cachedTextures.get(source);
-    return (activeSourceCounts.get(source) || 0) > 0 || isFallbackSource(source)
+    return (activeSourceCounts.get(source) || 0) > 0 || (temporarySourceCounts.get(source) || 0) > 0 || temporaryTimers.has(source) || isFallbackSource(source)
       || Boolean(texture && options.isTextureInUse?.(texture));
   }
 
@@ -216,6 +222,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
       }
       failedTextureSources.delete(source);
       textureLoadFailureCounts.delete(source);
+      failedLoadListeners.delete(source);
       textureLoadListeners.delete(source);
     });
   }
@@ -228,6 +235,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
       if (isSourceRetained(source)) continue;
       failedTextureSources.delete(source);
       textureLoadFailureCounts.delete(source);
+      failedLoadListeners.delete(source);
     }
   }
 
@@ -285,6 +293,11 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
             failedTextureSources.delete(source);
             textureLoadFailureCounts.delete(source);
             promoteReadyReplacements(source);
+            const retryListeners = failedLoadListeners.get(source);
+            if(retryListeners) {
+              for(const [key,listener] of retryListeners)addTextureLoadListener(source,listener,key);
+              failedLoadListeners.delete(source);
+            }
             notifyTextureLoadSettled(source);
           } catch (error: unknown) {
             if (loadGeneration !== generation) return;
@@ -293,6 +306,7 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
             const failureCount = (textureLoadFailureCounts.get(source) || 0) + 1;
             textureLoadFailureCounts.set(source, failureCount);
             if (!isTauriAssetIconSource(source) || failureCount >= 2) failedTextureSources.add(source);
+            if(textureLoadListeners.has(source))failedLoadListeners.set(source,new Map(textureLoadListeners.get(source)));
             notifyTextureLoadSettled(source);
           } finally {
             activeLoads -= 1;
@@ -410,6 +424,8 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     currentSourceByItemKey.clear();
     fallbackSourceByItemKey.clear();
     activeSourceCounts.clear();
+    for(const timer of temporaryTimers.values())clearTimeout(timer);
+    temporaryTimers.clear();temporarySourceCounts.clear();failedLoadListeners.clear();
     scheduledRetirements.clear();
     recentTextureErrors.length = 0;
     recentTextureObserverErrors.length = 0;
@@ -425,7 +441,26 @@ export function createIconTextureRepository(options: RepositoryOptions = {}): Ic
     const work = [...pendingTextureLoads].filter(([source]) => !sources || sources.has(source)).map(([, promise]) => promise);
     return work.length ? Promise.all(work).then(() => {}) : undefined;
   }
-  return Object.freeze({ dispose, resolve, snapshot, synchronize, retain, prepare, pendingWork, retireUnused: retireUnreferencedSources });
+  function retainTemporary(item: IconTextureItem): () => void {
+    const source=resolveSource(item);if(!source)return()=>{};
+    const timer=temporaryTimers.get(source);if(timer)clearTimeout(timer);temporaryTimers.delete(source);
+    temporarySourceCounts.set(source,(temporarySourceCounts.get(source)??0)+1);
+    let released=false;const retainedGeneration=generation;
+    return()=>{
+      if(released||retainedGeneration!==generation)return;released=true;
+      const remaining=(temporarySourceCounts.get(source)??1)-1;
+      if(remaining>0){temporarySourceCounts.set(source,remaining);return;}
+      temporarySourceCounts.delete(source);
+      const timer=setTimeout(()=>{temporaryTimers.delete(source);retireSourceAfterFrame(source);},options.temporaryRetentionMs??30_000);
+      timer.unref?.();temporaryTimers.set(source,timer);
+    };
+  }
+  function retryFailedSources():Promise<void>{
+    const sources=[...failedTextureSources].filter(isSourceRetained);
+    for(const source of sources){failedTextureSources.delete(source);textureLoadFailureCounts.delete(source);}
+    return Promise.all(sources.map(requestTextureLoad)).then(()=>{});
+  }
+  return Object.freeze({ dispose, resolve, snapshot, synchronize, retain, prepare, pendingWork, retainTemporary, retryFailedSources, retireUnused: retireUnreferencedSources });
 }
 
 export const iconTextureRepository = createIconTextureRepository();

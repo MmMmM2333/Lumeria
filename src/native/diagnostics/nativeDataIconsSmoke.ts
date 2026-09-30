@@ -1,0 +1,57 @@
+import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import { getNativePixiApplicationTesting } from "../../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js";
+import type { createLaunchpadApps } from "../../application/launchpadApps.js";
+import type { NativeAppDialogs } from "../../rendering/native/NativeAppDialogs.js";
+import type { NativeManagement } from "../../rendering/native/NativeManagement.js";
+import type { NativeIconRepository } from "../../rendering/native/nativeIconResidency.js";
+import type { NativeVirtualList } from "../../rendering/native/ui/NativeVirtualList.js";
+import type { NativeScrollView } from "../../rendering/native/NativeScrollView.js";
+import { captureSmokeFrame } from "../nativeSmokeSupport.js";
+import { present, waitFor } from "../product/nativeScenePresentation.js";
+
+export async function runNativeDataIconsSmoke(options:{app:NativePixiApplication;apps:ReturnType<typeof createLaunchpadApps>;dialogs:NativeAppDialogs;management:NativeManagement;icons:NativeIconRepository;directory:string;save():Promise<void>;quit():void|Promise<void>}) {
+  const {app,apps,dialogs,management,icons,directory}=options;
+  assert.ok(process.env.LUMERIA_NATIVE_DATA_DIR,"icon diagnostics require isolated user data");
+  mkdirSync(directory,{recursive:true});process.env.LAUNCHPAD_NATIVE_SMOKE_ARTIFACT_DIR=directory;
+  const samples:unknown[]=[];
+  const sample=(phase:string,ms=0)=>{const snapshot=icons.snapshot();samples.push({phase,ms,cached:snapshot.cached.length,pending:snapshot.pending.length,
+    retainedEncodedBytes:snapshot.cached.reduce((sum,entry)=>sum+entry.retainedEncodedBytes,0),gpu:icons.residency()});};
+  apps.editorModel.actions.openCreate();apps.editorModel.target.value=join(process.env.SystemRoot!,"System32","shell32.dll");dialogs.sync();
+  await present(app,"isolated icon editor");sample("before chooser");
+  const start=performance.now();apps.editorModel.actions.openIconChooser();dialogs.sync();
+  await waitFor("real embedded icon list",()=>!apps.iconChooserModel.isLoading.value&&apps.iconChooserModel.choices.value.length>100);
+  dialogs.sync();await present(app,"real icon candidate grid");sample("first visible candidates",performance.now()-start);
+  const choices=apps.iconChooserModel.choices.value;
+  assert.ok(choices.every(choice=>choice.iconPath&&choice.iconDataUrl===null),"embedded choices contain paths only");
+  const list=management.getChildByLabel("native-virtual-list",true) as NativeVirtualList;
+  assert.ok(list&&list.mountedCount<list.count,"the real candidate list mounts only visible rows");
+  assert.ok(icons.snapshot().cached.length<choices.length/2,"offscreen candidates are not decoded");
+  await captureSmokeFrame(app,"data-icons-first-page");
+  let ancestor=list.parent;while(ancestor&&ancestor.label!=="native-scroll-view")ancestor=ancestor.parent;
+  assert.ok(ancestor);const scroll=ancestor as NativeScrollView;
+  scroll.scrollTo(scroll.maxOffset);await present(app,"distant candidate page");sample("distant candidates");
+  await captureSmokeFrame(app,"data-icons-distant-page");
+  const cachedAfterDistant=icons.snapshot().cached.length;
+  scroll.scrollTo(0);await present(app,"return to cached candidates");sample("return to first candidates");
+  assert.equal(icons.snapshot().cached.length,cachedAfterDistant,"returning to visited rows reuses textures");
+  await getNativePixiApplicationTesting(app).recover();await present(app,"candidate textures after device recovery");
+  assert.equal(icons.snapshot().cached.length,cachedAfterDistant,"device recovery reuses encoded snapshots");
+  assert.ok(management.handleKey({type:"down",key:"Tab"}),"candidate grid retains keyboard navigation");
+  sample("device recovery");
+  apps.iconChooserModel.actions.close();dialogs.sync();await present(app,"chooser closed");
+  const reopened=performance.now();apps.editorModel.actions.openIconChooser();dialogs.sync();
+  await waitFor("reopened icon list",()=>!apps.iconChooserModel.isLoading.value&&apps.iconChooserModel.choices.value.length>100);
+  dialogs.sync();await present(app,"reopened cached chooser");sample("reopened",performance.now()-reopened);
+  assert.equal(icons.snapshot().cached.length,cachedAfterDistant,"reopening reuses recently released resources");
+  apps.iconChooserModel.actions.choose(apps.iconChooserModel.choices.value[0]!);dialogs.sync();await present(app,"path-selected editor");
+  assert.equal(apps.editorModel.iconDataUrl.value,null);assert.ok(apps.editorModel.iconPath.value);
+  apps.editorModel.target.value=join(process.env.SystemRoot!,"System32","notepad.exe");apps.editorModel.name.value="Isolated cached icon";
+  dialogs.sync();await present(app,"selected path preview");await captureSmokeFrame(app,"data-icons-selected");
+  assert.equal(apps.editorModel.actions.save(),true);await options.save();
+  sample("saved path selection");
+  writeFileSync(join(directory,"result.json"),JSON.stringify({candidateCount:choices.length,samples,passed:true},null,2));
+  await options.quit();
+}

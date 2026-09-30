@@ -25,7 +25,7 @@
           </div>
           <div v-if="model.choices.value.length" class="icon-chooser-grid">
             <button v-for="choice in model.choices.value" :key="choice.id" class="icon-chooser-option" type="button" :aria-label="t('dialogs.iconChooser.chooseEmbedded')" @click="model.actions.choose(choice)">
-              <img :src="choice.iconDataUrl" alt="" draggable="false" />
+              <img :src="choice.iconUrl || choice.iconDataUrl || undefined" alt="" draggable="false" loading="lazy" />
             </button>
           </div>
           <div v-else-if="model.isLoading.value" style="min-height: 76px; display: flex; align-items: center" role="status">{{ t("dialogs.iconChooser.loading") }}</div>

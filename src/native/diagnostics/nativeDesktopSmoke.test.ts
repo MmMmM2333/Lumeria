@@ -76,10 +76,12 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
     const loadNormally=nativeData.loadIconChoices,saveNormally=appDialogs()!.options.save,pickNormally=appDialogs()!.options.pickIcon;
     const {createCanvas}=await import("@napi-rs/canvas");
     const candidateCanvas=createCanvas(32,32),candidateContext=candidateCanvas.getContext("2d");
-    const candidates=Array.from({length:121},(_,index)=>{
+    const candidates:{id:string;iconPath:string}[]=[];
+    for(let index=0;index<121;index++){
       candidateContext.fillStyle=`hsl(${index*3},75%,55%)`;candidateContext.fillRect(0,0,32,32);
-      return {id:`fixture-${index}`,...cachedIcon,iconDataUrl:index?candidateCanvas.toDataURL("image/png"):cachedIcon.iconDataUrl};
-    });
+      const cached=index?await nativeData.cacheCustomIcon(candidateCanvas.toDataURL("image/png")):cachedIcon;
+      candidates.push({id:`fixture-${index}`,iconPath:cached.iconPath});
+    }
     nativeData.loadIconChoices=async()=>candidates;
     try{
       editor.actions.openCreate();appDialogs()!.sync();await present("new app editor rendered");
@@ -104,7 +106,8 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
       await capture("icon-candidate-grid");await present("candidate selection hit target");
       click(management.getChildByLabel("native-dialog:icon-choice-0",true)!);
       await waitFor("candidate returns to editor",()=>management.activeId==="editor");await present("selected editor icon");
-      assert.equal(editor.iconDataUrl.value,cachedIcon.iconDataUrl);
+      assert.equal(editor.iconPath.value,cachedIcon.iconPath);
+      assert.equal(editor.iconDataUrl.value,null,"embedded candidates keep only the cached path");
       // A delayed upload result belongs to the chooser session that initiated it.
       let finishUpload!:(value:typeof cachedIcon|null)=>void;
       appDialogs()!.options.pickIcon=()=>new Promise(resolve=>{finishUpload=resolve;});

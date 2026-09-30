@@ -45,10 +45,11 @@ const SCAN_RESULT_TAB_IGNORED = "ignored";
 
 export type ScanResultTab = typeof SCAN_RESULT_TAB_AVAILABLE | typeof SCAN_RESULT_TAB_IGNORED;
 export type LaunchTargetStatus = LaunchTargetCheckResult["status"];
-export type ManagedAppIcon = Readonly<{ iconDataUrl: string; iconPath: string | null }>;
+export type ManagedAppIcon = Readonly<{ iconDataUrl: string | null; iconPath: string | null }>;
 export type ManagedAppIconChoice = Readonly<{
   id: string;
-  iconDataUrl: string;
+  iconDataUrl: string | null;
+  iconUrl?: string | null;
   iconPath: string | null;
   restoreDefault?: boolean;
 }>;
@@ -343,7 +344,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
           else delete overrides.customIconPath;
           item.presentationOverrides = overrides;
         }
-        delete item.customIconUrl;
+        if(customIconPath&&!customIconDataUrl)item.customIconUrl=catalog.toAssetUrl(customIconPath);
+        else delete item.customIconUrl;
         if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
         else delete item.customIconDataUrl;
         changed = true;
@@ -715,12 +717,13 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
 
   function normalizeIconChoices(choices: readonly AppIconChoice[]): ManagedAppIconChoice[] {
     return (choices || [])
-      .map((choice, index) => ({
+      .map((choice, index):ManagedAppIconChoice => ({
         id: String(choice?.id || `icon-choice-${index}`),
         iconPath: choice?.iconPath || null,
-        iconDataUrl: choice?.iconDataUrl || null,
+        iconDataUrl: null,
+        iconUrl: choice?.iconPath ? catalog.toAssetUrl(choice.iconPath) : null,
       }))
-      .filter((choice): choice is ManagedAppIconChoice => Boolean(choice.iconDataUrl));
+      .filter(choice => Boolean(choice.iconPath));
   }
 
   function getIconChooserSourcePath(chooser: ManagedAppIconChooser | null | undefined): string {
@@ -747,10 +750,11 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     try {
       const choices = targetPath&&options.shouldUseNativeCatalog()?await catalog.loadIconChoices(targetPath):[];
       if (requestId !== iconChooserRequestId) return;
-      const seen=new Set(defaults.map(choice=>choice.iconDataUrl));
+      const seen=new Set(defaults.map(choice=>choice.iconPath||choice.iconDataUrl));
       iconChoices.value = [...defaults,...normalizeIconChoices(choices).filter(choice=>{
-        if(seen.has(choice.iconDataUrl)||Boolean(choice.iconPath&&choice.iconPath===original?.iconPath))return false;
-        seen.add(choice.iconDataUrl);return true;
+        const source=choice.iconPath||choice.iconDataUrl;
+        if(seen.has(source)||Boolean(choice.iconPath&&choice.iconPath===original?.iconPath))return false;
+        seen.add(source);return true;
       })];
     } catch (error) {
       if (requestId === iconChooserRequestId) {
@@ -814,7 +818,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
   }
 
   function applyIconChooserIcon(icon: ManagedAppIcon): void {
-    if (!icon?.iconDataUrl || !iconChooser.value) return;
+    if (!(icon?.iconDataUrl || icon?.iconPath) || !iconChooser.value) return;
     if (iconChooser.value.target === "editor") {
       editorIconPath.value = icon.iconPath || null;
       editorIconDataUrl.value = icon.iconDataUrl;
@@ -834,7 +838,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       else updateAppCustomIcon(iconChooser.value.appId,null);
       closeIconChooser();return;
     }
-    if(!choice.iconPath&&options.shouldUseNativeCatalog()){
+    if(!choice.iconPath&&choice.iconDataUrl&&options.shouldUseNativeCatalog()){
       const requestId=iconChooserRequestId;
       void cacheCustomIconDataUrl(choice.iconDataUrl).then(icon=>{
         if(requestId===iconChooserRequestId)applyIconChooserIcon(icon);
@@ -919,7 +923,8 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
       }
       if (customIconPath) item.customIconPath = customIconPath;
       else delete item.customIconPath;
-      delete item.customIconUrl;
+      if(customIconPath&&!customIconDataUrl)item.customIconUrl=catalog.toAssetUrl(customIconPath);
+      else delete item.customIconUrl;
       if (customIconDataUrl) item.customIconDataUrl = customIconDataUrl;
       else delete item.customIconDataUrl;
       if (isCatalogApp && !targetChanged) {
@@ -1197,6 +1202,7 @@ export function createLaunchpadApps(options: LaunchpadAppsOptions & {catalogPort
     if (launchArgs) app.launchArgs = launchArgs;
     if (editorRunAsAdmin.value && ["executable", "shortcut"].includes(launchTarget.kind)) app.runAsAdmin = true;
     if (editorIconPath.value) app.customIconPath = editorIconPath.value;
+    if (editorIconPath.value&&!editorIconDataUrl.value) app.customIconUrl=catalog.toAssetUrl(editorIconPath.value);
     if (editorIconDataUrl.value) app.customIconDataUrl = editorIconDataUrl.value;
     options.commitPages(options.appendAppsToPages(options.pages.value, [app]));
     options.reclampPageIndices();
