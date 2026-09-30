@@ -646,7 +646,8 @@ management.captureReturnFocus=()=>nativeSettings.shell?.captureFocus()??(()=>app
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {
-  resumeTiming?.mark("presented");resumeTiming?.presented();textPrewarm.presented();
+  const visible=app.window.isVisible()&&!app.window.isMinimized();
+  if(visible)resumeTiming?.mark("presented");resumeTiming?.presented(visible);textPrewarm.presented();
   // Maximize state may settle after the resize notification. Refresh caption
   // controls against the HWND state of the frame that actually reached screen.
   windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
@@ -1028,6 +1029,7 @@ try {
     getSettingsThemePreference:()=>settings.presentation.windowEffectAppearance.value,
     getSystemAppearance:()=>systemAppearance,
     isCloseCoordinatorClosing:()=>closeCoordinator.closing,
+    isDesktopFrameVisible:()=>scene.getDesktopAlpha()>0,
     isDragActive:()=>editing?.drag.isDragActive()??false,
     isFolderRendered:()=>Boolean(folderFlow.snapshot().renderedFolder),
     log:(event,value)=>logNativeRuntime(event,value),

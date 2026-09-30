@@ -54,4 +54,7 @@ let now=0,report:unknown;const timing=createNativeResumeTiming(value=>{report=va
 timing.begin("hidden");now=3;timing.measure("show",()=>{now=8;});timing.mark("renderStart");now=10;timing.mark("renderStart");timing.presented();
 assert.deepEqual(report,{id:1,start:0,context:"hidden",spans:{show:5},marks:{renderStart:8},totalMs:10});
 timing.begin("replaced");timing.cancel();now=20;timing.presented();assert.equal((report as {id:number}).id,1);
+timing.begin("prepared");now=25;timing.presented(false);assert.equal((report as {id:number}).id,1,"hidden preparation must not finish a visible-resume measurement");
+timing.mark("windowShown");now=30;timing.presented(true);
+assert.deepEqual(report,{id:3,start:20,context:"prepared",spans:{},marks:{windowShown:5},totalMs:10});
 console.log("Native text prewarm ownership, priority, pause and resume timing passed");

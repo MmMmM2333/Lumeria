@@ -32,4 +32,6 @@ Tab 从搜索输入返回结果导航时保留隐式文本会话：方向键导�
 
 实现入口：[指针路由](../src/native/product/nativeInputRouter.ts)、[键盘路由](../src/native/product/nativeKeyboardRouter.ts)、[可见性控制](../src/native/product/nativeVisibilityController.ts)。
 
+隐藏后唤起时，先在隐藏状态提交带背景且桌面透明度大于零的开场帧，再恢复系统材质并显示窗口。关闭结束帧与入场动画的初始帧均可能透明，不能把任意一次 Present 当作可显示的内容。背景从开场帧就按配置绘制，图标和控件继续入场动画；最小化恢复先还原窗口，再等待运行状态，避免在暂停的渲染器上等待隐藏帧。
+
 保留较大的 GPU 缓冲区可以减少 resize 时重复分配，但会增加资源占用。应用完成帧数不等于显示器扫描帧率；比较方案时还要检查实际画面、命中及跨屏行为。
