@@ -1,5 +1,7 @@
 import "./runtime-shim";
 import { NativeFramePreparation } from "./native-frame-preparation";
+import { NativeWindowSync } from "./native-window-sync";
+import { NativePresentationWatchdog } from "./native-presentation-watchdog";
 import { GpuWindow, Screen, webgpu } from "../platform/electrobun-sdk";
 import {
 	AlphaMask,
@@ -345,6 +347,15 @@ export async function createNativePixiApplication(
 					throw new Error(`Missing Pixi ${pipe} pipe; loaded: ${Object.keys(result.renderPipes).join(",")}`);
 				}
 			}
+      try {
+        // Pixi configures the canvas lazily. Window sync may resize it before
+        // the first render, including when queued DPI events follow recovery.
+        const rootTarget = result.renderTarget.getRenderTarget(result.view.renderTarget);
+        result.renderTarget.getGpuRenderTarget(rootTarget);
+        // Pixi logs configure errors; the native reconfigure must still validate
+        // the live device before the application can enter its running state.
+        reconfigureContext(runtimeContext);
+      } catch (error) { destroyRenderer(result); throw error; }
 			return result;
 		};
 
@@ -377,8 +388,8 @@ export async function createNativePixiApplication(
 		let lastError: { type: string; message: string; at: number } | null = null;
 		let lastPresentedAt = performance.now();
 		let renderCount = 0;
-		let pendingWindowSync = true;
-		let pendingBackingSync = true;
+    const windowSync = new NativeWindowSync();
+    const presentationWatchdog = new NativePresentationWatchdog();
 		let windowSyncTimer: ReturnType<typeof setTimeout> | null = null;
 		let lastFrameAt = performance.now();
 		let inputPollingEnabled = false;
@@ -391,7 +402,7 @@ export async function createNativePixiApplication(
 		const retiredGenerations = new Set<number>();
 		const animations = new Set<(deltaMs: number) => void>();
 		const framePreparation = new NativeFramePreparation(() => {
-			lastFrameAt = performance.now(); requestFrame();
+			lastFrameAt = performance.now(); presentationWatchdog.reset(); requestFrame();
 		}, error => fail("resource-preparation", error instanceof Error ? error.message : String(error), error));
 		const runtimeEvents: Array<{ sequence: number; at: number; type: string; data?: unknown }> = [];
 		let runtimeEventSequence = 0;
@@ -426,6 +437,7 @@ export async function createNativePixiApplication(
 			if (next === state) return;
 			const previous = state;
 			state = next;
+      if (next !== "running") presentationWatchdog.reset();
 			recordEvent("state-changed", { state: next, previous, reason });
 			emit("statechange", { state: next, previous, reason });
 		};
@@ -590,6 +602,7 @@ export async function createNativePixiApplication(
 		const presentFailureCode = (status: Exclude<NativePresentStatus, "success" | "suboptimal"> | null) => ({ outdated: -3, timeout: -2, "surface-lost": -4, "out-of-memory": -6, "device-lost": -5, fatal: -15 }[status ?? "fatal"]);
 		const markPresented = (status: NativePresentStatus) => {
 			lastPresentedAt = performance.now(); renderCount++;
+      presentationWatchdog.reset();
 			if (recoveryAwaitingPresent?.deviceGeneration === deviceGeneration) {
 				const recovered = recoveryAwaitingPresent; recoveryAwaitingPresent = null;
 				emit("recoverypresented", recovered);
@@ -662,8 +675,9 @@ export async function createNativePixiApplication(
 					installFastPath(renderer); nativeInput = attachNativePixiEvents(window, renderer, inputHooks); bindInputObservers();
 					if (mode === "device") retireDevice(previous.device, previous.generation);
 					activePreference = preference; snapshot = nativeFrameHost.getWindowSnapshot(inputWindow); minimized = snapshot.minimized;
+          windowSync.afterRecovery();
+					lastError = null; recoveryCount++; lastFrameAt = performance.now();
 					setState(minimized ? "suspended" : "running", reason);
-					lastError = null; recoveryCount++; pendingWindowSync = true; pendingBackingSync = true; lastFrameAt = performance.now();
 					recordEvent("recovered", { reason, mode, deviceGeneration, surfaceGeneration });
 					emit("recovered", { reason, mode, deviceGeneration, surfaceGeneration });
 					recoveryAwaitingPresent = { reason, mode, deviceGeneration, surfaceGeneration };
@@ -703,9 +717,9 @@ export async function createNativePixiApplication(
 		}
 
 		function syncWindow() {
-			const syncBacking = pendingBackingSync; pendingWindowSync = false; pendingBackingSync = false;
-			if (state !== "running") { pendingWindowSync = true; pendingBackingSync ||= syncBacking; return; }
+			if (state !== "running") return;
 			try {
+        windowSync.sync((syncBacking, notifyResize) => {
 				const previousDisplayId = snapshot.displayId;
 				const previousResolution = resolution;
         // Refit the native fullscreen HWND before deriving the logical viewport
@@ -715,7 +729,7 @@ export async function createNativePixiApplication(
 				snapshot = nativeFrameHost.getWindowSnapshot(inputWindow);
 				const nextResolution = snapshot.scaleFactor > 0 ? snapshot.scaleFactor : 1;
 				const nextSize = { width: snapshot.clientWidth / nextResolution, height: snapshot.clientHeight / nextResolution };
-				if (snapshot.minimized || nextSize.width <= 0 || nextSize.height <= 0) { minimized = true; suspendRuntime("minimized"); return; }
+				if (snapshot.minimized || nextSize.width <= 0 || nextSize.height <= 0) { minimized = true; suspendRuntime("minimized"); return false; }
 				const logicalChanged = nextSize.width !== contentSize.width || nextSize.height !== contentSize.height || nextResolution !== resolution;
 				const source = renderer.view.texture.source;
 				const backingChanged = source.pixelWidth !== Math.round(nextSize.width * nextResolution) || source.pixelHeight !== Math.round(nextSize.height * nextResolution) || source.resolution !== nextResolution;
@@ -742,10 +756,12 @@ export async function createNativePixiApplication(
 				if (snapshot.displayId !== previousDisplayId || nextResolution !== previousResolution) {
 					recordEvent("display-changed", { id: snapshot.displayId.toString(), resolution: nextResolution });
 				}
-				if (logicalChanged) emit("resize", { ...nextSize, resolution: nextResolution });
+				if (logicalChanged || notifyResize) emit("resize", { ...nextSize, resolution: nextResolution });
+        return true;
+        });
 			} catch (error) { void requestRecovery(`window sync failed: ${error instanceof Error ? error.message : String(error)}`, "surface"); }
 		}
-		function requestWindowSync(syncBacking = true) { pendingWindowSync = true; pendingBackingSync ||= syncBacking; if (state === "running") requestFrame(); }
+		function requestWindowSync(syncBacking = true) { windowSync.request(syncBacking); if (state === "running") requestFrame(); }
 		const requestSettledSync = () => {
 			if (windowSyncTimer !== null) clearTimeout(windowSyncTimer);
 			const settle = () => {
@@ -761,7 +777,7 @@ export async function createNativePixiApplication(
 			else requestWindowSync(true);
 		};
 		function suspendRuntime(reason: string) { if (state !== "running") return; minimized = reason === "minimized" || minimized; setState("suspended", reason); frameScheduler?.suspend(); }
-		function restoreRuntime() { if (state !== "suspended") return; minimized = false; setState("running", "restored"); pendingWindowSync = true; pendingBackingSync = true; lastFrameAt = performance.now(); syncWindow(); frameScheduler?.resume(); requestFrame(); }
+		function restoreRuntime() { if (state !== "suspended") return; minimized = false; windowSync.request(true); setState("running", "restored"); lastFrameAt = performance.now(); syncWindow(); frameScheduler?.resume(); requestFrame(); }
 		syncInputLayout = () => {
 			if (state !== "running") return;
 			const currentScale = nativeFrameHost.getWindowScaleFactor(inputWindow);
@@ -771,11 +787,12 @@ export async function createNativePixiApplication(
 		const tick = () => {
 			if (closed || state !== "running" || (paused && stepFrames <= 0)) return;
 			if (framePreparation.pending) { lastFrameAt = performance.now(); return; }
+      presentationWatchdog.beginFrame(performance.now());
 			let phase = "gpu-events";
 			try {
 				pollGpu(); if (state !== "running") return;
 				phase = "window-sync";
-				if (pendingWindowSync) syncWindow(); if (state !== "running") return;
+				if (windowSync.pending) syncWindow(); if (state !== "running") return;
 				const now = performance.now(); const delta = Math.max(0, now - lastFrameAt); lastFrameAt = now;
 				for (const update of [...animations]) { try { update(delta); } catch (error) { fail("animation", error instanceof Error ? error.message : String(error), error); return; } }
 				phase = "resource-preparation";
@@ -811,7 +828,7 @@ export async function createNativePixiApplication(
 		if (!minimized) { syncWindow(); requestFrame(); } else frameScheduler.suspend();
 
 		const frameCounters = (): NativeAppFrameCounters => { const counters = nativeFrameHost.readCounters(); return { submitCount: Number(counters.submitCount), presentCount: Number(counters.presentCount), renderCount, lastStatus: counters.lastStatus }; };
-		const monitor = setInterval(() => { if (!closed) { pollGpu(); if (state === "running" && !minimized && !framePreparation.pending && performance.now() - lastPresentedAt > 5000 && animations.size) void requestRecovery("presentation stalled", "surface"); } }, 500);
+		const monitor = setInterval(() => { if (!closed) { pollGpu(); if (state === "running" && !minimized && (!paused || stepFrames > 0) && !framePreparation.pending && presentationWatchdog.stalled(performance.now())) void requestRecovery("presentation stalled", "surface"); } }, 500);
 		let disposePromise: Promise<void> | null = null;
 		let unregisterTesting = () => {};
 		let allowClose = false;
@@ -946,9 +963,9 @@ export async function createNativePixiApplication(
 		unregisterTesting = registerNativePixiApplicationTesting(application, {
 			diagnostics,
 			handles: () => ({ surfaceWindow, inputWindow, route, deviceGeneration, surfaceGeneration }),
-			pause: () => { paused = true; frameScheduler?.suspend(); },
-			resume: () => { paused = false; stepFrames = 0; lastFrameAt = performance.now(); frameScheduler?.resume(); requestFrame(); },
-			step: (frames = 1) => { paused = true; stepFrames = Math.max(1, Math.min(1000, Math.floor(frames))); frameScheduler?.resume(); requestFrame(); },
+			pause: () => { paused = true; presentationWatchdog.reset(); frameScheduler?.suspend(); },
+			resume: () => { paused = false; stepFrames = 0; presentationWatchdog.reset(); lastFrameAt = performance.now(); frameScheduler?.resume(); requestFrame(); },
+			step: (frames = 1) => { paused = true; presentationWatchdog.reset(); stepFrames = Math.max(1, Math.min(1000, Math.floor(frames))); frameScheduler?.resume(); requestFrame(); },
 			switchGpu: async (preference) => { if (preference !== activePreference) await requestRecovery(`GPU switch ${activePreference} -> ${preference}`, "surface", preference, false); },
 			recover: () => requestRecovery("manual recovery", "surface", activePreference, false),
 			injectFault: (kind: NativeAppFault) => {

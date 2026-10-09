@@ -1325,6 +1325,19 @@ try {
   }) : null;
   if(devtools)logNativeRuntime("devtools-ready",devtools.identity);
 
+  if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_NATIVE_SURFACE_PROOF){
+    const proof=await (await import("../diagnostics/nativeSurfaceProof.js")).runNativeSurfaceProof({
+      app,commitScene,getLiveBackingObserved:()=>resizeLiveBackingObserved,
+      getObservedResizeEvents:()=>resizeEvents,iconNodes:()=>collectActiveIconNodes(),
+      initialWork:sceneController.readWork(),present:description=>present(app,description),
+      selectionToolbarX:()=>selectionToolbar.x,setObserveLiveResize:value=>{observeLiveResize=value;},
+      settingsButtonX:()=>settingsButton.x,searchBarX:()=>searchBar.x,waitFor,
+    });
+    const {writeFileSync}=await import("node:fs");
+    writeFileSync(process.env.LAUNCHPAD_NATIVE_SURFACE_PROOF,JSON.stringify(proof,null,2));
+    closeCoordinator.requestQuit();await closed;return;
+  }
+
   if(__LUMERIA_DIAGNOSTICS__&&nativeMode==="dev"&&process.env.LAUNCHPAD_DATA_ICONS_PROOF){
     await (await import("../diagnostics/nativeDataIconsSmoke.js")).runNativeDataIconsSmoke({app,apps:apps!,dialogs:appDialogs!,management,icons:iconTextures,directory:process.env.LAUNCHPAD_DATA_ICONS_PROOF,save:()=>saves.flush(),quit:()=>closeCoordinator.requestQuit()});return;
   }

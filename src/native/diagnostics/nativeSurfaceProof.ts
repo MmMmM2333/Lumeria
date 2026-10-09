@@ -4,6 +4,7 @@ import type { NativePixiApplication } from "../../../vendor/electrobun-pixi-nati
 import type { NativeDesktopScene } from "../../rendering/native/NativeDesktopScene.js";
 import type { NativeIconNode } from "../product/nativeIconNode.js";
 import { displayFor } from "../product/nativeScenePresentation.js";
+import { getNativePixiApplicationTesting } from "../../../vendor/electrobun-pixi-native-starter/src/runtime/native-app-testing.js";
 
 type SceneCommitWork = ReturnType<NativeDesktopScene["commit"]>;
 
@@ -81,6 +82,44 @@ export async function runNativeSurfaceProof(context: NativeSurfaceProofContext):
   let presentCount = 1;
   const resizeObserved = true;
   const resizePresentCount = 1;
+
+  const testing = getNativePixiApplicationTesting(app);
+  for (const resizeDuringRecovery of [false, true]) {
+    const recoveryBefore = testing.diagnostics().runtime.recoveryCount;
+    const resizeBefore = getObservedResizeEvents();
+    const frameBefore = { ...app.window.getFrame() };
+    const sizeBefore = app.contentSize;
+    let changed = false;
+    const offState = app.on("statechange", ({ state }) => {
+      if (state === "recovering" && resizeDuringRecovery && !changed) {
+        changed = true;
+        app.window.setSize(frameBefore.width + 48, frameBefore.height + 32);
+      }
+    });
+    try {
+      await testing.recover();
+      await waitFor("GPU recovery synchronizes the window and UI", () => (
+        app.state === "running" && getObservedResizeEvents() > resizeBefore
+      ));
+      await present("the synchronized GPU recovery frame");
+      assert.equal(testing.diagnostics().runtime.recoveryCount, recoveryBefore + 1,
+        "window synchronization before the first recovery frame must not trigger a second recovery");
+      const source = app.renderer.view.texture.source;
+      assert.equal(source.pixelWidth, Math.round(app.contentSize.width * app.resolution));
+      assert.equal(source.pixelHeight, Math.round(app.contentSize.height * app.resolution));
+      assert.equal(settingsButtonX(), app.contentSize.width - 54);
+      presentCount += 1;
+    } finally {
+      offState();
+      if (changed && app.state === "running") {
+        app.window.setSize(frameBefore.width, frameBefore.height);
+        await waitFor("the restored recovery regression dimensions", () => (
+          app.contentSize.width === sizeBefore.width && app.contentSize.height === sizeBefore.height
+        ));
+        await present("the restored recovery regression viewport");
+      }
+    }
+  }
 
   const currentDisplay = displayFor(app.window.getFrame());
   const alternateDisplay = Screen.getAllDisplays().find((candidate) => (

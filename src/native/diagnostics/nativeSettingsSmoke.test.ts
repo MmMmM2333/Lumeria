@@ -145,6 +145,18 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
     assert.equal(hoverRow.parent!.getChildIndex(hoverRow),0,"hover paint must be behind row icon and title");
     const p=hoverRow.toGlobal({x:Math.min(220,hoverRow.controlWidth/2),y:36});app.nativeInput.emitPointer("pointermove",p.x,p.y,0);
     await present(`style ${theme} hover`);await capture(`settings-style-${theme}-hover`);
+    const languageVisible=()=>{
+      const control=app.stage.getChildByLabel("native-setting:language",true)!;
+      const hit=control.hitArea as Rectangle;
+      const point=control.toGlobal({x:hit.x+hit.width/2,y:hit.y+hit.height/2});
+      let target:Container|null=app.renderer.events.rootBoundary.hitTest(point.x,point.y);
+      while(target&&target!==control)target=target.parent;
+      return target===control;
+    };
+    for(let attempt=0;attempt<32&&!languageVisible();attempt++){
+      onKey({type:"down",key:"Tab"});await present("language selector scrolled into view");
+    }
+    assert.ok(languageVisible(),"language selector must be inside the scroll viewport before clicking");
     clickWithNativeInput(app.stage.getChildByLabel("native-setting:language",true)!);
     await waitFor("language popup entrance",()=>!scene.getMotionSnapshot().active);await present(`style ${theme} popup`);
     assert.ok(management.getChildByLabel("native-menu:selected-indicator",true));await capture(`settings-style-${theme}-dropdown`);

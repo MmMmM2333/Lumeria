@@ -14,7 +14,7 @@
     "prepare:electrobun": "node tools/patch-electrobun.mjs",
     "verify:adapter": "node tools/patch-electrobun.mjs --check",
     "debug:pixi": "node tools/pixi-debug.mjs",
-    "test:host": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-scheduler.test.ts src/runtime/native-surface-capacity.test.ts src/rendering/native-render.test.ts src/platform/native-accessibility.test.ts src/platform/native-frame-host.test.ts src/rendering/pixi-bind-group-lifecycle.test.ts src/rendering/native-skia.test.ts src/input/text-editor.test.ts src/input/text-input.test.ts src/input/native-text-input.test.ts src/input/native-events.test.ts src/rendering/native-webgpu-status.test.ts",
+    "test:host": ".\\build\\dev-win-x64\\PixiJSNativeWebGPU-dev\\bin\\bun.exe test src/runtime/native-scheduler.test.ts src/runtime/native-surface-capacity.test.ts src/rendering/native-render.test.ts src/platform/native-accessibility.test.ts src/platform/native-frame-host.test.ts src/rendering/pixi-bind-group-lifecycle.test.ts src/rendering/native-skia.test.ts src/input/text-editor.test.ts src/input/text-input.test.ts src/input/native-text-input.test.ts src/input/native-events.test.ts src/rendering/native-webgpu-status.test.ts src/platform/native-window-presentation.test.ts",
     "test:lifecycle": "node tools/pixi-debug.mjs smoke",
     "start": "node tools/run-electrobun.mjs start",
     "bunnymark": "node tools/run-bunnymark.mjs",
