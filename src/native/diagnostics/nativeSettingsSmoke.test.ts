@@ -97,7 +97,8 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
     restoreCommittedLayout, saves, scene, searchBar, settings, settingsButton,
     settingsTheme, smoke, tray, waitFor, windowChrome, windowPanelState,
   } = context;
-  const clickWithNativeInput = (target: Parameters<typeof smoke.clickWithNativeInput>[1]) => smoke.clickWithNativeInput(app, target);
+  const clickWithNativeInput = (target: Parameters<typeof smoke.clickWithNativeInput>[1]) => smoke.clickWithNativeInput(app, target, 0, 0, true);
+  const revealScrollableControl = (target: Container) => smoke.revealScrollableControl(target, present);
   const backgroundBaseline=context.backgroundBaseline;
   const cachedBackground=await nativeData.background({path:join(brandingDirectory,"light.png")});
   assert.ok(cachedBackground);
@@ -179,7 +180,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("sidebar expanded width",()=>sidebar.navigationWidth===220&&!scene.getMotionSnapshot().active);await capture("settings-sidebar-expanded");
   sidebar.toggleNavigation();await waitFor("sidebar collapsed width",()=>sidebar.navigationWidth===68&&!scene.getMotionSnapshot().active);
   const disclosureButton=app.stage.getChildByLabel("native-setting:icon-expand",true) as NativeFluentButton;
-  assert.ok(disclosureButton);clickWithNativeInput(disclosureButton);
+  assert.ok(disclosureButton);await revealScrollableControl(disclosureButton);clickWithNativeInput(disclosureButton);
   assert.equal(disclosureButton.focused,false,"mouse selection must not paint a keyboard focus ring");
   await waitFor("icon disclosure intermediate",()=>{
     const body=app.stage.getChildByLabel("native-disclosure:general.icons",true)?.getChildByLabel("native-disclosure-content");return Boolean(body&&body.alpha>0.05&&body.alpha<0.95);
@@ -196,7 +197,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   await waitFor("icon disclosure collapsed",()=>app.stage.getChildByLabel("native-disclosure:general.icons",true)?.visible===false);
   const originalShortcut=settings.draft.mainWindowShortcut.value;
   const shortcutControl=app.stage.getChildByLabel("native-setting:shortcut",true);assert.ok(shortcutControl);
-  clickWithNativeInput(shortcutControl);
+  await revealScrollableControl(shortcutControl);clickWithNativeInput(shortcutControl);
   app.nativeInput.emitKey("down",{keyCode:0x77,modifiers:6});
   assert.equal(settings.draft.mainWindowShortcut.value,"control+alt+F8","native shortcut recording must reach the shared draft");
   const clearShortcut=app.stage.getChildByLabel("native-setting:clear-shortcut",true) as NativeFluentButton;
@@ -206,7 +207,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   settings.actions.setDraftMainWindowShortcut(originalShortcut);
   await present("shortcut recording settles refreshed controls");
   const languageControl=app.stage.getChildByLabel("native-setting:language",true);assert.ok(languageControl);
-  clickWithNativeInput(languageControl);await present("general language menu");
+  await revealScrollableControl(languageControl);clickWithNativeInput(languageControl);await present("general language menu");
   assert.ok(management.modal,"language selector must open the native menu");
   app.nativeInput.emitKey("down",{keyCode:0x1b});
   assert.ok(getSettingsShell(),"closing the language menu must retain settings");
@@ -216,7 +217,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   const nextLocale=localeBefore==="en-US"?"zh-CN":"en-US";
   const nextIcon=LAUNCHPAD_ICON_VARIANTS.find(value=>value!==iconBefore)!;
   const languageAgain=app.stage.getChildByLabel("native-setting:language",true)!;
-  clickWithNativeInput(languageAgain);await present("language menu selection");
+  await revealScrollableControl(languageAgain);clickWithNativeInput(languageAgain);await present("language menu selection");
   const localeLabel=nativeLocaleOptions.find(option=>option.value===nextLocale)!.label;
   const languageOption=management.getChildByLabel(`native-action:${localeLabel}`,true);assert.ok(languageOption);
   clickWithNativeInput(languageOption);
@@ -410,7 +411,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
   for(let index=0;index<100&&!managerLink.focused;index++)onKey({type:"down",key:"Tab"});
   assert.ok(managerLink.focused);await present("apps manager link revealed");
   {const scroll=managerLink.parent!.parent!.parent as import("../../rendering/native/NativeScrollView.js").NativeScrollView;scroll.scrollTo(scroll.maxOffset);await present("apps overview actions");await capture("settings-apps-actions");}
-  clickWithNativeInput(managerLink);
+  await revealScrollableControl(managerLink);clickWithNativeInput(managerLink);
   await waitFor("apps manager transition",()=>!scene.getMotionSnapshot().active);await present("apps manager rendered");
   const firstManaged=apps().filteredManagedApps.value[0]!;
   await capture("virtual-manager-before-selection");
@@ -742,7 +743,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
     await clickBackgroundControl("base-color-picker");
     assert.equal(management.activeId,"color-picker");
     const field=management.getChildByLabel("native-color:hex",true) as import("../../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
-    clickWithNativeInput(field);field.selectAll();field.commitText("#336699");
+    await revealScrollableControl(field);clickWithNativeInput(field);field.selectAll();field.commitText("#336699");
     await capture(accept?"native-color-picker-dark":"native-color-picker-light");
     clickWithNativeInput(management.getChildByLabel(accept?"native-modal:color-picker:confirm":"native-modal:color-picker:cancel",true)!);
     await waitFor("native color picker released",()=>!management.modal);

@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Rectangle, type Container } from "pixi.js";
 import type { NativePixiApplication } from "../../vendor/electrobun-pixi-native-starter/src/native-host.js";
+import { NativeScrollView } from "../rendering/native/NativeScrollView.js";
 import { prepareNativeIconTextures } from "../rendering/native/nativeRecoverableIconSource.js";
 import type { NativePixelData, NativePixelRegion } from "./nativePixelProof.js";
 export { assertNativeScenePixels } from "./nativePixelProof.js";
@@ -52,6 +53,17 @@ export async function captureSmokeFrame(app: NativePixiApplication, name: string
     format: "png",
   });
   writeFileSync(join(directory, `${name}.png`), Buffer.from(dataUrl.split(",")[1]!, "base64"));
+}
+
+/** Reveal a scroll-clipped control and commit its geometry before hit testing. */
+export async function revealScrollableControl(target: Container, present: (description: string) => Promise<void>): Promise<void> {
+  let ancestor = target.parent;
+  while (ancestor && !(ancestor instanceof NativeScrollView)) ancestor = ancestor.parent;
+  if (!(ancestor instanceof NativeScrollView)) return;
+  const area = target.hitArea as Rectangle | null;
+  const top = ancestor.content.toLocal(target.toGlobal({ x: area?.x ?? 0, y: area?.y ?? 0 })).y;
+  ancestor.reveal(top, area?.height ?? target.getLocalBounds().height);
+  await present("test control scrolled into view: " + target.label);
 }
 
 export function clickWithNativeInput(app: NativePixiApplication, target: Container, button=0, modifiers=0, validateTarget=false): void {
