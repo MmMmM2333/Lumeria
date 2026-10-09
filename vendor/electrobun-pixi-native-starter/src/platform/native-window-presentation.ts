@@ -34,6 +34,9 @@ const dwm=process.platform==="win32"?dlopen("dwmapi.dll",{
   DwmExtendFrameIntoClientArea:{args:["ptr","ptr"],returns:"i32"},
 }):null;
 const materials={none:1,mica:2,acrylic:3,micaAlt:4} as const;
+// Only the bits changed by fullscreen belong to its saved style. WS_VISIBLE,
+// WS_MINIMIZE and WS_DISABLED remain owned by the live window lifecycle.
+const windowModeStyleMask=0x81c70000n;
 /** Only the application-owned root window is eligible for presentation changes. */
 export function createNativeWindowPresentation(inputWindow:number,releaseCapture:()=>void){
   if(!user||!dwm)return null;
@@ -68,8 +71,10 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     return {rect,style:BigInt.asUintN(32,BigInt(user.symbols.GetWindowLongPtrW(window,-16)))};
   };
   const writePlacement=({style,rect}:WindowPlacement)=>{
-    user.symbols.SetWindowLongPtrW(window,-16,style);
-    if(BigInt.asUintN(32,BigInt(user.symbols.GetWindowLongPtrW(window,-16)))!==style)throw new Error("Cannot change the window style");
+    const liveStyle=BigInt.asUintN(32,BigInt(user.symbols.GetWindowLongPtrW(window,-16)));
+    const nextStyle=BigInt.asUintN(32,(liveStyle&~windowModeStyleMask)|(style&windowModeStyleMask));
+    user.symbols.SetWindowLongPtrW(window,-16,nextStyle);
+    if(BigInt.asUintN(32,BigInt(user.symbols.GetWindowLongPtrW(window,-16)))!==nextStyle)throw new Error("Cannot change the window style");
     if(!user.symbols.SetWindowPos(window,null,rect[0]!,rect[1]!,rect[2]!-rect[0]!,rect[3]!-rect[1]!,0x34))throw new Error("Cannot change the window frame");
     const actual=readPlacement().rect;
     if(actual.some((value,index)=>value!==rect[index]))throw new Error("Window did not retain the requested frame");

@@ -64,6 +64,10 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
     layoutState, management, nativeData, onDesktopPageIndexCommit, onKey, present, saves, scene,
     searchBar, searchQuery, selectionToolbar, smoke, t, waitFor,
   } = context;
+  const clickDialogControl = async (target: import("pixi.js").Container): Promise<void> => {
+    await smoke.revealScrollableControl(target, present);
+    click(target);
+  };
   const customSource=baselinePages.flat().find(item=>item.id==="native-layout-icon")?.customIconPath;
   assert.equal(typeof customSource,"string","runNativeElectrobun smoke fixture must provide its generated icon");
   const normalizedIcon=await normalizeNativeCustomIcon(customSource as string);
@@ -85,33 +89,33 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
     nativeData.loadIconChoices=async()=>candidates;
     try{
       editor.actions.openCreate();appDialogs()!.sync();await present("new app editor rendered");
-      const editField=(id:string,value:string)=>{
+      const editField=async(id:string,value:string)=>{
         const input=management.getChildByLabel(`native-editor:${id}`,true) as import("../../../vendor/electrobun-pixi-native-starter/src/native-host.js").TextInput;
-        assert.ok(input);click(input);input.selectAll();input.commitText(value);
+        assert.ok(input);await clickDialogControl(input);input.selectAll();input.commitText(value);
       };
-      editField("name","Native dialog fixture");editField("target","C:\\Windows\\System32\\notepad.exe");
+      await editField("name","Native dialog fixture");await editField("target","C:\\Windows\\System32\\notepad.exe");
       await present("editor executable args appear");assert.ok(management.getChildByLabel("native-editor:args",true));
-      editField("args","--fixture");await present("editor live draft");assert.equal(editor.args.value,"--fixture");
+      await editField("args","--fixture");await present("editor live draft");assert.equal(editor.args.value,"--fixture");
       await capture("editor-reference-match");
       nativeData.loadIconChoices=async()=>{throw new Error("Embedded icon fixture could not be read.");};
-      click(management.getChildByLabel("native-dialog:editor-icon",true)!);
+      await clickDialogControl(management.getChildByLabel("native-dialog:editor-icon",true)!);
       await waitFor("embedded icon load failure",()=>Boolean(chooser.error.value)&&management.activeId==="icon-chooser");await present("embedded icon error visible");
       assert.ok(management.getChildByLabel("native-dialog:icon-upload",true),"local image selection remains available after embedded icon failure");
       await capture("icon-candidate-load-error");onKey({type:"down",key:"Escape"});await present("failed chooser closed");
       nativeData.loadIconChoices=async()=>candidates;
-      click(management.getChildByLabel("native-dialog:editor-icon",true)!);
+      await clickDialogControl(management.getChildByLabel("native-dialog:editor-icon",true)!);
       await waitFor("embedded icon candidates loaded",()=>management.activeId==="icon-chooser"&&chooser.choices.value.length===candidates.length);await present("candidate grid visible");
       const list=management.getChildByLabel("native-virtual-list",true) as import("../../rendering/native/ui/NativeVirtualList.js").NativeVirtualList;
       assert.ok(list.mountedCount<list.count,"candidate grid must virtualize offscreen rows");
       await capture("icon-candidate-grid");await present("candidate selection hit target");
-      click(management.getChildByLabel("native-dialog:icon-choice-0",true)!);
+      await clickDialogControl(management.getChildByLabel("native-dialog:icon-choice-0",true)!);
       await waitFor("candidate returns to editor",()=>management.activeId==="editor");await present("selected editor icon");
       assert.equal(editor.iconPath.value,cachedIcon.iconPath);
       assert.equal(editor.iconDataUrl.value,null,"embedded candidates keep only the cached path");
       // A delayed upload result belongs to the chooser session that initiated it.
       let finishUpload!:(value:typeof cachedIcon|null)=>void;
       appDialogs()!.options.pickIcon=()=>new Promise(resolve=>{finishUpload=resolve;});
-      click(management.getChildByLabel("native-dialog:editor-icon",true)!);
+      await clickDialogControl(management.getChildByLabel("native-dialog:editor-icon",true)!);
       await waitFor("upload chooser",()=>management.activeId==="icon-chooser"&&chooser.choices.value.length===candidates.length);await present("upload action visible");
       const upload=management.getChildByLabel("native-dialog:icon-upload",true)!;
       // The upload control follows the virtualized candidates and must be revealed by keyboard.
@@ -120,13 +124,13 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
       onKey({type:"down",key:"Escape"});await present("upload chooser cancelled");
       editor.actions.resetIcon();finishUpload(cachedIcon);await present("stale upload ignored");assert.equal(editor.iconDataUrl.value,null);
       nativeData.loadIconChoices=async()=>[];
-      click(management.getChildByLabel("native-dialog:editor-icon",true)!);
+      await clickDialogControl(management.getChildByLabel("native-dialog:editor-icon",true)!);
       await waitFor("empty icon chooser ready",()=>management.activeId==="icon-chooser"&&!chooser.isLoading.value);await present("empty icon chooser");
       await capture("icon-chooser-empty-reference-match");onKey({type:"down",key:"Escape"});await present("empty chooser cancelled");
       assert.equal(editor.name.value,"Native dialog fixture","chooser cancellation preserves the editor draft");
       appDialogs()!.options.save=async()=>{throw new Error("smoke: editor save unavailable. ".repeat(24));};
       const countBefore=apps().managedApps.value.length;
-      click(management.getChildByLabel("native-modal:editor:confirm",true)!);await present("editor save failed");
+      await clickDialogControl(management.getChildByLabel("native-modal:editor:confirm",true)!);await present("editor save failed");
       assert.equal(management.activeId,"editor");assert.equal(editor.name.value,"Native dialog fixture");assert.equal(apps().managedApps.value.length,countBefore+1);
       await capture("editor-save-failure");
       const editorWindow={...app.window.getFrame()};
@@ -143,7 +147,7 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
         await waitFor("editor window restored",()=>app.contentSize.width>480);
         await present("editor retry hit target");
       }
-      appDialogs()!.options.save=saveNormally;click(management.getChildByLabel("native-modal:editor:confirm",true)!);
+      appDialogs()!.options.save=saveNormally;await clickDialogControl(management.getChildByLabel("native-modal:editor:confirm",true)!);
       await waitFor("editor retry saved",()=>!management.modal);
       assert.equal(apps().managedApps.value.length,countBefore+1,"retrying a newly created app must preserve its original id");
       const savedFixture=apps().managedApps.value.find(item=>item.name==="Native dialog fixture")!;
@@ -402,12 +406,12 @@ export async function runNativeDesktopSmoke(context: NativeDesktopSmokeContext):
   onKey({type:"down",key:"Escape"});
   assert.equal(searchBar.host.focused,initialField,"closing nested form must restore the parent field focus");
   assert.equal(management.modal,true,"closing nested form must not close its parent");
-  click(management.getChildByLabel("native-modal:editor:cancel",true)!);
+  await clickDialogControl(management.getChildByLabel("native-modal:editor:cancel",true)!);
   assert.equal(management.modal,false,"Space on the focused Cancel button must close the dialog");
   await present("edit dialog cancelled");
   editItem(activePageItems().find(item=>item.id==="native-settings")??null);
   await present("reopened application editor hit targets");
-  click(management.getChildByLabel("native-modal:editor:confirm",true)!);
+  await clickDialogControl(management.getChildByLabel("native-modal:editor:confirm",true)!);
   onKey({type:"down",key:"Escape"});
   assert.equal(management.modal,true,"Escape cannot destroy an in-flight form submission");
   await waitFor("Enter submits native edit form",()=>!management.modal);

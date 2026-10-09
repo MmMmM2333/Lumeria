@@ -24,6 +24,12 @@ Native 使用宿主的帧调度，不另外启动一套 RAF。纯位置、透明
 
 批量工具栏模糊需要背景取样。DComp surface 支持 CopySrc 时使用局部复制；能力未知或不支持时保留整场景中间表面回退，不能把请求的 usage 当作设备实际支持。
 
+## 深度模板纹理尺寸
+
+Pixi 8.20.1 内部深度模板纹理创建后，通过 TextureSource.resize() 规范化为整数物理像素，再交给 GPU 分配。该规则覆盖首次使用遮罩以及 GPU 恢复后的延迟创建，避免小数 DPI 的浮点误差让深度模板比颜色附件多一个像素。
+
+修复由 vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs 维护，同时应用于 JS 和 MJS；安装依赖时自动应用，check:pixi-patch 验证完整性。已有及外部传入的深度模板附件沿用原行为。回归命令为 npm run test:pixi-render-target。
+
 ## 修改后的验证
 
 结构更新次数、图标重设次数和应用呈现帧间隔分别测量。平均 FPS 不能说明首次操作是否长帧；最终节点正确也不能证明动画期间没有重复图标或交接空白。

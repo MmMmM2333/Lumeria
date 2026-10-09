@@ -24,14 +24,16 @@ if (version !== "2.0.1" || commit !== expectedCommit) {
 if (refresh) {
 	// git diff omits untracked additions; never silently drop an existing patch's
 	// new native header when refreshing a freshly-applied checkout.
-	const header = "package/src/native/win/native_touchpad.h";
-	if (existsSync(join(source, header)) && runGit("ls-files", "--error-unmatch", header).status !== 0) {
-		throw new Error(`Refresh requires the new header in the diff; run git add -N ${header} in the source checkout`);
-	}
+    for (const header of ["package/src/native/win/native_touchpad.h", "package/src/native/win/native_tray.h"]) {
+        if (existsSync(join(source, header)) && runGit("ls-files", "--error-unmatch", header).status !== 0) {
+            throw new Error("Refresh requires the new header in the diff; run git add -N " + header);
+        }
+    }
 	const diff = runGit(
 		"diff", "--",
 		"package/src/native/win/nativeWrapper.cpp",
     "package/src/native/win/native_touchpad.h",
+    "package/src/native/win/native_tray.h",
 		"package/src/native/win/dcomp_compositor.h",
 		"package/src/sdks/main/proc/native.ts",
 		"package/src/sdks/main/webgpuAdapter.ts",
@@ -75,6 +77,9 @@ if (alreadyApplied || apply) {
     "wgpuDeviceMaxTextureDimension2D",
     "wgpuSurfaceSetPresentExtent",
     "g_retainedPresentExtents",
+    'RegisterWindowMessageW(L"TaskbarCreated")',
+    "restoreTrayIcon(hwnd, it->second->nid)",
+    "WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE",
     "SetSourceSize",
     "SetMatrixTransform",
     "wgpuWindowSetBackgroundVisual",
@@ -138,6 +143,8 @@ if (alreadyApplied || apply) {
 	const whitespace = runGit(
 		"diff", "--check", "--",
 		"package/src/native/win/nativeWrapper.cpp",
+        "package/src/native/win/native_touchpad.h",
+        "package/src/native/win/native_tray.h",
 		"package/src/native/win/dcomp_compositor.h",
 		"package/src/sdks/main/proc/native.ts",
 		"package/src/sdks/main/webgpuAdapter.ts",

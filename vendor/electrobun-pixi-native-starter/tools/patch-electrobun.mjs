@@ -391,11 +391,64 @@ const patchPixiBindGroups = (extension, baseClass) => {
 	return pixiChanged;
 };
 
+const patchPixiDepthStencil = (extension, textureSourceClass) => {
+  const path = join(dependencyRoot, "node_modules/pixi.js/lib/rendering/renderers/shared/renderTarget/RenderTarget." + extension);
+  const source = readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+  const original = [
+    "  _createDepthStencilTexture(width, height, resolution) {",
+    "    this.depthStencilAttachment ?? (this.depthStencilAttachment = {",
+    "      texture: new " + textureSourceClass + "({",
+    "        width,",
+    "        height,",
+    "        resolution,",
+    '        format: "depth24plus-stencil8",',
+    "        autoGenerateMipmaps: false,",
+    "        antialias: false,",
+    "        mipLevelCount: 1",
+    "        // sampleCount: handled by the render target system..",
+    "      })",
+    "    });",
+    "    return this.depthStencilAttachment;",
+    "  }",
+  ].join("\n");
+  const patched = [
+    "  _createDepthStencilTexture(width, height, resolution) {",
+    "    if (!this.depthStencilAttachment) {",
+    "      const texture = new " + textureSourceClass + "({",
+    "        width,",
+    "        height,",
+    "        resolution,",
+    '        format: "depth24plus-stencil8",',
+    "        autoGenerateMipmaps: false,",
+    "        antialias: false,",
+    "        mipLevelCount: 1",
+    "        // sampleCount: handled by the render target system..",
+    "      });",
+    "      // Match resize rounding before GPU allocation, including lazily-created masks.",
+    "      texture.resize();",
+    "      this.depthStencilAttachment = { texture };",
+    "    }",
+    "    return this.depthStencilAttachment;",
+    "  }",
+  ].join("\n");
+  if (source.split("  _createDepthStencilTexture(width, height, resolution) {").length !== 2) {
+    throw new Error("PixiJS " + extension + " depth/stencil creation changed; refusing an unsafe patch");
+  }
+  if (source.split(patched).length === 2) return false;
+  if (source.split(original).length !== 2) throw new Error("PixiJS " + extension + " depth/stencil creation changed; refusing an unsafe patch");
+  if (checkOnly) throw new Error("PixiJS " + extension + " depth/stencil integer size patch is not applied");
+  writeFileSync(path, source.replace(original, patched));
+  return true;
+};
+
 if (!sdkOnly) {
 const pixiMjsChanged = patchPixiBindGroups("mjs", "BindGroup");
 const pixiJsChanged = patchPixiBindGroups("js", "BindGroup.BindGroup");
 const pixiChanged = pixiMjsChanged || pixiJsChanged;
 console.log(`PixiJS texture BindGroup lifecycle patch ${pixiChanged ? "applied" : "verified"}`);
+const depthMjsChanged = patchPixiDepthStencil("mjs", "TextureSource");
+const depthJsChanged = patchPixiDepthStencil("js", "TextureSource.TextureSource");
+console.log("PixiJS depth/stencil integer size patch " + (depthMjsChanged || depthJsChanged ? "applied" : "verified"));
 // A Text can outlive its renderer (including off-stage cached UI). Its global
 // dirty bit may be false even though this renderer has never rasterized it.
 for (const extension of ["mjs", "js"]) {
