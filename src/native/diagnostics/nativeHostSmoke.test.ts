@@ -269,6 +269,7 @@ export async function runNativeHostSmoke(context: NativeHostSmokeContext): Promi
     const {sendTrayTestAction}=await import("../../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js");
     const trayHandle=tray();
     assert.ok(trayHandle);
+    await sendTrayTestAction(trayHandle.id,"recover");
     await sendTrayTestAction(trayHandle.id,"left");await waitFor("tray left click hides",()=>!app.window.isVisible());
     await sendTrayTestAction(trayHandle.id,"left");await waitFor("tray left click reopens",()=>app.window.isVisible()&&launchFlow().isDesktopOpen.value);
     await waitFor("tray show settles",()=>scene.getDesktopAlpha()>0.99&&!scene.getMotionSnapshot().active);

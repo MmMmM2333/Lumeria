@@ -41,7 +41,7 @@ npm run native:dev
 官方附件由 `native-toolchain.lock.json` 固定大小、哈希和文件清单；当前 `archive.url` 未配置，不能直接公开下载。已有匹配附件时运行：
 
 ```powershell
-npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc.tar.gz
+npm run native:prepare -- --archive C:\Downloads\lumeria-toolchain-electrobun-2.0.1-win-x64-r4-tray-recovery.tar.gz
 npm run native:toolchain:check
 ```
 
@@ -60,7 +60,7 @@ npm run native:toolchain:check
 | 导入时 Starter 来源 | 同目录 `starter-manifest.json` | 历史记录，普通构建不再改写，不作为当前源码完整性依据 |
 | 本地验证与打包产物 | `artifacts/`、`.codex-dev/` | 忽略，不混入源码分发 |
 
-r1 来源为已有 Starter 0.3.4 的 SDK，已对原清单的 462 个条目逐个核实，其中 app.log 作为运行记录排除，最终分发 461 个 SDK 文件。Electrobun 上游固定为 `8d09d15db791f346e419efd452d6759750addb62`（官方 v2.0.1），C++ DComp/输入补丁保存在仓库，Bun 声明固定 1.4.2，WebGPU SDK 投影补丁保存在 `tools/patch-electrobun.mjs`。r1 保留完整导入 SDK（含当前 Native 产品未使用的 CEF 和其他语言 SDK）；不在本阶段裁剪底层组成以避免改变现有构建行为。运行日志 `app.log` 不进入附件。
+当前 r4 SDK 包含 461 个文件，Electrobun 上游固定为 `8d09d15db791f346e419efd452d6759750addb62`（官方 v2.0.1）。Windows DComp、输入及托盘恢复补丁保存在仓库，Bun 声明固定 1.4.2，WebGPU SDK 投影补丁保存在 tools/patch-electrobun.mjs。SDK 保留完整上游组成（含当前 Native 产品未使用的 CEF 和其他语言 SDK），运行日志 app.log 不进入附件。
 
 校验通过表示文件与锁定附件一致。源码重建、应用构建和发行验收是不同检查；发布前还需核对实际分发内容和第三方许可材料。
 
@@ -130,6 +130,8 @@ npm run native:release:bytecode
 启动隐藏需要 `GpuWindow` 的 `hidden` 参数投影补丁，底层 ABI 已支持该能力。已有 r3 SDK 请通过 `native:prepare:source` 重建并选择本地 SDK；不要手工修改受清单保护的缓存文件。`check:pixi-patch` 同时检查该映射与 Pixi 文字恢复补丁。
 
 DComp 合成桥接和 CopySrc surface 是固定 SDK 补丁的一部分。构建应使用匹配的源码、补丁和锁文件，不能通过手工替换缓存 DLL 跳过校验。CopySrc 按设备实际能力启用，不支持时保留回退，详见[渲染说明](rendering.md)。Live Desktop 的宿主边界见[实现说明](native-live-desktop.md)。
+
+托盘恢复包含在 r4 SDK 中：隐藏顶层窗口接收 Windows 的 TaskbarCreated 通知后，重新注册原图标；若任务栏暂未就绪，每秒重试直到成功，移除托盘时同步清理窗口与定时器。Windows 决定图标在托盘或折叠菜单的位置。使用旧 SDK 的开发环境需通过 native:prepare:source 重建，或导入与当前锁匹配的 r4 附件。
 
 ## 构建格式
 

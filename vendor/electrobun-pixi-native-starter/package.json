@@ -5,7 +5,7 @@
   "type": "module",
   "electrobunPixiStarter": {
     "bunVersion": "1.4.2",
-    "nativeWrapperSha256": "22a30e5a31ed3e95c4005d63605dc91e2498c3732bef0a022d92ec27650f1cb4"
+    "nativeWrapperSha256": "580dccd7f3556558d20d4b5283e718e1583fae24e42ec270b266387a6f0271c6"
   },
   "scripts": {
     "devtools:mcp": "node tools/devtools-mcp.mjs",

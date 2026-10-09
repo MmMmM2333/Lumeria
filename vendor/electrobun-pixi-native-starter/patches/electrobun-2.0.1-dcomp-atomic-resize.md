@@ -41,8 +41,13 @@ This repository stages that complete local devkit at
 and applies/verifies the projected WebGPU adapter patch before launching the
 Electrobun command. Keeping the source devkit under `.hutch` is intentional:
 stable packaging clears `artifacts`, but leaves this staging directory intact.
-The staged native DLL is 2,090,496 bytes with SHA-256
-`22A30E5A31ED3E95C4005D63605DC91E2498C3732BEF0A022D92EC27650F1CB4`.
+The current SDK inventory and native DLL hash are recorded in
+`native-toolchain.lock.json`.
+
+The Windows tray uses a hidden top-level tool window to receive TaskbarCreated.
+It adds the original icon again, falls back to modifying an existing entry for
+duplicate/DPI notifications, and retries every second while the shell is not
+ready. Removing the tray cancels retries and destroys the receiver window.
 Starter 0.2.16 includes native_touchpad.h in the reconstructible patch, with
 nativeTouchpadAbi/Attach/Poll/Detach exports (touchpad ABI 1). Direct Manipulation
 registers on the GPU surface HWND; registering only its root does not receive

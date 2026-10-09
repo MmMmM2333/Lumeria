@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc",
+  "id": "lumeria-toolchain-electrobun-2.0.1-win-x64-r4-tray-recovery",
   "target": "win32-x64",
   "electrobun": "2.0.1",
   "bun": "1.4.2",
@@ -12,15 +12,15 @@
     "patches": [
       {
         "path": "patches/electrobun-2.0.1-dcomp-atomic-resize.patch",
-        "sha256": "0a4e53a3941ee0fb505edd88304e8e31df31a9f6703bd486a88b3a11a5e060b3"
+        "sha256": "00163b9ad2915de7e66f8bd2f9b82a61e6c4d38cd9252c39472a7dca6766e3b6"
       }
     ],
-    "sourceDiffSha256": "0a4e53a3941ee0fb505edd88304e8e31df31a9f6703bd486a88b3a11a5e060b3"
+    "sourceDiffSha256": "00163b9ad2915de7e66f8bd2f9b82a61e6c4d38cd9252c39472a7dca6766e3b6"
   },
   "archive": {
-    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r3-copysrc.tar.gz",
-    "size": 181741587,
-    "sha256": "d1bc3f1e20477ad3168b429a174a500884c33f5717d8df39f4cbee885f169780",
+    "file": "lumeria-toolchain-electrobun-2.0.1-win-x64-r4-tray-recovery.tar.gz",
+    "size": 181742600,
+    "sha256": "3b72c47fce17c5d028b142c6357b904cea796e8672f11e37c0636c31d82c003b",
     "url": null
   },
   "files": [
@@ -261,8 +261,8 @@
     },
     {
       "path": "api/sdks/main/core/GpuWindow.ts",
-      "size": 8440,
-      "sha256": "507816d50e2845b5db03c5db1b428844d7d4ea83939c22f2881937894d76d748"
+      "size": 8161,
+      "sha256": "17040640e037ca6157bbc7184a5c33501f98ca115b5f7c0b20307203f7dd6435"
     },
     {
       "path": "api/sdks/main/core/hostTransportEncryption.ts",
@@ -2256,8 +2256,8 @@
     },
     {
       "path": "libNativeWrapper.dll",
-      "size": 2096640,
-      "sha256": "534a65f3ec4976c27272d533687935cb00e97bb040a3df2d71c0f0832fddb420"
+      "size": 2098176,
+      "sha256": "580dccd7f3556558d20d4b5283e718e1583fae24e42ec270b266387a6f0271c6"
     },
     {
       "path": "main.js",

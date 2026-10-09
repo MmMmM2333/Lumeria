@@ -565,12 +565,14 @@ index 4ef9512..5ef3501 100644
 +
  };
 diff --git a/package/src/native/win/nativeWrapper.cpp b/package/src/native/win/nativeWrapper.cpp
-index 006196c..65b0e3f 100644
+index 006196c..dad8ca5 100644
 --- a/package/src/native/win/nativeWrapper.cpp
 +++ b/package/src/native/win/nativeWrapper.cpp
-@@ -81,12 +81,14 @@
+@@ -80,13 +80,16 @@
+ 
  // DirectComposition compositor (GPU surface compositing for Windows)
  #include "dcomp_compositor.h"
++#include "native_tray.h"
  
 -// DirectComposition zero-copy bridge state (per-surface)
 -// DCompBridgeState is defined later, after WGPU function pointer declarations.
@@ -587,7 +589,7 @@ index 006196c..65b0e3f 100644
  
  using namespace electrobun;
  
-@@ -4804,6 +4806,33 @@ public:
+@@ -4804,6 +4807,33 @@ public:
      }
  };
  
@@ -621,7 +623,7 @@ index 006196c..65b0e3f 100644
  // WGPUView class - simple native child window surface
  class WGPUView : public AbstractView {
  public:
-@@ -5541,6 +5570,7 @@ typedef struct {
+@@ -5541,6 +5571,7 @@ typedef struct {
      WindowBlurHandler blurHandler;
      WindowKeyHandler keyHandler;
      ChromeStyle chromeStyle;
@@ -629,7 +631,7 @@ index 006196c..65b0e3f 100644
      bool bypassShouldClose;
      wchar_t pendingHighSurrogate;
  } WindowData;
-@@ -5815,6 +5845,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+@@ -5815,6 +5846,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
              break;
  
          case WM_NCCALCSIZE:
@@ -647,7 +649,7 @@ index 006196c..65b0e3f 100644
              if (wParam == TRUE && data && data->chromeStyle == ChromeStyle::HiddenInset) {
                  NCCALCSIZE_PARAMS* p = (NCCALCSIZE_PARAMS*)lParam;
                  RECT original = p->rgrc[0];
-@@ -5835,6 +5876,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+@@ -5835,6 +5877,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
              }
              break;
  
@@ -666,7 +668,7 @@ index 006196c..65b0e3f 100644
          case WM_INPUT: {
              if (g_isMovingWindow && g_targetWindow) {
                  UINT dwSize = 0;
-@@ -6060,7 +6113,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+@@ -6060,7 +6114,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
              {
                  PAINTSTRUCT ps;
                  HDC hdc = BeginPaint(hwnd, &ps);
@@ -675,7 +677,25 @@ index 006196c..65b0e3f 100644
                  EndPaint(hwnd, &ps);
              }
              return 0;
-@@ -8752,6 +8805,13 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
+@@ -6172,14 +6226,16 @@ public:
+         if (contextMenu) {
+             DestroyMenu(contextMenu);
+         }
+-        // Remove from system tray
++        if (hwnd) KillTimer(hwnd, kTrayRecoveryTimerId);
+         Shell_NotifyIconW(NIM_DELETE, &nid);
++        if (hwnd) DestroyWindow(hwnd);
+     }
+ };
+ 
+ // Global map to store tray items by their window handle
+ static std::map<HWND, NSStatusItem*> g_trayItems;
+ static UINT g_trayMessageId = WM_USER + 100;
++static UINT g_taskbarCreatedMessageId = 0;
+ 
+ struct SimpleJsonValue {
+     enum Type { STRING, BOOL, ARRAY, OBJECT, UNKNOWN };
+@@ -8752,6 +8808,13 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
              ::log("ERROR: Container window handle invalid for WGPUView");
              return;
          }
@@ -689,7 +709,7 @@ index 006196c..65b0e3f 100644
  
          RECT physicalBounds = electrobun::logicalToPhysicalRect(
              x,
-@@ -8764,9 +8824,14 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
+@@ -8764,9 +8827,14 @@ ELECTROBUN_EXPORT AbstractView* initWGPUView(uint32_t webviewId,
              // full-size WGPU view fills the drawable client area instead.
              GetClientRect(containerHwnd, &physicalBounds);
          }
@@ -706,7 +726,7 @@ index 006196c..65b0e3f 100644
              L"",
              WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
              physicalBounds.left,
-@@ -8884,6 +8949,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
+@@ -8884,6 +8952,7 @@ ELECTROBUN_EXPORT void* wgpuViewGetNativeHandle(AbstractView *abstractView) {
  
  typedef void* (*PFN_wgpuInstanceCreateSurface)(void* instance, const void* descriptor);
  typedef void (*PFN_wgpuSurfaceConfigure)(void* surface, const void* config);
@@ -714,7 +734,7 @@ index 006196c..65b0e3f 100644
  typedef void (*PFN_wgpuSurfaceGetCurrentTexture)(void* surface, void* surfaceTexture);
  typedef int32_t (*PFN_wgpuSurfacePresent)(void* surface);
  typedef WGPUFuture (*PFN_wgpuQueueOnSubmittedWorkDone)(WGPUQueue queue, WGPUQueueWorkDoneCallbackInfo callbackInfo);
-@@ -8896,6 +8962,7 @@ typedef void (*PFN_wgpuBufferUnmap)(WGPUBuffer buffer);
+@@ -8896,6 +8965,7 @@ typedef void (*PFN_wgpuBufferUnmap)(WGPUBuffer buffer);
  static HMODULE wgpuLibHandle = nullptr;
  static PFN_wgpuInstanceCreateSurface p_wgpuInstanceCreateSurface = nullptr;
  static PFN_wgpuSurfaceConfigure p_wgpuSurfaceConfigure = nullptr;
@@ -722,7 +742,7 @@ index 006196c..65b0e3f 100644
  static PFN_wgpuSurfaceGetCurrentTexture p_wgpuSurfaceGetCurrentTexture = nullptr;
  static PFN_wgpuSurfacePresent p_wgpuSurfacePresent = nullptr;
  static PFN_wgpuQueueOnSubmittedWorkDone p_wgpuQueueOnSubmittedWorkDone = nullptr;
-@@ -9024,7 +9091,8 @@ static bool ensureDCompSymbols() {
+@@ -9024,7 +9094,8 @@ static bool ensureDCompSymbols() {
  
  // DirectComposition zero-copy bridge state (per-surface)
  struct DCompBridgeState {
@@ -732,7 +752,7 @@ index 006196c..65b0e3f 100644
      ComPtr<ID3D12Resource> stagingDx12;
      ComPtr<ID3D11Device5> presentDevice;
      ComPtr<ID3D11DeviceContext4> presentContext;
-@@ -9042,6 +9110,10 @@ struct DCompBridgeState {
+@@ -9042,6 +9113,10 @@ struct DCompBridgeState {
      WGPUDevice wgpuDevice = nullptr;
      uint32_t width = 0;
      uint32_t height = 0;
@@ -743,7 +763,7 @@ index 006196c..65b0e3f 100644
  
      void cleanup() {
          std::lock_guard<std::mutex> lock(frameMutex);
-@@ -9079,12 +9151,35 @@ struct DCompBridgeState {
+@@ -9079,12 +9154,35 @@ struct DCompBridgeState {
          }
          presentContext.Reset();
          presentDevice.Reset();
@@ -780,7 +800,7 @@ index 006196c..65b0e3f 100644
  extern "C++" {
  
  static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
-@@ -9095,23 +9190,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
+@@ -9095,23 +9193,74 @@ static std::shared_ptr<DCompBridgeState> makeDCompBridge() {
          });
  }
  
@@ -860,7 +880,7 @@ index 006196c..65b0e3f 100644
  }
  
  static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context) {
-@@ -9135,6 +9281,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
+@@ -9135,6 +9284,62 @@ static bool drainD3D11Context(ID3D11Device* device, ID3D11DeviceContext* context
      }
  }
  
@@ -923,7 +943,7 @@ index 006196c..65b0e3f 100644
  } // extern "C++"
  
  static std::wstring getExecutableDirW() {
-@@ -9171,7 +9373,8 @@ static HMODULE loadWgpuLibrary() {
+@@ -9171,7 +9376,8 @@ static HMODULE loadWgpuLibrary() {
  }
  
  static bool ensureWgpuSymbols() {
@@ -933,7 +953,7 @@ index 006196c..65b0e3f 100644
          && p_wgpuQueueOnSubmittedWorkDone && p_wgpuBufferMapAsync && p_wgpuInstanceWaitAny
          && p_wgpuBufferGetMappedRange && p_wgpuBufferUnmap) {
          return true;
-@@ -9180,6 +9383,7 @@ static bool ensureWgpuSymbols() {
+@@ -9180,6 +9386,7 @@ static bool ensureWgpuSymbols() {
      if (!handle) return false;
      p_wgpuInstanceCreateSurface = (PFN_wgpuInstanceCreateSurface)GetProcAddress(handle, "wgpuInstanceCreateSurface");
      p_wgpuSurfaceConfigure = (PFN_wgpuSurfaceConfigure)GetProcAddress(handle, "wgpuSurfaceConfigure");
@@ -941,7 +961,7 @@ index 006196c..65b0e3f 100644
      p_wgpuSurfaceGetCurrentTexture = (PFN_wgpuSurfaceGetCurrentTexture)GetProcAddress(handle, "wgpuSurfaceGetCurrentTexture");
      p_wgpuSurfacePresent = (PFN_wgpuSurfacePresent)GetProcAddress(handle, "wgpuSurfacePresent");
      p_wgpuQueueOnSubmittedWorkDone = (PFN_wgpuQueueOnSubmittedWorkDone)GetProcAddress(handle, "wgpuQueueOnSubmittedWorkDone");
-@@ -9188,7 +9392,8 @@ static bool ensureWgpuSymbols() {
+@@ -9188,7 +9395,8 @@ static bool ensureWgpuSymbols() {
      p_wgpuBufferGetMappedRange = (PFN_wgpuBufferGetMappedRange)GetProcAddress(handle, "wgpuBufferGetMappedRange");
      p_wgpuBufferGetConstMappedRange = (PFN_wgpuBufferGetConstMappedRange)GetProcAddress(handle, "wgpuBufferGetConstMappedRange");
      p_wgpuBufferUnmap = (PFN_wgpuBufferUnmap)GetProcAddress(handle, "wgpuBufferUnmap");
@@ -951,7 +971,7 @@ index 006196c..65b0e3f 100644
          || !p_wgpuQueueOnSubmittedWorkDone || !p_wgpuBufferMapAsync || !p_wgpuInstanceWaitAny
          || !p_wgpuBufferGetMappedRange || !p_wgpuBufferUnmap) {
          ::log("WGPU: missing symbols");
-@@ -9735,8 +9940,117 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
+@@ -9735,8 +9943,117 @@ ELECTROBUN_EXPORT void* wgpuInstanceCreateSurfaceMainThread(void* instance, void
  
  // Surface-to-HWND mapping for DComp bridge initialization
  static std::map<void*, HWND> g_surfaceToHwnd;
@@ -1069,7 +1089,7 @@ index 006196c..65b0e3f 100644
  ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractView* abstractView) {
      if (!wgpuInstance || !abstractView || !abstractView->hwnd) {
          printf("[WGPU] createSurfaceForView: null check failed (inst=%p view=%p hwnd=%p)\n",
-@@ -9770,30 +10084,19 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
+@@ -9770,30 +10087,19 @@ ELECTROBUN_EXPORT void* wgpuCreateSurfaceForView(void* wgpuInstance, AbstractVie
  
  // Helper: Initialize DComp zero-copy bridge for a surface.
  // Returns true on success, false if DComp is unavailable or init fails.
@@ -1110,7 +1130,7 @@ index 006196c..65b0e3f 100644
      // Require DXGI shared handle feature for cross-device sharing
      bool hasDXGISharedHandle = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedTextureMemoryDXGISharedHandle);
      bool hasSharedFence = p_wgpuDeviceHasFeature(device, WGPUFeatureName_SharedFenceDXGISharedHandle);
-@@ -9801,82 +10104,89 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9801,82 +10107,89 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (!hasDXGISharedHandle || !hasSharedFence) {
          printf("[DComp] Zero-copy bridge requires DXGI shared texture and fence support\n");
@@ -1253,7 +1273,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Step 5: Create DX12 staging texture with shared access
-@@ -9899,7 +10209,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9899,7 +10212,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          nullptr, IID_PPV_ARGS(&bridge->stagingDx12));
      if (FAILED(hr)) {
          printf("[DComp] CreateCommittedResource (staging) failed: 0x%08lx\n", hr);
@@ -1262,7 +1282,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Step 6: Create DXGI shared handle
-@@ -9908,7 +10218,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9908,7 +10221,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
          GENERIC_ALL, nullptr, &bridge->stagingSharedHandle);
      if (FAILED(hr)) {
          printf("[DComp] CreateSharedHandle failed: 0x%08lx\n", hr);
@@ -1271,7 +1291,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Step 7: Set up bidirectional cross-device synchronization. EndAccess
-@@ -9942,7 +10252,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9942,7 +10255,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (FAILED(hr) || !bridge->presentationSharedFence) {
          printf("[DComp] Shared presentation fence setup failed; using normal HWND surface\n");
@@ -1280,7 +1300,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Step 8: Open shared handle on presentation device for CopyResource
-@@ -9954,7 +10264,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9954,7 +10267,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      }
      if (FAILED(hr)) {
          printf("[DComp] OpenSharedResource1 on presentation device failed: 0x%08lx\n", hr);
@@ -1289,7 +1309,7 @@ index 006196c..65b0e3f 100644
      }
      // Staging texture shared to presentation device
  
-@@ -9970,7 +10280,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9970,7 +10283,7 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
  
      if (!bridge->sharedTexMem) {
          printf("[DComp] wgpuDeviceImportSharedTextureMemory returned null\n");
@@ -1298,7 +1318,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Verify properties
-@@ -9978,14 +10288,17 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9978,14 +10291,17 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      WGPUStatus propStatus = p_wgpuSharedTextureMemoryGetProperties(bridge->sharedTexMem, &props);
      if (propStatus != WGPUStatus_Success) {
          printf("[DComp] SharedTextureMemory properties failed (status=%d)\n", propStatus);
@@ -1321,7 +1341,7 @@ index 006196c..65b0e3f 100644
  
      WGPUTextureDescriptor wgpuTexDesc = {};
      wgpuTexDesc.usage = requestedUsage;
-@@ -9998,101 +10311,346 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
+@@ -9998,101 +10314,346 @@ static bool initDCompBridgeForSurface(void* surface, void* devicePtr, uint32_t w
      bridge->zeroCopyTexture = p_wgpuSharedTextureMemoryCreateTexture(bridge->sharedTexMem, &wgpuTexDesc);
      if (!bridge->zeroCopyTexture) {
          printf("[DComp] wgpuSharedTextureMemoryCreateTexture returned null\n");
@@ -1353,10 +1373,10 @@ index 006196c..65b0e3f 100644
 -        g_dcompBridges[surface] = std::move(bridge);
 +        std::lock_guard<std::mutex> mapLock(g_dcompBridgeMapMutex);
 +        configured = g_dawnConfiguredSurfaces.erase(surface) > 0;
-+    }
+     }
 +    if (configured) {
 +        runOnMainThreadSyncVoid([&]() { p_wgpuSurfaceUnconfigure(surface); });
-     }
++    }
 +}
  
 -    return true;
@@ -1716,7 +1736,7 @@ index 006196c..65b0e3f 100644
          auto retireBridge = [&]() {
              bridge->unusable.store(true);
              lock.unlock();
-@@ -10114,8 +10672,7 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+@@ -10114,8 +10675,7 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
                      "[DComp] Failed to abandon previous access (status=%d); retiring bridge\n",
                      abandonedStatus);
                  retireBridge();
@@ -1726,7 +1746,7 @@ index 006196c..65b0e3f 100644
                  return;
              }
          }
-@@ -10141,52 +10698,358 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
+@@ -10141,52 +10701,358 @@ ELECTROBUN_EXPORT void wgpuSurfaceGetCurrentTextureMainThread(void* surface, voi
          if (status == WGPUStatus_Success) {
              bridge->presentationFencePending = false;
              bridge->accessActive = true;
@@ -2009,8 +2029,10 @@ index 006196c..65b0e3f 100644
 +            std::lock_guard<std::mutex> stateLock(surfaceState->mutex);
 +            bridge = surfaceState->inFlight;
 +        }
-+    }
-+
+     }
+ 
+-    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
+-        !bridge->unusable.load()) {
 +    if (bridge && bridge->resizeAttachedSwapChain) {
 +        if (!MainThreadDispatcher::is_main_thread()) {
 +            return MainThreadDispatcher::dispatch_sync(
@@ -2018,10 +2040,8 @@ index 006196c..65b0e3f 100644
 +        }
 +        return presentResizedDCompBridgeOnMainThread(
 +            surface, surfaceState, std::move(bridge));
-     }
- 
--    if (bridge && bridge->zeroCopyTexture && bridge->accessActive &&
--        !bridge->unusable.load()) {
++    }
++
 +    if (bridge && bridge->zeroCopyTexture) {
          std::unique_lock<std::mutex> lock(bridge->frameMutex);
 +        std::unique_lock<std::mutex> presentLock(surfaceState->presentMutex);
@@ -2100,7 +2120,7 @@ index 006196c..65b0e3f 100644
          // End Dawn's access — returns shared fences for cross-device sync
          bridge->accessActive = false;
          WGPUSharedTextureMemoryEndAccessState endState =
-@@ -10226,24 +11089,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+@@ -10226,24 +11092,91 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              }
          }
  
@@ -2196,7 +2216,7 @@ index 006196c..65b0e3f 100644
  
          const uint64_t nextFenceValue = bridge->presentationFenceValue + 1;
          hr = bridge->presentContext->Signal(
-@@ -10271,14 +11201,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
+@@ -10271,14 +11204,98 @@ ELECTROBUN_EXPORT int32_t wgpuSurfacePresentMainThread(void* surface) {
              return 0;
          }
  
@@ -2301,7 +2321,7 @@ index 006196c..65b0e3f 100644
      }
  
      // Normal HWND path
-@@ -11075,10 +12089,13 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+@@ -11075,10 +12092,13 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
  
          // Handle titleBarStyle options
          data->chromeStyle = ChromeStyle::Default;
@@ -2318,7 +2338,7 @@ index 006196c..65b0e3f 100644
          } else if (titleBarStyle && strcmp(titleBarStyle, "hiddenInset") == 0) {
              // "hiddenInset" = frameless window with resize borders and DWM shadow.
              // We use WS_CAPTION | WS_THICKFRAME so the system treats it as a
-@@ -11091,8 +12108,8 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+@@ -11091,8 +12111,8 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
  
          // Handle transparent windows
          if (transparent) {
@@ -2329,7 +2349,7 @@ index 006196c..65b0e3f 100644
          }
  
          // Electrobun's cross-platform window geometry is expressed in DIPs.
-@@ -11147,7 +12164,7 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
+@@ -11147,7 +12167,7 @@ ELECTROBUN_EXPORT HWND createWindowWithFrameAndStyleFromWorker(
  
              // Force the window frame to recalculate so WM_NCCALCSIZE
              // is sent again with chromeStyle already set.
@@ -2338,7 +2358,39 @@ index 006196c..65b0e3f 100644
                  SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
                      SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
              }
-@@ -12535,8 +13552,17 @@ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
+@@ -12504,11 +13524,29 @@ ELECTROBUN_EXPORT const char* clipboardAvailableFormats() {
+ 
+ // Window procedure for handling tray messages
+ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
++    if ((g_taskbarCreatedMessageId && msg == g_taskbarCreatedMessageId) ||
++        (msg == WM_TIMER && wParam == kTrayRecoveryTimerId)) {
++        auto it = g_trayItems.find(hwnd);
++        if (it == g_trayItems.end()) {
++            KillTimer(hwnd, kTrayRecoveryTimerId);
++            return 0;
++        }
++        const auto result = restoreTrayIcon(hwnd, it->second->nid);
++        if (result == TrayRestoreResult::restored) {
++            ::log("System tray icon restored after taskbar recreation");
++        } else if (result == TrayRestoreResult::retryUnavailable) {
++            ::log("ERROR: Could not schedule system tray recovery");
++        } else if (msg == g_taskbarCreatedMessageId) {
++            ::log("System tray is not ready; retrying icon registration");
++        }
++        return 0;
++    }
+     switch (msg) {
+         case WM_CLOSE:
++            // The tray is removed explicitly by its owner.
++            return 0;
+         case WM_DESTROY:
+-            // Don't allow the tray window to be closed/destroyed by default handlers
+-            ::log("Preventing tray window close/destroy");
++            KillTimer(hwnd, kTrayRecoveryTimerId);
+             return 0;
+             
+         case WM_COMMAND:
+@@ -12535,8 +13573,17 @@ LRESULT CALLBACK TrayWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                      
                      switch (LOWORD(lParam)) {
                          case WM_LBUTTONUP:
@@ -2358,7 +2410,53 @@ index 006196c..65b0e3f 100644
                          case WM_RBUTTONUP:
                              // Right click - show context menu if it exists, otherwise call handler
                              if (trayItem->contextMenu) {
-@@ -14366,3 +15392,4 @@ extern "C" ELECTROBUN_EXPORT void setWindowIcon(void* window, const char* iconPa
+@@ -12610,7 +13657,16 @@ ELECTROBUN_EXPORT NSStatusItem* createTray(uint32_t trayId, const char *title, c
+             statusItem->imagePath = std::string(pathToImage);
+         }
+         
+-        // Create a hidden window to receive tray messages
++        if (!g_taskbarCreatedMessageId) {
++            g_taskbarCreatedMessageId = RegisterWindowMessageW(L"TaskbarCreated");
++            if (!g_taskbarCreatedMessageId) {
++                ::log("ERROR: Failed to register taskbar recreation message");
++                delete statusItem;
++                return nullptr;
++            }
++        }
++
++        // Create a hidden window to receive tray messages.
+         static bool classRegistered = false;
+         if (!classRegistered) {
+             WNDCLASSW wc = {0};
+@@ -12634,13 +13690,14 @@ ELECTROBUN_EXPORT NSStatusItem* createTray(uint32_t trayId, const char *title, c
+             classRegistered = true;
+         }
+         
+-        // Create message-only window (safer for tray operations)
+-        statusItem->hwnd = CreateWindowW(
++        // TaskbarCreated is broadcast only to top-level windows.
++        statusItem->hwnd = CreateWindowExW(
++            WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+             L"TrayWindowClass",
+             L"TrayWindow",
+-            0,                    // No visible style
+-            0, 0, 0, 0,          // Position and size (ignored for message-only)
+-            HWND_MESSAGE,        // Message-only window
++            0,                    // Hidden; no taskbar or Alt-Tab entry.
++            0, 0, 0, 0,
++            NULL,                 // Top-level window receives shell broadcasts.
+             NULL, 
+             g_hInstanceDll,
+             NULL
+@@ -12707,7 +13764,6 @@ ELECTROBUN_EXPORT NSStatusItem* createTray(uint32_t trayId, const char *title, c
+             sprintf_s(errorMsg, "ERROR: Failed to add icon to system tray: %lu", error);
+             ::log(errorMsg);
+             
+-            DestroyWindow(statusItem->hwnd);
+             g_trayItems.erase(statusItem->hwnd);
+             delete statusItem;
+             return nullptr;
+@@ -14366,3 +15422,4 @@ extern "C" ELECTROBUN_EXPORT void setWindowIcon(void* window, const char* iconPa
  // implementation detail of the WGPU surface lifecycle (see
  // wgpuSurfaceConfigureMainThread, wgpuSurfaceGetCurrentTextureMainThread,
  // wgpuSurfacePresentMainThread).
@@ -2544,6 +2642,35 @@ index 0000000..2739771
 +        state->close();
 +    });
 +}
+diff --git a/package/src/native/win/native_tray.h b/package/src/native/win/native_tray.h
+new file mode 100644
+index 0000000..e865e14
+--- /dev/null
++++ b/package/src/native/win/native_tray.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include <Windows.h>
++#include <shellapi.h>
++
++namespace electrobun {
++constexpr UINT_PTR kTrayRecoveryTimerId = 1;
++constexpr UINT kTrayRecoveryIntervalMs = 1000;
++
++enum class TrayRestoreResult { restored, retryScheduled, retryUnavailable };
++
++// A DPI notification can arrive while the icon still exists; modify that entry
++// if adding it fails. Keep retries on the owning UI thread until the shell is ready.
++inline TrayRestoreResult restoreTrayIcon(HWND window, NOTIFYICONDATAW& icon) {
++    if (Shell_NotifyIconW(NIM_ADD, &icon) ||
++        Shell_NotifyIconW(NIM_MODIFY, &icon)) {
++        KillTimer(window, kTrayRecoveryTimerId);
++        return TrayRestoreResult::restored;
++    }
++    return SetTimer(window, kTrayRecoveryTimerId, kTrayRecoveryIntervalMs, nullptr)
++        ? TrayRestoreResult::retryScheduled : TrayRestoreResult::retryUnavailable;
++}
++} // namespace electrobun
 diff --git a/package/src/sdks/main/proc/native.ts b/package/src/sdks/main/proc/native.ts
 index 17a2f5e..3bbd8d0 100644
 --- a/package/src/sdks/main/proc/native.ts
