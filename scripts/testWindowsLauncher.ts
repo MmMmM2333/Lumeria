@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { PRODUCT } from "../src/platform/product.js";
 import { assertReleaseOutput } from "./windowsRelease.js";
 import { windowsBuildTools } from "./windowsBuildTools.js";
+import { testWindowsLauncherLifetimes } from "./testWindowsLauncherLifetimes.js";
 
 if (process.platform !== "win32") throw new Error("Launcher tests require Windows");
 mkdirSync(".codex-dev", { recursive: true });
@@ -27,7 +28,15 @@ try {
     println!("root={}", std::env::var("LUMERIA_PRODUCT_ROOT").unwrap());
     println!("origin={}", std::env::var("LUMERIA_LAUNCH_ORIGIN").unwrap());
     println!("dataPid={}", std::env::var("LUMERIA_DATA_PID").unwrap_or_default());
+    println!("dataPipe={}", std::env::var("LUMERIA_DATA_PIPE").unwrap_or_default());
     println!("runtimePid={}", std::process::id());
+    if let Ok(path) = std::env::var("LUMERIA_FIXTURE_RELEASE") {
+      let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+      while !std::path::Path::new(&path).exists() {
+        assert!(std::time::Instant::now() < deadline, "Runtime fixture was not released");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+      }
+    }
     if std::env::var("LUMERIA_FIXTURE_WAIT").is_ok() { std::thread::sleep(std::time::Duration::from_secs(20)); }
     for arg in std::env::args().skip(1) { println!("arg={arg}"); }
     std::process::exit(std::env::var("LUMERIA_FIXTURE_EXIT_CODE").unwrap_or("0".into()).parse().unwrap());
@@ -69,6 +78,7 @@ try {
     while(alive&&Date.now()<until){try{process.kill(dataPid,0);await new Promise(resolve=>setTimeout(resolve,20));}catch{alive=false;}}
     assert.equal(alive,false,"closing the launcher's Job handle must reap data after abrupt launcher exit");
   }finally{if(abrupt.exitCode===null)abrupt.kill();if(runtimePid)try{process.kill(runtimePid);}catch{}}
+  await testWindowsLauncherLifetimes({ root, launcher, data });
   const sidecar=join(product,"runtime/Resources/app/bun/lumeria-native-data.exe");
   renameSync(sidecar,sidecar+".missing");
   try{run([],1);}finally{renameSync(sidecar+".missing",sidecar);}

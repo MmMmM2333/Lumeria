@@ -47,7 +47,11 @@ pub fn start(allocator: std.mem.Allocator, env: *std.process.Environ.Map, execut
     errdefer _ = CloseHandle(job);
     // JOBOBJECT_EXTENDED_LIMIT_INFORMATION (Windows x64).
     var limits: [144]u8 align(8) = @splat(0);
-    std.mem.writeInt(u32, limits[16..20], 0x2000, .little); // KILL_ON_JOB_CLOSE
+    // Own the data service; apps it launches have independent lifetimes.
+    // Internal child processes must be assigned to this Job explicitly.
+    const kill_on_job_close: u32 = 0x2000;
+    const silent_breakaway_ok: u32 = 0x1000;
+    std.mem.writeInt(u32, limits[16..20], kill_on_job_close | silent_breakaway_ok, .little);
     if (!SetInformationJobObject(job, 9, &limits, limits.len).toBool()) return error.DataJobConfigurationFailed;
     var si: SI = .{};
     var child: PI = undefined;
