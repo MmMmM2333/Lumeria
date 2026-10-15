@@ -11,9 +11,12 @@ It checks the product manifest, starts `runtime/bin/LumeriaRuntime.exe`, forward
 startup arguments and the full Windows exit code, and waits for the runtime.
 It has no extraction, update, bootstrap-install or uninstall implementation.
 Normal starts also prestart the Rust data service via `data_service.zig`, using
-an owner-restricted local named pipe and a kill-on-close Job. Control requests
-do not create a data service. The pipe keeps the existing JSON protocol; this
-avoids a measured multi-second CreateProcess stall when Bun is the parent.
+an owner-restricted local named pipe and a kill-on-close Job. The Job allows
+silent breakaway so externally launched apps and their descendants keep running
+after Lumeria exits or crashes. Internal child processes must be explicitly
+assigned to the Job when they need the same shutdown lifetime as the data service.
+Control requests do not create a data service. The pipe keeps the existing JSON
+protocol; this avoids a measured multi-second CreateProcess stall when Bun is the parent.
 The NSIS installer owns those installation responsibilities.
 
 The application uses a per-data-directory authenticated session for activation
