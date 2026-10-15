@@ -30,6 +30,14 @@ export class NativeSearchBar extends Container {
   get explicitEditing():boolean{return this.#explicitEditing;}
   focusForTyping():void{this.input.focus();this.#explicitEditing=false;this.#sync();}
   focusEditor():void{this.input.focus();this.#explicitEditing=true;this.#sync();}
+  captureFocus():(()=>void)|null {
+    if(!this.input.focused)return null;
+    const explicitEditing=this.#explicitEditing;
+    return ()=>{
+      if(this.destroyed||this.input.destroyed)return;
+      if(explicitEditing)this.focusEditor();else this.focusForTyping();
+    };
+  }
   readonly #offRecovered: () => void;
   constructor(app: NativePixiApplication, placeholder: string, readonly onQuery: (query: string) => void, clipboard: NativeClipboardPort) {
     super({ label: "native-search-bar", eventMode: "static", cursor: "text" });

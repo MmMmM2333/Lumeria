@@ -646,7 +646,7 @@ const onContext = (event: FederatedPointerEvent):void=>{
 };
 app.stage.on("rightclick",onContext);
 management.on("context-request",(x:number,y:number)=>{const hit=app.renderer.events.rootBoundary.hitTest(x,y);const target=resolveNativePointerTarget(hit);const item=target.kind==="icon"?getCurrentIconScope().items.find(item=>item.id===target.id)??null:null;contextMenu(item,x,y);});
-management.captureReturnFocus=()=>nativeSettings.shell?.captureFocus()??(()=>app.invalidate());
+management.captureReturnFocus=()=>nativeSettings.shell?.captureFocus()??searchBar.captureFocus()??(()=>app.invalidate());
 let offResize = (): void => {};
 let offBackgroundResize=()=>{};
 const offPresented = app.on("presented", () => {

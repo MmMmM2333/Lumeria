@@ -60,7 +60,7 @@ export async function runNativeSearchSmoke(
 ): Promise<NativeLaunchSearchSmokeOutcome> {
   const {
     activateItem, activePageItems, app, closeSettings, currentFrame, editing, getLayoutPages,
-    getSettingsShell, iconTextures, openSettings, present, scene, searchBar,
+    getSettingsShell, iconTextures, management, openSettings, present, scene, searchBar,
     searchQuery, settingsButton, showLaunchpad, smoke, waitFor,
   } = context;
   await iconTextures.prepareItems(collectTextureItems(currentFrame(), getLayoutPages()));
@@ -68,6 +68,50 @@ export async function runNativeSearchSmoke(
   await (await import("./nativeRecoverySearchSmoke.js")).runNativeRecoverySearchSmoke(context);
   await waitFor("search text session prepared before first key",()=>searchBar.input.focused && app.textInput.active);
   assert.equal(searchBar.explicitEditing,false,"ready text session must preserve result navigation mode");
+  for(const query of ["","Word"])for(const explicitEditing of [false,true]){
+    for(const dismissal of ["escape","outside","wheel","action","replace","resize"] as const){
+      searchBar.setQuery(query);
+      if(explicitEditing)searchBar.focusEditor();else searchBar.focusForTyping();
+      searchBar.input.setSelectionRange(query.length);
+      const selection={...searchBar.input.selection};
+      const actions=[{label:"Keep search",run:()=>{}}];
+      management.menu(180,140,actions);
+      await present("search focus suspended by menu");
+      assert.equal(searchBar.input.focused,false,"menus must suspend native search input");
+      assert.equal(app.textInput.active,false);
+      if(dismissal==="outside"){
+        const layer=management.getChildByLabel("native-context-menu");assert.ok(layer);
+        smoke.clickWithNativeInput(app,layer,0,0,true);
+      }else if(dismissal==="wheel"){
+        const x=app.contentSize.width/2,y=app.contentSize.height/2;
+        app.nativeInput.emitPointer("pointermove",x,y,0);
+        app.nativeInput.emitWheel(x,y,0,1,0);
+      }else if(dismissal==="action"){
+        const action=management.getChildByLabel("native-action:Keep search",true);assert.ok(action);
+        smoke.clickWithNativeInput(app,action,0,0,true);
+      }else if(dismissal==="resize")management.resize();
+      else{
+        if(dismissal==="replace")management.menu(220,180,actions);
+        app.nativeInput.emitKey("down",{keyCode:27});app.nativeInput.emitKey("up",{keyCode:27});
+      }
+      await present("search focus restored after "+dismissal);
+      assert.equal(management.modal,false,`query=${query}, editor=${explicitEditing}, dismissal=${dismissal}`);
+      assert.equal(searchBar.input.focused,true,"closing a menu must restore native text input");
+      assert.equal(app.textInput.active,true);
+      assert.equal(searchBar.explicitEditing,explicitEditing,dismissal+" must preserve the search focus mode");
+      assert.equal(searchQuery(),query,"menu dismissal must preserve the query");
+      assert.deepEqual(searchBar.input.selection,selection,"menu dismissal must preserve the caret selection");
+      assert.equal(searchBar.input.caretBlinkEnabled,Boolean(query)||explicitEditing);
+      assert.equal(searchBar.input.alpha,query||explicitEditing?1:0);
+      if(!query&&dismissal==="escape")await context.capture("search-menu-restored-"+(explicitEditing?"editor":"implicit"));
+      if(query){
+        app.nativeInput.emitKey("down",{keyCode:37});app.nativeInput.emitKey("up",{keyCode:37});
+        assert.equal(searchBar.input.selection.start,query.length-(explicitEditing?1:0),"restored mode must route arrows to the caret or results");
+      }
+    }
+  }
+  searchBar.setQuery("");searchBar.focusForTyping();await present("implicit search restored after menu checks");
+  console.log("Native menu search focus: empty/query, implicit/editor, six dismissal paths and arrow routing passed");
   app.textInput.updateComposition("Word");
   assert.equal(searchBar.input.value,"","preedit must not commit its text");
   assert.equal(searchQuery(),"Word","first IME composition must preview results without an ASCII focus trigger");
