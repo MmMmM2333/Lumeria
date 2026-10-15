@@ -1,68 +1,132 @@
 name: Windows Release
 
 on:
+  pull_request:
+    branches: [main]
   push:
+    branches: [main]
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  NODE_VERSION: '26.5.0'
+  NPM_VERSION: '11.17.0'
+  RUST_VERSION: '1.97.1'
+
 concurrency:
-  group: windows-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: windows-release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    if: github.event.deleted == false
+  preflight:
+    if: github.event.deleted != true
     runs-on: windows-2025
-    timeout-minutes: 180
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
     outputs:
       version: ${{ steps.version.outputs.version }}
       commit: ${{ steps.version.outputs.commit }}
+      installer-artifact: ${{ steps.version.outputs.installer-artifact }}
     steps:
-      - name: Check out the tagged revision
+      - name: Check out the revision to test
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Validate the release tag
+      - name: Resolve the product version and validate release tags
         id: version
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or $env:RELEASE_TAG -cne "v$version") {
+          if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'package.json must contain a stable MAJOR.MINOR.PATCH version.'
+          }
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") {
             throw 'The tag must be vMAJOR.MINOR.PATCH and match package.json.'
           }
           $commit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve the checked-out commit.' }
           "version=$version" >> $env:GITHUB_OUTPUT
           "commit=$commit" >> $env:GITHUB_OUTPUT
+          "installer-artifact=windows-installer-${version}-$env:GITHUB_RUN_ID" >> $env:GITHUB_OUTPUT
 
-      - name: Set up Node
+      - name: Set up Node and the npm download cache
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: '26.5.0'
-          package-manager-cache: false
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Set up the SDK build host
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Prepare the pinned Rust and npm versions
+        id: environment
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup toolchain install $env:RUST_VERSION --profile minimal --target x86_64-pc-windows-msvc
+          "RUSTUP_TOOLCHAIN=${env:RUST_VERSION}-x86_64-pc-windows-msvc" >> $env:GITHUB_ENV
+          npm install --global "npm@$env:NPM_VERSION"
+          if (!$env:ImageVersion) { throw 'The runner image version is unavailable.' }
+          "image-version=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Restore Rust dependencies for the independent tests
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          bun-version: '1.4.2'
+          key: ${{ steps.environment.outputs.image-version }}
+          workspaces: |
+            . -> target
+            vendor/electrobun-pixi-native-starter/native/frame -> target
+          cache-bin: false
+          cache-on-failure: true
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Run checks independent of the SDK
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm ci
+          npm run check:preflight
+
+  build:
+    needs: preflight
+    if: github.event_name != 'pull_request'
+    runs-on: windows-2025
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      version: ${{ needs.preflight.outputs.version }}
+      commit: ${{ needs.preflight.outputs.commit }}
+      installer-artifact: ${{ needs.preflight.outputs.installer-artifact }}
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.preflight.outputs.commit }}
+          persist-credentials: false
+
+      - name: Set up Node and the npm download cache
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Prepare Windows build tools
+        id: environment
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           New-Item -ItemType Directory -Force artifacts/ci-logs | Out-Null
           Start-Transcript -Path artifacts/ci-logs/environment.log
           try {
-            rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
-            'RUSTUP_TOOLCHAIN=1.97.1-x86_64-pc-windows-msvc' >> $env:GITHUB_ENV
-            npm install --global npm@11.17.0
+            rustup toolchain install $env:RUST_VERSION --profile minimal --target x86_64-pc-windows-msvc
+            "RUSTUP_TOOLCHAIN=${env:RUST_VERSION}-x86_64-pc-windows-msvc" >> $env:GITHUB_ENV
+            npm install --global "npm@$env:NPM_VERSION"
+            if (!$env:ImageVersion) { throw 'The runner image version is unavailable.' }
+            "image-version=$env:ImageVersion" >> $env:GITHUB_OUTPUT
             cmake --version
             $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
             $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -87,47 +151,98 @@ jobs:
             "LUMERIA_NSIS=$nsis" >> $env:GITHUB_ENV
           } finally { Stop-Transcript }
 
-      - name: Install dependencies and check project versions
+      - name: Restore Rust dependencies for the application build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ steps.environment.outputs.image-version }}
+          workspaces: |
+            . -> target
+            vendor/electrobun-pixi-native-starter/native/frame -> ../../.hutch/frame-target
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: Install application dependencies
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           npm ci
-          npm run check:version
 
-      - name: Restore SDK source cache
-        id: sdk-source-cache
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+      - name: Restore the verified SDK and selection record
+        id: sdk-cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
-          path: build/electrobun-source
-          key: ${{ runner.os }}-${{ runner.arch }}-electrobun-sdk-${{ hashFiles('native-toolchain.lock.json', 'package-lock.json', 'vendor/electrobun-pixi-native-starter/patches/**', 'vendor/electrobun-pixi-native-starter/tools/prepare-source.mjs', 'vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs') }}
+          path: |
+            vendor/electrobun-pixi-native-starter/.hutch/devkit-dcomp-2.0.1
+            vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json
+          key: >-
+            ${{ runner.os }}-${{ runner.arch }}-sdk-v2-${{ steps.environment.outputs.image-version }}-${{
+              hashFiles(
+                '.github/workflows/release.yml',
+                'package-lock.json',
+                'vendor/electrobun-pixi-native-starter/package.json',
+                'vendor/electrobun-pixi-native-starter/native-toolchain.lock.json',
+                'vendor/electrobun-pixi-native-starter/patches/**',
+                'scripts/rebuildElectrobunDevkit.ps1',
+                'vendor/electrobun-pixi-native-starter/tools/prepare-source.mjs',
+                'vendor/electrobun-pixi-native-starter/tools/native-toolchain.mjs',
+                'vendor/electrobun-pixi-native-starter/tools/electrobun-dcomp-patch.mjs',
+                'vendor/electrobun-pixi-native-starter/tools/patch-electrobun.mjs',
+                'vendor/electrobun-pixi-native-starter/tools/bun-runtime-pin.mjs'
+              )
+            }}
 
-      - name: Build and verify the pinned SDK from source
+      - name: Set up the SDK source build host
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+
+      - name: Prepare and verify the SDK
+        env:
+          SDK_CACHE_HIT: ${{ steps.sdk-cache.outputs.cache-hit }}
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Transcript -Path artifacts/ci-logs/toolchain.log
           try {
-            npm run native:prepare:source -- --source build/electrobun-source
+            if ($env:SDK_CACHE_HIT -eq 'true') {
+              npm run native:prepare
+            } else {
+              npm run native:prepare:source
+            }
             npm run native:toolchain:check
+            $selection = Get-Content 'vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json' -Raw | ConvertFrom-Json
+            if (!$selection.localBuild.buildEnvironment) { throw 'The selected SDK has no source build record.' }
+            $selection.localBuild.buildEnvironment | ConvertTo-Json -Depth 10 | Set-Content artifacts/ci-logs/sdk-build-environment.json -Encoding utf8
           } finally { Stop-Transcript }
 
-      - name: Run checks and data-service integration tests
+      - name: Save the verified SDK before running application checks
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            vendor/electrobun-pixi-native-starter/.hutch/devkit-dcomp-2.0.1
+            vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+
+      - name: Run SDK-dependent checks and data-service integration tests
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Transcript -Path artifacts/ci-logs/checks.log
           try {
-            npm run check
-            npm run test:native-data
-            cargo test -p lumeria-live-desktop --locked
+            npm run check:app
+            npm run test:native-data:integration
           } finally { Stop-Transcript }
 
       - name: Build the Windows installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Transcript -Path artifacts/ci-logs/package.log
           try { npm run native:release } finally { Stop-Transcript }
 
       - name: Verify and collect only this version's release files
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           $name = "Lumeria-$env:RELEASE_VERSION-x64-Setup.exe"
           $installer = Join-Path 'artifacts' $name
@@ -142,10 +257,11 @@ jobs:
           New-Item -ItemType Directory -Force artifacts/release-upload | Out-Null
           Copy-Item -LiteralPath $installer, "$installer.sha256" -Destination artifacts/release-upload
 
-      - name: Upload release files for the draft job
+      - name: Upload the verified installer
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-installer-${{ github.ref_name }}
+          name: ${{ needs.preflight.outputs.installer-artifact }}
           path: artifacts/release-upload/*
           if-no-files-found: error
           retention-days: 14
@@ -156,11 +272,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-build-records-${{ github.ref_name }}-${{ github.run_attempt }}
+          name: windows-build-records-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             artifacts/ci-logs/
-            artifacts/Lumeria-${{ steps.version.outputs.version }}-x64-Setup.exe.json
-            build/electrobun-source/lumeria-build-environment.json
+            artifacts/Lumeria-${{ needs.preflight.outputs.version }}-x64-Setup.exe.json
             vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json
           include-hidden-files: true
           if-no-files-found: warn
@@ -168,6 +283,7 @@ jobs:
 
   draft:
     needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -177,7 +293,7 @@ jobs:
       - name: Download this run's verified installer
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: windows-installer-${{ github.ref_name }}
+          name: ${{ needs.build.outputs.installer-artifact }}
           path: release-files
 
       - name: Create or update an unpublished release draft
