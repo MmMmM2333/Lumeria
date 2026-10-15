@@ -67,6 +67,24 @@ test("archive inventory rejects links, duplicate entries and unlisted paths", ()
   assert.throws(() => validateArchiveListing("a\na\n", "- a\n- a\n", lock));
   assert.throws(() => validateArchiveListing("a\n../b\n", "- a\n- b\n", lock));
 });
+test("temporary cleanup retries transient Windows lock errors", (t) => {
+  const root = temporary(), original = fs.rmSync;
+  let options;
+  const mocked = t.mock.method(fs, "rmSync", (path, rmOptions) => {
+    options = rmOptions;
+    return original(path, rmOptions);
+  });
+  syncBuiltinESMExports();
+  try {
+    writeFileSync(join(root, "lock.txt"), "content");
+    removeTemporary(root, tmpdir());
+    assert.deepEqual(options, { recursive: true, force: true, maxRetries: 60, retryDelay: 100 });
+    assert.equal(existsSync(root), false);
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
 test("verification never follows an SDK directory junction", () => {
   const root = temporary(), target = join(root, "target"), link = join(root, "linked");
   try {
