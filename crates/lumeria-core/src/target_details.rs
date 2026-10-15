@@ -148,12 +148,13 @@ mod tests {
     #[test]
     fn manifest_run_level_distinguishes_required_from_highest_available() {
         let root=std::env::temp_dir().join(format!("lumeria-run-level-{}",std::process::id()));std::fs::create_dir_all(&root).unwrap();
-        let manifest=root.join("app.manifest");
         for (level,expected) in [("requireAdministrator",true),("highestAvailable",false),("asInvoker",false)] {
+            let manifest=root.join(format!("app-{level}.manifest"));
             std::fs::write(&manifest,format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0"><assemblyIdentity version="1.0.0.0" processorArchitecture="*" name="Lumeria.Test" type="win32"/><trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges><requestedExecutionLevel level="{level}" uiAccess="false"/></requestedPrivileges></security></trustInfo></assembly>"#)).unwrap();
             assert_eq!(administrator_requirement(&manifest),Some(expected),"{level}");
+            std::fs::remove_file(manifest).unwrap();
         }
-        std::fs::remove_file(manifest).unwrap();std::fs::remove_dir(root).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[cfg(windows)]
