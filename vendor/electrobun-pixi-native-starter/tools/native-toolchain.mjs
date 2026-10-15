@@ -100,7 +100,7 @@ export async function verifyInventory(directory, lock) {
 // Only remove directories created by this invocation, beneath the checked parent.
 export function removeTemporary(path, parent) {
   if (dirname(resolve(path)) !== realpathSync(parent) || lstatSync(path).isSymbolicLink()) throw new Error("Temporary cleanup escaped its parent");
-  rmSync(path, { recursive: true });
+  rmSync(path, { recursive: true, force: true, maxRetries: 60, retryDelay: 100 });
 }
 function localCache() {
   const path = join(starterRoot, ".hutch");
