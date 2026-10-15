@@ -161,9 +161,10 @@ mod tests {
         );
         let command =
             lumeria_core::autostart::autostart_run_command(&installed_launcher(&data).unwrap());
+        let expected_launcher = fs::canonicalize(root.join("Lumeria.exe")).unwrap();
         assert_eq!(
             command,
-            lumeria_core::autostart::autostart_run_command(&root.join("Lumeria.exe"))
+            lumeria_core::autostart::autostart_run_command(&expected_launcher)
         );
         assert!(!command.to_string_lossy().contains(r"\\?\"));
         fs::write(
