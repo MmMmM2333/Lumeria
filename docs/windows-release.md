@@ -62,30 +62,55 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 
 增删或升级分发依赖时，同步更新第三方声明中的组件和许可原文。发布二进制时提供对应版本的源码与构建脚本，具体说明见 [LICENSING.md](../LICENSING.md)。
 
-## GitHub 标签构建
+## GitHub 检查与构建
 
-`.github/workflows/release.yml` 只在推送 `v*` 标签时运行，普通提交和 PR 不触发。标签必须是
-`vMAJOR.MINOR.PATCH`，并与项目版本一致；暂不接受预发布后缀。工作流文件必须包含在标签对应的提交中。
+`.github/workflows/release.yml` 支持以下入口：
 
-版本修改、提交和本地验收完成后，由维护者推送对应标签，例如：
+| 触发 | 行为 |
+| --- | --- |
+| 面向 `main` 的 PR | 运行不依赖 SDK 的 Windows 检查 |
+| 推送到 `main` | 前置检查、准备并缓存 SDK、完整检查及数据服务集成测试 |
+| Actions 手动运行 | 同上，并制作、校验和上传安装包 |
+| 推送 `v*` 标签 | 同上，并创建或更新 Release 草稿 |
+
+`preflight` 运行 `npm run check:preflight`，覆盖版本、工具链边界、托盘恢复、根 Cargo workspace
+和 Native Frame 测试。通过后，`build` 检出相同提交，再运行 `check:app` 与
+`test:native-data:integration`；前置测试不重复执行。`npm run check` 仍聚合完整检查。
+
+Windows runner 固定 Node/npm、Rust、Bun、Zig 和 NSIS 版本，并使用镜像内的 MSVC、Windows SDK
+与 CMake。npm 缓存仅保留下载内容，依赖仍由 `npm ci` 安装；Cargo 缓存绑定编译器、镜像和依赖输入。
+
+SDK 缓存只包含 Starter 的 `.hutch/devkit-dcomp-2.0.1` 和
+`.hutch/native-toolchain.local.json`。缓存键覆盖真实工具链锁、源码补丁、构建脚本、npm 锁文件、
+工作流中的工具版本和 runner 镜像版本；不使用宽泛的 SDK 恢复键。命中后执行 `native:prepare`
+验证来源和文件哈希，并按当前源码准备 Native Frame；未命中则执行 `native:prepare:source`。
+两条路径都必须通过 `native:toolchain:check`。损坏或不匹配的 SDK 会使检查失败，不自动接受漂移产物。
+
+首次成功构建 SDK 后立即保存缓存，后续应用检查或打包失败不影响该缓存。`main` 上产生的缓存可供
+后续标签和分支使用；不同标签各自产生的缓存不能互相读取。缓存被清理或输入变化后重新从源码构建。
+完整上游 SDK 组成保持不变，实际构建耗时以对应运行日志为准。
+
+手动试包：在 Actions 的 **Windows Release** 中点击 **Run workflow**，选择要测试的分支。
+工作流必须先存在于默认分支。安装包与 SHA-256 文件位于
+`windows-installer-<version>-<run_id>` artifact；手动运行不创建 Release 草稿。
+
+标签必须是 `vMAJOR.MINOR.PATCH` 并与项目版本一致，暂不接受预发布后缀。
+工作流文件必须包含在标签对应的提交中。版本修改、提交和验收完成后，由维护者推送标签，例如：
 
 ```powershell
 git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
 ```
 
-Windows 构建任务准备固定版本的 Node/npm、Rust、Bun、Zig 和 NSIS，使用 runner 的 MSVC、
-Windows SDK 与 CMake。它调用 `native:prepare:source` 从固定源码生成并校验 SDK，不依赖已发布的
-工具链附件；第一版不缓存 SDK。然后运行 `npm run check`、数据服务集成测试与 Live Desktop Rust
-测试，再执行 `native:release`。首次云端构建仍需确认 runner 的磁盘、耗时和上游下载是否满足要求。
-
-构建成功后，独立发布任务只创建或更新该标签的 **Release 草稿**，附件仅包含安装包 `.exe`
-及其 `.exe.sha256`。`.exe.json`、工具链生成记录和步骤日志留在 Actions artifacts，保留 14 天。
-GitHub 在发布页面另提供标签对应的源码下载。草稿不会自动公开，仍须验收该安装包后手动发布。
+标签构建成功后，独立任务只创建或更新该标签的 **Release 草稿**，附件仅包含安装包 `.exe`
+及其 `.exe.sha256`。`.exe.json`、SDK 来源记录和步骤日志留在
+`windows-build-records-<run_id>-<attempt>` Actions artifact，保留 14 天；源码重建和缓存命中均保留
+原 SDK 的构建环境记录。GitHub 在发布页面另提供标签对应的源码下载。
+草稿不会自动公开，须验收该安装包后手动发布。
 
 重跑失败任务可补齐草稿附件；工作流拒绝修改已公开版本、含其他附件的草稿或构建后被移动的标签。
 发布任务使用 GitHub 自动提供的 `GITHUB_TOKEN`，不需要额外 PAT；仓库／组织须允许 Actions 运行
-及该任务的 `contents: write` 权限。不要将这个仅标签触发的任务设为 PR 必须通过的检查。
+及草稿任务的 `contents: write` 权限。PR 只执行前置检查，分支保护应选择 `preflight`。
 
 云端检查不替代 GPU 界面、UAC、托盘、快捷键及真实安装／升级／卸载验收。当前安装包仍未签名。
 
