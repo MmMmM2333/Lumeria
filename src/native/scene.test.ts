@@ -456,6 +456,16 @@ function stepSceneAnimations(): void {
   assert.ok(update, "the native scene should request animation frames while motion is active");
   update(1000 / 60);
 }
+{
+  const tasks:(()=>void)[]=[],snaps:boolean[]=[];
+  const scheduler=createNativeSceneScheduler(task=>tasks.push(task));
+  scheduler.connect(snap=>snaps.push(snap));
+  scheduler.request();scheduler.request(true);scheduler.request();
+  assert.equal(tasks.length,1,"query alignment must share the queued scene commit");
+  tasks.shift()!();assert.deepEqual(snaps,[true],"later requests must retain pending query alignment");
+  scheduler.request();tasks.shift()!();assert.deepEqual(snaps,[true,false],"alignment must not leak into later paging");
+  scheduler.dispose();
+}
 const frame = makeCompleteFrame();
 runNativeDragPerformanceTests(frame);
 runNativeSearchPerformanceTests(frame);

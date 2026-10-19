@@ -382,7 +382,7 @@ function clickWithNativeInput(target: Container, button=0, modifiers=0): void {
 const inputFrames=createNativeFrameCallbacks(()=>app.invalidate());
 const sceneUpdates = createNativeSceneScheduler(task=>{inputFrames.request(task);});
 const renderScene = sceneUpdates.run;
-const requestSceneRender = () => { sceneUpdates.request(); catalogRefresh?.notifyReady(); };
+const requestSceneRender = (snap = false) => { sceneUpdates.request(snap); catalogRefresh?.notifyReady(); };
 let prepareSearchInput=()=>{};
 let newAppsFocused=false;
 const offInputFrame=app.beforeRender(()=>{inputFrames.flush();sceneUpdates.flush();prepareSearchInput();catalogRefresh?.notifyReady();});
@@ -837,6 +837,7 @@ try {
   let searchResults:readonly LaunchpadApp[]|null=null;
   let searchPageSize=0;
   changeSearch = (query,deferScene=false) => {
+    const queryChanged = query !== searchQuery;
     searchQuery = query;
     layoutState.commitSearchPageIndex(0);
     if(query.trim() && folderFlow.snapshot().renderedFolder) closeFolder();
@@ -847,6 +848,11 @@ try {
     const pageSize=layoutState.presentation.pageSize.value;
     const sameResults=Boolean(results&&searchResults&&!layoutChanged&&pageSize===searchPageSize
       &&currentFrame.interaction.isSearchMode&&results.length===searchResults.length&&results.every((app,index)=>app===searchResults![index]));
+    const resetNavigation = queryChanged || Boolean(query.trim() && !sameResults);
+    const snapTrack = resetNavigation && (readPageTrackScrub().desktop !== null
+      || Math.abs(scene.getMotionSnapshot().desktopPageTrackX) > 0.01);
+    // A new query owns a new page projection; discard the gesture and its tail.
+    if(resetNavigation)nativeInputRouter?.cancelGesture();
     const pages = sameResults?currentFrame.viewport.activePages:sceneController.resolveProjectedPages(query.trim()
       ? layoutState.operations.chunkIntoPages([...results!],pageSize)
       : layoutPages);
@@ -860,8 +866,8 @@ try {
     });
     activePageItems = getNativeActivePageItems(currentFrame);
     if(query.trim()) setFocusedIcon(firstIconFocus(getCurrentIconScope()));
-    if(deferScene){requestSceneRender();}
-    else{renderScene();iconNodes = collectActiveIconNodes();}
+    if(deferScene){requestSceneRender(snapTrack);}
+    else{renderScene(snapTrack);iconNodes = collectActiveIconNodes();}
   };
 
   let resolveClosed!: () => void;

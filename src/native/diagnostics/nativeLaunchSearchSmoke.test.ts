@@ -68,6 +68,50 @@ export async function runNativeSearchSmoke(
   await (await import("./nativeRecoverySearchSmoke.js")).runNativeRecoverySearchSmoke(context);
   await waitFor("search text session prepared before first key",()=>searchBar.input.focused && app.textInput.active);
   assert.equal(searchBar.explicitEditing,false,"ready text session must preserve result navigation mode");
+  // Cross the actual text and wheel boundaries while a page is still displaced.
+  let wheelTime=performance.now(),sequence=8000;
+  const swipe=(phase:"begin"|"update"|"inertia"|"end",dx=0)=>{
+    wheelTime+=16;
+    app.nativeInput.emitWheel(app.contentSize.width/2,app.contentSize.height/2,dx,0,0,0,wheelTime,{source:"touchpad",phase,sequence});
+  };
+  const assertAligned=()=>assert.ok(Math.abs(scene.getMotionSnapshot().desktopPageTrackX)<0.1,"a changed query must align results immediately");
+  for(const startPage of [0,1]){
+    searchBar.setQuery("");searchBar.focusForTyping();
+    while(currentFrame().viewport.activePageIndex!==startPage){
+      searchBar.handleKey({type:"down",key:currentFrame().viewport.activePageIndex<startPage?"ArrowRight":"ArrowLeft",ctrlKey:true});
+    }
+    await waitFor("desktop page settled before search interruption",()=>!scene.getMotionSnapshot().active);
+    const span=scene.getPageWidth("desktop",startPage,app.contentSize.width);
+    sequence++;swipe("begin");swipe("update",span*.4);
+    await waitFor("halfway desktop swipe displayed",()=>Math.abs(scene.getMotionSnapshot().desktopPageTrackX+startPage*span)>span*.1);
+    app.nativeInput.emitText("W");await present("typing interrupts the desktop swipe");assertAligned();
+    searchBar.input.selectAll();app.nativeInput.emitText("Word 0");await present("query refinement after interrupted desktop swipe");
+    assert.equal(activePageItems()[0]?.id,"search-0");assertAligned();
+    swipe("update",span*.2);swipe("inertia",span*.2);swipe("end");await present("old desktop swipe tail rejected");assertAligned();
+    assert.equal(currentFrame().viewport.activePageIndex,0,"old input cannot page the search results");
+    searchBar.setQuery("W");await present("multiple search pages restored");
+    sequence++;swipe("begin");swipe("update",span*.4);
+    await waitFor("search swipe displayed",()=>scene.getMotionSnapshot().desktopPageTrackX < -span*.1);
+    searchBar.input.selectAll();app.nativeInput.emitText("Wo");await present("same-result query changes during a search swipe");assertAligned();
+    assert.ok(currentFrame().viewport.activePages.length>1,"same-result refinement must retain multiple result pages");
+    searchBar.input.selectAll();app.nativeInput.emitText("Word 0");await present("narrower query after a search swipe");assertAligned();
+    swipe("inertia",span*.2);swipe("end");await present("old search swipe tail rejected");assertAligned();
+  }
+  searchBar.setQuery("W");searchBar.focusForTyping();await present("clear-query swipe ready");
+  sequence++;swipe("begin");swipe("update",app.contentSize.width*.4);
+  await waitFor("search swipe displayed before clearing",()=>scene.getMotionSnapshot().desktopPageTrackX < -app.contentSize.width*.1);
+  searchBar.setQuery("");await present("clearing a query interrupts search paging");
+  const restoredDesktopX=scene.getMotionSnapshot().desktopPageTrackX;
+  assert.ok(Math.abs(restoredDesktopX-scene.getMotionSnapshot().desktopPageTrackTargetX)<0.1,"clearing must align the saved desktop page");
+  swipe("inertia",100);swipe("end");await present("old search tail cannot move the desktop");
+  assert.equal(scene.getMotionSnapshot().desktopPageTrackX,restoredDesktopX);
+  searchBar.setQuery("W");searchBar.focusForTyping();await present("new search gesture ready");
+  sequence++;swipe("begin");swipe("update",app.contentSize.width*.7);swipe("inertia");swipe("end");
+  assert.equal(currentFrame().viewport.activePageIndex,1,"a fresh gesture still pages search results");
+  await waitFor("fresh search page settled",()=>!scene.getMotionSnapshot().active);
+  searchBar.setQuery("");await present("desktop restored after search swipe checks");
+  await waitFor("desktop text ready after search swipe checks",()=>searchBar.input.focused&&!scene.getMotionSnapshot().active);
+  console.log("Native search interruption: desktop/search partial swipes, query refinement, stale tails and fresh search paging passed");
   for(const query of ["","Word"])for(const explicitEditing of [false,true]){
     for(const dismissal of ["escape","outside","wheel","action","replace","resize"] as const){
       searchBar.setQuery(query);

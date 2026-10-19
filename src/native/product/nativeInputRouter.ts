@@ -88,7 +88,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   let closingFolderGesture = false;
   let lastWheelGestureTime = 0;
   let wheelActive = false;
-  let touchpadOwner:{sequence:number;settings:NativeSettingsShell|null;dialog:string|null;folder:string|null}|null=null;
+  let touchpadOwner:{sequence:number;settings:NativeSettingsShell|null;dialog:string|null;folder:string|null;area:LaunchpadIconScope<SceneItem>["area"]}|null=null;
 
   const releaseGesturePointer = () => {
     const id = touchId;
@@ -259,7 +259,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
       return;
     }
     const inFolder = folder.renderedFolder && !folder.isClosing;
-    const scope = inFolder ? `folder:${folder.renderedFolder!.id}` : "desktop";
+    const scope = inFolder ? `folder:${folder.renderedFolder!.id}` : getCurrentIconScope().area === "search" ? "search" : "desktop";
     const pageIndex = inFolder
       ? folder.folderPageIndex
       : getDesktopPageIndex();
@@ -313,8 +313,8 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   const guardTouchpadRoute=(event:FederatedWheelEvent)=>{
     const meta=readNativeTouchpad(event);
     if(!meta)return;
-    if(meta.phase==="begin")touchpadOwner={sequence:meta.sequence,settings:getSettingsShell(),dialog:management.activeId,folder:folderFlow.snapshot().renderedFolder?.id??null};
-    const valid=touchpadOwner?.sequence===meta.sequence&&touchpadOwner.settings===getSettingsShell()&&touchpadOwner.dialog===management.activeId&&touchpadOwner.folder===(folderFlow.snapshot().renderedFolder?.id??null);
+    if(meta.phase==="begin")touchpadOwner={sequence:meta.sequence,settings:getSettingsShell(),dialog:management.activeId,folder:folderFlow.snapshot().renderedFolder?.id??null,area:getCurrentIconScope().area};
+    const valid=touchpadOwner?.sequence===meta.sequence&&touchpadOwner.settings===getSettingsShell()&&touchpadOwner.dialog===management.activeId&&touchpadOwner.folder===(folderFlow.snapshot().renderedFolder?.id??null)&&touchpadOwner.area===getCurrentIconScope().area;
     if(!valid){event.preventDefault();event.stopPropagation();touchpadOwner=null;interruptWheel(event);}
     if(meta.phase==="end"||meta.phase==="cancel")touchpadOwner=null;
   };

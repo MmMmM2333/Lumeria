@@ -30,9 +30,9 @@ export function createNativeSceneScheduler(enqueue: (task: () => void) => void =
   return {
     get disposed(): boolean { return state.disposed; },
     get pending(): boolean { return state.pending; },
-    request(): void {
+    request(snap = false): void {
       if (state.disposed) return;
-      state.pending = true;
+      state.pending = true; state.snap ||= snap;
       schedule();
     },
     connect(render: (snap: boolean) => void): void {
