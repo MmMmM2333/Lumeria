@@ -1,5 +1,5 @@
 import { createNativeParagraph } from "./nativeParagraph.js";
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Rectangle } from "pixi.js";
 import type { LaunchpadTransientNotice } from "../../application/launchpadNotices.js";
 import { NativeFluentButton } from "./NativeFluentButton.js";
 import { nativeFluentIcon } from "./nativeFluentIcons.js";
@@ -38,7 +38,7 @@ export class NativeNotice extends Container{
     const copy=(value:string,size:number,color:string,bold=false)=>{const label=createNativeParagraph(value,{fontFamily:[...NATIVE_UI_FONT_FAMILY],fontSize:size,fontWeight:bold?"700":"400",fill:color,wordWrap:true,wordWrapWidth:copyWidth,breakWords:true,lineHeight:size*(bold?1.25:1.45)},copyWidth);label.position.set(50,y);this.addChild(label);y+=label.height+5;};
     copy(notice.title,14,"rgba(255,255,255,0.94)",true);copy(notice.message,12,"rgba(255,255,255,0.72)");if(notice.detail)copy(notice.detail,11,"rgba(255,255,255,0.48)");
     if(notice.actionText){const action=new NativeFluentButton(notice.actionText,Math.max(80,Math.min(width-64,notice.actionText.length*9+24)),()=>notice.onAction?.(),this.invalidate,"dark","outline",false,28);action.label="native-notice:action";action.position.set(width-14-action.controlWidth,y+7);this.addChild(action);this.#buttons.push(action);y+=47;}
-    const height=Math.max(60,y+9);this.position.set(Math.max(8,size.width-width-20),Math.max(8,size.height-height-20));
+    const height=Math.max(60,y+9);this.hitArea=new Rectangle(0,0,width,height);this.position.set(Math.max(8,size.width-width-20),Math.max(8,size.height-height-20));
     this.addChildAt(nativePanelShadow(width,height,"0 12px 32px rgba(0, 0, 0, 0.28)"),0);
     this.addChildAt(new Graphics({eventMode:"none"}).roundRect(0.5,0.5,width-1,height-1,8).fill(fill).stroke({color:border,width:1}),1);
     const icon=nativeFluentIcon(iconName,iconColor,18);icon.position.set(19,15);this.addChild(icon);
