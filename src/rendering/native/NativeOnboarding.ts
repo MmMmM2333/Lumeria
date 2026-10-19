@@ -1,3 +1,4 @@
+import {readErrorMessage} from "../../application/errorMessage.js";
 import {createNativeShortcutWarning} from "./NativeShortcutWarning.js";
 import {Container,Graphics,Sprite,type Texture} from "pixi.js";
 import type {createLaunchpadApps} from "../../application/launchpadApps.js";
@@ -15,7 +16,7 @@ import {t} from "../../native/nativeLocalization.js";
 import type {NativeNavigationKey} from "../../native/nativeStartup.js";
 import {nativeFluentIcon} from "./nativeFluentIcons.js";
 
-export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpadApps>;settings:ReturnType<typeof createLaunchpadSettings>;management:NativeManagement;icon():Texture;theme():NativeTheme;invalidate():void;save():Promise<void>;scan():Promise<void>;complete():void;warnShortcut?(message:string):void;shortcutWarning?():string}){
+export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpadApps>;settings:ReturnType<typeof createLaunchpadSettings>;management:NativeManagement;icon():Texture;theme():NativeTheme;invalidate():void;save():Promise<void>;scan():Promise<void>;complete():void;shortcutWarning?():string}){
   let step=0,recording=false,prepared=false,applied=false,transitioning=false,direction=0,grouped=true;let currentBody:Container|null=null;
   const changeStep=async(next:number,refresh=true)=>{if(transitioning)return;transitioning=true;direction=next>step?1:-1;const body=currentBody;if(body&&!body.destroyed){body.interactiveChildren=false;await new Promise<void>(resolve=>{motion(body).duration(.1).to({alpha:0,x:body.x-direction*16,onComplete:resolve}).start();});}step=next;recording=false;transitioning=false;if(refresh)redraw();};
   const redraw=()=>o.management.refresh();
@@ -42,7 +43,7 @@ export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpad
       const themes=new NativeSegmentedControl(["light","dark","system"].map(value=>({value,label:t(`imports.theme_${value}`),id:`native-onboarding:theme:${value}`})),o.settings.draft.settingsThemePreference.value,value=>{o.settings.actions.setDraftSettingsThemePreference(value);redraw();},o.invalidate,o.theme());themes.position.set(width-themes.controlWidth-16,top+21);node.addChild(themes);controls.push(...themes.controls);
       top=row(t("settings.general.shortcut.title"),"keyboard-24-regular");const hint=text(t(recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),56,top+42,12);hint.style.fill=style.muted;hint.style.wordWrapWidth=Math.max(100,width-340);button(recording?t("imports.recording"):(o.settings.draft.mainWindowShortcut.value===null?t("settings.general.shortcut.notSet"):formatMainWindowShortcut(o.settings.draft.mainWindowShortcut.value)),top+22,()=>{recording=true;redraw();}).label="native-onboarding:shortcut";
       const shortcutButton=node.getChildByLabel("native-onboarding:shortcut") as NativeFluentButton;
-      const message=o.settings.presentation.mainWindowShortcutError.value||o.settings.presentation.mainWindowShortcutWarning.value||o.shortcutWarning?.()||"";
+      const message=o.settings.presentation.mainWindowShortcutError.value||(o.settings.draft.mainWindowShortcut.value===o.settings.presentation.mainWindowShortcut.value?(o.settings.presentation.mainWindowShortcutWarning.value||o.shortcutWarning?.()||""):"");
       shortcutButton.caption.style.fontSize=12;
       const fieldWidth=Math.max(145,shortcutButton.caption.width+44)+(message?32:0);
       shortcutButton.resizeWidth(fieldWidth);shortcutButton.x=width-120-fieldWidth;
@@ -135,6 +136,9 @@ export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpad
   return {
     open(){
       step=0;recording=false;prepared=false;applied=false;grouped=true;o.settings.beginEdit();o.settings.actions.setDraftSettingsThemePreference("light");
+      const shortcutCheck=o.settings.nativeIntegration.registerCurrentShortcut()
+        .then(()=>{o.settings.actions.setMainWindowShortcutError("");})
+        .catch(error=>{o.settings.actions.setMainWindowShortcutError(readErrorMessage(error)||t("settings.general.shortcut.unavailable"));});
       o.management.dialog({id:"onboarding",title:"",width:800,fixedHeight:640,scrollGutter:16,maxHeight:640,showClose:false,dismissible:false,
         get busyText(){return step===2?t("imports.preparing"):"";},
         get footerStatus(){return `${step+1} / 3`;},
@@ -142,14 +146,14 @@ export function createNativeOnboarding(o:{apps:ReturnType<typeof createLaunchpad
         cancel:()=>{if(step>0&&!transitioning&&!applied&&!o.apps.imports.staged)void changeStep(step-1);},
         canConfirm:()=>!recording&&!transitioning,onClose:()=>{recording=false;if(!applied)o.settings.cancelEdit();o.apps.imports.finish();},
         confirm:async()=>{
-          if(step<2){await changeStep(step+1,false);return false;}
+          if(step<2){if(step===0)await shortcutCheck;await changeStep(step+1,false);return false;}
           if(!prepared){for(const source of o.apps.presentation.scanRoots.value)if(source.type!=="windowsAppCatalog")o.apps.imports.policy(source.id,grouped,false);await o.scan();o.apps.imports.open("initial",o.apps.imports.catalog.map(a=>a.id));prepared=true;}
           if(!applied){
             const outcome=await o.settings.applyEdit({shortcutFailure:"warn"});
             if(!outcome.ok)throw outcome.error;
             applied=true;
           }
-          if(o.apps.imports.rows.length)o.apps.imports.apply();else o.apps.imports.completeEmpty();await o.save();o.complete();if(o.settings.presentation.mainWindowShortcutWarning.value)o.warnShortcut?.(o.settings.presentation.mainWindowShortcutWarning.value);return true;
+          if(o.apps.imports.rows.length)o.apps.imports.apply();else o.apps.imports.completeEmpty();await o.save();o.complete();return true;
         },build});
     },
     handleKey(event:NativeNavigationKey){

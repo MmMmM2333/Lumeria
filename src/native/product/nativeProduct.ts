@@ -1119,7 +1119,7 @@ try {
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
     if(!outcome.ok){
       const message=readErrorMessage(outcome.error);console.error("Native shortcut registration failed:",message);
-      settings.actions.setMainWindowShortcutError(nativeShortcutErrorMessage(outcome.error));reportNativeError(outcome.error,"shortcut");
+      settings.actions.setMainWindowShortcutError(nativeShortcutErrorMessage(outcome.error));if(!needsOnboarding)reportNativeError(outcome.error,"shortcut");
     }
   }
   tray=createLaunchpadTray({
@@ -1213,7 +1213,6 @@ try {
   onboarding=createNativeOnboarding({apps:apps!,settings,management,shortcutWarning:()=>mainShortcut.failure?nativeShortcutErrorMessage(mainShortcut.failure):"",icon:()=>brandingTextures.get(settingsTheme()==="dark"?"dark":"light")!,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),
     scan:async()=>{if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_CHECK==="1")await new Promise(resolve=>setTimeout(resolve,700));const request=apps!.nativeIntegration.captureScanRequest();const result=await nativeData.scanApps(request.roots,request.filters);if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));apps!.imports.setCatalog(result.apps);},
     complete:()=>{requestSceneRender();},
-    warnShortcut:message=>notices.showTransientNotice({title:t("errors.native.shortcut.title"),message:`${message}\n${t("imports.shortcutOptional")}`,intent:"warning"}),
   });
   if(needsOnboarding&&nativeMode!=="smoke")onboarding.open();
   if(startupLoadRecovered&&!notices.transientNotice.value)notices.showLayoutLoadRecovered();

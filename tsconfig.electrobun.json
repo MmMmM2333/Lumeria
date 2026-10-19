@@ -15,6 +15,7 @@
     "verbatimModuleSyntax": true
   },
   "include": [
+    "src/native/nativeOnboardingShortcut.test.ts",
     "src/native/nativeVisibilityController.test.ts",
     "src/native/nativeContextMenu.test.ts",
     "src/rendering/native/NativeImportHelp.ts",
