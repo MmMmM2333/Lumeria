@@ -17,6 +17,30 @@ import type { CompleteDesktopSceneFrame, SceneItem } from "../sceneFrame.js";
 export async function runNativeVisualParityTests(baseFrame:CompleteDesktopSceneFrame):Promise<void>{
   motionRuntime.reset();motionRuntime.suspendAutoTicker();
   {
+    const root=new Container(),scene=new NativeDesktopScene(root),viewport={width:1000,height:800,resolution:1};
+    try{
+      const items=[{id:"press-a",name:"App A",type:"app" as const},{id:"press-b",name:"App B",type:"app" as const}];
+      for(const search of [false,true]){
+        const frame=snapshotContractValue({...baseFrame,viewport:{...baseFrame.viewport,activePages:[items],activePageIndex:0},
+          interaction:{...baseFrame.interaction,isSearchMode:search,iconGesturePresentation:null}}) as CompleteDesktopSceneFrame;
+        scene.commit(frame,viewport,{snapDesktopLayout:true});
+        const target=root.getChildByLabel("launchpad-item:press-a",true) as IconNode;
+        const other=root.getChildByLabel("launchpad-item:press-b",true) as IconNode;
+        const structures=scene.getUpdateStatistics().structure;
+        for(const phase of ["pressing","armed",null] as const){
+          const changed=Object.freeze({...frame,interaction:Object.freeze({...frame.interaction,iconGesturePresentation:phase?Object.freeze({scope:search?"search":"desktop",phase,target:Object.freeze({kind:"icon",id:"press-a"})}):null})});
+          scene.commit(changed,viewport,{snapDesktopLayout:false});
+          for(let i=0;i<20;i++)motionRuntime.step(1/120);
+          assert.equal(target.interactionPhase,phase);assert.equal(other.interactionPhase,null);
+          assert.equal(target.visualWrap.alpha,1);assert.equal(other.iconSprite.tint,0xffffff);
+          assert.equal(target.iconSprite.tint,phase==="pressing"?0xd1d1d1:phase==="armed"?0xf5f5f5:0xffffff);
+          assert.equal(target.labelText.tint,0xffffff);
+          assert.equal(scene.getUpdateStatistics().structure,structures,"press/release must not rebuild desktop structure");
+        }
+      }
+    }finally{scene.destroy();root.destroy({children:true});motionRuntime.reset();}
+  }
+  {
     const layer=new DesktopLayer({iconBoundsRegistry:createIconBoundsRegistry()});
     const overlay=layer.singleStageFolderLayer;
     try{

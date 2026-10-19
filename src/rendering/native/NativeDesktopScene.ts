@@ -1,3 +1,4 @@
+import { resolveIconInteractionPhase } from "../../domain/input/launchpadTargetPresentation.js";
 import { Container, type Text } from "pixi.js";
 import { FOLDER_OPEN_DESKTOP_TRANSFORM } from "../desktopVisualTargets.js";
 import { NativePageDots } from "./NativePageDots.js";
@@ -362,6 +363,24 @@ export class NativeDesktopScene {
       .map(node=>({text:node.labelText,page:Number(node.source?.pageIndex)||0}));
   }
 
+  #presentIconGesture(frame:CompleteDesktopSceneFrame,folder:NativeFolderPresentation|null|undefined):void {
+    const presentation=frame.interaction.iconGesturePresentation;
+    if(this.#committed?.frame.interaction.iconGesturePresentation===presentation)return;
+    if(this.#structureFrame)this.#structureFrame={...this.#structureFrame,iconGesturePresentation:presentation,
+      singleStageFolderState:this.#structureFrame.singleStageFolderState?{...this.#structureFrame.singleStageFolderState,
+        iconGesturePresentation:presentation}:null};
+    const scopes:[string,ReadonlyMap<string,IconNode>][]=[
+      [frame.interaction.isSearchMode?"search":"desktop",this.#layer.iconNodes],
+      [`folder:${folder?.renderedFolder?.id??""}`,this.#layer.singleStageFolderLayer.iconNodes],
+    ];
+    for(const [scope,nodes] of scopes)for(const node of nodes.values()){
+      const state=node.state;if(!state)continue;
+      const phase=resolveIconInteractionPhase(presentation,{scope,itemId:node.item?.id??null,
+        interactive:state.interactive&&!state.dragging&&!state.ghosted&&!state.opening});
+      if(phase!==state.interactionPhase)node.setState(Object.freeze({...state,interactionPhase:phase}));
+    }
+  }
+
   commit(
     frame: CompleteDesktopSceneFrame,
     viewport: NativeSceneViewport,
@@ -372,6 +391,7 @@ export class NativeDesktopScene {
     assertStaticFrame(frame);
     assertViewport(viewport);
     const folder=options.folderPresentation;
+    this.#presentIconGesture(frame,folder);
     // Open/close is a presentation change. It does not alter desktop node state,
     // grid layout or hit bounds; native input gating is owned by the launch flow.
     // Group presentation (pointer/trail and release motion) owns an interaction
@@ -379,7 +399,7 @@ export class NativeDesktopScene {
     // still structural dependencies, just as in PixiDesktopSurface.
     const localSelection=!folder?.renderedFolder&&!this.#layer.getFolderHandoffNodes().size
       &&!frame.interaction.dragMeta&&!frame.interaction.groupDragState&&!frame.interaction.provisionalFolderRollback;
-    const interactionStructure:unknown[]=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState"
+    const interactionStructure:unknown[]=Object.entries(frame.interaction).filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState"&&key!=="iconGesturePresentation"
       &&!(localSelection&&["selectedAppIds","focusedIcon","isBatchSelectionActive"].includes(key))).flat();
     interactionStructure.push(frame.interaction.groupDragState?.key,frame.interaction.groupDragState?.phase,
       frame.interaction.groupDragState?.runtimePlan?.key);
@@ -389,7 +409,7 @@ export class NativeDesktopScene {
       folder?.renderedFolder,folder?.folderPageIndex,folder?.isClosing,folder?.openProgressTarget,folder?.openingCancelRequest,
       options.folderPageTrackScrub];
     const desktopDependencies=[...Object.values(frame.viewport),...Object.entries(frame.interaction)
-      .filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState").flat(),
+      .filter(([key])=>key!=="isDesktopClosing"&&key!=="groupDragState"&&key!=="iconGesturePresentation").flat(),
       frame.interaction.groupDragState?.key,frame.interaction.groupDragState?.phase,frame.interaction.groupDragState?.runtimePlan?.key,
       frame.folder,frame.diagnostics,
       viewport.width,viewport.height,viewport.resolution,options.chromeInset,options.openingIconId,

@@ -224,12 +224,17 @@ export async function runIconNodeTests(): Promise<void> {
     assert(pressScaleImpulses.some((animation) => animation.prop === "x"), "press should create an additive scale x impulse");
     assert(pressScaleImpulses.some((animation) => animation.prop === "y"), "press should create an additive scale y impulse");
     assert(node.visualWrap.scale.x < 1 && node.visualWrap.scale.y < 1, "press additive impulse should shrink visual scale immediately");
-    assert(snapshot.animations.some((animation) => animation.prop === "alpha" && animation.laneKey === "base"), "press should keep the existing alpha feedback animation");
-    const pressingAlphaTarget = requireValue(
-      snapshot.animations.find((animation) => animation.prop === "alpha" && animation.laneKey === "base")?.to,
-      "pressing feedback should expose an alpha target",
+    assert(snapshot.animations.some((animation) => animation.prop === "value" && animation.laneKey === "base"), "press should animate artwork brightness");
+    const pressingBrightnessTarget = requireValue(
+      snapshot.animations.find((animation) => animation.prop === "value" && animation.laneKey === "base")?.to,
+      "pressing feedback should expose a brightness target",
     );
-    assert(pressingAlphaTarget > 0.6 && pressingAlphaTarget < 1, "pressing feedback should remain visible while clearly acknowledging the press");
+    assert(pressingBrightnessTarget > 0.6 && pressingBrightnessTarget < 1, "pressing feedback should remain visible while clearly acknowledging the press");
+    assert(node.visualWrap.alpha===1,"press must preserve opacity so bright backdrops do not wash out artwork");
+    for(let i=0;i<8;i++)motionRuntime.step(1/120);
+    assert(node.iconSprite.tint===0xd1d1d1&&node.emojiText.tint===0xd1d1d1,"app and emoji artwork darken consistently");
+    assert(node.folderThumb.tint===0xd1d1d1&&node.folderChildrenWrap.tint===0xd1d1d1,"folder artwork and previews share brightness");
+    assert(node.labelText.tint===0xffffff&&node.missingBadge.tint===0xffffff,"labels and status badges keep their color");
     const pressingScale = node.visualWrap.scale.x;
 
     node.setState({ ...interactionNodeState, interactionPhase: "pressing" });
@@ -240,12 +245,12 @@ export async function runIconNodeTests(): Promise<void> {
 
     node.setState({ ...interactionNodeState, interactionPhase: "armed" });
     snapshot = motionRuntime.debugSnapshot();
-    const armedAlphaTarget = requireValue(
-      snapshot.animations.find((animation) => animation.prop === "alpha" && animation.laneKey === "base")?.to,
-      "armed feedback should expose an alpha target",
+    const armedBrightnessTarget = requireValue(
+      snapshot.animations.find((animation) => animation.prop === "value" && animation.laneKey === "base")?.to,
+      "armed feedback should expose a brightness target",
     );
     assert(node.cursor === "pointer", "armed feedback should keep the ordinary pointer cursor until dragging starts");
-    assert(armedAlphaTarget > pressingAlphaTarget, "armed feedback should lift the icon out of the darker pressing state");
+    assert(armedBrightnessTarget > pressingBrightnessTarget, "armed feedback should lift the icon out of the darker pressing state");
     assert(node.visualWrap.scale.x > pressingScale, "armed feedback should add a small upward scale impulse");
 
     const armedImpulseCount = snapshot.animations.filter((animation) => animation.lane === "additive").length;

@@ -803,6 +803,7 @@ try {
     getLayoutPages:()=>layoutState.presentation.pages.value,
     getLaunchFlow:()=>launchFlow,
     getPageTrackScrub:()=>readPageTrackScrub(),
+    getIconGesturePresentation:()=>nativeInputRouter?.readIconGesturePresentation()??null,
     getSearchQuery:()=>searchQuery,
     iconTextures,
     launchGhostView,

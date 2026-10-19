@@ -42,6 +42,7 @@ export type NativeSceneControllerPorts = Readonly<{
   getLayoutPages: () => ReadonlyLaunchpadPages;
   getLaunchFlow: () => LaunchFlow | null;
   getPageTrackScrub: () => NativePageTrackScrub;
+  getIconGesturePresentation: () => PresentationFrame["interaction"]["iconGesturePresentation"];
   getSearchQuery: () => string;
   iconTextures: IconTextureRepository;
   launchGhostView: NativeLaunchGhost;
@@ -100,6 +101,9 @@ export function createNativeSceneController(ports: NativeSceneControllerPorts): 
   // Disconnection is owned by the scene scheduler, which the entry assembly
   // disposes during teardown.
   ports.sceneUpdates.connect((snapDesktopLayout = false) => {
+    const gesture=ports.getIconGesturePresentation(),before=frameAt();
+    if(before.interaction.iconGesturePresentation!==gesture)ports.applyFrame(Object.freeze({...before,
+      interaction:Object.freeze({...before.interaction,iconGesturePresentation:gesture})}),false);
     const launchFlow = ports.getLaunchFlow();
     if (launchFlow) {
       const closed = !launchFlow.isDesktopOpen.value;

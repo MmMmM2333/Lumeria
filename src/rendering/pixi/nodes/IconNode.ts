@@ -244,8 +244,8 @@ function getIconMotionLabel(item: SceneItem | null | undefined, fallback = "Icon
   return item?.name || item?.title || item?.id || fallback;
 }
 
-const PRESSING_VISUAL_ALPHA = 0.72;
-const ARMED_VISUAL_ALPHA = 0.92;
+const PRESSING_BRIGHTNESS = 0.82;
+const ARMED_BRIGHTNESS = 0.96;
 const PRESSING_SCALE_IMPULSE = -0.03;
 const ARMED_SCALE_IMPULSE = 0.05;
 const RELEASE_SCALE_IMPULSE = 0.02;
@@ -299,6 +299,7 @@ export class IconNode extends Container {
   declare isFolder: boolean;
   declare openingScaleActive: boolean | null;
   declare interactionPhase: IconInteractionPhase | null;
+  declare readonly pressBrightness:{value:number};
   declare readonly onAction: IconNodeActionHandler;
   declare readonly focusFrame: Graphics;
   declare readonly batchSelectionBadge: Container;
@@ -370,6 +371,7 @@ export class IconNode extends Container {
     this.isFolder = false;
     this.openingScaleActive = null;
     this.interactionPhase = null;
+    this.pressBrightness={value:1};
     this.onAction = options.onAction || (() => {});
     this.iconTextures = options.iconTextures || iconTextureRepository;
 
@@ -548,6 +550,7 @@ export class IconNode extends Container {
     this.state = state as IconVisualState;
     if (wasFolder !== this.isFolder) {
       this.interactionPhase = null;
+      killMotionOf(this.pressBrightness);this.pressBrightness.value=1;this.paintPressBrightness();
       killMotionOf(this.visualWrap, "alpha");
       killMotionOf(this.visualWrap.scale);
       this.visualWrap.alpha = 1;
@@ -615,6 +618,7 @@ export class IconNode extends Container {
     describe(this, "node", "node");
     describe(this.scale, "node.scale", "nodeScale", this);
     describe(this.visualWrap, "visualWrap", "visualWrap");
+    describe(this.pressBrightness,"pressBrightness","pressBrightness",this.visualWrap);
     describe(this.visualWrap?.scale, "visualWrap.scale", "visualScale", this.visualWrap);
     describe(this.jiggleWrap, "jiggleWrap", "jiggleWrap");
     describe(this.folderThumb, "folderThumb", "folderThumb");
@@ -753,22 +757,28 @@ export class IconNode extends Container {
     this.onAction("pointerdown", original, this.item, this.source, this);
   }
 
+  private paintPressBrightness():void {
+    const channel=Math.round(255*Math.max(0,Math.min(1,this.pressBrightness.value))),tint=channel*0x010101;
+    this.iconSprite.tint=tint;this.emojiText.tint=tint;
+    this.folderThumb.tint=tint;this.folderChildrenWrap.tint=tint;
+  }
+
   setInteractionPhase(phase: string | null | undefined, options: InteractionPhaseOptions = {}): void {
     const nextPhase = phase === "pressing" || phase === "armed" ? phase : null;
     const previousPhase = this.interactionPhase;
-    const nextAlpha = nextPhase === "pressing"
-      ? PRESSING_VISUAL_ALPHA
+    const nextBrightness = nextPhase === "pressing"
+      ? PRESSING_BRIGHTNESS
       : nextPhase === "armed"
-        ? ARMED_VISUAL_ALPHA
+        ? ARMED_BRIGHTNESS
         : 1;
     this.interactionPhase = nextPhase;
     this.cursor = this.state?.interactive === false
       ? "default"
       : "pointer";
     if (nextPhase === previousPhase && !options.immediate) return;
-    killMotionOf(this.visualWrap, "alpha");
+    killMotionOf(this.pressBrightness);
     if (options.immediate) {
-      this.visualWrap.alpha = nextAlpha;
+      this.pressBrightness.value=nextBrightness;this.paintPressBrightness();
       killMotionOf(this.visualWrap.scale);
       this.visualWrap.scale.set(1);
       return;
@@ -785,10 +795,10 @@ export class IconNode extends Container {
         y: impulse,
       });
     }
-    motion(this.visualWrap)
+    motion(this.pressBrightness)
       .preset(nextPhase === "pressing" ? "press" : "release")
       .interrupt("retarget")
-      .to({ alpha: nextAlpha })
+      .to({value:nextBrightness,onUpdate:()=>this.paintPressBrightness()})
       .start();
   }
 
@@ -1762,6 +1772,7 @@ export class IconNode extends Container {
 
   override destroy(options?: DestroyOptions): void {
     this.stopJiggle();
+    killMotionOf(this.pressBrightness);
     this.cancelFolderHandoffLabelFade();
     killMotionOf(this.folderHoverFrame);
     killMotionOf(this.appFolderCreateFrame);

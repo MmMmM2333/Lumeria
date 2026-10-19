@@ -6,6 +6,7 @@ import type { LaunchpadIconScope } from "../../domain/iconFocus.js";
 import {
 createLaunchpadGestureEngine,
 type LaunchpadGestureDeadline,
+type LaunchpadTargetPresentation,
 type LaunchpadGestureOutput,
 type LaunchpadPagePresentation,
 } from "../../domain/input/launchpadGestureEngine.js";
@@ -61,6 +62,7 @@ export type NativeInputRouter = Readonly<{
   interruptWheel: (event: Readonly<{ timeStamp?: unknown }>) => void;
   readPageTrackScrub: () => NativePageTrackScrub;
   readTouchId: () => number | null;
+  readIconGesturePresentation: () => LaunchpadTargetPresentation | null;
 }>;
 
 export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeInputRouter {
@@ -74,6 +76,12 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   const wheelGestures = createLaunchpadGestureEngine();
   const wheelDeadlines = new Map<LaunchpadGestureDeadline["kind"], ReturnType<typeof setTimeout>>();
   let touchId: number | null = null;
+  let iconGesturePresentation:LaunchpadTargetPresentation|null=null;
+  const setIconGesturePresentation=(next:LaunchpadTargetPresentation|null)=>{
+    if(iconGesturePresentation?.phase===next?.phase&&iconGesturePresentation?.scope===next?.scope
+      &&iconGesturePresentation?.target.id===next?.target.id)return;
+    iconGesturePresentation=next;requestSceneRender();
+  };
   let desktopPageTrackScrub: ScenePageTrackScrub | null = null;
   let folderPageTrackScrub: ScenePageTrackScrub | null = null;
   // Single frozen getter view: per-frame readers see live values without a
@@ -93,6 +101,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   const releaseGesturePointer = () => {
     const id = touchId;
     touchId = null;
+    setIconGesturePresentation(null);
     closingFolderGesture = false;
     if (id !== null) app.nativeInput.releasePointerCapture(id);
   };
@@ -164,6 +173,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   };
   applyWheelOutput = (output, event, time, source = "wheel"): void => {
     const editing = getEditing();
+    if(Object.prototype.hasOwnProperty.call(output,"targetPresentation"))setIconGesturePresentation(output.targetPresentation??null);
     // Release before commands: activation can synchronously hide the window or
     // trigger another cancellation, which must not observe a stale pointer.
     if (output.releasesPointer) { resetWheelNavigation(); releaseGesturePointer(); }
@@ -420,5 +430,6 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     interruptWheel,
     readPageTrackScrub: () => scrubView,
     readTouchId: () => touchId,
+    readIconGesturePresentation: () => iconGesturePresentation,
   });
 }
