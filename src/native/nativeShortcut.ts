@@ -4,6 +4,11 @@ type ShortcutHost = {
   register(accelerator:string,callback:()=>void):boolean;
   unregister(accelerator:string):boolean;
 };
+export class NativeShortcutError extends Error {
+  constructor(readonly operation:"register"|"unregister"|"restore"|"rollback",readonly shortcut:string,options?:ErrorOptions){
+    super(`Shortcut ${operation} failed: ${shortcut}`,options);this.name="NativeShortcutError";
+  }
+}
 export function nativeShortcutAccelerator(shortcut:string):string {
   return normalizeMainWindowShortcut(shortcut).split("+").map(token=>{
     if(/^Key[A-Z]$/.test(token))return token.slice(3);
@@ -18,40 +23,44 @@ export function nativeShortcutAccelerator(shortcut:string):string {
 export function createNativeShortcut(host:ShortcutHost,activate:()=>void){
   let current:string|null=null;
   let suspended=false;
+  // Only an inactive configured binding survives settings cancellation/reopening.
+  let failure:NativeShortcutError|null=null;
   const unregister=()=>{
-    if(current&&!host.unregister(nativeShortcutAccelerator(current)))throw new Error("Could not unregister the active shortcut");
+    if(current&&!host.unregister(nativeShortcutAccelerator(current)))throw new NativeShortcutError("unregister",current);
   };
-  const register=(shortcut:string)=>{
-    if(!host.register(nativeShortcutAccelerator(shortcut),activate))throw new Error("Shortcut is unavailable or already registered");
+  const register=(shortcut:string,operation:"register"|"restore"="register")=>{
+    if(!host.register(nativeShortcutAccelerator(shortcut),activate))throw new NativeShortcutError(operation,shortcut);
   };
   return {
     get current(){return current;},
+    get failure(){return failure;},
     apply(value:string|null){
       const next=normalizeMainWindowShortcut(value);
-      if(next===current)return {ok:true as const,shortcut:current};
-      if(suspended){current=next;return {ok:true as const,shortcut:next};}
+      if(next===current&&!failure)return {ok:true as const,shortcut:current};
+      if(suspended){current=next;if(!next)failure=null;return {ok:true as const,shortcut:next};}
       try{
         if(next)register(next);
         try{unregister();}
         catch(error){
           if(next&&!host.unregister(nativeShortcutAccelerator(next))){
-            throw new AggregateError([error,new Error("Could not roll back the new shortcut")],"Shortcut replacement and rollback failed");
+            throw new NativeShortcutError("rollback",next,{cause:error});
           }
           throw error;
         }
-        current=next;
+        current=next;failure=null;
         return {ok:true as const,shortcut:current};
-      }catch(error){return {ok:false as const,error};}
+      }catch(error){
+        if(!current&&error instanceof NativeShortcutError)failure=error;
+        return {ok:false as const,error};
+      }
     },
-    suspend(){
-      if(suspended)return;
-      unregister();suspended=true;
-    },
+    suspend(){if(suspended)return;unregister();suspended=true;},
     resume(){
       if(!suspended)return;
-      if(current)register(current);
-      suspended=false;
+      try{if(current)register(current,"restore");}
+      catch(error){if(error instanceof NativeShortcutError)failure=error;throw error;}
+      suspended=false;if(current)failure=null;
     },
-    dispose(){if(!suspended)unregister();current=null;},
+    dispose(){if(!suspended)unregister();current=null;failure=null;},
   };
 }

@@ -1,3 +1,4 @@
+import { NativeLayoutSaveError, nativeErrorFeedback, nativeLaunchErrorFeedback, nativeShortcutErrorMessage, type NativeErrorOperation } from "../nativeErrorFeedback.js";
 import { createNativeHotCorners } from "../nativeHotCorners.js";
 import { nativeHotCorners } from "../nativeHotCornersLibrary.js";
 import {NativeNewAppsButton} from "../../rendering/native/NativeNewAppsButton.js";
@@ -254,7 +255,7 @@ const nativeSettings=createNativeSettingsController({
   },
   refreshBackground:()=>refreshBackground(),
   syncLiveDesktop:()=>syncLiveDesktop(),
-  openLogs:()=>{if(!openNativePath(nativeLogDirectory))reportNativeError(new Error("Could not open logs folder"));},
+  openLogs:()=>{if(!openNativePath(nativeLogDirectory))reportNativeError(new Error("Could not open logs folder"),"logs");},
   openExternalUrl:url=>{if(!openNativeExternalUrl(url))throw new Error("Could not open the default browser");},
   requestSceneRender:()=>requestSceneRender(),
   settings:()=>settings,
@@ -272,7 +273,7 @@ let appDialogs:NativeAppDialogs|null=null;
 let refreshTargetChecks: (force?: boolean) => Promise<void> = async()=>{};
 let refreshOneTarget: (id:string,force?:boolean)=>Promise<void> = async()=>{};
 let saveFailed=(error:unknown)=>{logNativeRuntime("save-error",String(error));},saveRecovered=()=>{};
-const saves = createLayoutSaveQueue(async document=>{try{await nativeData.saveLayout(document);saveRecovered();}catch(error){saveFailed(error);throw error;}});
+const saves = createLayoutSaveQueue(async document=>{try{await nativeData.saveLayout(document);saveRecovered();}catch(error){const failure=new NativeLayoutSaveError(error);saveFailed(error);throw failure;}});
 let currentFrame = makeNativeStartupFrame(loadedLayout, catalogResult.apps, layoutState.presentation.pages.value);
 let activePageItems = getNativeActivePageItems(currentFrame);
 let searchQuery = "";
@@ -333,7 +334,12 @@ const settings=createLaunchpadSettings({
       return selected.value[0]?nativeData.background({path:selected.value[0]}):null;
     },
   },
-  mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},registerShortcut:async value=>mainShortcut.apply(value),applyHotCorners:config=>hotCorners.apply(config),
+  mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},
+    registerShortcut:async value=>{
+      const outcome=mainShortcut.apply(value);if(outcome.ok)return outcome;
+      logNativeRuntime("shortcut-error",readErrorMessage(outcome.error));
+      return {ok:false,error:new Error(nativeShortcutErrorMessage(outcome.error),{cause:outcome.error})};
+    },applyHotCorners:config=>hotCorners.apply(config),
     setMode:request=>{
       app.setWindowMode(request.mode,request.fullscreenOverscanEnabled?1:0);return {ok:true};
     },
@@ -366,11 +372,11 @@ const management = new NativeManagement(searchBar.host, () => app.contentSize, (
   settingsTheme);
 
 const iconTextures = createNativeIconTextureRepository(app);
-function reportNativeError(error: unknown): void {
+function reportNativeError(error:unknown,operation:NativeErrorOperation="runtime"):void {
+  logNativeRuntime("error",{operation,message:readErrorMessage(error),cause:error instanceof Error?String(error.cause??""):""});
+  const feedback=nativeErrorFeedback(error,operation);if(!feedback)return;
   if(startupPreparation?.pending){startupPreparation.activate();app.window.show();app.window.activate();}
-  const message=readErrorMessage(error);
-  logNativeRuntime("error",message);
-  notices.showTransientNotice({title:t("errors.launch.genericTitle"),message,intent:"error"});
+  notices.showTransientNotice(feedback);
 }
 
 
@@ -525,10 +531,10 @@ function contextMenu(item:SceneItem|null,x:number,y:number):void{
           const latest=apps?.nativeIntegration.getTargetDetails(item.id);if(latest?.status==="missing"){await activateItem(item);return;}
           if(!latest?.canElevate)throw new Error(t("launchpad.target.adminUnavailable"));
           launchFlow?.openApp(item as ReadonlyLaunchpadApp,undefined,true);
-        })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error);});}});
+        })().catch(error=>{if(!(error instanceof NativeLaunchError&&error.kind==="cancelled"))reportNativeError(error,"launch");});}});
         const reveal=async(path:string,folder=false)=>{await saves.flush();await nativeData.revealPath(path,folder);preserveViewAfterLocation();launchFlow?.closeDesktop({clearSearch:false});};
-        actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(reportNativeError);}});
-        if(showShortcut)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",disabled:!details?.shortcutLocation,run:()=>{if(details?.shortcutLocation)void reveal(details.shortcutLocation).catch(reportNativeError);}});
+        actions.push({label:t(details?.locationIsFolder?"launchpad.target.openFolder":"launchpad.target.openLocation"),icon:"folder-open-20-regular",disabled:!details?.fileLocation,run:()=>{if(details?.fileLocation)void reveal(details.fileLocation,details.locationIsFolder).catch(error=>reportNativeError(error,"location"));}});
+        if(showShortcut)actions.push({label:t("launchpad.target.openShortcutLocation"),icon:"folder-link-20-regular",disabled:!details?.shortcutLocation,run:()=>{if(details?.shortcutLocation)void reveal(details.shortcutLocation).catch(error=>reportNativeError(error,"location"));}});
         actions.push({label:t("launchpad.target.recheck"),icon:"arrow-sync-20-regular",run:()=>{void refreshOneTarget(item.id,true);}});
       }
       actions.push({label:t(item.type==="folder"?"common.actions.rename":"common.actions.edit"),icon:item.type==="folder"?"rename-20-regular":"edit-20-regular",run:()=>editItem(item)});
@@ -597,7 +603,7 @@ const scene = new NativeDesktopScene(app.stage, {
   onRollbackComplete: token => {editing?.rollback.complete(token);},
   onIconEditAction:(action,item)=>{
     if(action==="remove")removeItems([item.id]);
-    else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(reportNativeError);
+    else if(action==="choose-icon" || action==="reset-icon")void updateIcon(item,action==="reset-icon").catch(error=>reportNativeError(error,"icons"));
   },
 });
 const textPrewarm=createNativeTextPrewarm({renderer:()=>timedRenderer,
@@ -633,7 +639,7 @@ const settingsButton=new NativeSettingsButton(()=>openSettings(),()=>app.invalid
 app.stage.addChild(settingsButton);
 let onboarding:ReturnType<typeof createNativeOnboarding>|null=null;
 const newAppsButton=new NativeNewAppsButton(()=>{if(management.modal)return;if(apps&&!apps.presentation.importState.value.completed)onboarding?.open();else appDialogs?.recent();},()=>app.invalidate());app.stage.addChild(newAppsButton);
-const windowChrome=new NativeWindowChrome(app,reportNativeError,()=>brandingTextures.get(settings.presentation.launchpadIconVariant.value)!);
+const windowChrome=new NativeWindowChrome(app,error=>reportNativeError(error,"window"),()=>brandingTextures.get(settings.presentation.launchpadIconVariant.value)!);
 refreshWindowChrome=()=>windowChrome.update(settings.presentation.showCustomTitlebar.value,app.windowMode==="windowed");
 app.stage.addChild(windowChrome);
 const launchGhostView=new NativeLaunchGhost();app.stage.addChild(launchGhostView);
@@ -687,7 +693,7 @@ const closeCoordinator=createNativeCloseCoordinator({
   hideWindow:()=>app.window.hide(),
   log:event=>logNativeRuntime(event),
   prepareRestart:()=>prepareNativeRestart(),
-  reportError:error=>{reportNativeError(error);},
+  reportError:error=>{reportNativeError(error,"close");},
   requestWindowClose:()=>{app.window.requestClose();},
   setInteractive:enabled=>{app.stage.interactiveChildren=enabled;},
   waitForSettingsApply:()=>nativeSettings.shell?.waitForApply(),
@@ -708,31 +714,31 @@ try {
         liveDesktop.poll();
       }catch(error){
         try{liveDesktop.stop();}catch(stopError){logNativeRuntime("live-desktop-stop-error",stopError);}
-        void desktopBackground.configure({...backgroundConfig(),backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height,undefined,systemAppearance).catch(reportNativeError);
-        reportNativeError(error);
+        void desktopBackground.configure({...backgroundConfig(),backgroundSource:"systemMaterial"},app.contentSize.width,app.contentSize.height,undefined,systemAppearance).catch(error=>reportNativeError(error,"background"));
+        reportNativeError(error,"background");
       }
     },1000);
   }
   offBackgroundResize=app.on("resize",()=>{
-    void refreshBackground().catch(reportNativeError);
+    void refreshBackground().catch(error=>reportNativeError(error,"background"));
   });
   offSystemPreferences=subscribeNativeSystemPreferences(result=>{
-    if(!result.ok){reportNativeError(result.error.message);return;}
+    if(!result.ok){reportNativeError(result.error.message,"appearance");return;}
     if(setNativeUiFontFamily(result.value.uiFontFamily))nativeSettings.redraw();
     if(systemAppearance!==result.value.appearance){
       systemAppearance=result.value.appearance;nativeSettings.redraw();
       if(settings.presentation.windowEffectAppearance.value==="system"&&(!launchFlow||launchFlow.isDesktopOpen.value)){
         try{windowEffects.set(settings.presentation.windowEffectMaterial.value,systemAppearance);}
-        catch(error){reportNativeError(error);}
+        catch(error){reportNativeError(error,"background");}
       }
-      void refreshBackground().catch(reportNativeError);app.invalidate();
+      void refreshBackground().catch(error=>reportNativeError(error,"background"));app.invalidate();
     }
   });
   app.setWindowMode(settings.presentation.windowMode.value,settings.presentation.fullscreenOverscanEnabled.value?1:0);
   windowEffects.set(settings.presentation.windowEffectMaterial.value,resolveAppearancePreference(settings.presentation.windowEffectAppearance.value,systemAppearance));
   await present(app, "the native host startup frame");
   startupPhase("ui-assembly");
-  await refreshBackground().catch(reportNativeError);
+  await refreshBackground().catch(error=>reportNativeError(error,"background"));
   startupPhase("background");
   const iconTextureSnapshot = await iconTextures.synchronize(collectTextureItems(currentFrame));
   startupPhase("icon-repository");
@@ -812,7 +818,7 @@ try {
   let resizeLiveBackingObserved = false;
   let observeLiveResize = false;
   offResize = app.on("resize", ({ height, resolution, width }) => {
-    void branding.synchronize(resolution).catch(reportNativeError);
+    void branding.synchronize(resolution).catch(error=>reportNativeError(error,"icons"));
     configureNativeTextResolution(resolution,app.stage);
     nativeSettings.redraw();
     // Resize must update controls as well as icons without depending on a later animation commit.
@@ -1049,7 +1055,7 @@ try {
     pauseTextPrewarm:()=>textPrewarm.pause(),
     present:description=>present(app,description),
     prioritizeTextPrewarm:(pageIndex,targetIndex)=>textPrewarm.prioritize(pageIndex,targetIndex),
-    reportError:error=>reportNativeError(error),
+    reportError:error=>reportNativeError(error,"window"),
     requestSceneRender,
     resetFolder:()=>folderFlow.reset(),
     prepareSearchInput:()=>prepareSearchInput(),
@@ -1085,13 +1091,13 @@ try {
       try{await nativeData.launchApp(item.id,elevated);return true;}
       catch(error){
         if(error instanceof NativeLaunchError&&error.kind==="cancelled")return {kind:"cancelled"};
-        const detail=readErrorMessage(error);return {kind:"launch",title:t("errors.launch.genericTitle"),message:detail,detail,suggestion:t("errors.launch.suggestion.editTarget")};
+        const detail=readErrorMessage(error);return {kind:"launch",...nativeLaunchErrorFeedback(error),detail};
       }
     },
     waitForAppLaunchAnimation:()=>launchGhostView.waitForCompletion(),
     showNativeLaunchError:error=>{visibility.show();management.warning({...error,intent:"error",confirmText:t("notices.acknowledge")});},
     beginNativeWindowClose:()=>visibility.beginCloseAnimation(),
-    hideNativeWindow:visibility.hideAfterPresented,onDesktopCloseComplete:()=>{void visibility.hideAfterPresented().catch(reportNativeError);},
+    hideNativeWindow:visibility.hideAfterPresented,onDesktopCloseComplete:()=>{void visibility.hideAfterPresented().catch(error=>reportNativeError(error,"window"));},
     schedulePageGridMetrics:requestSceneRender,startHomeRevealSettleWindow:()=>{},
   },flowState,{...visibility.timers,afterCommit:queueMicrotask});
   showLaunchpad=visibility.show;
@@ -1105,12 +1111,12 @@ try {
   dismissLaunchpad=visibility.dismiss;toggleLaunchpad=visibility.toggle;shortcutLaunchpad=visibility.shortcut;
   disposeLaunchFlow=visibility.disposeTimers;
   hotCornerActivate=visibility.hotCorner;
-  try{hotCorners.apply(settings.presentation.hotCorners.value);}catch(error){reportNativeError(error);}
+  try{hotCorners.apply(settings.presentation.hotCorners.value);}catch(error){reportNativeError(error,"hotCorners");}
   if(!process.env.LUMERIA_NATIVE_DATA_DIR){
     const outcome=mainShortcut.apply(normalizeMainWindowShortcut(loadedLayout?.settings.mainWindowShortcut));
     if(!outcome.ok){
       const message=readErrorMessage(outcome.error);console.error("Native shortcut registration failed:",message);
-      settings.actions.setMainWindowShortcutError(message);reportNativeError(message);
+      settings.actions.setMainWindowShortcutError(nativeShortcutErrorMessage(outcome.error));reportNativeError(outcome.error,"shortcut");
     }
   }
   tray=createLaunchpadTray({
@@ -1244,7 +1250,7 @@ try {
       return{result,revision};
     },
     canApply:()=>!catalogInteractionBusy(),
-    report:error=>{logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error);},
+    report:error=>{logNativeRuntime("catalog-refresh-failed",error);reportNativeError(error,"scan");},
     apply:async({result,revision:catalogRevision},request,current)=>{
       const key=nativeCatalogCacheKey(request.roots,request.filters);
       const stillCurrent=()=>{
@@ -1273,7 +1279,7 @@ try {
       const pages=layoutState.operations.reconcileDocument(result.apps.map(normalizeNativeApp),document,apps!.presentation.hiddenAppIds.value).pages;
       apps!.imports.setCatalog(result.apps);
       commitEditedPages(pages);
-      void iconTextures.retryFailedSources().then(()=>requestSceneRender()).catch(reportNativeError);
+      void iconTextures.retryFailedSources().then(()=>requestSceneRender()).catch(error=>reportNativeError(error,"icons"));
       apps!.imports.registerStartup(previous);
       appliedCatalogKey=contentKey;
       logNativeRuntime("catalog-refreshed",{apps:result.apps.length,changed:true});return true;

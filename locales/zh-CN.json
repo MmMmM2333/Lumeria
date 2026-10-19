@@ -1381,7 +1381,14 @@
             "missingMainKey": "请按下一个包含主键的组合键",
             "missingModifier": "请至少包含 Ctrl、Alt、Shift 或 Win 中的一个修饰键",
             "unsupportedKey": "这个按键暂不支持作为全局快捷键"
-          }
+          },
+          "failure": {
+            "register": "无法注册 {shortcut}。该组合可能被系统或其他程序占用，请更换组合后重试。",
+            "restore": "无法恢复 {shortcut}，当前快捷键未生效。请结束占用或更换组合后重试。",
+            "unregister": "无法暂停或替换 {shortcut}。请重试，必要时重启 Lumeria。",
+            "rollback": "未能完整恢复快捷键注册状态。请重启 Lumeria 后重新设置快捷键。"
+          },
+          "warning": "快捷键未生效或设置失败"
         },
         "language": {
           "title": "语言",
@@ -1779,6 +1786,52 @@
       }
     },
     "errors": {
+      "native": {
+        "runtime": {
+          "title": "操作未完成",
+          "message": "Lumeria 遇到问题，请重试。若问题持续，请在设置中打开日志查看详情。"
+        },
+        "shortcut": {
+          "title": "快捷键未生效",
+          "message": "无法注册快捷键，请在设置中更换组合后重试。"
+        },
+        "hotCorners": {
+          "title": "无法启用触发角",
+          "message": "触发角设置未能生效，请检查设置后重试。"
+        },
+        "background": {
+          "title": "无法更新背景",
+          "message": "背景未能加载或刷新，请检查背景设置后重试。"
+        },
+        "appearance": {
+          "title": "无法读取系统外观",
+          "message": "系统外观设置暂时不可用，请稍后重试。"
+        },
+        "icons": {
+          "title": "无法更新图标",
+          "message": "图标未能加载或更新，请重试。若应用已被移除，请重新扫描应用。"
+        },
+        "logs": {
+          "title": "无法打开日志文件夹",
+          "message": "请检查日志文件夹是否存在，以及是否有权限访问。"
+        },
+        "location": {
+          "title": "无法打开所在位置",
+          "message": "请检查目标是否仍然存在，以及是否有权限访问。"
+        },
+        "scan": {
+          "title": "无法刷新应用列表",
+          "message": "应用扫描未能完成，请稍后重试或在设置中重新扫描应用。"
+        },
+        "window": {
+          "title": "无法更新窗口",
+          "message": "窗口操作未能完成，请重试。若问题持续，请重启 Lumeria。"
+        },
+        "close": {
+          "title": "无法关闭窗口",
+          "message": "关闭操作未能完成，请重试。若问题持续，请查看日志。"
+        }
+      },
       "bootstrap": {
         "title": "Lumeria 初始化失败",
         "message": "无法初始化应用语言。请重启 Lumeria；如果问题持续存在，请查看日志。"

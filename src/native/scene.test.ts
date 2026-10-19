@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { runNativeNotificationFeedbackTests } from "./nativeNotificationFeedback.test.js";
 import { createNativeRecordSnapshot } from "../rendering/native/nativeSceneSnapshot.js";
 import { createNativeSceneScheduler } from "./nativeSceneScheduler.js";
 import { createLaunchpadGestureEngine } from "../domain/input/launchpadGestureEngine.js";
@@ -53,6 +54,7 @@ import {
 } from "./nativeStartup.js";
 
 installNativeCanvasTestAdapter();
+runNativeNotificationFeedbackTests();
 runNativeParagraphTests();
 {
   let opened="",fail=false;

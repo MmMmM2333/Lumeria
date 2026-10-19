@@ -1381,7 +1381,14 @@
             "missingMainKey": "Press a shortcut that includes a main key",
             "missingModifier": "Include at least one of Ctrl, Alt, Shift, or Win",
             "unsupportedKey": "This key cannot be used in a global shortcut"
-          }
+          },
+          "failure": {
+            "register": "Could not register {shortcut}. It may be reserved by Windows or another app. Choose another combination and try again.",
+            "restore": "Could not restore {shortcut}. The shortcut is inactive. Free the combination or choose another one and try again.",
+            "unregister": "Could not pause or replace {shortcut}. Try again, or restart Lumeria if the problem persists.",
+            "rollback": "The shortcut registration state could not be fully restored. Restart Lumeria and set the shortcut again."
+          },
+          "warning": "Shortcut inactive or could not be changed"
         },
         "language": {
           "title": "Language",
@@ -1779,6 +1786,52 @@
       }
     },
     "errors": {
+      "native": {
+        "runtime": {
+          "title": "Operation failed",
+          "message": "Lumeria encountered a problem. Try again. If it persists, open the logs in Settings for details."
+        },
+        "shortcut": {
+          "title": "Shortcut inactive",
+          "message": "Could not register the shortcut. Choose another combination in Settings and try again."
+        },
+        "hotCorners": {
+          "title": "Could not enable hot corners",
+          "message": "The hot corner settings could not be applied. Check the settings and try again."
+        },
+        "background": {
+          "title": "Could not update background",
+          "message": "The background could not be loaded or refreshed. Check the background settings and try again."
+        },
+        "appearance": {
+          "title": "Could not read system appearance",
+          "message": "System appearance settings are temporarily unavailable. Try again later."
+        },
+        "icons": {
+          "title": "Could not update icons",
+          "message": "An icon could not be loaded or updated. Try again, or rescan apps if the app has been removed."
+        },
+        "logs": {
+          "title": "Could not open logs folder",
+          "message": "Check that the logs folder exists and that you have permission to access it."
+        },
+        "location": {
+          "title": "Could not open file location",
+          "message": "Check that the target still exists and that you have permission to access it."
+        },
+        "scan": {
+          "title": "Could not refresh app list",
+          "message": "The app scan could not finish. Try again later or rescan apps in Settings."
+        },
+        "window": {
+          "title": "Could not update window",
+          "message": "The window operation could not finish. Try again, or restart Lumeria if the problem persists."
+        },
+        "close": {
+          "title": "Could not close window",
+          "message": "The close operation could not finish. Try again, or check the logs if the problem persists."
+        }
+      },
       "bootstrap": {
         "title": "Lumeria initialization failed",
         "message": "The application language could not be initialized. Restart Lumeria and check the logs if the problem continues."
