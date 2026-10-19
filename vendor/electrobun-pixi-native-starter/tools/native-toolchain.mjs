@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { verifyBunRuntimePin } from "./bun-runtime-pin.mjs";
 
 export const starterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -102,6 +103,21 @@ export function removeTemporary(path, parent) {
   if (dirname(resolve(path)) !== realpathSync(parent) || lstatSync(path).isSymbolicLink()) throw new Error("Temporary cleanup escaped its parent");
   rmSync(path, { recursive: true, force: true, maxRetries: 60, retryDelay: 100 });
 }
+// Retry transient Windows rename failures while keeping activation and rollback bounded.
+export async function renameWithRetry(source, destination) {
+  const deadline = performance.now() + 2000;
+  let backoff = 20;
+  for (;;) {
+    try { renameSync(source, destination); return; }
+    catch (error) {
+      const remaining = deadline - performance.now();
+      if (process.platform !== "win32" || !["EPERM", "EBUSY"].includes(error.code) || remaining <= 0) throw error;
+      await delay(Math.min(backoff, remaining));
+      if (performance.now() >= deadline) throw error;
+      backoff = Math.min(backoff * 2, 200);
+    }
+  }
+}
 function localCache() {
   const path = join(starterRoot, ".hutch");
   mkdirSync(path, { recursive: true });
@@ -132,7 +148,7 @@ export async function installArchive(archive, destination = devkitPath, lock = r
     const payload = join(temporary, "payload"); mkdirSync(payload);
     run("tar.exe", ["-xf", snapshot, "-C", payload]);
     await verifyDevkit(payload, lock);
-    renameSync(payload, destination);
+    await renameWithRetry(payload, destination);
   } finally { removeTemporary(temporary, cache); }
 }
 
@@ -160,15 +176,15 @@ export async function activateToolchain(archive, lock, localBuild = null, paths 
   try {
     await installArchive(archive, candidate, lock);
     if (localBuild) writeFileSync(join(transaction, "next-lock.json"), JSON.stringify({ ...lock, localBuild }, null, 2) + "\n");
-    if (existsSync(destination)) renameSync(destination, saved);
-    if (existsSync(receipt)) renameSync(receipt, savedReceipt);
-    renameSync(candidate, destination); installed = true;
-    if (localBuild) renameSync(join(transaction, "next-lock.json"), receipt);
+    if (existsSync(destination)) await renameWithRetry(destination, saved);
+    if (existsSync(receipt)) await renameWithRetry(receipt, savedReceipt);
+    await renameWithRetry(candidate, destination); installed = true;
+    if (localBuild) await renameWithRetry(join(transaction, "next-lock.json"), receipt);
   } catch (error) {
     try {
-      if (installed) renameSync(destination, candidate);
-      if (existsSync(saved)) renameSync(saved, destination);
-      if (existsSync(savedReceipt)) renameSync(savedReceipt, receipt);
+      if (installed) await renameWithRetry(destination, candidate);
+      if (existsSync(saved)) await renameWithRetry(saved, destination);
+      if (existsSync(savedReceipt)) await renameWithRetry(savedReceipt, receipt);
     } catch (rollback) {
       rollbackFailed = true;
       throw new AggregateError([error, rollback], `Toolchain activation rollback failed; inspect ${transaction}`);

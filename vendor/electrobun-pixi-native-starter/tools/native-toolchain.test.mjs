@@ -4,8 +4,9 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, symlin
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import fs from "node:fs";
+import timers from "node:timers/promises";
 import { syncBuiltinESMExports } from "node:module";
-import { activateToolchain, digest, readInstalledLock, readLock, safeName, validateArchiveListing, verifyDevkit, verifyNativeFrame, installArchive, downloadArchive, removeTemporary, starterRoot, run } from "./native-toolchain.mjs";
+import { activateToolchain, digest, readInstalledLock, readLock, safeName, validateArchiveListing, verifyDevkit, verifyNativeFrame, installArchive, downloadArchive, removeTemporary, renameWithRetry, starterRoot, run } from "./native-toolchain.mjs";
 import { parseSourceOptions, sourceDirectory } from "./prepare-source.mjs";
 
 const temporary = () => mkdtempSync(join(tmpdir(), "lumeria-toolchain-test-"));
@@ -85,6 +86,64 @@ test("temporary cleanup retries transient Windows lock errors", (t) => {
     syncBuiltinESMExports();
   }
 });
+test("SDK renames retry Windows lock errors without blocking the event loop", { skip: process.platform !== "win32" }, async (t) => {
+  let attempts = 0, yielded = false;
+  const mocked = t.mock.method(fs, "renameSync", () => {
+    attempts++;
+    if (attempts <= 2) throw Object.assign(new Error("temporary lock"), { code: attempts === 1 ? "EPERM" : "EBUSY" });
+  });
+  syncBuiltinESMExports();
+  try {
+    setImmediate(() => { yielded = true; });
+    await renameWithRetry("source", "destination");
+    assert.equal(attempts, 3);
+    assert.equal(yielded, true);
+  } finally { mocked.mock.restore(); syncBuiltinESMExports(); }
+});
+
+test("SDK rename deadline stops further attempts and preserves the original error", { skip: process.platform !== "win32" }, async (t) => {
+  let now = 0, attempts = 0;
+  const error = Object.assign(new Error("persistent lock"), { code: "EPERM", path: "source", dest: "destination" });
+  const clock = t.mock.method(performance, "now", () => now);
+  const timer = t.mock.method(timers, "setTimeout", async () => { now = 2001; });
+  const mocked = t.mock.method(fs, "renameSync", () => { attempts++; throw error; });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(renameWithRetry("source", "destination"), actual => actual === error);
+    assert.equal(attempts, 1, "an expired timer must not trigger another rename");
+  } finally { clock.mock.restore(); timer.mock.restore(); mocked.mock.restore(); syncBuiltinESMExports(); }
+});
+
+test("SDK rename propagates non-retryable errors immediately", async (t) => {
+  for (const code of ["ENOENT", "EEXIST", "EXDEV", "EACCES"]) {
+    let attempts = 0;
+    const error = Object.assign(new Error(code), { code, path: "source", dest: "destination" });
+    const mocked = t.mock.method(fs, "renameSync", () => { attempts++; throw error; });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(renameWithRetry("source", "destination"), actual => actual === error);
+      assert.equal(attempts, 1);
+    } finally { mocked.mock.restore(); syncBuiltinESMExports(); }
+  }
+});
+
+test("SDK rename does not retry Windows lock codes on other platforms", async (t) => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { ...platform, value: "linux" });
+  try {
+    for (const code of ["EPERM", "EBUSY"]) {
+      let attempts = 0;
+      const error = Object.assign(new Error(code), { code });
+      const mocked = t.mock.method(fs, "renameSync", () => { attempts++; throw error; });
+      syncBuiltinESMExports();
+      try {
+        await assert.rejects(renameWithRetry("source", "destination"), actual => actual === error);
+        assert.equal(attempts, 1);
+      } finally { mocked.mock.restore(); syncBuiltinESMExports(); }
+    }
+  } finally { Object.defineProperty(process, "platform", platform); }
+});
+
 test("verification never follows an SDK directory junction", () => {
   const root = temporary(), target = join(root, "target"), link = join(root, "linked");
   try {
@@ -160,6 +219,7 @@ test("local SDK selection verifies before replacing, retains backups and restore
   const root = temporary(), cache = join(starterRoot, ".hutch"); mkdirSync(cache, { recursive: true });
   const destination = mkdtempSync(join(cache, "test-selection-")), receipt = destination + ".json";
   const transactions = [];
+  let retained;
   try {
     const old = fixture(destination), source = join(root, "source"), candidate = fixture(source);
     candidate.id = "local-test-sdk";
@@ -180,17 +240,64 @@ test("local SDK selection verifies before replacing, retains backups and restore
     await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
     await verifyDevkit(join(transactions[0], "previous-sdk"), old);
     const rename = fs.renameSync;
-    let failed = false;
-    const replacementFailure = t.mock.method(fs, "renameSync", (from, to) => {
-      if(!failed && to === destination && String(from).endsWith("-candidate")) { failed = true; throw new Error("simulated locked SDK destination"); }
+    const retried = new Set();
+    const transientFailure = t.mock.method(fs, "renameSync", (from, to) => {
+      const phase = String(from).endsWith("payload") ? "candidate"
+        : from === destination ? "backup-sdk"
+        : from === receipt ? "backup-receipt"
+        : to === destination && String(from).endsWith("-candidate") ? "select-sdk"
+        : to === receipt && String(from).endsWith("next-lock.json") ? "select-receipt" : null;
+      if (phase && !retried.has(phase)) {
+        retried.add(phase);
+        assert.equal(existsSync(join(cache, "toolchain-activation.lock")), true);
+        throw Object.assign(new Error(`temporary ${phase} lock`), { code: "EPERM" });
+      }
       return rename(from, to);
     });
     syncBuiltinESMExports();
-    try { await assert.rejects(activateToolchain(archive, candidate, null, paths), /locked SDK/); }
+    try { transactions.push(await activateToolchain(archive, candidate, localBuild, paths)); }
+    finally { transientFailure.mock.restore(); syncBuiltinESMExports(); }
+    assert.deepEqual([...retried].sort(), ["candidate", "backup-sdk", "backup-receipt", "select-sdk", "select-receipt"].sort());
+    await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
+
+    let failed = 0;
+    const restored = new Set();
+    const replacementError = Object.assign(new Error("simulated locked SDK destination"), { code: "EPERM", dest: destination });
+    const replacementFailure = t.mock.method(fs, "renameSync", (from, to) => {
+      if (to === destination && String(from).endsWith("-candidate")) { failed++; throw replacementError; }
+      const phase = to === destination && String(from).endsWith("previous-sdk") ? "sdk"
+        : to === receipt && String(from).endsWith("previous-lock.json") ? "receipt" : null;
+      if (phase && !restored.has(phase)) {
+        restored.add(phase);
+        throw Object.assign(new Error(`temporary restore ${phase} lock`), { code: "EBUSY" });
+      }
+      return rename(from, to);
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(activateToolchain(archive, candidate, null, paths), error => error === replacementError); }
     finally { replacementFailure.mock.restore(); syncBuiltinESMExports(); }
-    assert.equal(failed, true);
+    assert.ok(failed > 1, "persistent locks must exhaust retries before rollback");
+    assert.deepEqual([...restored].sort(), ["receipt", "sdk"]);
+    assert.equal(existsSync(join(cache, "toolchain-activation.lock")), false);
     await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
     assert.equal(readInstalledLock(receipt, officialPath).id, candidate.id, "failed replacement restores the previous local selection receipt");
+    const receiptError = Object.assign(new Error("simulated receipt permission failure"), { code: "EACCES" });
+    let uninstalled = false;
+    const receiptFailure = t.mock.method(fs, "renameSync", (from, to) => {
+      if (to === receipt && String(from).endsWith("next-lock.json")) throw receiptError;
+      if (from === destination && String(to).endsWith("-candidate") && !uninstalled) {
+        uninstalled = true;
+        throw Object.assign(new Error("temporary installed SDK lock"), { code: "EBUSY" });
+      }
+      return rename(from, to);
+    });
+    syncBuiltinESMExports();
+    try { await assert.rejects(activateToolchain(archive, candidate, localBuild, paths), error => error === receiptError); }
+    finally { receiptFailure.mock.restore(); syncBuiltinESMExports(); }
+    assert.equal(uninstalled, true, "receipt failure must undo the installed candidate");
+    await verifyDevkit(destination, readInstalledLock(receipt, officialPath));
+    assert.equal(existsSync(join(cache, "toolchain-activation.lock")), false);
+
     writeFileSync(officialPath, JSON.stringify({ ...old, id: "changed-official" }));
     assert.throws(() => readInstalledLock(receipt, officialPath), /different repository/);
     writeFileSync(officialPath, JSON.stringify(old));
@@ -203,12 +310,43 @@ test("local SDK selection verifies before replacing, retains backups and restore
     await assert.rejects(verifyDevkit(destination, readInstalledLock(receipt, officialPath)), /drift/);
     transactions.push(await activateToolchain(archive, candidate, null, paths));
     assert.equal(existsSync(receipt), false);await verifyDevkit(destination, candidate);
-    assert.ok(existsSync(join(transactions[1], "previous-lock.json")));
+    assert.ok(existsSync(join(transactions.at(-1), "previous-lock.json")));
     assert.equal(digest(officialPath), localBuild.officialLockSha256);
+
+    transactions.push(await activateToolchain(archive, candidate, localBuild, paths));
+    const activationError = Object.assign(new Error("simulated candidate permission failure"), { code: "EACCES" });
+    const rollbackError = Object.assign(new Error("simulated persistent rollback lock"), { code: "EPERM" });
+    let rollbackAttempts = 0;
+    const rollbackFailure = t.mock.method(fs, "renameSync", (from, to) => {
+      if (to === destination && String(from).endsWith("-candidate")) {
+        retained = { candidate: from, transaction: String(from).slice(0, -"-candidate".length) };
+        throw activationError;
+      }
+      if (to === destination && String(from).endsWith("previous-sdk")) { rollbackAttempts++; throw rollbackError; }
+      return rename(from, to);
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(activateToolchain(archive, candidate, localBuild, paths), error => {
+        assert.ok(error instanceof AggregateError);
+        assert.deepEqual(error.errors, [activationError, rollbackError]);
+        assert.ok(error.message.includes(retained.transaction));
+        return true;
+      });
+    } finally { rollbackFailure.mock.restore(); syncBuiltinESMExports(); }
+    assert.ok(rollbackAttempts > 1);
+    await verifyDevkit(retained.candidate, candidate);
+    await verifyDevkit(join(retained.transaction, "previous-sdk"), candidate);
+    assert.equal(readInstalledLock(join(retained.transaction, "previous-lock.json"), officialPath).id, candidate.id);
+    assert.equal(existsSync(join(cache, "toolchain-activation.lock")), false);
   } finally {
     if (existsSync(receipt)) unlinkSync(receipt);
     if (existsSync(destination)) removeTemporary(destination, cache);
     for (const transaction of transactions) removeTemporary(transaction, cache);
+    if (retained) {
+      if (existsSync(retained.candidate)) removeTemporary(retained.candidate, cache);
+      if (existsSync(retained.transaction)) removeTemporary(retained.transaction, cache);
+    }
     removeTemporary(root, tmpdir());
   }
 });

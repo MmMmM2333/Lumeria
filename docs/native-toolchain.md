@@ -34,7 +34,7 @@ npm run native:dev
 
 本地选择记录位于 Starter 的 `.hutch/native-toolchain.local.json`，绑定官方锁文件哈希，不进入 Git。构建和类型检查共用这个 SDK；本地编译结果通过该记录校验，官方锁保持不变。
 
-切换前先验证候选，原 SDK 与记录保留在 `.hutch/activate-*/previous-sdk` 和 `previous-lock.json`；切换失败尝试回滚。先关闭使用该 SDK 的进程。若中断留下 activation lock，确认没有运行中的准备进程后再清理，不自动抢占。
+切换前先验证候选，原 SDK 与记录保留在 `.hutch/activate-*/previous-sdk` 和 `previous-lock.json`；切换失败尝试回滚。Windows 下安装、切换及回滚中的每次重命名遇到 `EPERM` 或 `EBUSY` 时，会异步退避重试，等待上限为 2 秒；超时仍报错，回滚失败时保留候选与备份供检查。先关闭使用该 SDK 的进程。若中断留下 activation lock，确认没有运行中的准备进程后再清理，不自动抢占。
 
 ### 使用预编译附件
 
