@@ -1,3 +1,4 @@
+import { createNativeCursorPolicy } from "./native-cursor";
 import Electrobun, { Screen, type GpuWindow } from "../platform/electrobun-sdk";
 import { electrobunNativeAdapter } from "../rendering/electrobun-native-adapter";
 import { Container, EventSystem, FederatedContainer, extensions } from "pixi.js";
@@ -241,6 +242,12 @@ function normalizeKey(keyCode: number, modifiers: number, chars?: string, scanCo
 
 class NativeEventSystem extends EventSystem {
 	static extension = EventSystem.extension;
+	readonly #nativeCursor=createNativeCursorPolicy(mode=>{
+		(this as any)._currentCursor=mode;
+		const style=this.cursorStyles[mode];
+		if(typeof style==="function")style(mode);
+		else (this as any).__nativeSetCursor?.(typeof style==="string"?style:mode);
+	});
 
 	init(options: any) {
 		this.resolution = this.renderer.resolution;
@@ -288,14 +295,8 @@ class NativeEventSystem extends EventSystem {
 		return event;
 	}
 
-	setCursor(mode: string) {
-		mode ||= "default";
-		if ((this as any)._currentCursor === mode) return;
-		(this as any)._currentCursor = mode;
-		const style = this.cursorStyles[mode];
-		if (typeof style === "function") style(mode);
-		else (this as any).__nativeSetCursor?.(typeof style === "string" ? style : mode);
-	}
+	setCursor(mode:string){this.#nativeCursor.request(mode);}
+	setCursorOverride(mode:string|null){this.#nativeCursor.override(mode);}
 }
 
 export function installNativePixiEventSystem() {
@@ -575,6 +576,7 @@ export function attachNativePixiEvents(
 	const onBlur = () => {
 		if (closed || !focused) return;
 		focused = false;
+		events.setCursorOverride?.(null);
 		for (const [pointerId, state] of [...pointerStates]) {
 			if (state.buttons || capturedPointers.has(pointerId)) {
 				emitPointer("pointercancel", state.x, state.y, -1, state.modifiers, capturePaths.get(pointerId), { pointerId, ...state });
@@ -673,8 +675,11 @@ export function attachNativePixiEvents(
 		capturePointer: acquirePointerCapture,
 		releasePointerCapture,
 		hasPointerCapture: (pointerId = 1) => capturedPointers.has(pointerId),
+		/** Temporarily own the cursor; null restores the latest ordinary hit-test request. */
+		setCursorOverride:(cursor:string|null)=>{if(!closed)events.setCursorOverride?.(cursor);},
 		destroy() {
 			if (closed) return;
+			events.setCursorOverride?.(null);
 			if (capturedPointers.has(1) && pointerStates.get(1)?.pointerType !== "touch") hooks.setPointerCapture?.(false);
 			closed = true;
 			if (hasNativePointers) Electrobun.events.off(pointerChannel, onPointer);

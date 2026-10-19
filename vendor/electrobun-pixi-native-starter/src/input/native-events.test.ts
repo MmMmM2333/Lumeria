@@ -134,3 +134,14 @@ test("two native touch contacts keep independent pointer data and implicit captu
 
 	input.destroy();
 });
+
+test("cursor override is released on blur and input teardown",()=>{
+  const cursors:(string|null)[]=[];
+  const input=attachNativePixiEvents({id:1,wgpuViewId:1,on:()=>()=>{}} as any,
+    {events:{rootBoundary:{mappingState:{trackingData:{}}},setCursorOverride:(cursor:string|null)=>cursors.push(cursor)}} as any,
+    {pollEvent:()=>null});
+  input.emitFocus(true);input.setCursorOverride("pointer");input.emitFocus(false);
+  expect(cursors).toEqual(["pointer",null]);
+  input.setCursorOverride("pointer");input.destroy();input.setCursorOverride("text");
+  expect(cursors).toEqual(["pointer",null,"pointer",null]);
+});

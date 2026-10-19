@@ -76,6 +76,12 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
   const wheelGestures = createLaunchpadGestureEngine();
   const wheelDeadlines = new Map<LaunchpadGestureDeadline["kind"], ReturnType<typeof setTimeout>>();
   let touchId: number | null = null;
+  let gesturePointerType:string|null=null,dragCursorOwned=false;
+  const syncDragCursor=()=>{
+    const active=touchId!==null&&gesturePointerType==="mouse"&&getEditing()?.drag.isDragActive()===true;
+    if(active===dragCursorOwned)return;
+    dragCursorOwned=active;app.nativeInput.setCursorOverride(active?"pointer":null);
+  };
   let iconGesturePresentation:LaunchpadTargetPresentation|null=null;
   const setIconGesturePresentation=(next:LaunchpadTargetPresentation|null)=>{
     if(iconGesturePresentation?.phase===next?.phase&&iconGesturePresentation?.scope===next?.scope
@@ -100,7 +106,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
 
   const releaseGesturePointer = () => {
     const id = touchId;
-    touchId = null;
+    touchId = null;gesturePointerType=null;syncDragCursor();
     setIconGesturePresentation(null);
     closingFolderGesture = false;
     if (id !== null) app.nativeInput.releasePointerCapture(id);
@@ -121,6 +127,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     clearWheelDeadline("clearPresentation");
     wheelActive = false;
     touchpadOwner = null;
+    syncDragCursor();
     clearWheelPresentation();
   };
   const toPageTrackScrub = (
@@ -212,6 +219,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
           isPrimary:true,pointerType:command.pointer.pointerType??undefined,
           dragAnchor:command.dragAnchor,dragStartedFromThreshold:command.dragStartedFromThreshold,
         });
+        syncDragCursor();
       }
       if(command.type === "updateDrag") editing?.drag.updateDragPointer({ clientX: Number(command.pointer.x), clientY: Number(command.pointer.y),
         pointerId: command.pointer.pointerId, pointerType: command.pointer.pointerType, buttons: command.pointer.buttons, preventDefault: () => {} });
@@ -318,6 +326,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
     wheelDeadlines.clear();
     wheelActive = false;
     touchpadOwner = null;
+    syncDragCursor();
     clearWheelPresentation();
   };
   const guardTouchpadRoute=(event:FederatedWheelEvent)=>{
@@ -376,7 +385,7 @@ export function createNativeInputRouter(ports: NativeInputRouterPorts): NativeIn
         pageWidth: scene.getPageWidth(scope.area === "folder" ? `folder:${scope.folderId}` : scope.area, scope.pageIndex, app.contentSize.width) },
     });
     if (output.ownsPointer) {
-      touchId = event.pointerId;
+      touchId = event.pointerId;gesturePointerType=event.pointerType;
       if(type==="pointerDown")closingFolderGesture = target.kind === "closingFolder";
       clearWheelPresentation();
       app.nativeInput.capturePointer(event.pointerId);
