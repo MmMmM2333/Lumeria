@@ -141,7 +141,7 @@ export class NativeModalPanel extends Container{
     if(this.#busy||this.#closing)return true;
     if(event.isComposing||this.host.focused?.composing)return false;
     if(event.type!=="down")return false;
-    if(event.key==="Escape"){this.requestClose();return true;}
+    if(event.key==="Escape"){if(!this.#controls[this.#focus]?.handleKey("Escape"))this.requestClose();return true;}
     if(event.key==="Tab"){
       let index=this.#focus<0?(event.shiftKey?0:-1):this.#focus;
       for(let n=0;n<this.#controls.length;n++){index=(index+(event.shiftKey?-1:1)+this.#controls.length)%this.#controls.length;if(!this.#controls[index]!.disabled()){this.#setFocus(index);break;}}return true;

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createNativeShortcutWarning } from "../rendering/native/NativeShortcutWarning.js";
+import { NativeFluentButton } from "../rendering/native/NativeFluentButton.js";
 import { Container, EventBoundary, extensions, FederatedContainer, Rectangle } from "pixi.js";
 import { NativeNotice } from "../rendering/native/NativeNotice.js";
 import { resolveNativePointerTarget, routeNativePointerDown } from "../rendering/native/nativePointerTarget.js";
@@ -51,14 +53,28 @@ export function runNativeNotificationFeedbackTests():void {
   {
     let unavailable=true;const registered=new Set<string>();
     const shortcut=createNativeShortcut({register:accelerator=>{if(unavailable||registered.has(accelerator))return false;registered.add(accelerator);return true;},unregister:accelerator=>registered.delete(accelerator)},()=>{});
+    const readFailure=()=>shortcut.failure;
     assert.equal(shortcut.apply("control+Space").ok,false);
     assert.equal(shortcut.failure?.shortcut,"control+Space","startup failure is owned by the runtime, not a settings draft");
     assert.equal(shortcut.current,null);
     unavailable=false;assert.equal(shortcut.apply("control+Space").ok,true);assert.equal(shortcut.failure,null);
     unavailable=true;assert.equal(shortcut.apply("alt+F9").ok,false);assert.equal(shortcut.failure,null,"an unsuccessful draft does not invalidate the active shortcut");
     assert.equal(shortcut.current,"control+Space");assert.equal(registered.has("Control+Space"),true);
-    shortcut.suspend();assert.throws(()=>shortcut.resume(),NativeShortcutError);assert.equal(shortcut.failure?.operation,"restore");
+    shortcut.suspend();assert.throws(()=>shortcut.resume(),NativeShortcutError);assert.equal(readFailure()?.operation,"restore");
     unavailable=false;shortcut.resume();assert.equal(shortcut.failure,null);shortcut.dispose();
+  }
+  for(const theme of ["dark","light"] as const){
+    let recordings=0;
+    const field=new NativeFluentButton("Ctrl + Space",180,()=>{recordings++;},()=>{},theme);
+    const warning=createNativeShortcutWarning({field,theme,invalidate:()=>{},label:"warning",tooltipLabel:"help",width:240});
+    warning.update("A shortcut failure that wraps across several lines and provides a specific recovery action.");
+    assert.equal(warning.button.parent,field);assert.equal(warning.button.visible,true);assert.equal(warning.tooltip.visible,false);
+    warning.button.activate();assert.equal(recordings,0);assert.equal(warning.tooltip.visible,true);
+    warning.control.focus(true);assert.equal(warning.tooltip.visible,true);
+    assert.equal(warning.control.handleKey("Escape"),true);assert.equal(warning.tooltip.visible,false);
+    assert.equal(warning.control.handleKey("Escape"),false,"a second Escape is available to the containing panel");
+    warning.update("");assert.equal(warning.button.visible,false);assert.equal(warning.tooltip.visible,false);assert.equal(warning.control.disabled(),true);
+    field.destroy({children:true});warning.tooltip.destroy({children:true});
   }
   extensions.mixin(Container,FederatedContainer);
   const stage=new Container({eventMode:"static",label:"desktop-stage"});stage.hitArea=new Rectangle(0,0,1000,700);
