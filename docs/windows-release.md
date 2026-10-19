@@ -6,7 +6,7 @@ Windows x64 产品入口为 `Lumeria.exe`，安装与升级由 `release/windows/
 ## 产品版本
 
 产品版本以 `package.json` 为准。使用 `npm run version:set -- 1.0.0` 同步 npm 清单、
-Cargo workspace 版本和两份锁文件；三个 Rust crate 通过 `version.workspace = true` 继承版本。
+Cargo workspace 版本和两份锁文件；四个 Rust crate 通过 `version.workspace = true` 继承版本。
 `npm run check:version` 检查上述版本是否一致，并已纳入 `npm run check`。
 该命令不创建 Git 提交或标签，也不修改第三方依赖、工具链、数据格式或协议版本。
 关于页、Electrobun 配置、Windows 品牌信息和发行包均通过 `PRODUCT.version` 使用产品版本。

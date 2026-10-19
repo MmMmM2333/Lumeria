@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertReleaseVersion } from "../src/platform/product.js";
 
-const crates=["lumeria-core","lumeria-native-data","lumeria-live-desktop"] as const;
+const crates=["lumeria-core","lumeria-hot-corners","lumeria-native-data","lumeria-live-desktop"] as const;
 const workspaceVersion=/(\[workspace\.package\][\s\S]*?^version\s*=\s*")([^"]+)(")/m;
 
 /** Synchronize only first-party product versions; dependencies and protocols are independent. */
