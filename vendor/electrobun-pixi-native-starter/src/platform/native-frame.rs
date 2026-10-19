@@ -1839,6 +1839,7 @@ fn cursor_handle(kind: u32) -> Handle {
         7 => 32648,
         8 => 32514,
         9 => 32642,
+        10 => 32643,
         _ => return null_mut(),
     };
     unsafe { LoadCursorW(null_mut(), id as usize as *const u16) }
@@ -2492,8 +2493,14 @@ unsafe fn input_subclass_proc_inner(
             push_input_event(event);
         }
         0x0020 => {
-            if l_param as u16 == 1 && !unsafe { (*state).cursor }.is_null() {
-                unsafe { SetCursor((*state).cursor) };
+            // The GPU child receives WM_SETCURSOR, while Pixi sets the root's
+            // cursor. Share that choice only within the same input route.
+            let root = unsafe { root_window(window) };
+            let cursor_state = unsafe { attached_input_state(root) }
+                .filter(|owner| unsafe { (**owner).route_id == (*state).route_id })
+                .unwrap_or(state);
+            if l_param as u16 == 1 && !unsafe { (*cursor_state).cursor }.is_null() {
+                unsafe { SetCursor((*cursor_state).cursor) };
                 return 1;
             }
         }
@@ -3015,7 +3022,7 @@ pub unsafe extern "C" fn pixi_set_cursor(window: Handle, kind: u32) -> i32 {
     }
     if error != 0 { return error; }
     let Some(state) = (unsafe { attached_input_state(window) }) else { return -3; };
-    if kind > 9 { return -4; }
+    if kind > 10 { return -4; }
     let cursor = cursor_handle(kind);
     if cursor.is_null() { return -5; }
     unsafe {

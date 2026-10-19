@@ -198,6 +198,52 @@ export const dragOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number}
 export const clickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number})=>sendOwnedMouse(inputWindow,point,{x:0,y:0},"click");
 export const activationClickOwnedNativeWindow=(inputWindow:number,point:{x:number;y:number},programmatic=false)=>sendOwnedMouse(inputWindow,point,{x:0,y:0},programmatic?"programmatic-click":"activation-click");
 
+
+/** Verify the OS cursor survives repeated moves within one resize handle. */
+export async function assertOwnedResizeCursor(inputWindow:number,point:{x:number;y:number},direction:string):Promise<void>{
+  const script=String.raw`
+import ctypes as c,sys,time
+from ctypes import wintypes as w
+pid,h,x,y=int(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]),int(sys.argv[4]);direction=sys.argv[5]
+u=c.WinDLL('user32',use_last_error=True)
+u.SetThreadDpiAwarenessContext.argtypes=[c.c_void_p];u.SetThreadDpiAwarenessContext(c.c_void_p(-4))
+u.GetWindowThreadProcessId.argtypes=[w.HWND,c.POINTER(w.DWORD)];u.GetWindowRect.argtypes=[w.HWND,c.POINTER(w.RECT)]
+u.GetCursorPos.argtypes=[c.POINTER(w.POINT)];u.SetCursorPos.argtypes=[c.c_int,c.c_int]
+u.SetForegroundWindow.argtypes=[w.HWND];u.GetForegroundWindow.restype=w.HWND
+u.LoadCursorW.argtypes=[w.HINSTANCE,c.c_void_p];u.LoadCursorW.restype=w.HANDLE
+class CursorInfo(c.Structure):
+ _fields_=[('size',w.DWORD),('flags',w.DWORD),('cursor',w.HANDLE),('point',w.POINT)]
+u.GetCursorInfo.argtypes=[c.POINTER(CursorInfo)]
+owner=w.DWORD();u.GetWindowThreadProcessId(h,c.byref(owner))
+if owner.value!=pid:raise RuntimeError('Resize cursor target owner changed')
+ids={'North':32645,'South':32645,'West':32644,'East':32644,'NorthWest':32642,'SouthEast':32642,'NorthEast':32643,'SouthWest':32643}
+expected=u.LoadCursorW(None,c.c_void_p(ids[direction]));previous=w.POINT();u.GetCursorPos(c.byref(previous))
+def cursor(expectedPoint=None):
+ info=CursorInfo();info.size=c.sizeof(info)
+ if not u.GetCursorInfo(c.byref(info)):raise c.WinError(c.get_last_error())
+ if expectedPoint and (info.point.x,info.point.y)!=expectedPoint:raise RuntimeError(f'Cursor moved externally: {(info.point.x,info.point.y)}, expected {expectedPoint}')
+ if u.GetForegroundWindow()!=h:raise RuntimeError('Foreground changed during resize cursor verification')
+ return info.cursor
+try:
+ u.SetForegroundWindow(h)
+ if u.GetForegroundWindow()!=h:raise RuntimeError('Resize test window is not foreground')
+ r=w.RECT();u.GetWindowRect(h,c.byref(r));u.SetCursorPos((r.left+r.right)//2,(r.top+r.bottom)//2);time.sleep(.06)
+ u.SetCursorPos(x,y);deadline=time.monotonic()+1
+ while cursor((x,y))!=expected:
+  if time.monotonic()>deadline:raise RuntimeError(direction+' did not acquire its resize cursor')
+  time.sleep(.01)
+ for step in range(1,4):
+  dx=step if direction not in ['West','East'] else 0
+  dy=step if direction not in ['North','South'] else 0
+  u.SetCursorPos(x+dx,y+dy);time.sleep(.06)
+  if cursor((x+dx,y+dy))!=expected:raise RuntimeError(direction+' lost its resize cursor during continued movement')
+finally:u.SetCursorPos(previous.x,previous.y)
+`;
+  const child=spawn("python",["-c",script,String(process.pid),String(inputWindow),String(Math.round(point.x)),String(Math.round(point.y)),direction],{windowsHide:true,stdio:["ignore","ignore","pipe"]});
+  let errors="";child.stderr.on("data",chunk=>{errors+=chunk;});
+  await new Promise<void>((resolve,reject)=>{child.once("error",reject);child.once("exit",code=>code===0?resolve():reject(new Error(errors)));});
+}
+
 export async function captureOwnedWindow(inputWindow:number,path?:string):Promise<{
   material:number;style:string;borderColor:number|null;borderColorReadStatus:number;dpi:number;frame:number[];client:number[];surfaces:number[][];
 }>{

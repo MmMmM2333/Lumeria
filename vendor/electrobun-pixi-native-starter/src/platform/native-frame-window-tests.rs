@@ -6,6 +6,7 @@ unsafe extern "system" {
         x: i32, y: i32, width: i32, height: i32, parent: Handle, menu: Handle,
         instance: Handle, param: *mut c_void) -> Handle;
     fn DestroyWindow(window: Handle) -> i32;
+    fn GetCursor() -> Handle;
 }
 
 struct Windows { root: Handle, child: Handle, route: u64 }
@@ -139,5 +140,44 @@ fn caret_update_after_native_blur_reports_inactive_without_restarting_input() {
         assert!(pixi_begin_text_input(windows.root, 30, 40, 2, 20) > 0);
         SendMessageW(windows.child, 0x0102, 'y' as usize, 0);
         assert_eq!(windows.text(), "y", "an explicit new session must accept input");
+    }
+}
+
+
+#[test]
+fn child_cursor_retains_the_same_route_root_cursor() {
+    unsafe {
+        let windows = Windows::new(880008);
+        for kind in [0, 1, 2, 4, 5, 9, 10] {
+            assert_eq!(pixi_set_cursor(windows.root, kind), 1);
+            for _ in 0..3 {
+                SendMessageW(windows.child, 0x0020, windows.child as usize, 1 | (0x0200 << 16));
+                assert_eq!(GetCursor(), cursor_handle(kind), "child WM_SETCURSOR must retain the root's resize cursor");
+            }
+        }
+    }
+}
+
+#[test]
+fn different_route_child_keeps_its_own_cursor() {
+    unsafe {
+        let windows = Windows::new(880009);
+        (*attached_input_state(windows.child).unwrap()).route_id = 880010;
+        assert_eq!(pixi_set_cursor(windows.child, 5), 1);
+        assert_eq!(pixi_set_cursor(windows.root, 4), 1);
+        SendMessageW(windows.child, 0x0020, windows.child as usize, 1 | (0x0200 << 16));
+        assert_eq!(GetCursor(), cursor_handle(5));
+    }
+}
+
+#[test]
+fn both_diagonal_resize_cursor_shapes_are_supported() {
+    unsafe {
+        let windows = Windows::new(880011);
+        assert_eq!(pixi_set_cursor(windows.root, 10), 1);
+        assert!(!cursor_handle(10).is_null());
+        assert_ne!(cursor_handle(9), cursor_handle(10));
+        assert_eq!(GetCursor(), LoadCursorW(null_mut(), 32643usize as *const u16));
+        assert_eq!(pixi_set_cursor(windows.root, 11), -4);
     }
 }

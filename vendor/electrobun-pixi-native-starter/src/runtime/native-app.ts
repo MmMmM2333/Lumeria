@@ -176,7 +176,7 @@ const gpuPowerPreferences = { default: 0, integrated: 1, discrete: 2 } as const;
 const cursorKinds: Readonly<Record<string, NativeCursorKind>> = {
 	default: 0, arrow: 0, pointer: 1, hand: 1, text: 2, crosshair: 3,
 	"ew-resize": 4, "col-resize": 4, "ns-resize": 5, "row-resize": 5,
-	"nwse-resize": 9, "se-resize": 9, move: 6, "not-allowed": 7, wait: 8, progress: 8,
+	"nwse-resize": 9, "se-resize": 9, "nesw-resize": 10, "ne-resize": 10, move: 6, "not-allowed": 7, wait: 8, progress: 8,
 };
 
 const displayFor = (frame: { x: number; y: number; width: number; height: number }) => {

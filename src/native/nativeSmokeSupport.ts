@@ -6,7 +6,7 @@ import { NativeScrollView } from "../rendering/native/NativeScrollView.js";
 import { prepareNativeIconTextures } from "../rendering/native/nativeRecoverableIconSource.js";
 import type { NativePixelData, NativePixelRegion } from "./nativePixelProof.js";
 export { assertNativeScenePixels } from "./nativePixelProof.js";
-export { activationClickOwnedNativeWindow, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
+export { activationClickOwnedNativeWindow, assertOwnedResizeCursor, captureOwnedWindow, clickOwnedNativeWindow, cycleOwnedWindowFocus, dragOwnedNativeWindow, respondToOwnedColorDialog } from "./nativeSettingsSmoke.js";
 
 export function toPixelRegion(
   target: Readonly<{ getBounds(): Readonly<{ height: number; width: number; x: number; y: number }> }>,

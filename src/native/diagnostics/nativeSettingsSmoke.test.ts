@@ -633,6 +633,7 @@ export async function runNativeSettingsSmoke(context: NativeSettingsSmokeContext
         y:direction.includes("North")?18:direction.includes("South")?-18:0};
       const before=app.getWindowFrame();
       assert.equal(app.renderer.events.rootBoundary.hitTest(point.x,point.y),edge,`${direction} resize handle must own its actual coordinates`);
+      await smoke.assertOwnedResizeCursor(handle,screenPoint(point.x,point.y),direction);
       try{await dragOwnedNativeWindow(handle,screenPoint(point.x,point.y),delta);}
       catch(error){console.error("Native OS resize failure",direction,testing.diagnostics().input);throw error;}
       console.log("Native OS resize observation",direction,JSON.stringify({before,after:app.getWindowFrame(),point}));

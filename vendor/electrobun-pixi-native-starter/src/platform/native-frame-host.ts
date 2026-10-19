@@ -64,7 +64,7 @@ export const nativeInputKinds = {
 	suspend: 20,
 	resume: 21,
 } as const satisfies Record<string, NativeInputKind>;
-export type NativeCursorKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type NativeCursorKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type NativeTextEventKind = 1 | 2 | 3 | 4 | 5;
 export type NativeJobKind = 1 | 2;
 export type NativeJobEventKind = 1 | 2 | 3 | 4;
@@ -638,14 +638,14 @@ export const nativeFrameHost = {
 
 	setCursor(window: Pointer, kind: NativeCursorKind): number {
 		assertPointer(window, "window");
-		if (!Number.isInteger(kind) || kind < 0 || kind > 9) throw new RangeError("cursor kind must be an integer from 0 to 9");
+		if (!Number.isInteger(kind) || kind < 0 || kind > 10) throw new RangeError("cursor kind must be an integer from 0 to 10");
 		return symbols.pixi_set_cursor(window, kind);
 	},
 
 	getLastCursor(window: Pointer): NativeCursorKind {
 		assertPointer(window, "window");
 		const kind = symbols.pixi_get_cursor(window);
-		if (kind < 0 || kind > 9) throw new Error(`native cursor query failed (${kind})`);
+		if (kind < 0 || kind > 10) throw new Error(`native cursor query failed (${kind})`);
 		return kind as NativeCursorKind;
 	},
 
