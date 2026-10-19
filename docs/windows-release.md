@@ -11,6 +11,8 @@ Cargo workspace 版本和两份锁文件；三个 Rust crate 通过 `version.wor
 该命令不创建 Git 提交或标签，也不修改第三方依赖、工具链、数据格式或协议版本。
 关于页、Electrobun 配置、Windows 品牌信息和发行包均通过 `PRODUCT.version` 使用产品版本。
 
+关于页通过 GitHub 公开的 `releases/latest` 链接发起 HEAD 请求，从重定向中读取最新稳定版本。只接受本仓库的 Release 标签 URL 和 `major.minor.patch` 稳定版本；保留请求超时、离开页面取消以及失败重试。
+
 若运行中的开发实例占用默认 Rust 产物，可设置 `CARGO_TARGET_DIR` 使用独立构建目录；
 Native 打包和 smoke 测试会从同一目录读取数据服务与 Live Desktop DLL。
 

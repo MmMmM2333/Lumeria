@@ -5,18 +5,23 @@ import { PRODUCT } from "./product.js";
 export function createGitHubReleaseSource(request:typeof fetch=fetch):ReleaseSource{
   return async signal=>{
     const repository=new URL(PRODUCT.repositoryUrl);
-    const response=await request(`https://api.github.com/repos${repository.pathname}/releases/latest`,{
-      signal,headers:{Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"},
+    // The public latest-release link resolves to the same stable release without
+    // consuming the anonymous REST quota shared by everyone on the same IP.
+    // Inspect the redirect without downloading HTML or following another host.
+    const response=await request(`${repository.href}/releases/latest`,{
+      signal,method:"HEAD",redirect:"manual",
     });
+    signal.throwIfAborted();
     if(response.status===404)return null;
-    if(!response.ok)throw new Error(`Release request failed (${response.status})`);
-    const value:unknown=await response.json();
-    if(!value||typeof value!=="object")throw new Error("Invalid release response");
-    const release=value as Record<string,unknown>;
-    if(release.draft!==false||release.prerelease!==false||typeof release.tag_name!=="string"||typeof release.html_url!=="string")throw new Error("Invalid stable release response");
-    stableVersion(release.tag_name);
-    const url=new URL(release.html_url);
-    if(url.origin!==repository.origin||url.username||url.password||!url.pathname.startsWith(`${repository.pathname}/releases/tag/`)||url.pathname===`${repository.pathname}/releases/tag/`)throw new Error("Unexpected release URL");
-    return {version:release.tag_name.replace(/^v/,""),releaseUrl:url.href} satisfies ReleaseInfo;
+    if(![301,302,303,307,308].includes(response.status))throw new Error(`Release request failed (${response.status})`);
+    const location=response.headers.get("location");
+    if(!location)throw new Error("Missing release URL");
+    const url=new URL(location,repository),prefix=`${repository.pathname}/releases/tag/`;
+    if(url.origin!==repository.origin||url.username||url.password||url.search||url.hash)throw new Error("Unexpected release URL");
+    if(url.pathname===`${repository.pathname}/releases`)return null;
+    if(!url.pathname.startsWith(prefix))throw new Error("Unexpected release URL");
+    const tag=url.pathname.slice(prefix.length);
+    stableVersion(tag);
+    return {version:tag.replace(/^v/,""),releaseUrl:url.href} satisfies ReleaseInfo;
   };
 }
