@@ -18,6 +18,7 @@ import type { createLaunchpadLayoutState } from "./launchpadLayoutState.js";
 import { isLiveDesktopExperimentEnabled } from "../domain/experimentalFeatures.js";
 import {
   DEFAULT_MAIN_WINDOW_SHORTCUT,
+  formatMainWindowShortcut,
   normalizeMainWindowShortcut,
 } from "../domain/mainWindowShortcut.js";
 import {
@@ -94,6 +95,7 @@ const DEFAULT_SETTINGS_THEME_PREFERENCE = APPEARANCE_DARK;
 
 export type LaunchpadSettingsRuntimeOptions = Readonly<{
   applyWindowPresentation?: boolean;
+  shortcutFailure?: "warn";
   reclampPageIndices?: () => void;
   schedulePageGridMetrics?: () => void;
   syncLiveDesktop?: () => unknown | Promise<unknown>;
@@ -103,11 +105,12 @@ export type LaunchpadSettingsFragment = {
 };
 export type MainWindowShortcutOutcome =
   | Readonly<{ ok: true; shortcut: string | null; skipped?: boolean }>
-  | Readonly<{ ok: false; error: unknown }>;
+  | Readonly<{ ok: false; error: unknown; reason?: "unavailable" }>;
 export type LaunchpadSettingsMainWindow = Readonly<{
   support: Readonly<{ value: Partial<MainWindowEffectsSupport> }>;
   applyHotCorners?: (config: HotCornerSettings) => void | Promise<void>;
   registerShortcut: (shortcut: string | null) => Promise<MainWindowShortcutOutcome>;
+  activeShortcut?: () => string | null;
   setEffectsEnabled: (request: Readonly<{
     enabled: boolean;
     material: LayoutSettings["windowEffectMaterial"];
@@ -248,6 +251,8 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   const draftLaunchpadIconVariant = ref<LaunchpadIconVariant>(DEFAULT_LAUNCHPAD_ICON_VARIANT);
   const draftLaunchAtLogin = ref(false);
   const mainWindowShortcutErrorState = ref("");
+  // A saved combination can be unavailable while an earlier binding remains active.
+  const mainWindowShortcutWarningState = ref("");
   const localePreferenceErrorState = ref("");
   const launchpadIconErrorState = ref("");
   const launchAtLoginErrorState = ref("");
@@ -629,6 +634,9 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
   async function applyEdit(runtimeOptions: LaunchpadSettingsRuntimeOptions = {}) {
     if (isApplyingSettingsConfigState.value) return explicitFailure(new Error("Settings are already being applied"));
     const committed = capture();
+    const committedShortcutWarning = mainWindowShortcutWarningState.value;
+    const previousActiveShortcut = mainWindow.activeShortcut ? mainWindow.activeShortcut() : committed.mainWindowShortcut;
+    let shortcutWarning = "";
     const currentLaunchAtLogin = Boolean(launchAtLoginState.value);
     const currentImageUrl = backgroundImageUrlState.value;
     const restoreLayout = layout.createConfigurationRollback();
@@ -681,10 +689,13 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
         undo.push(async () => { await mainWindow.applyHotCorners?.(committed.hotCorners); });
         await mainWindow.applyHotCorners?.(nextHotCorners);
       }
-      if (nextShortcut !== committed.mainWindowShortcut) {
+      if (nextShortcut !== committed.mainWindowShortcut || committedShortcutWarning || runtimeOptions.shortcutFailure === "warn") {
         reportFailure = error => { mainWindowShortcutErrorState.value = errorMessage(error, t("settings.general.shortcut.unavailable")); };
-        undo.push(() => mainWindow.registerShortcut(committed.mainWindowShortcut));
-        requireSuccess(await mainWindow.registerShortcut(nextShortcut));
+        undo.push(() => mainWindow.registerShortcut(previousActiveShortcut));
+        const registration = await mainWindow.registerShortcut(nextShortcut);
+        if (!registration.ok && registration.reason === "unavailable" && nextShortcut !== null && runtimeOptions.shortcutFailure === "warn") {
+          shortcutWarning = errorMessage(registration.error, t("settings.general.shortcut.unavailable"));
+        } else requireSuccess(registration);
       }
       if (nextLaunchpadIconVariant !== committed.launchpadIconVariant) {
         reportFailure = error => { launchpadIconErrorState.value = errorMessage(error, t("settings.general.launchpadIcon.applyFailed")); };
@@ -755,9 +766,11 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
         liveDesktopOutcome = await runtimeOptions.syncLiveDesktop();
         requireSuccess(liveDesktopOutcome);
       }
+      mainWindowShortcutWarningState.value = shortcutWarning;
       return {
         ok: true as const,
         appliedLayout,
+        shortcutWarning,
         platform: { effects: effectsOutcome, liveDesktop: liveDesktopOutcome, mode: modeOutcome },
       };
     } catch (error) {
@@ -776,6 +789,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
         try { requireSuccess(await runtimeOptions.syncLiveDesktop?.()); }
         catch (rollbackError) { rollbackErrors.push(rollbackError); }
       }
+      mainWindowShortcutWarningState.value = committedShortcutWarning;
       reportFailure?.(error);
       return explicitFailure(error, { rollbackErrors });
     } finally {
@@ -817,6 +831,7 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     fullscreenOverscanEnabledState.value = normalizeFullscreenOverscanEnabled(fragment.fullscreenOverscanEnabled);
     showCustomTitlebarState.value = normalizeShowCustomTitlebar(fragment.showCustomTitlebar);
     mainWindowShortcutState.value = normalizeMainWindowShortcut(fragment.mainWindowShortcut);
+    mainWindowShortcutWarningState.value = "";
     hotCornersState.value = readHotCornerSettings(fragment.hotCorners);
     localePreferenceState.value = normalizeLocalePreference(fragment.localePreference);
     settingsThemePreferenceState.value = normalizeAppearancePreference(fragment.settingsThemePreference);
@@ -888,10 +903,12 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     const outcome = await mainWindow.registerShortcut(mainWindowShortcutState.value);
     if (!outcome.ok) {
       mainWindowShortcutErrorState.value = errorMessage(outcome.error, t("settings.general.shortcut.unavailable"));
+      mainWindowShortcutWarningState.value = mainWindowShortcutErrorState.value;
       return outcome;
     }
     draftMainWindowShortcut.value = outcome.shortcut;
     mainWindowShortcutErrorState.value = "";
+    mainWindowShortcutWarningState.value = "";
     return outcome;
   }
 
@@ -954,6 +971,11 @@ export function createLaunchpadSettings(options: LaunchpadSettingsOptions, host:
     hotCorners: readonly(hotCornersState),
     canConfigureHotCorners: readonly(ref(Boolean(mainWindow.applyHotCorners))),
     mainWindowShortcutError: readonly(mainWindowShortcutErrorState),
+    mainWindowShortcutWarning: {get value(){
+      const message=mainWindowShortcutWarningState.value,active=mainWindow.activeShortcut?.();
+      return message&&active&&active!==mainWindowShortcutState.value
+        ?`${message}\n${t("settings.general.shortcut.activeFallback",{shortcut:formatMainWindowShortcut(active)})}`:message;
+    }},
     settingsThemePreference: readonly(settingsThemePreferenceState),
     showCustomTitlebar: readonly(showCustomTitlebarState),
     windowEffectAppearance: readonly(windowEffectAppearanceState),

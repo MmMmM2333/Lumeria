@@ -183,6 +183,63 @@ async function runSettingsForHost(native:boolean) {
     "structured shortcut failures should retain their platform message",
   );
 
+  {
+    let active:string|null="alt+Space",blocked=true,failMode=false;
+    const calls:Array<string|null>=[];
+    const runtime={...makeMainWindowRuntime(),activeShortcut:()=>active,
+      registerShortcut:async(value:string|null)=>{
+        calls.push(value);
+        if(blocked&&value!==null&&value!==active)return {ok:false as const,reason:"unavailable" as const,error:shortcutError};
+        active=value;return {ok:true as const,shortcut:value};
+      },setMode:async()=>failMode?{ok:false,error:new Error("window failure")}:{ok:true}};
+    const warningSettings=useLaunchpadSettings({layout:useLaunchpadLayout({getNewFolderName:()=>"Folder",seedEnabled:false}),
+      localizationText,liveDesktopSupport:{value:{}},mainWindow:runtime});
+    await warningSettings.beginEdit();
+    warningSettings.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+    warningSettings.actions.setDraftSettingsThemePreference(SETTINGS_THEME_LIGHT);
+    const allowed=await warningSettings.applyEdit({shortcutFailure:"warn"});
+    assert(allowed.ok&&allowed.shortcutWarning==="occupied","onboarding must commit with an explicit shortcut warning");
+    assert(warningSettings.presentation.mainWindowShortcut.value==="control+alt+KeyL"&&active==="alt+Space","save the desired shortcut without losing the active fallback");
+    assert(warningSettings.presentation.settingsThemePreference.value===SETTINGS_THEME_LIGHT,"other preferences must commit");
+    warningSettings.cancelEdit();await warningSettings.beginEdit();
+    assert(warningSettings.presentation.mainWindowShortcutWarning.value.includes("occupied"),"saved failure must survive cancel and reopen");
+    assert(warningSettings.presentation.mainWindowShortcutWarning.value.includes("Alt + Space"),"the warning names the active fallback");
+    active=null;
+    assert(!warningSettings.presentation.mainWindowShortcutWarning.value.includes("Alt + Space"),"a suspended or lost fallback must not be described as active");
+    active="alt+Space";
+    assert(!(await warningSettings.applyEdit()).ok,"ordinary settings must still reject an unavailable saved shortcut");
+    assert(active==="alt+Space"&&calls.at(-1)==="alt+Space","rollback must restore the actual fallback, not the unavailable saved combination");
+    failMode=true;
+    const laterFailure=await warningSettings.applyEdit({shortcutFailure:"warn"});
+    assert(!laterFailure.ok&&laterFailure.error instanceof Error&&laterFailure.error.message==="window failure","optional shortcut must not hide unrelated platform errors");
+    assert(active==="alt+Space"&&warningSettings.presentation.mainWindowShortcutWarning.value.includes("occupied"),"later failure must retain previous activation and saved warning");
+    failMode=false;blocked=false;
+    assert((await warningSettings.applyEdit()).ok,"applying the same saved combination must retry registration");
+    assert(active==="control+alt+KeyL"&&!warningSettings.presentation.mainWindowShortcutWarning.value,"successful retry clears the saved warning");
+    active=null;blocked=true;
+    warningSettings.persistence.restore({mainWindowShortcut:"alt+Space"});await warningSettings.beginEdit();
+    const unchanged=await warningSettings.applyEdit({shortcutFailure:"warn"});
+    assert(unchanged.ok&&unchanged.shortcutWarning==="occupied"&&active===null,"unchanged first-run defaults must be checked and remain non-blocking");
+    assert(!(await warningSettings.nativeIntegration.registerCurrentShortcut()).ok,"explicit retry can still fail honestly");
+    blocked=false;
+    assert((await warningSettings.nativeIntegration.registerCurrentShortcut()).ok&&!warningSettings.presentation.mainWindowShortcutWarning.value,"explicit saved-shortcut retry clears the warning after success");
+    active=null;blocked=true;await warningSettings.applyEdit({shortcutFailure:"warn"});
+    warningSettings.actions.setDraftMainWindowShortcut(null);
+    assert((await warningSettings.applyEdit()).ok&&!warningSettings.presentation.mainWindowShortcutWarning.value,"clearing the saved shortcut removes the warning");
+  }
+  {
+    const runtime={...makeMainWindowRuntime(),registerShortcut:async()=>({ok:false as const,error:shortcutError})};
+    const strict=useLaunchpadSettings({layout:useLaunchpadLayout({getNewFolderName:()=>"Folder",seedEnabled:false}),
+      localizationText,liveDesktopSupport:{value:{}},mainWindow:runtime});
+    await strict.beginEdit();strict.actions.setDraftMainWindowShortcut("control+alt+KeyL");
+    assert(!(await strict.applyEdit({shortcutFailure:"warn"})).ok,"unclassified registration errors must still fail onboarding");
+    assert(strict.presentation.mainWindowShortcut.value==="alt+Space"&&!strict.presentation.mainWindowShortcutWarning.value,"hard failure must not save the failed draft");
+    const clearing=useLaunchpadSettings({layout:useLaunchpadLayout({getNewFolderName:()=>"Folder",seedEnabled:false}),
+      localizationText,liveDesktopSupport:{value:{}},mainWindow:{...runtime,registerShortcut:async()=>({ok:false as const,reason:"unavailable" as const,error:shortcutError})}});
+    await clearing.beginEdit();clearing.actions.setDraftMainWindowShortcut(null);
+    assert(!(await clearing.applyEdit({shortcutFailure:"warn"})).ok,"failure to clear or unregister a shortcut must remain blocking");
+  }
+
   settings.beginEdit();
   settings.draft.rows.value = 2;
   settings.draft.cols.value = 3;

@@ -76,7 +76,7 @@ import { createNativeResumeTiming } from "../nativeResumeTiming.js";
 import { logNativeRuntime,nativeLogDirectory,nativeLogPath } from "../nativeRuntimeLog.js";
 import { createNativeSceneScheduler } from "../nativeSceneScheduler.js";
 import { type NativeSession } from "../nativeSession.js";
-import { createNativeShortcut } from "../nativeShortcut.js";
+import { createNativeShortcut, NativeShortcutError } from "../nativeShortcut.js";
 import { createNativeFrameCallbacks } from "../nativeFrameCallbacks.js";
 import { createNativeLiveDesktop } from "../nativeLiveDesktop.js";
 import {
@@ -335,10 +335,12 @@ const settings=createLaunchpadSettings({
     },
   },
   mainWindow:{support:{value:{...app.windowMaterialSupport,platform:"windows"}},
+    activeShortcut:()=>mainShortcut.active,
     registerShortcut:async value=>{
       const outcome=mainShortcut.apply(value);if(outcome.ok)return outcome;
       logNativeRuntime("shortcut-error",readErrorMessage(outcome.error));
-      return {ok:false,error:new Error(nativeShortcutErrorMessage(outcome.error),{cause:outcome.error})};
+      return {ok:false,...(outcome.error instanceof NativeShortcutError&&outcome.error.operation==="register"?{reason:"unavailable" as const}:{}),
+        error:new Error(nativeShortcutErrorMessage(outcome.error),{cause:outcome.error})};
     },applyHotCorners:config=>hotCorners.apply(config),
     setMode:request=>{
       app.setWindowMode(request.mode,request.fullscreenOverscanEnabled?1:0);return {ok:true};
@@ -1211,6 +1213,7 @@ try {
   onboarding=createNativeOnboarding({apps:apps!,settings,management,shortcutWarning:()=>mainShortcut.failure?nativeShortcutErrorMessage(mainShortcut.failure):"",icon:()=>brandingTextures.get(settingsTheme()==="dark"?"dark":"light")!,theme:settingsTheme,invalidate:()=>app.invalidate(),save:()=>saves.flush(),
     scan:async()=>{if(__LUMERIA_DIAGNOSTICS__&&process.env.LAUNCHPAD_NATIVE_IMPORT_CHECK==="1")await new Promise(resolve=>setTimeout(resolve,700));const request=apps!.nativeIntegration.captureScanRequest();const result=await nativeData.scanApps(request.roots,request.filters);if(result.warnings.length||result.stats.limitReached)throw new Error(t("imports.partial"));apps!.imports.setCatalog(result.apps);},
     complete:()=>{requestSceneRender();},
+    warnShortcut:message=>notices.showTransientNotice({title:t("errors.native.shortcut.title"),message:`${message}\n${t("imports.shortcutOptional")}`,intent:"warning"}),
   });
   if(needsOnboarding&&nativeMode!=="smoke")onboarding.open();
   if(startupLoadRecovered&&!notices.transientNotice.value)notices.showLayoutLoadRecovered();

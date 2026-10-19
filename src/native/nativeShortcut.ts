@@ -33,6 +33,7 @@ export function createNativeShortcut(host:ShortcutHost,activate:()=>void){
   };
   return {
     get current(){return current;},
+    get active(){return suspended?null:current;},
     get failure(){return failure;},
     apply(value:string|null){
       const next=normalizeMainWindowShortcut(value);

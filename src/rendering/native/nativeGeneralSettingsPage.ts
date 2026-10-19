@@ -91,7 +91,7 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
     label:"native-setting:shortcut-warning",tooltipLabel:"native-shortcut-tooltip",width:helpWidth});
   const help=warning.tooltip;help.y=shortcut.y+58;controls.push(warning.control);
   const updateShortcutWarning=()=>{
-    const message=settings.presentation.mainWindowShortcutError.value||options.shortcutWarning?.()||"";
+    const message=settings.presentation.mainWindowShortcutError.value||settings.presentation.mainWindowShortcutWarning.value||options.shortcutWarning?.()||"";
     warning.update(message);
     const fieldWidth=keyWidth+(message?32:0);
     if(keyField.controlWidth!==fieldWidth)keyField.resizeWidth(fieldWidth);

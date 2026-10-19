@@ -60,7 +60,8 @@ export function runNativeNotificationFeedbackTests():void {
     unavailable=false;assert.equal(shortcut.apply("control+Space").ok,true);assert.equal(shortcut.failure,null);
     unavailable=true;assert.equal(shortcut.apply("alt+F9").ok,false);assert.equal(shortcut.failure,null,"an unsuccessful draft does not invalidate the active shortcut");
     assert.equal(shortcut.current,"control+Space");assert.equal(registered.has("Control+Space"),true);
-    shortcut.suspend();assert.throws(()=>shortcut.resume(),NativeShortcutError);assert.equal(readFailure()?.operation,"restore");
+    assert.equal(shortcut.active,"control+Space");
+    shortcut.suspend();assert.equal(shortcut.active,null);assert.throws(()=>shortcut.resume(),NativeShortcutError);assert.equal(readFailure()?.operation,"restore");
     unavailable=false;shortcut.resume();assert.equal(shortcut.failure,null);shortcut.dispose();
   }
   for(const theme of ["dark","light"] as const){
