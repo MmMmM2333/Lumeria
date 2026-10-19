@@ -181,3 +181,64 @@ fn both_diagonal_resize_cursor_shapes_are_supported() {
         assert_eq!(pixi_set_cursor(windows.root, 11), -4);
     }
 }
+
+#[link(name = "user32")]
+unsafe extern "system" { fn ShowWindow(window: Handle, command: i32) -> i32; }
+
+#[test]
+fn fullscreen_layer_follows_activation_visibility_and_mode() {
+    unsafe {
+        let windows = Windows::new(880014);
+        let topmost = || GetWindowLongPtrW(windows.root, -20) & 8 != 0;
+        assert_eq!(pixi_set_fullscreen_layer(windows.child, 1), -4);
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 2), -4);
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 1), 1);
+        assert!(!topmost(), "hidden fullscreen must not elevate");
+        FULLSCREEN_LAYER_HOOKS.with(|cell| {
+            let hooks = cell.borrow();
+            assert!(hooks.windows.contains(&(windows.root as usize)));
+            assert!(!hooks.foreground.is_null() && !hooks.reorder.is_null());
+        });
+        ShowWindow(windows.root, 4); // Show without activating another app.
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        assert!(topmost(), "active fullscreen must cover the taskbar");
+        SendMessageW(windows.root, 0x0006, 0, 0);
+        assert!(!topmost(), "inactive fullscreen must release the layer");
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        SendMessageW(windows.root, 0x0005, 1, 0);
+        assert!(!topmost(), "minimize must release the layer");
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        ShowWindow(windows.root, 0);
+        assert!(!topmost(), "hide must release the layer");
+        ShowWindow(windows.root, 4);
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 0), 1);
+        assert!(!topmost(), "windowed mode must release the layer");
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        assert!(!topmost(), "later windowed activation must not elevate");
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 1), 1);
+        SendMessageW(windows.root, 0x0006, 1, 0);
+        assert_eq!(pixi_detach_input(windows.root), 1);
+        assert!(!topmost(), "detach must restore the previous layer");
+        FULLSCREEN_LAYER_HOOKS.with(|cell| {
+            let hooks = cell.borrow();
+            assert!(hooks.windows.is_empty());
+            assert!(hooks.foreground.is_null() && hooks.reorder.is_null());
+        });
+    }
+}
+
+#[test]
+fn fullscreen_layer_preserves_an_existing_topmost_policy() {
+    unsafe {
+        let windows = Windows::new(880015);
+        ShowWindow(windows.root, 4);
+        assert_ne!(SetWindowPos(windows.root, -1isize as Handle, 0, 0, 0, 0, 0x213), 0);
+        assert_ne!(GetWindowLongPtrW(windows.root, -20) & 8, 0, "initial topmost");
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 1), 1);
+        assert_eq!((*attached_input_state(windows.root).unwrap()).fullscreen_restore_topmost, Some(true));
+        SendMessageW(windows.root, 0x0006, 0, 0);
+        assert_eq!(pixi_set_fullscreen_layer(windows.root, 0), 1);
+        assert_ne!(GetWindowLongPtrW(windows.root, -20) & 8, 0);
+    }
+}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
 import type {NativeHostSmokeContext} from "./nativeHostSmoke.test.js";
 import {sendAltSpace} from "../../../vendor/electrobun-pixi-native-starter/src/runtime/shortcut-smoke.js";
+import {assertNativeFullscreenTaskbar} from "./nativeFullscreenTaskbarSmoke.js";
 import {sendTrayTestAction} from "../../../vendor/electrobun-pixi-native-starter/src/runtime/tray-smoke.js";
 
 // OS shortcuts must reach the foreground HWND, not just the Pixi key router.
@@ -39,6 +40,7 @@ export async function runNativeFullscreenShortcutSmoke(context:NativeHostSmokeCo
       app.setWindowMode("fullscreen",pixels);showLaunchpad();await present("fullscreen shortcuts ready");
       for(const [name,key] of [["Up",0x26],["Down",0x28],["Left",0x25],["Right",0x27]] as const){
         app.window.activate();await present(`Win+${name} foreground`);
+        await assertNativeFullscreenTaskbar(app.nativeWindowHandle,true);
         const baseline=await captureOwnedWindow(app.nativeWindowHandle);
         console.log(`Fullscreen shortcut replay: overscan=${pixels} Win+${name}`);
         const child=spawn("python",["-c",script,String(process.pid),String(app.nativeWindowHandle),String(key)],{windowsHide:true,stdio:["ignore","pipe","pipe"],timeout:5000});
@@ -51,6 +53,7 @@ export async function runNativeFullscreenShortcutSmoke(context:NativeHostSmokeCo
         assert.deepEqual(after.frame,baseline.frame,`Win+${name} retains fullscreen frame`);
         assert.deepEqual(after.client,baseline.client,`Win+${name} retains fullscreen client`);
         dismissLaunchpad();await waitFor(`Win+${name} hide`,()=>!app.window.isVisible());
+        await assertNativeFullscreenTaskbar(app.nativeWindowHandle,false);
         await sendAltSpace();await waitFor(`Win+${name} shortcut reopens`,()=>app.window.isVisible()&&app.state==="running");
         await present(`Win+${name} reopened frame`);
         dismissLaunchpad();await waitFor(`Win+${name} hide before tray`,()=>!app.window.isVisible());
@@ -59,6 +62,7 @@ export async function runNativeFullscreenShortcutSmoke(context:NativeHostSmokeCo
         await waitFor(`Win+${name} tray reopens`,()=>app.window.isVisible()&&app.state==="running");
         await waitFor(`Win+${name} tray animation settles`,()=>!context.scene.getMotionSnapshot().active);
         await present(`Win+${name} tray frame`);
+        await assertNativeFullscreenTaskbar(app.nativeWindowHandle,true);
       }
     }
     console.log("Fullscreen OS shortcuts: all 8 replay and reopen cases passed");

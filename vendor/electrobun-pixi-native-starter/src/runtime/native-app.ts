@@ -256,7 +256,7 @@ export async function createNativePixiApplication(
 		const inputWindow = nativeFrameHost.resolveInputWindow(surfaceWindow);
     const windowPresentation=createNativeWindowPresentation(inputWindow,()=>{
       if(nativeFrameHost.releaseMouseCapture(inputWindow)<0)throw new Error("Cannot release pointer capture");
-    });
+    },enabled=>nativeFrameHost.setFullscreenLayer(inputWindow,enabled));
     startupCleanup.push(()=>windowPresentation?.dispose());
     const windowIcon=createNativeWindowIcon(inputWindow);
     const colorDialog=createNativeColorDialog(inputWindow);

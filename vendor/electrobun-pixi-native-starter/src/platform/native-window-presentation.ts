@@ -38,7 +38,7 @@ const materials={none:1,mica:2,acrylic:3,micaAlt:4} as const;
 // WS_MINIMIZE and WS_DISABLED remain owned by the live window lifecycle.
 const windowModeStyleMask=0x81c70000n;
 /** Only the application-owned root window is eligible for presentation changes. */
-export function createNativeWindowPresentation(inputWindow:number,releaseCapture:()=>void){
+export function createNativeWindowPresentation(inputWindow:number,releaseCapture:()=>void,setFullscreenLayer:(enabled:boolean)=>void){
   if(!user||!dwm)return null;
   const window=user.symbols.GetAncestor(inputWindow as Pointer,2),owner=new Uint32Array(1);
   if(!window||!user.symbols.IsWindow(window)||!user.symbols.GetWindowThreadProcessId(window,ptr(owner))||owner[0]!==process.pid){
@@ -188,8 +188,8 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
         if(!windowedPlacement)throw new Error("Windowed placement is unavailable");
         target=windowedPlacement;
       }
-      try{writePlacement(target);}
-      catch(error){try{writePlacement(previous);}catch(rollback){throw new AggregateError([error,rollback],"Window mode and restoration failed");}throw error;}
+      try{writePlacement(target);setFullscreenLayer(nextFullscreen);}
+      catch(error){try{writePlacement(previous);setFullscreenLayer(fullscreen);}catch(rollback){throw new AggregateError([error,rollback],"Window mode and restoration failed");}throw error;}
       if(nextFullscreen&&!fullscreen)windowedPlacement=previous;
       if(!nextFullscreen)windowedPlacement=null;
       fullscreen=nextFullscreen;overscanPixels=nextPixels;
@@ -209,6 +209,7 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     },
     dispose(){
       if(!user.symbols.IsWindow(window))return;
+      if(fullscreen){setFullscreenLayer(false);fullscreen=false;}
       if(initialMaterial!==null)setAttribute(38,initialMaterial);
       if(initialDark!==null)setAttribute(20,initialDark);
       if(decorationsSupported){setAttribute(34,-1);setAttribute(33,0);}

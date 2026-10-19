@@ -230,6 +230,7 @@ const library = (BunFFI as any).dlopen(configuredLibrary || join(import.meta.dir
 	pixi_set_mouse_capture: { args: ["ptr"], returns: "i32" },
 	pixi_release_mouse_capture: { args: ["ptr"], returns: "i32" },
 	pixi_has_mouse_capture: { args: ["ptr"], returns: "i32" },
+	pixi_set_fullscreen_layer: { args: ["ptr", "u32"], returns: "i32" },
 	pixi_set_cursor: { args: ["ptr", "u32"], returns: "i32" },
 	pixi_get_cursor: { args: ["ptr"], returns: "i32" },
 	pixi_begin_text_input: { args: ["ptr", "i32", "i32", "i32", "i32"], returns: "i32" },
@@ -285,6 +286,7 @@ const symbols = library.symbols as {
 	pixi_set_mouse_capture(window: Pointer): number;
 	pixi_release_mouse_capture(window: Pointer): number;
 	pixi_has_mouse_capture(window: Pointer): number;
+	pixi_set_fullscreen_layer(window: Pointer, enabled: number): number;
 	pixi_set_cursor(window: Pointer, kind: NativeCursorKind): number;
 	pixi_get_cursor(window: Pointer): number;
 	pixi_begin_text_input(window: Pointer, x: number, y: number, width: number, height: number): number;
@@ -634,6 +636,12 @@ export const nativeFrameHost = {
 		const status = symbols.pixi_has_mouse_capture(window);
 		if (status < 0) throw new Error(`native mouse capture query failed (${status})`);
 		return status > 0;
+	},
+
+	setFullscreenLayer(window: Pointer, enabled: boolean): void {
+		assertPointer(window, "window");
+		const status = symbols.pixi_set_fullscreen_layer(window, enabled ? 1 : 0);
+		if (status < 0) throw new Error(`native fullscreen layer failed (${status})`);
 	},
 
 	setCursor(window: Pointer, kind: NativeCursorKind): number {

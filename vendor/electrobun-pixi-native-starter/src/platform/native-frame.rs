@@ -103,6 +103,15 @@ unsafe extern "system" {
     fn GetWindowRect(window: Handle, rect: *mut Rect) -> i32;
     fn IsIconic(window: Handle) -> i32;
     fn IsZoomed(window: Handle) -> i32;
+    fn IsWindowVisible(window: Handle) -> i32;
+    fn GetWindow(window: Handle, command: u32) -> Handle;
+    fn GetClassNameW(window: Handle, output: *mut u16, capacity: i32) -> i32;
+    fn SetWinEventHook(first: u32, last: u32, module: Handle,
+        callback: Option<unsafe extern "system" fn(Handle, u32, Handle, i32, i32, u32, u32)>,
+        process: u32, thread: u32, flags: u32) -> Handle;
+    fn UnhookWinEvent(hook: Handle) -> i32;
+    fn GetWindowLongPtrW(window: Handle, index: i32) -> isize;
+    fn SetWindowPos(window: Handle, after: Handle, x: i32, y: i32, width: i32, height: i32, flags: u32) -> i32;
     fn MonitorFromWindow(window: Handle, flags: u32) -> Handle;
     fn GetKeyState(key: i32) -> i16;
     fn GetDoubleClickTime() -> u32;
@@ -355,6 +364,7 @@ const OWNER_GET_CAPTURE: u32 = 15;
 const OWNER_GET_CURSOR: u32 = 16;
 const OWNER_CLIENT_TO_SCREEN: u32 = 17;
 const OWNER_SCREEN_TO_CLIENT: u32 = 18;
+const OWNER_SET_FULLSCREEN: u32 = 19;
 const OWNER_MESSAGE_MAGIC: isize = 0x5049_5849;
 const WH_CALLWNDPROC: i32 = 4;
 
@@ -381,6 +391,7 @@ unsafe fn dispatch_owner_request(request: *mut OwnerThreadRequest) -> i32 {
         OWNER_SET_CAPTURE => unsafe { pixi_set_mouse_capture(request.window) },
         OWNER_RELEASE_CAPTURE => unsafe { pixi_release_mouse_capture(request.window) },
         OWNER_SET_CURSOR => unsafe { pixi_set_cursor(request.window, request.arg0 as u32) },
+        OWNER_SET_FULLSCREEN => unsafe { pixi_set_fullscreen_layer(request.window, request.arg0 as u32) },
         OWNER_BEGIN_TEXT => unsafe {
             pixi_begin_text_input(
                 request.window,
@@ -809,6 +820,8 @@ struct WindowInputState {
     releasing_capture: bool,
     cursor: Handle,
     cursor_kind: u32,
+    fullscreen_restore_topmost: Option<bool>,
+    fullscreen_layer_updating: bool,
     minimized: bool,
     last_click_time: u64,
     last_click_x: i32,
@@ -2255,6 +2268,13 @@ unsafe fn input_subclass_proc_inner(
             unsafe { (*state).activation_mouse_message = activation_mouse_message(was_inactive, result, l_param) };
             return result;
         }
+        0x0006 => {
+            // The root's owner thread applies foreground fullscreen ordering.
+            unsafe { sync_fullscreen_layer(window, state, w_param & 0xffff != 0); }
+        }
+        0x0018 => {
+            unsafe { sync_fullscreen_layer(window, state, w_param != 0 && GetForegroundWindow() == window); }
+        }
         0x0231 => set_window_resizing(window as usize, true),
         0x0232 => set_window_resizing(window as usize, false),
         0x0003 if unsafe { root_window(window) } == window => {
@@ -2263,6 +2283,7 @@ unsafe fn input_subclass_proc_inner(
         0x0005 if unsafe { root_window(window) } == window => {
             unsafe { queue_state_event(state, window, INPUT_WINDOW_RESIZE) };
             let minimized = w_param == 1 || unsafe { IsIconic(window) } != 0;
+            unsafe { sync_fullscreen_layer(window, state, !minimized && GetForegroundWindow() == window); }
             if minimized != unsafe { (*state).minimized } {
                 unsafe { (*state).minimized = minimized };
                 unsafe {
@@ -2505,6 +2526,7 @@ unsafe fn input_subclass_proc_inner(
             }
         }
         0x0082 => {
+            remove_fullscreen_layer_window(window);
             let route_id = unsafe { (*state).route_id };
             set_window_resizing(window as usize, false);
             unsafe { stop_text_input(window, state) };
@@ -2775,6 +2797,8 @@ pub unsafe extern "C" fn pixi_attach_input(window: Handle, route_id: u64) -> i32
         releasing_capture: false,
         cursor: cursor_handle(0),
         cursor_kind: 0,
+        fullscreen_restore_topmost: None,
+        fullscreen_layer_updating: false,
         minimized: unsafe { IsIconic(window) } != 0,
         last_click_time: 0,
         last_click_x: 0,
@@ -2809,6 +2833,10 @@ pub unsafe extern "C" fn pixi_detach_input(window: Handle) -> i32 {
     }
     if error != 0 { return error; }
     let Some(state) = (unsafe { attached_input_state(window) }) else { return 0; };
+    if unsafe { (*state).fullscreen_restore_topmost }.is_some() {
+        let result = unsafe { pixi_set_fullscreen_layer(window, 0) };
+        if result < 0 { return result; }
+    }
     unsafe { DragAcceptFiles(window, 0) };
     unsafe { stop_text_input(window, state) };
     if unsafe { GetCapture() } == window && unsafe { ReleaseCapture() } == 0 {
@@ -3008,6 +3036,123 @@ pub unsafe extern "C" fn pixi_release_mouse_capture(window: Handle) -> i32 {
     if unsafe { (*state).has_capture } {
         unsafe { (*state).has_capture = false };
         unsafe { queue_state_event(state, window, INPUT_CAPTURE_LOST) };
+    }
+    1
+}
+
+#[derive(Default)]
+struct FullscreenLayerHooks {
+    foreground: Handle,
+    reorder: Handle,
+    windows: HashSet<usize>,
+}
+
+thread_local! {
+    static FULLSCREEN_LAYER_HOOKS: RefCell<FullscreenLayerHooks> = RefCell::new(FullscreenLayerHooks::default());
+}
+
+fn remove_fullscreen_layer_window(window: Handle) {
+    FULLSCREEN_LAYER_HOOKS.with(|cell| {
+        let mut hooks = cell.borrow_mut();
+        hooks.windows.remove(&(window as usize));
+        if hooks.windows.is_empty() {
+            if !hooks.foreground.is_null() { unsafe { UnhookWinEvent(hooks.foreground); } }
+            if !hooks.reorder.is_null() { unsafe { UnhookWinEvent(hooks.reorder); } }
+            hooks.foreground = null_mut(); hooks.reorder = null_mut();
+        }
+    });
+}
+
+fn add_fullscreen_layer_window(window: Handle) -> bool {
+    FULLSCREEN_LAYER_HOOKS.with(|cell| {
+        let mut hooks = cell.borrow_mut();
+        if hooks.windows.is_empty() {
+            hooks.foreground = unsafe { SetWinEventHook(3, 3, null_mut(), Some(fullscreen_layer_event), 0, 0, 0) };
+            hooks.reorder = unsafe { SetWinEventHook(0x8004, 0x8004, null_mut(), Some(fullscreen_layer_event), 0, 0, 0) };
+            if hooks.foreground.is_null() || hooks.reorder.is_null() {
+                if !hooks.foreground.is_null() { unsafe { UnhookWinEvent(hooks.foreground); } }
+                if !hooks.reorder.is_null() { unsafe { UnhookWinEvent(hooks.reorder); } }
+                hooks.foreground = null_mut(); hooks.reorder = null_mut();
+                return false;
+            }
+        }
+        hooks.windows.insert(window as usize);
+        true
+    })
+}
+
+unsafe fn taskbar_above_window(window: Handle) -> bool {
+    let display = unsafe { MonitorFromWindow(window, 2) };
+    let mut above = unsafe { GetWindow(window, 3) };
+    let mut visited = HashSet::new();
+    while !above.is_null() && visited.insert(above as usize) {
+        let mut name = [0u16; 64];
+        let length = unsafe { GetClassNameW(above, name.as_mut_ptr(), name.len() as i32) };
+        let name = String::from_utf16_lossy(&name[..length.max(0) as usize]);
+        if matches!(name.as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd")
+            && unsafe { MonitorFromWindow(above, 2) } == display { return true; }
+        above = unsafe { GetWindow(above, 3) };
+    }
+    false
+}
+
+unsafe extern "system" fn fullscreen_layer_event(
+    _hook: Handle, _event: u32, _window: Handle, _object: i32, _child: i32, _thread: u32, _time: u32,
+) {
+    let _ = std::panic::catch_unwind(|| {
+        // Shell can raise its taskbar after WM_ACTIVATE has finished. Observe that
+        // ordering event instead of polling, and touch only our active fullscreen HWND.
+        let windows: Vec<usize> = FULLSCREEN_LAYER_HOOKS.with(|cell| cell.try_borrow().map(|hooks| hooks.windows.iter().copied().collect()).unwrap_or_default());
+        for window in windows {
+            let window = window as Handle;
+            let Some(state) = (unsafe { attached_input_state(window) }) else { continue; };
+            let active = unsafe { GetForegroundWindow() } == window;
+            if !active || unsafe { taskbar_above_window(window) } {
+                unsafe { sync_fullscreen_layer(window, state, active); }
+            }
+        }
+    });
+}
+
+unsafe fn sync_fullscreen_layer(window: Handle, state: *mut WindowInputState, active: bool) -> i32 {
+    let Some(restore) = (unsafe { (*state).fullscreen_restore_topmost }) else { return 0; };
+    if unsafe { (*state).fullscreen_layer_updating } { return 0; }
+    let topmost = restore || (active && unsafe { IsWindowVisible(window) } != 0 && unsafe { IsIconic(window) } == 0);
+    let current = unsafe { GetWindowLongPtrW(window, -20) } & 8 != 0;
+    if current == topmost && !topmost { return 0; }
+    // Keep position, size, activation and owned popup ordering unchanged.
+    let after = (if topmost { -1isize } else { -2isize }) as Handle;
+    unsafe { (*state).fullscreen_layer_updating = true; }
+    let result = unsafe { SetWindowPos(window, after, 0, 0, 0, 0, 0x213) };
+    unsafe { (*state).fullscreen_layer_updating = false; }
+    if result == 0 { return -5; }
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pixi_set_fullscreen_layer(window: Handle, enabled: u32) -> i32 {
+    if enabled > 1 { return -4; }
+    let error = input_window_error(window);
+    if error == -2 {
+        return run_on_window_thread(window, OWNER_SET_FULLSCREEN, enabled as u64, [0; 4], null_mut());
+    }
+    if error != 0 { return error; }
+    if unsafe { root_window(window) } != window { return -4; }
+    let Some(state) = (unsafe { attached_input_state(window) }) else { return -3; };
+    let previous = unsafe { (*state).fullscreen_restore_topmost };
+    if enabled != 0 && previous.is_none() {
+        if !add_fullscreen_layer_window(window) { return -6; }
+        unsafe { (*state).fullscreen_restore_topmost = Some(GetWindowLongPtrW(window, -20) & 8 != 0); }
+    }
+    let result = unsafe { sync_fullscreen_layer(window, state, enabled != 0 && GetForegroundWindow() == window) };
+    if result < 0 {
+        unsafe { (*state).fullscreen_restore_topmost = previous; }
+        if previous.is_none() { remove_fullscreen_layer_window(window); }
+        return result;
+    }
+    if enabled == 0 {
+        unsafe { (*state).fullscreen_restore_topmost = None; }
+        remove_fullscreen_layer_window(window);
     }
     1
 }
@@ -4149,6 +4294,8 @@ mod tests {
 			releasing_capture: false,
 			cursor: null_mut(),
 			cursor_kind: 0,
+			fullscreen_restore_topmost: None,
+			fullscreen_layer_updating: false,
 			minimized: false,
 			last_click_time: 0,
 			last_click_x: 0,

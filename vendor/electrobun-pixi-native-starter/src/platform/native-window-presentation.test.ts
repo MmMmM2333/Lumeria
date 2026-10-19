@@ -5,7 +5,7 @@ test("native backdrop availability reflects the documented Windows build boundar
   expect(nativeWindowMaterialSupport("win32",22000).supportsAcrylic).toBe(false);
   expect(nativeWindowMaterialSupport("win32",22621).supportsMicaAlt).toBe(true);
   expect(nativeWindowMaterialSupport("linux",99999).supportsMica).toBe(false);
-  if(process.platform==="win32")expect(()=>createNativeWindowPresentation(0,()=>{})).toThrow();
+  if(process.platform==="win32")expect(()=>createNativeWindowPresentation(0,()=>{},()=>{})).toThrow();
 });
 
 test.skipIf(process.platform!=="win32")("window mode restores frame styles without restoring saved visibility or enabled state",()=>{
@@ -25,7 +25,8 @@ test.skipIf(process.platform!=="win32")("window mode restores frame styles witho
       if(!window)throw new Error("Cannot create the owned test window");
       try{
         if(savedVisible)user.symbols.ShowWindow(window,4);
-        const presentation=createNativeWindowPresentation(Number(window),()=>{})!;
+        const layers:boolean[]=[];
+        const presentation=createNativeWindowPresentation(Number(window),()=>{},enabled=>layers.push(enabled))!;
         const initialStyle=BigInt(user.symbols.GetWindowLongPtrW(window,-16));
         presentation.setMode(true,0);
         user.symbols.ShowWindow(window,visible?4:0);
@@ -35,6 +36,7 @@ test.skipIf(process.platform!=="win32")("window mode restores frame styles witho
         expect(Boolean(user.symbols.IsWindowEnabled(window))).toBe(enabled);
         const restoredStyle=BigInt(user.symbols.GetWindowLongPtrW(window,-16));
         expect(restoredStyle&0x81c70000n).toBe(initialStyle&0x81c70000n);
+        expect(layers).toEqual([true,false]);
         presentation.dispose();
       }finally{user.symbols.DestroyWindow(window as Pointer);}
     }
