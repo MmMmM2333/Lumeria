@@ -1,3 +1,4 @@
+import { createNativeParagraph } from "./nativeParagraph.js";
 import { nativeHotCornerSettings } from "./nativeHotCornerSettings.js";
 import { createNativeText } from "./nativeTypography.js";
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
@@ -22,6 +23,7 @@ type Options={
   recording:boolean;record():void;expanded:boolean;expand():void;hotCornersExpanded:boolean;expandHotCorners():void;
   icons:ReadonlyMap<LaunchpadIconVariant,Texture>;
   openLogs():void;
+  shortcutWarning?():string;
 };
 export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent{
   const {settings,width,theme}=options,style=nativeSettingsStyle(theme),node=new Container();
@@ -65,16 +67,16 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   const toggleFocus=new Graphics({eventMode:"none"});startup.addChild(toggleFocus);
   controls.push({node:toggle,focus:active=>{toggleFocus.clear();if(active)toggleFocus.roundRect(width-60,22,48,28,4).stroke({color:style.accent,width:2});options.invalidate();},
     disabled:()=>toggle.disabled,handleKey:key=>{if(key!==" "&&key!=="Enter")return false;toggle.toggle();return true;}});
-  const shortcut=row(t("settings.general.shortcut.title"),settings.presentation.mainWindowShortcutError.value||t(options.recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),72);
+  const shortcut=row(t("settings.general.shortcut.title"),t(options.recording?"settings.general.shortcut.recordingHint":"settings.general.shortcut.hint"),72);
   const shortcutValue=settings.draft.mainWindowShortcut.value;
   const value=shortcutValue===null?t("settings.general.shortcut.notSet"):formatMainWindowShortcut(shortcutValue);
   const keyMeasure=createNativeText({text:value,style:{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12}});
   const keyWidth=Math.max(112,keyMeasure.width+44);keyMeasure.destroy();
   const keyField=button(shortcut,value,width-222-keyWidth,19,keyWidth,options.record);
+  const shortcutHint=shortcut.children.find(child=>child instanceof NativeSingleLineText) as NativeSingleLineText;
   keyField.label="native-setting:shortcut";keyField.caption.x-=10;keyField.caption.style.fontSize=12;
   keyField.background.visible=false;
-  keyField.addChildAt(new Graphics({eventMode:"none"}).roundRect(0,0,keyWidth,32,6)
-    .fill(theme==="dark"?"rgba(0,0,0,0.18)":"rgba(0,0,0,0.035)").stroke({color:theme==="dark"?"rgba(255,255,255,0.16)":style.border,width:1}),0);
+  const keyFrame=new Graphics({eventMode:"none"});keyField.addChildAt(keyFrame,0);
   keyField.caption.alpha=0.64;keyField.caption.y=16;
   button(shortcut,t(options.recording?"settings.general.shortcut.recording":"settings.general.shortcut.record"),width-214,19,94,options.record);
   button(shortcut,t("common.actions.reset"),width-112,19,94,()=>{settings.actions.setDraftMainWindowShortcut(DEFAULT_MAIN_WINDOW_SHORTCUT);options.redraw();}).disabled=shortcutValue===DEFAULT_MAIN_WINDOW_SHORTCUT;
@@ -84,6 +86,44 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
     const icon=nativeFluentIcon("dismiss-16-regular",style.muted,12);icon.position.set(5,5);clear.addChild(icon);
     controls.push({node:clear,focus:active=>{clear.focused=active;},disabled:()=>clear.disabled,handleKey:key=>{if(key!==" "&&key!=="Enter")return false;clear.activate();return true;}});
   }
+  const warning=new NativeFluentButton(t("settings.general.shortcut.warning"),32,()=>showShortcutHelp(true),options.invalidate,theme,"subtle",false,32);
+  warning.label="native-setting:shortcut-warning";warning.caption.visible=false;
+  warning.position.set(2,0);keyField.addChild(warning);
+  const warningMark=nativeFluentIcon("error-circle-20-regular",theme==="dark"?"#ffcf70":"#9d5d00",20);
+  warningMark.position.set(6,6);warning.addChild(warningMark);
+  const help=new Container({label:"native-shortcut-tooltip",eventMode:"none"});help.visible=false;
+  help.position.set(70,shortcut.y+58);
+  let warningMessage="",warningHovered=false,warningFocused=false;
+  const showShortcutHelp=(active:boolean)=>{help.visible=warning.visible&&active;options.invalidate();};
+  warning.on("pointerover",()=>{warningHovered=true;showShortcutHelp(true);});
+  warning.on("pointerout",()=>{warningHovered=false;showShortcutHelp(warningFocused);});
+  controls.push({node:warning,focus:active=>{warningFocused=active;warning.focused=active;showShortcutHelp(active||warningHovered);},
+    disabled:()=>!warning.visible,handleKey:key=>{
+      if(key==="Escape"){if(!help.visible)return false;showShortcutHelp(false);return true;}
+      if(key!=="Enter"&&key!==" ")return false;showShortcutHelp(true);return true;
+    }});
+  const updateShortcutWarning=()=>{
+    const message=settings.presentation.mainWindowShortcutError.value||options.shortcutWarning?.()||"";
+    warning.visible=Boolean(message);
+    const fieldWidth=keyWidth+(message?32:0);
+    if(keyField.controlWidth!==fieldWidth)keyField.resizeWidth(fieldWidth);
+    keyField.x=width-222-fieldWidth;
+    keyField.caption.position.set(fieldWidth/2-10+(message?16:0),16);
+    const clear=keyField.getChildByLabel("native-setting:clear-shortcut");if(clear)clear.x=fieldWidth-27;
+    keyFrame.clear().roundRect(0,0,fieldWidth,32,6)
+      .fill(theme==="dark"?"rgba(0,0,0,0.18)":"rgba(0,0,0,0.035)").stroke({color:theme==="dark"?"rgba(255,255,255,0.16)":style.border,width:1});
+    shortcutHint.setAvailableWidth(Math.max(20,keyField.x-86));
+    const helpWidth=Math.min(420,Math.max(100,width-86));
+    help.x=Math.max(8,Math.min(keyField.x,width-helpWidth-8));
+    if(message!==warningMessage){
+      warningMessage=message;for(const child of help.removeChildren())child.destroy({children:true});
+      const copy=createNativeParagraph(message,{fontFamily:[...PIXI_UI_FONT_FAMILY],fontSize:12,lineHeight:18,fill:style.text},helpWidth-24);
+      copy.position.set(12,10);
+      help.addChild(new Graphics({eventMode:"none"}).roundRect(0,0,helpWidth,copy.height+20,6)
+        .fill(theme==="dark"?"#2d2d2d":"#ffffff").stroke({color:theme==="dark"?"#666666":"#a0a0a0",width:1}),copy);
+    }
+    if(!message)help.visible=false;
+  };
   const hotCorners=nativeHotCornerSettings(settings,width,theme,options.management,options.invalidate,options.redraw,options.hotCornersExpanded,options.expandHotCorners);
   hotCorners.node.y=y;node.addChild(hotCorners.node);controls.push(...hotCorners.controls);layout.child(hotCorners);y+=hotCorners.height+6;
   const language=row(t("settings.general.language.title"),settings.presentation.localePreferenceError.value);
@@ -131,7 +171,9 @@ export function nativeGeneralSettingsPage(options:Options):NativeSettingsContent
   y+=nativeUiMetrics.sectionGap;const advanced=text(t("settings.general.advanced.title"),0,y,18,true);node.addChild(advanced);y+=advanced.height+nativeUiMetrics.headingGap;
   const developer=row(t("native.tray.logs"));
   button(developer,t("native.tray.logs"),width-170,19,154,options.openLogs).label="native-setting:open-logs";
+  node.addChild(help);
   const update=()=>{
+    updateShortcutWarning();
     const error=settings.presentation.launchAtLoginError.value;
     startupTitle.y=17;
     const hint=!settings.presentation.canConfigureLaunchAtLogin.value?"settings.general.startup.unavailableHint"

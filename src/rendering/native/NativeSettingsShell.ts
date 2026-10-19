@@ -401,7 +401,7 @@ export class NativeSettingsShell extends Container {
     if(this.#applying||this.#closing)return true;
     if(this.options.beforeKey?.(event))return true;
     if(event.type!=="down")return false;
-    if(event.key==="Escape"){this.requestClose();return true;}
+    if(event.key==="Escape"){if(!this.#controls[this.#focus]?.handleKey("Escape"))this.requestClose();return true;}
     if(event.key==="Tab"){
       this.#keyboardFocus=true;
       const count=this.#controls.length;

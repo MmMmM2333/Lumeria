@@ -21,6 +21,7 @@ import type { NativeSettingsButton } from "../../rendering/native/NativeSettings
 import { NativeSettingsShell } from "../../rendering/native/NativeSettingsShell.js";
 import type { SceneItem } from "../../rendering/sceneFrame.js";
 import type { createNativeEditing } from "../nativeEditing.js";
+import { nativeShortcutErrorMessage } from "../nativeErrorFeedback.js";
 import type { createNativeShortcut } from "../nativeShortcut.js";
 import type { createNativeLayoutState } from "../nativeStartup.js";
 
@@ -97,11 +98,11 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
   const stopShortcutRecording=()=>{
     if(!recordingShortcut)return true;
     try{ports.mainShortcut().resume();recordingShortcut=false;return true;}
-    catch(error){ports.settings().actions.setMainWindowShortcutError(String(error));return false;}
+    catch(error){ports.settings().actions.setMainWindowShortcutError(nativeShortcutErrorMessage(error));return false;}
   };
   const recordShortcut=()=>{
     try{ports.mainShortcut().suspend();recordingShortcut=true;ports.settings().actions.setMainWindowShortcutError("");}
-    catch(error){ports.settings().actions.setMainWindowShortcutError(String(error));}
+    catch(error){ports.settings().actions.setMainWindowShortcutError(nativeShortcutErrorMessage(error));}
     shell?.redraw();
   };
   const close=()=>{
@@ -138,7 +139,7 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
             labelKey:page==="manager"?"settings.apps.manager.title":"settings.apps.excluded.title"});shell?.redraw();},
           edit:item=>ports.editItem(item as SceneItem|null)})
         :tab==="general"
-        ?nativeGeneralSettingsPage({settings,width,theme:ports.settingsTheme(),
+        ?nativeGeneralSettingsPage({settings,width,theme:ports.settingsTheme(),shortcutWarning:()=>{const failure=ports.mainShortcut().failure;return failure?nativeShortcutErrorMessage(failure):"";},
           management:ports.getManagement(),invalidate:()=>app.invalidate(),redraw:()=>shell?.redraw(),recording:recordingShortcut,
           hotCornersExpanded:expandedHotCorners,expandHotCorners:()=>{expandedHotCorners=!expandedHotCorners;shell?.redraw();},
           record:recordShortcut,expanded:expandedIcons,expand:()=>{expandedIcons=!expandedIcons;shell?.redraw();},icons:ports.brandingTextures(),openLogs:ports.openLogs})
@@ -151,6 +152,10 @@ export function createNativeSettingsController(ports: NativeSettingsControllerPo
       apply:async()=>{
         if(!stopShortcutRecording())throw new Error(settings.presentation.mainWindowShortcutError.value);
         if(settings.presentation.isChoosingBackgroundImage.value)throw new Error(ports.t("settings.interface.background.layer.choosing"));
+        if(ports.mainShortcut().failure&&settings.draft.mainWindowShortcut.value===settings.presentation.mainWindowShortcut.value){
+          const retry=await settings.nativeIntegration.registerCurrentShortcut();
+          if(!retry.ok)throw retry.error;
+        }
         try{
           await ports.desktopBackground().configure(nativeDraftBackground(settings),app.contentSize.width,app.contentSize.height,undefined,ports.getSystemAppearance());
         }catch(error){
