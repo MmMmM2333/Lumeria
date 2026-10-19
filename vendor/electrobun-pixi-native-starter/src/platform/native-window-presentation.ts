@@ -111,9 +111,9 @@ export function createNativeWindowPresentation(inputWindow:number,releaseCapture
     if(decorationsSupported){setAttribute(34,material==="none"||fullscreen?-2:-1);setAttribute(33,material==="none"||fullscreen?1:2);}
     if(initialMaterial!==null){
       setAttribute(38,materials[material]);
-      // With WM_NCPAINT active, leaving full-window glass after removing the
-      // backdrop produces an opaque black surface instead of DComp transparency.
-      const margin=new Int32Array([material!=="none"?-1:0,0,0,0]);
+      // Keep non-client rendering active for Acrylic show/focus recovery.
+      // Extending only the bottom edge avoids the accent-colored caption.
+      const margin=new Int32Array([0,0,0,material!=="none"?1:0]);
       const result=dwm.symbols.DwmExtendFrameIntoClientArea(window,ptr(margin));
       if(result<0)throw new Error(`DwmExtendFrameIntoClientArea failed (${result})`);
       if(readAttribute(38)!==materials[material])throw new Error("DWM did not retain the requested backdrop");
