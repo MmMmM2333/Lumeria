@@ -21,8 +21,8 @@ Native 打包和 smoke 测试会从同一目录读取数据服务与 Live Deskto
 首次克隆先执行 `npm ci` 和 `npm run native:prepare:source`，编译、校验并接入本地 SDK；有匹配附件时也可显式导入。环境要求及切换方式见 [Native 工具链指南](native-toolchain.md)。
 
 ```powershell
-npm run native:release           # ESM，默认正式安装包
-npm run native:release:bytecode  # 可选 CJS + 字节码安装包
+npm run native:release:bytecode  # CJS + 字节码，CI 安装包使用此命令
+npm run native:release           # ESM，本地构建命令
 ```
 
 流水线也可逐步运行：
@@ -78,6 +78,10 @@ Redistributable 目录复制，亦可用 `LUMERIA_VC_REDIST` 指向 `Microsoft.V
 `preflight` 运行 `npm run check:preflight`，覆盖版本、工具链边界、托盘恢复、根 Cargo workspace
 和 Native Frame 测试。通过后，`build` 检出相同提交，再运行 `check:app` 与
 `test:native-data:integration`；前置测试不重复执行。`npm run check` 仍聚合完整检查。
+
+手动运行与标签构建固定使用 `npm run native:release:bytecode`，由包内 Bun 1.4.2 生成 CJS 字节码。
+上传前核对生产格式为 `bytecode`、运行时版本与字节码清单匹配，并确认 `index.js.jsc` 存在。
+产品清单和字节码文件哈希清单与构建日志一起保留在 Actions 构建记录中。
 
 Windows runner 固定 Node/npm、Rust、Bun、Zig 和 NSIS 版本，并使用镜像内的 MSVC、Windows SDK
 与 CMake。npm 缓存仅保留下载内容，依赖仍由 `npm ci` 安装；Cargo 缓存绑定编译器、镜像和依赖输入。

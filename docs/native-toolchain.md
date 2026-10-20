@@ -126,7 +126,7 @@ npm run native:release
 npm run native:release:bytecode
 ```
 
-以上还需要 NSIS 3.11 与 MSVC CRT；路径变量和安装器说明见 [Windows 发行说明](windows-release.md)。ESM 为默认。源码构建通过不代表 UI、安装/卸载或升级已验收，应针对具体候选产物完成相应验证。
+以上还需要 NSIS 3.11 与 MSVC CRT；路径变量和安装器说明见 [Windows 发行说明](windows-release.md)。本地 `native:release` 使用 ESM；CI 手动运行和标签构建使用 `native:release:bytecode`。源码构建通过不代表 UI、安装/卸载或升级已验收，应针对具体候选产物完成相应验证。
 
 ## 原生补丁边界
 
@@ -138,4 +138,4 @@ DComp 合成桥接和 CopySrc surface 是固定 SDK 补丁的一部分。构建�
 
 ## 构建格式
 
-ESM 是默认格式，`npm run native:build:bytecode` 提供可选的 CJS 字节码构建。两者共用输出目录，后运行的构建会覆盖产物。已有对照没有显示 bytecode 能稳定降低内存，不应把它当作省内存开关。安装包命令见 [Windows 发行指南](windows-release.md)。
+本地 `native:build` 默认使用 ESM，`npm run native:build:bytecode` 生成 CJS 字节码；CI 安装包使用字节码。两者共用输出目录，后运行的构建会覆盖产物。已有对照没有显示 bytecode 能稳定降低内存，不应把它当作省内存开关。安装包命令见 [Windows 发行指南](windows-release.md)。

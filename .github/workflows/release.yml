@@ -232,18 +232,28 @@ jobs:
             npm run test:native-data:integration
           } finally { Stop-Transcript }
 
-      - name: Build the Windows installer
+      - name: Build the Windows bytecode installer
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           Start-Transcript -Path artifacts/ci-logs/package.log
-          try { npm run native:release } finally { Stop-Transcript }
+          try { npm run native:release:bytecode } finally { Stop-Transcript }
 
       - name: Verify and collect only this version's release files
         if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
+          $staging = 'release/staging/windows-x64/Lumeria'
+          $product = Get-Content "$staging/lumeria.json" -Raw | ConvertFrom-Json
+          $bytecodeRoot = "$staging/runtime/Resources/app/bun"
+          $bytecode = Get-Content "$bytecodeRoot/bytecode-manifest.json" -Raw | ConvertFrom-Json
+          if ($product.version -cne $env:RELEASE_VERSION -or $product.format -cne 'bytecode' -or
+              $product.diagnostics -cne $false -or $bytecode.bun -cne '1.4.2' -or
+              $bytecode.format -cne 'cjs' -or $bytecode.bytecode -cne $true -or
+              !(Test-Path -LiteralPath "$bytecodeRoot/index.js.jsc" -PathType Leaf)) {
+            throw 'The release must contain a production bytecode build for the bundled Bun 1.4.2.'
+          }
           $name = "Lumeria-$env:RELEASE_VERSION-x64-Setup.exe"
           $installer = Join-Path 'artifacts' $name
           $metadata = Get-Content "$installer.json" -Raw | ConvertFrom-Json
@@ -276,6 +286,8 @@ jobs:
           path: |
             artifacts/ci-logs/
             artifacts/Lumeria-${{ needs.preflight.outputs.version }}-x64-Setup.exe.json
+            release/staging/windows-x64/Lumeria/lumeria.json
+            release/staging/windows-x64/Lumeria/runtime/Resources/app/bun/bytecode-manifest.json
             vendor/electrobun-pixi-native-starter/.hutch/native-toolchain.local.json
           include-hidden-files: true
           if-no-files-found: warn
